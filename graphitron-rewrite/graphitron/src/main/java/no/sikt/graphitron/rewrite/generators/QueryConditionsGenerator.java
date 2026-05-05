@@ -103,17 +103,21 @@ public class QueryConditionsGenerator {
         // Reduce the noCondition()-and chain when there's nothing to compose. Zero filters land
         // as `return DSL.noCondition()`; one filter folds to a direct return; two or more keep
         // the seeded chain.
+        // QueryConditions class is not a *Fetchers; helper-emission gate does not apply here.
+        // ContextArg ParamSources never reach the QueryConditions callsite (condition methods
+        // do not declare @Context parameters); we still pass a ctx for API uniformity.
+        var ctx = new TypeFetcherEmissionContext();
         if (filters.isEmpty()) {
             builder.addStatement("return $T.noCondition()", DSL);
         } else if (filters.size() == 1) {
             var only = filters.get(0);
-            var callArgs = ArgCallEmitter.buildCallArgs(only.callParams(), only.className(), "table");
+            var callArgs = ArgCallEmitter.buildCallArgs(ctx, only.callParams(), only.className(), "table");
             builder.addStatement("return $T.$L($L)",
                 ClassName.bestGuess(only.className()), only.methodName(), callArgs);
         } else {
             builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
             for (var filter : filters) {
-                var callArgs = ArgCallEmitter.buildCallArgs(filter.callParams(), filter.className(), "table");
+                var callArgs = ArgCallEmitter.buildCallArgs(ctx, filter.callParams(), filter.className(), "table");
                 builder.addStatement("condition = condition.and($T.$L($L))",
                     ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
             }

@@ -35,11 +35,11 @@ public final class ArgCallEmitter {
      * {@link #buildArgExtraction} so the {@code JooqConvert} branch resolves the same
      * local.
      */
-    public static CodeBlock buildCallArgs(List<CallParam> params, String conditionsClassName, String srcAlias) {
+    public static CodeBlock buildCallArgs(TypeFetcherEmissionContext ctx, List<CallParam> params, String conditionsClassName, String srcAlias) {
         var args = CodeBlock.builder();
         args.add("$L", srcAlias);
         for (var param : params) {
-            args.add(", $L", buildArgExtraction(param, conditionsClassName, srcAlias));
+            args.add(", $L", buildArgExtraction(ctx, param, conditionsClassName, srcAlias));
         }
         return args.build();
     }
@@ -80,8 +80,8 @@ public final class ArgCallEmitter {
      * @param conditionsClassName  target for {@link CallSiteExtraction.TextMapLookup}; may be null
      *                             when no {@code TextMapLookup} extractions exist on the method.
      */
-    public static CodeBlock buildMethodBackedCallArgs(MethodRef method, CodeBlock tableExpression, String conditionsClassName) {
-        return buildMethodBackedCallArgs(method, tableExpression, null, conditionsClassName);
+    public static CodeBlock buildMethodBackedCallArgs(TypeFetcherEmissionContext ctx, MethodRef method, CodeBlock tableExpression, String conditionsClassName) {
+        return buildMethodBackedCallArgs(ctx, method, tableExpression, null, conditionsClassName);
     }
 
     /**
@@ -91,28 +91,29 @@ public final class ArgCallEmitter {
      * supplied at the Sources slot. When {@code null}, Sources is rejected as in the legacy
      * two-arg overload.
      */
-    public static CodeBlock buildMethodBackedCallArgs(MethodRef method, CodeBlock tableExpression,
+    public static CodeBlock buildMethodBackedCallArgs(TypeFetcherEmissionContext ctx, MethodRef method, CodeBlock tableExpression,
             CodeBlock sourcesExpression, String conditionsClassName) {
         var args = CodeBlock.builder();
         boolean first = true;
         for (var param : method.params()) {
             if (!first) args.add(", ");
             first = false;
-            args.add(emitForParam(param, tableExpression, sourcesExpression, conditionsClassName));
+            args.add(emitForParam(ctx, param, tableExpression, sourcesExpression, conditionsClassName));
         }
         return args.build();
     }
 
-    private static CodeBlock emitForParam(MethodRef.Param param, CodeBlock tableExpression,
+    private static CodeBlock emitForParam(TypeFetcherEmissionContext ctx, MethodRef.Param param, CodeBlock tableExpression,
             CodeBlock sourcesExpression, String conditionsClassName) {
         var source = param.source();
         return switch (source) {
             case ParamSource.Arg arg -> buildArgExtraction(
+                ctx,
                 new CallParam(arg.graphqlArgName(), arg.extraction(), false, param.typeName()),
                 conditionsClassName,
                 null);
             case ParamSource.Context ignored ->
-                CodeBlock.of("graphitronContext(env).getContextArgument(env, $S)", param.name());
+                CodeBlock.of("$L.getContextArgument(env, $S)", ctx.graphitronContextCall(), param.name());
             case ParamSource.DslContext ignored ->
                 CodeBlock.of("dsl");
             case ParamSource.Table ignored -> {
@@ -140,7 +141,7 @@ public final class ArgCallEmitter {
         };
     }
 
-    public static CodeBlock buildArgExtraction(CallParam param, String conditionsClassName, String srcAlias) {
+    public static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param, String conditionsClassName, String srcAlias) {
         return switch (param.extraction()) {
             case CallSiteExtraction.Direct ignored ->
                 CodeBlock.of("env.getArgument($S)", param.name());
@@ -156,7 +157,7 @@ public final class ArgCallEmitter {
                     param.name(), ClassName.bestGuess(conditionsClassName), tl.mapFieldName(),
                     String.class, param.name());
             case CallSiteExtraction.ContextArg ignored ->
-                CodeBlock.of("graphitronContext(env).getContextArgument(env, $S)", param.name());
+                CodeBlock.of("$L.getContextArgument(env, $S)", ctx.graphitronContextCall(), param.name());
             case CallSiteExtraction.JooqConvert jc -> param.list()
                 ? CodeBlock.of("$L.stream().map($L.$L.getDataType()::convert).toList()",
                     toCamelCase(param.name()) + "Keys", srcAlias, jc.columnJavaName())

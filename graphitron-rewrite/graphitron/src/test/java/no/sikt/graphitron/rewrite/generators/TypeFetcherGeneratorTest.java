@@ -1353,24 +1353,20 @@ class TypeFetcherGeneratorTest {
     @Test
     void graphitronContextHelper_emittedForServiceRecordOnlyClass() {
         // Regression: ServiceRecordField is the only BatchKeyField that doesn't extend
-        // SqlGeneratingField via TableTargetField. The previous forward-declared classifier
+        // SqlGeneratingField via TableTargetField. A previous forward-declared classifier
         // predicate enumerated SqlGeneratingField + a few interface/union/DML cases and silently
         // dropped ServiceRecordField, so a *Fetchers class whose only field was a
         // ServiceRecordField would emit a graphitronContext(env) call (via buildDataLoaderName)
-        // but no graphitronContext helper method, producing "cannot find symbol:
-        // graphitronContext(DataFetchingEnvironment)" downstream. Helper emission now post-scans
-        // the methods we just emitted, so any future call site picks up the helper without
-        // needing to enumerate field variants up-front.
+        // but no graphitronContext helper method. Emission now flows through
+        // TypeFetcherEmissionContext.graphitronContextCall(); the helper is gated on the
+        // recorded request, not on a method-body string scan.
         var field = scalarServiceRecordField(
             "Language", "displayName", false,
             new BatchKey.RowKeyed(List.of(languageIdCol())),
             ClassName.get(String.class));
         var spec = specWith(field);
-        assertThat(method(spec, "displayName").code().toString())
-            .as("sanity: the ServiceRecordField fetcher body references graphitronContext(env)")
-            .contains("graphitronContext(env)");
         assertThat(spec.methodSpecs())
-            .as("helper is emitted whenever any method body references graphitronContext(env)")
+            .as("helper is emitted whenever any emitter records a graphitronContext request")
             .extracting(MethodSpec::name)
             .contains("graphitronContext");
     }
