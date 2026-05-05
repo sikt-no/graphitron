@@ -29,7 +29,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Ready | [plan](error-handling-parity.md) |
 | `R61` | Add Record1<T> source-shape support alongside Row1<T> | In Review | [plan](emit-record1-keys-instead-of-row1.md) |
-| `R79` | Composite-key NodeId condition args: typed Row<N> end-to-end | Ready | [plan](query-conditions-composite-key-rown-call-site.md) |
+| `R79` | Composite-key NodeId condition args: typed Row<N> end-to-end | In Progress | [plan](query-conditions-composite-key-rown-call-site.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [graphitron-lsp](graphitron-lsp.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
@@ -103,7 +103,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### nodeid
 
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
-- `R79` [**Composite-key NodeId condition args: typed Row<N> end-to-end**](query-conditions-composite-key-rown-call-site.md) — Ready, architecture
+- `R79` [**Composite-key NodeId condition args: typed Row<N> end-to-end**](query-conditions-composite-key-rown-call-site.md) — In Progress, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
 ### service

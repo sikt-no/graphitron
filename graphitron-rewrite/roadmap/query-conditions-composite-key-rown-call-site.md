@@ -1,7 +1,7 @@
 ---
 id: R79
 title: "Composite-key NodeId condition args: typed Row<N> end-to-end"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 9
 theme: nodeid
