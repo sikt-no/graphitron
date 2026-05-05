@@ -8,9 +8,15 @@ override-propagation semantics that tie them together.
 
 == Pipeline shape
 
-- `FieldBuilder.classifyArguments` returns `List<ArgumentRef>` (sealed:
-  `ColumnArg`, `UnboundArg`, `TableInputArg`, `PlainInputArg`, `OrderByArg`,
-  `PaginationArgRef`, `UnclassifiedArg`).
+- `FieldBuilder.classifyArguments` returns `List<ArgumentRef>` (sealed,
+  three top-level arms plus two intermediate sealed sub-groupers):
+  `ScalarArg.{ColumnArg | CompositeColumnArg | ColumnReferenceArg |
+  CompositeColumnReferenceArg | UnboundArg}`,
+  `InputTypeArg.{TableInputArg | PlainInputArg}`,
+  plus the top-level `OrderByArg`, `PaginationArgRef`, `UnclassifiedArg`.
+  The composite/reference scalar arms (R50) carry multi-column or FK-resolved
+  bindings; the sealed sub-groupers let projections pattern-switch on shape
+  axis without enumerating leaves.
 - Projection helpers consume that list: `projectFilters`,
   `projectOrderBySpec`, `projectPaginationSpec`, `projectForLookup`.
 - `contextArguments` flow through `ServiceCatalog.reflectTableMethod` into

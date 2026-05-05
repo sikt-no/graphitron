@@ -1,7 +1,7 @@
 ---
 id: R15
 title: Sweep doc drift between rewrite docs and `model/` taxonomy
-status: Spec
+status: In Review
 bucket: cleanup
 priority: 3
 theme: docs
@@ -11,38 +11,117 @@ depends-on: []
 # Sweep doc drift between rewrite docs and `model/` taxonomy
 
 The three reference docs under `graphitron-rewrite/docs/` (`code-generation-triggers.adoc`,
-`rewrite-design-principles.adoc`, `argument-resolution.adoc`) have fallen behind several
-recent landings in `model/`. None of the drift breaks the build; all of it costs a first-time
-reader credibility. Re-audited 2026-05-02 against trunk after the focused sweep below.
-Re-audited again on the architecture-study pass (commit `96edb7a`); items 7-12 below
-were added in that pass. Reviewer-pass refresh against `cb20a25` (post-R36 / R58 / R59):
-counts and rosters retightened; `NodeIdDecodeKeys` added to the `CallSiteExtraction` row
-because R58's new "Wire-format encoding is a boundary concern" section
-(`rewrite-design-principles.adoc:85`) names it as the worked example, leaving the source-map
-table at `code-generation-triggers.adoc:266` and the intro paragraph at
-`rewrite-design-principles.adoc:31` as the two laggards.
+`rewrite-design-principles.adoc`, `argument-resolution.adoc`) had fallen behind several
+recent landings in `model/`. None of the drift broke the build; all of it cost a first-time
+reader credibility. This sweep ran across multiple commits; the final pass landed against
+trunk `c48e532` (post-R68 / R79 / R81 / R82 / R86).
 
-Re-audited 2026-05-05 against trunk `994e780` (post-R68 UX-review landings). Findings since
-the last sweep: the "five rewrite modules" Legacy-refs bullet has shipped (the count claim
-is gone and the module list at `rewrite-design-principles.adoc:155` is complete);
-`candidateHint` usage stats need a fresh number set (the 2026-05-02 update was already
-stale on its own terms). New drift items added in this pass: `ChildField.ParticipantColumnReferenceField`
-and `ChildField.ErrorsField` are missing from the Child Fields tables in
-`code-generation-triggers.adoc`, and `BatchKey`'s permits list at the source-map row
-(line 263) is post-R7-stale (the doc lists 5; the model carries at least 8 across the
-two `ParentKeyed` / `RecordParentBatchKey` axis hierarchies). The `depends-on:
-[docs-site-asciidoc]` front-matter entry was incorrect (the rewrite-internal docs are
-not blocked on the user-manual site move) and has been dropped.
+## Strategy: complete with R86 forward references
 
-The original scope of this item was a pure legacy-ref grep ("`graphitron-common`" + module
-count). That scope is preserved at the bottom; the larger driver now is variant-taxonomy
-drift caused by federation, the Relay `nodes(ids)` auto-emit, the `@condition`-on-input-
-field work, and the recent `BatchKey` and `ChildField` permit additions, all shipping
-under their own plans without a doc pass.
+R86 (`architecture-chapter.md`) eventually consolidates the typed-rejection narrative,
+sealed-hierarchies guidance, and wire-format-boundary principle into the public user-manual
+architecture chapter. R86's named scope is a new chapter, not a rewrite of these
+contributor-facing docs ; the variant-taxonomy tables, source map, and permit lists land
+locally and remain the canonical reference. A single forward-ref note in
+`rewrite-design-principles.adoc` flags the principle paragraphs that will eventually move
+to the public chapter; nothing else needs a forward ref.
 
-## Landed (2026-05-02 commit)
+## Landed (final pass against trunk `c48e532`)
 
-The 2026-05-02 sweep took out the six items the user flagged as the cheapest big win:
+### Variant-taxonomy drift
+
+- **`QueryEntityField` row removed.** `_entities` is no longer modelled as a `QueryField`
+  permit; it is resolved by `federation-graphql-java-support` through the generated
+  `EntityFetcherDispatch` runtime helper. Replaced the row with a footnote pointing at
+  `GraphitronSchema.entitiesByType` and `EntityFetcherDispatch`.
+- **`QueryNodesField` row added.** Relay `nodes(ids)` auto-emit (R7); dispatched at
+  `generators/util/QueryNodeFetcherClassGenerator.java`.
+- **`GraphitronType` permits enriched.** Added rows for `PlainObjectType`, `EnumType`,
+  `ConnectionType`, `EdgeType`, `PageInfoType` ; the connection trio was core to the
+  `@asConnection` path but absent from the Type Classification table.
+- **`CallSiteExtraction` enumeration fixed.** Now reads "five direct strategies plus two
+  sealed sub-groupers covering nested-input traversal (`NestedInputField`) and NodeId
+  decode (`NodeIdDecodeKeys.{SkipMismatchedElement | ThrowOnMismatch}`)" in both
+  `code-generation-triggers.adoc:266` (the source-map row) and
+  `rewrite-design-principles.adoc:31` (the principle).
+- **`GraphitronSchema` schematic corrected.** The diagram at
+  `code-generation-triggers.adoc:13-25` now shows all five fields (`types`, `fields`,
+  `fieldsByType`, `entitiesByType`, `warnings`) instead of the misleading two-field
+  shape.
+- **Source-map generators table restructured.** Replaced the nine-row file-by-file list
+  with a four-family grouping (fetcher emission, schema emission, error-handling
+  emission, runtime helpers). The error-handling family is now visible at the table level
+  rather than buried in `schema/`. Helper-emitter classes (`SplitRowsMethodEmitter`,
+  `LookupValuesJoinEmitter`, `JoinPathEmitter`, `MultiTablePolymorphicEmitter`,
+  `ArgCallEmitter`, `FetcherEmitter`, `HandleMethodBody`, `SelectMethodBody`,
+  `ValuesJoinRowBuilder`, `CompositeDecodeHelperRegistry`, etc.) are noted as reached
+  from inside a generator and not separate entries.
+- **`ArgumentRef` permits refresh.** `argument-resolution.adoc` lines 11-13 now show the
+  full sealed shape: `ScalarArg.{ColumnArg | CompositeColumnArg | ColumnReferenceArg |
+  CompositeColumnReferenceArg | UnboundArg}`, `InputTypeArg.{TableInputArg | PlainInputArg}`,
+  plus top-level `OrderByArg`, `PaginationArgRef`, `UnclassifiedArg`. The R50 composite
+  carriers and the two intermediate sealed sub-groupers (`ScalarArg`, `InputTypeArg`) are
+  now both visible.
+- **`ChildField.ParticipantColumnReferenceField` row added.** Scalar/Enum return-type
+  table on a `@table` parent now lists the participant-side FK carrier used on
+  `TableInterfaceType` participants.
+- **`ChildField.ErrorsField` row added.** `@record` parent table now lists the typed
+  error-channel slot on a service payload, with the passthrough-fetcher emission note.
+- **`BatchKey` source-map row enumerates both axes.** The Source Map row now reads
+  "Two axis sub-hierarchies: `ParentKeyed` (`RowKeyed`, `RecordKeyed`, `MappedRowKeyed`,
+  `MappedRecordKeyed`, `TableRecordKeyed`, `MappedTableRecordKeyed`) and
+  `RecordParentBatchKey` (`RowKeyed`, `LifterRowKeyed`, `AccessorKeyedSingle`,
+  `AccessorKeyedMany`)" ; ten permits across two axes. The companion `BatchKey` Javadoc
+  ("Seven permits across two axis sub-hierarchies") was updated in the same commit to
+  read "Ten permits across two axis sub-hierarchies (nine unique class names; `RowKeyed`
+  appears once on each axis)".
+
+### Principles-doc claims
+
+- **Reflection-permission roster refreshed.** `rewrite-design-principles.adoc:27` no
+  longer says "ServiceCatalog ... only places". Today's roster: `ServiceCatalog`,
+  `ServiceDirectiveResolver`, `BatchKeyLifterDirectiveResolver`, `FieldBuilder` ; four
+  builder-side classifiers convert reflection output into typed model values
+  (`MethodRef.Param`, `BatchKey`, `AccessorRef`).
+- **Raw-jOOQ-types boundary roster refreshed.** Reframed `rewrite-design-principles.adoc:29`
+  to "the boundary lives at `JooqCatalog`": that is the canonical permitted holder, plus
+  `BuildContext` (`ForeignKey` for validation-message FK enumeration) and
+  `catalog/CatalogBuilder` (`ForeignKey` + `Table` for the LSP completion-data snapshot).
+  `TypeBuilder`, `FieldBuilder`, and `ServiceCatalog` consume the classified output via
+  `JooqCatalog` rather than holding raw types directly.
+- **`candidateHint` usage stats refreshed.** `rewrite-design-principles.adoc:181` now
+  reads "17 occurrences across five files ; 7 in `BuildContext`, 3 in `TypeBuilder`,
+  3 in `Rejection`, 2 in `FieldBuilder`, 2 in `EnumMappingResolver`". The shape note
+  (Levenshtein-suggestion contract consolidated onto `BuildContext` and `Rejection`)
+  is also recorded so the next re-audit knows what the trend is.
+
+### Legacy refs
+
+- **Repo path corrected.** `code-generation-triggers.adoc:245` was
+  `graphitron-rewrite/src/main/java/...` (pre-monorepo-restructure relic); now reads
+  `graphitron-rewrite/graphitron/src/main/java/...` matching the actual layout.
+- **`directives.graphqls` location corrected.** `code-generation-triggers.adoc:295`
+  was the legacy `graphitron-common` path; now reads
+  `graphitron-rewrite/graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`
+  with the `RewriteSchemaLoader` auto-injection note.
+- **Legacy README link replaced.** `code-generation-triggers.adoc:296` pointed at the
+  legacy `graphitron-codegen-parent/graphitron-java-codegen/README.md`; now points at the
+  directive reference in the published manual (`docs/manual/reference/directives/`) and
+  flags R86 as the contributor-facing chapter that consolidates runtime extension points.
+
+### R86 forward reference
+
+- **Single inline note in `rewrite-design-principles.adoc` preamble.** The typed-rejection
+  narrative ("Builder-step results are sealed, not strings or out-params"), the
+  sealed-hierarchies guidance, and the wire-format-boundary principle are slated to
+  consolidate into the public user-manual architecture chapter once it lands (R86); until
+  then, this contributor-facing reference is the canonical source. Per R15's deeper-pass
+  recommendation, no other forward refs were added ; the variant-taxonomy / source-map /
+  permit-list content lives at this surface and is not part of R86's named scope.
+
+## Earlier landings (preserved for context)
+
+The 2026-05-02 sweep took out six items the user flagged as the cheapest big win:
 
 - **Java version.** `rewrite-design-principles.adoc:108-113` Java 21 → Java 25; expanded
   feature list (switch patterns, scoped values); noted the `requireJavaVersion` enforcer
@@ -66,149 +145,20 @@ The 2026-05-02 sweep took out the six items the user flagged as the cheapest big
   concrete partition (`IMPLEMENTED_LEAVES` / `PROJECTED_LEAVES` / `NOT_DISPATCHED_LEAVES`
   / `NOT_IMPLEMENTED_REASONS.keySet()`) and named the `GeneratorCoverageTest` enforcement.
 
-## Variant-taxonomy drift (still pending)
+The "five rewrite modules" Legacy-refs bullet shipped earlier (the count claim is gone and
+the module list at `rewrite-design-principles.adoc:155` is complete).
 
-One commit, one focused diff. Each row below is a single edit.
+## Out of scope (carried over)
 
-- **`QueryEntityField` no longer exists.** Removed in `a24feb4` (federation Phases 1-3);
-  `_entities` is now resolved by `federation-graphql-java-support` directly. Still appears
-  as a row in `code-generation-triggers.adoc`'s Query Fields table. Delete the row.
-- **`QueryNodesField` is missing from the docs.** Added in `71e439f` (Relay `nodes(ids)`
-  auto-emit); a real permit at `model/QueryField.java`, dispatched at
-  `generators/TypeFetcherGenerator.java`. Add a row in
-  `code-generation-triggers.adoc`'s Query Fields table.
-- **`GraphitronType` has 5 variants the docs don't acknowledge.**
-  `model/GraphitronType.java` permits `PlainObjectType`, `EnumType`, `ConnectionType`,
-  `EdgeType`, `PageInfoType` — the connection trio is core to the `@asConnection` path.
-  Absent from `code-generation-triggers.adoc`'s Type Classification table.
-- **`CallSiteExtraction` shows 5 variants, has 7.** `rewrite-design-principles.adoc:31` and
-  `code-generation-triggers.adoc:266` enumerate `Direct / EnumValueOf / TextMapLookup /
-  ContextArg / JooqConvert`. The 6th is `NestedInputField` (used for `@condition` on
-  `INPUT_FIELD_DEFINITION`). The 7th is the sealed sub-grouper `NodeIdDecodeKeys`
-  (`SkipMismatchedElement` / `ThrowOnMismatch`) added in R50 (`model/CallSiteExtraction.java:30`).
-  `argument-resolution.adoc` covers `NestedInputField` already; the same doc and the new
-  `rewrite-design-principles.adoc:85` "Wire-format encoding is a boundary concern" section
-  both already name `NodeIdDecodeKeys` ; the laggards are the source-map table at
-  `code-generation-triggers.adoc:266` and the intro paragraph at
-  `rewrite-design-principles.adoc:31`. Fix both to enumerate all seven, or rephrase the intro
-  as "five extraction strategies plus two sealed sub-groupers covering nested-input traversal
-  and NodeId decode."
-- **`GraphitronSchema` schematic is wrong.** `code-generation-triggers.adoc:13-25` shows
-  `Map<String, GraphitronField>`. Real shape at `GraphitronSchema.java:24-30` is five fields:
-  `Map<String, GraphitronType> types`, `Map<FieldCoordinates, GraphitronField> fields`,
-  `Map<String, List<GraphitronField>> fieldsByType`, `Map<String, EntityResolution>
-  entitiesByType`, `List<BuildWarning> warnings`. Fix the diagram.
-- **Source map misses ~17 generators.** `code-generation-triggers.adoc`'s Generators table
-  lists 8. `generators/schema/` has 13 (`ObjectTypeGenerator`, `InputTypeGenerator`,
-  `EnumTypeGenerator`, `GraphitronFacadeGenerator`, `GraphitronSchemaClassGenerator`,
-  `FetcherRegistrationsEmitter`, `DirectiveDefinitionEmitter`, `AppliedDirectiveEmitter`,
-  `GraphQLValueEmitter`, `InputDirectiveInputTypes`, plus an error-handling sub-family —
-  `ConstraintViolationsClassGenerator`, `ErrorMappingsClassGenerator`,
-  `ErrorRouterClassGenerator`); `generators/util/` has runtime-helper class generators
-  (`ColumnFetcherClassGenerator`, `EntityFetcherDispatchClassGenerator`,
-  `GraphitronContextInterfaceGenerator`, `NodeIdEncoderClassGenerator`,
-  `OrderByResultClassGenerator`, `QueryNodeFetcherClassGenerator`) alongside emitter helpers
-  that aren't generators (`HandleMethodBody`, `SelectMethodBody`, `ValuesJoinRowBuilder`,
-  `SchemaDirectiveRegistry`); root has `QueryConditionsGenerator` alongside
-  `TypeConditionsGenerator`. Restructure the source map to four families rather than
-  re-listing entries: fetcher emission, schema emission, error-handling emission, runtime
-  helpers ; that grouping makes the error-handling family visible at the table level instead
-  of buried in the schema/ folder.
-- **`argument-resolution.adoc` permits list is post-R50 stale.** Lines 11-13 enumerate
-  seven `ArgumentRef` variants (`ColumnArg`, `UnboundArg`, `TableInputArg`, `PlainInputArg`,
-  `OrderByArg`, `PaginationArgRef`, `UnclassifiedArg`). The model permits at minimum:
-  `ScalarArg.{ColumnArg | CompositeColumnArg | ColumnReferenceArg | CompositeColumnReferenceArg | UnboundArg}`,
-  `InputTypeArg.{TableInputArg | PlainInputArg}`, plus the three top-level
-  `OrderByArg` / `PaginationArgRef` / `UnclassifiedArg`. Three R50-introduced carriers
-  (`CompositeColumnArg`, `ColumnReferenceArg`, `CompositeColumnReferenceArg`) plus the two
-  intermediate sealed groupers (`ScalarArg`, `InputTypeArg`) are absent from the prose.
-- **`ChildField.ParticipantColumnReferenceField` is missing from the docs.** Listed in
-  `model/ChildField.java`'s permits clause (`ChildField.java:13`) as a scalar-field
-  carrier on `TableInterfaceType` participants, but absent from the Child Fields tables
-  at `code-generation-triggers.adoc:158-188`. Add a row in the appropriate sub-table
-  (scalar/enum return type) with the directive pattern that produces it.
-- **`ChildField.ErrorsField` is missing from the docs.** Listed in `ChildField.java:23`
-  as a permit; carries the typed error-channel slot on a service payload. The Type
-  Classification table at `code-generation-triggers.adoc:109` mentions `ErrorType` (the
-  type-side variant) but the field-side carrier has no row in the Child Fields tables.
-- **`BatchKey` source-map row lists 5 permits, has at least 8.**
-  `code-generation-triggers.adoc:263` says "`RowKeyed` / `RecordKeyed` / `MappedRowKeyed`
-  / `MappedRecordKeyed` / `LifterRowKeyed`". The model splits across two axis sub-hierarchies:
-  `ParentKeyed.{RowKeyed | RecordKeyed | MappedRowKeyed | MappedRecordKeyed | TableRecordKeyed
-  | MappedTableRecordKeyed}` (six), plus `RecordParentBatchKey.{RowKeyed | LifterRowKeyed |
-  AccessorKeyedSingle | AccessorKeyedMany}` (four; `RowKeyed` repeats across both axes).
-  Eight unique permits today. Either rephrase the source-map cell to point at the two axes
-  rather than enumerate, or list all eight; the BatchKey Javadoc opens with "Seven permits
-  across two axis sub-hierarchies" (out of date by one) so the doc cell and the Javadoc
-  should be updated together.
-
-## Principles-doc claims overtaken by structural changes
-
-Three claims in `rewrite-design-principles.adoc` whose name lists or counts no longer match
-the code. The principle's spirit is intact in each; only the cited evidence is stale.
-
-- **Reflection-permission roster is stale.** `rewrite-design-principles.adoc:27`:
-  "`ServiceCatalog.reflectServiceMethod()` and `ServiceCatalog.reflectTableMethod()` are the
-  only places that read the reflection `java.lang.reflect.Type` tree." Today three files
-  import `java.lang.reflect.Type`: `ServiceCatalog`, `BatchKeyLifterDirectiveResolver`
-  (R1, reflects on the developer-supplied lifter), and `FieldBuilder`. Update the roster.
-- **Raw-jOOQ-types permission roster is wrong.** `rewrite-design-principles.adoc:29`:
-  "`JooqCatalog`, `TypeBuilder`, `FieldBuilder`, and `ServiceCatalog` are the only classes
-  permitted to hold raw jOOQ types." Today three files import `org.jooq` raw types directly:
-  `JooqCatalog`, `BuildContext` (`ForeignKey` for `@reference` validation messages), and
-  `catalog/CatalogBuilder` (`ForeignKey` + `Table` for the LSP completion-data snapshot).
-  `TypeBuilder` / `FieldBuilder` / `ServiceCatalog` go through `JooqCatalog`. Either fix the
-  list to those three names, or rephrase the principle as "the boundary lives at
-  `JooqCatalog`; the only direct consumers of raw jOOQ types are `BuildContext` (for
-  validation-message FK enumeration) and the LSP-side `catalog/CatalogBuilder` snapshot;
-  classifier code consumes the classified output."
-- **`candidateHint` usage stats are stale.** `rewrite-design-principles.adoc:181`:
-  "Used in 14 places (5 in `FieldBuilder`, 5 in `TypeBuilder`, 2 in `BuildContext`,
-  2 in `ServiceCatalog`)." Today: 17 occurrences across 5 files (7 in `BuildContext`,
-  3 in `TypeBuilder`, 3 in `Rejection`, 2 in `FieldBuilder`, 2 in `EnumMappingResolver`);
-  `ServiceCatalog` and `BatchKeyLifterDirectiveResolver` no longer reference it directly.
-  The shape of the principle is healthier than the original numbers suggest because the
-  Levenshtein-suggestion contract has consolidated onto `BuildContext` and `Rejection`
-  (the rejection construction site), with classifier-side callers thinning out as
-  rejections are produced through the typed sealed-result path. Refresh the stats and
-  rephrase the location list as "the rejection-construction sites and the classifiers
-  that produce candidate lists" if a future re-audit will be cheap; otherwise enumerate
-  the five files with their current counts.
-
-## Legacy refs (original scope, preserved)
-
-- `code-generation-triggers.adoc:245` says "All source lives under
-  `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/`." Pre-monorepo-restructure
-  relic; the actual layout is `graphitron-rewrite/graphitron/src/main/java/...`. The path
-  on disk doesn't exist as written. Single-line edit at the top of the Source Map.
-- `code-generation-triggers.adoc:295` still lists the directive SDL location as
-  `graphitron-common/src/main/resources/directives.graphqls`. Per changelog entry
-  `c31771d`, the rewrite ships its own copy at
-  `graphitron-rewrite/graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`
-  and `RewriteSchemaLoader` auto-injects it. Update the link to the actual nested path.
-- `code-generation-triggers.adoc:296` (the line right after) — companion directive
-  reference — points at
-  `https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md`,
-  the legacy module's README. Either re-point at the rewrite-side doc or drop the link
-  if no rewrite-side equivalent exists yet. Paired edit with the line above.
-- *(Landed.) The "five rewrite modules" claim at `rewrite-design-principles.adoc:155`
-  has been corrected; the doc now lists all nine modules and omits the count claim.*
-- Anywhere `verify-standalone-build.sh`'s forbidden-coords list is paraphrased
-  inconsistently: a final grep pass (the 2026-05-05 grep finds only one matching site
-  and it is correct, so this can probably collapse into "no action").
-
-## Out of scope
-
-- `rewrite-docs-entrypoint.md` — the truncated `docs/README.md` is a separate item with its
-  own structural changes (preamble, pipeline tour, module map). Land first; this sweep
-  rebases on top.
-- `runtime-extension-points.md` — tracked under `runtime-extension-points-rewrite.md`; a
-  rewrite, not a sweep.
-- `docs-as-index-into-tests.md` — also rewrites `code-generation-triggers.md`; that plan
+- `rewrite-docs-entrypoint.md` ; the truncated `docs/README.md` is a separate item with
+  its own structural changes (preamble, pipeline tour, module map). Land first; this
+  sweep rebases on top.
+- `runtime-extension-points.md` ; tracked under `runtime-extension-points-rewrite.md`;
+  a rewrite, not a sweep.
+- `docs-as-index-into-tests.md` ; also rewrites `code-generation-triggers.md`; that plan
   notes this sweep should land first so the two passes don't edit overlapping paragraphs.
-- The duplicated Javadoc on `ChildField.ServiceTableField` (`model/ChildField.java:217-234`
-  has two stacked Javadoc blocks; Java attaches only the closer one). Trivial code fix, not
-  doc-sweep work; mention here only so it doesn't get lost.
+- The duplicated Javadoc on `ChildField.ServiceTableField` ; the file shows a single
+  Javadoc block today, so this Out-of-scope item from the earlier audit is moot.
 
 ## Follow-up
 
