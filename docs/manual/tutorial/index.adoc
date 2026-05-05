@@ -21,4 +21,9 @@ Time budget: about an hour, mostly waiting for the first Maven build to finish.
 
 If you are evaluating Graphitron rather than learning it, the xref:../../quick-start.adoc[Quick start] page covers the same ground in one screen. The tutorial is for the case where you want to type the commands yourself, see real responses, and build up the directive vocabulary one page at a time.
 
-xref:../index.adoc[← Back to the manual landing]
+[.pagenav,cols="<,^,>",frame=none,grid=none]
+|===
+|
+| xref:../index.adoc[↑ Manual landing]
+| xref:01-prerequisites.adoc[Start: Prerequisites →]
+|===
