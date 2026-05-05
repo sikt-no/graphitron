@@ -99,7 +99,9 @@ class ArgBindingMapTest {
         var result = ArgBindingMap.of(Set.of("a", "b"), Map.of());
         assertThat(result).isInstanceOf(ArgBindingMap.Result.Ok.class);
         var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
-        assertThat(map).containsEntry("a", "a").containsEntry("b", "b");
+        assertThat(map)
+            .containsEntry("a", PathExpr.head("a"))
+            .containsEntry("b", PathExpr.head("b"));
     }
 
     @Test
@@ -112,8 +114,8 @@ class ArgBindingMapTest {
             Map.of("inputs", "input"));
         var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
         assertThat(map).containsExactlyInAnyOrderEntriesOf(Map.of(
-            "dryRun", "dryRun",
-            "inputs", "input"));
+            "dryRun", PathExpr.head("dryRun"),
+            "inputs", PathExpr.head("input")));
     }
 
     @Test
@@ -123,7 +125,9 @@ class ArgBindingMapTest {
         var result = ArgBindingMap.of(Set.of("x"),
             new java.util.LinkedHashMap<>(Map.of("a", "x", "b", "x")));
         var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
-        assertThat(map).containsEntry("a", "x").containsEntry("b", "x");
+        assertThat(map)
+            .containsEntry("a", PathExpr.head("x"))
+            .containsEntry("b", PathExpr.head("x"));
     }
 
     @Test

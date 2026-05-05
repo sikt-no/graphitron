@@ -10,26 +10,27 @@ import java.util.Set;
  * {@link ServiceCatalog#reflectTableMethod} to bind reflected method parameters to their
  * GraphQL counterparts.
  *
- * <p>Keys are Java parameter names; values are the GraphQL argument (or input-field) names that
- * should bind to them. Identity entries ({@code key.equals(value)}) cover the no-override case;
- * override entries ({@code key != value}) name a Java parameter that differs from the GraphQL
- * argument's own name (i.e. {@code argMapping} on an {@code ExternalCodeReference}).
+ * <p>Keys are Java parameter names; values are {@link PathExpr} expressions that resolve to a
+ * GraphQL slot (and, post-R84, optionally a path into a nested input field). Identity entries
+ * ({@code key.equals(value.headName()) && value.isHead()}) cover the no-override case; override
+ * entries name a Java parameter that differs from the GraphQL argument's own name, optionally
+ * walking into a nested input field via dot-segments.
  *
- * <p>The single {@link #of} factory is axis-agnostic. It builds identity entries for every name
- * in {@code graphqlArgNames} and then applies {@code overrides} on top — replacing identity
- * entries whose Java target collides with an override key, so a Java parameter named {@code X}
- * stops binding to GraphQL arg {@code X} once an override claims it. The only failure shape is
- * {@link Result.UnknownArgRef}: an override whose GraphQL-source value is not in
- * {@code graphqlArgNames}. The parser ({@link #parseArgMapping}) enforces unique Java targets,
- * so the {@code overrides} map cannot have duplicate keys; identity entries cannot collide with
- * each other (GraphQL arg names are unique on a field), so {@code of(...)} has no collision
- * shape.
+ * <p>The single {@link #of} factory is axis-agnostic. It builds identity {@link PathExpr.Head}
+ * entries for every name in {@code graphqlArgNames} and then applies {@code overrides} on top
+ * — replacing identity entries whose Java target collides with an override key, so a Java
+ * parameter named {@code X} stops binding to GraphQL arg {@code X} once an override claims it.
+ * The only failure shape on the head axis is {@link Result.UnknownArgRef}: an override whose
+ * head-segment value is not in {@code graphqlArgNames}. The parser ({@link #parseArgMapping})
+ * enforces unique Java targets, so the {@code overrides} map cannot have duplicate keys; identity
+ * entries cannot collide with each other (GraphQL arg names are unique on a field), so
+ * {@code of(...)} has no collision shape.
  *
  * <p>The post-reflection typo guard inside {@link ServiceCatalog} only fires for explicit
- * override entries ({@code key != value}); identity entries fall through to the existing
- * per-parameter mismatch error.
+ * override entries (where the Java target differs from the head-segment name); identity entries
+ * fall through to the existing per-parameter mismatch error.
  */
-record ArgBindingMap(Map<String, String> byJavaName) {
+record ArgBindingMap(Map<String, PathExpr> byJavaName) {
 
     /** Result of the {@link #of} factory. */
     sealed interface Result {
@@ -73,14 +74,16 @@ record ArgBindingMap(Map<String, String> byJavaName) {
         // otherwise be a stale Java target (e.g. argMapping "inputs: input" against slot "input"
         // means the Java param is "inputs", not "input"). Two overrides binding to the same slot
         // is legal: argMapping "a: x, b: x" against slot {x} yields {a: x, b: x}.
-        var byJavaName = new LinkedHashMap<String, String>();
+        var byJavaName = new LinkedHashMap<String, PathExpr>();
         var claimedSlots = new java.util.HashSet<>(overrides.values());
         for (String argName : graphqlArgNames) {
             if (!claimedSlots.contains(argName)) {
-                byJavaName.put(argName, argName);
+                byJavaName.put(argName, PathExpr.head(argName));
             }
         }
-        byJavaName.putAll(overrides);
+        for (var entry : overrides.entrySet()) {
+            byJavaName.put(entry.getKey(), PathExpr.head(entry.getValue()));
+        }
         return new Result.Ok(new ArgBindingMap(Collections.unmodifiableMap(byJavaName)));
     }
 
