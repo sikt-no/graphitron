@@ -2,7 +2,7 @@
 :description: From the GraphQL schema and your directives, through the build, to the generated DataFetchers your application serves.
 :!toc:
 
-A 30-second mental model of the pipeline that turns your schema and your jOOQ catalog into the resolvers your application serves at runtime. Aimed at the user, not the contributor; for the contributor-level pipeline detail see xref:../../architecture/getting-started.adoc[Architecture: Getting started] and `graphitron-rewrite/docs/code-generation-triggers.adoc` in the source repository.
+A 30-second mental model of the pipeline that turns your schema and your jOOQ catalog into the resolvers your application serves at runtime. Aimed at the user, not the contributor; for the contributor-level pipeline detail see `graphitron-rewrite/docs/code-generation-triggers.adoc` in the source repository.
 
 == The three moving parts
 

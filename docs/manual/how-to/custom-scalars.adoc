@@ -58,7 +58,7 @@ The `Coercing<Internal, External>` parameters let you choose the Java side (`Int
 
 == One customizer, one builder
 
-The customizer runs once at schema build, not per request. Per-request runtime values (the `DSLContext`, context arguments, the tenant id) flow through `GraphitronContext` on the `ExecutionInput.graphQLContext`, not through the customizer. xref:../tutorial/02-fresh-checkout.adoc[Tutorial page 2: fresh checkout] and the architecture page xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime] cover the request-time wiring.
+The customizer runs once at schema build, not per request. Per-request runtime values (the `DSLContext`, context arguments, the tenant id) flow through `GraphitronContext` on the `ExecutionInput.graphQLContext`, not through the customizer. xref:../reference/runtime-api.adoc[The runtime API reference] covers the `Graphitron.buildSchema(...)` facade and the `GraphitronContext` surface.
 
 The customizer hook is *additive*. Calling any of the following inside it is unsupported and breaks the assembled schema:
 
@@ -90,8 +90,7 @@ The error names the scalar and every referencing field, so the fix is mechanical
 
 == See also
 
-* xref:../tutorial/02-fresh-checkout.adoc[Tutorial page 2: fresh checkout] is the first place a reader meets `Graphitron.buildSchema(...)`; the tutorial uses only built-in scalars but the wiring shape is the same.
-* xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime] covers the broader runtime surface (context arguments, tenant scoping, federation, the dev loop) the customizer interacts with.
+* xref:../reference/runtime-api.adoc[Runtime API reference] documents `Graphitron.buildSchema(...)`, including the additive-only customizer contract this recipe extends.
 * xref:federation-keys.adoc[How-to: Federation key fields] covers federation entity declaration; federation-namespaced scalars are wired by the federation transform, not by `additionalType(...)`.
 * xref:polymorphic-types.adoc[How-to: Polymorphic types] covers the supported `.codeRegistry(UnaryOperator)` extension point for type resolvers on hand-rolled interfaces and unions.
 

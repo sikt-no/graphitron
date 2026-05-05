@@ -28,6 +28,6 @@ The user-manual explanation chapter sits next to the deployed site's existing to
 * xref:../../dependencies.adoc[Dependencies]: why jOOQ and graphql-java are foundational, and what that means for users.
 * xref:../../security.adoc[Security]: why authorization stays in the database.
 
-For contributor-facing material (sealed hierarchies, classification source map, generator dispatch, runtime extension points), see xref:../../architecture/getting-started.adoc[the architecture chapter] and the rewrite-internal docs at `graphitron-rewrite/docs/`.
+For contributor-facing material (sealed hierarchies, classification source map, generator dispatch, runtime extension points), see the rewrite-internal docs at `graphitron-rewrite/docs/` in the source repository.
 
 xref:../index.adoc[← Back to the manual landing]

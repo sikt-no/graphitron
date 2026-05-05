@@ -161,7 +161,7 @@ type Query {
 }
 ----
 
-`tenantScoped(City table, UUID tenantId)` runs at request time with `tenantId` pulled from the runtime `GraphQLContext`. Wire the value into the context map at servlet bootstrap; the rewrite reads each named key with the runtime value's declared Java type. The companion architecture page xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime] covers the bootstrap-side wiring under the federation, custom scalars, and tenant scoping sections.
+`tenantScoped(City table, UUID tenantId)` runs at request time with `tenantId` pulled from the runtime `GraphQLContext`. Wire the value into the context map at servlet bootstrap; the rewrite reads each named key with the runtime value's declared Java type. xref:tenant-scoping.adoc[How-to: Tenant scoping] covers the supplying side, and xref:../reference/runtime-api.adoc[the runtime API reference] documents the `GraphitronContext` interface that brokers the per-request values.
 
 Two consequences worth pinning:
 

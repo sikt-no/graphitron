@@ -75,7 +75,7 @@ The `RETURNING` projection narrows to the response selection set: a mutation tha
 == See also
 
 * xref:../../tutorial/05-mutations.adoc[Tutorial page 5: A first mutation] walks the `INSERT`/`UPDATE`/`UPSERT` flow against a running database.
-* xref:lookupKey.adoc[`@lookupKey`] (Phase 2 follow-on) for row-identification on `UPDATE`, `DELETE`, and `UPSERT`.
+* xref:lookupKey.adoc[`@lookupKey`] identifies the target row on `UPDATE`, `DELETE`, and `UPSERT`.
 * xref:table.adoc[`@table`] establishes the input-type binding `@mutation` requires.
 * xref:service.adoc[`@service`] for custom-Java mutations.
 
