@@ -456,7 +456,7 @@ and asserts bidirectional coverage.
 `reference/deprecations.adoc`: aggregator table of every deprecated
 directive parameter with target removal version. Generated from the
 `@Deprecated` annotations on the directive-classification model.
-*Shipped at `ff98c9b`*. Two deviations from the plan: (1) the rewrite's
+*Shipped at `23c2056`*. Two deviations from the plan: (1) the rewrite's
 source of truth is the SDL `@deprecated()` marker in
 `directives.graphqls`, not Java `@Deprecated` annotations on a
 classification model; the legacy classification model lives in the
