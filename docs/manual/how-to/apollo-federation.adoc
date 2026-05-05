@@ -1,0 +1,126 @@
+= How-to: Apollo Federation transport
+:description: Wire the federation runtime around a Graphitron schema, the @link build-time opt-in, the two-arg buildSchema customizer for entity dispatch, the federation-graphql-java-support dependency, and the don't-double-wrap rule.
+:!toc:
+
+When your SDL declares an Apollo Federation `@link`, `Graphitron.buildSchema(...)` returns a federation-wrapped `GraphQLSchema` directly: `_Service.sdl`, `_entities`, the synthesised `_Entity` union, and per-type entity dispatchers are wired automatically. Without the `@link` the call returns a vanilla schema and the federation surface stays out of the build entirely. The whole transport is a small surface (one SDL declaration, one or two dependencies, one customizer hook), but it has a few sharp edges that are easy to trip over (double-wrapping with `Federation.transform`, mixing `@link` and manual directive declarations, the `<schemaInput tag>` implicit opt-in).
+
+This recipe walks the operational mechanics: declaring the `@link`, building the federation-wrapped schema, swapping in a custom entity fetcher for hand-rolled types, and the constraints around the customizer hook. For entity declaration (`@key`, `@key(resolvable: false)`, multi-alternative dispatch, the `@experimental_constructType` stub-from-another-subgraph pattern), read xref:federation-keys.adoc[How-to: Federation key fields] first.
+
+== Declare the federation `@link`
+
+Open one of your `.graphqls` files with an Apollo Federation 2 `@link` directive that imports the spec directives you intend to use:
+
+[source,graphql]
+----
+extend schema
+  @link(
+    url: "https://specs.apollo.dev/federation/v2.10",
+    import: ["@key", "@shareable", "@inaccessible", "@override", "@tag"]
+  )
+----
+
+Pick whichever `v2.x` URL covers the directives in your `import:` list; Graphitron delegates federation-directive parsing to `federation-graphql-java-support`, which tracks the Apollo spec and gates each directive on its minimum version. An import of `"@composeDirective"` against `v2.0` fails composition cleanly, naming the directive and the URL.
+
+The `@link` is the *build-time* opt-in. Whatever schema file carries it flips an internal `federationLink` flag in the generator, which is what triggers the federation-wrapped emission of `Graphitron.buildSchema`. Without the `@link`, the wrap is skipped entirely and the schema behaves exactly as before.
+
+If you would rather not use `@link`, declare each federation directive manually:
+
+[source,graphql]
+----
+directive @key(fields: String!, resolvable: Boolean = true) repeatable
+    on OBJECT | INTERFACE
+directive @shareable on OBJECT | FIELD_DEFINITION
+----
+
+Mixing the two on the same directive (importing `@key` via `@link` *and* redeclaring it manually) fails validation; pick one approach per directive.
+
+== Add the runtime dependency
+
+The generated `GraphitronSchema.build(...)` references `Federation` and `SchemaTransformer` at compile time when `federationLink` is set. Declare `federation-graphql-java-support` on the consumer module's compile classpath:
+
+[source,xml]
+----
+<dependency>
+    <groupId>com.apollographql.federation</groupId>
+    <artifactId>federation-graphql-java-support</artifactId>
+</dependency>
+----
+
+`graphitron-sakila-example/pom.xml` carries this dependency for the federation-fixture build; copy the same shape into your consumer module. The dependency is *compile-scope* on the consumer module (not plugin-scope) because the federation symbols appear in the generated source the consumer compiles.
+
+== Build the federation-wrapped schema
+
+The single-arg form is identical to the non-federation case, the wrap is implicit:
+
+[source,java]
+----
+GraphQLSchema schema = Graphitron.buildSchema(b -> {});
+// Federation directives, _Service.sdl, _entities, and _Entity are wired automatically.
+----
+
+`Graphitron.buildSchema(b -> {})` returns a schema whose `getQueryType()` exposes both your declared queries *and* the federation `_service` and `_entities` fields. The `_Entity` union lists every type Graphitron classifies as a federation entity (every `@node` type, every `@key`-bearing type), and `_service.sdl` reconstructs the SDL with synthesised `@key` directives on `@node` types so the supergraph composer can see them.
+
+The execution-tier tests `twoArgBuildDoesNotThrow`, `resultHasServiceType`, `resultHasEntitiesQueryField`, `resultEntityUnionContainsAllFixtureEntities`, and `serviceSdlExposesSynthesisedKeyOnNodeTypes` in `FederationBuildSmokeTest` pin this surface against `federation-graphql-java-support` API drift.
+
+*Don't double-wrap.* Calling `Federation.transform(...)` on a schema Graphitron already wrapped breaks composition: `_Service` and `_Entity` get added a second time, and the gateway sees a malformed subgraph. The wrap is automatic; let it happen.
+
+== Override the entity fetcher
+
+For every type Graphitron classifies, `_entities` resolution is wired automatically. `@node` types resolve via the NodeId path (decode the `id`, dispatch the per-type SELECT); types with a `@key` directive resolve via a column-value lookup. Both paths share the same per-type batched SELECT (one statement per `(__typename, alternative)` group), so federation gateway requests fan in without amplification.
+
+If your subgraph carries entity types Graphitron does *not* classify (hand-rolled GraphQL objects, types pulled from a non-Graphitron source), supply your own `fetchEntities` via the two-arg form:
+
+[source,java]
+----
+GraphQLSchema schema = Graphitron.buildSchema(
+    b   -> {},
+    fed -> fed.fetchEntities(myCustomFetcher));
+----
+
+The federation builder arrives pre-configured with Graphitron's defaults; the customizer replaces what the lambda touches and leaves the rest. The default fetcher resolves Graphitron-classified entities by routing through the per-type batched SELECT; a custom fetcher composes with that path by either delegating back to the default (for representations whose `__typename` is classified) or returning its own results (for representations the default doesn't recognise).
+
+Custom fetchers must return entities the default `resolveEntityType` recognises, jOOQ `Record`s with a `__typename` column. Richer type-resolution shapes (return a domain object with no jOOQ backing) are not currently supported; the supported extension point is the row shape graphql-java's federation support already understands.
+
+== Per-tenant entity routing
+
+Each `_entities` representation reaches the resolver through its own per-rep `DataFetchingEnvironment`. When tenant scoping applies, `getTenantId(env)` reads off the individual representation rather than the outer query arguments, so a single `_entities([rep1, rep2, rep3])` call whose representations span multiple tenants partitions cleanly into per-tenant batches:
+
+[source,java]
+----
+@Override public String getTenantId(DataFetchingEnvironment env) {
+    Map<String, Object> rep = env.getSource();
+    return tenantOf((String) rep.get("id"));
+}
+----
+
+xref:tenant-scoping.adoc[How-to: Tenant scoping] covers the full DataLoader-cache-key contract; the per-rep wiring is the federation-specific shape. The execution-tier test `entities_multiTenancyPartition_oneSelectPerTenant` in `FederationEntitiesDispatchTest` pins this end-to-end.
+
+== The `<schemaInput tag>` flag
+
+The Maven plugin's `<schemaInput><tag>...</tag></schemaInput>` configuration emits `@tag(name: "...")` directives on schema types. `@tag` is meaningful only to a federation gateway, so the plugin treats the configuration as an *implicit* opt-in to Federation 2:
+
+* If you have *not* declared `@link`, the plugin synthesises one with `import: ["@tag"]` for you. Nothing else changes; you can still author `@key` / `@shareable` / etc. with manual declarations if you want.
+* If you *have* declared `@link` but `"@tag"` is missing from the `import:` list, the build fails with a fatal error pointing at your `@link`. Add `"@tag"` to the `import:` list to clear it.
+* If `<schemaInput tag>` is unset, the plugin makes no federation choice on your behalf; the `@link` (or its absence) is the only signal.
+
+This is the one place where federation-relevant state lives outside the SDL itself; the rest of the federation surface is SDL-driven.
+
+== Constraints
+
+* The build-time opt-in is the SDL `@link`. `Graphitron.buildSchema(...)` returns a federation-wrapped schema *iff* one of your schema files declares the `@link`; without it, no federation surface gets wired.
+* Don't wrap the result in `Federation.transform(...)` yourself. Graphitron has already done it; a second wrap double-adds `_Service` / `_Entity` and breaks composition.
+* The `federation-graphql-java-support` dependency is compile-scope on the *consumer* module (not the plugin), the symbols appear in generated source the consumer compiles. xref:external-code.adoc[How-to: Wire external Java code] covers the plugin-scope dependency layout for the *other* external-code directives; federation is the exception.
+* Custom `fetchEntities` implementations must return entities the default `resolveEntityType` recognises (jOOQ `Record`s with a `__typename` column). Richer shapes (domain objects without jOOQ backing) are not currently supported.
+* `<schemaInput tag>` triggers an implicit `@link(import: ["@tag"])` synthesis when no `@link` is present, and a fatal build error when `@link` is present without `"@tag"` in `import:`. The error spells out the fix.
+* Mixing `@link` import and manual directive declaration on the same directive fails validation. Pick one per directive.
+* Per-rep tenant routing reads off `env.getSource()` (not `env.getArgument(...)`) for federation `_entities`. xref:tenant-scoping.adoc[How-to: Tenant scoping] covers the cache-key contract.
+* The `@link` URL pins the Federation 2 minor version (`v2.10` in the canonical example). Pick whichever version covers the directives you import; the generator delegates the version gate to `federation-graphql-java-support`.
+
+== See also
+
+* xref:federation-keys.adoc[How-to: Federation key fields] is the entity-side companion; it covers `@key`, multi-alternative dispatch, compound keys, the `resolvable: false` flag, and the `@experimental_constructType` stub pattern for entities owned by another subgraph.
+* xref:../../architecture/getting-started.adoc#federation[Getting started: Federation] covers the runtime framing this recipe is the operational extract of; it includes the broader architectural context for the dispatcher.
+* xref:tenant-scoping.adoc[How-to: Tenant scoping] covers per-rep tenant routing, the DataLoader cache-key contract, and the `getTenantId(repEnv)` shape that pairs with federation `_entities` dispatch.
+* xref:../reference/directives/experimental_constructType.adoc[`@experimental_constructType`] is the directive reference for projecting a stub representation of an entity owned by another subgraph; the recipe under federation-keys.adoc covers the runtime use.
+
+xref:index.adoc[← How-to index]
