@@ -83,6 +83,8 @@ Every change moves Backlog → Spec → Ready → In Progress → In Review → 
 
 When transitioning a roadmap item between states, or unsure of the file conventions for a new item, consult `graphitron-rewrite/docs/workflow.adoc` for the full state table and canonical paths.
 
+The `principles-architect` subagent (`.claude/agents/principles-architect.md`) is the forward-facing voice the *author* consults while drafting; it loads the strategic and technical principles docs and surfaces where a proposed design pushes against them. Call it proactively when drafting a Backlog → Spec plan body, when an implementer hits a design fork in In Progress, or as a self-check before requesting a `spec-review-prompt` handoff. It is read-only and does not produce verdicts; the reviewer-rule gates are still handled by the `spec-review-prompt` and `reviewer-prompt` skills, which hand off to a fresh agent so the guard ("reviewer ≠ last committer / ≠ implementer") holds.
+
 ## Git Workflow
 
 Trunk-based development against `claude/graphitron-rewrite`.
