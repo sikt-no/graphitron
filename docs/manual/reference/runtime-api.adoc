@@ -1,0 +1,184 @@
+= Runtime API reference
+:description: The hand-written-feeling runtime surface Graphitron emits into your generated sources. Covers the Graphitron facade's buildSchema entry point, the GraphitronContext per-request extension interface, and the NodeIdEncoder utility class.
+:!toc:
+
+Three hand-written-feeling classes ship as part of every Graphitron code-generation run. They aren't pulled in from a runtime library; they are *emitted into your `<outputPackage>` source tree* alongside the type-specific fetchers, and your consumer module compiles them. This is what keeps the runtime dependency surface flat: your code depends on jOOQ, graphql-java, and your own generated sources, nothing else.
+
+This page documents the public method surface of all three. The directive reference under xref:directives/index.adoc[`reference/directives`] covers what gets emitted *because of* SDL declarations; this page covers what gets emitted *unconditionally* and how your consumer code calls into it.
+
+== `Graphitron` facade
+
+Emitted by `GraphitronFacadeGenerator` into `<outputPackage>`. Single public entry point for building the schema:
+
+[source,java]
+----
+public final class Graphitron {
+
+    public static GraphQLSchema buildSchema(
+        Consumer<GraphQLSchema.Builder> customizer);
+
+    // Emitted only when your SDL declares a federation @link.
+    public static GraphQLSchema buildSchema(
+        Consumer<GraphQLSchema.Builder> schemaCustomizer,
+        Consumer<SchemaTransformer>     federationCustomizer);
+}
+----
+
+`buildSchema` returns a fully wired `GraphQLSchema`: every type, field, fetcher, and directive Graphitron understands is attached before the schema is built. The `customizer` lambda receives the underlying `GraphQLSchema.Builder` so consumer code can layer in scalars, additional types, or custom directives before the build.
+
+=== Customizer contract
+
+The customizer is *additive only*. The following are unsupported and break the assembled schema:
+
+* `.query(...)` / `.mutation(...)` / `.subscription(...)` -- replaces the root types Graphitron just wired.
+* `.clearDirectives()` -- drops the directive set Graphitron emits for federation, authorization, and validation.
+* `.codeRegistry(GraphQLCodeRegistry)` (the *replace* overload) -- replaces the fetcher registry Graphitron just populated.
+
+The supported extension shape for `codeRegistry` is the *transform* overload `.codeRegistry(UnaryOperator<GraphQLCodeRegistry.Builder>)`; that one is fine and is the seam for adding type resolvers to interfaces and unions whose Java types Graphitron cannot infer (hand-rolled domain types, types pulled in from a non-Graphitron source, polymorphic shapes outside the catalog). xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types] covers the resolver shape.
+
+The customizer runs *once per schema build*, not once per request. Per-request runtime values flow through `GraphitronContext` on the `ExecutionInput.graphQLContext`, not through this lambda.
+
+=== Federation two-arg overload
+
+When at least one of your `.graphqls` files carries an Apollo Federation `@link`, the generator emits a second overload that exposes the federation builder. The federation customizer's most useful method is `fetchEntities(...)` for swapping in a hand-rolled entity fetcher:
+
+[source,java]
+----
+GraphQLSchema schema = Graphitron.buildSchema(
+    b   -> b.additionalType(ExtendedScalars.UUID),
+    fed -> fed.fetchEntities(myCustomFetcher));
+----
+
+Without the `@link`, the federation overload isn't emitted, the federation surface stays out of the build entirely, and `buildSchema` returns a vanilla schema. xref:../how-to/apollo-federation.adoc[How-to: Apollo Federation transport] covers the transport-side wiring; xref:../how-to/federation-keys.adoc[How-to: Federation key fields] covers entity-side declaration.
+
+== `GraphitronContext` interface
+
+Emitted by `GraphitronContextInterfaceGenerator` into `<outputPackage>.schema`. The per-request extension point that brokers runtime values into generated fetchers:
+
+[source,java]
+----
+public interface GraphitronContext {
+
+    DSLContext getDslContext(DataFetchingEnvironment env);
+
+    <T> T getContextArgument(DataFetchingEnvironment env, String name);
+
+    default String getTenantId(DataFetchingEnvironment env) {
+        return "";
+    }
+
+    default Validator getValidator(DataFetchingEnvironment env) {
+        return DefaultValidatorHolder.INSTANCE;
+    }
+}
+----
+
+Apps register an implementation per request via the typed key `GraphitronContext.class`:
+
+[source,java]
+----
+ExecutionInput input = ExecutionInput.newExecutionInput()
+    .query(query)
+    .graphQLContext(b -> b.put(GraphitronContext.class, impl))
+    .build();
+----
+
+Generated fetchers retrieve it through a private helper emitted once per `*Fetchers` class (`graphitronContext(env)`); generated helpers that issue SQL on behalf of those fetchers (for example, `ConnectionHelper.totalCount(env)` for `@asConnection` connections) emit the same shim. `GraphitronContext` is *not* a per-app singleton; the same instance can serve every request as long as the methods derive their per-request answer from the `DataFetchingEnvironment`.
+
+=== `getDslContext`
+
+Returns the jOOQ `DSLContext` Graphitron should run SQL through for this fetch. The implementation can return the same `DSLContext` for every call, a tenant-specific one keyed off `env.getGraphQlContext().get("tenantId")`, or an id-specific one for federation `_entities` per-rep routing -- Graphitron uses whatever it gets without further inspection.
+
+This method is the seam for connection scope, transaction boundaries, session variables (PostgreSQL `SET LOCAL` for row-level security), per-tenant `Configuration` objects, and listener wiring. xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers per-tenant routing; the default implementation is left to the consumer.
+
+`getDslContext` is invoked once per resolver invocation; cache the per-tenant `DSLContext` (e.g. `computeIfAbsent` on a `Map<String, DSLContext>`) rather than rebuilding one per call.
+
+=== `getContextArgument`
+
+Resolves a named context-argument value for this fetch. Generated fetchers call this method when a directive declares a `contextArguments:` list (`@condition` and `@tableMethod` are the directive sites today):
+
+[source,java]
+----
+@Override @SuppressWarnings("unchecked")
+public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
+    return (T) env.getGraphQlContext().get(name);
+}
+----
+
+The `name` parameter is the string literal from the directive's `contextArguments:` list; you decide where the value comes from (`env.getGraphQlContext()`, a JWT claim, a cached request-scoped map, etc.). Two directives requesting the same name in the same request must see the same value; the typical shape is to read off the GraphQL context map. xref:../how-to/condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the call-site shape.
+
+=== `getTenantId`
+
+Returns the tenant identifier Graphitron prepends onto every DataLoader cache name. Single-tenant apps leave the default empty-string return in place; multi-tenant apps override:
+
+[source,java]
+----
+@Override public String getTenantId(DataFetchingEnvironment env) {
+    return env.getGraphQlContext().get("tenantId");
+}
+----
+
+The tenant prefix is the only pluggable component of the DataLoader name; the path component (`/customer/orders`) is unique per field and is appended automatically.
+
+The id this method returns *must* agree with whatever key `getDslContext` uses to choose its `DSLContext`. Graphitron uses the *first* key's `DSLContext` for an entire batch, so two tenants colliding into one DataLoader silently fall back to whichever id was submitted first; the framework does not detect the disagreement at runtime. xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers the partitioning contract end-to-end, including federation `_entities` per-rep routing where `env.getSource()` carries the representation map.
+
+=== `getValidator`
+
+Returns the `jakarta.validation.Validator` the wrapper's pre-execution validation step uses for this fetch. Defaults to the JVM's default validator factory:
+
+[source,java]
+----
+default Validator getValidator(DataFetchingEnvironment env) {
+    return DefaultValidatorHolder.INSTANCE;
+}
+----
+
+`DefaultValidatorHolder` is a holder-class idiom inside the same emitted file; its `INSTANCE` is initialised on the first call to `getValidator` (`Validation.buildDefaultValidatorFactory().getValidator()`) and shared by every subsequent default-using request. Apps that want a custom factory (per-tenant message interpolators, an alternative provider, request-scoped constraint validators) override the method and return their own `Validator`.
+
+== `NodeIdEncoder` utility
+
+Emitted by `NodeIdEncoderClassGenerator` into `<outputPackage>.schema` only when at least one type carries `@node`. Static, non-extendable encode/decode helpers for Relay global IDs:
+
+[source,java]
+----
+public final class NodeIdEncoder {
+
+    public static String encode(String typeId, Object... values);
+
+    public static String peekTypeId(String base64Id);
+
+    // Per-Node helpers, one pair per @node type:
+    public static String  encode<TypeName>(T1 v1, ..., TN vN);
+    public static RecordN<T1, ..., TN> decode<TypeName>(String base64Id);
+}
+----
+
+=== Wire format
+
+Every Graphitron-emitted nodeId is base64-url-encoded `"typeId:v1,v2,..."` (no padding, UTF-8). Commas inside values are escaped as `%2C`, so a key value containing a literal comma round-trips losslessly. The format matches the legacy `no.sikt.graphql.NodeIdStrategy` encoding, so IDs round-trip across a cut-over from the legacy generator.
+
+`encode(typeId, values...)` returns `null` when any value is `null`, so the GraphQL field resolves to `null` rather than emitting a malformed ID.
+
+=== Per-Node helpers
+
+For each `@node`-decorated type the generator emits two static helpers named after the GraphQL type:
+
+* `encode<TypeName>(T1 v1, ..., TN vN)` -- bakes the typeId into the helper name so call sites pass typed key values directly. Returns `null` if any value is `null`.
+* `decode<TypeName>(String base64Id)` -- returns a jOOQ `RecordN<T1, ..., TN>` typed against the bound table's PK columns, or `null` uniformly on malformed input or a typeId mismatch. Carrier consumers wrap that null through the matching `CallSiteExtraction.NodeIdDecodeKeys.*` arm.
+
+`peekTypeId(base64Id)` reads the typeId off the wire string without decoding the rest. `Query.node(id:)` uses this to dispatch to the right `@node` type's table; a non-typed reader can call it the same way.
+
+=== Why a final class with private constructor
+
+A single canonical wire format across every generated dispatcher is what makes nodeIds durable across schema evolution. Subclassing the encoder to override the encoding would let one corner of an app speak a different dialect from another, and the result would not round-trip. xref:../how-to/global-id.adoc[How-to: Global object IDs] covers Relay Node end-to-end, including stable-ID strategies and `keyColumns` migrations.
+
+== See also
+
+* xref:directives/index.adoc[Directive reference] is the SDL-driven half of what generated code looks like; this page is the SDL-independent half.
+* xref:../how-to/test-your-schema.adoc[How-to: Test your schema] covers wiring `Graphitron.buildSchema(...)` and a request-scoped `GraphitronContext` into an execution-tier test.
+* xref:../how-to/custom-scalars.adoc[How-to: Custom scalars] is the canonical use of the `buildSchema` customizer's `additionalType(...)` shape.
+* xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers `getDslContext` + `getTenantId` cooperation, the cache-key contract, and PostgreSQL row-level security.
+* xref:../how-to/global-id.adoc[How-to: Global object IDs] covers `NodeIdEncoder` end-to-end, including the per-Node helpers, `keyColumns` migrations, and `Query.node` / `Query.nodes` dispatch.
+* xref:../../architecture/runtime-extension-points.adoc[Runtime extension points] is the architectural framing this reference is the API extract of; it covers the rationale for emitting the interface per-app rather than shipping a shared runtime jar.
+
+xref:index.adoc[← Reference index]
