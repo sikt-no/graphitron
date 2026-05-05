@@ -183,6 +183,37 @@ class ServiceCatalogTest {
     }
 
     @Test
+    void reflectServiceMethod_rootFieldNameMismatch_suggestionMentionsPathExpression() {
+        // R84 Phase F floor: when the parameter-mismatch suggestion already prints an argMapping
+        // example (i.e. there is at least one available GraphQL arg), it also mentions that the
+        // right-hand side may be a dot-path into a nested input field. Discoverability for users
+        // adopting Relay-style wrapper inputs without scanning external docs.
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getFilmsWithDtoSources", bindings(Map.of("inputs", "inputs")), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("argMapping: \"keys: inputs\"")
+            .contains("dot-path into a nested input field")
+            .contains("argMapping: \"keys: inputs.<fieldName>\"");
+    }
+
+    @Test
+    void reflectServiceMethod_rootFieldNameMismatch_noArgs_doesNotMentionPathExpression() {
+        // The path-expression hint only fires when there is at least one available GraphQL
+        // argument to point at — the no-args branch already steers the user toward adding an
+        // argument or a context key, where dot-paths aren't applicable.
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getWithUnknown", bindings(Map.of()), Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("does not match any GraphQL argument or context key")
+            .contains("this field declares no GraphQL arguments")
+            .doesNotContain("dot-path");
+    }
+
+    @Test
     void reflectServiceMethod_rootFieldNameMismatch_listsAvailableNamesSorted() {
         // The error message lists both the available GraphQL argument names and context keys,
         // sorted, so users can spot typos. Multiple names exercise the join formatter.

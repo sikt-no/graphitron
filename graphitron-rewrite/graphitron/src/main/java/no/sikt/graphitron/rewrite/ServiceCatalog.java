@@ -249,7 +249,11 @@ class ServiceCatalog {
                                 suggestion = " — either rename the Java parameter to match one of the available argument names, or bind explicitly via the @service directive's argMapping field"
                                     + " (e.g. argMapping: \"" + displayName + ": " + soleArg + "\""
                                     + ", which reads as \"the Java parameter named '" + displayName
-                                    + "' binds to the GraphQL argument named '" + soleArg + "'\")";
+                                    + "' binds to the GraphQL argument named '" + soleArg + "'\")."
+                                    + " The right-hand side may also be a dot-path into a nested"
+                                    + " input field (e.g. argMapping: \"" + displayName + ": "
+                                    + soleArg + ".<fieldName>\") when the parameter pulls one field"
+                                    + " out of a wrapper input type — see R84 path expressions";
                             }
                             return new ServiceReflectionResult(null,
                                 Rejection.structural("parameter '" + displayName + "' in method '" + methodName
