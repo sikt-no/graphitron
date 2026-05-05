@@ -161,11 +161,29 @@ public final class Diagnostics {
         if (methodValue == null) return;
         String methodName = Nodes.unquote(Nodes.text(methodValue, file.source()));
         if (methodName.isEmpty()) return;
-        boolean methodFound = refOpt.get().methods().stream()
-            .anyMatch(m -> m.name().equals(methodName));
-        if (!methodFound) {
+        var methodOpt = refOpt.get().methods().stream()
+            .filter(m -> m.name().equals(methodName))
+            .findFirst();
+        if (methodOpt.isEmpty()) {
             out.add(diagnostic(file, methodValue,
                 "Unknown method '" + methodName + "' on class '" + fqn + "'."));
+            return;
+        }
+        // The method resolved. If it takes parameters but the consumer
+        // compiled the class without -parameters, our parameter names
+        // are unknown (null on every Parameter record). Surface the
+        // same warning the rewrite generator emits at build time
+        // (ServiceCatalog.emitParametersWarning), but as a per-
+        // reference Warning so the schema author sees it inline next
+        // to the affected directive.
+        var method = methodOpt.get();
+        if (!method.parameters().isEmpty()
+                && method.parameters().stream().allMatch(p -> p.name() == null)) {
+            out.add(diagnostic(file, methodValue, DiagnosticSeverity.Warning,
+                "Class '" + fqn + "' was compiled without `-parameters`; "
+                + "parameter help on '" + methodName + "' is unavailable. "
+                + "Add `<arg>-parameters</arg>` under maven-compiler-plugin "
+                + "compilerArgs to surface parameter names."));
         }
     }
 

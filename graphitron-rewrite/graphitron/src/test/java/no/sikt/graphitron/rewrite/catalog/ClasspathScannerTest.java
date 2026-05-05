@@ -113,9 +113,10 @@ class ClasspathScannerTest {
         assertThat(list.returnType()).isEqualTo("String");
         assertThat(list.parameters()).hasSize(1);
         assertThat(list.parameters().get(0).type()).isEqualTo("Integer");
-        // No -parameters attribute on the synthesised classfile, so names
-        // fall back to argN.
-        assertThat(list.parameters().get(0).name()).isEqualTo("arg0");
+        // No -parameters attribute on the synthesised classfile; the
+        // contract on Parameter.name says null in that case (the Phase
+        // 5c diagnostic uses the null as its detection signal).
+        assertThat(list.parameters().get(0).name()).isNull();
     }
 
     @Test

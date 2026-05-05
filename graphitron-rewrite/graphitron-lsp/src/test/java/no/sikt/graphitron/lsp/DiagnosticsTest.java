@@ -270,6 +270,57 @@ class DiagnosticsTest {
     }
 
     @Test
+    void methodWithNullParameterNamesProducesParametersWarning() {
+        // Method takes one parameter, but parameter name is null
+        // (consumer compiled the class without -parameters).
+        var method = new CompletionData.Method(
+            "list", "List", "",
+            List.of(new CompletionData.Parameter(null, "int", null, ""))
+        );
+        var catalog = new CompletionData(
+            List.of(),
+            List.of(),
+            List.of(new CompletionData.ExternalReference(
+                "com.example.FilmService", "com.example.FilmService", "",
+                List.of(method)
+            ))
+        );
+        var file = file("""
+            type Query {
+                x: Int @service(class: "com.example.FilmService", method: "list")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalog);
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+        assertThat(diags.get(0).getMessage()).contains("-parameters");
+    }
+
+    @Test
+    void methodWithNoParametersDoesNotProduceParametersWarning() {
+        var method = new CompletionData.Method("get", "String", "", List.of());
+        var catalog = new CompletionData(
+            List.of(),
+            List.of(),
+            List.of(new CompletionData.ExternalReference(
+                "com.example.FilmService", "com.example.FilmService", "",
+                List.of(method)
+            ))
+        );
+        var file = file("""
+            type Query {
+                x: Int @service(class: "com.example.FilmService", method: "get")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalog);
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
     void emptyExternalReferencesSuppressesUnknownClassDiagnostic() {
         // Pre-`mvn compile` state: the scanner has nothing yet. Reporting
         // every reference as unknown in that state would be noise.

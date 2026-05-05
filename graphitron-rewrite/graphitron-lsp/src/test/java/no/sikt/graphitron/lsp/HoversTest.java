@@ -197,6 +197,34 @@ class HoversTest {
     }
 
     @Test
+    void methodHoverWithNullParameterNamesShowsArgPlaceholderAndWarning() {
+        var method = new CompletionData.Method(
+            "list", "List", "",
+            List.of(new CompletionData.Parameter(null, "int", null, ""))
+        );
+        var catalog = new CompletionData(
+            List.of(),
+            List.of(),
+            List.of(new CompletionData.ExternalReference(
+                "com.example.FilmService", "com.example.FilmService", "",
+                List.of(method)
+            ))
+        );
+        var file = file("""
+            type Query {
+                x: Int @service(class: "com.example.FilmService", method: "list")
+            }
+            """);
+        var pos = pointAt(file, 1, "list");
+
+        var hover = Hovers.compute(file, catalog, pos).orElseThrow();
+
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md).contains("List list(int arg0)");
+        assertThat(md).contains("-parameters");
+    }
+
+    @Test
     void serviceMethodHoverWithUnknownMethodReturnsEmpty() {
         var file = file("""
             type Query {

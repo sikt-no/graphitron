@@ -129,34 +129,31 @@ public final class ClasspathScanner {
     /**
      * Reads parameter names off the {@code MethodParameters} attribute when
      * present (i.e. the class was compiled with {@code -parameters}).
-     * Returns synthesised {@code arg0}/{@code arg1}/&hellip; placeholders
-     * otherwise, mirroring {@link java.lang.reflect.Parameter#getName()}'s
-     * behaviour and giving the {@code -parameters}-missing diagnostic
-     * (Phase 5c) a detection signal.
+     * Returns a list of {@code null}s otherwise, per the
+     * {@link CompletionData.Parameter#name()} contract: a null name is
+     * the detection signal the Phase 5c diagnostic uses to warn the
+     * schema author that parameter help is unavailable until the class
+     * is recompiled with {@code -parameters}.
      */
     private static List<String> readParameterNames(MethodModel m, int parameterCount) {
         var attrOpt = m.findAttribute(Attributes.methodParameters());
         if (attrOpt.isEmpty()) {
-            return synthesisedNames(parameterCount);
+            var names = new ArrayList<String>(parameterCount);
+            for (int i = 0; i < parameterCount; i++) names.add(null);
+            return java.util.Collections.unmodifiableList(names);
         }
         MethodParametersAttribute attr = attrOpt.get();
         var names = new ArrayList<String>(parameterCount);
         var infos = attr.parameters();
         for (int i = 0; i < parameterCount; i++) {
             if (i >= infos.size()) {
-                names.add("arg" + i);
+                names.add(null);
                 continue;
             }
             var nameOpt = infos.get(i).name();
-            names.add(nameOpt.map(n -> n.stringValue()).orElse("arg" + i));
+            names.add(nameOpt.map(n -> n.stringValue()).orElse(null));
         }
-        return List.copyOf(names);
-    }
-
-    private static List<String> synthesisedNames(int n) {
-        var names = new ArrayList<String>(n);
-        for (int i = 0; i < n; i++) names.add("arg" + i);
-        return List.copyOf(names);
+        return java.util.Collections.unmodifiableList(names);
     }
 
     private static String displayName(ClassDesc desc) {
