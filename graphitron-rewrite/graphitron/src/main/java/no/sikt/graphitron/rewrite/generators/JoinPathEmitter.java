@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -77,44 +76,39 @@ public final class JoinPathEmitter {
 
     /**
      * Emits the correlation WHERE predicate relating the first-hop's target alias to the parent
-     * alias. Branches on FK direction: if the parent holds the FK columns,
-     * {@code first.alias().<targetCol> = parent.<sourceCol>} (matched by position); otherwise
-     * {@code first.alias().<sourceCol> = parent.<targetCol>}.
+     * alias: {@code first.alias().<slot.targetSide()> = parent.<slot.sourceSide()>} for each
+     * slot, ANDed together. Direction-blind because each slot is oriented at synthesis time:
+     * {@code sourceSide} is always the column on the source (parent) table and
+     * {@code targetSide} the column on the target (first-hop) table, regardless of which end of
+     * the catalog FK each maps to.
      *
-     * <p>The {@code parentHoldsFk} flag is supplied by the caller from the field's cardinality:
-     * {@code Single} cardinality means the parent row has at most one matching target — i.e. the
-     * parent holds the FK. {@code List} cardinality means the parent is the PK side and many
-     * target rows may hold the FK pointing back. Cardinality is the reliable signal even for
-     * self-referential FKs where source and target tables are identical (both {@code parent} and
-     * {@code children} fields navigate the same FK, in opposite directions).
-     *
-     * <p>Composite FKs AND the paired columns. Single-column FKs are the common case; the zip
-     * supports both uniformly. Precondition: {@code sourceColumns.size() == targetColumns.size()}
-     * (jOOQ guarantees equal arity; a mismatch is a builder bug and must fail loudly).
+     * <p>Composite FKs AND the paired columns. Single-column FKs are the common case; the slot
+     * iteration supports both uniformly. Empty-slot fallback (jOOQ catalog unavailable at build
+     * time) emits a runtime-throwing {@code DSL.noCondition()} stub so the mismatch surfaces at
+     * execution rather than silently producing broken SQL.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "fk-join.slots-oriented-source-and-target",
+        reliesOn = "Iterates JoinStep.FkJoin.slots() and reads slot.targetSide()/slot.sourceSide() "
+            + "to build a direction-blind correlation predicate; depends on synthesis-time slot "
+            + "orientation so the emitter does not re-derive FK direction at the call site.")
     public static CodeBlock emitCorrelationWhere(JoinStep.FkJoin first, String firstAlias,
-            String parentAlias, boolean parentHoldsFk) {
-        if (first.sourceColumns().size() != first.targetColumns().size()) {
-            throw new IllegalStateException(
-                "FkJoin '" + first.fkName() + "': sourceColumns/targetColumns arity mismatch ("
-                + first.sourceColumns().size() + " vs " + first.targetColumns().size() + ")");
-        }
-        List<ColumnRef> innerCols = parentHoldsFk ? first.targetColumns() : first.sourceColumns();
-        List<ColumnRef> parentCols = parentHoldsFk ? first.sourceColumns() : first.targetColumns();
-        if (innerCols.isEmpty() || parentCols.isEmpty()) {
-            // Empty column refs — jOOQ catalog was unavailable at build time. Emit a
-            // runtime-throwing stub so the mismatch surfaces at execution rather than silently
-            // producing broken SQL.
+            String parentAlias) {
+        if (first.slotCount() == 0) {
+            // No slots — jOOQ catalog was unavailable at build time. Emit a runtime-throwing
+            // stub so the mismatch surfaces at execution rather than silently producing broken SQL.
             return CodeBlock.of("$T.noCondition()",
                 ClassName.get("org.jooq.impl", "DSL"));
         }
         var code = CodeBlock.builder();
-        for (int i = 0; i < innerCols.size(); i++) {
+        int i = 0;
+        for (var slot : first.slots()) {
             if (i > 0) code.add(".and(");
             code.add("$L.$L.eq($L.$L)",
-                firstAlias, innerCols.get(i).javaName(),
-                parentAlias, parentCols.get(i).javaName());
+                firstAlias, slot.targetSide().javaName(),
+                parentAlias, slot.sourceSide().javaName());
             if (i > 0) code.add(")");
+            i++;
         }
         return code.build();
     }

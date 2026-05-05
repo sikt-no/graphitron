@@ -434,7 +434,7 @@ class FieldBuilder {
         if (elementType instanceof TableBackedType tbt && !(elementType instanceof TableInterfaceType)) {
             var wrapper = buildWrapper(fieldDef);
             var returnType = (ReturnTypeRef.TableBoundReturnType) ctx.resolveReturnType(elementTypeName, wrapper);
-            var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), returnType.table().tableName());
+            var referencePath = ctx.parsePath(fieldDef, name, parentTableType.table().tableName(), returnType.table().tableName(), wrapper.isList());
             if (referencePath.hasError()) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(referencePath.errorMessage()));
             }

@@ -4,9 +4,14 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.ForeignKeyRef;
+import no.sikt.graphitron.rewrite.model.JoinSlot;
+import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -172,5 +177,46 @@ public final class TestFixtures {
             encoderClass, "encode" + nodeTypeName, keyColumns);
         return new ChildField.CompositeColumnField(parentType, name, null, keyColumns,
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(enc));
+    }
+
+    // ===== JoinStep test fixtures =====
+
+    /**
+     * Test-only constructor mirroring the pre-R82 {@code FkJoin(name, fk, originTable,
+     * sourceColumns, targetTable, targetColumns, whereFilter, alias)} shape, zipping the two
+     * column lists into source-side/target-side slot pairs. Test fixtures historically wrote
+     * source columns first (parent-holds-FK convention), so {@code sourceColumns[i]} maps to
+     * {@code slot.sourceSide()} and {@code targetColumns[i]} to {@code slot.targetSide()} —
+     * exactly the FK-on-source case the spec migration table covers, kept mechanical for tests
+     * that don't care about the orientation specifically.
+     */
+    public static JoinStep.FkJoin fkJoin(String fkName, ForeignKeyRef fk, TableRef originTable,
+                                          List<ColumnRef> sourceColumns,
+                                          TableRef targetTable, List<ColumnRef> targetColumns,
+                                          MethodRef whereFilter, String alias) {
+        if (sourceColumns.size() != targetColumns.size()) {
+            throw new IllegalArgumentException(
+                "fkJoin fixture: sourceColumns/targetColumns arity mismatch ("
+                + sourceColumns.size() + " vs " + targetColumns.size() + ")");
+        }
+        List<JoinSlot.FkSlot> slots = new ArrayList<>(sourceColumns.size());
+        for (int i = 0; i < sourceColumns.size(); i++) {
+            slots.add(new JoinSlot.FkSlot(sourceColumns.get(i), targetColumns.get(i)));
+        }
+        return new JoinStep.FkJoin(fkName, fk, originTable, targetTable, slots, whereFilter, alias);
+    }
+
+    /**
+     * Test-only constructor mirroring the pre-R82 {@code LiftedHop(targetTable, targetColumns,
+     * alias)} shape, wrapping each {@link ColumnRef} as a {@link JoinSlot.LifterSlot} (the
+     * single-column-per-slot permit that encodes "DataLoader key tuple IS target-column tuple"
+     * structurally).
+     */
+    public static JoinStep.LiftedHop liftedHop(TableRef targetTable,
+                                                List<ColumnRef> targetColumns, String alias) {
+        List<JoinSlot.LifterSlot> slots = targetColumns.stream()
+            .map(JoinSlot.LifterSlot::new)
+            .toList();
+        return new JoinStep.LiftedHop(targetTable, slots, alias);
     }
 }

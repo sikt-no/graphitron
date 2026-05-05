@@ -123,13 +123,11 @@ public final class InlineTableFieldEmitter {
         }
 
         // WHERE: step 0's correlation against parent, then whereFilter methods, then user filters.
+        // Slot orientation at synthesis time means the emitter is direction-blind here; the
+        // cardinality-based parentHoldsFk derivation retired with R82.
         JoinStep.FkJoin first = (JoinStep.FkJoin) path.get(0);
         String firstAlias = aliases.get(0);
-        // Cardinality is the reliable FK-direction signal (works for self-refs where source and
-        // target tables are identical): Single → parent holds the FK (max-one target per row);
-        // List → parent is the PK side (many targets point back).
-        boolean parentHoldsFk = singleCardinality;
-        CodeBlock correlation = JoinPathEmitter.emitCorrelationWhere(first, firstAlias, parentAlias, parentHoldsFk);
+        CodeBlock correlation = JoinPathEmitter.emitCorrelationWhere(first, firstAlias, parentAlias);
         var where = CodeBlock.builder().add("$L", correlation);
         for (JoinStep step : path) {
             if (step instanceof JoinStep.FkJoin fk && fk.whereFilter() != null) {
