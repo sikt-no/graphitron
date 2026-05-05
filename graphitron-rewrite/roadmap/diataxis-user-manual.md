@@ -424,7 +424,7 @@ Two parallel deliverables:
   input type). Some material lifts from
   `graphitron-rewrite/docs/rewrite-design-principles.adoc`, but rewritten
   for users (no "the classifier emits an `UnclassifiedField`" jargon).
-  *Shipped at `8f7ef1c`.* Six pages: `why-database-first.adoc`,
+  *Shipped at `1ea0855`.* Six pages: `why-database-first.adoc`,
   `why-jooq-and-graphql-java.adoc`, `how-it-works.adoc`,
   `classifier-mental-model.adoc`, `batching-model.adoc`,
   `design-decisions.adoc`, plus an updated `index.adoc` mapping them.
@@ -448,7 +448,7 @@ Two parallel deliverables:
   generated `Graphitron.java` via an AsciiDoc include.
   *Shipped at `868593a` (runtime-api) and `d796c4c` (mojo + verifier).*
 
-Phase 4 status: both halves shipped (mojo + runtime at `868593a` / `d796c4c`; explanation at `8f7ef1c`).
+Phase 4 status: both halves shipped (mojo + runtime at `868593a` / `d796c4c`; explanation at `1ea0855`).
 
 ### Phase 5: Diagnostics glossary and deprecation index — shipped
 
