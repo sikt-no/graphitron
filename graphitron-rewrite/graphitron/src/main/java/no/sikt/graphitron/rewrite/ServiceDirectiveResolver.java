@@ -127,11 +127,14 @@ final class ServiceDirectiveResolver {
         }
 
         List<String> contextArgs = fb.parseContextArguments(fieldDef, DIR_SERVICE);
-        var graphqlArgNames = FieldBuilder.fieldArgumentNames(fieldDef);
-        var argMapping = serviceRef != null ? serviceRef.argMapping() : Map.<String, String>of();
-        var argBindingsResult = ArgBindingMap.of(graphqlArgNames, argMapping);
+        var slotTypes = FieldBuilder.argSlotTypes(fieldDef);
+        var argMapping = serviceRef != null ? serviceRef.argMapping() : Map.<String, List<String>>of();
+        var argBindingsResult = ArgBindingMap.of(slotTypes, argMapping);
         if (argBindingsResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
             return new Resolved.Rejected(Rejection.structural("service method could not be resolved — @service " + u.message()));
+        }
+        if (argBindingsResult instanceof ArgBindingMap.Result.PathRejected p) {
+            return new Resolved.Rejected(Rejection.structural("service method could not be resolved — @service " + p.message()));
         }
         var argBindings = ((ArgBindingMap.Result.Ok) argBindingsResult).map();
 

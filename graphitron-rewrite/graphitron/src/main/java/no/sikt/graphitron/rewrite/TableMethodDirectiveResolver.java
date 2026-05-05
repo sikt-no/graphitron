@@ -112,10 +112,13 @@ final class TableMethodDirectiveResolver {
         if (ref != null && ref.argMappingError() != null) {
             return new Resolved.Rejected(Rejection.structural("table method could not be resolved — @tableMethod " + ref.argMappingError()));
         }
-        var argMapping = ref != null ? ref.argMapping() : Map.<String, String>of();
-        var argBindingsResult = ArgBindingMap.of(FieldBuilder.fieldArgumentNames(fieldDef), argMapping);
+        var argMapping = ref != null ? ref.argMapping() : Map.<String, List<String>>of();
+        var argBindingsResult = ArgBindingMap.of(FieldBuilder.argSlotTypes(fieldDef), argMapping);
         if (argBindingsResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
             return new Resolved.Rejected(Rejection.structural("table method could not be resolved — @tableMethod " + u.message()));
+        }
+        if (argBindingsResult instanceof ArgBindingMap.Result.PathRejected p) {
+            return new Resolved.Rejected(Rejection.structural("table method could not be resolved — @tableMethod " + p.message()));
         }
         var argBindings = ((ArgBindingMap.Result.Ok) argBindingsResult).map();
         List<String> contextArgs = fb.parseContextArguments(fieldDef, DIR_TABLE_METHOD);

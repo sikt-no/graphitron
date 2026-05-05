@@ -127,11 +127,25 @@ class ArgBindingMapTest {
             .contains("duplicate entries for Java parameter 'inputs'");
     }
 
-    // ===== of(Set<String>, Map<String, String>) =====
+    // ===== of(Map<String, GraphQLInputType>, Map<String, List<String>>) =====
+
+    /** Minimal scalar slot: the slot type doesn't matter for single-segment overrides. */
+    private static java.util.Map<String, graphql.schema.GraphQLInputType> scalarSlots(String... names) {
+        var out = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        for (var n : names) out.put(n, graphql.Scalars.GraphQLString);
+        return out;
+    }
+
+    /** Build a single-segment override map: java -> [graphqlArg] (no path tail). */
+    private static java.util.Map<String, java.util.List<String>> headOverrides(java.util.Map<String, String> raw) {
+        var out = new java.util.LinkedHashMap<String, java.util.List<String>>();
+        raw.forEach((k, v) -> out.put(k, java.util.List.of(v)));
+        return out;
+    }
 
     @Test
     void of_emptyOverrides_returnsIdentityForEveryArgName() {
-        var result = ArgBindingMap.of(Set.of("a", "b"), Map.of());
+        var result = ArgBindingMap.of(scalarSlots("a", "b"), Map.of());
         assertThat(result).isInstanceOf(ArgBindingMap.Result.Ok.class);
         var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
         assertThat(map)
@@ -145,8 +159,8 @@ class ArgBindingMapTest {
         // Identity for input would conflict with the override's intent (Java param is "inputs",
         // not "input"), so the identity for `input` is dropped. dryRun stays as identity.
         var result = ArgBindingMap.of(
-            new java.util.LinkedHashSet<>(java.util.List.of("input", "dryRun")),
-            Map.of("inputs", "input"));
+            scalarSlots("input", "dryRun"),
+            headOverrides(Map.of("inputs", "input")));
         var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
         assertThat(map).containsExactlyInAnyOrderEntriesOf(Map.of(
             "dryRun", PathExpr.head("dryRun"),
@@ -157,8 +171,8 @@ class ArgBindingMapTest {
     void of_twoOverridesBindingToSameSlot_areBothPresent() {
         // R53 spec example: argMapping "a: x, b: x" against slot {x} produces {a: x, b: x}.
         // The Java method has parameters `a` and `b`, both receiving the value of GraphQL arg `x`.
-        var result = ArgBindingMap.of(Set.of("x"),
-            new java.util.LinkedHashMap<>(Map.of("a", "x", "b", "x")));
+        var result = ArgBindingMap.of(scalarSlots("x"),
+            headOverrides(new java.util.LinkedHashMap<>(Map.of("a", "x", "b", "x"))));
         var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
         assertThat(map)
             .containsEntry("a", PathExpr.head("x"))
@@ -167,7 +181,8 @@ class ArgBindingMapTest {
 
     @Test
     void of_overrideValueNotInArgNames_returnsUnknownArgRef() {
-        var result = ArgBindingMap.of(Set.of("input", "dryRun"), Map.of("inputs", "notAnArg"));
+        var result = ArgBindingMap.of(scalarSlots("input", "dryRun"),
+            headOverrides(Map.of("inputs", "notAnArg")));
         assertThat(result).isInstanceOf(ArgBindingMap.Result.UnknownArgRef.class);
         assertThat(((ArgBindingMap.Result.UnknownArgRef) result).message())
             .contains("argMapping entry 'inputs: notAnArg'")
@@ -180,7 +195,7 @@ class ArgBindingMapTest {
     void of_pathStepEmptySlots_emptyOverrides_isOk() {
         // Path-step @condition: no GraphQL arguments are in scope; with no argMapping the result
         // is the empty binding, identical to ArgBindingMap.empty().
-        var result = ArgBindingMap.of(Set.of(), Map.of());
+        var result = ArgBindingMap.of(java.util.Map.of(), Map.of());
         assertThat(result).isInstanceOf(ArgBindingMap.Result.Ok.class);
         assertThat(((ArgBindingMap.Result.Ok) result).map().byJavaName()).isEmpty();
     }
@@ -189,9 +204,89 @@ class ArgBindingMapTest {
     void of_pathStepEmptySlots_anyOverride_isUnknownArgRef() {
         // Path-step @condition with argMapping: every override's GraphQL-source is unknown
         // because the slot set is empty.
-        var result = ArgBindingMap.of(Set.of(), Map.of("javaParam", "anyArg"));
+        var result = ArgBindingMap.of(java.util.Map.of(),
+            headOverrides(Map.of("javaParam", "anyArg")));
         assertThat(result).isInstanceOf(ArgBindingMap.Result.UnknownArgRef.class);
         assertThat(((ArgBindingMap.Result.UnknownArgRef) result).message())
             .contains("argMapping entry 'javaParam: anyArg'");
+    }
+
+    // ===== of: path-expression resolution =====
+
+    @Test
+    void of_singleSegmentPath_buildsHead() {
+        // {kvotesporsmal: input}: head-only path, like an R53 single-name override.
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("InputT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("foo").type(graphql.Scalars.GraphQLString).build()).build());
+        var result = ArgBindingMap.of(slot, Map.of("kvotesporsmal", java.util.List.of("input")));
+        var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
+        assertThat(map.get("kvotesporsmal")).isEqualTo(PathExpr.head("input"));
+    }
+
+    @Test
+    void of_twoSegmentPath_buildsStepChainWithLiftsListFalse() {
+        // input: InputT { foo: String }; argMapping kv: input.foo
+        // Step "foo" walks from InputT into a scalar field; liftsList=false.
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("InputT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("foo").type(graphql.Scalars.GraphQLString).build()).build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+        var result = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "foo")));
+        var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
+        assertThat(map.get("kv"))
+            .isEqualTo(PathExpr.step(PathExpr.head("input"), "foo", false));
+    }
+
+    @Test
+    void of_listShapedFieldType_setsLiftsListTrue() {
+        // input: InputT { bs: [B] }; argMapping kv: input.bs
+        // Step "bs" walks into a list-shaped field; liftsList=true.
+        var bType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("BT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("c").type(graphql.Scalars.GraphQLString).build()).build();
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("InputT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("bs").type(graphql.schema.GraphQLList.list(bType)).build()).build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+        var result = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "bs")));
+        var map = ((ArgBindingMap.Result.Ok) result).map().byJavaName();
+        assertThat(map.get("kv"))
+            .isEqualTo(PathExpr.step(PathExpr.head("input"), "bs", true));
+    }
+
+    @Test
+    void of_walkThroughScalar_returnsPathRejected() {
+        // input: InputT { foo: String }; argMapping kv: input.foo.bar
+        // Walking from String into "bar" should reject (cannot traverse scalars).
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("InputT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("foo").type(graphql.Scalars.GraphQLString).build()).build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+        var result = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "foo", "bar")));
+        assertThat(result).isInstanceOf(ArgBindingMap.Result.PathRejected.class);
+        assertThat(((ArgBindingMap.Result.PathRejected) result).message())
+            .contains("walks through scalar 'String'")
+            .contains("at segment 'foo'");
+    }
+
+    @Test
+    void of_unknownPathSegment_returnsPathRejectedWithCandidate() {
+        // input: InputT { fooId: String }; argMapping kv: input.fooid (typo)
+        // Should reject with "did you mean fooId" candidate hint.
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("InputT").field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("fooId").type(graphql.Scalars.GraphQLString).build()).build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+        var result = ArgBindingMap.of(slot, Map.of("kv", java.util.List.of("input", "fooid")));
+        assertThat(result).isInstanceOf(ArgBindingMap.Result.PathRejected.class);
+        assertThat(((ArgBindingMap.Result.PathRejected) result).message())
+            .contains("segment 'fooid' does not exist on input type 'InputT'")
+            .contains("fooId");
     }
 }

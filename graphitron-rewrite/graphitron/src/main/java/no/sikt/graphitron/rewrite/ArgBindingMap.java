@@ -1,10 +1,20 @@
 package no.sikt.graphitron.rewrite;
 
+import graphql.schema.GraphQLEnumType;
+import graphql.schema.GraphQLInputObjectField;
+import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLInputType;
+import graphql.schema.GraphQLList;
+import graphql.schema.GraphQLNamedType;
+import graphql.schema.GraphQLNonNull;
+import graphql.schema.GraphQLScalarType;
+import graphql.schema.GraphQLType;
 import no.sikt.graphitron.rewrite.selection.GraphQLSelectionParseException;
 import no.sikt.graphitron.rewrite.selection.GraphQLSelectionParser;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,10 +46,20 @@ import java.util.Set;
  */
 record ArgBindingMap(Map<String, PathExpr> byJavaName) {
 
-    /** Result of the {@link #of} factory. */
+    /**
+     * Result of the {@link #of} factory.
+     *
+     * <p>{@link UnknownArgRef} fires when the head segment of an override doesn't name a slot at
+     * the directive's scope. {@link PathRejected} fires when a tail segment fails structural
+     * validation against the GraphQL schema (walks through scalar/enum/union/interface, names a
+     * field that doesn't exist on the input-object at that depth). The two arms are distinct so
+     * the caller's switch can render them with the appropriate "head segment" vs. "path tail"
+     * site context.
+     */
     sealed interface Result {
         record Ok(ArgBindingMap map) implements Result {}
         record UnknownArgRef(String message) implements Result {}
+        record PathRejected(String message) implements Result {}
     }
 
     /**
@@ -63,22 +83,75 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
     }
 
     /**
-     * Builds a binding map from {@code graphqlArgNames} (the GraphQL slots in scope at the
-     * directive site) and {@code overrides} (parsed from {@code argMapping}, keyed by Java
-     * target). Returns {@link Result.UnknownArgRef} when any override's GraphQL-source value is
-     * not in {@code graphqlArgNames}; the message names the unknown source and the available
-     * list. Site context (which directive the override sits on) is added by the caller.
+     * Builds a binding map from {@code slotTypes} (the GraphQL slots in scope at the directive
+     * site, mapped to their input types) and {@code overrides} (parsed segment chains, keyed by
+     * Java target). Returns:
+     *
+     * <ul>
+     *   <li>{@link Result.UnknownArgRef} when any override's head segment is not a key in
+     *       {@code slotTypes}. The message names the unknown source and the available list. Site
+     *       context (which directive the override sits on) is added by the caller.</li>
+     *   <li>{@link Result.PathRejected} when a tail segment fails structural validation against
+     *       the input-object type at that depth: walking through a scalar/enum/union/interface,
+     *       or a field name that does not exist on the input-object at that depth. The message
+     *       names the offending segment and (when applicable) suggests a close match.</li>
+     *   <li>{@link Result.Ok} with the resolved {@link PathExpr} chain for every override and
+     *       identity {@link PathExpr.Head} entries for every unclaimed slot.</li>
+     * </ul>
+     *
+     * <p>For each {@code Step} in a resolved {@link PathExpr}, {@code liftsList} is set to
+     * {@code true} when the GraphQL field's type at that depth is list-shaped (after stripping
+     * non-null wrappers). Walks through nested non-null/list wrappers transparently so that
+     * walking from a {@code [B]!} field's element-type B into B's child fields succeeds.
      *
      * <p>{@code overrides} is trusted to have unique keys (the parser enforces it).
      */
-    static Result of(Set<String> graphqlArgNames, Map<String, String> overrides) {
+    static Result of(Map<String, GraphQLInputType> slotTypes, Map<String, List<String>> overrides) {
+        var resolvedOverrides = new LinkedHashMap<String, PathExpr>();
+        var claimedSlots = new LinkedHashSet<String>();
         for (var entry : overrides.entrySet()) {
-            if (!graphqlArgNames.contains(entry.getValue())) {
-                return new Result.UnknownArgRef(
-                    "argMapping entry '" + entry.getKey() + ": " + entry.getValue()
-                    + "' references GraphQL argument '" + entry.getValue()
-                    + "', but available arguments are " + formatNameSet(graphqlArgNames));
+            String javaTarget = entry.getKey();
+            List<String> segments = entry.getValue();
+            if (segments.isEmpty()) {
+                continue; // parser guarantees non-empty; defensive only
             }
+            String head = segments.get(0);
+            if (!slotTypes.containsKey(head)) {
+                return new Result.UnknownArgRef(
+                    "argMapping entry '" + javaTarget + ": " + String.join(".", segments)
+                    + "' references GraphQL argument '" + head
+                    + "', but available arguments are " + formatNameSet(slotTypes.keySet()));
+            }
+            claimedSlots.add(head);
+            PathExpr expr = PathExpr.head(head);
+            GraphQLInputType currentFieldType = slotTypes.get(head);
+            for (int i = 1; i < segments.size(); i++) {
+                String segName = segments.get(i);
+                String dottedPath = String.join(".", segments);
+                GraphQLType walkType = unwrapForTraversal(currentFieldType);
+                if (!(walkType instanceof GraphQLInputObjectType inputObj)) {
+                    return new Result.PathRejected(
+                        "argMapping entry '" + javaTarget + ": " + dottedPath
+                        + "' walks through " + describeKind(walkType) + " at segment '"
+                        + segments.get(i - 1) + "'; only input-object types may be traversed");
+                }
+                GraphQLInputObjectField nextField = inputObj.getField(segName);
+                if (nextField == null) {
+                    var candidates = inputObj.getFields().stream()
+                        .map(GraphQLInputObjectField::getName)
+                        .toList();
+                    return new Result.PathRejected(
+                        "argMapping entry '" + javaTarget + ": " + dottedPath
+                        + "': segment '" + segName + "' does not exist on input type '"
+                        + inputObj.getName() + "'"
+                        + BuildContext.candidateHint(segName, candidates));
+                }
+                GraphQLInputType fieldType = nextField.getType();
+                boolean liftsList = isListShaped(fieldType);
+                expr = PathExpr.step(expr, segName, liftsList);
+                currentFieldType = fieldType;
+            }
+            resolvedOverrides.put(javaTarget, expr);
         }
         // Identity for every GraphQL arg whose slot is not claimed by an override; then overrides
         // on top. Skipping claimed slots removes the would-be identity entry whose key would
@@ -86,16 +159,49 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
         // means the Java param is "inputs", not "input"). Two overrides binding to the same slot
         // is legal: argMapping "a: x, b: x" against slot {x} yields {a: x, b: x}.
         var byJavaName = new LinkedHashMap<String, PathExpr>();
-        var claimedSlots = new java.util.HashSet<>(overrides.values());
-        for (String argName : graphqlArgNames) {
-            if (!claimedSlots.contains(argName)) {
-                byJavaName.put(argName, PathExpr.head(argName));
+        for (String slot : slotTypes.keySet()) {
+            if (!claimedSlots.contains(slot)) {
+                byJavaName.put(slot, PathExpr.head(slot));
             }
         }
-        for (var entry : overrides.entrySet()) {
-            byJavaName.put(entry.getKey(), PathExpr.head(entry.getValue()));
-        }
+        byJavaName.putAll(resolvedOverrides);
         return new Result.Ok(new ArgBindingMap(Collections.unmodifiableMap(byJavaName)));
+    }
+
+    /**
+     * Strips non-null and list wrappers in any order to expose the innermost named type for path
+     * traversal. {@code [B]!} → {@code B}, {@code [[B]!]!} → {@code B}, etc.
+     */
+    private static GraphQLType unwrapForTraversal(GraphQLType t) {
+        var current = t;
+        while (current instanceof GraphQLNonNull nn) {
+            current = nn.getWrappedType();
+        }
+        while (current instanceof GraphQLList list) {
+            current = list.getWrappedType();
+            while (current instanceof GraphQLNonNull nn) {
+                current = nn.getWrappedType();
+            }
+        }
+        return current;
+    }
+
+    /** True when {@code t} (after stripping a single layer of non-null) is a list. */
+    private static boolean isListShaped(GraphQLInputType t) {
+        GraphQLType current = t;
+        while (current instanceof GraphQLNonNull nn) {
+            current = nn.getWrappedType();
+        }
+        return current instanceof GraphQLList;
+    }
+
+    /** Human-readable description of a non-input-object type for {@link Result.PathRejected}. */
+    private static String describeKind(GraphQLType t) {
+        if (t instanceof GraphQLScalarType s) return "scalar '" + s.getName() + "'";
+        if (t instanceof GraphQLEnumType e) return "enum '" + e.getName() + "'";
+        if (t instanceof GraphQLNamedType n) return n.getClass().getSimpleName().replace("GraphQL", "").toLowerCase()
+            + " '" + n.getName() + "'";
+        return t.toString();
     }
 
     /**
