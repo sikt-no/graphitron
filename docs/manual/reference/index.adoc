@@ -20,6 +20,10 @@ All 26 directives in the rewrite's `directives.graphqls` are described below; th
 
 * xref:diagnostics-glossary.adoc[Diagnostics glossary]: every closed-set diagnostic code the validator emits, organised by category. Covers the three top-level rejection kinds (`author-error`, `invalid-schema`, `deferred`), the nine name-lookup attempt kinds (`column`, `table`, `foreign-key`, `service-method`, `lifter-method`, `enum-constant`, `type-name`, `nodeid-key-column`, `dml-kind`), and the four deferred emit-block reasons.
 
+== Deprecations
+
+* xref:deprecations.adoc[Deprecations]: aggregator for every deprecated directive argument, input field, and whole directive in the rewrite, with migration guidance pointing back at the canonical directive page.
+
 == Directives
 
 [cols="1,1",frame=none,grid=none]
