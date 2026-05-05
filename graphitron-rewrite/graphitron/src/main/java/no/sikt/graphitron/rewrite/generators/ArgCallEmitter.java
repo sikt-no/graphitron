@@ -36,10 +36,24 @@ public final class ArgCallEmitter {
      * local.
      */
     public static CodeBlock buildCallArgs(TypeFetcherEmissionContext ctx, List<CallParam> params, String conditionsClassName, String srcAlias) {
+        return buildCallArgs(ctx, params, conditionsClassName, srcAlias, null);
+    }
+
+    /**
+     * Variant that accepts a {@link CompositeDecodeHelperRegistry}. When non-null, composite-key
+     * NodeId decode chains (arity > 1) are lifted to per-class private helpers registered through
+     * the collector; the call site emits {@code <helper>(<wireExpr>)} instead of the inline
+     * decode-and-project ternary. Other extraction shapes are unaffected.
+     *
+     * <p>Currently only {@link QueryConditionsGenerator} passes a non-null registry; the
+     * remaining call sites (Inline*, SplitRows*, TypeFetcher) use the inline form.
+     */
+    public static CodeBlock buildCallArgs(TypeFetcherEmissionContext ctx, List<CallParam> params,
+            String conditionsClassName, String srcAlias, CompositeDecodeHelperRegistry registry) {
         var args = CodeBlock.builder();
         args.add("$L", srcAlias);
         for (var param : params) {
-            args.add(", $L", buildArgExtraction(ctx, param, conditionsClassName, srcAlias));
+            args.add(", $L", buildArgExtraction(ctx, param, conditionsClassName, srcAlias, registry));
         }
         return args.build();
     }
@@ -142,6 +156,15 @@ public final class ArgCallEmitter {
     }
 
     public static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param, String conditionsClassName, String srcAlias) {
+        return buildArgExtraction(ctx, param, conditionsClassName, srcAlias, null);
+    }
+
+    /**
+     * Registry-aware variant; see
+     * {@link #buildCallArgs(TypeFetcherEmissionContext, List, String, String, CompositeDecodeHelperRegistry)}.
+     */
+    public static CodeBlock buildArgExtraction(TypeFetcherEmissionContext ctx, CallParam param,
+            String conditionsClassName, String srcAlias, CompositeDecodeHelperRegistry registry) {
         return switch (param.extraction()) {
             case CallSiteExtraction.Direct ignored ->
                 CodeBlock.of("env.getArgument($S)", param.name());
@@ -164,11 +187,12 @@ public final class ArgCallEmitter {
                 : CodeBlock.of("$L.$L.getDataType().convert((String) env.getArgument($S))",
                     srcAlias, jc.columnJavaName(), param.name());
             case CallSiteExtraction.NestedInputField nif ->
-                buildNestedInputFieldExtraction(nif.outerArgName(), nif.path(), nif.leaf(), param.typeName(), param.list());
+                buildNestedInputFieldExtraction(nif.outerArgName(), nif.path(), nif.leaf(),
+                    param.typeName(), param.list(), registry);
             case CallSiteExtraction.NodeIdDecodeKeys nidk ->
                 buildNodeIdDecodeExtraction(
                     CodeBlock.of("env.getArgument($S)", param.name()),
-                    nidk, param.typeName(), param.list());
+                    nidk, param.typeName(), param.list(), registry);
         };
     }
 
@@ -198,12 +222,25 @@ public final class ArgCallEmitter {
      * {@code GraphqlErrorException} wrapper; the wrapper appears once per element.
      */
     private static CodeBlock buildNodeIdDecodeExtraction(CodeBlock wireExpr,
-            CallSiteExtraction.NodeIdDecodeKeys nidk, String leafTypeName, boolean list) {
+            CallSiteExtraction.NodeIdDecodeKeys nidk, String leafTypeName, boolean list,
+            CompositeDecodeHelperRegistry registry) {
         var decode = nidk.decodeMethod();
         var encoderClass = decode.encoderClass();
         String methodName = decode.methodName();
         int arity = decode.outputColumnShape().size();
         boolean throwOnMismatch = nidk instanceof CallSiteExtraction.ThrowOnMismatch;
+
+        // Composite (arity > 1) NodeId decoding lifts to a per-class private helper when the
+        // caller provides a registry. The helper bakes in the wire-shape guard, decode call, and
+        // Record<N>::valuesRow projection, so the call site collapses to <name>(wireExpr).
+        // Arity-1 paths and null-registry callers fall through to the inline form below.
+        if (registry != null && arity > 1) {
+            var mode = throwOnMismatch
+                ? CompositeDecodeHelperRegistry.Mode.THROW
+                : CompositeDecodeHelperRegistry.Mode.SKIP;
+            String helperName = registry.register(decode, mode, list);
+            return CodeBlock.of("$L($L)", helperName, wireExpr);
+        }
 
         ClassName objects = ClassName.get(java.util.Objects.class);
         ClassName collectors = ClassName.get(java.util.stream.Collectors.class);
@@ -321,7 +358,8 @@ public final class ArgCallEmitter {
      * ever requires it, callers can suppress warnings at the enclosing method.
      */
     private static CodeBlock buildNestedInputFieldExtraction(String outerArgName, List<String> path,
-            CallSiteExtraction leaf, String leafTypeName, boolean list) {
+            CallSiteExtraction leaf, String leafTypeName, boolean list,
+            CompositeDecodeHelperRegistry registry) {
         // For a Direct leaf the Map.get value is cast directly to the parameter type. For a
         // NodeIdDecodeKeys leaf the leaf cast is omitted -- the decode chain takes Object and
         // its own instanceof guard validates the runtime shape -- so the inner pattern stays
@@ -331,7 +369,8 @@ public final class ArgCallEmitter {
 
         if (nodeIdLeaf) {
             CodeBlock mapChain = buildMapChain(root, path, 0, /* leafType= */ null);
-            return buildNodeIdDecodeExtraction(mapChain, (CallSiteExtraction.NodeIdDecodeKeys) leaf, leafTypeName, list);
+            return buildNodeIdDecodeExtraction(mapChain, (CallSiteExtraction.NodeIdDecodeKeys) leaf,
+                leafTypeName, list, registry);
         }
         ClassName rawLeaf = ClassName.bestGuess(rawComponent(leafTypeName));
         TypeName castTarget = list
