@@ -16,8 +16,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R77` | Bulk DML mutations: listed @table input arguments | Spec | [plan](bulk-dml-mutations.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
 | `R81` | Sealed resolution outcomes for catalog table/FK lookups | In Review | [plan](catalog-resolution-sealed-outcomes.md) |
+| `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy | In Review | [plan](fix-legacy-refs-in-rewrite-docs.md) |
 | `R87` | Tighten instance-service @service design after architect review | Ready | [plan](instance-service-design-cleanup.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
@@ -155,7 +155,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### docs
 
-- `R15` [**Sweep doc drift between rewrite docs and `model/` taxonomy**](fix-legacy-refs-in-rewrite-docs.md) — Spec, cleanup
+- `R15` [**Sweep doc drift between rewrite docs and `model/` taxonomy**](fix-legacy-refs-in-rewrite-docs.md) — In Review, cleanup
 - `R3` [**Classification vocabulary follow-ups**](classification-vocabulary-followups.md) — Spec
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup

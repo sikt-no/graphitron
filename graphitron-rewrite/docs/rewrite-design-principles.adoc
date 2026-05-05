@@ -2,6 +2,8 @@
 
 Technical and architectural principles that govern the rewrite pipeline. For Graphitron's strategic/philosophical principles, see xref:../graphitron-principles.adoc[graphitron-principles.md].
 
+The typed-rejection narrative ("Builder-step results are sealed, not strings or out-params"), the sealed-hierarchies guidance, and the wire-format-boundary principle are slated to consolidate into the public user-manual architecture chapter once it lands (tracked under R86, `graphitron-rewrite/roadmap/architecture-chapter.md`); until then, this contributor-facing reference is the canonical source.
+
 '''
 
 == Generation-thinking
@@ -24,11 +26,11 @@ When variants split on independent axes (container × key-shape × backing-class
 
 == Classification belongs at the parse boundary
 
-`ServiceCatalog.reflectServiceMethod()` and `ServiceCatalog.reflectTableMethod()` are the only places that read the reflection `java.lang.reflect.Type` tree to classify parameters. They convert raw reflection output into `MethodRef.Param` values (each carrying a `ParamSource`). Everything downstream ; validator, generator ; switches on the pre-classified values and never touches reflection types.
+Reading the reflection `java.lang.reflect.Type` tree is permitted only at builder-side classifiers that convert reflection output into the typed model. Today four files cross that boundary: `ServiceCatalog` (for `@service` and `@tableMethod` parameter classification, including the post-R7 `classifySourcesType` for DataLoader source parameters); `ServiceDirectiveResolver` (for `@externalField` reference methods); `BatchKeyLifterDirectiveResolver` (R1, for the developer-supplied `@batchKeyLifter` lifter signature); and `FieldBuilder` (for `@batchKeyLifter` argument-mapping and accessor reflection on `@record` parents whose backing class carries typed FK accessors). Each converts raw reflection output into `MethodRef.Param`, `BatchKey`, or `AccessorRef` values (each carrying a `ParamSource`). Everything downstream ; validator, generator ; switches on the pre-classified values and never touches reflection types.
 
-`JooqCatalog`, `TypeBuilder`, `FieldBuilder`, and `ServiceCatalog` are the only classes permitted to hold raw jOOQ types (`Table<?>`, `ForeignKey<?,?>`) or raw graphql-java schema types. If a generator needs information not yet in a taxonomy record, the fix is to add a component and extract the value in the builder ; not to reach past the taxonomy boundary.
+The boundary lives at `JooqCatalog`: it is the canonical permitted holder of raw jOOQ types (`Table<?>`, `ForeignKey<?,?>`) and the path classifier code goes through. Two other classes also import `org.jooq` directly today: `BuildContext` (`ForeignKey` for `@reference` validation messages that need to enumerate keys for the candidate hint) and `catalog/CatalogBuilder` (`ForeignKey` + `Table` for the LSP completion-data snapshot, which marshals catalog metadata into a wire format the LSP server consumes). `TypeBuilder`, `FieldBuilder`, and `ServiceCatalog` consume the classified output via `JooqCatalog` rather than holding raw types directly. If a generator needs information not yet in a taxonomy record, the fix is to add a component and extract the value in the builder ; not to reach past the taxonomy boundary.
 
-`CallSiteExtraction` illustrates the principle for argument extraction: the builder decides once (at classify time) which extraction strategy applies to each argument ; `Direct`, `EnumValueOf`, `TextMapLookup`, `ContextArg`, or `JooqConvert` ; and stores that decision in `CallParam.extraction` or `ParamSource.Arg.extraction`. The generator switches on the pre-classified value and emits code directly.
+`CallSiteExtraction` illustrates the principle for argument extraction: the builder decides once (at classify time) which extraction strategy applies to each argument ; one of five direct strategies (`Direct`, `EnumValueOf`, `TextMapLookup`, `ContextArg`, `JooqConvert`) or one of two sealed sub-groupers covering nested-input traversal (`NestedInputField`, for `@condition` on `INPUT_FIELD_DEFINITION`) and NodeId decode (`NodeIdDecodeKeys.{SkipMismatchedElement | ThrowOnMismatch}`) ; and stores that decision in `CallParam.extraction` or `ParamSource.Arg.extraction`. The generator switches on the pre-classified value and emits code directly.
 
 == Capability interfaces and sealed switches serve different roles
 
@@ -178,7 +180,7 @@ Selection-driven queries produce different SQL per request, preventing cached qu
 
 === Error quality
 
-`BuildContext.candidateHint(attempt, candidates)` sorts candidates by Levenshtein distance. Used in 14 places (5 in `FieldBuilder`, 5 in `TypeBuilder`, 2 in `BuildContext`, 2 in `ServiceCatalog`). When adding new jOOQ existence checks in the validator or builder, follow the same pattern ; pass the relevant candidate list from `JooqCatalog` to `candidateHint`.
+`BuildContext.candidateHint(attempt, candidates)` sorts candidates by Levenshtein distance. The Levenshtein-suggestion contract has consolidated onto `BuildContext` and `Rejection` (the rejection-construction sites), with classifier-side callers thinning out as rejections are produced through the typed sealed-result path. Today: 17 occurrences across five files ; 7 in `BuildContext`, 3 in `TypeBuilder`, 3 in `Rejection`, 2 in `FieldBuilder`, 2 in `EnumMappingResolver`. When adding new jOOQ existence checks in the validator or builder, follow the same pattern ; pass the relevant candidate list from `JooqCatalog` to `candidateHint`, or produce the rejection through `Rejection.unknownName(...)` so the candidate list rides on the typed result.
 
 === Column value binding: `DSL.val(rawValue, col.getDataType())`
 
