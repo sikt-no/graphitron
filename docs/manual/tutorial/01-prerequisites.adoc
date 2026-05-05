@@ -93,4 +93,9 @@ How the rewrite organises itself into the generator, the Sakila catalog, the exa
 
 xref:02-first-schema.adoc[Page 2: The starter schema] introduces the directives that turn GraphQL types into PostgreSQL queries.
 
-xref:index.adoc[← Tutorial overview]
+[.pagenav,cols="<,^,>",frame=none,grid=none]
+|===
+|
+| xref:index.adoc[↑ Tutorial overview]
+| xref:02-first-schema.adoc[Next: The starter schema →]
+|===

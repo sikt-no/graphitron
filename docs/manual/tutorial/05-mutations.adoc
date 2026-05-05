@@ -105,4 +105,9 @@ How `@mutation(typeName: ...)` flips a resolver into an `INSERT`, `UPDATE`, or `
 
 xref:06-going-further.adoc[Page 6: Going further] points at the four how-to recipes most worth reading after this tutorial.
 
-xref:index.adoc[← Tutorial overview]
+[.pagenav,cols="<,^,>",frame=none,grid=none]
+|===
+| xref:04-joining-tables.adoc[← Previous: Joining tables]
+| xref:index.adoc[↑ Tutorial overview]
+| xref:06-going-further.adoc[Next: Going further →]
+|===
