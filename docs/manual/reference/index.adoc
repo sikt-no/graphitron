@@ -4,9 +4,9 @@
 
 Authoritative descriptions of every directive, every Maven plugin parameter, every runtime API entry point, and every diagnostic code Graphitron emits.
 
-== Status: directive, runtime-API, and Mojo reference, complete
+== Status: reference chapter complete
 
-All 26 directives in the rewrite's `directives.graphqls` are described below; the runtime-API reference covers the three classes Graphitron emits unconditionally into your generated sources; the Mojo configuration reference covers every parameter on the three Maven goals. The diagnostics glossary is authored in Phase 5.
+All 26 directives in the rewrite's `directives.graphqls` are described below; the runtime-API reference covers the three classes Graphitron emits unconditionally into your generated sources; the Mojo configuration reference covers every parameter on the three Maven goals; the diagnostics glossary covers every closed-set diagnostic code the validator emits.
 
 == Runtime API
 
@@ -15,6 +15,10 @@ All 26 directives in the rewrite's `directives.graphqls` are described below; th
 == Maven plugin
 
 * xref:mojo-configuration.adoc[Maven plugin configuration]: every parameter on every goal of `graphitron-maven`. Covers the three goals (`generate`, `validate`, `dev`), the shared `<configuration>` parameters (`outputDirectory`, `outputPackage`, `jooqPackage`, `schemaInputs`, `namedReferences`), the `dev`-only watch parameters (`port`, `debounceMs`, `skipInitial`), and the two complex POM bindings (`<schemaInput>`, `<namedReference>`).
+
+== Diagnostics
+
+* xref:diagnostics-glossary.adoc[Diagnostics glossary]: every closed-set diagnostic code the validator emits, organised by category. Covers the three top-level rejection kinds (`author-error`, `invalid-schema`, `deferred`), the nine name-lookup attempt kinds (`column`, `table`, `foreign-key`, `service-method`, `lifter-method`, `enum-constant`, `type-name`, `nodeid-key-column`, `dml-kind`), and the four deferred emit-block reasons.
 
 == Directives
 
