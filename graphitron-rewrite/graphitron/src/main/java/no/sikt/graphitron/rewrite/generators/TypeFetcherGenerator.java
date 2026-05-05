@@ -332,11 +332,11 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.ServiceTableField stf -> {
-                    builder.addMethod(buildServiceDataFetcher(ctx, stf.name(), stf, stf.method(), stf.returnType(), parentTable, RECORD, className, outputPackage));
+                    builder.addMethod(buildServiceDataFetcher(ctx, stf.name(), stf, stf.method(), stf.returnType(), parentTable, RECORD, className, outputPackage, stf.errorChannel()));
                     builder.addMethod(buildServiceRowsMethod(ctx, stf, stf.method(), stf.returnType(), RECORD, stf.parentTypeName(), outputPackage));
                 }
                 case ChildField.ServiceRecordField srf -> {
-                    builder.addMethod(buildServiceDataFetcher(ctx, srf.name(), srf, srf.method(), srf.returnType(), parentTable, srf.elementType(), className, outputPackage));
+                    builder.addMethod(buildServiceDataFetcher(ctx, srf.name(), srf, srf.method(), srf.returnType(), parentTable, srf.elementType(), className, outputPackage, srf.errorChannel()));
                     builder.addMethod(buildServiceRowsMethod(ctx, srf, srf.method(), srf.returnType(), srf.elementType(), srf.parentTypeName(), outputPackage));
                 }
                 case ChildField.SplitTableField stf -> {
@@ -1013,7 +1013,7 @@ public class TypeFetcherGenerator {
             .build());
         builder.addCode(returnSyncSuccess(valueType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(redactCatchArm(outputPackage));
+        builder.addCode(catchArm(outputPackage, qtmtf.errorChannel()));
         builder.endControlFlow();
 
         return builder.build();
@@ -2339,7 +2339,8 @@ public class TypeFetcherGenerator {
             TableRef prt,
             TypeName perKeyType,
             String className,
-            String outputPackage) {
+            String outputPackage,
+            Optional<ErrorChannel> errorChannel) {
 
         boolean isList = returnType.wrapper().isList();
         TypeName valueType = isList ? ParameterizedTypeName.get(LIST, perKeyType) : perKeyType;
@@ -2377,7 +2378,7 @@ public class TypeFetcherGenerator {
         return methodBuilder
             .addCode(CodeBlock.builder()
                 .add("return loader.load(key, env)\n")
-                .add("    ").add(asyncWrapTail(valueType, outputPackage, Optional.empty())).add(";\n")
+                .add("    ").add(asyncWrapTail(valueType, outputPackage, errorChannel)).add(";\n")
                 .build())
             .build();
     }

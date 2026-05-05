@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.Handler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.WithErrorChannel;
@@ -162,6 +163,17 @@ public final class MappingsConstantNameDedup {
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present, f.resultAssembly());
             case QueryField.QueryServiceRecordField f -> new QueryField.QueryServiceRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present, f.resultAssembly());
+            case QueryField.QueryTableMethodTableField f -> new QueryField.QueryTableMethodTableField(
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present);
+            case ChildField.ServiceTableField f -> new ChildField.ServiceTableField(
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.filters(),
+                f.orderBy(), f.pagination(), f.method(), f.batchKey(), present);
+            case ChildField.ServiceRecordField f -> new ChildField.ServiceRecordField(
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
+                f.batchKey(), present);
+            case ChildField.TableMethodField f -> new ChildField.TableMethodField(
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
+                present);
             default -> throw new IllegalStateException(
                 "MappingsConstantNameDedup: unhandled WithErrorChannel variant "
                     + field.getClass().getName()

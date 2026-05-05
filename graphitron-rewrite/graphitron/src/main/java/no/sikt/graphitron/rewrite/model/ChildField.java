@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import graphql.language.SourceLocation;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * A field on a non-root output type. Source context (table-mapped or result-mapped) is
@@ -252,8 +253,9 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef returnType,
         List<JoinStep> joinPath,
-        MethodRef method
-    ) implements ChildField, MethodBackedField {}
+        MethodRef method,
+        Optional<ErrorChannel> errorChannel
+    ) implements ChildField, MethodBackedField, WithErrorChannel {}
 
     record TableInterfaceField(
         String parentTypeName,
@@ -353,8 +355,9 @@ public sealed interface ChildField extends GraphitronField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         MethodRef method,
-        BatchKey.ParentKeyed batchKey
-    ) implements TableTargetField, MethodBackedField, BatchKeyField {
+        BatchKey.ParentKeyed batchKey,
+        Optional<ErrorChannel> errorChannel
+    ) implements TableTargetField, MethodBackedField, BatchKeyField, WithErrorChannel {
         @Override
         public String rowsMethodName() {
             return "load" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
@@ -379,8 +382,9 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef returnType,
         List<JoinStep> joinPath,
         MethodRef method,
-        BatchKey.ParentKeyed batchKey
-    ) implements ChildField, MethodBackedField, BatchKeyField {
+        BatchKey.ParentKeyed batchKey,
+        Optional<ErrorChannel> errorChannel
+    ) implements ChildField, MethodBackedField, BatchKeyField, WithErrorChannel {
 
         @Override
         public String rowsMethodName() {

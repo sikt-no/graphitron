@@ -340,7 +340,8 @@ class TypeFetcherGeneratorTest {
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
             List.of(), List.of(), new OrderBySpec.None(), null, method,
-            new BatchKey.RowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer"))));
+            new BatchKey.RowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer"))),
+            java.util.Optional.empty());
     }
 
     private static TypeSpec specWithServiceField(String parentType, String fieldName, boolean isList) {
@@ -388,7 +389,8 @@ class TypeFetcherGeneratorTest {
             List.of(new MethodRef.Param.Sourced("keys", batchKey)));
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
-            List.of(), List.of(), new OrderBySpec.None(), null, method, batchKey);
+            List.of(), List.of(), new OrderBySpec.None(), null, method, batchKey,
+            java.util.Optional.empty());
     }
 
     private static TypeSpec specWithMappedServiceField(String parentType, String fieldName, boolean isList, BatchKey.ParentKeyed batchKey) {
@@ -649,7 +651,7 @@ class TypeFetcherGeneratorTest {
                 new MethodRef.Param.Typed("minRentalRate", "java.lang.Double",
                     new ParamSource.Arg(new CallSiteExtraction.Direct(), no.sikt.graphitron.rewrite.PathExpr.head("minRentalRate")))));
         var field = new QueryField.QueryTableMethodTableField("Query", "popularFilms", null,
-            TestFixtures.tableBoundFilm(nonNullList()), method);
+            TestFixtures.tableBoundFilm(nonNullList()), method, java.util.Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
@@ -1437,7 +1439,7 @@ class TypeFetcherGeneratorTest {
             "no.example.Service", "getValues", perKeyType,
             List.of(new MethodRef.Param.Sourced("keys", batchKey)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
-            parentType, name, null, returnType, List.of(), method, batchKey);
+            parentType, name, null, returnType, List.of(), method, batchKey, java.util.Optional.empty());
     }
 
     private static no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField recordBackedServiceRecordField(
@@ -1449,7 +1451,7 @@ class TypeFetcherGeneratorTest {
             "no.example.Service", "getDetails", ClassName.bestGuess(fqBackingClass),
             List.of(new MethodRef.Param.Sourced("keys", batchKey)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
-            parentType, name, null, returnType, List.of(), method, batchKey);
+            parentType, name, null, returnType, List.of(), method, batchKey, java.util.Optional.empty());
     }
 
     private static TypeSpec specWith(GraphitronField field) {
