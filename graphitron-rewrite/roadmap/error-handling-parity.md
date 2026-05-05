@@ -1679,6 +1679,23 @@ shape:
 The full legacy fixture list above is the comparison anchor; these four are the minimum
 pipeline coverage for the runtime wiring.
 
+**Required test tier: compile + execute, not unit-text.** Each of the four fixtures must
+reach the compile-spec and execute-spec tiers, i.e. the generated `GraphitronSchema.java`
+must compile against the real graphql-java jar and the resulting fetchers must run a
+GraphQL request that surfaces the typed error. The existing unit tests for
+`buildErrorTypeFieldFetchers` (and the surrounding `@error` TypeResolver / field-fetcher
+emission in `GraphitronSchemaClassGenerator`) only assert against the generated source as
+a `String` via `body.contains(...)`, which cannot detect ambiguous-overload lambdas or
+calls into graphql-java methods that were renamed or removed. A concrete instance of the
+gap: the path/message field fetchers emitted by `buildErrorTypeFieldFetchers` shipped with
+both an ambiguous `codeRegistry.dataFetcher(coords, env -> {...})` (matching both the
+`DataFetcher<?>` and `DataFetcherFactory<?>` overloads on `Builder`) and a
+`DataFetchingEnvironment.getObject()` call (removed in graphql-java 25 in favour of
+`getSource()`); neither tripped any assertion until consumer compilation surfaced both.
+Until at least one fixture under this item exercises an `@error` type end-to-end, the
+entire `@error` codepath in `GraphitronSchemaClassGenerator` is invisible to the
+compile-spec tier.
+
 ---
 
 ## User documentation (first-client check)
