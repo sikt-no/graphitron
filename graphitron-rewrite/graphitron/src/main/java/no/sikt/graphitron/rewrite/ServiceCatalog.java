@@ -1,5 +1,11 @@
 package no.sikt.graphitron.rewrite;
 
+import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLInputType;
+import graphql.schema.GraphQLList;
+import graphql.schema.GraphQLNonNull;
+import graphql.schema.GraphQLScalarType;
+import graphql.schema.GraphQLType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.BatchKey;
@@ -18,6 +24,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -163,6 +170,25 @@ class ServiceCatalog {
     ServiceReflectionResult reflectServiceMethod(String className, String methodName,
             ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
             TypeName expectedReturnType) {
+        return reflectServiceMethod(className, methodName, argBindings, ctxKeys,
+            parentPkColumns, expectedReturnType, Map.of());
+    }
+
+    /**
+     * Stretch overload (R84 Phase F): identical to the 6-arg version, but accepts
+     * {@code slotTypes} so a parameter-mismatch rejection can pre-fill an unambiguous
+     * reachable path under one of the available slots in its argMapping suggestion.
+     *
+     * <p>The 6-arg overload delegates here with {@code Map.of()}; tests that don't care about
+     * the prefilled-path hint stay on the simpler form. The single production caller
+     * ({@link ServiceDirectiveResolver}) threads the real slot types from
+     * {@link FieldBuilder#argSlotTypes(graphql.schema.GraphQLFieldDefinition)} so that the
+     * suggestion message rendered to schema authors carries a copy-pasteable path when one
+     * is unambiguously reachable.
+     */
+    ServiceReflectionResult reflectServiceMethod(String className, String methodName,
+            ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
+            TypeName expectedReturnType, Map<String, GraphQLInputType> slotTypes) {
         var argByJavaName = argBindings.byJavaName();
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, Rejection.structural("service reference is incomplete"));
@@ -246,14 +272,26 @@ class ServiceCatalog {
                                 String soleArg = argByJavaName.size() == 1
                                     ? argByJavaName.keySet().iterator().next()
                                     : "<argName>";
+                                String reachablePath = unambiguousReachablePath(typeName, slotTypes);
+                                String pathExample;
+                                String pathTrailer;
+                                if (reachablePath != null) {
+                                    pathExample = "argMapping: \"" + displayName + ": " + reachablePath + "\"";
+                                    pathTrailer = " — that path is the only field reachable from the available"
+                                        + " arguments whose type matches '" + typeName + "', so the suggestion"
+                                        + " is concrete";
+                                } else {
+                                    pathExample = "argMapping: \"" + displayName + ": " + soleArg + ".<fieldName>\"";
+                                    pathTrailer = " when the parameter pulls one field out of a wrapper input"
+                                        + " type — see R84 path expressions";
+                                }
                                 suggestion = " — either rename the Java parameter to match one of the available argument names, or bind explicitly via the @service directive's argMapping field"
                                     + " (e.g. argMapping: \"" + displayName + ": " + soleArg + "\""
                                     + ", which reads as \"the Java parameter named '" + displayName
                                     + "' binds to the GraphQL argument named '" + soleArg + "'\")."
                                     + " The right-hand side may also be a dot-path into a nested"
-                                    + " input field (e.g. argMapping: \"" + displayName + ": "
-                                    + soleArg + ".<fieldName>\") when the parameter pulls one field"
-                                    + " out of a wrapper input type — see R84 path expressions";
+                                    + " input field (e.g. " + pathExample + ")"
+                                    + pathTrailer;
                             }
                             return new ServiceReflectionResult(null,
                                 Rejection.structural("parameter '" + displayName + "' in method '" + methodName
@@ -769,6 +807,129 @@ class ServiceCatalog {
             + " — free-form DTO sources on @service SOURCES parameters are not supported."
             + " The @batchKeyLifter directive solves the analogous case for child fields on @record"
             + " parents (not @service SOURCES)";
+    }
+
+    // ===== R84 Phase F (stretch): suggestion-side path search =====
+
+    /**
+     * Walks every slot in {@code slotTypes} looking for a single nested input-object field
+     * whose GraphQL type maps to {@code targetTypeName} (the Java type of an unmatched method
+     * parameter). Returns the dotted path (e.g. {@code "input.kvotesporsmalId"}) when exactly
+     * one such field exists across all slots; returns {@code null} when there is no match or
+     * more than one (so the caller falls back to the floor's {@code <fieldName>} placeholder).
+     *
+     * <p>The search is conservative on purpose: it only descends through non-list
+     * {@link GraphQLInputObjectType} intermediates and only matches scalar leaves whose
+     * GraphQL kind maps to a standard Java type (Int → Integer, Float → Double, String/ID →
+     * String, Boolean → Boolean, with {@code List<>} wraps propagated). Custom scalars,
+     * enums and named input objects don't count as candidate leaves; the suggestion would
+     * mislead users by pointing at a path whose runtime Java shape isn't guaranteed to match.
+     *
+     * <p>Matching is gated on {@code targetTypeName} (the parameter's
+     * {@link java.lang.reflect.Parameter#getParameterizedType()} name) equalling the
+     * mapped Java type literally. {@code java.util.List<java.lang.Integer>} matches {@code [Int!]!}
+     * ; {@code java.lang.Integer} matches a non-list {@code Int!}. Mismatches drop the
+     * candidate silently; a non-matching path simply doesn't get suggested.
+     */
+    private static String unambiguousReachablePath(
+            String targetTypeName, Map<String, GraphQLInputType> slotTypes) {
+        if (slotTypes.isEmpty()) return null;
+        var matches = new ArrayList<String>(2);
+        for (var entry : slotTypes.entrySet()) {
+            searchSlotForMatchingPath(entry.getKey(), entry.getValue(), targetTypeName,
+                new ArrayList<>(), new HashSet<>(), matches);
+            if (matches.size() > 1) return null;
+        }
+        return matches.size() == 1 ? matches.get(0) : null;
+    }
+
+    /**
+     * Recursive search helper. {@code trail} is the path of names from the slot down to (but
+     * not including) the current node; {@code visited} tracks input-type names already on the
+     * path so a self-referential schema can't loop. Slot-level matches are skipped because the
+     * floor's {@code soleArg} placeholder already covers the head case; only paths of length ≥2
+     * (slot.field, slot.f1.f2, …) are recorded.
+     */
+    private static void searchSlotForMatchingPath(String currentName, GraphQLInputType currentType,
+            String targetTypeName, List<String> trail, Set<String> visited, List<String> matches) {
+        GraphQLType walk = currentType;
+        while (walk instanceof GraphQLNonNull nn) {
+            walk = nn.getWrappedType();
+        }
+        // Skip list-shaped intermediates: the path expression for an intermediate-list segment
+        // produces a List<X> Java parameter shape, which is fine for R84 emit but harder to
+        // present in a one-line suggestion that doesn't surprise users. Restrict to flat paths.
+        if (!(walk instanceof GraphQLInputObjectType inputObj)) return;
+        if (!visited.add(inputObj.getName())) return;
+        trail.add(currentName);
+        try {
+            for (var field : inputObj.getFields()) {
+                String fieldName = field.getName();
+                GraphQLInputType fieldType = field.getType();
+                String javaTypeName = mapToJavaTypeName(fieldType);
+                if (javaTypeName != null && javaTypeName.equals(targetTypeName)) {
+                    trail.add(fieldName);
+                    matches.add(String.join(".", trail));
+                    trail.remove(trail.size() - 1);
+                    if (matches.size() > 1) return;
+                    continue;
+                }
+                GraphQLType inner = fieldType;
+                while (inner instanceof GraphQLNonNull nn) {
+                    inner = nn.getWrappedType();
+                }
+                if (inner instanceof GraphQLInputObjectType) {
+                    searchSlotForMatchingPath(fieldName, fieldType, targetTypeName,
+                        trail, visited, matches);
+                    if (matches.size() > 1) return;
+                }
+            }
+        } finally {
+            trail.remove(trail.size() - 1);
+            visited.remove(inputObj.getName());
+        }
+    }
+
+    /**
+     * Maps a {@link GraphQLInputType} to the canonical Java type name a graphql-java argument
+     * extraction would produce for it, suitable for literal comparison against
+     * {@link java.lang.reflect.Parameter#getParameterizedType()}'s name. Returns {@code null}
+     * for types the search can't translate confidently (custom scalars, enums, named input
+     * objects), so the caller skips that candidate rather than guessing.
+     */
+    private static String mapToJavaTypeName(GraphQLInputType t) {
+        GraphQLType current = t;
+        int listDepth = 0;
+        while (true) {
+            if (current instanceof GraphQLNonNull nn) {
+                current = nn.getWrappedType();
+                continue;
+            }
+            if (current instanceof GraphQLList l) {
+                current = l.getWrappedType();
+                listDepth++;
+                continue;
+            }
+            break;
+        }
+        String inner;
+        if (current instanceof GraphQLScalarType s) {
+            inner = switch (s.getName()) {
+                case "Int" -> "java.lang.Integer";
+                case "Float" -> "java.lang.Double";
+                case "String", "ID" -> "java.lang.String";
+                case "Boolean" -> "java.lang.Boolean";
+                default -> null;
+            };
+            if (inner == null) return null;
+        } else {
+            return null;
+        }
+        String result = inner;
+        for (int i = 0; i < listDepth; i++) {
+            result = "java.util.List<" + result + ">";
+        }
+        return result;
     }
 
     // ===== Result container =====

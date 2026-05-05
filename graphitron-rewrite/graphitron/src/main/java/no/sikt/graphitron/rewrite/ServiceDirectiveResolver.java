@@ -146,7 +146,8 @@ final class ServiceDirectiveResolver {
         TypeName expectedReturnType = isRoot ? computeExpectedServiceReturnType(returnType) : null;
 
         var result = svc.reflectServiceMethod(serviceRef.className(), serviceRef.methodName(),
-            argBindings, new HashSet<>(contextArgs), parentPkColumns, expectedReturnType);
+            argBindings, new HashSet<>(contextArgs), parentPkColumns, expectedReturnType,
+            slotTypes);
         if (result.failed()) {
             return new Resolved.Rejected(result.rejection().prefixedWith("service method could not be resolved — "));
         }
