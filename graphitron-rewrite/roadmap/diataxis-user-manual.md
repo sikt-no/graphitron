@@ -424,7 +424,15 @@ Two parallel deliverables:
   input type). Some material lifts from
   `graphitron-rewrite/docs/rewrite-design-principles.adoc`, but rewritten
   for users (no "the classifier emits an `UnclassifiedField`" jargon).
-  *Outstanding.*
+  *Shipped at `<TBD>`.* Six pages: `why-database-first.adoc`,
+  `why-jooq-and-graphql-java.adoc`, `how-it-works.adoc`,
+  `classifier-mental-model.adoc`, `batching-model.adoc`,
+  `design-decisions.adoc`, plus an updated `index.adoc` mapping them.
+  No verifier, by intent: explanation prose is curated voice, not a
+  surface that drifts mechanically against the code (the directive
+  reference, Mojo reference, diagnostics glossary, and deprecations
+  index are the ones that need verifiers; explanation cross-links into
+  them).
 - *Mojo + runtime reference*. `reference/mojo-configuration.adoc` lists
   every Maven plugin parameter (legacy "General settings", "Validation",
   "Query generation", "Code references" plus the rewrite-mojo additions
@@ -439,6 +447,8 @@ Two parallel deliverables:
   follow-up can lift signatures from `graphitron-sakila-example`'s
   generated `Graphitron.java` via an AsciiDoc include.
   *Shipped at `868593a` (runtime-api) and `d796c4c` (mojo + verifier).*
+
+Phase 4 status: both halves shipped (mojo + runtime at `868593a` / `d796c4c`; explanation at `<TBD>`).
 
 ### Phase 5: Diagnostics glossary and deprecation index — shipped
 

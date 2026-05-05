@@ -1,0 +1,82 @@
+= Design decisions
+:description: Why specific directive constraints, validator rejections, and emitter shapes are where they are. The user-visible "why" answers behind rules that look surprising on first contact.
+:!toc:
+
+A reading path for the design decisions that show up as rules you have to follow but whose rationale isn't obvious from the rule itself. Each section names a constraint, explains the alternative we considered, and points at the directive or how-to page that surfaces the rule in practice.
+
+== `@condition` methods take a table
+
+xref:../reference/directives/condition.adoc[`@condition`] points at a Java method that returns a jOOQ `Condition`. The method's first parameter is the table the condition is being applied to (typically a generated `Table<R>` instance). New users sometimes ask: why does the framework need to pass the table in? Couldn't the condition method just refer to the generated `Tables.CUSTOMER` constant directly?
+
+Two reasons:
+
+* *Aliasing.* Graphitron's generated queries use jOOQ aliasing whenever the same table appears in multiple roles (a self-join, a filter on a joined table, a subquery in a `@lookupKey` derived table). A condition that hardcodes `Tables.CUSTOMER` would refer to the wrong instance when the surrounding query has aliased it; the table parameter carries the aliased reference into the condition's scope so the predicate composes correctly.
+* *Symmetry with `@reference` join methods.* When `@reference` accepts a method-returned `Condition` (the *condition-join* shape, as opposed to a foreign-key path), the same first-parameter convention applies. Keeping the two callable shapes identical means one signature works for both kinds of custom predicate.
+
+The cost is that every condition method has to accept the table parameter explicitly, even when it isn't aliased in the caller's query. The benefit is that condition methods compose cleanly into any surrounding query shape, including the batching shapes that didn't exist when the condition was authored.
+
+xref:../how-to/add-custom-conditions.adoc[How-to: Add custom conditions] is the recipe.
+
+== `@lookupKey` blocks pagination
+
+A field with xref:../reference/directives/lookupKey.adoc[`@lookupKey`] cannot also carry xref:../reference/directives/asConnection.adoc[`@asConnection`]. The validator rejects the combination at build time.
+
+The reason is the *N × M contract* that batching depends on. xref:batching-model.adoc[The batching model] explains the mechanics: each `(parent, lookup-value)` pair contributes a fixed number of rows to the batched query, and the runtime dispatches results back to parents using the row-count predictability. Pagination changes per-parent row counts non-uniformly: page 2 of customer A's results carries different rows than page 2 of customer B's, and the dispatch loses the positional anchor that lets it route rows to the right parent.
+
+You could, in principle, page each lookup value independently and join the page boundaries into the derived target table. We considered it and rejected it: the surface complexity (page cursors per lookup value, per-parent state in the loader, validation of cursor consistency across the batch) outweighed the use cases we found. The pragmatic alternative is to use xref:../reference/directives/splitQuery.adoc[`@splitQuery`] for paginated relations and reserve `@lookupKey` for the bounded-cardinality shapes (Relay `node(id:)`, Apollo Federation `_entities`, point lookups on natural keys).
+
+== Mutations require `@table` on the input type
+
+A mutation like `createFilm(input: FilmCreateInput!): Film` won't generate unless `FilmCreateInput` carries xref:../reference/directives/table.adoc[`@table`]. The output type does not transfer its table binding to the input.
+
+Two reasons input types can't reuse the output type's binding:
+
+* *Input shapes diverge.* The set of fields a client supplies on create is rarely the set the database stores: client supplies natural keys, generated keys arrive from sequences, audit columns are server-set, transient validation fields don't reach storage at all. Forcing the input to share the output's binding would conflate the two surfaces.
+* *Different binding rules apply.* On a `@table` output, `@field` is column-bound and selection-driven; on a `@table` input, `@field` declares "this column is written on every call" and the GraphQL nullability of the field is the contract for whether the column must be supplied. The generator's emit rules differ; without the directive on the input, the classifier can't pick the input-shape rules.
+
+The cost is one extra `@table` directive per input type. The benefit is that input and output evolve independently, and a mutation's wire shape is clear from its input definition without cross-referencing the output.
+
+xref:../how-to/index.adoc[The how-to index] points at xref:../reference/directives/mutation.adoc[`@mutation`] and the mutation recipes for the full input vocabulary.
+
+== Selection drives projection
+
+A query that asks for `customer { firstName }` produces `SELECT customer.first_name`, not `SELECT *`. Graphitron reads the GraphQL `SelectedField` set at execution time and projects only the columns the client asked for.
+
+This is selection-aware projection, and it is not just an optimisation: it is what makes adding columns to a `@table` type non-breaking for existing queries. The generator does not know at build time which columns each client will ask for; the runtime decides per request, and the database does the minimum work for that selection.
+
+The cost is that every column-bound field has to flow through the runtime selection check; you can't shortcut the projection with hand-rolled code that selects fixed columns. The benefit is that the GraphQL schema can grow without making every existing query slower.
+
+xref:how-it-works.adoc[How it works] mentions selection-aware projection as part of the request-time path.
+
+== Federation `_entities` is a `@lookupKey` shape
+
+Apollo Federation's xref:../reference/directives/node.adoc[`@key`] resolution and xref:../reference/directives/nodeId.adoc[`@nodeId`] global IDs both run through the same `@lookupKey`-shaped batched dispatch. xref:../how-to/apollo-federation.adoc[How-to: Apollo Federation] is the recipe.
+
+The reason is simple: at runtime, "find all `Customer` entities whose `id` is in this set" and "find one `Customer` per `id` argument" are the same query. Reusing the `@lookupKey` mechanics gave federation `_entities` and Relay `node(id:)` the same batching contract for free, including the N × M predictability that lets the dispatch reattach results to the right entities.
+
+The cost: the federation surface inherits `@lookupKey`'s no-pagination rule (federation `_entities` is one-shot per `id`, not paged). The benefit: one runtime path serves three shapes (Relay node, Federation entities, generic `@lookupKey` lookups), and the contract is the same across all three.
+
+== The validator's diagnostics surface is closed-set
+
+Every rejection the validator emits falls into a finite, enumerated taxonomy: three top-level *kinds*, nine *attempt kinds* for name lookups, four *emit-block reasons* for deferred features. xref:../reference/diagnostics-glossary.adoc[The diagnostics glossary] is the canonical reference.
+
+The closed-set shape exists so consumers can build typed handling on top of it. The LSP fix-it engine reads the *attempt kind* off an unknown-name rejection and offers candidates from the right namespace (a column miss prompts column candidates, not table candidates). The watch mode reports the same kind in its build-status surface. Tooling that wants to filter, group, or count diagnostics has stable categories to work against.
+
+The cost is that adding a new diagnostic shape requires extending the closed set, not just authoring a new rejection inline. The benefit is that the surface is small, documentable, and amenable to mechanical handling. The xref:classifier-mental-model.adoc[classifier mental model] page explains how rejections appear at the validation step; the diagnostics glossary catalogues the codes themselves.
+
+== Build-time wins over runtime introspection
+
+Graphitron does almost nothing at runtime that it could have done at build time. Directive parsing, table resolution, foreign-key path discovery, projection plan, batch keying: all of it is decided when the generator runs, baked into the emitted `*Fetchers.java`, and never re-derived per request.
+
+The architectural payoff is that runtime overhead is comparable to hand-written jOOQ code: a `DataFetcher` invocation, a `DSLContext.select(...)` call, a result mapping. The generator's complexity stays at build time where it can fail loudly and where it doesn't add per-request latency.
+
+The cost is that schema changes require a build. There is a `dev` Mojo goal (xref:../reference/mojo-configuration.adoc[Mojo configuration reference]) that watches the schema and the classpath and re-emits in the background; it closes the iteration loop so the build cost is paid asynchronously while you keep working.
+
+== See also
+
+* xref:how-it-works.adoc[How it works] for the wider pipeline framing.
+* xref:classifier-mental-model.adoc[Classifier mental model] for the category-based mental model the design decisions sit in.
+* xref:batching-model.adoc[The batching model] for the runtime contract design decisions reference.
+* xref:../../graphitron-principles.adoc[Graphitron principles] for the higher-level design philosophy.
+
+xref:index.adoc[← Explanation index]
