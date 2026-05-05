@@ -1,0 +1,195 @@
+= Maven plugin configuration
+:description: Every parameter of every goal on Graphitron's Maven plugin (graphitron-maven). Covers the three goals (generate, validate, dev), the four shared <configuration> parameters, the dev-only watch parameters, the two complex POM bindings (<schemaInput>, <namedReference>), and the CLI -D properties.
+:!toc:
+
+`graphitron-maven` exposes three Maven goals: `generate` (the build-time codegen pipeline), `validate` (a faster schema-only run that emits no Java), and `dev` (the editor-loop server). Each goal accepts the same handful of `<configuration>` parameters; `dev` adds three of its own. Two of the parameters (`<schemaInputs>` and `<namedReferences>`) are list-of-complex-objects with their own POM bindings.
+
+This page is the parameter-by-parameter reference. The xref:../tutorial/01-prerequisites.adoc[tutorial's first chapter] introduces the canonical `<configuration>` shape with one schema input and the two required packages; the directive reference under xref:directives/index.adoc[`reference/directives`] covers what each schema input declares.
+
+== Goals
+
+[cols="1,1,2,2",options="header"]
+|===
+| Goal | Default phase | Purpose | Required parameters
+
+| `generate`
+| `generate-sources`
+| Run the rewrite pipeline (load → attribute → classify → validate → emit) and write Java sources under `<outputDirectory>`. Adds `<outputDirectory>` as a compile source root so the consumer's `compile` phase picks the generated code up automatically.
+| `<outputPackage>`, `<jooqPackage>`
+
+| `validate`
+| `validate`
+| Run load → attribute → classify → validate only. No Java is emitted; the pipeline stops after validation. Useful as a CI gate when you want a schema check without paying for the full code generation.
+| (none; both packages are optional, a sentinel is substituted)
+
+| `dev`
+| (none; CLI-only)
+| Run the LSP server on `127.0.0.1:8487` and watch `<schemaInputs>` for `.graphqls` writes plus the consumer's compiled jOOQ output for `.class` changes. Re-runs the generator on every save (debounced) and rebuilds the in-process catalog atomically. Stop with Ctrl+C.
+| `<outputPackage>`, `<jooqPackage>`
+|===
+
+The plugin coordinates are `no.sikt:graphitron-maven`; bind a goal to a `<execution>` block under the rewrite plugin's `<executions>` to wire it into the standard Maven lifecycle, or invoke from the command line with `mvn graphitron:<goal>`.
+
+== Shared parameters
+
+The following parameters apply to every goal:
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+
+| `outputDirectory`
+| `String` (path)
+| `${project.build.directory}/generated-sources/graphitron`
+| Directory the `generate` goal writes Java sources into. Resolved against the project basedir if relative. The `generate` goal also adds this directory as a compile source root so the consumer's `compile` phase picks up the generated code; `validate` and `dev` honour the parameter for their own context-construction but do not add the source root.
+
+| `outputPackage`
+| `String` (Java package)
+| (none)
+| Root Java package the generator writes under. Required for `generate` and `dev`; optional for `validate` (a sentinel package is substituted because the validate goal never emits code). The `Graphitron` facade lands at `<outputPackage>.Graphitron` and `GraphitronContext` at `<outputPackage>.schema.GraphitronContext`.
+
+| `jooqPackage`
+| `String` (Java package)
+| (none)
+| Root Java package of the consumer's jOOQ-generated catalog (the `Tables` / `Keys` / `Routines` classes). Required for `generate` and `dev`; optional for `validate`. The classifier resolves every `@table` and `@field` against the catalog rooted at this package.
+
+| `schemaInputs`
+| `List<SchemaInputBinding>`
+| empty
+| List of `<schemaInput>` entries pointing at `.graphqls` files (or globs that expand to `.graphqls` files) the loader assembles into one schema. Order matters when two files declare the same type with overlapping fields; later entries win. See xref:#schemainput-binding[`<schemaInput>` binding] for the per-entry shape.
+
+| `namedReferences`
+| `List<NamedReferenceBinding>`
+| empty
+| Reusable `name` → `className` mappings the SDL refers to via `ExternalCodeReference.name:` instead of repeating a fully qualified class name at every directive site. Each entry carries `<name>` and `<className>` children. Empty by default; populated only when the same external class is referenced from many places.
+|===
+
+== `dev`-goal parameters
+
+Three watch-loop knobs unique to the `dev` goal, each driven from a CLI property:
+
+[cols="1,1,1,1,3",options="header"]
+|===
+| Name | Type | Default | CLI property | Description
+
+| `port`
+| `int`
+| `8487`
+| `graphitron.dev.port`
+| TCP port the LSP server binds on `127.0.0.1`. The plugin fails fast with a clear message when the port is in use, naming the override property.
+
+| `debounceMs`
+| `long`
+| `300`
+| `graphitron.dev.debounceMs`
+| Debounce window for both the schema watcher and the classpath watcher. Multiple `.graphqls` writes inside the window collapse into one regenerate; the same applies to `.class` changes for the catalog rebuild. Lower for snappier response, higher for noisy editors.
+
+| `skipInitial`
+| `boolean`
+| `false`
+| `graphitron.dev.skipInitial`
+| Skip the initial generator pass at startup. Useful when the consumer has just run `mvn graphitron:generate` and the generated sources are already on disk; the dev loop still re-runs on every subsequent save.
+|===
+
+The CLI properties take precedence over `<configuration>` values, so `mvn graphitron:dev -Dgraphitron.dev.port=9090` works without editing the POM.
+
+[#schemainput-binding]
+== `<schemaInput>` binding
+
+Each `<schemaInput>` carries three optional children. The `pattern` is the only one most consumers need:
+
+[cols="1,1,3",options="header"]
+|===
+| Child | Type | Description
+
+| `pattern`
+| `String` (Ant-style glob)
+| Path or Ant glob relative to the project basedir, expanding to one or more `.graphqls` files. A literal path matches one file; a glob like `src/main/resources/graphql/**/*.graphqls` matches every schema file under the directory. Both shapes fan into the same loader.
+
+| `tag`
+| `String`
+| Optional tag applied to every type, field, argument, and enum value defined in matched files. Emitted as a `@tag(name: "...")` directive on each element. The plugin treats this as an implicit Federation 2 opt-in: when set without an `@link` in the SDL, the plugin synthesises one with `import: ["@tag"]`; when set with an `@link` whose import list omits `"@tag"`, the build fails with a fatal error pointing at the `@link`. xref:../how-to/apollo-federation.adoc[How-to: Apollo Federation transport] covers the federation interaction.
+
+| `descriptionNote`
+| `String`
+| Optional sentence appended to every element's description. Useful for marking a subgraph's elements with a provenance hint (e.g. `"From the orders subgraph"`) without editing the SDL by hand.
+|===
+
+The minimum useful entry is one `pattern`:
+
+[source,xml]
+----
+<schemaInputs>
+    <schemaInput>
+        <pattern>src/main/resources/graphql/schema.graphqls</pattern>
+    </schemaInput>
+</schemaInputs>
+----
+
+== `<namedReference>` binding
+
+Each `<namedReference>` carries two required children:
+
+[cols="1,1,3",options="header"]
+|===
+| Child | Type | Description
+
+| `name`
+| `String`
+| Lookup key the SDL uses to refer to this reference. Matched against the `name:` argument of `ExternalCodeReference`-bearing directives (see xref:directives/condition.adoc[`@condition`], xref:directives/externalField.adoc[`@externalField`], xref:directives/service.adoc[`@service`], xref:directives/tableMethod.adoc[`@tableMethod`]). Names live in a flat namespace; collisions are an author error.
+
+| `className`
+| `String` (FQCN)
+| Fully qualified Java class name the reference resolves to. The classifier checks this against the consumer module's classpath and fails the build with the offending name if the class can't be resolved.
+|===
+
+`<namedReferences>` is empty by default; consumers populate it when the same external class is referenced from many places and the FQCN repetition becomes painful. The directive-site form (without `name:`) takes a literal `className`, so this binding is purely an indirection and never adds new capability.
+
+== `validate`-goal sentinel
+
+The `validate` goal exists so consumers can run `mvn graphitron:validate` from the command line without editing their POM's `<execution>` block to thread `<outputPackage>` / `<jooqPackage>`. The mojo substitutes an inert sentinel (`validation.unused`) for both packages when they are not configured, so the classifier stage still type-checks against `RewriteContext`'s non-null contract. The sentinel never reaches generated code; the validate pipeline emits nothing.
+
+If the parameters *are* configured (e.g. when `validate` is bound to the `validate` lifecycle phase alongside a `generate` execution), the configured values flow through normally; the sentinel only activates when the parameters are absent.
+
+== Putting it together
+
+The canonical generate-and-deploy `<execution>` against the example schema:
+
+[source,xml]
+----
+<plugin>
+    <groupId>no.sikt</groupId>
+    <artifactId>graphitron-maven</artifactId>
+    <version>${graphitron.version}</version>
+    <executions>
+        <execution>
+            <id>rewrite-generate</id>
+            <goals><goal>generate</goal></goals>
+            <configuration>
+                <schemaInputs>
+                    <schemaInput>
+                        <pattern>src/main/resources/graphql/schema.graphqls</pattern>
+                    </schemaInput>
+                </schemaInputs>
+                <jooqPackage>com.example.jooq</jooqPackage>
+                <outputPackage>com.example.generated</outputPackage>
+            </configuration>
+        </execution>
+    </executions>
+</plugin>
+----
+
+For the dev loop add a second execution bound to no phase, or invoke `mvn graphitron:dev` directly. `graphitron-sakila-example`'s pre-wired POM (`graphitron-rewrite/graphitron-sakila-example/pom.xml`) is the canonical worked example.
+
+== Drift protection
+
+A bidirectional coverage test (`MojoDocCoverageTest` in `graphitron-maven`) asserts every `@Parameter`-annotated field on `AbstractRewriteMojo`, `GenerateMojo`, `ValidateMojo`, and `DevMojo` has a row in this page's parameter tables, and every parameter row corresponds to an annotated field on one of those Mojos. A new `@Parameter` field cannot land green without a doc row; a removed field forces the row's removal.
+
+== See also
+
+* xref:runtime-api.adoc[Runtime API reference] covers the `Graphitron` facade and `GraphitronContext` interface this plugin's `generate` goal emits into the consumer module.
+* xref:directives/index.adoc[Directive reference] covers the SDL surface every `<schemaInput>` parses against; `<namedReference>` entries match `ExternalCodeReference.name:` on the four directives that take external Java code.
+* xref:../tutorial/01-prerequisites.adoc[Tutorial page 1: Prerequisites] is the first place a consumer meets the plugin and the example consumer's pre-wired POM.
+* xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime] covers the dev loop's broader runtime framing (the LSP, the schema watcher, the classpath watcher) the `dev` goal is the operational extract of.
+
+xref:index.adoc[← Reference index]
