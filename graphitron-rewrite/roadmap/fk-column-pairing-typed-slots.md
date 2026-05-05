@@ -1,7 +1,7 @@
 ---
 id: R82
 title: "FK column pairing: typed slots over parallel ordered lists"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 4
 theme: model-cleanup
