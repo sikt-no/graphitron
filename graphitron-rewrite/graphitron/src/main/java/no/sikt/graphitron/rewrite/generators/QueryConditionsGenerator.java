@@ -13,7 +13,9 @@ import no.sikt.graphitron.rewrite.model.WhereFilter;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.CONDITION;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
@@ -79,6 +81,32 @@ public class QueryConditionsGenerator {
         return fieldName + "Condition";
     }
 
+    /**
+     * Returns the per-method outer-arg lift map: {@code outerArgName → localName} for each
+     * {@link CallSiteExtraction.NestedInputField#outerArgName()} referenced by ≥2 callParams
+     * across all of the method's filters. The local name is
+     * {@code <camelCaseOuterArg>Map}; the suffix prevents collision with JooqConvert lifts
+     * ({@code <name>Keys}) and with method parameters ({@code table}, {@code env}). Returns an
+     * insertion-ordered map so the emitted local declarations follow first-occurrence order.
+     */
+    static Map<String, String> computeLiftedOuters(List<WhereFilter> filters) {
+        var counts = new LinkedHashMap<String, Integer>();
+        for (var filter : filters) {
+            for (var param : filter.callParams()) {
+                if (param.extraction() instanceof CallSiteExtraction.NestedInputField nif) {
+                    counts.merge(nif.outerArgName(), 1, Integer::sum);
+                }
+            }
+        }
+        var lifted = new LinkedHashMap<String, String>();
+        for (var e : counts.entrySet()) {
+            if (e.getValue() >= 2) {
+                lifted.put(e.getKey(), toCamelCase(e.getKey()) + "Map");
+            }
+        }
+        return lifted;
+    }
+
     private static MethodSpec buildConditionMethod(
             String fieldName,
             ReturnTypeRef.TableBoundReturnType returnType,
@@ -106,6 +134,16 @@ public class QueryConditionsGenerator {
             }
         }
 
+        // Lift any NestedInputField outer arg referenced ≥2 times across all filters into a single
+        // typed Map<?, ?> local; per-arg expressions then start from that local instead of
+        // re-binding `_m1` per call. Lift naming is `<camelCaseOuterArg>Map` to avoid colliding
+        // with method parameters (`table`, `env`) or with JooqConvert lifts (`<name>Keys`).
+        var liftedOuters = computeLiftedOuters(filters);
+        for (var entry : liftedOuters.entrySet()) {
+            builder.addStatement("$T<?, ?> $L = env.getArgument($S) instanceof $T<?, ?> _m ? _m : null",
+                Map.class, entry.getValue(), entry.getKey(), Map.class);
+        }
+
         // Reduce the noCondition()-and chain when there's nothing to compose. Zero filters land
         // as `return DSL.noCondition()`; one filter folds to a direct return; two or more keep
         // the seeded chain.
@@ -122,13 +160,13 @@ public class QueryConditionsGenerator {
             builder.addStatement("return $T.noCondition()", DSL);
         } else if (filters.size() == 1) {
             var only = filters.get(0);
-            var callArgs = ArgCallEmitter.buildCallArgs(ctx, only.callParams(), only.className(), "table", registry);
+            var callArgs = ArgCallEmitter.buildCallArgs(ctx, only.callParams(), only.className(), "table", registry, liftedOuters);
             builder.addStatement("return $T.$L($L)",
                 ClassName.bestGuess(only.className()), only.methodName(), callArgs);
         } else {
             builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
             for (var filter : filters) {
-                var callArgs = ArgCallEmitter.buildCallArgs(ctx, filter.callParams(), filter.className(), "table", registry);
+                var callArgs = ArgCallEmitter.buildCallArgs(ctx, filter.callParams(), filter.className(), "table", registry, liftedOuters);
                 builder.addStatement("condition = condition.and($T.$L($L))",
                     ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
             }
