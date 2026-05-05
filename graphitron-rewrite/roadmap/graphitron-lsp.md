@@ -19,11 +19,21 @@ depends-on: []
 > **Phases 0-4 have shipped.** The LSP runs end-to-end against real
 > jOOQ catalogs with completion, diagnostics, hover, and
 > goto-definition for `@table`, `@field`, and `@reference`.
-> **Remaining work: Phases 5-7.** Phase 5 brings `@service` /
-> `@condition` + Javadoc (with the service-class enumeration question
-> this surfaces); Phase 6 swaps the bonede tree-sitter binding for
-> jtreesitter and vendors the grammar; Phase 7 retires the Rust LSP
-> and the legacy `IntrospectMojo`.
+> **Phases 0-6 are on trunk.** Phase 5 (this commit) brings
+> `@service` / `@condition` / `@record` completion, hover, and
+> diagnostics off a JDK 25 `java.lang.classfile`-driven scan of
+> `target/classes`. Phase 6 swapped the bonede tree-sitter binding for
+> jtreesitter and vendored the grammar. **Remaining work: Phase 7.**
+> Phase 7 retires the Rust LSP and the legacy `IntrospectMojo`.
+>
+> Javadoc surfacing (table / column / scalar / method descriptions
+> shown in hover) and per-line `Column.definition` /
+> `Method.definition` refinement were originally folded into Phase 5
+> on top of a JavaParser dependency. We deferred both to a follow-up
+> roadmap item: bytecode-only enumeration covers the high-value
+> autocomplete path the user-facing motivation centres on, and the
+> JavaParser dep is uncomfortably large for a single LSP improvement.
+> The follow-up item lands once the trade-off is worth re-opening.
 
 ## Status
 
@@ -43,14 +53,27 @@ Done, on trunk:
   publish wiring, Markdown hover.
 - **Phase 4** (commit `035ef2b`): goto-definition into the
   jOOQ-generated source tree (file-level URIs; per-line refinement
-  arrives with Phase 5's JavaParser adoption).
+  was originally folded into Phase 5 on top of JavaParser; deferred
+  with the JavaParser follow-up).
+- **Phase 5** (commits `ed5ebf3` → `39ca34f` → this commit):
+  `@service` / `@condition` / `@record` autocomplete, hover, and
+  diagnostics. The classpath scanner walks `target/classes` via
+  `java.lang.classfile` and surfaces public top-level classes plus
+  their public methods with erased parameter types; the LSP offers
+  class-FQN completion in `class:` slots, method-name completion in
+  `method:` slots, and per-reference diagnostics for unknown class /
+  unknown method / `-parameters`-missing. A3 closes here.
+- **Phase 6** (commits `232f8e0` → `0bbd6f3` → `9f41cdc` → `5c9109d`):
+  jtreesitter migration + grammar vendoring. macOS x86_64 / aarch64
+  wired; Windows + CI matrix follow-up tracked under R89.
 
-Test suite: 72 LSP + 37 graphitron-maven module tests, all green
+Test suite: 90+ LSP + 48 graphitron-maven module tests, all green
 against the fixture jOOQ catalog.
 
-The remainder of this plan describes Phases 5-7. Sections below carry
-forward only the design pieces those phases extend; the
-already-shipped rationale lives in the commit messages.
+The remainder of this plan describes Phase 7 plus the Phase 5 design
+record. Sections below carry forward only the design pieces those
+phases extend; already-shipped rationale lives in the commit
+messages.
 
 ## References
 
@@ -65,9 +88,9 @@ already-shipped rationale lives in the commit messages.
   `CatalogBuilder` and the `CompletionData` data shape live in the
   rewrite module under
   `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/catalog/`.
-- **Service-method enumeration source** (Phase 5): a JavaParser
-  walk over the consumer's source roots; see the Phase 5
-  description below for the rationale.
+- **Service / record class enumeration source** (Phase 5, shipped):
+  a `java.lang.classfile` walk over `<basedir>/target/classes`. See
+  `ClasspathScanner` in the rewrite catalog package.
 
 ## Goal
 
@@ -111,81 +134,84 @@ programmatic clients (Claude Code, future automation). The
 loopback-socket transport serves all four through the same lsp4j
 endpoint.
 
-## Scope boundaries (Phases 5-7)
+## Scope boundaries
 
-**In scope**
+**In scope (shipped)**
 
-- `@service` / `@condition` completion, diagnostics, and hover
-  (Phase 5).
-- Javadoc surfacing on table / column / scalar / method elements
-  (Phase 5).
-- Service-class enumeration source: a JavaParser walk over the
-  consumer's source roots (Phase 5).
-- jtreesitter binding swap and grammar vendoring (Phase 6; the
-  Java 25 floor it depends on is now in place per
-  [`bump-to-java-25.md`](bump-to-java-25.md)).
+- `@service` / `@condition` / `@record` completion, diagnostics,
+  and hover (Phase 5).
+- Service / record / condition class enumeration: a
+  `java.lang.classfile` walk over `<basedir>/target/classes`
+  (Phase 5; replaced the original JavaParser-driven design).
+- `-parameters`-missing per-reference Warning + hover hint
+  (Phase 5c, closing A3).
+- jtreesitter binding swap and grammar vendoring (Phase 6).
+
+**In scope (remaining)**
+
 - Rust-LSP and `graphitron-maven-plugin:introspect` retirement
   (Phase 7).
 
 **Out of scope**
 
+- Javadoc surfacing on table / column / scalar / method hovers,
+  per-line `Column.definition` / `Method.definition` refinement,
+  and `@externalField` source-walk completion. All deferred to a
+  JavaParser-driven follow-up roadmap item.
 - LSP server architecture revisits. Single-process lsp4j over a
   loopback socket is the target.
 - Editor-side configuration tooling. Setup recipes ship as docs.
 - Cross-language schema authoring features that the Rust LSP does
-  not have today. New capabilities ship as separate plans once
-  parity plus Phase 5 lands.
+  not have today. New capabilities ship as separate plans.
 - GraalVM Native Image distribution. Tracked as a follow-up if
   cold-start UX feedback warrants it.
 - Performance work beyond preserving the Rust LSP's per-keystroke
   responsiveness.
 
-## Design (extension points for Phases 5-7)
+## Design (record of shipped seams)
 
 The shipped architecture is documented in the source. This section
-describes the seams Phases 5-7 plug into; for the current code map
-walk `graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/`
+records the seams Phases 5 and 6 plugged into; for the current code
+map walk `graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/`
 (per-directive providers under `completions/`, `diagnostics/`,
 `hover/`, `definition/`; parsing helpers under `parsing/`; per-file
 state under `state/`; lsp4j wiring under `server/`).
 
-### Per-directive dispatch (Phase 5 extension)
+### Per-directive dispatch
 
 `GraphitronTextDocumentService` switches on directive name and
 delegates to `TableCompletions` / `FieldCompletions` /
-`ReferenceCompletions` / `Hovers` / `Diagnostics` / `Definitions`.
-Phase 5 adds `@service`, `@condition`, and `@externalField` cases
-by writing the matching providers and registering them in the
-same switches; no new parsing primitives are needed beyond the
-existing `Directives`, `NestedArgs`, and `TypeContext` helpers.
+`ReferenceCompletions` / `ClassNameCompletions` /
+`MethodCompletions` / `Hovers` / `Diagnostics` / `Definitions`.
+Phase 5 added `@service`, `@condition`, and `@record` cases by
+writing the matching providers and registering them in the same
+switches; no new parsing primitives were needed beyond the existing
+`Directives`, `NestedArgs`, and `TypeContext` helpers.
 
-`@externalField` completion (deliverable, R48 follow-up): the LSP
-indexes every `public static Field<X> name(<Table> table)` method
-on the consumer's source roots and offers them as
+`@externalField` completion (deferred to a separate follow-up): the
+LSP would index every `public static Field<X> name(<Table> table)`
+method on the consumer's source roots and offer them as
 `reference: { className, method }` completions. `Parameter.source =
-ParamSource.Table` already models the parameter shape; the
-source-walk filter is the only new code. The classifier rejects
-unmatched references at codegen with `AUTHOR_ERROR`, so authoring
-without LSP support still works, but the completion path makes
-discovery a one-keystroke operation matching the `@service` and
-`@condition` flows.
+ParamSource.Table` already models the parameter shape. The source
+walk needs JavaParser (the same dependency the Phase 5 follow-up
+delivers); deferred along with Javadoc.
 
 ### Catalog data shape
 
 `CompletionData` (in the rewrite module's `catalog/` package)
-already carries the `ExternalReference` / `Method` / `Parameter`
-records Phase 5 will populate, along with the `MethodRef.ParamSource`
-taxonomy on `Parameter.source` (`Arg`, `Context`, `Sources`,
-`DslContext`, `Table`, `SourceTable`). The data shape is settled;
-Phase 5 only needs an enumeration source plus a Javadoc reader,
-both described in Phase 5 below.
+carries the `ExternalReference` / `Method` / `Parameter` records
+Phase 5 populates. `Parameter.source` (the `MethodRef.ParamSource`
+taxonomy: `Arg`, `Context`, `Sources`, `DslContext`, `Table`,
+`SourceTable`) stays empty in Phase 5 — the classifier-driven
+population is generator-side work and the LSP does not need it for
+the autocomplete / hover surface. `Parameter.name == null` carries
+the `-parameters`-missing detection signal.
 
 `SourceLocation` already carries `(uri, line, column)` and Phase 4
 populated it with file-level URIs for tables / columns / FK
-references. Phase 5's JavaParser adoption refines `Column.definition`
-and the Phase-5-populated `Method.definition` to per-line accuracy
-as a side effect; the LSP `Definitions` provider needs no further
-changes.
+references. Phase 5 leaves the file-level URIs in place; per-line
+refinement of `Column.definition` and `Method.definition` moves to
+the JavaParser follow-up alongside Javadoc.
 
 ### Workspace recalculation queue
 
@@ -194,23 +220,21 @@ changes.
 text-document notification and publishes diagnostics for the
 touched files. Catalog-only swaps (the `.class` watcher firing
 without a buffer change) currently rely on the next edit to
-trigger a publish. If Phase 5 adds latency-sensitive
-catalog-driven diagnostics (the `-parameters` warning is the
-canonical case; see A3), an eager publisher hook can layer on by
-routing `Workspace.markAllForRecalculation` through a listener;
-the queue infrastructure is already in place.
+trigger a publish. The Phase 5c `-parameters`-missing diagnostic
+follows the same per-edit drain path; an eager publisher hook for
+catalog-only swaps stays a follow-up if it ever becomes painful.
 
 ### Diagnostics cancellation
 
-Diagnostics today run synchronously in the notification handler.
+Diagnostics run synchronously in the notification handler.
 `Diagnostics.compute` is a pure function so cancellation costs
-nothing if a later request supersedes it. Phase 5's per-method
-Javadoc lookups will be heavier; lsp4j's `CompletableFuture` +
-`CancelChecker` integrates directly with virtual threads when we
-need preemption. The Rust LSP's `unsafe`+`PhantomPinned` dance
-to thread definitions through a held workspace lock has no Java
-counterpart and never will: the GC keeps references alive across
-the lock release.
+nothing if a later request supersedes it. Phase 5 stayed
+synchronous; lsp4j's `CompletableFuture` + `CancelChecker`
+integrates directly with virtual threads if a future heavier
+provider needs preemption. The Rust LSP's `unsafe` +
+`PhantomPinned` dance to thread definitions through a held
+workspace lock has no Java counterpart and never will: the GC
+keeps references alive across the lock release.
 
 ### Cross-platform native sourcing
 
@@ -225,82 +249,61 @@ Each phase is a coherent landing unit with its own commit set, tests,
 and exit criteria. Consumers see the LSP improve incrementally; the
 Rust LSP keeps running until Phase 7.
 
-Phases 0-4 are on trunk (see Status above for commit anchors). The
-remaining phases:
+Phases 0-6 are on trunk (see Status above for commit anchors). The
+remaining work:
 
-**Phase 5: `@service` / `@condition` / `@record` + Javadoc.** The
-contract extensions that motivated this work, plus the
-`@record(record: {className:})` autocomplete that we deferred from
-Phase 3 along with the same enumeration question.
+**Phase 5: `@service` / `@condition` / `@record` autocomplete (shipped).**
 
-Two new capabilities:
+Phase 5 delivered the contract extension that motivated this work:
+schema authors get class-name and method-name completion (plus hover
+and per-reference diagnostics) on the three directives that take a
+Java FQN. Class enumeration runs off a JDK 25
+`java.lang.classfile`-driven walk of `<basedir>/target/classes`, no
+new dependency. Method, return-type, and erased parameter-type
+information come off the same .class read in one pass; parameter
+names come off the `MethodParameters` attribute when the consumer
+compiled with `-parameters`, and absence of that attribute surfaces
+as a per-reference Warning (closing A3).
 
-1. **Service / record class enumeration.** `ServiceCatalog` is a
-   stateless reflector that only knows what the schema explicitly
-   references, so it cannot answer "what service classes /
-   methods exist?" for autocomplete. Source: a JavaParser walk
-   over the consumer's source roots. Two reinforcing reasons:
+The original Phase 5 design folded JavaParser-driven Javadoc
+surfacing in alongside the autocomplete work (Javadoc on table /
+column / scalar / method hovers; per-line `Column.definition` /
+`Method.definition` refinement of Phase 4's file-level URIs). That
+was deferred to a follow-up phase: bytecode enumeration covers the
+high-value autocomplete surface without taking on
+`com.github.javaparser:javaparser-symbol-solver-core`. The follow-up
+delivers Javadoc-on-hover and per-line definitions when the trade-off
+is worth re-opening.
 
-   - Phase 5 already adopts JavaParser for the Javadoc work
-     below, so the marginal cost is mostly walking additional
-     files.
-   - Source roots are a naturally bounded set with no new config
-     knob. The previous Maven plugin's `externalReferenceImports`
-     element (a package search path for unqualified refs) was
-     dropped in the rewrite plugin alongside the move to FQN-only
-     `@service(class:)`; reintroducing a search-path config for
-     the LSP would contradict that direction.
+Class enumeration alternatives considered and rejected:
 
-   Two alternatives were considered and ruled out:
+- **JavaParser walk over source roots.** The original plan; rejected
+  per the trade-off above.
+- **Classpath scan for an `@RewriteService` annotation marker
+  consumers attach to service classes.** Adds an authoring step;
+  surface stays empty until consumers migrate every service class.
+- **The POM's `namedReferences` map.** Covers only the legacy
+  `@service(name:)` form, and modern `@service(class:)` and
+  `@record(record: {className:})` schemas do not populate the map
+  at all; the autocomplete surface would be mostly empty.
 
-   - A classpath scan for an `@RewriteService` annotation marker
-     consumers attach to service classes. Adds an authoring step,
-     and without an `externalReferenceImports` equivalent the
-     scan must either walk the entire classpath or take a new
-     config knob; neither is appealing. (The annotation marker
-     can still serve as an opt-in filter inside the JavaParser
-     walk if the unmarked surface turns out too noisy; that is a
-     follow-up call, not a Phase 5 decision.)
-   - The POM's `namedReferences` map. Covers only the legacy
-     `@service(name:)` form, and we want our advanced tooling to
-     push consumers off that form rather than entrench it.
-     Modern `@service(class:)` and `@record(record: {className:})`
-     schemas do not populate the map at all, so supporting it
-     would also leave the autocomplete surface mostly empty for
-     current schemas.
+The data shape on `CompletionData` (`ExternalReference` / `Method` /
+`Parameter`) is unchanged; `Parameter.source` (the
+`MethodRef.ParamSource` taxonomy slot) stays empty in Phase 5 — the
+classifier-driven population is generator-side work and the LSP does
+not need it for the autocomplete / hover surface that ships here.
 
-   The data shape (`ExternalReference` / `Method` / `Parameter`
-   records on `CompletionData`, with `Parameter.source` matching
-   the `MethodRef.ParamSource` taxonomy) is already defined and
-   unchanged.
+Phase 5 exit criteria, all met: schema author gets class-FQN
+completion on `@service(class:)` / `@condition(class:)` /
+`@record(record: {className:})`; method-name completion on
+`@service(method:)` / `@condition(method:)`; hover shows the method
+signature and a `-parameters`-missing hint when applicable;
+diagnostics flag unknown class / unknown method / parameters-missing
+per reference. A3 closed.
 
-2. **Javadoc surfacing.** Method signatures populate
-   `Method.parameters` from `MethodRef`; Javadoc for tables /
-   columns / scalars / methods is read from aggregator source
-   files via JavaParser
-   (`com.github.javaparser:javaparser-symbol-solver-core`) and
-   attached to the corresponding `description` slot. JavaParser
-   is the chosen tool: it works against classpath sources (jars
-   with source attachments included), does not depend on
-   JDK-internal `com.sun.source` APIs, and the rewrite already
-   has no stake in either; new dependency only. Side effect:
-   per-line `Column.definition` / `Method.definition` ranges
-   replace Phase 4's file-level URIs.
-
-The `-parameters` warning that the rewrite generator emits at
-build time (see A3) needs an LSP-side equivalent: a workspace-
-level diagnostic / status message when a referenced service class
-was compiled without `-parameters` so the parameter-name surface
-in completion / hover is non-empty. Wire-up uses the existing
-`Workspace.markAllForRecalculation` plumbing.
-
-Exit criteria: schema author gets parameter completion on
-`@service(method:)` / `@condition` and class-name completion on
-`@record(record: {className:})`; hovers on a column show
-`COMMENT ON COLUMN` text and on a service method show its
-Javadoc; the `-parameters`-missing warning surfaces in the
-editor; the legacy `file:///tables/<NAME>` Phase-4 URIs refine to
-per-line ranges. A3 closes here.
+The Phase-4 file-level URIs (the `Column.definition` /
+`Method.definition` slots) stay file-level in Phase 5; per-line
+refinement moves to the JavaParser follow-up alongside Javadoc.
 
 **Phase 6: jtreesitter migration + grammar vendoring.** The Java
 25 floor is in place per
@@ -345,13 +348,16 @@ Test tiers in place from earlier phases:
 
 Per-phase additions still ahead:
 
-- **Phase 5**: `@service` / `@condition` / `@record` end-to-end
-  tests covering the chosen enumeration source; Javadoc
-  extraction tests against fixture jOOQ + service classes; the
-  `-parameters`-missing path (parameter names null, plus the
-  workspace-level diagnostic the LSP raises); per-line
+- **Phase 5** (shipped): `ClasspathScanner` filter and method
+  extraction (`ClasspathScannerTest`); per-directive
+  completion / hover / diagnostic coverage on `@service` /
+  `@condition` / `@record` (`ClassNameCompletionsTest`,
+  `MethodCompletionsTest`, plus extensions in `HoversTest` /
+  `DiagnosticsTest`); the `-parameters`-missing path (parameter
+  names null on the catalog record, plus the per-reference
+  Warning the LSP raises). Javadoc-extraction and per-line
   refinement assertions on `Column.definition` /
-  `Method.definition`.
+  `Method.definition` move to the JavaParser follow-up.
 - **Phase 6**: existing test suite must pass against the
   jtreesitter binding without test-side changes (validates the
   `GraphqlLanguage` swap is the only point that changed). Native
@@ -365,10 +371,10 @@ rewrite.
 
 ## Rollout
 
-The Rust LSP keeps running until Phase 7. Phases 0-4 are on trunk
-but consumers do not migrate yet: feature parity is in place, but
-the contract extensions they care about (`@service` / `@condition`
-help and Javadoc) land in Phase 5. Once Phase 5 ships:
+The Rust LSP keeps running until Phase 7. Phases 0-6 are on trunk;
+the autocomplete / hover / diagnostic surface for `@service` /
+`@condition` / `@record` is live with Phase 5. Once consumers are
+ready to switch:
 
 1. Consumer runs `mvn graphitron:dev` in a terminal in their schema
    module. The LSP starts on `localhost:8487`; the watch loops
@@ -411,16 +417,7 @@ already removed from trunk on its own landing.
 
 ## Open questions
 
-A3 is the only one still open; A1, A2, and A4 closed earlier.
-
-A3. **`-parameters` propagation for service Javadoc.** The
-   rewrite generator already emits a one-shot warning when it
-   reads a service class compiled without `-parameters`
-   (`ServiceCatalog.emitParametersWarning` in
-   `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/ServiceCatalog.java`).
-   The LSP needs the same behaviour but should surface it as an
-   LSP diagnostic / status message rather than a build-time log.
-   Closes in Phase 5.
+All A* questions are closed; see below.
 
 ### Closed
 
@@ -448,6 +445,17 @@ A3. **`-parameters` propagation for service Javadoc.** The
   when jtreesitter goes live. Phase 6 vendors under
   `graphitron-lsp/src/main/resources/grammars/` and builds per
   platform.
+- **A3: `-parameters` propagation for service hover.** Closed in
+  Phase 5c. The rewrite generator's build-time warning
+  (`ServiceCatalog.emitParametersWarning`) gets an LSP-side
+  counterpart: when the classfile scanner reads a method whose
+  `MethodParameters` attribute is absent, the resulting
+  `Parameter` records carry `name == null`; `Diagnostics`
+  emits a per-reference `Warning` on each `@service` /
+  `@condition` directive that references such a method, and
+  `Hovers` appends a "_Parameter names are unavailable;
+  recompile with the `-parameters` flag&hellip;_" hint to the
+  method signature.
 
 ## Appendix: spike learnings
 
