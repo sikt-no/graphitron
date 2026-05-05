@@ -130,42 +130,46 @@ R59 sharpened `ServiceCatalog`'s parameter-mismatch messages with concrete `argM
 - Methods / runtime transforms (Apollo's `->first`, `->match`, etc.).
 - Renaming or stabilising the directive surface.
 
-## Implementation findings (mid-flight, requesting a second opinion)
+## Implementation progress
 
-Phase A landed at trunk (b3f85cd) and consists of:
+Phases A through D have shipped to trunk; D-list, E, and F remain. Each phase preserves R53 wire-compat for non-dotted inputs.
 
-- `PathExpr` sealed carrier with `Head` / `Step` arms (`be6b8f7`).
-- `ArgBindingMap.byJavaName` retyped from `Map<String, String>` to `Map<String, PathExpr>` (`b3f85cd`). Single-segment Heads only, behaviour-equivalent to R53. Full graphitron unit suite (1320 tests) green.
+| Phase | Scope | Trunk SHA |
+|-------|-------|-----------|
+| A | `PathExpr` sealed carrier (`Head` / `Step`); `ArgBindingMap.byJavaName` retyped to `Map<String, PathExpr>` (single-segment only) | `b3f85cd` |
+| B | `selection.parseEntries(raw)` lexer-driven entry point; `ArgBindingMap.parseArgMapping` returns `Map<String, List<String>>` segment chains | `d3653fd` |
+| C | `ArgBindingMap.of(slotTypes, segmentChains)` walks segment chains against the GraphQL schema, populates `PathExpr.Step.liftsList`; new `Result.PathRejected` arm; carrier types retyped to carry segments through `ExternalRef.argMapping` and `ConditionDirective.argMapping` | `0bfe949` |
+| D | `ParamSource.Arg` retyped to carry `PathExpr path`; multi-segment paths route through the existing `CallSiteExtraction.NestedInputField` machinery for null-safe Map traversal | `d5555f2` |
+| D-list | (deferred) intermediate-list traversal in emit (`Step.liftsList=true` segments). Today guarded by an `IllegalStateException` in `ArgCallEmitter.extractionForArg`; lifts when `buildMapChain` learns to emit `.stream().map(...)` for list intermediates | — |
+| E | Tests at four tiers (pipeline Relay-mutation, execution sakila fixture, unit extensions). Compilation tier fires automatically | — |
+| F | Error-message extension (floor + stretch) for path-expression hints in `ServiceCatalog` parameter-mismatch messages | — |
 
-While doing Phase A, four seam decisions emerged that the original spec leaves implicit and that the next reviewer should weigh in on:
+### Seam decisions taken (with the rationale that surfaced from the implementation)
 
-1. **Split `ArgBindingMap.of(...)` into parse-side and resolve-side.** Today's `of(Set<String> graphqlArgNames, Map<String, String> overrides)` only knows slot *names*, not slot *types*. To populate `Step.liftsList` and to reject "walk through scalar / enum / union / interface", the factory needs the GraphQL input type backing each slot. Two shapes available:
-   - **Single signature**, take `Map<String, GraphQLInputType> slotTypes` instead of `Set<String>`. Simpler call-site change, but conflates parse-time and schema-walk concerns in one factory.
-   - **Two layers**: `parseEntries(raw) → Map<String, List<String>>` (pure syntactic, still in `selection/`), then `ArgBindingMap.resolve(slotTypes, segments) → Result` (schema-aware, walks input types and decides `liftsList`). Cleaner separation; matches the spec's "one parser, two binders" framing for R69 reuse.
-   Recommendation: **two layers**. Then R69 reuses `parseEntries(...)` directly without inheriting any of R84's schema-walk logic.
+1. **Two-layer parser/resolver split.** `selection.parseEntries(raw)` does pure syntax (tokens → segment chains), `ArgBindingMap.of(slotTypes, segments)` does the schema walk and `liftsList` decision. R69 will consume `parseEntries(...)` directly without inheriting any of R84's schema-walk logic.
 
-2. **`ParamSource.Arg.graphqlArgName: String` is the runtime carrier that needs a shape change.** Three downstream emitters consume it (`ArgCallEmitter`, `TypeFetcherGenerator`, `EnumMappingResolver` for the `<FIELD>_<ARG>_MAP` field name). The spec doesn't pick a shape. Two options:
-   - Replace with `PathExpr path`. Emitters call `path.headName()` for the head (today's behaviour) and walk segments when present.
-   - Replace with a sealed `ArgExtraction { HeadOnly(String name) | PathWalk(PathExpr path) }`, which lets the no-path emit stay literally identical and isolates path-walking emit code in its own arm.
-   Recommendation: **`PathExpr path` directly.** The single-segment Head case is cheap to emit (the existing `env.getArgument(headName())` shape), and the sealed split would just bookkeep the same distinction the `PathExpr.isHead()` predicate already exposes. `EnumMappingResolver`'s `<FIELD>_<ARG>_MAP` key uses the head name; that survives unchanged.
+2. **`ParamSource.Arg.path: PathExpr`, not a sealed `ArgExtraction { HeadOnly | PathWalk }`.** A delegating `graphqlArgName()` convenience method preserves source-compatibility for every existing reader (`MethodRef`, `EnumMappingResolver`, `ConditionResolver`, `ArgCallEmitter`); the multi-segment branch happens once in `ArgCallEmitter.extractionForArg` and routes through `NestedInputField`.
 
-3. **Parsing of dotted RHS happens at parse time, not at resolve time.** Today's `parseArgMapping("kvotesporsmal: input.kvotesporsmalId")` lands as override `{kvotesporsmal -> "input.kvotesporsmalId"}`, and `ArgBindingMap.of` rejects `"input.kvotesporsmalId"` as an unknown slot via `UnknownArgRef`. So R84 must split the dotted RHS at parse time (head + tail segments) before the slot-name check fires; otherwise dotted overrides would dead-end at the existing typo guard. This isn't optional — it's load-bearing for the feature working at all.
+3. **Multi-segment paths route through existing `CallSiteExtraction.NestedInputField`** rather than introducing a parallel emit path. R55's nested-input-field machinery already handles null-safe Map traversal at every level; R84's job is to recognise when a `ParamSource.Arg.path` has multi-segment shape and wrap the existing extraction as the leaf. Free reuse of mature code; the only new thing R84 emits is one `extractionForArg` call.
 
-4. **R69 coupling is light.** R69 (currently Backlog) declares `@experimental_constructType(selection: ...)` but has no live consumer of the `selection/` parser yet. R84's "rewrite to serve both" promise reduces to: extract a syntactic-only entry point in `selection/` that emits comma-separated `key: dotted.path` entries as `Map<String, List<String>>`. R69 binds that output to columns (each path is a column reference); R84 binds it to GraphQL input-type walks. No cross-coupling beyond shared parse output.
+4. **`Result.PathRejected` instead of a `pathError` carrier slot.** The original spec asked for `pathError` on `ExternalRef` / `ConditionDirective` next to `argMappingError`. In the implemented shape, path resolution lives in `ArgBindingMap.of` (the call sites already switch on the `Result` arm), so a separate carrier slot would be redundant metadata that no consumer reads. Each call site's `if (... instanceof Result.PathRejected p)` branch wraps the message with site context just like `UnknownArgRef`.
 
-### Recommended phase staging for the rest
+### Phase D-list deferral
 
-- **Phase B — Pure parse extraction.** Add `selection.parseEntries(raw) → Map<String, List<String>>` (uses existing Lexer/Token/TokenKind). Re-implement `ArgBindingMap.parseArgMapping` to call it, returning segment chains. `parseArgMapping`'s existing test cases get re-aimed onto segment-chain assertions; no semantic change for non-dotted inputs. *No call sites change yet.* Wire-compat: a single-segment override still produces a one-element segment chain.
-- **Phase C — Resolve-side `liftsList` and `PathRejected`.** Change `ArgBindingMap.of` signature to take `Map<String, GraphQLInputType> slotTypes` (or equivalent oracle); walk segments against the input-object hierarchy; populate `PathExpr.Step.liftsList`; emit `Result.PathRejected` for the four structural-rejection shapes the spec enumerates. Add `pathError` slot on `ExternalRef` and `ConditionDirective`. Update each call site (`ServiceDirectiveResolver`, `TableMethodDirectiveResolver`, `ConditionResolver.resolveArg/resolveField`, `BuildContext.resolveConditionRef/buildInputFieldCondition`) to pass slot types.
-- **Phase D — Runtime emit.** Change `ParamSource.Arg.graphqlArgName: String` to `path: PathExpr`. Update the three downstream emitters to walk segments at runtime: intermediate-null short-circuit, list element-wise traversal for `liftsList=true` segments, leaf-lifter under `List<>` wrappers. Compilation-tier covers the typed shapes (`List<List<XRecord>>`).
-- **Phase E — Tests at four tiers.** Pipeline test in `GraphitronSchemaBuilderTest` (Relay-mutation shape, scalar/list path siblings); execution test in `GraphQLQueryTest` modelled on `queryServiceTable_filmsByServiceRenamed_overrideBindsArgToDifferentlyNamedJavaParam`; unit-tier extensions in `ArgBindingMapTest` and `GraphQLSelectionParserTest`. Compilation tier fires automatically.
-- **Phase F — Error-message extension.** Floor (mention dot-path option in every parameter-mismatch suggestion) and stretch (pre-fill an unambiguous reachable path in the suggestion).
+R84's spec includes the array-projection case (`in.b.c` where `b: [B]` and `c: [C]` produces `List<List<C>>`). Phase A–D ships the *non-list* path: scalar leaves under non-list intermediates (the spec's primary trigger from the Sikt admissio→opptak migration). The classifier still resolves `liftsList=true` from the schema in Phase C and the test suite covers that resolution; the gap is on the emit side, where `ArgCallEmitter.extractionForArg` throws `IllegalStateException` if it sees a `liftsList=true` segment.
 
-Each phase is an independent commit and each preserves R53 wire-compat for non-dotted inputs. The first commit that *changes observable behaviour* for path-bearing input is Phase D.
+Phase D-list will:
+
+- Extend `buildMapChain` (or fork a list-aware variant) to emit `.stream().map(...)` for list intermediates.
+- Apply the leaf lifter under `List<>` wrappers in the right element-wise spot.
+- Drop the `IllegalStateException` guard in `extractionForArg`.
+- Add execution-tier coverage for one-list-deep and two-list-deep paths.
+
+This split keeps Phase D reviewable as one commit and gives a clean handle for the list-element-wise change.
 
 ### Open questions for the reviewer
 
-- **Phase staging granularity.** Is six phases too many? Phases B+C could collapse if "parse without `liftsList`, then patch `liftsList` during resolve" is acceptable. The split-layer phasing exists mainly to keep diffs reviewable; concrete review preference welcome.
-- **Phase D pre-work.** Does plumbing `PathExpr` through `ParamSource.Arg` warrant its own commit, or fold it into Phase D's emit changes? The carrier change touches every read site; the runtime walking touches a subset. Splitting them keeps the runtime-emit diff focused on path semantics, but adds a no-op intermediate commit.
-- **R69 dependency record.** R84 currently declares `depends-on: []`. After Phase B, R69 begins consuming `selection.parseEntries(...)` for free. Should R69's plan body get a one-line note ("parser entry point lands in R84") to record the inverse dependency, or is the implicit one-parser-two-binders shared assumption strong enough?
+- **Phase D-list scope.** Is deferring intermediate-list traversal acceptable? The spec's primary trigger is non-list (Relay-mutation Single wrapper input → two `@nodeId` fields), so Phases A–D cover the trigger end-to-end. List-walking is real R84 scope but unblocks no live consumer today. Deferring keeps the architectural cut clean and lets the reviewer evaluate the carrier shape before committing to the more involved emit work.
+- **R69 dependency record.** R84 declares `depends-on: []`. After Phase B, R69 silently consumes `selection.parseEntries(...)`. Should R69's plan body get a one-line note ("parser entry point lands in R84") to record the inverse dependency, or is the implicit one-parser-two-binders shared assumption strong enough?
+- **Spec-deviation: skipped `pathError` carrier slot.** The implemented shape replaces it with `Result.PathRejected`. Want to acknowledge or amend the spec text?
 
