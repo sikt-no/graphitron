@@ -229,6 +229,18 @@ final class NodeIdLeafResolver {
         if (keys.error() != null) {
             return new Resolved.Rejected(Rejection.structural(keys.error()));
         }
+        // jOOQ's typed Record/Row tops out at arity 22 (Record22 / Row22). A NodeType with more
+        // than 22 key columns cannot be expressed as a typed Record<N>, so the decode helper's
+        // return type and any composite-key consumer (BodyParam.RowEq / RowIn) would not compile.
+        // Reject at classification time, mirroring validateChildConnectionParentPk's > 21 cap on
+        // parent-PK + idx (this case has no idx widen, so the threshold is > 22).
+        if (keys.keyColumns().size() > 22) {
+            return new Resolved.Rejected(Rejection.structural(
+                "@nodeId(typeName: '" + refTypeName + "') on leaf '" + leafName
+                + "': NodeType has " + keys.keyColumns().size() + " key columns, exceeding"
+                + " jOOQ's typed Row22 cap. Reduce key arity or expose components as separate"
+                + " scalar arguments."));
+        }
         var decodeMethod = ctx.resolveDecodeHelperForTable(
             targetTableName, keys.typeId(), keys.keyColumns());
         if (decodeMethod == null) {

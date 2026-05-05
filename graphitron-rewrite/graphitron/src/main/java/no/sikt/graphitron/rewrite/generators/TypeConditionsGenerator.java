@@ -8,8 +8,10 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.LookupField;
@@ -100,10 +102,7 @@ public class TypeConditionsGenerator {
             .addParameter(jooqTableClass, "table");
 
         for (var bp : gcf.bodyParams()) {
-            var paramType = bp.list()
-                ? ParameterizedTypeName.get(LIST, ClassName.bestGuess(bp.javaType()))
-                : ClassName.bestGuess(bp.javaType());
-            builder.addParameter(paramType, bp.name());
+            builder.addParameter(paramType(bp), bp.name());
         }
 
         builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
@@ -129,10 +128,9 @@ public class TypeConditionsGenerator {
                     }
                 }
                 case BodyParam.RowEq req -> {
-                    // DSL.row(new Field<?>[]{table.c1, ..., table.cN}).eq(arg)
-                    // The Field<?>[] form picks the RowN overload (untyped), which lets the
-                    // method receive a RowN parameter without per-arity Row<N> typing.
-                    var cols = buildColsArray(req.columns());
+                    // DSL.row(table.c1, ..., table.cN).eq(arg) — the typed Field<T> overload
+                    // produces a Row<N><T1, ..., TN> matching the method parameter exactly.
+                    var cols = buildTypedCols(req.columns());
                     if (req.nonNull()) {
                         builder.addStatement("condition = condition.and($T.row($L).eq($L))",
                             DSL, cols, req.name());
@@ -142,9 +140,9 @@ public class TypeConditionsGenerator {
                     }
                 }
                 case BodyParam.RowIn rin -> {
-                    // DSL.row(new Field<?>[]{table.c1, ..., table.cN}).in(rows)
-                    // Same RowN form as RowEq; jOOQ matches Row.in(Collection<? extends Row>).
-                    var cols = buildColsArray(rin.columns());
+                    // DSL.row(table.c1, ..., table.cN).in(rows) — typed Row<N>.in takes
+                    // Collection<? extends Row<N><T1, ..., TN>>.
+                    var cols = buildTypedCols(rin.columns());
                     if (rin.nonNull()) {
                         builder.addStatement("condition = condition.and($T.row($L).in($L))",
                             DSL, cols, rin.name());
@@ -160,19 +158,39 @@ public class TypeConditionsGenerator {
     }
 
     /**
-     * Emits {@code new Field<?>[]{table.c1, ..., table.cN}} so that
-     * {@code DSL.row(Field<?>[])} picks the untyped {@code RowN} overload rather than the
-     * arity-specific {@code Row<N>}. This lets the condition method's parameter be {@code RowN}
-     * (or {@code List<RowN>}) without dragging the column type parameters into the signature.
+     * Computes the method parameter type for a {@link BodyParam}. Eq/In use their stored
+     * {@code javaType}; row-shape variants build {@code Row<N><T1, ..., TN>} (or {@code List<...>}
+     * for IN) from the column tuple so that {@code DSL.row(Field<T1>, ..., Field<TN>).eq/.in}
+     * matches without coercion.
      */
-    private static CodeBlock buildColsArray(List<no.sikt.graphitron.rewrite.model.ColumnRef> columns) {
+    private static TypeName paramType(BodyParam bp) {
+        return switch (bp) {
+            case BodyParam.Eq eq -> ClassName.bestGuess(eq.javaType());
+            case BodyParam.In in -> ParameterizedTypeName.get(LIST, ClassName.bestGuess(in.javaType()));
+            case BodyParam.RowEq req -> rowTypeName(req.columns());
+            case BodyParam.RowIn rin -> ParameterizedTypeName.get(LIST, rowTypeName(rin.columns()));
+        };
+    }
+
+    /** Builds {@code Row<N><T1, ..., TN>} from a column tuple. */
+    private static ParameterizedTypeName rowTypeName(List<ColumnRef> columns) {
+        int n = columns.size();
+        ClassName rowN = ClassName.get("org.jooq", "Row" + n);
+        TypeName[] typeArgs = new TypeName[n];
+        for (int i = 0; i < n; i++) {
+            typeArgs[i] = ClassName.bestGuess(columns.get(i).columnClass());
+        }
+        return ParameterizedTypeName.get(rowN, typeArgs);
+    }
+
+    /** Comma-separated {@code table.c1, ..., table.cN} for {@code DSL.row(Field<T>...)}. */
+    private static CodeBlock buildTypedCols(List<ColumnRef> columns) {
         var cells = CodeBlock.builder();
         for (int i = 0; i < columns.size(); i++) {
             if (i > 0) cells.add(", ");
             cells.add("table.$L", columns.get(i).javaName());
         }
-        return CodeBlock.of("new $T<?>[]{$L}",
-            ClassName.get("org.jooq", "Field"), cells.build());
+        return cells.build();
     }
 
     static FieldSpec buildTextEnumMapField(CallSiteExtraction.TextMapLookup tl) {
