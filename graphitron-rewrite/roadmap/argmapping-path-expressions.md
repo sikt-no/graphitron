@@ -103,10 +103,10 @@ The path-expression wire-through threads through every call site R53 already wir
 - `FieldBuilder.parseExternalRef` (the seam at lines around `ArgBindingMap.parseArgMapping(rawArgMapping)`) feeds the new parser and stores `Map<String, PathExpr>` on `ExternalRef`.
 - `BuildContext.resolveConditionRef` and `BuildContext.buildInputFieldCondition` parse via the new parser and call `ArgBindingMap.of(...)` with the slot set in scope.
 - `ServiceCatalog.reflectServiceMethod` and `ServiceCatalog.reflectTableMethod` consume the `PathExpr` value side and apply the leaf-type lifter (which already exists for the head-only case) under any `List<>` wrappers.
-- `FieldBuilder.buildArgCondition` and `FieldBuilder.buildFieldCondition` ride the same parser path; no fork from the service / `@tableMethod` arms.
+- `ConditionResolver.resolveArg` and `ConditionResolver.resolveField` ride the same parser path; no fork from the service / `@tableMethod` arms.
 - The five `parseExternalRef` structural-inertness rejections R53 introduced (`@externalField`, `@record` × 2, `@enum`) keep their existing rejection shape; path expressions don't change *whether* `argMapping` is allowed at those sites, only what the right-hand side may contain.
 
-The R53 changelog enumerates the same seven sites (`resolveServiceField`, the two `@tableMethod` arms, `buildArgCondition`, `buildFieldCondition`, `BuildContext.resolveConditionRef`, `buildInputFieldCondition`); they are the canonical list and this item touches all of them.
+The R53 changelog enumerates the same seven sites under their R53-era names (`resolveServiceField`, the two `@tableMethod` arms, `buildArgCondition`, `buildFieldCondition`, `BuildContext.resolveConditionRef`, `buildInputFieldCondition`); since lifted out of `FieldBuilder` per the "Builder-step results are sealed" principle, the current names are `ServiceDirectiveResolver`, the two arms in `TableMethodDirectiveResolver`, `ConditionResolver.resolveArg`, `ConditionResolver.resolveField`, `BuildContext.resolveConditionRef`, and `BuildContext.buildInputFieldCondition`. They are the canonical list and this item touches all of them.
 
 ## Tests
 
