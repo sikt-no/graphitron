@@ -55,8 +55,10 @@ publish:snapshot:
   extends: .maven-publish
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  # Uses -gitlab-SNAPSHOT suffix to distinguish from locally-built snapshots
+  # in developer ~/.m2 caches, so consumers can opt in explicitly.
   script:
-    - mvn $MAVEN_CLI_OPTS $MAVEN_SKIP_OPTS -s ci_settings.xml clean deploy -P gitlab
+    - mvn $MAVEN_CLI_OPTS $MAVEN_SKIP_OPTS -s ci_settings.xml -Dchangelist=-gitlab-SNAPSHOT clean deploy -P gitlab
 
 publish:release:
   extends: .maven-publish
