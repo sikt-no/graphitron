@@ -3,7 +3,7 @@ id: R85
 title: "Emit graphitronContext helper into Conditions and Type classes"
 status: Backlog
 bucket: cleanup
-depends-on: [type-fetcher-helper-emission-gate]
+depends-on: []
 ---
 
 # Emit `graphitronContext` helper into Conditions and Type classes
