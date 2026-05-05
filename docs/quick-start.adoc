@@ -12,7 +12,7 @@ This page is a high-level orientation. If you want to type commands yourself and
 == Outline
 
 . *Generate jOOQ classes from your database schema.* Use the https://www.jooq.org/doc/latest/manual/code-generation/codegen-configuration/[jOOQ code generator] to produce typed table/record classes. Graphitron consumes them.
-. *Write your GraphQL schema with Graphitron directives.* Annotate types and fields to declare how they map to tables and columns. The directive reference is in the https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite[source repository] (see `graphitron-codegen-parent/graphitron-java-codegen/README.md`).
+. *Write your GraphQL schema with Graphitron directives.* Annotate types and fields to declare how they map to tables and columns. The directive reference lives at xref:manual/reference/directives/index.adoc[Reference: directives].
 . *Configure the Graphitron Maven plugin.* Wire it into your `pom.xml` so it runs after jOOQ codegen and before your application code compiles.
 . *Build.* The generated resolvers land alongside your code, ready to be wired into your GraphQL server.
 
