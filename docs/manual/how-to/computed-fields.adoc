@@ -1,0 +1,163 @@
+= How-to: Computed fields with `@externalField`
+:description: Resolve a field's value with a developer-supplied static method that returns a jOOQ Field, in lieu of a column or a join.
+:!toc:
+
+The xref:../reference/directives/externalField.adoc[`@externalField`] directive hands one slot of a generated `SELECT` clause off to a developer-supplied static method that returns a jOOQ `Field<T>`. Reach for it when the value isn't a plain column and isn't reachable through `@field` or `@reference`: computed booleans, derived strings, vendor-specific SQL expressions, or `Field.convert(...)` lifts that fabricate a typed record from a single column. The method is invoked at code-generation time; its returned `Field<T>` is inlined under an alias into the parent table's `$fields()` projection, and a `ColumnFetcher` reads the alias from the result `Record` at request time.
+
+This recipe walks through writing the Java method, attaching the directive, and the three return shapes the rewrite recognises (scalar `Field<T>`, lifted `Field<TableRecord<?>>`, lifted `Field<CustomJavaRecord>`). For the plugin-classpath and FQCN mechanics shared with `@service`, `@condition`, and the other external-code directives, read xref:external-code.adoc[How-to: Wire external Java code] first.
+
+== Write the Java method
+
+Every `@externalField` method has the same shape: a `static` method on a public class, returning `Field<T>`, taking the parent type's jOOQ table class as its sole formal parameter. The example fixture computes a boolean column on `Film`:
+
+[source,java]
+----
+package no.sikt.graphitron.rewrite.test.extensions;
+
+import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
+import org.jooq.Field;
+import org.jooq.impl.DSL;
+
+public final class FilmExtensions {
+
+    private FilmExtensions() {}
+
+    public static Field<Boolean> isEnglish(Film table) {
+        return DSL.field(table.LANGUAGE_ID.eq(1));
+    }
+}
+----
+
+Three things matter:
+
+* *The sole parameter is the parent table's jOOQ class.* The rewrite passes the aliased parent table the field's fetcher is selecting from. Resolve column references through `table.LANGUAGE_ID` (the alias-bearing accessor) rather than the static `Film.FILM.LANGUAGE_ID` handle, the alias keeps the expression anchored in the caller's `FROM` and lets jOOQ render the projected column against the correct alias.
+* *The return type's `T` matches the GraphQL scalar.* The rewrite trusts the declared return type at the reflection site; the GraphQL field's runtime type must be readable from the projected `T`. A `Field<Boolean>` for a `Boolean` field, a `Field<String>` for a `String`, and so on, with the lift forms below for `@record`-typed fields.
+* *The method runs at code-generation time, not at request time.* The `Field<T>` you return is inlined into the SQL once and reused for every fetcher invocation. Don't capture per-request state in the method; reach for xref:handle-services.adoc[`@service`] when the value depends on the request.
+
+Add the carrying artifact to the rewrite plugin's `<dependencies>` block, not your consumer module's compile classpath; the plugin reflects on the class via `Class.forName(...)` at code-generation time. xref:external-code.adoc[How-to: Wire external Java code] covers the plugin-classpath setup in full.
+
+== Attach the directive
+
+`@externalField` is valid only on `FIELD_DEFINITION`. Attach it on a field of a `@table`-bound type and point the reference at the static method:
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    isEnglish: Boolean @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions",
+        method:    "isEnglish"
+    })
+}
+----
+
+When the GraphQL field name and the Java method name agree, omit `method:`, the rewrite uses the field name as the static-method name:
+
+[source,graphql]
+----
+isEnglish: Boolean @externalField(reference: {
+    className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"
+})
+----
+
+The execution-tier test `films_isEnglish_resolvesViaExternalFieldExpression` in `GraphQLQueryTest` runs `{ films { title isEnglish } }` against the seeded Sakila data and asserts that every row's `isEnglish` resolves to `true` (all five seeded films carry `language_id = 1`).
+
+== Return shapes
+
+A `@externalField` method returns one of three shapes. The first is a plain scalar; the other two lift a single column into a typed record so child fields on the resulting xref:../reference/directives/record.adoc[`@record`] type batch-fetch the rest.
+
+=== Scalar `Field<T>`
+
+The default and the simplest case. `T` matches the GraphQL scalar (`Boolean`, `String`, `Integer`, …). The expression is whatever jOOQ exposes: column comparisons, `DSL.iif(...)`, `DSL.case_()`, vendor-specific casts, regex predicates. The rewrite drops the `Field<T>` into the parent's projection and reads the value out by alias.
+
+=== Lifted `Field<TableRecord<?>>`
+
+Use this shape when the GraphQL field returns a `@record`-typed wrapper backed by a jOOQ `TableRecord`. The static method projects a single column (typically a foreign-key value on the parent table), and `Field.convert(Converter.from(...))` converts the raw value into a `TableRecord` carrying that column as the PK:
+
+[source,graphql]
+----
+type Inventory @table(name: "inventory") {
+    inventoryId: Int! @field(name: "INVENTORY_ID")
+    filmRef:     FilmCard @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions",
+        method:    "filmRef"
+    })
+}
+
+type FilmCard @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+    filmId: Int @field(name: "film_id")
+}
+----
+
+[source,java]
+----
+public static Field<FilmRecord> filmRef(Inventory table) {
+    return table.FILM_ID.convert(Converter.from(Integer.class, FilmRecord.class, filmId -> {
+        FilmRecord f = new FilmRecord();
+        f.setFilmId(filmId);
+        return f;
+    }));
+}
+----
+
+The lifted `FilmRecord` carries only the PK; the framework batch-fetches non-PK columns on demand through the standard `@record`-parent paths. The execution-tier test `inventoryById_filmRef_resolvesViaExternalFieldReturningFieldOfTableRecord` runs `{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmRef { filmId } } }` and asserts each row's `filmRef.filmId` equals the seeded `inventory.film_id`.
+
+=== Lifted `Field<CustomJavaRecord>`
+
+Use this shape when the wrapper is a developer-defined Java record with a typed `TableRecord` accessor. The classifier picks the canonical accessor (the record's component whose declared type is a jOOQ `TableRecord`) and produces an `AccessorKeyedSingle` batch key for any GraphQL child field returning the wrapped `@table` type, batching dispatch through a `DataLoader` keyed on the element table's PK:
+
+[source,graphql]
+----
+type Inventory @table(name: "inventory") {
+    filmCardData: FilmCardWrapper @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions",
+        method:    "filmCardData"
+    })
+}
+
+type FilmCardWrapper @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmCardData"}) {
+    film: Film
+}
+----
+
+[source,java]
+----
+public record FilmCardData(FilmRecord film) {}
+
+public static Field<FilmCardData> filmCardData(Inventory table) {
+    return table.FILM_ID.convert(Converter.from(Integer.class, FilmCardData.class, filmId -> {
+        FilmRecord f = new FilmRecord();
+        f.setFilmId(filmId);
+        return new FilmCardData(f);
+    }));
+}
+----
+
+The execution-tier test `inventoryById_filmCardData_firesAccessorKeyedSingleLiftThroughCustomJavaRecord` runs `{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmCardData { film { filmId title } } } }`, asserts the `filmId` round-trips through the lift, and checks that `title` (a non-PK column not present on the lifted `FilmRecord`) resolves through the framework's PK-keyed batch fetch. This is the path that makes "lift one column on the parent, then read the full child row by PK" work without writing a service.
+
+== Pick a shape
+
+The default is whichever shape is closest to the value. A scalar field wants a `Field<T>`. A wrapper that fronts a single jOOQ table wants `Field<TableRecord<?>>`. A wrapper that bundles a typed record alongside other fields wants `Field<CustomJavaRecord>` so the canonical-accessor inference can derive the batch key. The xref:result-types.adoc[How-to: Result-type variants] recipe covers the broader decision tree for `@record` parents and accessor-driven batching.
+
+When the value is not a column-shaped expression at all (a network call, request-scoped logic, multi-row payload), the right directive is xref:handle-services.adoc[`@service`], not `@externalField`. When the value comes from following an FK chain to another table, the right directive is xref:../reference/directives/reference.adoc[`@reference`].
+
+== Constraints
+
+* The parent type must be `@table`-bound. The static method's sole formal parameter is the parent table's jOOQ class; without that anchor, reflection has no shape to bind.
+* The GraphQL field name must not collide with a real SQL column on the parent table. The wiring side resolves the field by name via `DSL.field("<name>")` against the result `Record`; a collision shadows the actual column. Rename the field or use xref:../reference/directives/field.adoc[`@field(name: ...)`] to disambiguate.
+* `className:` is required on the reference. A bare `@externalField` (no `reference:`, or a reference with no `className:`) surfaces with the diagnostic `external field reference could not be resolved -- missing className`.
+* `method:` is optional. When omitted, the rewrite uses the GraphQL field name as the static-method name. Set `method:` only when the two diverge.
+* `argMapping:` on the reference is structurally inert and is rejected at parse time. `@externalField` consumes no GraphQL-argument-bound parameters, the method's only formal parameter is the parent table.
+* The static method must return `Field<T>` where `T` matches the GraphQL scalar, or one of the lift forms (`Field<TableRecord<?>>`, `Field<CustomJavaRecord>`) when the field's GraphQL type is a xref:../reference/directives/record.adoc[`@record`].
+* The carrying class must be on the rewrite Maven plugin's classpath, not the consumer module's compile classpath. Reflection failures surface as `external field reference could not be resolved -- <reflection error>`. xref:external-code.adoc[How-to: Wire external Java code] covers the plugin-classpath setup.
+* Combining `@externalField` with a `@reference` path (the condition-join lift form) is not yet supported; the build rejects this with a deferred-validation error pointing at the `computed-field-with-reference.md` roadmap item.
+
+== See also
+
+* xref:../reference/directives/externalField.adoc[`@externalField`] is the directive's reference page; the parameter list, the `ExternalCodeReference` shape, and the per-site rejection messages live there.
+* xref:external-code.adoc[How-to: Wire external Java code] covers the rewrite plugin's classpath setup, the FQCN requirement, and the method-name default.
+* xref:result-types.adoc[How-to: Result-type variants] covers the `@record` parent decision tree, including the canonical-accessor inference that auto-derives batch keys for `Field<CustomJavaRecord>` lifts.
+* xref:../reference/directives/reference.adoc[`@reference`] is the FK-driven counterpart; choose it when the value comes from a chain of catalog joins, choose `@externalField` when the value is a custom expression or a typed lift.
+* xref:handle-services.adoc[How-to: Handle services] covers the alternative when the field's value depends on the request rather than on a column expression.
+* xref:../reference/directives/record.adoc[`@record`] is the natural target type for the `Field<TableRecord<?>>` and `Field<CustomJavaRecord>` lift forms.
+
+xref:index.adoc[← How-to index]
