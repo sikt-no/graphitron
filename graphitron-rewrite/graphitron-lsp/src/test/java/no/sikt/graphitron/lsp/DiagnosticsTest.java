@@ -175,6 +175,84 @@ class DiagnosticsTest {
             .isLessThan(d.getRange().getEnd().getCharacter());
     }
 
+    @Test
+    void unknownServiceClassProducesError() {
+        var file = file("""
+            type Query {
+                x: Int @service(class: "com.example.Missing", method: "foo")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealService"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("Missing").contains("class");
+    }
+
+    @Test
+    void unknownConditionClassProducesError() {
+        var file = file("""
+            type Query {
+                x: Int @condition(class: "com.example.Missing", method: "foo")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealCondition"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("Missing");
+    }
+
+    @Test
+    void unknownRecordClassNameProducesError() {
+        var file = file("""
+            input FooInput @record(record: {className: "com.example.Missing"}) {
+                bar: Int
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealRecord"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("Missing");
+    }
+
+    @Test
+    void knownServiceClassProducesNoError() {
+        var file = file("""
+            type Query {
+                x: Int @service(class: "com.example.RealService", method: "foo")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealService"));
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void emptyExternalReferencesSuppressesUnknownClassDiagnostic() {
+        // Pre-`mvn compile` state: the scanner has nothing yet. Reporting
+        // every reference as unknown in that state would be noise.
+        var file = file("""
+            type Query {
+                x: Int @service(class: "com.example.RealService", method: "foo")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog());  // empty externalReferences
+
+        assertThat(diags).isEmpty();
+    }
+
+    private static CompletionData catalogWithKnownClass(String fqn) {
+        return new CompletionData(
+            List.of(),
+            List.of(),
+            List.of(new CompletionData.ExternalReference(fqn, fqn, "", List.of()))
+        );
+    }
+
     private static WorkspaceFile file(String source) {
         return new WorkspaceFile(1, source);
     }

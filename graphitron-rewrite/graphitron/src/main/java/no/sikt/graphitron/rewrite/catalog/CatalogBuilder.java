@@ -15,9 +15,10 @@ import java.util.Optional;
 
 /**
  * Assembles a {@link CompletionData} snapshot the LSP queries against. Sources
- * tables / columns / FK references from {@link JooqCatalog} and scalar types
- * from the parsed {@link GraphQLSchema}; {@code externalReferences} stays
- * empty until Phase 5 wires service-class enumeration.
+ * tables / columns / FK references from {@link JooqCatalog}, scalar types from
+ * the parsed {@link GraphQLSchema}, and the consumer's compiled service /
+ * condition / record class FQNs from {@link ClasspathScanner} over
+ * {@code <basedir>/target/classes/}.
  *
  * <p>Designed to run hot: a single pass over the jOOQ catalog plus a single
  * pass over the assembled schema's type list. The dev goal calls
@@ -43,8 +44,20 @@ public final class CatalogBuilder {
         return new CompletionData(
             buildTables(jooq, jooqSourceRoot, jooqPkgPath),
             buildScalars(assembled),
-            List.of()
+            buildExternalReferences(ctx)
         );
+    }
+
+    /**
+     * Class-name candidates for {@code @service} / {@code @condition} /
+     * {@code @record} completion. Phase 5 ships only the FQN; the
+     * {@code methods} slot stays empty until method enumeration lands.
+     */
+    private static List<CompletionData.ExternalReference> buildExternalReferences(RewriteContext ctx) {
+        Path classesRoot = ctx.basedir().resolve("target/classes");
+        return ClasspathScanner.scan(classesRoot, ctx.jooqPackage()).stream()
+            .map(fqn -> new CompletionData.ExternalReference(fqn, fqn, "", List.of()))
+            .toList();
     }
 
     private static List<CompletionData.Table> buildTables(

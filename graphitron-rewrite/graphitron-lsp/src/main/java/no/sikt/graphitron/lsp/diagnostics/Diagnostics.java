@@ -42,6 +42,8 @@ public final class Diagnostics {
                 case "table" -> validateTable(directive, file, catalog, out);
                 case "field" -> validateField(directive, file, catalog, out);
                 case "reference" -> validateReference(directive, file, catalog, out);
+                case "service", "condition" -> validateClassArg(directive, file, catalog, out);
+                case "record" -> validateRecordClassName(directive, file, catalog, out);
                 default -> { /* no validation yet */ }
             }
         }
@@ -132,6 +134,52 @@ public final class Diagnostics {
             out.add(diagnostic(file, valueNode,
                 "Unknown table '" + tableName + "'. The jOOQ catalog does not contain a table with this name."));
         }
+    }
+
+    private static void validateClassArg(
+        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+    ) {
+        // Empty `externalReferences` means the classpath scan saw nothing
+        // (typically: consumer hasn't run `mvn compile` yet). Reporting
+        // every reference as unknown in that state would be noise; defer
+        // until the scan has at least one entry to match against.
+        if (catalog.externalReferences().isEmpty()) return;
+        Node argValue = stringArgValueNode(directive, "class", file.source());
+        if (argValue == null) return;
+        String fqn = Nodes.unquote(Nodes.text(argValue, file.source()));
+        if (fqn.isEmpty()) return;
+        if (!classKnown(catalog, fqn)) {
+            out.add(diagnostic(file, argValue,
+                "Unknown class '" + fqn + "'. Not found in compiled target/classes."));
+        }
+    }
+
+    private static void validateRecordClassName(
+        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+    ) {
+        if (catalog.externalReferences().isEmpty()) return;
+        for (var arg : directive.arguments()) {
+            if (!"record".equals(Nodes.text(arg.key(), file.source()))) continue;
+            forEachObjectField(arg.value(), (field) -> {
+                Node nameNode = childOfKind(field, "name");
+                Node valueNode = childOfKind(field, "value");
+                if (nameNode == null || valueNode == null) return;
+                if (!"className".equals(Nodes.text(nameNode, file.source()))) return;
+                String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
+                if (fqn.isEmpty()) return;
+                if (!classKnown(catalog, fqn)) {
+                    out.add(diagnostic(file, valueNode,
+                        "Unknown class '" + fqn + "'. Not found in compiled target/classes."));
+                }
+            });
+        }
+    }
+
+    private static boolean classKnown(CompletionData catalog, String fqn) {
+        for (var ref : catalog.externalReferences()) {
+            if (ref.className().equals(fqn)) return true;
+        }
+        return false;
     }
 
     private static Set<String> collectAllFkNames(CompletionData catalog) {

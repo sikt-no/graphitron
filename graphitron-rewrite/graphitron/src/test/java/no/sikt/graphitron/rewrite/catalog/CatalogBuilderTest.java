@@ -130,14 +130,16 @@ class CatalogBuilderTest {
     }
 
     @Test
-    void externalReferencesStaysEmptyInPhase2() {
+    void externalReferencesEmptyWhenBasedirHasNoTargetClasses(@org.junit.jupiter.api.io.TempDir java.nio.file.Path empty) {
         var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
         var bundle = TestSchemaHelper.buildBundle("type Query { x: Int }");
+        var ctx = new no.sikt.graphitron.rewrite.RewriteContext(
+            java.util.List.of(), empty, empty.resolve("out"),
+            "fake.code.generated", DEFAULT_JOOQ_PACKAGE, java.util.Map.of()
+        );
 
-        var data = CatalogBuilder.build(jooq, bundle.assembled(), no.sikt.graphitron.common.configuration.TestConfiguration.testContext());
+        var data = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
 
-        // Service-method enumeration is Phase 5 work; Phase 2 deliberately
-        // leaves this slot empty (see plan, OQ A1/Phase 5).
         assertThat(data.externalReferences()).isEmpty();
     }
 }
