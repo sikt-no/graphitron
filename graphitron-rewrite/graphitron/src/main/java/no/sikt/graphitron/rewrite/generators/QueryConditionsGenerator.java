@@ -53,17 +53,22 @@ public class QueryConditionsGenerator {
         for (var type : schema.types().values()) {
             if (!(type instanceof GraphitronType.RootType rootType)) continue;
             var methods = new ArrayList<MethodSpec>();
+            // One registry per emitted class: composite-key NodeId decode helpers registered
+            // by any condition method on this root type are deduplicated and emitted as private
+            // static helpers alongside the public condition methods.
+            var registry = new CompositeDecodeHelperRegistry();
             for (var field : schema.fieldsOf(rootType.name())) {
                 if (field instanceof QueryField.QueryTableField qtf) {
-                    methods.add(buildConditionMethod(qtf.name(), qtf.returnType(), qtf.filters(), outputPackage));
+                    methods.add(buildConditionMethod(qtf.name(), qtf.returnType(), qtf.filters(), outputPackage, registry));
                 } else if (field instanceof QueryField.QueryTableInterfaceField qtif) {
-                    methods.add(buildConditionMethod(qtif.name(), qtif.returnType(), qtif.filters(), outputPackage));
+                    methods.add(buildConditionMethod(qtif.name(), qtif.returnType(), qtif.filters(), outputPackage, registry));
                 }
             }
             if (methods.isEmpty()) continue;
             String simpleName = rootType.name() + CLASS_NAME_SUFFIX;
             var classBuilder = TypeSpec.classBuilder(simpleName).addModifiers(Modifier.PUBLIC);
             methods.forEach(classBuilder::addMethod);
+            registry.emit().forEach(classBuilder::addMethod);
             out.add(classBuilder.build());
         }
         return out;
@@ -78,7 +83,8 @@ public class QueryConditionsGenerator {
             String fieldName,
             ReturnTypeRef.TableBoundReturnType returnType,
             List<WhereFilter> filters,
-            String outputPackage) {
+            String outputPackage,
+            CompositeDecodeHelperRegistry registry) {
         var tableRef = returnType.table();
         var names = GeneratorUtils.ResolvedTableNames.of(tableRef, returnType.returnTypeName(), outputPackage);
         var jooqTableClass = names.jooqTableClass();
@@ -111,13 +117,13 @@ public class QueryConditionsGenerator {
             builder.addStatement("return $T.noCondition()", DSL);
         } else if (filters.size() == 1) {
             var only = filters.get(0);
-            var callArgs = ArgCallEmitter.buildCallArgs(ctx, only.callParams(), only.className(), "table");
+            var callArgs = ArgCallEmitter.buildCallArgs(ctx, only.callParams(), only.className(), "table", registry);
             builder.addStatement("return $T.$L($L)",
                 ClassName.bestGuess(only.className()), only.methodName(), callArgs);
         } else {
             builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
             for (var filter : filters) {
-                var callArgs = ArgCallEmitter.buildCallArgs(ctx, filter.callParams(), filter.className(), "table");
+                var callArgs = ArgCallEmitter.buildCallArgs(ctx, filter.callParams(), filter.className(), "table", registry);
                 builder.addStatement("condition = condition.and($T.$L($L))",
                     ClassName.bestGuess(filter.className()), filter.methodName(), callArgs);
             }
