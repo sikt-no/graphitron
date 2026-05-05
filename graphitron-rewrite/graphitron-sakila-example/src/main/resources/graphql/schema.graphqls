@@ -32,6 +32,11 @@ type Query {
     # film_id) and joins on both PK columns. Decode-on-mismatch surfaces as
     # GraphqlErrorException via the ThrowOnMismatch contract. See lift-nodeid-out-of-model.md.
     filmActorByNodeId(id: [ID!]! @lookupKey): [FilmActor!]!
+    # R79 compilation-tier regression guard: composite-PK NodeId on a *non-lookupKey* arg, fed
+    # through an `@table`-bound input type. Reaches FieldBuilder.compositeImplicitBodyParam →
+    # BodyParam.RowIn → TypeConditionsGenerator's typed `DSL.row(table.c1, table.c2).in(ids)`
+    # form. Before R79 the generated source did not compile (Row vs Row<N> assignment).
+    filmActorsByCompositeNodeIds(filter: FilmActorCompositeNodeIdFilter): [FilmActor!]!
     # ConnectionSynthesis: directive-driven @asConnection on a bare list. The generator
     # synthesises QueryStoresConnectionType, QueryStoresEdgeType and wires them into
     # GraphitronSchema.build() via .additionalType(...). Hand-written Connection types
@@ -564,6 +569,13 @@ type FilmActor implements Node @table(name: "film_actor") @node {
     id:      ID!  @nodeId
     filmId:  Int! @field(name: "film_id")
     actorId: Int! @field(name: "actor_id")
+}
+
+# R79 fixture (paired with `filmActorsByCompositeNodeIds`). The implicit-condition path
+# routes `ids` to BodyParam.RowIn over the FilmActor PK columns (actor_id, film_id),
+# generating a typed `Row2<Integer, Integer>` in the condition method.
+input FilmActorCompositeNodeIdFilter @table(name: "film_actor") {
+    ids: [ID!] @nodeId(typeName: "FilmActor")
 }
 
 type Language @table(name: "language") {
