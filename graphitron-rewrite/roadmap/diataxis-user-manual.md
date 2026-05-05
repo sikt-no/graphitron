@@ -1,7 +1,7 @@
 ---
 id: R68
 title: "Diataxis user manual: absorb legacy README into the docs site"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 15
 theme: docs
