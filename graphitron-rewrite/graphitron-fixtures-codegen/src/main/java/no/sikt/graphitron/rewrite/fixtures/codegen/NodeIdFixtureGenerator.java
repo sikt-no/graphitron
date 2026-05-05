@@ -45,7 +45,14 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         // exposes a unique ALT_KEY column targeted by `child_ref.parent_alt_key`'s FK. The
         // FK does not positionally match __NODE_KEY_COLUMNS — that mismatch is the test
         // surface for the rooted-at-parent JOIN-with-projection emission path.
-        "parent_node", new Metadata("ParentNode", List.of("PK_ID"))
+        "parent_node", new Metadata("ParentNode", List.of("PK_ID")),
+        // R79 §6 arity > 22 rejection fixture. NodeIdLeafResolver.resolve rejects any
+        // NodeType with > 22 key columns (jOOQ's typed Record/Row caps at Row22); this
+        // 23-column composite-PK table is the smallest case that exercises that guard.
+        "too_wide", new Metadata("TooWide", List.of(
+            "K1",  "K2",  "K3",  "K4",  "K5",  "K6",  "K7",  "K8",
+            "K9",  "K10", "K11", "K12", "K13", "K14", "K15", "K16",
+            "K17", "K18", "K19", "K20", "K21", "K22", "K23"))
     );
 
     @Override
