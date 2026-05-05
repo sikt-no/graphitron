@@ -18,7 +18,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R15` | Sweep doc drift between rewrite docs and `model/` taxonomy | Spec | [plan](fix-legacy-refs-in-rewrite-docs.md) |
 | `R81` | Sealed resolution outcomes for catalog table/FK lookups | In Progress | [plan](catalog-resolution-sealed-outcomes.md) |
-| `R82` | FK column pairing: typed slots over parallel ordered lists | In Review | [plan](fk-column-pairing-typed-slots.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R84` | Path expressions in argMapping | Ready | [plan](argmapping-path-expressions.md) |
@@ -138,7 +137,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R4` [**Collapse `BatchKeyField` validator/emitter redundancy**](collapse-tabletargetfield-redundancy.md) — Backlog, cleanup
 - `R81` [**Sealed resolution outcomes for catalog table/FK lookups**](catalog-resolution-sealed-outcomes.md) — In Progress, architecture
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md) — Backlog, architecture
-- `R82` [**FK column pairing: typed slots over parallel ordered lists**](fk-column-pairing-typed-slots.md) — In Review, cleanup
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Backlog, stubs
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
