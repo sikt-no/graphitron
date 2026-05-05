@@ -87,12 +87,28 @@ public final class Hovers {
           .append(" on `").append(ref.className()).append("`")
           .append("\n\n```\n")
           .append(method.returnType()).append(' ').append(method.name()).append('(');
+        boolean missingNames = false;
         for (int i = 0; i < method.parameters().size(); i++) {
             if (i > 0) sb.append(", ");
             var p = method.parameters().get(i);
-            sb.append(p.type()).append(' ').append(p.name());
+            sb.append(p.type()).append(' ');
+            if (p.name() != null) {
+                sb.append(p.name());
+            } else {
+                sb.append("arg").append(i);
+                missingNames = true;
+            }
         }
         sb.append(")\n```");
+        if (missingNames) {
+            // The detection signal mirrors the build-time
+            // ServiceCatalog.emitParametersWarning path: a null name on
+            // any parameter means the class was compiled without
+            // -parameters. Phase 5c also emits this as a workspace
+            // diagnostic; surfacing it on hover is the immediate
+            // editor-side hint.
+            sb.append("\n\n_Parameter names are unavailable; recompile with the `-parameters` flag to surface them._");
+        }
         return sb.toString();
     }
 

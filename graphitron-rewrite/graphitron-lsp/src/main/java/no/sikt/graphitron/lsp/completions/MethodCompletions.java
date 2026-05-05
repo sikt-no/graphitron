@@ -77,7 +77,8 @@ public final class MethodCompletions {
         for (int i = 0; i < method.parameters().size(); i++) {
             if (i > 0) sb.append(", ");
             var p = method.parameters().get(i);
-            sb.append(p.type()).append(' ').append(p.name());
+            sb.append(p.type()).append(' ')
+                .append(p.name() != null ? p.name() : "arg" + i);
         }
         sb.append(')');
         return sb.toString();
