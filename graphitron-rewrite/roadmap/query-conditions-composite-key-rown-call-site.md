@@ -1,7 +1,7 @@
 ---
 id: R79
 title: "Composite-key NodeId condition args: typed Row<N> end-to-end"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 9
 theme: nodeid
@@ -97,6 +97,32 @@ All three sub-steps target `QueryConditionsGenerator` (`graphitron-rewrite/graph
   Call sites collapse to `decodeKvotetypeRow(filter == null ? null : filter.get("kvotetypeId"))` (scalar) or `decodeKvotetypeRows(filter == null ? null : filter.get("kvotetypeIds"))` (list). Helpers are deduplicated per `QueryConditions` class.
 
 The helpers live on the `QueryConditions` class (the call site), emitted by `QueryConditionsGenerator` alongside the condition methods. `ArgCallEmitter.buildNodeIdDecodeExtraction`'s arity > 1 builder collapses to "produce a call to the per-class helper"; the helper itself is the only place where the decode-and-project chain appears in the generated source.
+
+#### Implementation seam (Spec→Ready note)
+
+The Spec→Ready review flagged that "the call-site emitter reduces to a `<helper>(<wireExpr>)` invocation" and "helpers live on the `QueryConditions` class" together imply an unspecified API contract on `ArgCallEmitter`. The contract is:
+
+1. **First, fix the inline arity > 1 form so it compiles in isolation.** The bug at `ArgCallEmitter.java:232` (`Record::valuesRow` raw method reference) and `:267` / `:275` (`(($T) _r).valuesRow()` cast through raw `Record`) both lose the `Record<N><T1, ..., TN>` type that `HelperRef.Decode.returnType()` already provides. Drop the raw cast and use `decode.returnType()` (the typed `RecordN`) for both the `instanceof` pattern and the method-reference receiver. After this fix, every `ArgCallEmitter.buildCallArgs` call site (`InlineTableFieldEmitter`, `InlineLookupTableFieldEmitter`, `SplitRowsMethodEmitter`, `TypeFetcherGenerator`, `QueryConditionsGenerator`) emits compiling code for composite-key NodeId args, with no helper involved. This is the load-bearing fix; helpers are a strict readability layer on top.
+
+2. **Then, add an opt-in helper registry for QueryConditions.** Introduce a small `CompositeDecodeHelperRegistry` (a mutable collector). `ArgCallEmitter.buildCallArgs` and `buildArgExtraction` get an extra parameter `CompositeDecodeHelperRegistry registry` (nullable). When non-null, the composite NodeIdDecodeKeys arity > 1 path registers a helper keyed on `(decode.encoderClass(), decode.methodName(), mode, list)` and emits a call to it; when null, falls back to the inline form from §1. Other emit sites (Inline*, SplitRows*, TypeFetcher) pass `null` initially — they don't exercise composite-key NodeId decode in practice today, and lifting them is out of scope for R79.
+
+   ```java
+   final class CompositeDecodeHelperRegistry {
+       enum Mode { SKIP, THROW }
+       record Key(ClassName encoderClass, String methodName, Mode mode, boolean list) {}
+       private final Map<Key, MethodSpec> helpers = new LinkedHashMap<>();
+       String register(HelperRef.Decode decode, Mode mode, boolean list);  // returns helper method name, builds spec lazily
+       Collection<MethodSpec> emit();                                       // for QueryConditionsGenerator to add to the class
+   }
+   ```
+
+   Helper naming (keyed-deduplicated, private static, no leak risk): `decode<NodeType>Row` / `decode<NodeType>Rows` for `Mode.SKIP`; `decode<NodeType>RowOrThrow` / `decode<NodeType>RowsOrThrow` for `Mode.THROW`. `<NodeType>` derives from `decode.methodName()` (which is already `decode<TypeName>`, so strip the `decode` prefix).
+
+3. **`QueryConditionsGenerator` ownership.** `generateConditionsClass` (or its rewrite-equivalent in the QueryConditions emitter — name pinned at implementation) instantiates one registry per class, threads it through each `buildConditionMethod` invocation, and calls `registry.emit()` after the method-emit loop, adding each `MethodSpec` to the class builder.
+
+4. **Why a registry rather than returning a structured result.** The alternative (have `ArgCallEmitter` return `(CodeBlock, List<MethodSpec>)` and let the caller dedupe) pushes deduplication onto every caller and breaks the "callers pass `null` to opt out" pattern. A nullable side-effect collector is the idiomatic shape elsewhere in the rewrite (compare `TypeClassGenerator`'s field/method accumulators).
+
+5. **Test coverage of the seam.** The pipeline test rewritten in §6 asserts on `TypeConditionsGenerator` (the composer side, no helper involved). A second new pipeline-tier test on the `QueryConditions` emitter asserts that two distinct condition methods on the same class consuming the same NodeId type emit exactly one shared helper (deduplication works) and that the throw-mode arm gets a separate helper from the skip-mode arm (key separation works). Test name pinned at implementation.
 
 ### 6. Tests
 
