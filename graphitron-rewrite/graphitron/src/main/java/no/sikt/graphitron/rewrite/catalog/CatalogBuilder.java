@@ -50,14 +50,13 @@ public final class CatalogBuilder {
 
     /**
      * Class-name candidates for {@code @service} / {@code @condition} /
-     * {@code @record} completion. Phase 5 ships only the FQN; the
-     * {@code methods} slot stays empty until method enumeration lands.
+     * {@code @record} completion, with public methods of each populated
+     * straight off the classfile (parameter names included when the
+     * consumer compiled with {@code -parameters}).
      */
     private static List<CompletionData.ExternalReference> buildExternalReferences(RewriteContext ctx) {
         Path classesRoot = ctx.basedir().resolve("target/classes");
-        return ClasspathScanner.scan(classesRoot, ctx.jooqPackage()).stream()
-            .map(fqn -> new CompletionData.ExternalReference(fqn, fqn, "", List.of()))
-            .toList();
+        return ClasspathScanner.scan(classesRoot, ctx.jooqPackage());
     }
 
     private static List<CompletionData.Table> buildTables(

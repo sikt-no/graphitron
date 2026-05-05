@@ -144,13 +144,28 @@ public final class Diagnostics {
         // every reference as unknown in that state would be noise; defer
         // until the scan has at least one entry to match against.
         if (catalog.externalReferences().isEmpty()) return;
-        Node argValue = stringArgValueNode(directive, "class", file.source());
-        if (argValue == null) return;
-        String fqn = Nodes.unquote(Nodes.text(argValue, file.source()));
+        Node classValue = stringArgValueNode(directive, "class", file.source());
+        if (classValue == null) return;
+        String fqn = Nodes.unquote(Nodes.text(classValue, file.source()));
         if (fqn.isEmpty()) return;
-        if (!classKnown(catalog, fqn)) {
-            out.add(diagnostic(file, argValue,
+        var refOpt = catalog.externalReferences().stream()
+            .filter(r -> r.className().equals(fqn))
+            .findFirst();
+        if (refOpt.isEmpty()) {
+            out.add(diagnostic(file, classValue,
                 "Unknown class '" + fqn + "'. Not found in compiled target/classes."));
+            return;
+        }
+        // Class resolved — also validate the sibling `method:` if present.
+        Node methodValue = stringArgValueNode(directive, "method", file.source());
+        if (methodValue == null) return;
+        String methodName = Nodes.unquote(Nodes.text(methodValue, file.source()));
+        if (methodName.isEmpty()) return;
+        boolean methodFound = refOpt.get().methods().stream()
+            .anyMatch(m -> m.name().equals(methodName));
+        if (!methodFound) {
+            out.add(diagnostic(file, methodValue,
+                "Unknown method '" + methodName + "' on class '" + fqn + "'."));
         }
     }
 

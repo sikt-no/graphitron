@@ -26,8 +26,8 @@ class ClasspathScannerTest {
 
     @Test
     void emptyWhenClassesDirectoryIsAbsent(@TempDir Path basedir) {
-        var fqns = ClasspathScanner.scan(basedir.resolve("target/classes"), JOOQ_PKG);
-        assertThat(fqns).isEmpty();
+        var refs = ClasspathScanner.scan(basedir.resolve("target/classes"), JOOQ_PKG);
+        assertThat(refs).isEmpty();
     }
 
     @Test
@@ -35,11 +35,10 @@ class ClasspathScannerTest {
         writePublicClass(classes, "com.example.MyService");
         writePublicClass(classes, "com.example.OtherService");
 
-        var fqns = ClasspathScanner.scan(classes, JOOQ_PKG);
+        var refs = ClasspathScanner.scan(classes, JOOQ_PKG);
 
-        assertThat(fqns).containsExactlyInAnyOrder(
-            "com.example.MyService", "com.example.OtherService"
-        );
+        assertThat(refs).extracting(CompletionData.ExternalReference::className)
+            .containsExactlyInAnyOrder("com.example.MyService", "com.example.OtherService");
     }
 
     @Test
@@ -47,9 +46,10 @@ class ClasspathScannerTest {
         writePublicClass(classes, "com.example.Public");
         writeClass(classes, "com.example.PackagePrivate", 0); // no ACC_PUBLIC
 
-        var fqns = ClasspathScanner.scan(classes, JOOQ_PKG);
+        var refs = ClasspathScanner.scan(classes, JOOQ_PKG);
 
-        assertThat(fqns).containsExactly("com.example.Public");
+        assertThat(refs).extracting(CompletionData.ExternalReference::className)
+            .containsExactly("com.example.Public");
     }
 
     @Test
@@ -57,9 +57,10 @@ class ClasspathScannerTest {
         writePublicClass(classes, "com.example.MyService");
         writePublicClass(classes, JOOQ_PKG + ".tables.Film");
 
-        var fqns = ClasspathScanner.scan(classes, JOOQ_PKG);
+        var refs = ClasspathScanner.scan(classes, JOOQ_PKG);
 
-        assertThat(fqns).containsExactly("com.example.MyService");
+        assertThat(refs).extracting(CompletionData.ExternalReference::className)
+            .containsExactly("com.example.MyService");
     }
 
     @Test
@@ -72,9 +73,62 @@ class ClasspathScannerTest {
         writeRawBytes(classes, "com/example/package-info.class", new byte[]{4, 5});
         writeRawBytes(classes, "module-info.class", new byte[]{6, 7});
 
-        var fqns = ClasspathScanner.scan(classes, JOOQ_PKG);
+        var refs = ClasspathScanner.scan(classes, JOOQ_PKG);
 
-        assertThat(fqns).containsExactly("com.example.Public");
+        assertThat(refs).extracting(CompletionData.ExternalReference::className)
+            .containsExactly("com.example.Public");
+    }
+
+    @Test
+    void populatesMethodsWithErasedParameterTypes(@TempDir Path classes) throws IOException {
+        // An interface so we can declare abstract methods with no body.
+        var fqn = "com.example.MyService";
+        var stringDesc = ClassDesc.of("java.lang.String");
+        var integerDesc = ClassDesc.of("java.lang.Integer");
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_INTERFACE | ClassFile.ACC_ABSTRACT)
+            .withMethod(
+                "list",
+                java.lang.constant.MethodTypeDesc.of(stringDesc, integerDesc),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT,
+                mb -> {}
+            )
+            .withMethod(
+                "noArgs",
+                java.lang.constant.MethodTypeDesc.of(stringDesc),
+                ClassFile.ACC_PUBLIC | ClassFile.ACC_ABSTRACT,
+                mb -> {}
+            )
+        );
+        writeRawBytes(classes, "com/example/MyService.class", bytes);
+
+        var refs = ClasspathScanner.scan(classes, JOOQ_PKG);
+
+        assertThat(refs).hasSize(1);
+        var ref = refs.get(0);
+        assertThat(ref.className()).isEqualTo(fqn);
+        assertThat(ref.methods()).extracting(CompletionData.Method::name)
+            .containsExactlyInAnyOrder("list", "noArgs");
+        var list = ref.methods().stream().filter(m -> m.name().equals("list")).findFirst().orElseThrow();
+        assertThat(list.returnType()).isEqualTo("String");
+        assertThat(list.parameters()).hasSize(1);
+        assertThat(list.parameters().get(0).type()).isEqualTo("Integer");
+        // No -parameters attribute on the synthesised classfile, so names
+        // fall back to argN.
+        assertThat(list.parameters().get(0).name()).isEqualTo("arg0");
+    }
+
+    @Test
+    void skipsConstructorAndClassInitMethods(@TempDir Path classes) throws IOException {
+        writePublicClass(classes, "com.example.Plain");
+
+        var refs = ClasspathScanner.scan(classes, JOOQ_PKG);
+
+        // The default classfile build emits a synthetic constructor; it
+        // should not surface as a method candidate.
+        assertThat(refs).hasSize(1);
+        assertThat(refs.get(0).methods()).extracting(CompletionData.Method::name)
+            .doesNotContain("<init>", "<clinit>");
     }
 
     @Test
@@ -86,9 +140,10 @@ class ClasspathScannerTest {
         Files.createDirectories(bogus.getParent());
         Files.write(bogus, new byte[]{0, 1, 2, 3, 4});
 
-        var fqns = ClasspathScanner.scan(classes, JOOQ_PKG);
+        var refs = ClasspathScanner.scan(classes, JOOQ_PKG);
 
-        assertThat(fqns).containsExactly("com.example.Real");
+        assertThat(refs).extracting(CompletionData.ExternalReference::className)
+            .containsExactly("com.example.Real");
     }
 
     private static void writePublicClass(Path classes, String fqn) throws IOException {
