@@ -1813,9 +1813,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(lrk.targetKeyColumns()).hasSize(2);
                 assertThat(lrk.targetKeyColumns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
                     .containsExactly("film_id", "store_id");
-                // Single source of truth: hop.targetColumns() and batchKey.targetKeyColumns() are
-                // the same list instance — no second copy of the column tuple.
-                assertThat(lrk.hop().targetColumns()).isSameAs(lrk.targetKeyColumns());
+                // Single source of truth: hop.targetSideColumns() and batchKey.targetKeyColumns()
+                // resolve to the same column tuple — both materialise the LifterSlot column list.
+                assertThat(lrk.hop().targetSideColumns()).isEqualTo(lrk.targetKeyColumns());
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },

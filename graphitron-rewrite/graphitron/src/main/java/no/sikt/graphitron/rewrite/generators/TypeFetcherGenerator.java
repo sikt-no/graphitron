@@ -775,26 +775,25 @@ public class TypeFetcherGenerator {
      * Builds the {@code Condition} declaration from a single-hop {@link JoinStep.FkJoin} path
      * for a {@link ChildField.TableInterfaceField} fetcher.
      *
-     * <p>FK direction is inferred from {@code targetTable}: if {@code fkJoin.targetTable()}
-     * matches the child table name, the parent holds the FK (parent.fk → child.pk); otherwise
-     * the child holds the FK (child.fk → parent.pk). {@code ColumnRef} carries no table reference,
-     * so {@code targetTable} is the only available signal.
+     * <p>The hop's source side is the parent table, target side the child table — by synthesis-time
+     * orientation. The FK-direction question (which end of the catalog FK lives on which side)
+     * was answered once in {@code BuildContext.synthesizeFkJoin} and baked into the slot pair, so
+     * the emitter reads {@code child.<targetSide> = parentRecord.<sourceSide>} uniformly without
+     * re-deriving direction.
      *
      * <p>Precondition: the classifier guarantees exactly one {@link JoinStep.FkJoin} step
      * (multi-hop and {@link JoinStep.ConditionJoin} paths are rejected at classification time).
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "fk-join.slots-oriented-source-and-target",
+        reliesOn = "Reads slot.targetSide() (child table) and slot.sourceSide() (parent table) "
+            + "from the single FK slot to build the parentRecord-correlation condition without "
+            + "the legacy parentHoldsFk derivation; depends on synthesis-time slot orientation.")
     private static CodeBlock buildJoinPathCondition(List<JoinStep> joinPath, String childTableName) {
         var fkJoin = (JoinStep.FkJoin) joinPath.get(0);
-        String fkHolderCol = fkJoin.sourceColumns().get(0).sqlName();
-        String pkCol       = fkJoin.targetColumns().get(0).sqlName();
-
-        // targetTable is the PK side (the table the FK points to).
-        // If it matches the child table, the parent holds the FK: parent.fk → child.pk.
-        // Otherwise the child holds the FK: child.fk → parent.pk.
-        boolean parentHoldsFk = fkJoin.targetTable().tableName().equals(childTableName);
-
-        String childCol        = parentHoldsFk ? pkCol        : fkHolderCol;
-        String parentRecordCol = parentHoldsFk ? fkHolderCol  : pkCol;
+        var slot = fkJoin.slots().get(0);
+        String childCol        = slot.targetSide().sqlName();
+        String parentRecordCol = slot.sourceSide().sqlName();
 
         return CodeBlock.builder()
             .addStatement("$T condition = $T.field($T.name($S)).eq(parentRecord.get($T.name($S)))",
@@ -906,10 +905,11 @@ public class TypeFetcherGenerator {
             if (tb.discriminatorValue() == null) continue;
             for (var ctf : tb.crossTableFields()) {
                 String aliasVar = ctf.aliasVarName();
-                // FK direction: the @reference is parsed starting from the interface table, so
-                // sourceColumns sit on the parent (interface table = tableLocal) and targetColumns
-                // sit on the joined alias — i.e. the parent holds the FK.
-                var fkOn = JoinPathEmitter.emitCorrelationWhere(ctf.fkJoin(), aliasVar, tableLocal, true);
+                // The @reference is parsed starting from the interface table, so the slot's
+                // source side is on the parent (interface table = tableLocal) and target side on
+                // the joined alias. Slot orientation is direction-blind; emitCorrelationWhere
+                // reads target.<targetSide>.eq(parent.<sourceSide>) uniformly.
+                var fkOn = JoinPathEmitter.emitCorrelationWhere(ctf.fkJoin(), aliasVar, tableLocal);
                 var onCondition = CodeBlock.builder()
                     .add("$L.and($T.field($T.name($S)).eq($S))",
                         fkOn, DSL, DSL, discriminatorColumn, tb.discriminatorValue())

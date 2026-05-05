@@ -39,7 +39,7 @@ class BatchKeyTest {
 
     @Test
     void accessorKeyedSingleJavaTypeNameForSingleColumnPk() {
-        var hop = new JoinStep.LiftedHop(LANGUAGE_TABLE, List.of(LANGUAGE_ID), "owner_0");
+        var hop = TestFixtures.liftedHop(LANGUAGE_TABLE, List.of(LANGUAGE_ID), "owner_0");
         var bk = new BatchKey.AccessorKeyedSingle(hop, SINGLE_ACCESSOR);
         assertThat(bk.javaTypeName())
             .isEqualTo("java.util.List<org.jooq.Record1<java.lang.Integer>>");
@@ -51,7 +51,7 @@ class BatchKeyTest {
         var compositePkB = new ColumnRef("b_id", "B_ID", "java.lang.Integer");
         var compositeTable = TestFixtures.tableRef("composite", "COMPOSITE", "Composite",
             List.of(compositePkA, compositePkB));
-        var hop = new JoinStep.LiftedHop(compositeTable, compositeTable.primaryKeyColumns(), "items_0");
+        var hop = TestFixtures.liftedHop(compositeTable, compositeTable.primaryKeyColumns(), "items_0");
         var bk = new BatchKey.AccessorKeyedMany(hop, MANY_ACCESSOR);
         assertThat(bk.javaTypeName())
             .isEqualTo("java.util.List<org.jooq.Record2<java.lang.Long, java.lang.Integer>>");
@@ -59,19 +59,19 @@ class BatchKeyTest {
 
     @Test
     void accessorKeyedSingleTargetKeyColumnsDelegatesToHop() {
-        var hop = new JoinStep.LiftedHop(LANGUAGE_TABLE, List.of(LANGUAGE_ID), "owner_0");
+        var hop = TestFixtures.liftedHop(LANGUAGE_TABLE, List.of(LANGUAGE_ID), "owner_0");
         var bk = new BatchKey.AccessorKeyedSingle(hop, SINGLE_ACCESSOR);
         // Single source of truth: the BatchKey's targetKeyColumns must round-trip to the hop's
         // own list, not a separate copy. LiftedHop's canonical constructor wraps with
         // List.copyOf, so identity is the test under the hop.targetColumns() projection.
-        assertThat(bk.targetKeyColumns()).isSameAs(hop.targetColumns());
+        assertThat(bk.targetKeyColumns()).isEqualTo(hop.targetSideColumns());
     }
 
     @Test
     void accessorKeyedManyTargetKeyColumnsDelegatesToHop() {
-        var hop = new JoinStep.LiftedHop(FILM_TABLE, List.of(FILM_ID), "films_0");
+        var hop = TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "films_0");
         var bk = new BatchKey.AccessorKeyedMany(hop, MANY_ACCESSOR);
-        assertThat(bk.targetKeyColumns()).isSameAs(hop.targetColumns());
+        assertThat(bk.targetKeyColumns()).isEqualTo(hop.targetSideColumns());
     }
 
     /**
@@ -93,7 +93,7 @@ class BatchKeyTest {
      */
     @Test
     void keyElementTypeShapeMapAcrossVariants() {
-        var lifterHop = new JoinStep.LiftedHop(FILM_TABLE, List.of(FILM_ID), "f_0");
+        var lifterHop = TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "f_0");
         var lifterRef = new LifterRef(ClassName.bestGuess("com.example.Lifters"), "extract");
 
         BatchKey rowKeyed = new BatchKey.RowKeyed(List.of(FILM_ID));
@@ -102,10 +102,10 @@ class BatchKeyTest {
         BatchKey mappedRecordKeyed = new BatchKey.MappedRecordKeyed(List.of(FILM_ID));
         BatchKey lifterRowKeyed = new BatchKey.LifterRowKeyed(lifterHop, lifterRef);
         BatchKey accessorSingle = new BatchKey.AccessorKeyedSingle(
-            new JoinStep.LiftedHop(LANGUAGE_TABLE, List.of(LANGUAGE_ID), "owner_0"),
+            TestFixtures.liftedHop(LANGUAGE_TABLE, List.of(LANGUAGE_ID), "owner_0"),
             SINGLE_ACCESSOR);
         BatchKey accessorMany = new BatchKey.AccessorKeyedMany(
-            new JoinStep.LiftedHop(FILM_TABLE, List.of(FILM_ID), "films_0"),
+            TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "films_0"),
             MANY_ACCESSOR);
         BatchKey tableRecordKeyed = new BatchKey.TableRecordKeyed(List.of(FILM_ID),
             no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class);
@@ -169,13 +169,13 @@ class BatchKeyTest {
     void recordParentBatchKeyExhaustiveSwitchCompilesAcrossAllFourPermits() {
         BatchKey.RecordParentBatchKey row = new BatchKey.RowKeyed(List.of(FILM_ID));
         BatchKey.RecordParentBatchKey lifter = new BatchKey.LifterRowKeyed(
-            new JoinStep.LiftedHop(FILM_TABLE, List.of(FILM_ID), "f_0"),
+            TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "f_0"),
             new LifterRef(ClassName.bestGuess("com.example.Lifters"), "extract"));
         BatchKey.RecordParentBatchKey accSingle = new BatchKey.AccessorKeyedSingle(
-            new JoinStep.LiftedHop(LANGUAGE_TABLE, List.of(LANGUAGE_ID), "owner_0"),
+            TestFixtures.liftedHop(LANGUAGE_TABLE, List.of(LANGUAGE_ID), "owner_0"),
             SINGLE_ACCESSOR);
         BatchKey.RecordParentBatchKey accMany = new BatchKey.AccessorKeyedMany(
-            new JoinStep.LiftedHop(FILM_TABLE, List.of(FILM_ID), "films_0"),
+            TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "films_0"),
             MANY_ACCESSOR);
 
         for (var bk : List.of(row, lifter, accSingle, accMany)) {

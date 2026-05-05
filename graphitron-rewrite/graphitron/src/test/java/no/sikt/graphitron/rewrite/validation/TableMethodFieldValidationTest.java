@@ -32,7 +32,7 @@ class TableMethodFieldValidationTest {
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey (stubbed)",
             new TableMethodField("Film", "filteredActors", null, new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)), List.of(
-                new JoinStep.FkJoin("film_actor_film_id_fkey", null, null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
+                TestFixtures.fkJoin("film_actor_film_id_fkey", null, null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
                 new MethodRef.Basic("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of())),
             List.of(stubbedError("Film.filteredActors", TableMethodField.class))),
 

@@ -185,28 +185,18 @@ public final class SplitRowsMethodEmitter {
         // construction (BatchKey.LifterRowKeyed holds one LiftedHop, not a list), so the bridging
         // loop below never executes for it.
         JoinStep firstStep = joinPath.get(0);
-        // JOIN-on predicate columns: parent-side FK-holder columns (FkJoin.sourceColumns) for
-        // catalog FKs, target-side columns (LiftedHop.targetColumns) for the lifter path. This
-        // is the genuine identity fork — sealed switch belongs here, not at the uniform target
-        // accessors above.
-        List<ColumnRef> joinOnCols = switch (firstStep) {
-            case JoinStep.FkJoin fk          -> fk.sourceColumns();
-            case JoinStep.LiftedHop lh       -> lh.targetColumns();
-            case JoinStep.ConditionJoin cj   -> throw new IllegalStateException(
+        // Parent-side and target-side column lists, materialised through the WithTarget capability.
+        // Both FkJoin and LiftedHop carry slots; FkSlot pairs source/target distinctly, LifterSlot
+        // collapses them onto a single column. The accessors read direction-blind — synthesis-time
+        // orientation guarantees sourceSide is on the parent table and targetSide on the target.
+        if (firstStep instanceof JoinStep.ConditionJoin) {
+            throw new IllegalStateException(
                 "ConditionJoin cannot be the first hop of a Split/Record rows-method; "
                 + "unsupportedReason should have short-circuited upstream");
-        };
-        // Parent-side column for each joinOnCols slot. FK declaration pairs sourceColumns[i] with
-        // targetColumns[i]; the lifter path stores both sides on the same list. Used to derive the
-        // parentInput.field(sqlName, type) reference per slot, sidestepping any positional mismatch
-        // between FK column ordering and @node(keyColumns: [...]) ordering.
-        List<ColumnRef> joinOnParentCols = switch (firstStep) {
-            case JoinStep.FkJoin fk          -> fk.targetColumns();
-            case JoinStep.LiftedHop lh       -> lh.targetColumns();
-            case JoinStep.ConditionJoin cj   -> throw new IllegalStateException(
-                "ConditionJoin cannot be the first hop of a Split/Record rows-method; "
-                + "unsupportedReason should have short-circuited upstream");
-        };
+        }
+        JoinStep.WithTarget firstWithTarget = (JoinStep.WithTarget) firstStep;
+        List<ColumnRef> joinOnCols = firstWithTarget.targetSideColumns();
+        List<ColumnRef> joinOnParentCols = firstWithTarget.sourceSideColumns();
 
         // Empty-input short-circuit — before touching the DSL context.
         body.beginControlFlow("if (keys.isEmpty())");
@@ -639,35 +629,26 @@ public final class SplitRowsMethodEmitter {
         body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
 
-        // JOIN: terminal.<target_col> = parentInput.<value>.
-        // Both FkJoin and LiftedHop expose the terminal-side columns through targetColumns():
-        // for FkJoin this is the parent's FK target on the terminal (single-cardinality
-        // SplitTableField, parent-holds-FK); for LiftedHop this is the element table's PK
-        // (loadMany contract for AccessorKeyedMany). The matching parent-side column for slot
-        // i differs by step type: FkJoin pairs targetColumns[i] with sourceColumns[i] by FK
-        // declaration; LiftedHop's DataLoader key tuple IS its target-column tuple by
-        // construction, so the parent column equals the terminal column. We resolve the
-        // parentInput field by sqlName + Java type rather than positional index, because
-        // @node(keyColumns: [...]) ordering may differ from the FK/lifter column ordering.
-        List<ColumnRef> singleParentCols;
-        if (firstHop instanceof JoinStep.FkJoin fkSingle) {
-            singleParentCols = fkSingle.sourceColumns();
-        } else if (firstHop instanceof JoinStep.LiftedHop lhSingle) {
-            singleParentCols = lhSingle.targetColumns();
-        } else {
-            throw new IllegalStateException(
-                "buildSingleMethod: unexpected first-hop type " + firstHop.getClass().getName());
-        }
+        // JOIN: terminal.<slot.targetSide()> = parentInput.<slot.sourceSide()>.
+        // Both FkJoin and LiftedHop expose slots() through WithTarget; FkSlot pairs source/target
+        // distinctly while LifterSlot collapses both onto a single column by construction (the
+        // DataLoader key tuple IS the target-column tuple). The slot-iteration loop reads
+        // direction-blind regardless of which permit the firstHop carries — synthesis-time
+        // orientation guarantees sourceSide is on the parent table and targetSide on the terminal.
+        // The parentInput field is resolved by sqlName + Java type rather than positional index,
+        // sidestepping @node(keyColumns: [...]) vs FK column ordering mismatches.
         var onCond = CodeBlock.builder();
-        for (int i = 0; i < firstHop.targetColumns().size(); i++) {
-            if (i > 0) onCond.add(".and(");
-            ColumnRef parentCol = singleParentCols.get(i);
+        int slotIdx = 0;
+        for (var slot : firstHop.slots()) {
+            if (slotIdx > 0) onCond.add(".and(");
+            ColumnRef parentCol = slot.sourceSide();
             ClassName colType = ClassName.bestGuess(parentCol.columnClass());
             onCond.add("$L.$L.eq(parentInput.field($S, $T.class))",
                 firstAlias,
-                firstHop.targetColumns().get(i).javaName(),
+                slot.targetSide().javaName(),
                 parentCol.sqlName(), colType);
-            if (i > 0) onCond.add(")");
+            if (slotIdx > 0) onCond.add(")");
+            slotIdx++;
         }
 
         var sel = CodeBlock.builder();

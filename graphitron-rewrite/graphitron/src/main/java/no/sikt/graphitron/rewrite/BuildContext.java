@@ -22,6 +22,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -499,6 +500,18 @@ class BuildContext {
      */
     ParsedPath parsePath(GraphQLDirectiveContainer container, String fieldName,
             String startSqlTableName, String targetSqlTableName) {
+        return parsePath(container, fieldName, startSqlTableName, targetSqlTableName, /*isList=*/false);
+    }
+
+    /**
+     * Variant of {@link #parsePath} that accepts the field's list-cardinality, used to
+     * disambiguate self-referential FK direction at synthesis time. For {@code category.parent}
+     * the parent (source) holds the FK; for {@code category.children} the child (target) holds it,
+     * even though both navigate the same FK constraint. Cardinality is the only reliable signal
+     * here — the table-name comparison cannot resolve self-ref direction.
+     */
+    ParsedPath parsePath(GraphQLDirectiveContainer container, String fieldName,
+            String startSqlTableName, String targetSqlTableName, boolean isList) {
         var directive = container.getAppliedDirective(DIR_REFERENCE);
         var pathArg = directive != null ? directive.getArgument(ARG_PATH) : null;
         List<?> elements;
@@ -516,7 +529,7 @@ class BuildContext {
 
         for (var v : elements) {
             if (v instanceof Map<?, ?>) {
-                parsePathElement(asMap(v), currentSource, fieldName, stepIndex, resolvedElements, errors);
+                parsePathElement(asMap(v), currentSource, fieldName, stepIndex, resolvedElements, errors, isList);
                 stepIndex++;
                 if (!resolvedElements.isEmpty()) {
                     var last = resolvedElements.getLast();
@@ -534,7 +547,7 @@ class BuildContext {
                 && !startSqlTableName.equalsIgnoreCase(targetSqlTableName)) {
             var fks = catalog.findForeignKeysBetweenTables(startSqlTableName, targetSqlTableName);
             if (fks.size() == 1) {
-                Optional<FkJoin> step = synthesizeFkJoin(fks.get(0), startSqlTableName, fieldName, 0, null);
+                Optional<FkJoin> step = synthesizeFkJoin(fks.get(0), startSqlTableName, fieldName, 0, null, /*selfRefFkOnSource=*/!isList);
                 if (step.isEmpty()) {
                     return new ParsedPath(List.of(),
                         "FK '" + fks.get(0).getName() + "' between '" + startSqlTableName + "' and '"
@@ -567,11 +580,22 @@ class BuildContext {
      * {@link JooqCatalog#findForeignKeysBetweenTables}, so this is the structural
      * "schema present, no Tables class" case handled by {@link JooqCatalog.TableEntry#toTableRef}.
      */
+    /**
+     * @param selfRefFkOnSource for self-referential FKs (where {@code f.getTable()} equals
+     *     {@code f.getKey().getTable()}), the table-name comparison is ambiguous. The caller
+     *     supplies this hint: {@code true} when the parent holds the FK (single-cardinality
+     *     traversal, e.g. {@code category.parent}), {@code false} when the child holds the FK
+     *     (list-cardinality traversal, e.g. {@code category.children}). Ignored for non-self-ref
+     *     FKs, where the table-name comparison resolves direction.
+     */
     Optional<FkJoin> synthesizeFkJoin(ForeignKey<?, ?> f, String sourceSqlName, String fieldName,
-            int stepIndex, MethodRef whereFilter) {
+            int stepIndex, MethodRef whereFilter, boolean selfRefFkOnSource) {
         String fkSideTable  = f.getTable().getName();
         String keySideTable = f.getKey().getTable().getName();
-        boolean fkOnSource = sourceSqlName.equalsIgnoreCase(fkSideTable);
+        boolean isSelfRef = fkSideTable.equalsIgnoreCase(keySideTable);
+        boolean fkOnSource = isSelfRef
+            ? selfRefFkOnSource
+            : sourceSqlName.equalsIgnoreCase(fkSideTable);
         String targetSqlName = fkOnSource ? keySideTable : fkSideTable;
         var fkRef = catalog.findForeignKeyByName(f.getName()).orElse(null);
         Optional<TableRef> targetTable = resolveTable(targetSqlName);
@@ -646,7 +670,7 @@ class BuildContext {
      * {@code fieldName + "_" + stepIndex}.
      */
     private void parsePathElement(Map<String, Object> element, String currentSourceSqlName,
-            String fieldName, int stepIndex, List<JoinStep> out, List<String> errors) {
+            String fieldName, int stepIndex, List<JoinStep> out, List<String> errors, boolean isList) {
         Object keyRaw = element.get(ARG_KEY);
         Object tableRaw = element.get(ARG_TABLE_REF);
         Object conditionRaw = element.get(ARG_CONDITION);
@@ -688,7 +712,7 @@ class BuildContext {
                 }
                 whereFilter = res.ref();
             }
-            Optional<FkJoin> keyStep = synthesizeFkJoin(f, effectiveSourceSqlName, fieldName, stepIndex, whereFilter);
+            Optional<FkJoin> keyStep = synthesizeFkJoin(f, effectiveSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
             if (keyStep.isEmpty()) {
                 errors.add("key '" + f.getName() + "' touches a table whose schema package is not generated");
                 return;
@@ -715,7 +739,7 @@ class BuildContext {
                 }
                 whereFilter = res.ref();
             }
-            Optional<FkJoin> tableStep = synthesizeFkJoin(fks.get(0), currentSourceSqlName, fieldName, stepIndex, whereFilter);
+            Optional<FkJoin> tableStep = synthesizeFkJoin(fks.get(0), currentSourceSqlName, fieldName, stepIndex, whereFilter, /*selfRefFkOnSource=*/!isList);
             if (tableStep.isEmpty()) {
                 errors.add("FK '" + fks.get(0).getName() + "' between '" + currentSourceSqlName + "' and '"
                     + tableName.get() + "' touches a table whose schema package is not generated");
@@ -1165,7 +1189,10 @@ class BuildContext {
                         return new InputFieldResolution.Unresolved(name, null,
                             "synthesis shim FK '" + shimFkName + "' not found in catalog");
                     }
-                    Optional<FkJoin> shimFkStepOpt = synthesizeFkJoin(shimFkOpt.get(), tableName, name, 0, null);
+                    // Synthesis shim is for input-side NodeId refs; the parent (input field's
+                    // backing table) holds the FK by the shim's invariant, so selfRefFkOnSource
+                    // is fixed at true.
+                    Optional<FkJoin> shimFkStepOpt = synthesizeFkJoin(shimFkOpt.get(), tableName, name, 0, null, /*selfRefFkOnSource=*/true);
                     Optional<TableRef> shimTargetTableOpt = resolveTable(targetTableOpt.get());
                     if (shimFkStepOpt.isEmpty() || shimTargetTableOpt.isEmpty()) {
                         return new InputFieldResolution.Unresolved(name, null,

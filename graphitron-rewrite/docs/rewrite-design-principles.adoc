@@ -223,11 +223,14 @@ directive closes that gap: the schema author supplies a static Java method that 
 batch key out of the parent DTO, plus the `targetColumns` (column names on the child table) the
 key positions match. The classifier reflects on the lifter once at build time, validates the per-position
 column-class match, and produces a `BatchKey.LifterRowKeyed` carrying a `JoinStep.LiftedHop` (target
-table + key columns, single-hop by construction) and a `LifterRef` (declaring class + method name).
-The emitter feeds that into the existing `SplitRowsMethodEmitter.buildListMethod` path with no
-identity branching: target accessors come from the `JoinStep.WithTarget` capability, key extraction
-from the lifter call. The lifter is the *single place* where the DTO → key mapping lives; if a
-schema author needs a different key, they author a new lifter method, not a new emitter arm.
+table + slot list, single-hop by construction) and a `LifterRef` (declaring class + method name).
+The lifted slots are `JoinSlot.LifterSlot` permits, each folding source-side and target-side onto
+a single `ColumnRef` by construction (DataLoader key tuple IS target-column tuple as a type fact,
+not a prose precondition). The emitter feeds that into the existing
+`SplitRowsMethodEmitter.buildListMethod` path with no identity branching: target accessors come
+from `WithTarget.slots()`, key extraction from the lifter call. The lifter is the *single place*
+where the DTO → key mapping lives; if a schema author needs a different key, they author a new
+lifter method, not a new emitter arm.
 
 === Helper-locality
 

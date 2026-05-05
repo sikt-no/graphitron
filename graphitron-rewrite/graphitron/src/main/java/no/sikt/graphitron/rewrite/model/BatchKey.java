@@ -74,7 +74,7 @@ public sealed interface BatchKey
      *       {@code "java.util.Set<org.jooq.Record1<java.lang.Integer>>"}</li>
      *   <li>{@code LifterRowKeyed(hop, lifter)} →
      *       {@code "java.util.List<org.jooq.Row1<java.lang.Long>>"} (using
-     *       {@code hop.targetColumns()})</li>
+     *       {@code hop.targetSideColumns()})</li>
      * </ul>
      */
     String javaTypeName();
@@ -336,22 +336,22 @@ public sealed interface BatchKey
     record LifterRowKeyed(JoinStep.LiftedHop hop, LifterRef lifter) implements RecordParentBatchKey {
 
         /**
-         * Target-side columns the lifter materialises. Delegates to {@code hop.targetColumns()};
+         * Target-side columns the lifter materialises. Delegates to {@code hop.targetSideColumns()};
          * the {@link JoinStep.LiftedHop} is the single source of truth so the DataLoader-key
          * column tuple cannot diverge from the JOIN target columns.
          */
         public List<ColumnRef> targetKeyColumns() {
-            return hop.targetColumns();
+            return hop.targetSideColumns();
         }
 
         @Override
         public String javaTypeName() {
-            return containerType("List", "Row", hop.targetColumns());
+            return containerType("List", "Row", hop.targetSideColumns());
         }
 
         @Override
         public List<ColumnRef> preludeKeyColumns() {
-            return hop.targetColumns();
+            return hop.targetSideColumns();
         }
 
         @Override
@@ -383,21 +383,21 @@ public sealed interface BatchKey
 
         /**
          * Target-side key columns: the element table's PK. Delegates to
-         * {@code hop.targetColumns()}; the {@link JoinStep.LiftedHop} is the single source of
+         * {@code hop.targetSideColumns()}; the {@link JoinStep.LiftedHop} is the single source of
          * truth so the DataLoader-key column tuple cannot diverge from the JOIN target columns.
          */
         public List<ColumnRef> targetKeyColumns() {
-            return hop.targetColumns();
+            return hop.targetSideColumns();
         }
 
         @Override
         public String javaTypeName() {
-            return containerType("List", "Record", hop.targetColumns());
+            return containerType("List", "Record", hop.targetSideColumns());
         }
 
         @Override
         public List<ColumnRef> preludeKeyColumns() {
-            return hop.targetColumns();
+            return hop.targetSideColumns();
         }
 
         @Override
@@ -434,21 +434,21 @@ public sealed interface BatchKey
 
         /**
          * Target-side key columns: the element table's PK. Delegates to
-         * {@code hop.targetColumns()}; the {@link JoinStep.LiftedHop} is the single source of
+         * {@code hop.targetSideColumns()}; the {@link JoinStep.LiftedHop} is the single source of
          * truth so the DataLoader-key column tuple cannot diverge from the JOIN target columns.
          */
         public List<ColumnRef> targetKeyColumns() {
-            return hop.targetColumns();
+            return hop.targetSideColumns();
         }
 
         @Override
         public String javaTypeName() {
-            return containerType("List", "Record", hop.targetColumns());
+            return containerType("List", "Record", hop.targetSideColumns());
         }
 
         @Override
         public List<ColumnRef> preludeKeyColumns() {
-            return hop.targetColumns();
+            return hop.targetSideColumns();
         }
 
         @Override
