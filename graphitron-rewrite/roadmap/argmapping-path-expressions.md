@@ -132,7 +132,7 @@ R59 sharpened `ServiceCatalog`'s parameter-mismatch messages with concrete `argM
 
 ## Implementation progress
 
-Phases A through E and D-list have shipped to trunk; F remains. Each phase preserves R53 wire-compat for non-dotted inputs.
+Phases A through E, D-list, and F (floor) have shipped to trunk; F (stretch) is deferred. Each phase preserves R53 wire-compat for non-dotted inputs.
 
 | Phase | Scope | Trunk SHA |
 |-------|-------|-----------|
@@ -142,7 +142,8 @@ Phases A through E and D-list have shipped to trunk; F remains. Each phase prese
 | D | `ParamSource.Arg` retyped to carry `PathExpr path`; multi-segment paths route through the existing `CallSiteExtraction.NestedInputField` machinery for null-safe Map traversal | `d5555f2` |
 | E | Execution-tier sakila fixture (`filmsByPath` via `input.ids`); leaf-vs-intermediate list bug fix in `ArgCallEmitter.extractionForArg` | `035c7f8` |
 | D-list | Element-wise list traversal in emit: a parallel `buildListAwarePathExtraction` walker emits `.stream().map(...).toList()` for intermediate `liftsList=true` segments; one-list-deep and two-list-deep sakila fixtures (`filmsByListPath` via `input.items.id` → `List<Integer>`; `filmsByNestedListPath` via `input.groups.items.id` → `List<List<Integer>>`); the `IllegalStateException` guard in `extractionForArg` is replaced by a dispatcher in `emitForParam` that routes intermediate-list paths through the new walker | (this commit) |
-| F | Error-message extension (floor + stretch) for path-expression hints in `ServiceCatalog` parameter-mismatch messages | — |
+| F (floor) | `ServiceCatalog.reflectServiceMethod` parameter-mismatch suggestion now appends a dot-path example (`argMapping: "<param>: <slot>.<fieldName>"`) whenever the existing argMapping example fires (i.e. when the field has ≥1 GraphQL argument). Two unit tests pin the new wording and the no-args negative case | (this commit) |
+| F (stretch) | (deferred) Pre-fill an unambiguous reachable path under a slot when the unmatched Java parameter's type matches a single nested path. Requires either widening `reflectServiceMethod`'s signature to thread `Map<String, GraphQLInputType> slotTypes` (~30 test call sites to update) or adding a typed `ParameterMismatch(displayName, typeName, slotTypes)` rejection arm rendered at a higher layer; both routes are disproportionate plumbing for a polish improvement with no live consumer | — |
 
 ### Seam decisions taken (with the rationale that surfaced from the implementation)
 
