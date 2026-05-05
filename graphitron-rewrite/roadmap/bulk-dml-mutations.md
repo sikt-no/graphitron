@@ -504,25 +504,31 @@ sharpening.
     - `createFilm_omittedFieldUsesColumnDefault` — single-row
       INSERT omits `rentalDuration`; asserts read-back is the DB
       default (`3`).
-    - `createFilm_explicitNullViolatesNotNull` — single-row INSERT
-      sets `rentalDuration: null`; asserts
-      `IntegrityConstraintViolationException` (the NOT NULL branch
-      the missing-vs-null section explicitly accommodates).
+    - `createFilm_explicitNullRaisesError` — single-row INSERT
+      sets `rentalDuration: null`; the jOOQ-thrown
+      `IntegrityConstraintViolationException` routes through
+      `ErrorRouter.redact` (same as
+      [`GraphQLQueryTest.compositeNodeIdLookup_typeMismatch_raisesError`](../graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/GraphQLQueryTest.java)),
+      so assert `result.getErrors()` is non-empty and `data` is
+      null. Locks in the NOT NULL branch the missing-vs-null
+      section explicitly accommodates.
     - `createFilms_omittedFieldUsesColumnDefault` — bulk INSERT
       with all rows omitting `rentalDuration`; asserts every row
       reads back `3`.
-    - `createFilms_explicitNullViolatesNotNull` — bulk INSERT with
-      one row carrying `rentalDuration: null`; asserts the whole
-      statement aborts with `IntegrityConstraintViolationException`
-      and `QUERY_COUNT == 1` (the violated INSERT, no partial
-      writes).
+    - `createFilms_explicitNullRaisesError` — bulk INSERT with
+      one row carrying `rentalDuration: null`; the constraint
+      violation aborts the whole statement and routes through
+      `ErrorRouter.redact`. Assert `result.getErrors()` is
+      non-empty and `QUERY_COUNT == 1` (the violated INSERT
+      dispatched once, no partial writes).
 
     These are split rather than conjoined into
     `_omittedFieldUsesColumnDefault_explicitNullWritesNull` because
     `rental_duration` is `NOT NULL DEFAULT 3`: explicit null
-    surfaces a constraint violation, not a NULL write, and on a
-    bulk INSERT the violation aborts the whole statement, so a
-    single conjoined test can't observe both row outcomes.
+    routes through the redact path as an error, not a NULL write,
+    and on a bulk INSERT the constraint violation aborts the whole
+    statement, so a single conjoined test can't observe both row
+    outcomes.
   - UPDATE missing-vs-null pair (single-row + bulk):
     - `updateFilm_omittedFieldLeavesColumnAlone_explicitNullWritesNull`
       — one single-row UPDATE call: row sets `title` to `"X"` and
@@ -550,7 +556,7 @@ sharpening.
       the alignment between UPSERT update branch and UPDATE
       verb's PATCH semantics; ensures `c = EXCLUDED.c` did not
       sneak back in for omitted columns.
-    - `upsertFilms_divergentInputShapes_routesGuardError`
+    - `upsertFilms_divergentInputShapes_raisesError`
       — bulk UPSERT with row A having `{filmId, title}` and row
       B having `{filmId, title, description}` (and
       `tia.setFields()` non-empty so `.doUpdate()` mode is in
@@ -564,19 +570,19 @@ sharpening.
       and that `QUERY_COUNT == 1` (one INSERT … ON CONFLICT DO
       NOTHING dispatched). Locks in the gating that the
       uniformity guard fires only when `.doUpdate()` is in play.
-  - `updateFilms_divergentInputShapes_routesGuardError` — bulk
+  - `updateFilms_divergentInputShapes_raisesError` — bulk
     UPDATE with row A having `{filmId, title}` and row B having
     `{filmId, title, description}`; asserts the routed error
     envelope (`IllegalArgumentException` message reaches the
     response via `ErrorRouter`, naming the offending row index
     and both key sets) plus `QUERY_COUNT == 0`.
-  - `updateFilms_onlyLookupKeyFields_routesGuardError` (and the
-    single-row analogue `updateFilm_onlyLookupKeyFields_routesGuardError`)
+  - `updateFilms_onlyLookupKeyFields_raisesError` (and the
+    single-row analogue `updateFilm_onlyLookupKeyFields_raisesError`)
     — asserts the no-set-fields-present runtime check fires when
     the input contains only `@lookupKey` fields, surfacing the
     routed envelope. Mirrored on UPSERT for `.doUpdate()` mode
-    (`upsertFilms_onlyLookupKeyFields_routesGuardError`, single-row
-    analogue `upsertFilm_onlyLookupKeyFields_routesGuardError`).
+    (`upsertFilms_onlyLookupKeyFields_raisesError`, single-row
+    analogue `upsertFilm_onlyLookupKeyFields_raisesError`).
   - Empty-list short-circuit, one test per verb (the contract is
     uniform across all four; lock each so a regression in one arm
     can't pass silently):
@@ -585,7 +591,7 @@ sharpening.
     `deleteFilms_emptyListInput_doesNotRoundTrip`,
     `upsertFilms_emptyListInput_doesNotRoundTrip`. Each asserts
     the response carries an empty list and `QUERY_COUNT == 0`.
-  - `updateFilms_duplicateLookupKeys_routesGuardError` — asserts
+  - `updateFilms_duplicateLookupKeys_raisesError` — asserts
     the bulk-UPDATE duplicate-tuple guard fires; assert via the
     routed error envelope plus `QUERY_COUNT == 0`, so the guard
     is observed *before* any SQL is dispatched. UPSERT has no
