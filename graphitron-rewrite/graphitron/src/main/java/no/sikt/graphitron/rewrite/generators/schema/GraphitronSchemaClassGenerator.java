@@ -424,15 +424,19 @@ public final class GraphitronSchemaClassGenerator {
      */
     private static CodeBlock buildErrorTypeFieldFetchers(String typeName) {
         var FIELD_COORDINATES = ClassName.get("graphql.schema", "FieldCoordinates");
+        var DATA_FETCHER      = ClassName.get("graphql.schema", "DataFetcher");
         var GRAPHQL_ERROR     = ClassName.get("graphql", "GraphQLError");
         var THROWABLE         = ClassName.get(Throwable.class);
         var STRING_CN         = ClassName.get(String.class);
+        var OBJECT_CN         = ClassName.get(Object.class);
+        var DF_OBJECT         = ParameterizedTypeName.get(DATA_FETCHER, OBJECT_CN);
 
         var cb = CodeBlock.builder();
-        // path
-        cb.add("codeRegistry.dataFetcher($T.coordinates($S, $S), env -> {\n",
-            FIELD_COORDINATES, typeName, "path").indent();
-        cb.addStatement("Object src = env.getObject()");
+        // path: cast disambiguates Builder.dataFetcher(..., DataFetcher<?>) from
+        // its DataFetcherFactory<?> overload, and pins env to DataFetchingEnvironment.
+        cb.add("codeRegistry.dataFetcher($T.coordinates($S, $S), ($T) env -> {\n",
+            FIELD_COORDINATES, typeName, "path", DF_OBJECT).indent();
+        cb.addStatement("Object src = env.getSource()");
         cb.beginControlFlow("if (src instanceof $T ge)", GRAPHQL_ERROR);
         cb.addStatement("return ge.getPath() == null ? java.util.List.of() : "
             + "ge.getPath().stream().map($T::valueOf).toList()", STRING_CN);
@@ -441,9 +445,9 @@ public final class GraphitronSchemaClassGenerator {
             + ".map($T::valueOf).toList()", STRING_CN);
         cb.unindent().add("});\n");
         // message
-        cb.add("codeRegistry.dataFetcher($T.coordinates($S, $S), env -> {\n",
-            FIELD_COORDINATES, typeName, "message").indent();
-        cb.addStatement("Object src = env.getObject()");
+        cb.add("codeRegistry.dataFetcher($T.coordinates($S, $S), ($T) env -> {\n",
+            FIELD_COORDINATES, typeName, "message", DF_OBJECT).indent();
+        cb.addStatement("Object src = env.getSource()");
         cb.beginControlFlow("if (src instanceof $T ge)", GRAPHQL_ERROR);
         cb.addStatement("return ge.getMessage()");
         cb.endControlFlow();
