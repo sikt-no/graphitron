@@ -1,0 +1,7 @@
+type Query {
+  query(customerIds: [ID!]! @nodeId(typeName: "Customer") @condition(condition: {name: "QUERY_FETCH_CONDITION", method: "queryCustomerNodeIdsAsString"})): Customer
+}
+
+type Customer implements Node @node(typeId: "C") @table {
+  id: ID!
+}

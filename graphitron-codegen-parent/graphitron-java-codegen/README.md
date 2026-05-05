@@ -26,6 +26,7 @@ using Java and [jOOQ](https://www.jooq.org/).
     - [Skip DataFetcher generation with @notGenerated](#skip-datafetcher-generation-with-notgenerated)
     - [Map fields to table columns with @field](#map-fields-to-table-columns-with-field)
     - [Construct nested types from table columns with @experimental_constructType](#construct-nested-types-from-table-columns-with-experimental_constructtype)
+    - [Resolve fields from database functions with @experimental_procedureCall](#resolve-fields-from-database-functions-with-experimental_procedurecall)
   - [Tables, joins and records](#tables-joins-and-records)
     - [Link types to database tables with @table](#link-types-to-database-tables-with-table)
     - [Define table join paths with @reference](#define-table-join-paths-with-reference)
@@ -43,6 +44,7 @@ using Java and [jOOQ](https://www.jooq.org/).
     - [Example: Condition using nested record configurations](#example-condition-using-nested-record-configurations)
     - [Example: Schema with listed input types and condition set _on_ listed input field](#example-schema-with-listed-input-types-and-condition-set-on-listed-input-field)
     - [Example: Schema with listed input types and condition set on input field _inside_ a list input](#example-schema-with-listed-input-types-and-condition-set-on-input-field-inside-a-list-input)
+    - [Example: Condition with @nodeId argument](#example-condition-with-nodeid-argument)
   - [Map enums with @enum](#map-enums-with-enum)
   - [Generate mutations with @mutation](#generate-mutations-with-mutation)
   - [Custom logic with @service](#custom-logic-with-service)
@@ -53,6 +55,10 @@ using Java and [jOOQ](https://www.jooq.org/).
     - [Auto-fetching @table types from database](#auto-fetching-table-types-from-database)
     - [Nested input structures](#nested-input-structures)
     - [Input types with Java records](#input-types-with-java-records)
+    - [Explicit null vs not provided in services](#explicit-null-vs-not-provided-in-services)
+      - [jOOQ record inputs](#jooq-record-inputs)
+      - [Java record inputs (experimental)](#java-record-inputs-experimental)
+      - [How to use](#how-to-use)
     - [Context variables](#context-variables)
     - [Response mapping](#response-mapping)
   - [Custom table resolution with @tableMethod](#custom-table-resolution-with-tablemethod)
@@ -879,6 +885,26 @@ _Resulting_code_:
                ).toList()
        ) : DSL.noCondition()
 )
+```
+
+#### Example: Condition with @nodeId argument
+A `@nodeId` argument can be received as a decoded jOOQ record by declaring the corresponding
+condition method parameter as the record type.
+
+_Schema_:
+```graphql
+customerWithNextCustomerId(
+    customerId: ID!
+        @nodeId(typeName: "Customer")
+        @condition(condition: {className: "some.path.CustomerConditions", method: "customerWithNextCustomerId"}, override: true)
+): Customer
+```
+
+_Condition method_:
+```java
+public static Condition customerWithNextCustomerId(Customer customer, CustomerRecord id) {
+    return customer.CUSTOMER_ID.eq(id.getCustomerId() + 1);
+}
 ```
 
 ### Map enums with @enum

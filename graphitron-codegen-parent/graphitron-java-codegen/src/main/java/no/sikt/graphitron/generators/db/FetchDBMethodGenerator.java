@@ -12,6 +12,7 @@ import no.sikt.graphitron.definitions.mapping.JOOQMapping;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.InterfaceDefinition;
 import no.sikt.graphitron.definitions.objects.ObjectDefinition;
+import no.sikt.graphitron.definitions.sql.SQLCondition;
 import no.sikt.graphitron.definitions.sql.SQLJoinStatement;
 import no.sikt.graphitron.generators.abstractions.DBMethodGenerator;
 import no.sikt.graphitron.generators.codebuilding.KeyWrapper;
@@ -28,6 +29,7 @@ import org.jooq.Named;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.configuration.GeneratorConfig.*;
@@ -39,14 +41,12 @@ import static no.sikt.graphitron.generators.codebuilding.NameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.*;
-import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.isNodeIdReferenceField;
 import static no.sikt.graphitron.generators.context.NodeIdReferenceHelpers.resolveColumnNamesForNodeIdField;
+import static no.sikt.graphitron.generators.dto.DTOGenerator.getDTOGetterMethodNameForField;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
-import static no.sikt.graphitron.mappings.RoutineReflection.getInParameters;
-import static no.sikt.graphitron.mappings.RoutineReflection.getRoutineMethodName;
-import static no.sikt.graphitron.mappings.RoutineReflection.getRoutinesClassName;
-import static no.sikt.graphitron.mappings.RoutineReflection.resolveRoutine;
+import static no.sikt.graphitron.mappings.ReflectionHelpers.methodExpectsTableRecordParamAtIndex;
+import static no.sikt.graphitron.mappings.RoutineReflection.*;
 import static no.sikt.graphitron.mappings.TableReflection.*;
 import static org.apache.commons.lang3.StringUtils.uncapitalize;
 
@@ -808,7 +808,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             }
 
             if (field.hasCondition()) {
-                var conditionInputs = List.of(renderedSequence, getCheckedNameWithPath(inputCondition));
+                var conditionInputs = List.of(renderedSequence, getCheckedNameWithPath(inputCondition, field.getCondition(), 2, 1));
                 allConditionCodeBlocks.add(field.getCondition().formatToString(conditionInputs));
             }
         }
@@ -830,18 +830,22 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
             var sequence = context.iterateJoinSequenceFor(field).render();
 
             if (!sequence.isEmpty() && field.hasCondition()) {
-                var conditionInputs = List.of(sequence, getCheckedNameWithPath(inputCondition));
+                var conditionInputs = List.of(sequence, getCheckedNameWithPath(inputCondition, field.getCondition(), 2, 1));
                 allConditionCodeBlocks.add(field.getCondition().formatToString(conditionInputs));
             }
         }
 
         for (var condition : declaredInputConditions.entrySet()) {
+            var values = condition.getValue();
+            var sqlCondition = condition.getKey().getCondition();
+            var methodInputCount = 1 + values.size();
             var inputs = Stream.concat(
                     Stream.of(context.getCurrentJoinSequence().render()),
-                    condition.getValue().stream().map(this::getCheckedNameWithPath)
+                    IntStream.range(0, values.size())
+                            .mapToObj(i -> getCheckedNameWithPath(values.get(i), sqlCondition, methodInputCount, i + 1))
             ).collect(Collectors.toList());
 
-            allConditionCodeBlocks.add(condition.getKey().getCondition().formatToString(inputs));
+            allConditionCodeBlocks.add(sqlCondition.formatToString(inputs));
         }
         return allConditionCodeBlocks;
     }
@@ -920,20 +924,39 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
                 .orElseThrow(() -> new IllegalStateException("No join fields found for EXISTS correlation on " + aliasName));
     }
 
-    private CodeBlock getCheckedNameWithPath(InputCondition condition) {
+    private CodeBlock getCheckedNameWithPath(InputCondition condition, SQLCondition sqlCondition, int methodInputCount, int paramIndex) {
         var nameWithPath = condition.getNameWithPath();
         var checks = condition.getChecksAsSequence();
-        var enumConverter = toGraphEnumConverter(
-                condition.getInput().getTypeName(),
-                nameWithPath,
-                true,
-                processedSchema
-        );
+        var input = condition.getInput();
+        var enumConverter = toGraphEnumConverter(input.getTypeName(), nameWithPath, true, processedSchema);
+
+        CodeBlock value;
+        if (!enumConverter.isEmpty()) {
+            value = enumConverter;
+        } else if (processedSchema.isNodeIdField(input)
+                && expectsRecordParam(sqlCondition, methodInputCount, paramIndex)) {
+            var node = processedSchema.getNodeConfigurationForNodeIdFieldOrThrow(input);
+            value = input.isIterableWrapped()
+                    ? nodeIdsToTableRecordsBlock(node, nameWithPath)
+                    : nodeIdToTableRecordBlock(node, nameWithPath);
+        } else {
+            value = nameWithPath;
+        }
 
         return CodeBlock.of(
                 !checks.isEmpty() && !condition.getNamePath().isEmpty() ? checks + " ? $L : null" : "$L",
-                enumConverter.isEmpty() ? nameWithPath : enumConverter
+                value
         );
+    }
+
+    /**
+     * @return whether the condition method's parameter at {@code paramIndex} is a jOOQ table
+     * record (singular or {@code List<…>}).
+     */
+    private static boolean expectsRecordParam(SQLCondition sqlCondition, int methodInputCount, int paramIndex) {
+        return getExternalReferences().getMethodsFrom(sqlCondition.getReference()).stream()
+                .filter(it -> it.getParameterTypes().length == methodInputCount + sqlCondition.getContextFields().size())
+                .anyMatch(method -> methodExpectsTableRecordParamAtIndex(method, paramIndex));
     }
 
     private CodeBlock createTupleCondition(

@@ -4,6 +4,8 @@ import no.sikt.jooq.example.VacationDestinationRecord;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static no.sikt.jooq.example.VacationDestination.VACATION_DESTINATION;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -86,6 +88,20 @@ class NodeIdStrategyTest {
         assertEquals(1, vacationDestinationRecord.getExtraKey());
 
         assertTrue(vacationDestinationRecord.changed());
+    }
+
+    @Test
+    @DisplayName("nodeIdToTableRecord creates a record with node ID fields populated")
+    void nodeIdIsMappedToTableRecord() {
+        var record = new NodeIdStrategy().nodeIdToTableRecord(
+                "VmFjYXRpb25EZXN0aW5hdGlvbjoxMjM0LE5vcndheQ==", // Decoded: VacationDestination:1234,Norway
+                "VacationDestination",
+                List.of(VACATION_DESTINATION.DESTINATION_ID, VACATION_DESTINATION.COUNTRY_NAME)
+        );
+
+        assertNotNull(record);
+        assertEquals(1234, record.getDestinationId());
+        assertEquals("Norway", record.getCountryName());
     }
 
     @Test

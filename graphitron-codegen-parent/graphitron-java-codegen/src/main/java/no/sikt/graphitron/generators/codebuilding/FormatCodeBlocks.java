@@ -828,6 +828,30 @@ public class FormatCodeBlocks {
     }
 
     /**
+     * @return CodeBlock that decodes a single node ID into a table record using
+     * {@link no.sikt.graphql.NodeIdStrategy#nodeIdToTableRecord}.
+     */
+    public static CodeBlock nodeIdToTableRecordBlock(NodeConfiguration node, CodeBlock idValue) {
+        return CodeBlock.of("$N.nodeIdToTableRecord($L, $S, $L)",
+                VAR_NODE_STRATEGY,
+                idValue,
+                node.typeId(),
+                listOf(node.nodeIdFieldsWithStaticFieldBlock())
+        );
+    }
+
+    /**
+     * @return CodeBlock that streams a list of node IDs and decodes each to a table record.
+     */
+    public static CodeBlock nodeIdsToTableRecordsBlock(NodeConfiguration node, CodeBlock listValue) {
+        return CodeBlock.of("$L.stream().map($N -> $L).toList()",
+                listValue,
+                VAR_ITERATOR,
+                nodeIdToTableRecordBlock(node, CodeBlock.of("$N", VAR_ITERATOR))
+        );
+    }
+
+    /**
      * @return CodeBlock with comma-separated table fields using a static table instance resolved from the table name.
      * Example: {@code Film.FILM.FILM_ID, Film.FILM.LANGUAGE_ID}
      */
