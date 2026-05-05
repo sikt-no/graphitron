@@ -21,7 +21,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R87` | Tighten instance-service @service design after architect review | Ready | [plan](instance-service-design-cleanup.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
-| `R84` | Path expressions in argMapping | Ready | [plan](argmapping-path-expressions.md) |
+| `R84` | Path expressions in argMapping | In Progress | [plan](argmapping-path-expressions.md) |
 | `R70` | Support TableRecord-keyed Map returns on @service rows methods <sub>blocked by: [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)</sub> | In Review | [plan](service-rows-tablerecord-key-shape.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
@@ -108,7 +108,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### service
 
 - `R87` [**Tighten instance-service @service design after architect review**](instance-service-design-cleanup.md) — Ready, architecture
-- `R84` [**Path expressions in argMapping**](argmapping-path-expressions.md) — Ready, feature
+- `R84` [**Path expressions in argMapping**](argmapping-path-expressions.md) — In Progress, feature
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R70` [**Support TableRecord-keyed Map returns on @service rows methods**](service-rows-tablerecord-key-shape.md) — In Review, feature, blocked by [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
