@@ -10,7 +10,8 @@ import java.util.stream.Collectors;
 /**
  * The batch-key strategy for a DataLoader SOURCES parameter.
  *
- * <p>Seven permits across two axis sub-hierarchies:
+ * <p>Ten permits across two axis sub-hierarchies (nine unique class names; {@code RowKeyed}
+ * appears once on each axis):
  *
  * <ul>
  *   <li>{@link ParentKeyed} (catalog-resolvable): {@link RowKeyed}, {@link RecordKeyed},

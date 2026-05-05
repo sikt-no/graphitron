@@ -15,8 +15,11 @@ GraphQL Schema
 GraphitronSchemaBuilder  (the only place directives are read)
       ↓
 GraphitronSchema
-  ├── Map<String, GraphitronType>   (one per GraphQL type)
-  └── Map<String, GraphitronField>  (one per field)
+  ├── Map<String, GraphitronType>                      types         (one per GraphQL type)
+  ├── Map<FieldCoordinates, GraphitronField>           fields        (one per field)
+  ├── Map<String, List<GraphitronField>>               fieldsByType  (derived index)
+  ├── Map<String, EntityResolution>                    entitiesByType (federation entity mappings)
+  └── List<BuildWarning>                               warnings      (non-fatal advisories)
       ↓
 Generators
   ├── TypeFetcherGenerator     →  fetchers.*Fetchers
@@ -111,6 +114,11 @@ Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 | Input type with `@table` + `@record` | `InputType`* (via `@record`) | On input types, `@record` dominates `@table`. When both are present, `@table` is ignored and the input classifies as if only `@record` were declared; a build warning names the shadowed directive. Clean up by removing `@table` from the input declaration ; the warning disappears naturally. |
 | Input type without `@table` | `InputType`* | No generation (developer-provided class) |
 | Input type with `@table` used on fields with conflicting return tables | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage |
+| Object type with no `@table` and no `@record` | `PlainObjectType` | No generation; nested under a parent table-bound or result-bound scope via `NestingField` |
+| GraphQL `enum` type | `EnumType` | No generation; enum values map to DB strings/ints at column-bind time |
+| Generated `*Connection` type (from `@asConnection` transform) | `ConnectionType` | Pagination wrapper; pairs with `EdgeType` and `PageInfoType` below |
+| Generated `*Edge` type | `EdgeType` | Edge wrapper carrying `node` + `cursor` for the connection |
+| Generated `PageInfo` type | `PageInfoType` | Connection page-info wrapper |
 | Conflicting or unresolvable directives | `UnclassifiedType` | Validation error ; build fails |
 
 *Intermediate sealed interfaces* (not shown in the table ; grouping nodes in the hierarchy):
@@ -130,8 +138,8 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 |---|---|---|
 | Any argument has `@lookupKey` | `QueryLookupTableField` | Async DataLoader fetcher + sync `lookup*()` rows method |
 | `@tableMethod` | `QueryTableMethodTableField` | Field method stub |
-| Field named `node` | `QueryNodeField` | Field method stub |
-| Field named `_entities` (Federation) | `QueryEntityField` | Field method stub |
+| Field named `node` (Relay) | `QueryNodeField` | Field method stub |
+| Field named `nodes` (Relay; auto-emitted, batched-by-id) | `QueryNodesField` | Async DataLoader fetcher dispatching by NodeId |
 | Return: `@table`+`@discriminate` interface | `QueryTableInterfaceField` | Field method stub |
 | Return: multi-table interface | `QueryInterfaceField` | Field method stub |
 | Return: union | `QueryUnionField` | Field method stub |
@@ -139,6 +147,8 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 | `@service`, return non-table type | `QueryServiceRecordField` | Field method stub |
 | Return: `@table` type (default) | `QueryTableField` | Full fetcher ; condition call + orderBy build + inline DSL chain (`dsl.select(Type.$fields(...)).from(table)...`) |
 | Anything else | `UnclassifiedField`** | Validation error ; build fails |
+
+The federation `_entities` field is *not* modelled as a `QueryField` permit; it is resolved by `federation-graphql-java-support` directly and dispatched through the generated `EntityFetcherDispatch` runtime helper. The corresponding entity-resolution metadata is carried in `GraphitronSchema.entitiesByType`.
 
 === Mutation Fields
 
@@ -161,6 +171,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 |---|---|---|
 | `@field(name:)` or matching column name | `ColumnField` (`compaction = Direct`) | Column method in `wiring()` |
 | `@reference` on scalar | `ColumnReferenceField` (`compaction = Direct`) | Column method in `wiring()` |
+| `@reference` on scalar declared on a `TableInterfaceType` participant | `ParticipantColumnReferenceField` | Column method in `wiring()`; picks up the participant-side FK rather than the interface-side resolver |
 | `@nodeId` (single-column PK), no typeName | `ColumnField` (`compaction = NodeIdEncodeKeys`) | Column method in `wiring()`; the projected column is wrapped in the per-Node `encode<TypeName>` helper |
 | `@nodeId(typeName:)`, single-column PK target | `ColumnReferenceField` (`compaction = NodeIdEncodeKeys`) | As above, against the FK-resolved target column |
 | `@nodeId` (composite PK), no typeName | `CompositeColumnField` | Column method in `wiring()`; projects `RowN<...>` of the parent's PK columns and wraps in `encode<TypeName>` |
@@ -196,6 +207,7 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 | Return `@table` (default; catalog FK from parent's jOOQ TableRecord) | `RecordTableField` (with `BatchKey.RecordParentBatchKey`) | Async DataLoader fetcher + `rows*()` method |
 | Return `@table` with `@batchKeyLifter` (parent is `PojoResultType` or `JavaRecordType`; no catalog FK required) | `RecordTableField` / `RecordLookupTableField` (with `BatchKey.LifterRowKeyed`) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows |
 | Return non-table type | `RecordField` | Column method in `wiring()` |
+| `errors:` slot on a service payload (one entry per `@error` mapping) | `ErrorsField` | Passthrough; graphql-java's default `PropertyDataFetcher` reads the list the carrier's try/catch wrapper or the service-method body produced |
 | `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method |
 | `@service`, return non-table | `ServiceRecordField` | Field method stub |
 
@@ -242,7 +254,7 @@ Not all classification requires directives. The builder also classifies based on
 
 == Source Map
 
-All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewrite/`. Each file has Javadoc documenting its variants and record components.
+All source lives under `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/`. Each file has Javadoc documenting its variants and record components.
 
 === Model (`model/`)
 
@@ -260,10 +272,10 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 | Join path | `JoinStep.java` | `FkJoin` / `ConditionJoin` / `LiftedHop` |
 | WHERE filters | `WhereFilter.java` | `GeneratedConditionFilter` / `ConditionFilter` ; call-site contract |
 | Service methods | `MethodRef.java` | Resolved Java method with `ParamSource` variants |
-| DataLoader keys | `BatchKey.java` | `RowKeyed` / `RecordKeyed` / `MappedRowKeyed` / `MappedRecordKeyed` / `LifterRowKeyed` |
+| DataLoader keys | `BatchKey.java` | Two axis sub-hierarchies: `ParentKeyed` (`RowKeyed`, `RecordKeyed`, `MappedRowKeyed`, `MappedRecordKeyed`, `TableRecordKeyed`, `MappedTableRecordKeyed`) and `RecordParentBatchKey` (`RowKeyed`, `LifterRowKeyed`, `AccessorKeyedSingle`, `AccessorKeyedMany`) |
 | Ordering | `OrderBySpec.java` | `Fixed` / `Argument` / `None` |
 | Pagination | `PaginationSpec.java` | Relay cursor arguments |
-| Argument extraction | `CallSiteExtraction.java` | `Direct` / `EnumValueOf` / `TextMapLookup` / `ContextArg` / `JooqConvert` |
+| Argument extraction | `CallSiteExtraction.java` | Five direct strategies (`Direct` / `EnumValueOf` / `TextMapLookup` / `ContextArg` / `JooqConvert`) plus two sealed sub-groupers: `NestedInputField` (descends an input-object graph for `@condition` on `INPUT_FIELD_DEFINITION`) and `NodeIdDecodeKeys` (`SkipMismatchedElement` / `ThrowOnMismatch`; arity-N NodeId decode at the call site) |
 | Input field hierarchy | `InputField.java` | Sealed interface ; `ColumnField` / `ColumnReferenceField` / `CompositeColumnField` / `CompositeColumnReferenceField` / `NestingField` for mutation inputs |
 | Condition params | `CallParam.java`, `BodyParam.java` | Call-site vs body-generation views |
 
@@ -279,21 +291,21 @@ All source lives under `graphitron-rewrite/src/main/java/no/sikt/graphitron/rewr
 
 === Generators (`generators/`)
 
-| Component | Output | File |
+Four families, by what they emit. The Generators package holds emitter helpers (`SplitRowsMethodEmitter`, `InlineLookupTableFieldEmitter`, `LookupValuesJoinEmitter`, `JoinPathEmitter`, `MultiTablePolymorphicEmitter`, `ArgCallEmitter`, `FetcherEmitter`, `HandleMethodBody`, `SelectMethodBody`, `ValuesJoinRowBuilder`, etc.) alongside the entry-point generators below ; helpers are reached from inside a generator and don't appear in this table.
+
+| Family | Generators | What lands |
 |---|---|---|
-| `TypeFetcherGenerator` | `fetchers.*Fetchers` ; wiring + field fetcher/rows methods | `TypeFetcherGenerator.java` |
-| `TypeClassGenerator` | `types.*` ; `$fields(sel, table, env)` projection method | `TypeClassGenerator.java` |
-| `TypeConditionsGenerator` | `conditions.*Conditions` ; pure-function WHERE predicates | `TypeConditionsGenerator.java` |
-| `GeneratorUtils` | Shared building blocks ; `ResolvedTableNames`, key type construction, constants | `GeneratorUtils.java` |
-| `ColumnFetcherClassGenerator` | `rewrite.ColumnFetcher<T>` ; `LightDataFetcher` for column fields | `util/ColumnFetcherClassGenerator.java` |
-| `ConnectionResultClassGenerator` | `rewrite.ConnectionResult` ; pagination carrier (Result + pageSize + cursor + columns) | `util/ConnectionResultClassGenerator.java` |
-| `ConnectionHelperClassGenerator` | `rewrite.ConnectionHelper` ; edges/nodes/pageInfo + cursor encode/decode | `util/ConnectionHelperClassGenerator.java` |
-| `GraphitronValuesClassGenerator` | `rewrite.GraphitronValues` ; shared constants (`GRAPHITRON_INPUT_IDX`) | `util/GraphitronValuesClassGenerator.java` |
+| Fetcher emission | `TypeFetcherGenerator`, `TypeClassGenerator`, `TypeConditionsGenerator` | `fetchers.*Fetchers` (wiring + field fetcher/rows methods); `types.*` (`$fields(sel, table, env)` projection); `conditions.*Conditions` (pure-function WHERE predicates) |
+| Schema emission (`schema/`) | `ObjectTypeGenerator`, `InputTypeGenerator`, `EnumTypeGenerator`, `GraphitronFacadeGenerator`, `GraphitronSchemaClassGenerator`, `FetcherRegistrationsEmitter`, `DirectiveDefinitionEmitter`, `AppliedDirectiveEmitter`, `GraphQLValueEmitter`, `InputDirectiveInputTypes` | The runtime SDL classes graphql-java consumes: per-type wiring entries, applied-directive emission, registration glue |
+| Error-handling emission (`schema/`) | `ConstraintViolationsClassGenerator`, `ErrorMappingsClassGenerator`, `ErrorRouterClassGenerator` | The typed-error classes service payloads project errors into; mappings constant + router that selects per-exception |
+| Runtime helpers (`util/`) | `ColumnFetcherClassGenerator`, `ConnectionResultClassGenerator`, `ConnectionHelperClassGenerator`, `GraphitronValuesClassGenerator`, `EntityFetcherDispatchClassGenerator`, `GraphitronContextInterfaceGenerator`, `NodeIdEncoderClassGenerator`, `OrderByResultClassGenerator`, `QueryNodeFetcherClassGenerator` | Per-app emitted runtime classes (`ColumnFetcher`, `ConnectionResult`, `ConnectionHelper`, `GraphitronValues`, `EntityFetcherDispatch`, `GraphitronContext`, `NodeIdEncoder`, `OrderByResult`, `QueryNodeFetcher`) — the runtime extension points graphql-java and the federation library plug into |
+
+`GeneratorUtils` (root of `generators/`) holds shared building blocks reached from any family ; `ResolvedTableNames`, key-type construction, constants. `QueryConditionsGenerator` is part of fetcher emission and emits the `(env, ...) -> typed-args` adapter that fronts user-written `*Conditions` composers (see the "Wire boundaries are typed adapter / composer pairs" principle in xref:rewrite-design-principles.adoc[Rewrite Design Principles]).
 
 === Directives
 
-- *SDL definitions*: `graphitron-common/src/main/resources/directives.graphqls`
-- *Directive reference with examples*: link:https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-codegen-parent/graphitron-java-codegen/README.md[graphitron-java-codegen README]
+- *SDL definitions*: `graphitron-rewrite/graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`. `RewriteSchemaLoader` auto-injects this file into the merged schema.
+- *Directive reference with examples*: see the directive reference under `docs/manual/reference/directives/` (rendered at the published manual). The contributor-facing chapter consolidating runtime extension points is tracked under R86 (`graphitron-rewrite/roadmap/architecture-chapter.md`); until it ships, this Source Map is the canonical reference for what each generator emits.
 
 '''
 
