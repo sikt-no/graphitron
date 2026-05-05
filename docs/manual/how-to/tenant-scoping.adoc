@@ -1,0 +1,144 @@
+= How-to: Tenant scoping
+:description: Wire two methods on GraphitronContext (getDslContext and getTenantId) so each request reaches a tenant-specific DSLContext and so DataLoader caches stay partitioned per tenant.
+:!toc:
+
+A multi-tenant Graphitron app routes each request to its tenant's data without leaking rows or batches between tenants. The whole story is two cooperating methods on the per-app `GraphitronContext` interface: `getDslContext(env)` returns the jOOQ `DSLContext` Graphitron should run SQL through, and `getTenantId(env)` returns the prefix Graphitron concatenates onto every DataLoader cache name. The first stops queries from a tenant from reading another tenant's rows; the second stops two tenants' batched fetches from sharing a cache. Both methods must agree on the same key, or one tenant's batch silently inherits another's `DSLContext`.
+
+This recipe walks through stashing the tenant id at request entry, implementing the two methods, registering the context per request, and the PostgreSQL row-level security pattern that compose with `getDslContext`.
+
+== Stash the tenant id at request entry
+
+The framework knows nothing about how a request reaches your servlet. Whatever extracts the tenant id (JWT claim, header, subdomain, mTLS cert) writes it to the GraphQL context map before `ExecutionInput.build()`:
+
+[source,java]
+----
+String tenantId = resolveTenantId(httpRequest); // your auth code
+
+ExecutionInput input = ExecutionInput.newExecutionInput()
+    .query(query)
+    .graphQLContext(b -> b
+        .put(GraphitronContext.class, ctx)
+        .put("tenantId", tenantId))
+    .build();
+----
+
+`GraphitronContext.class` is the typed key Graphitron uses to resolve the per-app context implementation; `"tenantId"` is the string key your `GraphitronContext` implementation reads back. Pick whatever string key you like, but be consistent across every place that writes and reads it.
+
+== Implement `getDslContext`: per-tenant database access
+
+Every generated fetcher calls `getDslContext(env)` to pick up its `DSLContext`. The implementation can return a different context per request, per tenant, or per id, and Graphitron uses whatever it gets without further inspection:
+
+[source,java]
+----
+public class TenantContext implements GraphitronContext {
+    private final Map<String, DSLContext> perTenant;
+
+    @Override public DSLContext getDslContext(DataFetchingEnvironment env) {
+        String tenantId = env.getGraphQlContext().get("tenantId");
+        return perTenant.computeIfAbsent(tenantId, this::buildPerTenantContext);
+    }
+    // ...
+}
+----
+
+The shape of `buildPerTenantContext` is up to you: a separate `Configuration` per tenant, a shared `Configuration` with per-tenant `Settings`, a connection-pool-aware `SET LOCAL` for session variables, or any combination. The decision tree under xref:../../architecture/getting-started.adoc#tenant-scoped-dslcontext[Getting started: Tenant-scoped DSLContext] covers the runtime trade-offs in detail.
+
+== Implement `getTenantId`: DataLoader cache isolation
+
+The framework batches fetches through DataLoader. Each `DataLoader` is registered under a name that combines the tenant prefix with the GraphQL field path:
+
+[source,java]
+----
+String name = graphitronContext(env).getTenantId(env)
+    + "/" + String.join("/", env.getExecutionStepInfo().getPath().getKeysOnly());
+----
+
+Single-tenant apps leave the default empty-string return in place; the path component is unique per field, so two batches can't collide. Multi-tenant apps return a stable per-tenant id so two tenants issuing the same query do *not* share one cache:
+
+[source,java]
+----
+@Override public String getTenantId(DataFetchingEnvironment env) {
+    return env.getGraphQlContext().get("tenantId");
+}
+----
+
+The same id read in `getDslContext` and `getTenantId` is the safe default. They are separate methods because their consumers are separate (your code chooses the `DSLContext`; Graphitron chooses the DataLoader cache), but the ids must agree: when a single batch's keys span more than one tenant, Graphitron uses the *first* key's `DSLContext` for the entire batch, so two tenants colliding into one DataLoader silently fall back to whichever id was submitted first.
+
+The execution-tier test `nodes_perTenantPartition_separateBatchPerTenant` in `GraphQLQueryTest` pins this end-to-end: a custom `GraphitronContext` that returns a per-id tenant from `getTenantId`, a four-id `nodes(ids: [...])` query whose ids split 2/2 across `tenantA`/`tenantB`, and an assertion that the test sees exactly *two* SQL queries (one customer batch per tenant), not one (collision into a single DataLoader) and not four (broken batching).
+
+== Per-id tenant routing for federation `_entities`
+
+Federation's `_entities` query is the canonical case where one request carries representations from multiple tenants. Graphitron resolves each representation through the per-rep `DataFetchingEnvironment`, so `getTenantId(repEnv)` reads off the individual representation rather than the outer arguments:
+
+[source,java]
+----
+@Override public String getTenantId(DataFetchingEnvironment env) {
+    Map<String, Object> rep = env.getSource(); // or env.getArgument(...) for non-_entities calls
+    return tenantOf((String) rep.get("id"));
+}
+----
+
+The execution-tier test `entities_multiTenancyPartition_oneSelectPerTenant` in `FederationEntitiesDispatchTest` runs a federation `_entities(representations: [...])` request whose representations span two tenants and asserts each `(__typename, tenantId)` pair issues exactly one SELECT, batched through the `VALUES (idx, ...)` derived table.
+
+== Register the context per request
+
+The two methods compose into one `GraphitronContext` implementation; register it once per request via the typed key:
+
+[source,java]
+----
+ExecutionInput input = ExecutionInput.newExecutionInput()
+    .query(query)
+    .graphQLContext(b -> b
+        .put(GraphitronContext.class, new TenantContext(perTenantBuilder))
+        .put("tenantId", tenantId))
+    .build();
+
+GraphQL graphQL = GraphQL.newGraphQL(schema).build();
+graphQL.execute(input);
+----
+
+`GraphitronContext` is *not* a per-app singleton; the same instance can serve every request as long as `getDslContext` and `getTenantId` derive the per-request answer from the `DataFetchingEnvironment`. Stash request-scoped state on the `graphQLContext` map (as `"tenantId"` above), not on `this`.
+
+== Compose with PostgreSQL row-level security
+
+The recommended enforcement model is PostgreSQL row-level security: policies filter rows transparently based on a session-scoped variable, and generated SQL needs no awareness of the tenant boundary. `getDslContext` is the natural seam for setting the session variable:
+
+[source,sql]
+----
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON documents
+    USING (tenant_id = current_setting('app.tenant_id', true)::uuid);
+----
+
+[source,java]
+----
+@Override public DSLContext getDslContext(DataFetchingEnvironment env) {
+    String tenantId = env.getGraphQlContext().get("tenantId");
+    Connection conn = dataSource.getConnection();
+    DSLContext ctx = DSL.using(conn, SQLDialect.POSTGRES);
+    ctx.execute("SELECT set_config('app.tenant_id', ?, true)", tenantId);
+    return ctx;
+}
+----
+
+The `true` third argument to `set_config` is `is_local`, scoping the variable to the current transaction; the value resets when the transaction ends rather than persisting on the connection after it returns to the pool. Generated SQL is unchanged; Postgres applies the policy without Graphitron's involvement. xref:../../architecture/getting-started.adoc#row-level-security[Getting started: Row-level security] covers the dialect-agnostic framing and the broader security model.
+
+== Constraints
+
+* `getDslContext` and `getTenantId` must agree on the same partitioning key. Disagreement does not raise an error, it silently routes a tenant's batch through another tenant's `DSLContext` (Graphitron uses the first key's `DSLContext` for the whole batch).
+* The default `getTenantId` implementation returns `""`. Single-tenant apps don't override it. Multi-tenant apps must override or accept the cache-collision risk.
+* `getDslContext` is invoked once per resolver invocation; cache the per-tenant `DSLContext` (`computeIfAbsent` on a `Map<String, DSLContext>`, a Caffeine cache, or whatever keeps allocation off the hot path). Don't rebuild a `DSLContext` per call.
+* Per-id routing (federation `_entities`, batched lookups across tenants) reads the id off the per-rep `DataFetchingEnvironment`, not the outer call's arguments. Reading `env.getArgument(...)` works for the non-batched case; reading `env.getSource()` is the federation-`_entities` shape.
+* `set_config(..., true)` (transaction-scoped) is the connection-pool-safe form; `set_config(..., false)` persists on the connection across requests and is unsafe with pooling. Wrap each request in a transaction, or hold one connection per request, so the `SET LOCAL` actually applies.
+* The tenant id and the `GraphitronContext` instance are independent: the typed-key `GraphitronContext.class` registration covers what Graphitron needs to find; the string-keyed `"tenantId"` (or whatever key your implementation reads) is purely consumer-side wiring and you can name it whatever you like.
+
+== See also
+
+* xref:../../architecture/getting-started.adoc#tenant-scoped-dslcontext[Getting started: Tenant-scoped DSLContext] is the runtime-side companion; it covers per-tenant `Configuration` shapes, connection-pool considerations, and the request-entry hook in more detail.
+* xref:add-custom-conditions.adoc[How-to: Add custom conditions] covers `contextArguments:` for pulling tenant-scoped values into `@condition` predicates; the same context map carries both the `tenantId` and any other request-scoped values.
+* xref:split-vs-inline.adoc[How-to: When to split queries] covers the DataLoader cache key (path-scoped, request-scoped, tenant-prefixed); the tenant prefix is the part this recipe controls.
+* xref:federation-keys.adoc[How-to: Federation key fields] covers federation entity declaration; per-rep tenant routing pairs naturally with federation `_entities` dispatch.
+* xref:test-your-schema.adoc[How-to: Test your schema] covers the consumer-side execution-tier test pattern; it includes the per-tenant context test under "per-tenant context tests".
+
+xref:index.adoc[← How-to index]
