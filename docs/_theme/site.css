@@ -510,6 +510,40 @@ table.quadrants > * > tr > td {
     text-decoration: underline;
 }
 
+/* ---------- page navigation (manual/tutorial/) -------------------------- */
+
+/* Three-column footer row carrying prev / up / next on sequential pages.
+ * AsciiDoc form: `[.pagenav,cols="<,^,>",frame=none,grid=none]` table
+ * with three single-cell xrefs. Empty cells (first page has no prev,
+ * last page has no next) preserve column alignment so the up-link
+ * stays centred regardless of which neighbours exist. */
+table.pagenav,
+table.pagenav > colgroup,
+table.pagenav > * > tr > th,
+table.pagenav > * > tr > td {
+    border: none;
+}
+table.pagenav {
+    width: 100%;
+    margin: var(--sds-space-gap-large) 0 0;
+    border-top: var(--sds-space-border-weight-thin, 1px) solid var(--sds-color-layout-divider-subtle, #e2e4e8);
+    border-spacing: 0;
+    table-layout: fixed;
+}
+table.pagenav > * > tr > td {
+    padding: var(--sds-space-padding-small) 0 0;
+    vertical-align: top;
+    font-size: 0.95rem;
+    color: var(--sds-color-text-secondary, #6b7280);
+}
+table.pagenav a {
+    color: var(--sds-color-brand-primary-strong, #5b3d99);
+    text-decoration: none;
+}
+table.pagenav a:hover {
+    text-decoration: underline;
+}
+
 @media (max-width: 45rem) {
     table.featurerow {
         display: block;
@@ -558,6 +592,29 @@ table.quadrants > * > tr > td {
     }
     table.quadrants > tbody > tr > td:last-child {
         margin-bottom: 0;
+    }
+
+    /* Pagenav rows that fit comfortably as three columns on desktop
+     * cramp at phone widths once the link text exceeds ~30 characters.
+     * Stack vertically and keep alignment cues (← prefix on prev,
+     * → suffix on next) doing the navigational work in place of the
+     * row's left/center/right column geometry. */
+    table.pagenav {
+        display: block;
+        border-spacing: 0;
+    }
+    table.pagenav > colgroup {
+        display: none;
+    }
+    table.pagenav > tbody,
+    table.pagenav > tbody > tr {
+        display: block;
+    }
+    table.pagenav > tbody > tr > td {
+        display: block;
+        width: 100%;
+        text-align: left;
+        padding: var(--sds-space-padding-small) 0 0;
     }
 
     .nav-header-inner {

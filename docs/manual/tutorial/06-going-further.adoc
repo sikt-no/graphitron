@@ -37,4 +37,9 @@ The design decisions behind Graphitron: why the database catalog is the source o
 
 The tutorial is over. The example you built against is the same one the rest of the manual references in its `verified by` pointers; if a how-to or reference page mentions a query, you can paste it into the same `curl` shape from xref:03-first-query.adoc[page 3] and run it against your local server.
 
-xref:index.adoc[← Tutorial overview]
+[.pagenav,cols="<,^,>",frame=none,grid=none]
+|===
+| xref:05-mutations.adoc[← Previous: A first mutation]
+| xref:index.adoc[↑ Tutorial overview]
+|
+|===

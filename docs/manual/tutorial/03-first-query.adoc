@@ -78,4 +78,9 @@ How a generated resolver translates a GraphQL selection set into a column-narrow
 
 xref:04-joining-tables.adoc[Page 4: Joining tables] adds the `address` field and shows how `@reference` produces a `JOIN`.
 
-xref:index.adoc[← Tutorial overview]
+[.pagenav,cols="<,^,>",frame=none,grid=none]
+|===
+| xref:02-first-schema.adoc[← Previous: The starter schema]
+| xref:index.adoc[↑ Tutorial overview]
+| xref:04-joining-tables.adoc[Next: Joining tables →]
+|===
