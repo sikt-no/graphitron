@@ -92,14 +92,66 @@
                   "Corrupted channel by directly writing to native stream in forked JVM".
                   Switch to TCP/IP-based fork-node IPC so the test JVM's stdout stays free
                   for the native library.
+
+                  Phase 6 step 3 will swap the binding to jtreesitter (FFM, no JNI native
+                  printf) and this workaround can be dropped together with the bonede deps.
                 -->
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <forkNode implementation="org.apache.maven.plugin.surefire.extensions.SurefireForkNodeFactory"/>
+                    <!--
+                      jtreesitter calls SymbolLookup.libraryLookup, a restricted FFM API.
+                      Without this flag JDK 25 only warns, but a future release will block
+                      the call; declare the access up-front.
+                    -->
+                    <argLine>--enable-native-access=ALL-UNNAMED</argLine>
                 </configuration>
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <!--
+              Compiles the vendored tree-sitter runtime + tree-sitter-graphql grammar
+              into a per-platform shared library under
+              `target/classes/lib/<os>-<arch>/`. Phase 6 step 4 will add macOS x86_64,
+              macOS arm64, and Windows x86_64 profiles alongside this one.
+            -->
+            <id>build-native-linux-x86_64</id>
+            <activation>
+                <os>
+                    <family>unix</family>
+                    <name>Linux</name>
+                    <arch>amd64</arch>
+                </os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>build-tree-sitter-graphql</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${project.basedir}/src/main/native/build-native.sh</executable>
+                                    <arguments>
+                                        <argument>${project.build.outputDirectory}/lib/linux-x86_64</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>
