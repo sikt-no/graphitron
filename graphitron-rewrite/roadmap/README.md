@@ -53,6 +53,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R75` [**Synthesize payload carrier for canonical data+errors shapes**](synthesize-payload-carrier.md): R12 establishes a positional canonical-constructor contract on `@record` payload classes: SDL field index *i* binds to ctor parameter *i*, with the errors-shaped field producing the slot graphitron writes into from the catch arm (`FieldBuilder.findCanonicalCtor`, `FieldBuilder.resolveErrorChannel`). The contract is load-bearing for the error channel, but its current shape leaks framework concerns into the consumer's source tree: the consumer has to author a Java class whose fields include `errors`, even though `errors` is never theirs to populate. The transport shape and the domain shape are entangled in their code. _(blocked by [error-handling-parity](error-handling-parity.md))_
 - `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md): Shift new test investment from per-variant structural tests toward SDL-to-classification-to-emission pipeline tests keyed off `graphitron-fixtures`.
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md): `TypeFetcherGenerator.java` is 1 646 lines, one public entry point (`generate(GraphitronSchema)`), and ~30 private methods that implement per-field-variant emitters plus shared helpers. It is the counterpart to the now-shipped `FieldBuilder` decomposition (R6, see [`changelog.md`](changelog.md)): a central generator that has accumulated coverage faster than its file shape can absorb.
+- `R87` [**Tighten instance-service @service design after architect review**](instance-service-design-cleanup.md): The instance-`@service` support shipped on commit `6da0351` (branch `claude/fix-mutation-fetchers-error-rBjD2`) restored legacy parity (downstream consumers with `public ServiceName(DSLContext ctx)` constructors and instance methods compile again) but landed without a Spec. A post-hoc principles-architect review surfaced seven tensions, ordered by architectural weight; this item tracks the cleanup. The bug fix itself is sound (the `serviceCallTarget` call-site fork is the right shape); what's wrong is how the static-vs-instance axis is carried in the model, where the contract is mirrored, and at what tier the new behaviour is tested.
 
 ### Stubs
 
@@ -116,6 +117,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture, blocked by [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)
 - `R61` [**Add Record1<T> source-shape support alongside Row1<T>**](emit-record1-keys-instead-of-row1.md) — In Review, architecture
 - `R74` [**Row/Record return shapes for typed accessor batch keys**](accessor-row-record-shapes.md) — Spec, architecture
+- `R87` [**Tighten instance-service @service design after architect review**](instance-service-design-cleanup.md) — Backlog, architecture
 
 ### mutations-errors
 
