@@ -124,6 +124,25 @@ The Spec→Ready review flagged that "the call-site emitter reduces to a `<helpe
 
 5. **Test coverage of the seam.** The pipeline test rewritten in §6 asserts on `TypeConditionsGenerator` (the composer side, no helper involved). A second new pipeline-tier test on the `QueryConditions` emitter asserts that two distinct condition methods on the same class consuming the same NodeId type emit exactly one shared helper (deduplication works) and that the throw-mode arm gets a separate helper from the skip-mode arm (key separation works). Test name pinned at implementation.
 
+### Implementation status (updated during In Progress)
+
+Shipped in the first In-Progress cycle:
+
+- §1 dead `javaType` slot dropped from `BodyParam.RowEq/RowIn`; the interface method comes off; `FieldBuilder` and `TypeConditionsGenerator` switch per variant. (`R79 §1+§2+§4` commit)
+- §2 typed `Row<N><T1, ..., TN>` body emission via `ParameterizedTypeName` over `columnClass()`; `buildColsArray`'s `Field<?>[]` erasure trick is gone. (same commit)
+- §3 inline arity > 1 forms in `ArgCallEmitter` fixed to use raw `RecordN` pattern + cast to typed `Row<N><...>` (Java-17 compatible — parameterized `instanceof` patterns are JDK 21+). The list arm uses `Record<N>::valuesRow` instead of raw `Record::valuesRow`. This is the load-bearing bug fix; helpers (below) are a strict readability layer on top. (same commit)
+- §4 arity > 22 deferred `Rejection.structural` lands in `NodeIdLeafResolver.resolve` before the decode-helper resolution, with wording tracking the `validateChildConnectionParentPk` precedent (Row22 cap, suggest scalar fan-out). (same commit)
+- §5 `noCondition()`-and chain reduction in `QueryConditionsGenerator`: zero filters → `return DSL.noCondition()`, one filter → direct return, ≥2 → keep the chain. JooqConvert+list locals are pre-lifted ahead of the dispatch so they stay in scope. (`R79 §5` commit)
+- §6 compilation-tier regression-guard fixture (`filmActorsByCompositeNodeIds` + `FilmActorCompositeNodeIdFilter`) in `graphitron-sakila-example`'s schema, exercising the `compositeImplicitBodyParam` → `BodyParam.RowIn` → typed `Row<N>` path against real jOOQ. Generated source now compiles where it did not before. (`R79 §6` commit)
+- §6 pipeline test rewritten: `nodeIdInFilter_compositeColumns_emitsRowInWithUntypedRowN` → `_emitsTypedRowIn` plus a sibling assertion that the parameter type is `List<Row2<Integer, Integer>>`. (`R79 §1+§2+§4` commit)
+
+Pending for In Review or a follow-up cycle:
+
+- §3+§5 helper-registry layer. The inline form compiles correctly today, so this is a readability-only pass. The seam shape is pinned in the *Implementation seam (Spec→Ready note)* section above; nothing in it is invalidated by the inline-form fix. Worth landing before approval if the In-Review reviewer thinks the inline expression at the call site (visible in `target/generated-sources/.../QueryConditions.java::filmActorsByCompositeNodeIdsCondition`) is harder to read than the helper version would be.
+- §5 sub-step 1: lift shared outer-arg locals (`Map<?, ?> filter = ... instanceof Map<?, ?> _m ? _m : null`). Independent of the helper registry; lands in `QueryConditionsGenerator`. The current code re-binds `_m1` per filter call — fine for one-filter methods (the common case after the §5 reduction shipped above), but worth doing for the two-or-more case.
+- §6 unit test for the arity > 22 rejection. Needs a 23-column-PK fixture in `nodeidfixture` (schema in `graphitron-sakila-db/src/main/resources/init.sql` plus the matching jOOQ codegen entry). The rejection path itself is a 5-line guard following a documented precedent, so the test cost vs. defensive value justifies a follow-up; leaving it to the In-Review reviewer's call.
+- §6 pipeline-tier helper-dedup test (only meaningful once the registry lands).
+
 ### 6. Tests
 
 - **Compilation tier (regression guard for the original R79 bug):** new fixture exercising a composite-key NodeId argument feeding a query-field condition. Sakila has no composite-PK NodeId arg today, so this fixture lives in `graphitron-fixtures-codegen` (or a small extension to the sakila example schema if a composite-PK table can be reused / synthesized; pin the choice during In Progress, before the implementation step lands). The generated source compiles cleanly against real jOOQ. This is the gap that hid the bug.
