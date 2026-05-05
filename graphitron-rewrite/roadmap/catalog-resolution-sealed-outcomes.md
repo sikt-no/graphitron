@@ -1,7 +1,7 @@
 ---
 id: R81
 title: "Sealed resolution outcomes for catalog table/FK lookups"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: model-cleanup
