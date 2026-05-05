@@ -99,6 +99,27 @@ public final class TestFixtures {
         return sb.toString();
     }
 
+    // ===== ForeignKeyRef =====
+
+    /**
+     * Builds a synthetic {@link ForeignKeyRef} rooted in {@link #TEST_JOOQ_ROOT}. The constant
+     * name is derived by upper-casing the SQL constraint name (matching jOOQ's stock
+     * {@code Keys.<TABLE>__<FK>} convention closely enough for fixture purposes); tests that need
+     * exact constant names should pass them explicitly via the three-arg overload.
+     *
+     * <p>R81 lifted {@link no.sikt.graphitron.rewrite.model.JoinStep.FkJoin#fk()} to a non-null
+     * {@link ForeignKeyRef}. Fixtures that previously passed {@code null} should route through
+     * this factory so the synthetic FK reference is type-correct end to end.
+     */
+    public static ForeignKeyRef foreignKeyRef(String sqlName) {
+        return foreignKeyRef(sqlName, sqlName.toUpperCase(),
+            ClassName.get(TEST_JOOQ_ROOT, "Keys"));
+    }
+
+    public static ForeignKeyRef foreignKeyRef(String sqlName, String constantName, ClassName keysClass) {
+        return new ForeignKeyRef(sqlName, keysClass, constantName);
+    }
+
     // ===== ColumnRef =====
 
     public static ColumnRef filmIdCol() {
@@ -182,15 +203,16 @@ public final class TestFixtures {
     // ===== JoinStep test fixtures =====
 
     /**
-     * Test-only constructor mirroring the pre-R82 {@code FkJoin(name, fk, originTable,
-     * sourceColumns, targetTable, targetColumns, whereFilter, alias)} shape, zipping the two
-     * column lists into source-side/target-side slot pairs. Test fixtures historically wrote
-     * source columns first (parent-holds-FK convention), so {@code sourceColumns[i]} maps to
-     * {@code slot.sourceSide()} and {@code targetColumns[i]} to {@code slot.targetSide()} —
-     * exactly the FK-on-source case the spec migration table covers, kept mechanical for tests
-     * that don't care about the orientation specifically.
+     * Test-only constructor mirroring the pre-R82 {@code FkJoin(fk, originTable, sourceColumns,
+     * targetTable, targetColumns, whereFilter, alias)} shape (post-R81 dropped the redundant
+     * {@code fkName} component; the SQL constraint name is carried by {@code fk.sqlName()}),
+     * zipping the two column lists into source-side/target-side slot pairs. Test fixtures
+     * historically wrote source columns first (parent-holds-FK convention), so
+     * {@code sourceColumns[i]} maps to {@code slot.sourceSide()} and {@code targetColumns[i]} to
+     * {@code slot.targetSide()} — exactly the FK-on-source case the spec migration table covers,
+     * kept mechanical for tests that don't care about the orientation specifically.
      */
-    public static JoinStep.FkJoin fkJoin(String fkName, ForeignKeyRef fk, TableRef originTable,
+    public static JoinStep.FkJoin fkJoin(ForeignKeyRef fk, TableRef originTable,
                                           List<ColumnRef> sourceColumns,
                                           TableRef targetTable, List<ColumnRef> targetColumns,
                                           MethodRef whereFilter, String alias) {
@@ -203,7 +225,7 @@ public final class TestFixtures {
         for (int i = 0; i < sourceColumns.size(); i++) {
             slots.add(new JoinSlot.FkSlot(sourceColumns.get(i), targetColumns.get(i)));
         }
-        return new JoinStep.FkJoin(fkName, fk, originTable, targetTable, slots, whereFilter, alias);
+        return new JoinStep.FkJoin(fk, originTable, targetTable, slots, whereFilter, alias);
     }
 
     /**

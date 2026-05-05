@@ -1638,12 +1638,14 @@ class FieldBuilder {
             return NO_ASSEMBLY;
         }
 
-        Class<?> tableRecordClass = ctx.catalog.findRecordClass(dmlTableSqlName).orElse(null);
-        if (tableRecordClass == null) {
+        var tableResolution = ctx.catalog.findTable(dmlTableSqlName);
+        if (!(tableResolution instanceof JooqCatalog.TableResolution.Resolved tableResolved)) {
             return new DmlPayloadAssemblyResult.Reject(
-                "DML target table '" + dmlTableSqlName + "' is not in the jOOQ catalog; "
-                    + "cannot resolve a row-slot type for payload class '" + result.fqClassName() + "'");
+                "DML target table '" + dmlTableSqlName + "' resolution failed ("
+                    + ctx.unknownTableRejection(tableResolution, dmlTableSqlName).message()
+                    + "); cannot resolve a row-slot type for payload class '" + result.fqClassName() + "'");
         }
+        Class<?> tableRecordClass = tableResolved.entry().table().getRecordType();
 
         Class<?> payloadCls;
         try {

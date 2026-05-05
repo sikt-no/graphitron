@@ -46,12 +46,12 @@ class ServiceCatalog {
     // ===== Table and column resolution =====
 
     Optional<TableRef> resolveTable(String sqlName) {
-        return ctx.catalog.findTable(sqlName).flatMap(e -> e.toTableRef(sqlName));
+        return ctx.catalog.findTable(sqlName).asEntry().map(e -> e.toTableRef(sqlName));
     }
 
     Optional<TableRef> resolveTableByRecordClass(Class<?> recordClass) {
         return ctx.catalog.findTableByRecordClass(recordClass)
-            .flatMap(e -> e.toTableRef(e.table().getName()));
+            .map(e -> e.toTableRef(e.table().getName()));
     }
 
     Optional<ColumnRef> resolveKeyColumn(String colName, String tableSqlName) {
