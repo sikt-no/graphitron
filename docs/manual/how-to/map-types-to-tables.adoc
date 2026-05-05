@@ -14,6 +14,29 @@ xref:../reference/directives/table.adoc[`@table`] without `name:` looks up the j
 
 The `name:` value must match the jOOQ-generated identifier exactly (typically uppercase for PostgreSQL when jOOQ's default casing is in effect). The build fails with an unclassified-type error if the catalog has no matching `Table` class.
 
+== Tables in non-default schemas
+
+When the consumer's jOOQ codegen straddles two or more SQL schemas (`public`, `archive`, an external integration namespace), `@table(name:)` accepts a qualified `"schema.table"` form to scope the lookup. Unqualified names still work in the common case where the table name is unique across every schema in the catalog:
+
+[source,graphql]
+----
+type Widget @table(name: "widget") {                       # unique across schemas
+    id: ID! @field(name: "WIDGET_ID")
+}
+
+type ArchivedEvent @table(name: "archive.event") {         # qualified
+    id: ID! @field(name: "EVENT_ID")
+}
+
+type CurrentEvent @table(name: "public.event") {           # qualified
+    id: ID! @field(name: "EVENT_ID")
+}
+----
+
+When the bare table name appears in two or more schemas, an *unqualified* lookup fails the build with the standard "table '...' could not be resolved in the jOOQ catalog" rejection (the catalog returns empty rather than picking whichever schema iterated first). The candidate hint then lists every matching name in the catalog, but the fix is to qualify, not to rename. Single-schema consumers see no change; only collision sites are forced to qualify, so adding a non-default schema to a previously single-schema project only forces edits where a name actually collides.
+
+The same syntax applies on input types and interfaces; `@table(name: "schema.table")` is valid wherever bare `@table(name:)` was. Schema and table halves of the qualified value are both case-insensitive (consistent with the unqualified form).
+
 == Field-to-column with `@field`
 
 The most common shape: bind every scalar to its column.
