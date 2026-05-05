@@ -3506,4 +3506,110 @@ class GraphQLQueryTest {
             dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
         }
     }
+
+    // ===== R12 @error end-to-end (error-handling-parity.md) =====
+    //
+    // The query-side @error fixture exists for visibility, not for exhaustive coverage of every
+    // handler shape. Without an end-to-end driver the @error codepath in
+    // GraphitronSchemaClassGenerator (per-@error-type path/message DataFetchers, the union's
+    // source-class TypeResolver) is invisible to compile-spec and execute-spec, which is what
+    // let an ambiguous-overload + removed-DataFetchingEnvironment.getObject() bug ship to
+    // production. The three tests below drive the full pipeline against the real graphql-java
+    // engine: the per-fetcher catch arm into ErrorRouter.dispatch, the union's instanceof
+    // dispatch ladder into the right @error type, and the synthesized path/message fetchers
+    // populating the SDL's [String!]! / String! contract. The happy-path test pins the
+    // payload-factory's defaulted slot ('title' = null only on the catch arm; populated on the
+    // straight return).
+    //
+    // The fixture intentionally uses two GENERIC handlers (over a DATABASE/VALIDATION mix). The
+    // bug we shipped fired on every @error type the loop emitted, regardless of handler kind;
+    // two GENERIC entries exercise the per-@error DataFetcher loop and the union TypeResolver's
+    // multi-branch dispatch without dragging in jOOQ's SQLException semantics or the Jakarta
+    // validation pre-step (which has its own dependency footprint). DATABASE / VALIDATION end-
+    // to-end coverage lands with the rest of R12's "Test fixture updates for source-direct
+    // dispatch" Remaining-work bullet, on the four named fixtures (SakPayload, DeleteFilmPayload,
+    // and the validator integration).
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmLookup_invalidId_routesThroughInvalidIdErrorType() {
+        // id < 0 throws FilmLookupInvalidIdException; ErrorRouter.dispatch matches on the
+        // ErrorMappings.FILM_LOOKUP_PAYLOAD ExceptionMapping for that class, places the throwable
+        // into the errors list, and constructs new FilmLookupPayload(null, errors). graphql-java
+        // then walks the union via the source-class TypeResolver and resolves to FilmLookupInvalid.
+        Map<String, Object> data = execute("""
+            {
+                filmLookup(id: -7) {
+                    title
+                    errors {
+                        __typename
+                        ... on FilmLookupInvalid { path message }
+                        ... on FilmLookupNotFound { path message }
+                    }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("filmLookup", as(MAP));
+        // The catch arm constructs the payload with the title slot defaulted (defaultLiteralFor
+        // String == "null"); the dispatch route never produces a non-null title.
+        payload.containsEntry("title", null);
+        var errors = payload.extractingByKey("errors", as(list(Map.class)));
+        errors.hasSize(1);
+        var only = errors.element(0, as(MAP));
+        only.containsEntry("__typename", "FilmLookupInvalid");
+        // Synthesized path DataFetcher routes Throwable sources through
+        // env.getExecutionStepInfo().getPath().toList() so the [String!]! contract holds even
+        // though Throwable has no getPath() accessor. The path is the SDL field path of the
+        // path-field's own resolution (filmLookup → errors → 0 → path); list indices are
+        // String::valueOf-coerced so the [String!]! contract holds for graphql-java's mixed
+        // String/Integer path elements.
+        only.extractingByKey("path", as(LIST))
+            .containsExactly("filmLookup", "errors", "0", "path");
+        // message DataFetcher routes through Throwable.getMessage().
+        only.containsEntry("message", "invalid id: -7");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmLookup_zeroId_routesThroughNotFoundErrorType() {
+        // The second handler in source order: FilmLookupNotFoundException → FilmLookupNotFound.
+        // Confirms the TypeResolver's instanceof ladder dispatches to the right branch, and that
+        // the per-@error path/message DataFetchers are wired for both @error types (not only the
+        // first one in declaration order).
+        Map<String, Object> data = execute("""
+            {
+                filmLookup(id: 0) {
+                    title
+                    errors {
+                        __typename
+                        ... on FilmLookupNotFound { path message }
+                        ... on FilmLookupInvalid { path message }
+                    }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("filmLookup", as(MAP));
+        payload.containsEntry("title", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmLookupNotFound");
+        only.containsEntry("message", "film 0 not found");
+        only.extractingByKey("path", as(LIST))
+            .containsExactly("filmLookup", "errors", "0", "path");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmLookup_validId_returnsHappyPathPayload() {
+        // Happy path: the service returns FilmLookupPayload directly (NoAssembly), no catch arm
+        // fires, errors is the empty list. Confirms the per-fetcher try/catch wrapper doesn't
+        // perturb non-error returns.
+        Map<String, Object> data = execute("""
+            { filmLookup(id: 5) { title errors { __typename } } }
+            """);
+        var payload = assertThat(data).extractingByKey("filmLookup", as(MAP));
+        payload.containsEntry("title", "THE LOOKED-UP FILM");
+        payload.extractingByKey("errors", as(LIST)).isEmpty();
+    }
 }
