@@ -571,18 +571,30 @@ class BuildContext {
             int stepIndex, MethodRef whereFilter) {
         String fkSideTable  = f.getTable().getName();
         String keySideTable = f.getKey().getTable().getName();
-        String targetSqlName = sourceSqlName.equalsIgnoreCase(fkSideTable) ? keySideTable : fkSideTable;
+        boolean fkOnSource = sourceSqlName.equalsIgnoreCase(fkSideTable);
+        String targetSqlName = fkOnSource ? keySideTable : fkSideTable;
         var fkRef = catalog.findForeignKeyByName(f.getName()).orElse(null);
         Optional<TableRef> targetTable = resolveTable(targetSqlName);
         Optional<TableRef> originTable = resolveTable(sourceSqlName);
         if (targetTable.isEmpty() || originTable.isEmpty()) {
             return Optional.empty();
         }
-        List<ColumnRef> sourceColumns = resolveFkColumnRefs(f.getTable(), f.getFields());
-        List<ColumnRef> targetColumns = resolveFkColumnRefs(f.getKey().getTable(), f.getKey().getFields());
+        List<ColumnRef> fkSideCols  = resolveFkColumnRefs(f.getTable(), f.getFields());
+        List<ColumnRef> keySideCols = resolveFkColumnRefs(f.getKey().getTable(), f.getKey().getFields());
+        // Synthesis-time orientation: bake the FK-direction decision into each slot pair so
+        // emitter sites read direction-blind (target.<targetSide>.eq(source.<sourceSide>))
+        // regardless of whether the FK lives on the source or the target table.
+        List<JoinSlot.FkSlot> slots = new java.util.ArrayList<>(fkSideCols.size());
+        for (int i = 0; i < fkSideCols.size(); i++) {
+            ColumnRef fkCol  = fkSideCols.get(i);
+            ColumnRef keyCol = keySideCols.get(i);
+            slots.add(fkOnSource
+                ? new JoinSlot.FkSlot(fkCol, keyCol)
+                : new JoinSlot.FkSlot(keyCol, fkCol));
+        }
         String alias = fieldName + "_" + stepIndex;
         return Optional.of(new FkJoin(f.getName(), fkRef, originTable.get(),
-            sourceColumns, targetTable.get(), targetColumns, whereFilter, alias));
+            targetTable.get(), slots, whereFilter, alias));
     }
 
     /**

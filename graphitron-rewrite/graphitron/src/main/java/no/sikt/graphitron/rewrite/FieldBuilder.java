@@ -56,7 +56,9 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
+import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import no.sikt.graphitron.rewrite.model.HelperRef;
+import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
@@ -1091,7 +1093,7 @@ class FieldBuilder {
                         || (cra.argCondition().isPresent() && cra.argCondition().get().override());
                     if (!autoSuppressed) {
                         var fkJoin = (JoinStep.FkJoin) cra.joinPath().get(0);
-                        ColumnRef fkSourceColumn = fkJoin.sourceColumns().get(0);
+                        ColumnRef fkSourceColumn = fkJoin.sourceSideColumns().get(0);
                         String javaType = javaTypeFor(cra.extraction(), fkSourceColumn);
                         bodyParams.add(cra.list()
                             ? new BodyParam.In(cra.name(), fkSourceColumn, javaType, cra.nonNull(), cra.extraction())
@@ -1107,7 +1109,7 @@ class FieldBuilder {
                         || (ccra.argCondition().isPresent() && ccra.argCondition().get().override());
                     if (!autoSuppressed) {
                         var fkJoin = (JoinStep.FkJoin) ccra.joinPath().get(0);
-                        List<ColumnRef> fkSourceColumns = fkJoin.sourceColumns();
+                        List<ColumnRef> fkSourceColumns = fkJoin.sourceSideColumns();
                         bodyParams.add(ccra.list()
                             ? new BodyParam.RowIn(ccra.name(), fkSourceColumns, ccra.nonNull(), ccra.extraction())
                             : new BodyParam.RowEq(ccra.name(), fkSourceColumns, ccra.nonNull(), ccra.extraction()));
@@ -2687,12 +2689,17 @@ class FieldBuilder {
      * cardinality falls through to parent-PK, but the classifier rejects it upstream).
      *
      * <p>Sibling of {@link #deriveBatchKeyForResultType} — that helper is for record parents and
-     * unconditionally uses {@code fk.sourceColumns()} because record parents never batch by
+     * unconditionally reads {@code fk.sourceSideColumns()} because record parents never batch by
      * parent PK.
      */
+    @DependsOnClassifierCheck(
+        key = "fk-join.slots-oriented-source-and-target",
+        reliesOn = "Reads fk.sourceSideColumns() to populate the BatchKey.RowKeyed key tuple "
+            + "with the parent-side columns of the FK; depends on synthesis-time slot orientation "
+            + "so the same call works whether the parent or the child holds the FK constraint.")
     private static BatchKey.RowKeyed deriveSplitQueryBatchKey(TableRef parentTable, List<JoinStep> path, boolean isList) {
         if (!isList && !path.isEmpty() && path.get(0) instanceof JoinStep.FkJoin fk) {
-            return new BatchKey.RowKeyed(fk.sourceColumns());
+            return new BatchKey.RowKeyed(fk.sourceSideColumns());
         }
         return new BatchKey.RowKeyed(parentTable.primaryKeyColumns());
     }
@@ -2710,11 +2717,15 @@ class FieldBuilder {
      *       (cannot generate a typed cast for key extraction)</li>
      * </ul>
      *
-     * <p>Otherwise returns a {@link BatchKey.RowKeyed} with the FK source columns. {@link BatchKey.RowKeyed}
-     * produces {@code RowN<...>} keys; {@code GeneratorUtils.buildFkRowKey} forks per parent
-     * {@link GraphitronType.ResultType} (jOOQ table record / jOOQ record / Java record / typed POJO)
-     * to extract scalar values and build the key via {@code DSL.row(...)}.
+     * <p>Otherwise returns a {@link BatchKey.RowKeyed} with the FK source-side columns.
+     * {@link BatchKey.RowKeyed} produces {@code RowN<...>} keys; {@code GeneratorUtils.buildFkRowKey}
+     * forks per parent {@link GraphitronType.ResultType} (jOOQ table record / jOOQ record / Java
+     * record / typed POJO) to extract scalar values and build the key via {@code DSL.row(...)}.
      */
+    @DependsOnClassifierCheck(
+        key = "fk-join.slots-oriented-source-and-target",
+        reliesOn = "Reads fkJoin.sourceSideColumns() to build a record-parent BatchKey.RowKeyed "
+            + "key tuple over the parent-side columns of the FK, regardless of FK direction.")
     private static BatchKey.RecordParentBatchKey deriveBatchKeyForResultType(
             List<JoinStep> joinPath, GraphitronType.ResultType parentResultType) {
         if (joinPath.isEmpty() || !(joinPath.get(0) instanceof JoinStep.FkJoin fkJoin)) {
@@ -2723,7 +2734,7 @@ class FieldBuilder {
         if (parentResultType instanceof GraphitronType.PojoResultType prt && prt.fqClassName() == null) {
             return null;
         }
-        return new BatchKey.RowKeyed(fkJoin.sourceColumns());
+        return new BatchKey.RowKeyed(fkJoin.sourceSideColumns());
     }
 
     /**
@@ -2929,8 +2940,13 @@ class FieldBuilder {
             return new AccessorDerivation.CardinalityMismatch(joined);
         }
 
-        // Exactly one resolvable match; build the corresponding permit.
-        var hop = new JoinStep.LiftedHop(expectedTable, expectedTable.primaryKeyColumns(), fieldName + "_0");
+        // Exactly one resolvable match; build the corresponding permit. The accessor's
+        // DataLoader key tuple equals the element table's PK tuple by classifier construction
+        // (Invariant Acc-1), so each slot is a LifterSlot whose single ColumnRef is the PK col.
+        List<JoinSlot.LifterSlot> hopSlots = expectedTable.primaryKeyColumns().stream()
+            .map(JoinSlot.LifterSlot::new)
+            .toList();
+        var hop = new JoinStep.LiftedHop(expectedTable, hopSlots, fieldName + "_0");
         AccessorMatch only = resolvable.get(0);
         if (only instanceof AccessorMatch.Single s) {
             var ref = new AccessorRef(
@@ -3219,23 +3235,30 @@ class FieldBuilder {
     }
 
     /**
-     * Returns the FK source columns on the parent table when the join path collapses to a single
-     * FK hop entered from the parent (parent-holds-FK pattern) <em>and</em> the FK's target
-     * columns positionally match the target NodeType's {@code keyColumns}. {@code null} otherwise
-     * (composite-key with non-mirroring FK, multi-hop, condition-join).
+     * Returns the source-side columns on the parent table when the join path collapses to a
+     * single FK hop entered from the parent (parent-holds-FK pattern) <em>and</em> the FK's
+     * target-side columns positionally match the target NodeType's {@code keyColumns}.
+     * {@code null} otherwise (composite-key with non-mirroring FK, multi-hop, condition-join).
      */
+    @DependsOnClassifierCheck(
+        key = "fk-join.slots-oriented-source-and-target",
+        reliesOn = "Reads fk.targetSideColumns() and fk.sourceSideColumns() to test whether the "
+            + "single-hop FK's target-side columns mirror the target NodeType's keyColumns; the "
+            + "returned source-side columns become a NodeId-translation predicate over the parent "
+            + "table without a JOIN.")
     private static List<ColumnRef> fkMirrorSourceColumns(TableRef parentTable, List<JoinStep> joinPath,
                                                           List<ColumnRef> targetKeyColumns) {
         if (joinPath.size() != 1) return null;
         if (!(joinPath.get(0) instanceof JoinStep.FkJoin fk)) return null;
         if (!fk.originTable().tableName().equalsIgnoreCase(parentTable.tableName())) return null;
-        if (fk.targetColumns().size() != targetKeyColumns.size()) return null;
-        for (int i = 0; i < fk.targetColumns().size(); i++) {
-            if (!fk.targetColumns().get(i).sqlName().equalsIgnoreCase(targetKeyColumns.get(i).sqlName())) {
+        if (fk.slotCount() != targetKeyColumns.size()) return null;
+        List<ColumnRef> targetSide = fk.targetSideColumns();
+        for (int i = 0; i < targetSide.size(); i++) {
+            if (!targetSide.get(i).sqlName().equalsIgnoreCase(targetKeyColumns.get(i).sqlName())) {
                 return null;
             }
         }
-        return fk.sourceColumns();
+        return fk.sourceSideColumns();
     }
 
     private boolean isScalarOrEnum(GraphQLFieldDefinition fieldDef) {

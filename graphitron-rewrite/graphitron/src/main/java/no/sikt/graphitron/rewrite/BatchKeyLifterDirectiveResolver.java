@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LifterRef;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -329,9 +330,14 @@ final class BatchKeyLifterDirectiveResolver {
         }
 
         // 6. Build the LiftedHop and the LifterRowKeyed BatchKey. Single source of truth: the
-        //    BatchKey reads through hop.targetColumns(); no second copy of the column list exists.
+        //    BatchKey reads through hop.slots(); no second copy of the column list exists.
+        //    LifterSlot encodes "DataLoader key tuple IS target-column tuple" as a type fact:
+        //    one ColumnRef component, sourceSide() == targetSide() by definition.
         String alias = fieldName + "_0";
-        var hop = new JoinStep.LiftedHop(targetTable, targetColumns, alias);
+        List<JoinSlot.LifterSlot> slots = targetColumns.stream()
+            .map(JoinSlot.LifterSlot::new)
+            .toList();
+        var hop = new JoinStep.LiftedHop(targetTable, slots, alias);
         var lifterRef = new LifterRef(ClassName.get(lifterClass), lifterMethodName);
         var batchKey = new BatchKey.LifterRowKeyed(hop, lifterRef);
         return new Resolved.Ok(batchKey, tbReturnType);
