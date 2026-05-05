@@ -91,11 +91,12 @@ public final class MultiTablePolymorphicEmitter {
      * UNION ALL has no per-branch WHERE; the SELECT spans the full participant tables.
      */
     public static List<MethodSpec> emitMethods(
+            TypeFetcherEmissionContext ctx,
             String fieldName,
             List<ParticipantRef> participants,
             boolean isList,
             String outputPackage) {
-        return emitMethods(fieldName, participants, Map.of(), isList, outputPackage);
+        return emitMethods(ctx, fieldName, participants, Map.of(), isList, outputPackage);
     }
 
     /**
@@ -110,6 +111,7 @@ public final class MultiTablePolymorphicEmitter {
      *                              root-fetcher emission. v1 supports only single-hop FK chains.
      */
     public static List<MethodSpec> emitMethods(
+            TypeFetcherEmissionContext ctx,
             String fieldName,
             List<ParticipantRef> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
@@ -120,7 +122,7 @@ public final class MultiTablePolymorphicEmitter {
             .map(p -> (ParticipantRef.TableBound) p)
             .toList();
         var methods = new ArrayList<MethodSpec>();
-        methods.add(buildMainFetcher(fieldName, tableBoundParticipants,
+        methods.add(buildMainFetcher(ctx, fieldName, tableBoundParticipants,
             participantJoinPaths, isList, outputPackage));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, false,
@@ -172,6 +174,7 @@ public final class MultiTablePolymorphicEmitter {
      *                              child connections, null for root queries.
      */
     public static List<MethodSpec> emitConnectionMethods(
+            TypeFetcherEmissionContext ctx,
             String fieldName,
             List<ParticipantRef> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
@@ -186,12 +189,12 @@ public final class MultiTablePolymorphicEmitter {
         // The empty-tableBound defensive path falls into the root branch; both fetcher builders
         // emit a non-throwing empty payload when participants is empty.
         if (parentTable != null && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildBatchedConnectionFetcher(fieldName, parentTable,
+            methods.add(buildBatchedConnectionFetcher(ctx, fieldName, parentTable,
                 outputPackage));
-            methods.add(buildBatchedConnectionRowsMethod(fieldName, tableBoundParticipants,
+            methods.add(buildBatchedConnectionRowsMethod(ctx, fieldName, tableBoundParticipants,
                 participantJoinPaths, defaultPageSize, parentTable, outputPackage));
         } else {
-            methods.add(buildRootConnectionFetcher(fieldName, tableBoundParticipants,
+            methods.add(buildRootConnectionFetcher(ctx, fieldName, tableBoundParticipants,
                 defaultPageSize, outputPackage));
         }
         for (var participant : tableBoundParticipants) {
@@ -214,6 +217,7 @@ public final class MultiTablePolymorphicEmitter {
      * read parent-side PK values directly off the carrier record.
      */
     private static MethodSpec buildMainFetcher(
+            TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
             boolean isList, String outputPackage) {
@@ -235,7 +239,7 @@ public final class MultiTablePolymorphicEmitter {
         if (isChildFetcher) {
             builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
         }
-        builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT);
+        builder.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall());
 
         if (participants.isEmpty()) {
             // Empty participant set is rejected by the validator, but emit a defensive empty
@@ -326,6 +330,7 @@ public final class MultiTablePolymorphicEmitter {
      * {@link #emitConnectionMethods}.
      */
     private static MethodSpec buildRootConnectionFetcher(
+            TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
             int defaultPageSize, String outputPackage) {
 
@@ -344,7 +349,7 @@ public final class MultiTablePolymorphicEmitter {
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
-        builder.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT);
+        builder.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall());
 
         if (participants.isEmpty()) {
             // Defensive empty path: validator rejects an empty participant set, but emit a
@@ -652,6 +657,7 @@ public final class MultiTablePolymorphicEmitter {
      * would only get here through a validator bug).
      */
     private static MethodSpec buildBatchedConnectionFetcher(
+            TypeFetcherEmissionContext ctx,
             String fieldName, TableRef parentTable,
             String outputPackage) {
 
@@ -702,8 +708,8 @@ public final class MultiTablePolymorphicEmitter {
         // same as Split* fetchers — graphql-java records aliases as path keys, so aliased uses
         // get distinct DataLoaders.
         builder.addStatement(
-            "$T name = graphitronContext(env).getTenantId(env) + $S + $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
-            String.class, "/", String.class, "/");
+            "$T name = $L.getTenantId(env) + $S + $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
+            String.class, ctx.graphitronContextCall(), "/", String.class, "/");
         builder.addCode(
             "$T loader = env.getDataLoaderRegistry()\n"
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
@@ -773,6 +779,7 @@ public final class MultiTablePolymorphicEmitter {
      * SELECT.
      */
     private static MethodSpec buildBatchedConnectionRowsMethod(
+            TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
             int defaultPageSize, TableRef parentTable,
@@ -812,7 +819,7 @@ public final class MultiTablePolymorphicEmitter {
         b.addStatement("return $T.of()", LIST);
         b.endControlFlow();
 
-        b.addStatement("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT);
+        b.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall());
 
         // Per-participant table aliases for stage 1.
         for (var participant : participants) {

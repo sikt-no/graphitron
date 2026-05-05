@@ -33,7 +33,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R18` | Java LSP rewrite + introspect retirement + `dev` goal | Ready | [plan](graphitron-lsp.md) |
 | `R68` | Diataxis user manual: absorb legacy README into the docs site | Ready | [plan](diataxis-user-manual.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
-| `R80` | Replace string-scan helper-emission gate in `TypeFetcherGenerator` | Ready | [plan](type-fetcher-helper-emission-gate.md) |
+| `R80` | Replace string-scan helper-emission gate in `TypeFetcherGenerator` | In Progress | [plan](type-fetcher-helper-emission-gate.md) |
 
 ---
 
