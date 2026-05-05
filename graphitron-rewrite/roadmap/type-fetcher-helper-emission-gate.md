@@ -1,12 +1,81 @@
 ---
 id: R80
 title: "Replace string-scan helper-emission gate in `TypeFetcherGenerator`"
-status: In Progress
+status: In Review
 bucket: cleanup
 depends-on: []
 ---
 
 # Replace string-scan helper-emission gate in `TypeFetcherGenerator`
+
+Shipped at `cb21cc5`. Below is the as-shipped record; the original spec body is
+preserved for reviewer context.
+
+## Implementation summary
+
+- Added `TypeFetcherEmissionContext` (package-private, single-helper today:
+  `HelperKind.GRAPHITRON_CONTEXT`). `graphitronContextCall()` returns
+  `CodeBlock.of("graphitronContext(env)")` and records the request in the
+  context's `EnumSet`.
+- Threaded `ctx` through every emitter that writes the call:
+  `ArgCallEmitter` (both `buildCallArgs` overloads, both
+  `buildMethodBackedCallArgs` overloads, `buildArgExtraction`),
+  `LookupValuesJoinEmitter.buildFetcherBody`,
+  `SplitRowsMethodEmitter` (entry points + `emitParentInputAndFkChain`),
+  `MultiTablePolymorphicEmitter` (`emitMethods` overloads,
+  `emitConnectionMethods`, `buildMainFetcher`, `buildRootConnectionFetcher`,
+  `buildBatchedConnectionFetcher`, `buildBatchedConnectionRowsMethod`), and the
+  in-file `TypeFetcherGenerator.build*` private statics.
+- Replaced the 11 SQL-context literals (`addStatement("$T dsl =
+  graphitronContext(env).getDslContext(env)", dslContextClass)`) with `$L`
+  interpolation of `ctx.graphitronContextCall()`. Same for the validator
+  pre-step (`__validator = ...getValidator(env)`) and the multitable tenant-id
+  data-loader-name composition.
+- Class assembly drains `ctx.isRequested(GRAPHITRON_CONTEXT)` and emits
+  `buildGraphitronContextHelper(outputPackage)` accordingly. The post-scan
+  block at `:478-482` and its explanatory comment delete.
+- `ConnectionHelperClassGenerator` keeps its own self-contained assembly
+  unchanged, per the spec's out-of-scope list.
+
+### Non-Fetchers consumers
+
+`QueryConditionsGenerator`, `InlineTableFieldEmitter`, and
+`InlineLookupTableFieldEmitter` also call `ArgCallEmitter`. They emit into
+classes other than `*Fetchers` (the `<Type>Conditions` builder, the `Type`
+class's `$fields()`), which have no `graphitronContext` helper. The shipped
+shape constructs a local `TypeFetcherEmissionContext` at the call site and
+passes it through; if a `ContextArg` ever reaches one of those paths, the
+recorded request goes nowhere (matching pre-R80 behaviour, which would also
+have emitted a call into a class without the helper). A separate roadmap item
+should formalise that boundary if it ever bites.
+
+## Test impact
+
+- `graphitronContextHelper_emittedForServiceRecordOnlyClass`
+  (`TypeFetcherGeneratorTest:1354`) keeps the helper-presence assertion;
+  the body-string sanity assertion at `:1369-1371` deletes (was the test-tier
+  code-string pattern the principles ban).
+- `graphitronContextHelper_notEmittedWhenNoBodyReferencesIt` unchanged.
+- All 1308 graphitron unit/pipeline tests pass on the full
+  `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`.
+
+### Schema fixture: deferred
+
+The spec proposed adding a service-record-only `@record` type to
+`graphitron-sakila-example/schema.graphqls` so compile-tier coverage exercises
+the previous regression shape. The natural shape (a `@record` type whose only
+child is a `@service` scalar with `Set<Record1<Integer>>` keys) is rejected by
+the schema validator: `@service at the root does not support
+List<Row>/List<Record>/List<Object> batch parameters ; the root has no parent
+context to batch against`. A `ConstructorField` parent (Film → record passthrough)
+does not change the validator's read; the type is treated as root for batch-shape
+purposes. The unit test at `:1354` plus the structural property of the new
+design (the call only exists as the return value of
+`graphitronContextCall()`, which records the dependency) provide the
+regression coverage; further compile-tier exercise would require a fixture
+shape the validator accepts, which is outside R80's scope.
+
+## Original spec body
 
 `TypeFetcherGenerator.generateTypeSpec` decides whether to emit the
 `graphitronContext` helper by serialising every just-emitted method's
