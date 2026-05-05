@@ -1,62 +1,71 @@
-= @index (deprecated)
-:description: Legacy single-purpose alias for @order(index:). Migrate to @order.
+= Directive reference
+:description: Every directive in the rewrite, alphabetically and by category.
 :!toc:
 
-[CAUTION]
-====
-*Deprecated.* `@index` exists for backward compatibility with schemas predating xref:order.adoc[`@order`]. New code must use `@order(index: "...")` instead. The framework still recognises `@index` and routes it to the same generator path, but the directive surface, error messages, and how-to pages all assume `@order`.
-====
+Authoritative descriptions of every directive in the rewrite's `directives.graphqls`. Each directive page carries its SDL signature, parameter table, canonical examples from the Sakila example schema, constraints, and cross-links to the recipes and explanation pages that frame it.
 
-Connects an enum value to a database index by name. Functionally identical to `@order(index: "...")` with no additional capabilities; the rename happened when xref:order.adoc[`@order`] generalised the surface to include `fields:` and `primaryKey:`.
-
-== SDL signature
-
-[source,graphql]
-----
-directive @index(name: String) on ENUM_VALUE
-----
-
-== Parameters
-
-[cols="1,1,1,3",options="header"]
+[cols="1,1",frame=none,grid=none]
 |===
-| Name | Type | Default | Description
-| `name` | `String` | none | Name of the database index on the enum's parent table (resolved via the xref:orderBy.adoc[`@orderBy`] argument that references this enum). Identical semantics to xref:order.adoc[`@order`'s `index`].
+a|
+== Alphabetical
+
+* xref:asConnection.adoc[`@asConnection`]
+* xref:batchKeyLifter.adoc[`@batchKeyLifter`]
+* xref:condition.adoc[`@condition`]
+* xref:defaultOrder.adoc[`@defaultOrder`]
+* xref:discriminate.adoc[`@discriminate`]
+* xref:discriminator.adoc[`@discriminator`]
+* xref:enum.adoc[`@enum`]
+* xref:error.adoc[`@error`]
+* xref:experimental_constructType.adoc[`@experimental_constructType`]
+* xref:externalField.adoc[`@externalField`]
+* xref:field.adoc[`@field`]
+* xref:index-directive.adoc[`@index`] _(deprecated, use `@order(index:)`)_
+* xref:lookupKey.adoc[`@lookupKey`]
+* xref:multitableReference.adoc[`@multitableReference`]
+* xref:mutation.adoc[`@mutation`]
+* xref:node.adoc[`@node`]
+* xref:nodeId.adoc[`@nodeId`]
+* xref:notGenerated.adoc[`@notGenerated`] _(rejected, remove from the schema)_
+* xref:order.adoc[`@order`]
+* xref:orderBy.adoc[`@orderBy`]
+* xref:record.adoc[`@record`]
+* xref:reference.adoc[`@reference`]
+* xref:service.adoc[`@service`]
+* xref:splitQuery.adoc[`@splitQuery`]
+* xref:table.adoc[`@table`]
+* xref:tableMethod.adoc[`@tableMethod`]
+
+a|
+== By category
+
+*Mapping* +
+xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], xref:record.adoc[`@record`]
+
+*Joining* +
+xref:reference.adoc[`@reference`], xref:multitableReference.adoc[`@multitableReference`], xref:batchKeyLifter.adoc[`@batchKeyLifter`]
+
+*Querying* +
+xref:asConnection.adoc[`@asConnection`], xref:condition.adoc[`@condition`], xref:experimental_constructType.adoc[`@experimental_constructType`], xref:externalField.adoc[`@externalField`], xref:lookupKey.adoc[`@lookupKey`], xref:splitQuery.adoc[`@splitQuery`], xref:tableMethod.adoc[`@tableMethod`]
+
+*Mutating* +
+xref:mutation.adoc[`@mutation`], xref:service.adoc[`@service`]
+
+*Sorting* +
+xref:orderBy.adoc[`@orderBy`], xref:order.adoc[`@order`], xref:defaultOrder.adoc[`@defaultOrder`], xref:index-directive.adoc[`@index`] (deprecated)
+
+*Error handling* +
+xref:error.adoc[`@error`]
+
+*Polymorphism* +
+xref:discriminate.adoc[`@discriminate`], xref:discriminator.adoc[`@discriminator`]
+
+*Global ID* +
+xref:node.adoc[`@node`], xref:nodeId.adoc[`@nodeId`]
+
+*Rejected by the rewrite* +
+xref:notGenerated.adoc[`@notGenerated`] (remove from the schema)
+
 |===
-
-== Canonical example
-
-[source,graphql]
-----
-# Legacy
-enum FilmOrderByField {
-    LANGUAGE @index(name: "IDX_FK_LANGUAGE_ID")
-    TITLE    @index(name: "IDX_TITLE")
-}
-
-# Equivalent, modern
-enum FilmOrderByField {
-    LANGUAGE @order(index: "IDX_FK_LANGUAGE_ID")
-    TITLE    @order(index: "IDX_TITLE")
-}
-----
-
-The two forms generate identical code. The migration is a mechanical rename plus a parameter shape change (`name:` becomes `index:`).
-
-== Constraints
-
-* Applies only to enum values, like xref:order.adoc[`@order`].
-* `name` must resolve to an existing database index when jOOQ index generation is enabled. The same "no matching index" error fires as for xref:order.adoc[`@order(index:)`].
-* `@index` and xref:order.adoc[`@order`] cannot both decorate the same enum value.
-* Cannot express the field-based or primary-key sorting modes available on xref:order.adoc[`@order`]. Schemas that need those modes must migrate.
-
-== Migration
-
-Replace each `@index(name: "X")` with `@order(index: "X")`. No runtime behaviour changes; only the directive name and parameter key.
-
-== See also
-
-* xref:order.adoc[`@order`] is the supported replacement.
-* xref:orderBy.adoc[`@orderBy`] is the entry point for both forms.
 
 xref:../index.adoc[← Reference index]

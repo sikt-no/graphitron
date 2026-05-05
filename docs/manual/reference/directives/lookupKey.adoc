@@ -60,6 +60,6 @@ returns three positions in input order: `{ title: "ACADEMY DINOSAUR" }`, `null`,
 
 * xref:mutation.adoc[`@mutation`] uses `@lookupKey` on input fields to identify the target row for `UPDATE`, `DELETE`, and `UPSERT`.
 * xref:../../how-to/batch-lookups.adoc[How-to: Batch lookups] covers correlated-key shapes, NodeId-keyed lookups, and `@splitQuery` interactions.
-* xref:../../tutorial/03-first-query.adoc[Tutorial page 3: A first query] introduces `@lookupKey` on a single-key example.
+* xref:../../tutorial/05-mutations.adoc[Tutorial page 5: A first mutation] uses `@lookupKey` on the `UPDATE` input to identify the target row.
 
 xref:../index.adoc[← Reference index]

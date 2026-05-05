@@ -15,7 +15,7 @@ The `DeprecationsDocCoverageTest` verifier asserts every SDL `@deprecated()` mar
 
 [NOTE]
 ====
-*Honest deviation from the R68 plan.* The plan called for a "target removal version" column. The rewrite's `@deprecated(reason:)` markers do not carry a structured removal version, and the project does not currently version directive surface as a separate cadence. Until the rewrite ships a versioned directive contract, "Status" carries the practical signal (discouraged, transitional, removed) and "Migration" names the replacement.
+The rewrite's `@deprecated(reason:)` markers do not carry a structured removal version, and the project does not currently version the directive surface as a separate cadence. "Status" carries the practical signal (discouraged, transitional, removed) and "Migration" names the replacement.
 ====
 
 == Deprecated arguments and input fields
@@ -43,7 +43,7 @@ The GraphQL spec does not allow `@deprecated` on a directive definition, so thes
 |===
 | Directive | Status | Since | Migration
 
-| xref:directives/index.adoc[`@index`]
+| xref:directives/index-directive.adoc[`@index`]
 | Backward-compatibility alias
 | Rewrite v1
 | Replace `@index(name: "X")` with xref:directives/order.adoc[`@order(index: "X")`]. The two forms generate identical code; only the directive name and parameter key change. xref:directives/order.adoc[`@order`] also offers `fields:` and `primaryKey:` modes that `@index` cannot express.
@@ -58,6 +58,6 @@ These directives parse but the rewrite refuses to generate against them. They ar
 == See also
 
 * xref:diagnostics-glossary.adoc[Diagnostics glossary] catalogues the closed-set rejection kinds the validator emits.
-* xref:directives/index.adoc[`@index`] and xref:directives/asConnection.adoc[`@asConnection`] carry their own deprecation prose at the canonical site.
+* xref:directives/index-directive.adoc[`@index`] and xref:directives/asConnection.adoc[`@asConnection`] carry their own deprecation prose at the canonical site.
 
 xref:index.adoc[← Reference index]

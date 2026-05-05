@@ -41,7 +41,7 @@ public class TenantContext implements GraphitronContext {
 }
 ----
 
-The shape of `buildPerTenantContext` is up to you: a separate `Configuration` per tenant, a shared `Configuration` with per-tenant `Settings`, a connection-pool-aware `SET LOCAL` for session variables, or any combination. The decision tree under xref:../../architecture/getting-started.adoc#tenant-scoped-dslcontext[Getting started: Tenant-scoped DSLContext] covers the runtime trade-offs in detail.
+The shape of `buildPerTenantContext` is up to you: a separate `Configuration` per tenant, a shared `Configuration` with per-tenant `Settings`, a connection-pool-aware `SET LOCAL` for session variables, or any combination.
 
 == Implement `getTenantId`: DataLoader cache isolation
 
@@ -122,7 +122,7 @@ CREATE POLICY tenant_isolation ON documents
 }
 ----
 
-The `true` third argument to `set_config` is `is_local`, scoping the variable to the current transaction; the value resets when the transaction ends rather than persisting on the connection after it returns to the pool. Generated SQL is unchanged; Postgres applies the policy without Graphitron's involvement. xref:../../architecture/getting-started.adoc#row-level-security[Getting started: Row-level security] covers the dialect-agnostic framing and the broader security model.
+The `true` third argument to `set_config` is `is_local`, scoping the variable to the current transaction; the value resets when the transaction ends rather than persisting on the connection after it returns to the pool. Generated SQL is unchanged; Postgres applies the policy without Graphitron's involvement. xref:../../security.adoc[The Security page] covers the database-first authorization stance.
 
 == Constraints
 
@@ -135,7 +135,7 @@ The `true` third argument to `set_config` is `is_local`, scoping the variable to
 
 == See also
 
-* xref:../../architecture/getting-started.adoc#tenant-scoped-dslcontext[Getting started: Tenant-scoped DSLContext] is the runtime-side companion; it covers per-tenant `Configuration` shapes, connection-pool considerations, and the request-entry hook in more detail.
+* xref:../reference/runtime-api.adoc[Runtime API reference] documents the `GraphitronContext` interface (`getDslContext`, `getTenantId`, `getContextArgument`, `getValidator`) this recipe extends.
 * xref:add-custom-conditions.adoc[How-to: Add custom conditions] covers `contextArguments:` for pulling tenant-scoped values into `@condition` predicates; the same context map carries both the `tenantId` and any other request-scoped values.
 * xref:split-vs-inline.adoc[How-to: When to split queries] covers the DataLoader cache key (path-scoped, request-scoped, tenant-prefixed); the tenant prefix is the part this recipe controls.
 * xref:federation-keys.adoc[How-to: Federation key fields] covers federation entity declaration; per-rep tenant routing pairs naturally with federation `_entities` dispatch.

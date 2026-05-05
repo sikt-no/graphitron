@@ -4,10 +4,6 @@
 
 Authoritative descriptions of every directive, every Maven plugin parameter, every runtime API entry point, and every diagnostic code Graphitron emits.
 
-== Status: reference chapter complete
-
-All 26 directives in the rewrite's `directives.graphqls` are described below; the runtime-API reference covers the three classes Graphitron emits unconditionally into your generated sources; the Mojo configuration reference covers every parameter on the three Maven goals; the diagnostics glossary covers every closed-set diagnostic code the validator emits.
-
 == Runtime API
 
 * xref:runtime-api.adoc[Runtime API reference]: the `Graphitron.buildSchema(...)` facade (single-arg and federation two-arg overloads), the `GraphitronContext` per-request interface (`getDslContext`, `getContextArgument`, `getTenantId`, `getValidator`), and the `NodeIdEncoder` utility (generic `encode`/`peekTypeId`/`decodeValues` plus per-Node `encode<TypeName>` and `decode<TypeName>` helpers).
@@ -42,7 +38,7 @@ a|
 * xref:directives/experimental_constructType.adoc[`@experimental_constructType`]
 * xref:directives/externalField.adoc[`@externalField`]
 * xref:directives/field.adoc[`@field`]
-* xref:directives/index.adoc[`@index`] _(deprecated, use `@order(index:)`)_
+* xref:directives/index-directive.adoc[`@index`] _(deprecated, use `@order(index:)`)_
 * xref:directives/lookupKey.adoc[`@lookupKey`]
 * xref:directives/multitableReference.adoc[`@multitableReference`]
 * xref:directives/mutation.adoc[`@mutation`]
@@ -74,7 +70,7 @@ xref:directives/asConnection.adoc[`@asConnection`], xref:directives/condition.ad
 xref:directives/mutation.adoc[`@mutation`], xref:directives/service.adoc[`@service`]
 
 *Sorting* +
-xref:directives/orderBy.adoc[`@orderBy`], xref:directives/order.adoc[`@order`], xref:directives/defaultOrder.adoc[`@defaultOrder`], xref:directives/index.adoc[`@index`] (deprecated)
+xref:directives/orderBy.adoc[`@orderBy`], xref:directives/order.adoc[`@order`], xref:directives/defaultOrder.adoc[`@defaultOrder`], xref:directives/index-directive.adoc[`@index`] (deprecated)
 
 *Error handling* +
 xref:directives/error.adoc[`@error`]
