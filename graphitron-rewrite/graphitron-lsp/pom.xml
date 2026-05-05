@@ -84,13 +84,15 @@
     </build>
 
     <profiles>
+        <!--
+          Each profile compiles the vendored tree-sitter runtime + tree-sitter-graphql
+          grammar into a per-platform shared library under
+          `target/classes/lib/<os>-<arch>/`. The CI matrix in `.github/workflows/
+          rewrite-build.yml` runs the build on all three host platforms so the matching
+          binary lands in each module-jar produced for that platform. Windows is a
+          follow-up roadmap item: build-native.bat does not exist yet.
+        -->
         <profile>
-            <!--
-              Compiles the vendored tree-sitter runtime + tree-sitter-graphql grammar
-              into a per-platform shared library under
-              `target/classes/lib/<os>-<arch>/`. Phase 6 step 4 will add macOS x86_64,
-              macOS arm64, and Windows x86_64 profiles alongside this one.
-            -->
             <id>build-native-linux-x86_64</id>
             <activation>
                 <os>
@@ -116,6 +118,74 @@
                                     <executable>${project.basedir}/src/main/native/build-native.sh</executable>
                                     <arguments>
                                         <argument>${project.build.outputDirectory}/lib/linux-x86_64</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>build-native-macos-x86_64</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                    <arch>x86_64</arch>
+                </os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>build-tree-sitter-graphql</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${project.basedir}/src/main/native/build-native.sh</executable>
+                                    <arguments>
+                                        <argument>${project.build.outputDirectory}/lib/macos-x86_64</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>build-native-macos-aarch64</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                    <arch>aarch64</arch>
+                </os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>build-tree-sitter-graphql</id>
+                                <phase>generate-resources</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${project.basedir}/src/main/native/build-native.sh</executable>
+                                    <arguments>
+                                        <argument>${project.build.outputDirectory}/lib/macos-aarch64</argument>
                                     </arguments>
                                 </configuration>
                             </execution>
