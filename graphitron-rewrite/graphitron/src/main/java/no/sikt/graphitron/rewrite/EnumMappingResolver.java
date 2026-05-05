@@ -218,7 +218,7 @@ final class EnumMappingResolver {
                     arg.graphqlArgName()));
         }).toList();
         return new MethodRef.Basic(method.className(), method.methodName(),
-            method.returnType(), newParams, method.declaredExceptions());
+            method.returnType(), newParams, method.declaredExceptions(), method.isStatic());
     }
 
     /**

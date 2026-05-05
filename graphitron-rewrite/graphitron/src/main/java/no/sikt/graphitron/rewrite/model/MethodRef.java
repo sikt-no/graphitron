@@ -37,6 +37,21 @@ public interface MethodRef {
     List<Param> params();
 
     /**
+     * Whether the underlying Java method is {@code static} and therefore callable as
+     * {@code ClassName.methodName(...)} at the emission site, vs an instance method that the
+     * emitter must invoke on a fresh holder via {@code new ClassName(dsl).methodName(...)}.
+     *
+     * <p>Defaults to {@code true} because every {@link MethodRef} producer except
+     * {@code @service} reflection is structurally static-only ({@code @condition} expressions,
+     * {@code @tableMethod} per its strict reflection contract, {@code @externalField} per its
+     * strict reflection contract, enum-mapping helpers). {@code ServiceCatalog.reflectServiceMethod}
+     * is the one site that may produce {@code false}: a developer {@code @service} method may be
+     * either a static utility or an instance method on a class with a {@code (DSLContext)}
+     * constructor (the legacy generator's per-call instantiation pattern).
+     */
+    default boolean isStatic() { return true; }
+
+    /**
      * Fully qualified names of the checked exceptions the underlying Java method declares
      * (i.e. {@link java.lang.reflect.Method#getExceptionTypes()}). Empty when the method has no
      * {@code throws} clause or when this {@link MethodRef} variant doesn't reflect a Java method
@@ -128,7 +143,8 @@ public interface MethodRef {
         String methodName,
         TypeName returnType,
         List<Param> params,
-        List<String> declaredExceptions
+        List<String> declaredExceptions,
+        boolean isStatic
     ) implements MethodRef {
 
         public Basic {
@@ -136,14 +152,25 @@ public interface MethodRef {
         }
 
         /**
+         * Compatibility constructor for the pre-instance-services world: callers that don't
+         * supply {@code isStatic} get {@code true} (i.e. the static-call emission shape). All
+         * non-{@code @service} producers stay on this constructor; {@code ServiceCatalog
+         * .reflectServiceMethod} uses the 6-arg form to thread the actual modifier.
+         */
+        public Basic(String className, String methodName, TypeName returnType,
+                     List<Param> params, List<String> declaredExceptions) {
+            this(className, methodName, returnType, params, declaredExceptions, true);
+        }
+
+        /**
          * Backward-compatible 4-arg constructor for call sites that don't (yet) populate
          * declared exceptions: defaults to an empty list. {@code ServiceCatalog} reflection
-         * sites use the 5-arg form to capture {@code Method.getExceptionTypes()}; tests and
-         * non-reflection sites that don't care about the §4 match rule continue to use this
-         * 4-arg form.
+         * sites use the wider forms to capture {@code Method.getExceptionTypes()} and the
+         * static modifier; tests and non-reflection sites that don't care about either continue
+         * to use this 4-arg form.
          */
         public Basic(String className, String methodName, TypeName returnType, List<Param> params) {
-            this(className, methodName, returnType, params, List.of());
+            this(className, methodName, returnType, params, List.of(), true);
         }
     }
 

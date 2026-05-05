@@ -987,6 +987,48 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
+    void mutationServiceRecordField_instanceMethod_emitsNewServiceWithDsl() {
+        // Instance-method service (`isStatic == false`): the emitter produces
+        // `new ServiceClass(dsl).method(...)` instead of the static `ServiceClass.method(...)`,
+        // and unconditionally declares the `dsl` local even when the method itself takes no
+        // DSLContext parameter (the constructor needs it).
+        var method = new MethodRef.Basic(
+            "com.example.Service", "doThing", ClassName.get("java.lang", "Integer"),
+            List.of(), List.of(), /* isStatic */ false);
+        var field = new MutationField.MutationServiceRecordField("Mutation", "doThing", null,
+            new ReturnTypeRef.ScalarReturnType("Int", single()), method,
+            Optional.empty(), Optional.empty());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
+
+        var body = method(spec, "doThing").code().toString();
+        assertThat(body).contains("org.jooq.DSLContext dsl =");
+        assertThat(body).contains("new com.example.Service(dsl).doThing(");
+        assertThat(body).doesNotContain("com.example.Service.doThing(");
+    }
+
+    @Test
+    void mutationServiceRecordField_staticMethod_keepsStaticCallShape() {
+        // Counter-test for the instance-method shape: static services stay on the
+        // `ServiceClass.method(...)` call and skip the unconditional `dsl` local. Without
+        // this assertion an emitter regression that always emitted the instance form would
+        // slip through.
+        var method = new MethodRef.Basic(
+            "com.example.Service", "doThing", ClassName.get("java.lang", "Integer"),
+            List.of());
+        var field = new MutationField.MutationServiceRecordField("Mutation", "doThing", null,
+            new ReturnTypeRef.ScalarReturnType("Int", single()), method,
+            Optional.empty(), Optional.empty());
+        var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
+            List.of(field), DEFAULT_OUTPUT_PACKAGE);
+
+        var body = method(spec, "doThing").code().toString();
+        assertThat(body).contains("com.example.Service.doThing(");
+        assertThat(body).doesNotContain("new com.example.Service(");
+        assertThat(body).doesNotContain("DSLContext dsl");
+    }
+
+    @Test
     void mutationServiceRecordField_withValidationHandler_emitsValidatorPreStep() {
         // R12 §5 wrapper integration on the mutation side: when the channel carries any
         // ValidationHandler, the shared helper inserts the pre-execution Jakarta validation
