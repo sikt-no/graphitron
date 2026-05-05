@@ -145,17 +145,22 @@ public final class ArgCallEmitter {
      * {@code NestedInputField} whose {@code outerArgName} is the head segment and whose
      * {@code path} is the tail segment list. The existing
      * {@link #buildNestedInputFieldExtraction} machinery handles null-safe Map traversal at
-     * every level. {@code Step.liftsList=true} segments (intermediate-list traversal) are not
-     * yet supported and surface as an {@link IllegalStateException} at emit time; the
-     * classifier rejects them at the binding boundary.
+     * every level. The leaf step's {@code liftsList} flag is irrelevant for emit (the Map
+     * traversal returns the list value directly to the Java parameter). Intermediate steps
+     * with {@code liftsList=true} (a list-typed field followed by more segments) require
+     * element-wise traversal and are not yet supported; emit throws an
+     * {@link IllegalStateException} so a build-time error surfaces clearly.
      */
     private static CallSiteExtraction extractionForArg(ParamSource.Arg arg, String paramDisplayName) {
         if (arg.path().isHead()) {
             return arg.extraction();
         }
         var segments = arg.path().segments();
-        for (var s : segments.subList(1, segments.size())) {
-            if (s.liftsList()) {
+        // Only intermediate steps (not the last) require element-wise traversal when
+        // liftsList=true. The terminal step's liftsList flag is informational; the leaf value
+        // is whatever Map.get returns — already a List<...> in shape.
+        for (int i = 1; i < segments.size() - 1; i++) {
+            if (segments.get(i).liftsList()) {
                 throw new IllegalStateException(
                     "argMapping path expression with intermediate list segment is not yet supported"
                     + " at emit time (param '" + paramDisplayName + "', path '" + arg.path().asString()
