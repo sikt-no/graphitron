@@ -15,9 +15,9 @@ import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
-import org.treesitter.TSParser;
-import org.treesitter.TSPoint;
-import org.treesitter.TreeSitterGraphql;
+import io.github.treesitter.jtreesitter.Parser;
+import io.github.treesitter.jtreesitter.Point;
+import io.github.treesitter.jtreesitter.Language;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -76,7 +76,7 @@ class FixtureCatalogTest {
     @Test
     void tableCompletionsReturnSqlTableNames() {
         String source = "type Foo @table(name: \"\") { x: Int }";
-        TSPoint cursor = new TSPoint(0, source.indexOf('"') + 1);
+        Point cursor = new Point(0, source.indexOf('"') + 1);
         var items = tableCompletions(catalog(), source, cursor);
         assertThat(items).extracting(CompletionItem::getLabel)
             .contains("film", "actor", "language");
@@ -93,7 +93,7 @@ class FixtureCatalogTest {
             """;
         int line = 1;
         int col = source.split("\n")[line].indexOf('"') + 1;
-        var items = fieldCompletions(catalog(), source, new TSPoint(line, col));
+        var items = fieldCompletions(catalog(), source, new Point(line, col));
         assertThat(items).extracting(CompletionItem::getLabel)
             .contains("FILM_ID", "TITLE", "LANGUAGE_ID");
         assertThat(items).extracting(CompletionItem::getLabel)
@@ -156,25 +156,25 @@ class FixtureCatalogTest {
 
     // ---- Helpers ----
 
-    private static List<CompletionItem> tableCompletions(CompletionData data, String source, TSPoint cursor) {
+    private static List<CompletionItem> tableCompletions(CompletionData data, String source, Point cursor) {
         var bytes = source.getBytes(StandardCharsets.UTF_8);
-        var tree = parser().parseString(null, source);
+        var tree = parser().parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("no directive at cursor"));
         return TableCompletions.generate(data, directive, cursor, bytes);
     }
 
-    private static List<CompletionItem> fieldCompletions(CompletionData data, String source, TSPoint cursor) {
+    private static List<CompletionItem> fieldCompletions(CompletionData data, String source, Point cursor) {
         var bytes = source.getBytes(StandardCharsets.UTF_8);
-        var tree = parser().parseString(null, source);
+        var tree = parser().parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("no directive at cursor"));
         return FieldCompletions.generate(data, directive, cursor, bytes);
     }
 
-    private static TSParser parser() {
-        var p = new TSParser();
-        p.setLanguage(new TreeSitterGraphql());
+    private static Parser parser() {
+        var p = new Parser();
+        p.setLanguage(no.sikt.graphitron.lsp.parsing.GraphqlLanguage.get());
         return p;
     }
 }

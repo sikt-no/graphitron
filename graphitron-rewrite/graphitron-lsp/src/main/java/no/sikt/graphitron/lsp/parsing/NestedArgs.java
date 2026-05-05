@@ -1,7 +1,7 @@
 package no.sikt.graphitron.lsp.parsing;
 
-import org.treesitter.TSNode;
-import org.treesitter.TSPoint;
+import io.github.treesitter.jtreesitter.Node;
+import io.github.treesitter.jtreesitter.Point;
 
 import java.util.Optional;
 
@@ -29,9 +29,9 @@ public final class NestedArgs {
     public record Nested(
         Directives.Argument outerArgument,
         String outerArgumentName,
-        TSNode nestedField,
-        TSNode nestedFieldName,
-        TSNode nestedValue,
+        Node nestedField,
+        Node nestedFieldName,
+        Node nestedValue,
         String nestedFieldNameText
     ) {}
 
@@ -44,15 +44,15 @@ public final class NestedArgs {
      */
     public static Optional<Nested> findContaining(
         Directives.Directive directive,
-        TSPoint pos,
+        Point pos,
         byte[] source
     ) {
         for (Directives.Argument arg : directive.arguments()) {
             if (!arg.contains(pos)) continue;
-            TSNode innerObjectField = findInnermostObjectField(arg.value(), pos);
+            Node innerObjectField = findInnermostObjectField(arg.value(), pos);
             if (innerObjectField == null) continue;
-            TSNode nameNode = childOfKind(innerObjectField, "name");
-            TSNode valueNode = childOfKind(innerObjectField, "value");
+            Node nameNode = childOfKind(innerObjectField, "name");
+            Node valueNode = childOfKind(innerObjectField, "value");
             if (nameNode == null || valueNode == null) continue;
             return Optional.of(new Nested(
                 arg,
@@ -71,16 +71,18 @@ public final class NestedArgs {
      * {@code object_value}, plain {@code value}) looking for the
      * deepest {@code object_field} that contains {@code pos}.
      */
-    private static TSNode findInnermostObjectField(TSNode node, TSPoint pos) {
-        if (node == null || node.isNull() || !Nodes.contains(node, pos)) {
+    private static Node findInnermostObjectField(Node node, Point pos) {
+        if (node == null || !Nodes.contains(node, pos)) {
             return null;
         }
-        TSNode best = null;
+        Node best = null;
         if ("object_field".equals(node.getType())) {
             best = node;
         }
         for (int i = 0; i < node.getChildCount(); i++) {
-            TSNode descendant = findInnermostObjectField(node.getChild(i), pos);
+            Node child = node.getChild(i).orElse(null);
+            if (child == null) continue;
+            Node descendant = findInnermostObjectField(child, pos);
             if (descendant != null) {
                 best = descendant;
             }
@@ -88,10 +90,10 @@ public final class NestedArgs {
         return best;
     }
 
-    private static TSNode childOfKind(TSNode parent, String kind) {
+    private static Node childOfKind(Node parent, String kind) {
         for (int i = 0; i < parent.getChildCount(); i++) {
-            TSNode child = parent.getChild(i);
-            if (kind.equals(child.getType())) return child;
+            Node child = parent.getChild(i).orElse(null);
+            if (child != null && kind.equals(child.getType())) return child;
         }
         return null;
     }

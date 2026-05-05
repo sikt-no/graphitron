@@ -1,27 +1,36 @@
 package no.sikt.graphitron.lsp.parsing;
 
-import org.treesitter.TreeSitterGraphql;
+import io.github.treesitter.jtreesitter.Language;
+
+import java.lang.foreign.Arena;
 
 /**
- * Singleton holder for the tree-sitter-graphql language binding.
+ * Singleton holder for the {@code tree-sitter-graphql} language binding.
  *
- * <p>Centralised here so the eventual migration from
- * {@code io.github.bonede:tree-sitter-graphql} (JNI, JDK 21) to
- * {@code io.github.tree-sitter:jtreesitter} + a separately packaged
- * tree-sitter-graphql grammar (FFM, JDK 25+) only touches one file.
- * Every other module that needs the language looks it up here.
+ * <p>Loads via {@code jtreesitter}, which itself resolves runtime symbols
+ * through the {@link io.github.treesitter.jtreesitter.NativeLibraryLookup}
+ * SPI registered under {@code META-INF/services}; that SPI extracts the
+ * platform-appropriate shared library shipped under {@code lib/<os>-<arch>/}
+ * inside this jar (Linux x86_64 today; macOS / Windows in R18 Phase 6
+ * step 4). The combined library exports both jtreesitter's runtime symbols
+ * and the grammar's {@code tree_sitter_graphql} entry point, so a single
+ * {@link Language#load} call covers both.
  *
- * <p>Construction is cheap and thread-safe (the underlying bonede class
- * is stateless), but we hold one instance to avoid the allocation cost
- * on hot paths.
+ * <p>The {@link Arena#global() global arena} is intentional: the
+ * {@link Language} keeps its native pointer alive for the JVM's lifetime,
+ * matching how the LSP uses it (one parser pool, hot reload via the
+ * {@code dev} mojo's filesystem watcher rather than process recycling).
  */
 public final class GraphqlLanguage {
 
-    private static final TreeSitterGraphql INSTANCE = new TreeSitterGraphql();
+    private static final Language INSTANCE = Language.load(
+        new BundledLibraryLookup().get(Arena.global()),
+        "tree_sitter_graphql"
+    );
 
     private GraphqlLanguage() {}
 
-    public static TreeSitterGraphql get() {
+    public static Language get() {
         return INSTANCE;
     }
 }

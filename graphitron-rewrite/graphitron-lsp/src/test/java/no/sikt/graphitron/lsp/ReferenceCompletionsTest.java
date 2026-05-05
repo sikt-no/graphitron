@@ -4,9 +4,9 @@ import no.sikt.graphitron.lsp.completions.ReferenceCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.junit.jupiter.api.Test;
-import org.treesitter.TSParser;
-import org.treesitter.TSPoint;
-import org.treesitter.TreeSitterGraphql;
+import io.github.treesitter.jtreesitter.Parser;
+import io.github.treesitter.jtreesitter.Point;
+import io.github.treesitter.jtreesitter.Language;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -33,7 +33,7 @@ class ReferenceCompletionsTest {
         int line = 1;
         int col = lines[line].indexOf('"') + 1;
 
-        var items = run(filmCatalog(), source, new TSPoint(line, col));
+        var items = run(filmCatalog(), source, new Point(line, col));
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactlyInAnyOrder("FILM__FILM_LANGUAGE_ID_FKEY", "FILM_ACTOR__FILM_ACTOR_FILM_ID_FKEY");
@@ -50,7 +50,7 @@ class ReferenceCompletionsTest {
         int line = 1;
         int col = lines[line].indexOf('"') + 1;
 
-        var items = run(filmCatalog(), source, new TSPoint(line, col));
+        var items = run(filmCatalog(), source, new Point(line, col));
 
         assertThat(items).extracting(c -> c.getLabel())
             .containsExactlyInAnyOrder("film", "language", "film_actor");
@@ -68,7 +68,7 @@ class ReferenceCompletionsTest {
         int line = 1;
         int col = lines[line].indexOf("key:") + 1;
 
-        var items = run(filmCatalog(), source, new TSPoint(line, col));
+        var items = run(filmCatalog(), source, new Point(line, col));
 
         assertThat(items).isEmpty();
     }
@@ -84,7 +84,7 @@ class ReferenceCompletionsTest {
         int line = 1;
         int col = lines[line].indexOf('"') + 1;
 
-        var items = run(filmCatalog(), source, new TSPoint(line, col));
+        var items = run(filmCatalog(), source, new Point(line, col));
 
         assertThat(items).isEmpty();
     }
@@ -102,18 +102,18 @@ class ReferenceCompletionsTest {
         int line = 1;
         int col = lines[line].indexOf('"') + 1;
 
-        var items = run(filmCatalog(), source, new TSPoint(line, col));
+        var items = run(filmCatalog(), source, new Point(line, col));
 
         assertThat(items).isEmpty();
     }
 
     private static List<org.eclipse.lsp4j.CompletionItem> run(
-        CompletionData data, String source, TSPoint cursor
+        CompletionData data, String source, Point cursor
     ) {
-        var parser = new TSParser();
-        parser.setLanguage(new TreeSitterGraphql());
+        var parser = new Parser();
+        parser.setLanguage(no.sikt.graphitron.lsp.parsing.GraphqlLanguage.get());
         var bytes = source.getBytes(StandardCharsets.UTF_8);
-        var tree = parser.parseString(null, source);
+        var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
         return ReferenceCompletions.generate(data, directive, cursor, bytes);

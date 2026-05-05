@@ -1,7 +1,7 @@
 package no.sikt.graphitron.lsp.parsing;
 
-import org.treesitter.TSNode;
-import org.treesitter.TSPoint;
+import io.github.treesitter.jtreesitter.Node;
+import io.github.treesitter.jtreesitter.Point;
 
 /**
  * Tree-sitter node helpers. Pulled out so the directive code reads close
@@ -17,16 +17,16 @@ public final class Nodes {
      * because cursor positions sit between characters and editing at
      * end-of-range should still resolve to the surrounding node.
      */
-    public static boolean contains(TSNode node, TSPoint point) {
-        TSPoint start = node.getStartPoint();
-        TSPoint end = node.getEndPoint();
-        if (point.getRow() < start.getRow() || point.getRow() > end.getRow()) {
+    public static boolean contains(Node node, Point point) {
+        Point start = node.getStartPoint();
+        Point end = node.getEndPoint();
+        if (point.row() < start.row() || point.row() > end.row()) {
             return false;
         }
-        if (point.getRow() == start.getRow() && point.getColumn() < start.getColumn()) {
+        if (point.row() == start.row() && point.column() < start.column()) {
             return false;
         }
-        if (point.getRow() == end.getRow() && point.getColumn() > end.getColumn()) {
+        if (point.row() == end.row() && point.column() > end.column()) {
             return false;
         }
         return true;
@@ -37,7 +37,7 @@ public final class Nodes {
      * offsets from tree-sitter map onto byte offsets in the source string;
      * we need the encoded bytes to slice safely.
      */
-    public static String text(TSNode node, byte[] source) {
+    public static String text(Node node, byte[] source) {
         int start = node.getStartByte();
         int end = node.getEndByte();
         return new String(source, start, end - start, java.nio.charset.StandardCharsets.UTF_8);

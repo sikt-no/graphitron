@@ -4,9 +4,9 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.completions.TableCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import org.junit.jupiter.api.Test;
-import org.treesitter.TSParser;
-import org.treesitter.TSPoint;
-import org.treesitter.TreeSitterGraphql;
+import io.github.treesitter.jtreesitter.Parser;
+import io.github.treesitter.jtreesitter.Point;
+import io.github.treesitter.jtreesitter.Language;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -28,7 +28,7 @@ class TableCompletionsTest {
                 bar: Int
             }
             """;
-        TSPoint cursor = new TSPoint(0, source.indexOf('"') + 1);
+        Point cursor = new Point(0, source.indexOf('"') + 1);
 
         CompletionData data = new CompletionData(
             List.of(
@@ -39,10 +39,10 @@ class TableCompletionsTest {
             List.of()
         );
 
-        var parser = new TSParser();
-        parser.setLanguage(new TreeSitterGraphql());
+        var parser = new Parser();
+        parser.setLanguage(no.sikt.graphitron.lsp.parsing.GraphqlLanguage.get());
         var bytes = source.getBytes(StandardCharsets.UTF_8);
-        var tree = parser.parseString(null, source);
+        var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
 
@@ -61,12 +61,12 @@ class TableCompletionsTest {
             }
             """;
         // Cursor on the directive name, not inside an argument.
-        TSPoint cursor = new TSPoint(0, source.indexOf("@table") + 1);
+        Point cursor = new Point(0, source.indexOf("@table") + 1);
 
-        var parser = new TSParser();
-        parser.setLanguage(new TreeSitterGraphql());
+        var parser = new Parser();
+        parser.setLanguage(no.sikt.graphitron.lsp.parsing.GraphqlLanguage.get());
         var bytes = source.getBytes(StandardCharsets.UTF_8);
-        var tree = parser.parseString(null, source);
+        var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow();
 

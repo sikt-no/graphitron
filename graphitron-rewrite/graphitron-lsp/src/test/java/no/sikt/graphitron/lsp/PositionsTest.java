@@ -21,8 +21,8 @@ class PositionsTest {
         byte[] source = "type Foo {}\n".getBytes(StandardCharsets.UTF_8);
         var resolved = Positions.resolve(source, 0, 5);
         assertThat(resolved.byteOffset()).isEqualTo(5);
-        assertThat(resolved.tsPoint().getRow()).isEqualTo(0);
-        assertThat(resolved.tsPoint().getColumn()).isEqualTo(5);
+        assertThat(resolved.tsPoint().row()).isEqualTo(0);
+        assertThat(resolved.tsPoint().column()).isEqualTo(5);
     }
 
     @Test
@@ -72,8 +72,8 @@ class PositionsTest {
         // Line 0 occupies bytes 0..18 (UTF-8 length of "type å { f: Int }\n").
         int line0Bytes = "type å { f: Int }\n".getBytes(StandardCharsets.UTF_8).length;
         assertThat(resolved.byteOffset()).isEqualTo(line0Bytes + 5);
-        assertThat(resolved.tsPoint().getRow()).isEqualTo(1);
-        assertThat(resolved.tsPoint().getColumn()).isEqualTo(5);
+        assertThat(resolved.tsPoint().row()).isEqualTo(1);
+        assertThat(resolved.tsPoint().column()).isEqualTo(5);
     }
 
     @Test

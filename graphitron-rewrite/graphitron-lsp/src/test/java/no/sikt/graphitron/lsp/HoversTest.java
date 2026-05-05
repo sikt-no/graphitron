@@ -5,7 +5,7 @@ import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.MarkupKind;
 import org.junit.jupiter.api.Test;
-import org.treesitter.TSPoint;
+import io.github.treesitter.jtreesitter.Point;
 
 import java.util.List;
 
@@ -109,7 +109,7 @@ class HoversTest {
         int line = 0;
         int col = file.tree().getRootNode().getType().equals("source_file")
             ? "type Foo @t".length() : 0;
-        var pos = new TSPoint(line, col);
+        var pos = new Point(line, col);
 
         assertThat(Hovers.compute(file, filmCatalog(), pos)).isEmpty();
     }
@@ -126,7 +126,7 @@ class HoversTest {
         assertThat(Hovers.compute(file, filmCatalog(), pos)).isEmpty();
     }
 
-    private static TSPoint pointAt(WorkspaceFile file, int line, String token) {
+    private static Point pointAt(WorkspaceFile file, int line, String token) {
         String source = new String(file.source(), java.nio.charset.StandardCharsets.UTF_8);
         var lines = source.split("\n");
         int col = lines[line].indexOf(token);
@@ -134,7 +134,7 @@ class HoversTest {
             throw new AssertionError("token '" + token + "' not on line " + line + ": " + lines[line]);
         }
         // Land on the middle of the token so we are unambiguously inside it.
-        return new TSPoint(line, col + Math.max(1, token.length() / 2));
+        return new Point(line, col + Math.max(1, token.length() / 2));
     }
 
     private static WorkspaceFile file(String source) {
