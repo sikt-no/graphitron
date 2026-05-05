@@ -587,11 +587,11 @@ public final class MultiTablePolymorphicEmitter {
      * returns {@code null} when no joinPath applies (root-fetcher form, or the participant is
      * absent from {@code participantJoinPaths}).
      *
-     * <p>Single-hop FK only: the predicate is
-     * {@code <participantTable>.<fkCol>.eq(parentRecord.get(DSL.name("<parentPkCol>"), <Type>.class))}.
-     * FK direction is inferred from the FK's {@code targetTable} — when it matches the
-     * participant's own table, the parent holds the FK (rare for child fields). Otherwise the
-     * participant holds the FK pointing back to the parent's PK (the standard B3 shape).
+     * <p>Single-hop FK only: per-slot AND-chain
+     * {@code <participantTable>.<slot.targetSide()>.eq(parentRecord.get(DSL.name("<slot.sourceSide().sqlName()>"), <Type>.class))}.
+     * Synthesis-time slot orientation means the parent side is always {@code slot.sourceSide()} and
+     * the participant side {@code slot.targetSide()}, regardless of which end of the catalog FK each
+     * maps to; iteration is direction-blind.
      *
      * <p>The two-arg {@code parentRecord.get(Name, Class)} form returns the typed value
      * (rather than {@code Object}) so the typed {@code Field<T>.eq(T)} overload selects
@@ -913,7 +913,7 @@ public final class MultiTablePolymorphicEmitter {
             var participant = participants.get(p);
             String alias = "stage1_" + participant.typeName();
             CodeBlock projection = batchedBranchProjection(participant, alias);
-            CodeBlock joinPredicate = batchedBranchJoinPredicate(participant, participantJoinPaths, parentPkCols);
+            CodeBlock joinPredicate = batchedBranchJoinPredicate(participant, participantJoinPaths);
             if (p == 0) {
                 b.add("    dsl.select($L)\n", projection);
                 b.add("        .from($L)\n", alias);
@@ -1042,9 +1042,6 @@ public final class MultiTablePolymorphicEmitter {
      * type-correct AND-chain even when a multi-column FK declares its columns in a different
      * order than the parent's {@code @node(keyColumns: [...])} directive: positional misuse is
      * structurally impossible because no two parallel lists are paired.
-     *
-     * <p>{@code parentPkCols} is unused after the slot lift; the parameter is retained on the
-     * signature for symmetry with sibling helpers and removable in a follow-up pass.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "fk-join.slots-oriented-source-and-target",
@@ -1053,7 +1050,7 @@ public final class MultiTablePolymorphicEmitter {
             + "synthesis-time slot orientation, retiring the matchingParticipantCol sqlName lookup "
             + "and the parentHoldsFk derivation off targetTable().")
     private static CodeBlock batchedBranchJoinPredicate(ParticipantRef.TableBound participant,
-            Map<String, List<JoinStep>> participantJoinPaths, List<ColumnRef> parentPkCols) {
+            Map<String, List<JoinStep>> participantJoinPaths) {
         var path = participantJoinPaths.get(participant.typeName());
         var fkJoin = (JoinStep.FkJoin) path.get(0);
         String tableAlias = "stage1_" + participant.typeName();

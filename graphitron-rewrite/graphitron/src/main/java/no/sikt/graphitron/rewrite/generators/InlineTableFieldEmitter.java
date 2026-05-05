@@ -123,8 +123,6 @@ public final class InlineTableFieldEmitter {
         }
 
         // WHERE: step 0's correlation against parent, then whereFilter methods, then user filters.
-        // Slot orientation at synthesis time means the emitter is direction-blind here; the
-        // cardinality-based parentHoldsFk derivation retired with R82.
         JoinStep.FkJoin first = (JoinStep.FkJoin) path.get(0);
         String firstAlias = aliases.get(0);
         CodeBlock correlation = JoinPathEmitter.emitCorrelationWhere(first, firstAlias, parentAlias);
