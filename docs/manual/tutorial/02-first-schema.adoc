@@ -20,29 +20,25 @@ type Query {
 
 == Customer
 
+The shape relevant to this page, with the scalar fields and the two directive families that map them:
+
 [source,graphql]
 ----
-type Customer implements Node @table(name: "customer") @node {
-    id:         ID!      @nodeId
+type Customer @table(name: "customer") {
     customerId: Int!     @field(name: "CUSTOMER_ID")
     firstName:  String!  @field(name: "FIRST_NAME")
     lastName:   String!  @field(name: "LAST_NAME")
     email:      String   @field(name: "EMAIL")
     activebool: Boolean! @field(name: "ACTIVEBOOL")
-    address:    Address  @reference(path: [{key: "customer_address_id_fkey"}])
     ...
 }
 ----
-
-Two directive families do the work here:
 
 `@table(name: "customer")` binds the GraphQL `Customer` type to the `customer` table in jOOQ's catalog. The generator looks up the matching jOOQ `Table` class at code-generation time, fails the build if it cannot find one, and uses it everywhere `Customer` appears in a query.
 
 `@field(name: "FIRST_NAME")` on each scalar field tells the generator which column to project. When the GraphQL name and the column name match (case-insensitively), the directive is unnecessary; here every field carries it because the schema is explicit. A query selecting `firstName` produces `SELECT customer.first_name AS firstName`; a query selecting both `firstName` and `lastName` produces `SELECT customer.first_name AS firstName, customer.last_name AS lastName`.
 
-The `@reference` directive on `address` is a foreign-key join. You will use it on xref:04-joining-tables.adoc[page 4]; ignore it for now.
-
-`@nodeId` and `@node` are the Relay Global Object Identification machinery. They are out of scope for this tutorial; the xref:../how-to/global-node-identification.adoc[corresponding how-to] covers them.
+The full `Customer` type in the schema also carries `implements Node @node` and an `id: ID! @nodeId` field, plus a foreign-key-driven `address: Address @reference(...)`. xref:04-joining-tables.adoc[Page 4] introduces `@reference`; xref:../how-to/global-id.adoc[How-to: Global object IDs] covers `@node` and `@nodeId`.
 
 == Address
 

@@ -79,6 +79,25 @@ curl -s -X POST http://localhost:8080/graphql \
 
 A response of `{"data":{"__typename":"Query"}}` means the GraphQL engine is wired up and ready.
 
+== If something goes wrong
+
+Three failures account for most newcomer hiccups; if you hit one, the fix is short.
+
+*The build fails with `Detected JDK ... is version 21.x.x which is not in the allowed range [25,)`.* The Maven enforcer is reading `JAVA_HOME`, which inherited a JDK 21 from your shell or a prior session. Install JDK 25 and point `JAVA_HOME` at it:
+
+[source,bash]
+----
+sudo apt-get install -y openjdk-25-jdk-headless
+export JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64
+mvn -version  # should now report Java 25
+----
+
+On macOS or Windows, install a JDK 25 distribution (Temurin, Liberica, etc.) and set `JAVA_HOME` accordingly. `mvn -version` is the verification step; it must report Java 25 before the build will pass.
+
+*Quarkus fails to start with "address already in use" or never reaches `Listening on: http://0.0.0.0:8080`.* Port 8080 is taken by another process (a previous run that didn't shut down, a system service, another local app). Either stop the offender (`lsof -i :8080` finds it) or run the example on a different port: `mvn quarkus:dev -Dquarkus.http.port=8081`. Adjust the `localhost:8080` URLs in the rest of this tutorial to match.
+
+*The example app starts but every query returns a connection error.* Postgres isn't reachable on `localhost:5432`. If you used the Docker command above, `docker ps` should show `graphitron-pg`; if it isn't there, the container exited (check `docker logs graphitron-pg`). If you're running Postgres natively, confirm `psql -U postgres -d rewrite_test -c "SELECT 1"` returns `1`. The default credentials the example expects are `postgres` / `postgres` against database `rewrite_test`.
+
 == Use GraphiQL instead of curl (optional)
 
 The example bundles the GraphiQL playground: an in-browser editor with auto-complete, query history, and a one-click run button against the same `/graphql` endpoint. Open `http://localhost:8080/graphiql/` directly, or visit `http://localhost:8080/graphql` in a browser and you are redirected there automatically.

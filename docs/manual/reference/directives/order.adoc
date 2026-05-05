@@ -81,12 +81,12 @@ The enum's parent type is determined by where the enum is referenced from (the x
 * `fields[].name` must be a real column on the bound table. Resolution mirrors xref:field.adoc[`@field`]: case-sensitive against the jOOQ-generated identifiers.
 * `collate` is passed verbatim to the database; misspelled collations surface only at query time.
 * `@order` applies to enum values only. Use it on every value of an enum referenced by xref:orderBy.adoc[`@orderBy`]; missing values fail the build.
-* xref:index.adoc[`@index`] is the deprecated single-purpose alias for `@order(index:)`. New code should use `@order`.
+* xref:index-directive.adoc[`@index`] is the deprecated single-purpose alias for `@order(index:)`. New code should use `@order`.
 
 == See also
 
 * xref:orderBy.adoc[`@orderBy`] is the entry point that activates `@order`-bearing enums.
 * xref:defaultOrder.adoc[`@defaultOrder`] reuses the same `index` / `fields` / `primaryKey` shape on the field rather than the enum.
-* xref:index.adoc[`@index`] is deprecated; migrate to `@order(index:)`.
+* xref:index-directive.adoc[`@index`] is deprecated; migrate to `@order(index:)`.
 
 xref:../index.adoc[← Reference index]

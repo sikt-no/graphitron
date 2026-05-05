@@ -45,6 +45,23 @@ class DirectiveDocCoverageTest {
 
     private static final String DOCS_DIRECTIVES_PATH = "docs/manual/reference/directives";
 
+    /**
+     * Page filename → directive name remap for cases where the natural
+     * {@code <name>.adoc} would collide with the directory's landing page.
+     * {@code index.adoc} is the directives landing (alphabetical + categorical
+     * roll-up); the {@code @index} directive lives at {@code index-directive.adoc}
+     * to free the {@code index.adoc} slot for the landing.
+     */
+    private static final java.util.Map<String, String> PAGE_TO_DIRECTIVE = java.util.Map.of(
+        "index-directive", "index"
+    );
+
+    /**
+     * Page filenames that are not per-directive pages (chapter landing,
+     * section indexes, etc.). Excluded from the directive ↔ page comparison.
+     */
+    private static final Set<String> NON_DIRECTIVE_PAGES = Set.of("index");
+
     @Test
     void everyDirectiveHasAReferencePageAndViceVersa() throws IOException {
         Set<String> directives = directivesFromSchema();
@@ -93,6 +110,8 @@ class DirectiveDocCoverageTest {
                 .map(p -> p.getFileName().toString())
                 .filter(n -> n.endsWith(".adoc"))
                 .map(n -> n.substring(0, n.length() - ".adoc".length()))
+                .filter(n -> !NON_DIRECTIVE_PAGES.contains(n))
+                .map(n -> PAGE_TO_DIRECTIVE.getOrDefault(n, n))
                 .collect(toCollection(TreeSet::new));
         }
     }

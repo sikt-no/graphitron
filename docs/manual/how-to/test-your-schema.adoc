@@ -259,7 +259,7 @@ void perTenantDispatch_routesPerTenant() {
 }
 ----
 
-The pattern is the same as the basic helper, just with a callable context builder. For full-on multi-tenant testing, also see xref:../../architecture/getting-started.adoc#tenant-scoping[Getting started: Tenant-scoping] for the framework-side wiring contract.
+The pattern is the same as the basic helper, just with a callable context builder. For full-on multi-tenant testing, also see xref:tenant-scoping.adoc[How-to: Tenant scoping] for the framework-side wiring contract.
 
 == Federation entity tests
 
@@ -296,7 +296,7 @@ The test passes representations via GraphQL variables, and asserts on the dispat
 
 * `GraphQLQueryTest` (`graphitron-rewrite/graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/GraphQLQueryTest.java`) is the canonical template; copy its `@BeforeAll` setup.
 * `FederationEntitiesDispatchTest` (same package) covers the federation-side test pattern.
-* xref:../../architecture/getting-started.adoc#federation[Getting started: Federation] covers the framework-level wiring this recipe assumes is in place.
+* xref:apollo-federation.adoc[How-to: Apollo Federation transport] covers the framework-level wiring this recipe assumes is in place when testing federation entities.
 * xref:handle-services.adoc[How-to: Handle services] covers the `@service` argument-binding contract that consumer tests exercise.
 * xref:error-channel.adoc[How-to: The errors channel] covers asserting on typed errors that flow through a payload's `errors:` field vs the framework redaction path.
 * xref:federation-keys.adoc[How-to: Federation key fields] covers the dispatch rules a federation-side test verifies.

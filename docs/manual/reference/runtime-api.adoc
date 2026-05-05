@@ -179,6 +179,5 @@ A single canonical wire format across every generated dispatcher is what makes n
 * xref:../how-to/custom-scalars.adoc[How-to: Custom scalars] is the canonical use of the `buildSchema` customizer's `additionalType(...)` shape.
 * xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers `getDslContext` + `getTenantId` cooperation, the cache-key contract, and PostgreSQL row-level security.
 * xref:../how-to/global-id.adoc[How-to: Global object IDs] covers `NodeIdEncoder` end-to-end, including the per-Node helpers, `keyColumns` migrations, and `Query.node` / `Query.nodes` dispatch.
-* xref:../../architecture/runtime-extension-points.adoc[Runtime extension points] is the architectural framing this reference is the API extract of; it covers the rationale for emitting the interface per-app rather than shipping a shared runtime jar.
 
 xref:index.adoc[← Reference index]

@@ -4,7 +4,7 @@
 
 xref:../reference/directives/experimental_constructType.adoc[`@experimental_constructType`] points at this recipe for the non-resolvable-entity pattern that motivates the directive's existence. To make sense of that pattern, you need the surrounding federation surface first: how `@key` declares an entity, how graphitron wires entity resolution from `@key` and `@node`, what compound and multi-alternative keys do, and the `resolvable: false` flag for keys owned by another subgraph. This recipe walks the path from "what `@key` does at all" through to "how to project a stub of an entity that lives elsewhere".
 
-The framework-level federation surface (the `@link` opt-in, the runtime entity dispatcher, custom fetchers, the `<schemaInput tag>` flag) lives in xref:../../architecture/getting-started.adoc#federation[Getting started: Federation]; this recipe assumes that wiring is in place.
+The framework-level federation surface (the `@link` opt-in, the runtime entity dispatcher, custom fetchers, the `<schemaInput tag>` flag) lives in xref:apollo-federation.adoc[How-to: Apollo Federation transport]; this recipe assumes that wiring is in place.
 
 == What `@key` does
 
@@ -192,7 +192,7 @@ The Sakila example schema doesn't currently fold these two together: `federated-
 
 == Wiring federation: `@link`, `<schemaInput tag>`, custom fetchers
 
-Three wiring concerns surface once `@key` is in play. They live in xref:../../architecture/getting-started.adoc#federation[Getting started: Federation]; the operational summary:
+Three wiring concerns surface once `@key` is in play. xref:apollo-federation.adoc[How-to: Apollo Federation transport] covers them in full; the operational summary:
 
 * *Opt in via `@link`.* Add an `extend schema @link(url: "...", import: [...])` to one of your `.graphqls` files. The plugin detects the link and wraps the assembled schema with the federation builder. Without `@link`, the schema is non-federation; `@key` fails graphql-java parsing because the directive is not declared.
 * *Manual directive declarations.* Alternative to `@link`: declare each directive you use (`directive @key(fields: String!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE`). The build still wraps with federation when the catalog finds any federation directive applied. Mixing the two on the same directive (importing via `@link` and redeclaring it locally) fails validation.
@@ -215,7 +215,7 @@ Three wiring concerns surface once `@key` is in play. They live in xref:../../ar
 * xref:../reference/directives/node.adoc[`@node`] is the Relay/`Query.node` directive whose synthesised key feeds the federation `_entities` path.
 * xref:../reference/directives/nodeId.adoc[`@nodeId`] declares the encoded `id:` field that NODE_ID-shape alternatives use.
 * xref:../reference/directives/field.adoc[`@field`] is the per-field column-mapping axis; alternative to `@experimental_constructType` when the constructed type *does* have its own `@table`.
-* xref:../../architecture/getting-started.adoc#federation[Getting started: Federation] covers the framework-level wiring (`@link`, `<schemaInput tag>`, custom fetchers) this recipe assumes is in place.
+* xref:apollo-federation.adoc[How-to: Apollo Federation transport] covers the framework-level wiring (`@link`, `<schemaInput tag>`, custom fetchers) this recipe assumes is in place.
 * xref:global-id.adoc[How-to: Global object IDs] covers the Relay-side `Query.node` dispatch and `keyColumns` migrations that share infrastructure with `@key`.
 
 xref:index.adoc[← How-to index]

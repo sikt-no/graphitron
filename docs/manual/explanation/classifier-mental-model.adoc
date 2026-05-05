@@ -2,7 +2,7 @@
 :description: What the build's classification step does, in user-visible terms. Useful when reading rejection messages, understanding directive interactions, or diagnosing why a field surfaces as a stub.
 :!toc:
 
-The build doesn't blindly emit a fetcher for every field; it first sorts each field into a category based on its directives, its parent, and its return type. The sorting is the *classification* step, and most of the build's user-visible behaviour (rejection messages, directive interaction rules, batched-vs-correlated query shapes) traces back to it. This page explains the model in user terms; xref:../../architecture/getting-started.adoc[the architecture chapter] covers the contributor-facing detail.
+The build doesn't blindly emit a fetcher for every field; it first sorts each field into a category based on its directives, its parent, and its return type. The sorting is the *classification* step, and most of the build's user-visible behaviour (rejection messages, directive interaction rules, batched-vs-correlated query shapes) traces back to it. This page explains the model in user terms; the rewrite-internal docs at `graphitron-rewrite/docs/` cover the contributor-facing detail.
 
 == Two axes describe every field
 
@@ -71,6 +71,5 @@ A third, less common shape: *deferred*. The validator recognises the field but t
 * xref:how-it-works.adoc[How it works] is the wider pipeline; classification is one of its four steps.
 * xref:design-decisions.adoc[Design decisions] explains why specific category boundaries are where they are (why `@condition` methods take a table; why `@lookupKey` blocks pagination; etc.).
 * xref:../reference/diagnostics-glossary.adoc[Diagnostics glossary] is the canonical surface for the rejection messages the classifier produces.
-* xref:../../architecture/getting-started.adoc[Architecture: Getting started] covers the contributor-facing pipeline detail (sealed hierarchies, variant taxonomy, generator dispatch).
 
 xref:index.adoc[← Explanation index]

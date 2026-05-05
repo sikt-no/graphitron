@@ -190,6 +190,5 @@ A bidirectional coverage test (`MojoDocCoverageTest` in `graphitron-maven`) asse
 * xref:runtime-api.adoc[Runtime API reference] covers the `Graphitron` facade and `GraphitronContext` interface this plugin's `generate` goal emits into the consumer module.
 * xref:directives/index.adoc[Directive reference] covers the SDL surface every `<schemaInput>` parses against; `<namedReference>` entries match `ExternalCodeReference.name:` on the four directives that take external Java code.
 * xref:../tutorial/01-prerequisites.adoc[Tutorial page 1: Prerequisites] is the first place a consumer meets the plugin and the example consumer's pre-wired POM.
-* xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime] covers the dev loop's broader runtime framing (the LSP, the schema watcher, the classpath watcher) the `dev` goal is the operational extract of.
 
 xref:index.adoc[← Reference index]

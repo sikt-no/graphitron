@@ -36,7 +36,3 @@ I want to understand why Graphitron works the way it does.
 Background on the design decisions, the batching model, the database-first stance, and how the pipeline fits together.
 
 |===
-
-== Manual under construction
-
-The manual is being authored across phases (item `R68` in xref:../roadmap/index.adoc[the roadmap]). This Phase 1a slice ships the information architecture so the four-quadrant shape can be reviewed before the prose lands. Each quadrant's index page names its current state and points readers at the closest existing material until the new prose arrives.

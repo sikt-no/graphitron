@@ -178,7 +178,7 @@ type Query {
 * *No build-time validation that the context key is wired.* A typo in `contextArguments` surfaces as a `null` parameter at request time, not at build time. Test the wiring (or log on null in the condition method).
 * *`contextArguments:` and `argMapping:` are independent.* `argMapping:` rebinds GraphQL argument names to differently-named Java parameters; `contextArguments:` adds parameters from the request context. They compose: a method can take `(table, mapped GraphQL args, context args)` in that order.
 
-The signing-side context-argument story (tenant scoping, request-id propagation, current-user filtering) is a recurring need; the recipe in xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime] (under federation, custom scalars, tenant scoping) covers the bootstrap side.
+The supplying side of the context-argument story (tenant scoping, request-id propagation, current-user filtering) lives in xref:tenant-scoping.adoc[How-to: Tenant scoping] and the runtime-side `GraphitronContext` interface documented in xref:../reference/runtime-api.adoc[the runtime API reference].
 
 == Constraints and pitfalls
 

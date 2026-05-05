@@ -2,34 +2,71 @@
 :description: Recipes for the day-to-day patterns Graphitron's directives unlock.
 :!toc:
 
-Task-indexed recipes for the day-to-day patterns Graphitron's directives unlock: mapping types to tables, joining via references, batch lookups, custom conditions, services, mutations, pagination and sorting, polymorphic types, error handling, global node identification, computed fields, Apollo federation, custom scalars, tenant scoping, and the recommended consumer test pattern.
+Task-indexed recipes for the day-to-day patterns Graphitron's directives unlock. Browse alphabetically when you know which directive you want; browse by category when you know which problem you're solving.
 
-== Status
+[cols="1,1",frame=none,grid=none]
+|===
+a|
+== Alphabetical
 
-All R68 Phase 3 recipes have landed. The legacy https://github.com/sikt-no/graphitron/tree/main/graphitron-codegen-parent/graphitron-java-codegen/README.md[`graphitron-java-codegen` README]'s worked examples are directive-compatible with the rewrite and remain a useful cross-reference; for the architectural framing under each recipe, see xref:../../architecture/getting-started.adoc[Getting started with the rewrite runtime].
+* xref:add-custom-conditions.adoc[Add custom conditions]: attach a developer-supplied predicate to a field, argument, or input field via `@condition`.
+* xref:apollo-federation.adoc[Apollo Federation transport]: wire the federation runtime around a Graphitron schema.
+* xref:batch-lookups.adoc[Batch lookups]: drive a positional batch fetch with `@lookupKey` and get one result per input position.
+* xref:computed-fields.adoc[Computed fields with `@externalField`]: project a derived column from a developer-supplied jOOQ `Field<T>`.
+* xref:condition-cascade.adoc[Stacking and overriding conditions]: when explicit `@condition` predicates stack with implicit ones, and what `override:` suppresses.
+* xref:connections.adoc[Cursor-paginated connections]: synthesised vs declared connection types, `totalCount` cost, and what the rewrite caps (and doesn't).
+* xref:custom-scalars.adoc[Custom scalars]: declare a custom scalar in the SDL and register a `GraphQLScalarType` through the `Graphitron.buildSchema(...)` customizer.
+* xref:error-channel.adoc[The errors channel]: route Java exceptions through a service payload's `errors:` field as typed data.
+* xref:external-code.adoc[Wire external Java code]: the shared mechanics for `@service`, `@externalField`, `@tableMethod`, `@condition`, `@batchKeyLifter`, `@enum`, and `@record`.
+* xref:federation-keys.adoc[Federation key fields]: declare entity keys with `@key`, layer them onto `@node` types, and stub non-resolvable entities owned by another subgraph.
+* xref:global-id.adoc[Global object IDs]: Relay Global Object Identification end-to-end, including stable IDs, `keyColumns` migrations, and `Query.node` dispatch.
+* xref:handle-services.adoc[Handle services]: bind GraphQL arguments to Java parameters and pick a return shape the framework recognises.
+* xref:join-with-references.adoc[Join with references]: pin foreign-key paths between table-bound types so the generator emits a JOIN.
+* xref:map-types-to-tables.adoc[Map types to tables]: bind types and fields with `@table` + `@field` across the four directive sites.
+* xref:migrating-from-legacy.adoc[Migrating from the legacy generator]: walk a schema authored against `graphitron-codegen-parent` to the rewrite.
+* xref:polymorphic-types.adoc[Polymorphic types]: choose between single-table and multi-table layouts for GraphQL interfaces and unions.
+* xref:result-types.adoc[Result-type variants]: pick a backing class for a `@record` parent (jOOQ `TableRecord`, jOOQ `Record`, Java record, plain POJO).
+* xref:sort-results.adoc[Sort results]: pick a column source, build stable keyset cursors with explicit tie-breakers, and avoid the collation pitfalls.
+* xref:split-vs-inline.adoc[When to split queries]: choose between inline correlated subqueries and `@splitQuery`-batched fetches.
+* xref:tenant-scoping.adoc[Tenant scoping]: wire `getDslContext` and `getTenantId` on `GraphitronContext` so each request reaches a tenant-specific `DSLContext`.
+* xref:test-your-schema.adoc[Test your schema]: wire a consumer-side execution-tier test against a real Postgres.
 
-== Available recipes
+a|
+== By category
 
-* xref:map-types-to-tables.adoc[Map types to tables]: bind types and fields with `@table` + `@field` across the four directive sites (object field, argument, input field, enum value). Covers text-column vs jOOQ-typed enum mapping, input-type binding, and the table-context cascade.
-* xref:external-code.adoc[Wire external Java code]: the shared mechanics for `@service`, `@externalField`, `@tableMethod`, `@condition`, `@batchKeyLifter`, `@enum`, and `@record`. Plugin classpath, FQCN requirement, method-name defaults, `argMapping:` syntax.
-* xref:polymorphic-types.adoc[Polymorphic types]: choose between single-table (`@discriminate` + `@discriminator`) and multi-table (no discriminator, two-stage `UNION ALL` fetcher) layouts for GraphQL interfaces and unions. Includes polymorphic child fields and pagination contract.
-* xref:global-id.adoc[Global object IDs]: Relay Global Object Identification end to end. Stable-ID strategies, `keyColumns` migrations, composite-PK nodes, cross-type IDs from FK paths, decode-side argument and input contracts, and `Query.node`/`Query.nodes` dispatch.
-* xref:sort-results.adoc[Sort results]: pick a column source (`index:`, `fields:`, `primaryKey:`), mix static `@defaultOrder` with dynamic `@orderBy`, build stable keyset cursors with explicit tie-breakers, and avoid the collation and index-volatility pitfalls.
-* xref:connections.adoc[Cursor-paginated connections]: synthesised vs declared connection types, the one-field-one-connection rule (and why `connectionName:` is deprecated), what `totalCount` actually costs (and when it returns `null`), and what the rewrite does (and does not) cap on page size.
-* xref:add-custom-conditions.adoc[Add custom conditions]: write a static Java method that returns a jOOQ `Condition` and attach it via `@condition` at one of three SDL sites (argument, field, input field). Covers the `(Table<?>, args, contextArgs) -> Condition` signature, the `-parameters` compiler flag, `argMapping:` for renamed Java parameter names, `contextArguments:` for request-scoped values, and the `DSL.noCondition()` opt-out.
-* xref:condition-cascade.adoc[Stacking and overriding conditions]: when explicit `@condition` predicates stack with implicit ones, what `override: true` suppresses at argument vs field level, the `@table` cascade and the divergence from legacy "outer owns everything" semantics, the input-carrier rules for nested inputs, and how `contextArguments:` flow.
-* xref:computed-fields.adoc[Computed fields with `@externalField`]: write a static Java method that returns a jOOQ `Field<T>` and attach it via `@externalField` on a `@table`-bound parent. Covers the `(ParentTable) -> Field<T>` signature, the method-name default that mirrors the GraphQL field name, and the three return shapes (scalar `Field<T>`, lifted `Field<TableRecord<?>>`, lifted `Field<CustomJavaRecord>` with auto-derived accessor batching).
-* xref:batch-lookups.adoc[Batch lookups]: drive a positional batch fetch with `@lookupKey` across the single-key, correlated multi-arg, `@table` composite, NodeId-encoded, `@splitQuery`-per-parent, and `@record`-parent shapes. Includes the failure-mode split between synthesised lookup-key NodeIds (`Throw`) and same-table `@nodeId` args (`Skip`), and the implicit-predicate exemption.
-* xref:split-vs-inline.adoc[When to split queries]: choose between inline correlated subqueries and `@splitQuery`-batched fetches. Covers the round-trip-vs-fan-out trade-off, the three operational cases the classifier requires split for, the `DataLoader` cache key (path-scoped, request-scoped, tenant-prefixed), and the aliased-uses-don't-share-batches consequence.
-* xref:result-types.adoc[Result-type variants]: pick a backing class for a `@record` parent (jOOQ `TableRecord`, jOOQ `Record`, Java record, plain POJO) and let accessor inference batch the children when the catalog can't. Covers the classifier's decision tree, the `AccessorKeyedSingle`/`AccessorKeyedMany` auto-derivation rules, when to reach for `@batchKeyLifter`, and the end-to-end fixtures for each shape.
-* xref:error-channel.adoc[The errors channel]: route Java exceptions through a service payload's `errors:` field as typed data. Covers union vs single-type carriers, the source-order + cause-chain dispatch loop, why `description:` is captured but currently unused, what the synthesised `path:` slot actually contains, and the redact-with-correlation-id fallback for unmatched exceptions.
-* xref:handle-services.adoc[Handle services]: bind GraphQL arguments to Java parameters (including nested input types and request-context values), pick a return shape the framework recognises (`Result<TableRecord>`, scalar, `@record` payload, or `Map<Key, Value>`), and wire `@service` onto a child field via the `@splitQuery` `Set<Key> → Map<Key, Value>` contract.
-* xref:join-with-references.adoc[Join with references]: pin foreign-key paths between table-bound types so the generator emits a JOIN. Covers the implicit-FK shortcut, multi-hop chains and junction tables, the two ways to pin a hop (`key:` vs `table:`), inline cross-table column references, the input-field variant, and the current classify-only state of `condition:`-only paths.
-* xref:custom-scalars.adoc[Custom scalars]: declare a custom scalar in the SDL and register a graphql-java `GraphQLScalarType` through the `Graphitron.buildSchema(...)` customizer. Covers the `additionalType(...)` registration shape, the `graphql-java-extended-scalars` library shortcut for common scalars (`UUID`, `DateTime`, `Date`, `Json`), the additive-only customizer contract, and the unresolved-scalar build-time error.
-* xref:tenant-scoping.adoc[Tenant scoping]: wire `getDslContext(env)` and `getTenantId(env)` on `GraphitronContext` so each request reaches a tenant-specific `DSLContext` and so DataLoader caches stay partitioned per tenant. Covers stashing the tenant id at request entry, per-id routing for federation `_entities`, the colliding-loaders consequence when the two methods disagree, and PostgreSQL row-level security as the recommended enforcement model.
-* xref:federation-keys.adoc[Federation key fields]: declare entity keys with `@key`, layer keys onto `@node` types (NODE_ID + DIRECT alternatives), dispatch across most-specific-first matching, and stub non-resolvable entities owned by another subgraph using `@experimental_constructType` to project the representation from the parent table's columns.
-* xref:apollo-federation.adoc[Apollo Federation transport]: wire the federation runtime around a Graphitron schema. Covers the `@link` build-time opt-in, the `federation-graphql-java-support` compile-scope dependency, `Graphitron.buildSchema(b -> {}, fed -> {})` for swapping in a custom entity fetcher, the don't-double-wrap rule, the `<schemaInput tag>` implicit-opt-in, and per-rep tenant routing for `_entities` dispatch.
-* xref:migrating-from-legacy.adoc[Migrating from the legacy generator]: walk a schema authored against `graphitron-codegen-parent` to the rewrite. Covers the hard removal (`@notGenerated`), the synthesis shims that warn today (bare `id: ID!` on `@node` types, `[ID!] @field(name: "X_ID")` on `@table` inputs), the deprecated arguments (`connectionName:`, `name:` on `ExternalCodeReference`, `@index`), and the one intentional behavior divergence (`@condition` cascade).
-* xref:test-your-schema.adoc[Test your schema]: wire a consumer-side execution-tier test class that runs full GraphQL requests through your generated facade against a real Postgres. Covers the Testcontainers + `GraphitronContext` + `GraphQL` setup, the two assertion families (response shapes via AssertJ navigation, round-trip counts via the `ExecuteListener`-driven `QUERY_COUNT` and `SQL_LOG`), error-path tests, per-tenant context tests, and the federation `_entities` test pattern.
+*Mapping types to tables* +
+xref:map-types-to-tables.adoc[Map types to tables], xref:custom-scalars.adoc[Custom scalars]
+
+*Joining and batching* +
+xref:join-with-references.adoc[Join with references], xref:batch-lookups.adoc[Batch lookups], xref:split-vs-inline.adoc[When to split queries]
+
+*Pagination and sorting* +
+xref:connections.adoc[Cursor-paginated connections], xref:sort-results.adoc[Sort results]
+
+*Filtering* +
+xref:add-custom-conditions.adoc[Add custom conditions], xref:condition-cascade.adoc[Stacking and overriding conditions]
+
+*Custom Java code* +
+xref:external-code.adoc[Wire external Java code], xref:handle-services.adoc[Handle services], xref:computed-fields.adoc[Computed fields]
+
+*Result shapes and polymorphism* +
+xref:result-types.adoc[Result-type variants], xref:polymorphic-types.adoc[Polymorphic types]
+
+*Mutations and errors* +
+xref:error-channel.adoc[The errors channel]
+
+*Global IDs and federation* +
+xref:global-id.adoc[Global object IDs], xref:federation-keys.adoc[Federation key fields], xref:apollo-federation.adoc[Apollo Federation transport]
+
+*Multi-tenant* +
+xref:tenant-scoping.adoc[Tenant scoping]
+
+*Migration* +
+xref:migrating-from-legacy.adoc[Migrating from the legacy generator]
+
+*Testing* +
+xref:test-your-schema.adoc[Test your schema]
+
+|===
 
 xref:../index.adoc[← Back to the manual landing]

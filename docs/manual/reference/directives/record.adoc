@@ -90,6 +90,6 @@ A bare child reference on such a parent is rejected with `RecordTableField (or R
 * xref:table.adoc[`@table`] is the catalog-bound counterpart. Choose `@table` when jOOQ already represents the backing class; choose `@record` when the carrier is a hand-written Java record/POJO or you want a different jOOQ row type than `@table` would resolve.
 * xref:service.adoc[`@service`] is the most common upstream of `@record` output types: the service method returns the Java class, and the resolver projects through it.
 * xref:batchKeyLifter.adoc[`@batchKeyLifter`] supplies the missing FK path for child `@table` fields on plain-Java-record parents.
-* xref:../../explanation/result-types.adoc[Explanation: Result-type variants] (Phase 4) covers `JavaRecordType` / `PojoResultType` / `JooqRecordType` / `JooqTableRecordType` and how the rewrite picks among them.
+* xref:../../how-to/result-types.adoc[How-to: Result-type variants] covers `JavaRecordType` / `PojoResultType` / `JooqRecordType` / `JooqTableRecordType` and how the rewrite picks among them.
 
 xref:../index.adoc[← Reference index]

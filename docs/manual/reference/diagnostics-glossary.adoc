@@ -133,6 +133,5 @@ Structural variants (`AuthorError.Structural`, `InvalidSchema.Structural`, `Inva
 * xref:directives/index.adoc[Directive reference] is the SDL-side companion: every closed-set name lookup that produces an `unknown-name` error resolves against a directive's argument, and the directive page covers the resolution contract.
 * xref:mojo-configuration.adoc[Maven plugin configuration] covers the `validate` goal that runs the validator without emitting code; useful for a CI gate that surfaces these errors without the full code-generation cost.
 * xref:../how-to/migrating-from-legacy.adoc[How-to: Migrating from the legacy generator] covers diagnostics specific to the legacy-to-rewrite transition (the `@notGenerated` rejection, the synthesis shims that warn but classify, the `@condition` cascade divergence).
-* xref:../../architecture/rewrite-design-principles.adoc[Rewrite design principles] covers the typed-rejection rationale (why a sealed hierarchy rather than a flat enum, why structured candidates rather than parsing prose).
 
 xref:index.adoc[← Reference index]
