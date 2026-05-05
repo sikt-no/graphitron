@@ -109,9 +109,14 @@ public class QueryConditionsGenerator {
         // Reduce the noCondition()-and chain when there's nothing to compose. Zero filters land
         // as `return DSL.noCondition()`; one filter folds to a direct return; two or more keep
         // the seeded chain.
-        // QueryConditions class is not a *Fetchers; helper-emission gate does not apply here.
-        // ContextArg ParamSources never reach the QueryConditions callsite (condition methods
-        // do not declare @Context parameters); we still pass a ctx for API uniformity.
+        // ContextArg ParamSources can reach this callsite via @condition(contextArguments: [...])
+        // — the classifier lifts those to ParamSource.Context, and MethodRef.callParams() converts
+        // them to CallSiteExtraction.ContextArg in the filter's call params. ArgCallEmitter then
+        // emits graphitronContext(env).getContextArgument(env, name) into the QueryConditions
+        // class, which today has no graphitronContext helper — generated source fails to compile
+        // for users of the feature. R85 closes this gap by giving QueryConditionsGenerator its own
+        // EmissionContext and emitting the helper when requested. Until then, the throwaway ctx
+        // here records into a context nothing drains.
         var ctx = new TypeFetcherEmissionContext();
         if (filters.isEmpty()) {
             builder.addStatement("return $T.noCondition()", DSL);
