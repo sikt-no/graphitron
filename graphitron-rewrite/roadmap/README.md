@@ -87,6 +87,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 ### Other
 
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md): The `@experimental_constructType(selection: "...")` directive is declared in `directives.graphqls` and stripped from the emitted schema by `SchemaDirectiveRegistry`, but no classifier, model carrier, or emitter exists for it yet.
+- `R84` [**Path expressions in argMapping**](argmapping-path-expressions.md): R53 (`external-code-reference-arg-mapping`) shipped `argMapping` as a flat `javaParam: graphqlArg` mini-DSL on `@service`, `@tableMethod`, and every `@condition` site. The right-hand side names a single GraphQL slot at the directive's scope. This is enough when the Java method takes the wrapper input wholesale, but the very common "Relay-style mutation with a single `input:` argument carrying several typed sub-fields" pattern forces every service author to either accept the wrapper as a Java parameter and unpack it themselves, or write a thin façade method whose only job is to pluck and forward. Both paths are friction; the wrapper-acceptance path also leaks GraphQL-input shapes into service signatures that otherwise have no GraphQL knowledge.
 
 
 ---
@@ -107,6 +108,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
+- `R84` [**Path expressions in argMapping**](argmapping-path-expressions.md) — Backlog, feature
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R70` [**Support TableRecord-keyed Map returns on @service rows methods**](service-rows-tablerecord-key-shape.md) — In Review, feature, blocked by [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
