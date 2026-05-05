@@ -888,12 +888,15 @@ class BuildContext {
                 "path-step @condition: " + pe.message());
         }
         var segmentChains = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
-        Map<String, String> argMapping = FieldBuilder.flattenSegments(segmentChains);
-        var bindingResult = ArgBindingMap.of(Set.of(), argMapping);
+        var bindingResult = ArgBindingMap.of(java.util.Map.<String, graphql.schema.GraphQLInputType>of(), segmentChains);
         if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
             return new ConditionResolution(null,
                 "path-step @condition: no GraphQL arguments are in scope at a path-step @condition; "
                 + u.message());
+        }
+        if (bindingResult instanceof ArgBindingMap.Result.PathRejected p) {
+            return new ConditionResolution(null,
+                "path-step @condition: " + p.message());
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(className, methodName, argBindings, Set.of(), null);
@@ -915,13 +918,17 @@ class BuildContext {
     /**
      * Parsed representation of a {@code @condition} directive applied to any
      * {@link GraphQLDirectiveContainer} (field, argument, or input-object field).
+     *
+     * <p>{@code argMapping} stores parsed segment chains keyed by Java target; single-segment
+     * chains preserve R53 wire-compat, multi-segment chains carry R84 path expressions. The
+     * call site supplies the slot-type oracle when calling {@link ArgBindingMap#of}.
      */
     record ConditionDirective(
         String className,
         String methodName,
         boolean override,
         List<String> contextArguments,
-        Map<String, String> argMapping,
+        Map<String, List<String>> argMapping,
         String argMappingError
     ) {}
 
@@ -954,8 +961,7 @@ class BuildContext {
             return new ConditionDirective(className, methodName, override, ctxArgs, Map.of(), pe.message());
         }
         var segmentChains = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
-        Map<String, String> argMapping = FieldBuilder.flattenSegments(segmentChains);
-        return new ConditionDirective(className, methodName, override, ctxArgs, argMapping, null);
+        return new ConditionDirective(className, methodName, override, ctxArgs, segmentChains, null);
     }
 
     /**
@@ -973,9 +979,13 @@ class BuildContext {
             errors.add("input field '" + inputFieldName + "' @condition: " + cond.argMappingError());
             return Optional.empty();
         }
-        var bindingResult = ArgBindingMap.of(Set.of(field.getName()), cond.argMapping());
+        var bindingResult = ArgBindingMap.of(java.util.Map.of(field.getName(), field.getType()), cond.argMapping());
         if (bindingResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
             errors.add("input field '" + inputFieldName + "' @condition: " + u.message());
+            return Optional.empty();
+        }
+        if (bindingResult instanceof ArgBindingMap.Result.PathRejected p) {
+            errors.add("input field '" + inputFieldName + "' @condition: " + p.message());
             return Optional.empty();
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();

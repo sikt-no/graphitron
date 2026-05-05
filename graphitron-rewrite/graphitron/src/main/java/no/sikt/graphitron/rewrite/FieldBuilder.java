@@ -84,6 +84,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -3314,20 +3315,7 @@ class FieldBuilder {
             return new ExternalRef(className, methodName, Map.of(), null, pe.message());
         }
         var segmentChains = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
-        return new ExternalRef(className, methodName, flattenSegments(segmentChains), null, null);
-    }
-
-    /**
-     * Flattens segment-chain overrides back to dot-joined strings for the
-     * {@code Map<String, String>}-shaped storage on {@link ExternalRef#argMapping()} and
-     * {@code BuildContext.ConditionDirective.argMapping}. Phase B preserves the downstream
-     * {@link ArgBindingMap#of} signature; Phase C will replace this flatten step with direct
-     * segment-chain consumption.
-     */
-    static Map<String, String> flattenSegments(Map<String, java.util.List<String>> segmentChains) {
-        var out = new java.util.LinkedHashMap<String, String>();
-        segmentChains.forEach((k, segs) -> out.put(k, String.join(".", segs)));
-        return java.util.Collections.unmodifiableMap(out);
+        return new ExternalRef(className, methodName, segmentChains, null, null);
     }
 
     /**
@@ -3430,12 +3418,32 @@ class FieldBuilder {
 
     // ===== Inner records =====
 
-    record ExternalRef(String className, String methodName, Map<String, String> argMapping,
+    /**
+     * Builder-private carrier for an {@code ExternalCodeReference}. {@code argMapping} stores
+     * parsed segment chains keyed by Java target; single-segment chains cover the R53 wire-compat
+     * case, multi-segment chains cover R84 path expressions. Schema walking happens later when
+     * the consumer calls {@link ArgBindingMap#of}.
+     */
+    record ExternalRef(String className, String methodName,
+                       Map<String, java.util.List<String>> argMapping,
                        String lookupError, String argMappingError) {}
 
     static Set<String> fieldArgumentNames(GraphQLFieldDefinition fieldDef) {
         return fieldDef.getArguments().stream()
             .map(GraphQLArgument::getName)
             .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    /**
+     * Maps each GraphQL argument on {@code fieldDef} to its {@link graphql.schema.GraphQLInputType}.
+     * Feeds {@link ArgBindingMap#of} as the slot-type oracle for resolving path expressions
+     * against the field's argument types. Insertion order preserved.
+     */
+    static Map<String, graphql.schema.GraphQLInputType> argSlotTypes(GraphQLFieldDefinition fieldDef) {
+        var out = new LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        for (var arg : fieldDef.getArguments()) {
+            out.put(arg.getName(), arg.getType());
+        }
+        return out;
     }
 }
