@@ -1,7 +1,7 @@
 ---
 id: R84
 title: "Path expressions in argMapping"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: service
