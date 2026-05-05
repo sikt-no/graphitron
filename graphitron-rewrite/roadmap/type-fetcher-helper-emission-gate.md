@@ -1,7 +1,7 @@
 ---
 id: R80
 title: "Replace string-scan helper-emission gate in `TypeFetcherGenerator`"
-status: Spec
+status: Ready
 bucket: cleanup
 depends-on: []
 ---
