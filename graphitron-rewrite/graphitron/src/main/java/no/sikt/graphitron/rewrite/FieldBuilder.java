@@ -3313,8 +3313,21 @@ class FieldBuilder {
         if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
             return new ExternalRef(className, methodName, Map.of(), null, pe.message());
         }
-        Map<String, String> argMapping = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
-        return new ExternalRef(className, methodName, argMapping, null, null);
+        var segmentChains = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
+        return new ExternalRef(className, methodName, flattenSegments(segmentChains), null, null);
+    }
+
+    /**
+     * Flattens segment-chain overrides back to dot-joined strings for the
+     * {@code Map<String, String>}-shaped storage on {@link ExternalRef#argMapping()} and
+     * {@code BuildContext.ConditionDirective.argMapping}. Phase B preserves the downstream
+     * {@link ArgBindingMap#of} signature; Phase C will replace this flatten step with direct
+     * segment-chain consumption.
+     */
+    static Map<String, String> flattenSegments(Map<String, java.util.List<String>> segmentChains) {
+        var out = new java.util.LinkedHashMap<String, String>();
+        segmentChains.forEach((k, segs) -> out.put(k, String.join(".", segs)));
+        return java.util.Collections.unmodifiableMap(out);
     }
 
     /**

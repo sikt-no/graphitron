@@ -60,6 +60,60 @@ public final class GraphQLSelectionParser {
         return parser.parseTopLevel();
     }
 
+    /**
+     * Parses {@code input} as a comma-separated list of {@code key: dotted.path} entries.
+     *
+     * <p>This is the shared entry point for {@code argMapping} (R84) and
+     * {@code @experimental_constructType(selection: ...)} (R69). Both grammars accept the same
+     * shape: one or more entries, each {@code NAME COLON NAME}, where the value-side name may
+     * contain dot-separated segments. Whitespace and commas between entries are insignificant
+     * (standard GraphQL convention; the lexer already handles this).
+     *
+     * <p>Empty / null / blank input yields an empty list. The parser raises
+     * {@link GraphQLSelectionParseException} on syntactic problems (missing colon, missing
+     * value name, empty path segment, unexpected token); duplicate-key detection is delegated
+     * to the consumer (since "duplicate Java parameter" reads differently from "duplicate
+     * GraphQL field" depending on the binder).
+     */
+    public static List<ParsedEntry> parseEntries(String input) {
+        if (input == null || input.isBlank()) {
+            return List.of();
+        }
+        var lexer = new Lexer(input);
+        var entries = new ArrayList<ParsedEntry>();
+        while (lexer.peek().kind() != TokenKind.EOF) {
+            var keyTok = lexer.next();
+            if (keyTok.kind() != TokenKind.NAME) {
+                throw new GraphQLSelectionParseException(
+                    "expected an entry key but got " + keyTok);
+            }
+            var colon = lexer.next();
+            if (colon.kind() != TokenKind.COLON) {
+                throw new GraphQLSelectionParseException(
+                    "expected ':' after entry key '" + keyTok.value() + "' but got " + colon);
+            }
+            var valueTok = lexer.next();
+            if (valueTok.kind() != TokenKind.NAME) {
+                throw new GraphQLSelectionParseException(
+                    "expected a value name after ':' for entry '" + keyTok.value()
+                    + "' but got " + valueTok);
+            }
+            // Lexer's readName() accepts dots within names, so a dotted path arrives as one
+            // token. Split here so each segment is a clean identifier; reject the empty segment
+            // case (e.g. "a..b" or "a.") since neither the head nor any tail step may be empty.
+            var parts = valueTok.value().split("\\.", -1);
+            for (var part : parts) {
+                if (part.isEmpty()) {
+                    throw new GraphQLSelectionParseException(
+                        "entry '" + keyTok.value() + "' has an empty path segment in '"
+                        + valueTok.value() + "' — segments must be non-empty identifiers");
+                }
+            }
+            entries.add(new ParsedEntry(keyTok.value(), List.of(parts)));
+        }
+        return entries;
+    }
+
     // -------------------------------------------------------------------------
     // Internal parser
     // -------------------------------------------------------------------------
