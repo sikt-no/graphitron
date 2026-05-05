@@ -2265,6 +2265,21 @@ class GraphQLQueryTest {
         assertThat(films).extracting(f -> f.get("filmId")).containsExactly(1, 2);
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void queryServiceTable_filmsByPath_argMappingWalksIntoNestedInputField() {
+        // R84: argMapping right-hand side is a dot-path (`input.ids`). The Relay-style wrapper
+        // input pattern: GraphQL takes one `input` argument carrying typed sub-fields; the Java
+        // service signature stays GraphQL-input-shape-agnostic. Generated fetcher must walk
+        // `env.getArgument("input")` into the `ids` key and pass the resulting List<Integer>
+        // to the service method's `filmIds` parameter — proves the path-expression machinery
+        // wires through end-to-end (parser → schema-walk → ParamSource.Arg.path → emit).
+        Map<String, Object> data = execute(
+            "{ filmsByPath(input: {ids: [1, 2]}) { filmId title } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByPath");
+        assertThat(films).extracting(f -> f.get("filmId")).containsExactly(1, 2);
+    }
+
     // ===== TableInterfaceType (Track A) =====
 
     @Test

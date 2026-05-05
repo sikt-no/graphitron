@@ -144,6 +144,15 @@ type Query {
             method: "filmsByServiceRenamed",
             argMapping: "filmIds: ids"
         })
+    # R84 (argmapping-path-expressions.md): argMapping right-hand side is a dot-path into a
+    # nested input-object field. The Java method takes List<Integer> filmIds; the path
+    # `input.ids` walks from the wrapper input argument into its `ids` field.
+    filmsByPath(input: FilmsByPathInput!): [Film!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmsByPath",
+            argMapping: "filmIds: input.ids"
+        })
     # plan-service-root-fetchers.md: @service root fetcher with scalar return.
     filmCount: Int!
         @service(service: {
@@ -710,6 +719,14 @@ input NestedFilmInput @table(name: "film") {
 # behavior (absent means unconstrained) is also exercised by tests.
 input FilmImplicitInput @table(name: "film") {
     filmId: ID @field(name: "film_id")
+}
+
+# R84 (argmapping-path-expressions.md): wrapper input for `filmsByPath`. The argMapping
+# expression `filmIds: input.ids` walks from the `input` GraphQL argument into the `ids`
+# field; the service signature stays GraphQL-input-shape-agnostic
+# (List<Integer> filmIds, not the wrapper map).
+input FilmsByPathInput {
+    ids: [Int!]!
 }
 
 # self-table-nodeid-filter.md: same-table @nodeId filter input. Each base64 ID decodes
