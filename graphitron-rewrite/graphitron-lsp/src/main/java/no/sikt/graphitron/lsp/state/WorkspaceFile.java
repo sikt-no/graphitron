@@ -2,10 +2,10 @@ package no.sikt.graphitron.lsp.state;
 
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.TypeNames;
-import org.treesitter.TSInputEdit;
-import org.treesitter.TSParser;
-import org.treesitter.TSPoint;
-import org.treesitter.TSTree;
+import io.github.treesitter.jtreesitter.InputEdit;
+import io.github.treesitter.jtreesitter.Parser;
+import io.github.treesitter.jtreesitter.Point;
+import io.github.treesitter.jtreesitter.Tree;
 
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashSet;
@@ -21,8 +21,10 @@ import java.util.Set;
  *
  * <ul>
  *   <li>{@link #applyEdit} performs an incremental tree-sitter re-parse
- *       (passing the old tree to {@code parseString}); only the changed
- *       region is re-tokenised and re-parsed.</li>
+ *       (passing the old tree to {@link Parser#parse(String, Tree)}); only
+ *       the changed region is re-tokenised and re-parsed. The previous
+ *       {@link Tree} is closed before the new one replaces it so its
+ *       backing FFM arena releases promptly rather than waiting for GC.</li>
  *   <li>The parser instance is reused across edits to avoid the
  *       construction cost (loading the language + allocating native
  *       state).</li>
@@ -35,23 +37,22 @@ import java.util.Set;
  */
 public final class WorkspaceFile {
 
-    private final TSParser parser;
+    private final Parser parser;
     private byte[] source;
-    private TSTree tree;
+    private Tree tree;
     private int version;
     private Set<String> declaredTypes;
     private Set<String> dependsOnDeclarations;
 
     public WorkspaceFile(int version, String content) {
-        this.parser = new TSParser();
-        this.parser.setLanguage(GraphqlLanguage.get());
+        this.parser = new Parser(GraphqlLanguage.get());
         this.source = content.getBytes(StandardCharsets.UTF_8);
-        this.tree = parser.parseString(null, content);
+        this.tree = parser.parse(content).orElseThrow(WorkspaceFile::parseHalted);
         this.version = version;
         refreshTypeIndex();
     }
 
-    public TSTree tree() {
+    public Tree tree() {
         return tree;
     }
 
@@ -78,8 +79,8 @@ public final class WorkspaceFile {
         int newVersion,
         int startByte,
         int oldEndByte,
-        TSPoint startPoint,
-        TSPoint oldEndPoint,
+        Point startPoint,
+        Point oldEndPoint,
         String newText
     ) {
         if (newVersion < version) {
@@ -93,11 +94,14 @@ public final class WorkspaceFile {
         System.arraycopy(newBytes, 0, updated, startByte, newBytes.length);
         System.arraycopy(source, oldEndByte, updated, newEndByte, source.length - oldEndByte);
 
-        TSPoint newEndPoint = computeNewEndPoint(startPoint, newText);
+        Point newEndPoint = computeNewEndPoint(startPoint, newText);
 
-        tree.edit(new TSInputEdit(startByte, oldEndByte, newEndByte, startPoint, oldEndPoint, newEndPoint));
+        tree.edit(new InputEdit(startByte, oldEndByte, newEndByte, startPoint, oldEndPoint, newEndPoint));
         this.source = updated;
-        this.tree = parser.parseString(tree, new String(updated, StandardCharsets.UTF_8));
+        Tree previous = tree;
+        this.tree = parser.parse(new String(updated, StandardCharsets.UTF_8), previous)
+            .orElseThrow(WorkspaceFile::parseHalted);
+        previous.close();
         this.version = newVersion;
         refreshTypeIndex();
     }
@@ -111,7 +115,9 @@ public final class WorkspaceFile {
             return;
         }
         this.source = content.getBytes(StandardCharsets.UTF_8);
-        this.tree = parser.parseString(null, content);
+        Tree previous = tree;
+        this.tree = parser.parse(content).orElseThrow(WorkspaceFile::parseHalted);
+        previous.close();
         this.version = newVersion;
         refreshTypeIndex();
     }
@@ -139,9 +145,16 @@ public final class WorkspaceFile {
         this.dependsOnDeclarations = Set.copyOf(deps);
     }
 
-    private static TSPoint computeNewEndPoint(TSPoint startPoint, String inserted) {
-        int row = startPoint.getRow();
-        int column = startPoint.getColumn();
+    private static IllegalStateException parseHalted() {
+        // jtreesitter returns Optional.empty() only when parsing was halted (cancellation,
+        // resource limit). The dev mojo does not configure either, so an empty Optional
+        // indicates a tree-sitter bug or out-of-memory condition; surface it loudly.
+        return new IllegalStateException("tree-sitter parse halted unexpectedly");
+    }
+
+    private static Point computeNewEndPoint(Point startPoint, String inserted) {
+        int row = startPoint.row();
+        int column = startPoint.column();
         int lineStartIdx = 0;
         for (int i = 0; i < inserted.length(); i++) {
             if (inserted.charAt(i) == '\n') {
@@ -151,6 +164,6 @@ public final class WorkspaceFile {
             }
         }
         column += inserted.length() - lineStartIdx;
-        return new TSPoint(row, column);
+        return new Point(row, column);
     }
 }

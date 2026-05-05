@@ -4,9 +4,9 @@ import no.sikt.graphitron.lsp.completions.FieldCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.junit.jupiter.api.Test;
-import org.treesitter.TSParser;
-import org.treesitter.TSPoint;
-import org.treesitter.TreeSitterGraphql;
+import io.github.treesitter.jtreesitter.Parser;
+import io.github.treesitter.jtreesitter.Point;
+import io.github.treesitter.jtreesitter.Language;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -31,7 +31,7 @@ class FieldCompletionsTest {
         // Cursor inside the empty quoted argument value.
         int line = 1;
         int col = source.split("\n")[line].indexOf('"') + 1;
-        TSPoint cursor = new TSPoint(line, col);
+        Point cursor = new Point(line, col);
 
         var items = run(filmCatalog(), source, cursor);
 
@@ -49,7 +49,7 @@ class FieldCompletionsTest {
             """;
         int line = 1;
         int col = source.split("\n")[line].indexOf('"') + 1;
-        TSPoint cursor = new TSPoint(line, col);
+        Point cursor = new Point(line, col);
 
         var items = run(filmCatalog(), source, cursor);
 
@@ -66,7 +66,7 @@ class FieldCompletionsTest {
             """;
         int line = 1;
         int col = source.split("\n")[line].indexOf('"') + 1;
-        TSPoint cursor = new TSPoint(line, col);
+        Point cursor = new Point(line, col);
 
         var items = run(filmCatalog(), source, cursor);
 
@@ -83,7 +83,7 @@ class FieldCompletionsTest {
         // Cursor on the @field directive name, not inside the argument.
         int line = 1;
         int col = source.split("\n")[line].indexOf("@field") + 1;
-        TSPoint cursor = new TSPoint(line, col);
+        Point cursor = new Point(line, col);
 
         var items = run(filmCatalog(), source, cursor);
 
@@ -100,7 +100,7 @@ class FieldCompletionsTest {
             """;
         int line = 1;
         int col = source.split("\n")[line].indexOf('"') + 1;
-        TSPoint cursor = new TSPoint(line, col);
+        Point cursor = new Point(line, col);
 
         var items = run(filmCatalog(), source, cursor);
 
@@ -109,12 +109,12 @@ class FieldCompletionsTest {
     }
 
     private static List<org.eclipse.lsp4j.CompletionItem> run(
-        CompletionData data, String source, TSPoint cursor
+        CompletionData data, String source, Point cursor
     ) {
-        var parser = new TSParser();
-        parser.setLanguage(new TreeSitterGraphql());
+        var parser = new Parser();
+        parser.setLanguage(no.sikt.graphitron.lsp.parsing.GraphqlLanguage.get());
         var bytes = source.getBytes(StandardCharsets.UTF_8);
-        var tree = parser.parseString(null, source);
+        var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
         return FieldCompletions.generate(data, directive, cursor, bytes);

@@ -2,7 +2,7 @@ package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import org.junit.jupiter.api.Test;
-import org.treesitter.TSPoint;
+import io.github.treesitter.jtreesitter.Point;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,7 +29,7 @@ class IncrementalParseTest {
         // Insert " baz: String" before the closing brace. Edit grows the
         // fields_definition; tree-sitter must add a node, not just retoken.
         int insertAt = source.indexOf("}\n");
-        TSPoint insertPoint = new TSPoint(2, 0);
+        Point insertPoint = new Point(2, 0);
         String inserted = "    baz: String\n";
         file.applyEdit(2, insertAt, insertAt, insertPoint, insertPoint, inserted);
 
@@ -40,10 +40,10 @@ class IncrementalParseTest {
         assertThat(fieldDefs).isEqualTo(2L);
     }
 
-    private static long countSubtreesOfKind(org.treesitter.TSNode node, String kind) {
+    private static long countSubtreesOfKind(io.github.treesitter.jtreesitter.Node node, String kind) {
         long count = node.getType().equals(kind) ? 1 : 0;
         for (int i = 0; i < node.getChildCount(); i++) {
-            count += countSubtreesOfKind(node.getChild(i), kind);
+            count += countSubtreesOfKind(node.getChild(i).orElseThrow(), kind);
         }
         return count;
     }
@@ -61,8 +61,8 @@ class IncrementalParseTest {
 
         // Edit type B's table name from BBB to CCC.
         int bbbStart = source.indexOf("BBB");
-        TSPoint bbbStartPoint = new TSPoint(1, source.indexOf("BBB") - source.indexOf('\n') - 1);
-        TSPoint bbbEndPoint = new TSPoint(1, bbbStartPoint.getColumn() + 3);
+        Point bbbStartPoint = new Point(1, source.indexOf("BBB") - source.indexOf('\n') - 1);
+        Point bbbEndPoint = new Point(1, bbbStartPoint.column() + 3);
         file.applyEdit(2, bbbStart, bbbStart + 3, bbbStartPoint, bbbEndPoint, "CCC");
 
         // The new source still contains type A's @table(name: "AAA") unchanged.

@@ -4,7 +4,7 @@ import no.sikt.graphitron.lsp.definition.Definitions;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.junit.jupiter.api.Test;
-import org.treesitter.TSPoint;
+import io.github.treesitter.jtreesitter.Point;
 
 import java.util.List;
 
@@ -89,7 +89,7 @@ class DefinitionsTest {
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         // Cursor on the @table directive name token, not on its argument.
         int col = "type Foo @t".length();
-        assertThat(Definitions.compute(file, filmCatalog(), new TSPoint(0, col))).isEmpty();
+        assertThat(Definitions.compute(file, filmCatalog(), new Point(0, col))).isEmpty();
     }
 
     @Test
@@ -121,14 +121,14 @@ class DefinitionsTest {
         assertThat(Definitions.compute(file, unsourcedCatalog, pos)).isEmpty();
     }
 
-    private static TSPoint pointAt(WorkspaceFile file, int line, String token) {
+    private static Point pointAt(WorkspaceFile file, int line, String token) {
         String source = new String(file.source(), java.nio.charset.StandardCharsets.UTF_8);
         var lines = source.split("\n");
         int col = lines[line].indexOf(token);
         if (col < 0) {
             throw new AssertionError("token '" + token + "' not on line " + line + ": " + lines[line]);
         }
-        return new TSPoint(line, col + Math.max(1, token.length() / 2));
+        return new Point(line, col + Math.max(1, token.length() / 2));
     }
 
     private static WorkspaceFile file(String source) {

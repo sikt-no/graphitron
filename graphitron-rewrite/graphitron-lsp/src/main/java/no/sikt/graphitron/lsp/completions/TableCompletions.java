@@ -8,7 +8,7 @@ import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
-import org.treesitter.TSPoint;
+import io.github.treesitter.jtreesitter.Point;
 
 import java.util.List;
 
@@ -26,7 +26,7 @@ public final class TableCompletions {
     public static List<CompletionItem> generate(
         CompletionData data,
         Directives.Directive directive,
-        TSPoint pos,
+        Point pos,
         byte[] source
     ) {
         var argument = directive.arguments().stream()

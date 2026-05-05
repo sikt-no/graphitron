@@ -1,10 +1,10 @@
 package no.sikt.graphitron.lsp.parsing;
 
-import org.treesitter.TSNode;
-import org.treesitter.TSQuery;
-import org.treesitter.TSQueryCapture;
-import org.treesitter.TSQueryCursor;
-import org.treesitter.TSQueryMatch;
+import io.github.treesitter.jtreesitter.Node;
+import io.github.treesitter.jtreesitter.Query;
+import io.github.treesitter.jtreesitter.QueryCapture;
+import io.github.treesitter.jtreesitter.QueryCursor;
+import io.github.treesitter.jtreesitter.QueryMatch;
 
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -32,30 +32,31 @@ public final class TypeNames {
         (named_type (name) @ref)
         """;
 
-    private static final TSQuery QUERY =
-        new TSQuery(GraphqlLanguage.get(), DECLARATION_QUERY);
+    private static final Query QUERY =
+        new Query(GraphqlLanguage.get(), DECLARATION_QUERY);
 
     private TypeNames() {}
 
     public record Extracted(Set<String> declared, Set<String> referenced) {}
 
-    public static Extracted extract(TSNode root, byte[] source) {
+    public static Extracted extract(Node root, byte[] source) {
         var declared = new LinkedHashSet<String>();
         var referenced = new LinkedHashSet<String>();
 
-        var cursor = new TSQueryCursor();
-        cursor.exec(QUERY, root);
-        var match = new TSQueryMatch();
-        while (cursor.nextMatch(match)) {
-            for (TSQueryCapture capture : match.getCaptures()) {
-                String name = QUERY.getCaptureNameForId(capture.getIndex());
-                String text = Nodes.text(capture.getNode(), source);
-                switch (name) {
-                    case "decl" -> declared.add(text);
-                    case "ref" -> referenced.add(text);
-                    default -> { /* ignore */ }
+        // We only read each capture's text inside the stream consumer, so a confined
+        // arena scoped to this method is enough — no Node escapes the try block.
+        try (var cursor = new QueryCursor(QUERY);
+             java.lang.foreign.Arena arena = java.lang.foreign.Arena.ofConfined()) {
+            cursor.findMatches(root, arena, null).forEach(match -> {
+                for (QueryCapture capture : match.captures()) {
+                    String text = Nodes.text(capture.node(), source);
+                    switch (capture.name()) {
+                        case "decl" -> declared.add(text);
+                        case "ref" -> referenced.add(text);
+                        default -> { /* ignore */ }
+                    }
                 }
-            }
+            });
         }
         return new Extracted(declared, referenced);
     }
