@@ -1,0 +1,16 @@
+# Tests dataloader normalization for service-returned keys with various shapes:
+# null, partial PK, PK + non-PK populated, PK only. Only the latter two should
+# resolve to a Film. Exercises composite-PK stripping via FilmActor.
+{
+    filmActorLookup(ids: [
+        "RmlsbUFjdG9yOjEsMQ",
+        "RmlsbUFjdG9yOjEwLDE",
+        "RmlsbUFjdG9yOjIwLDE",
+        "RmlsbUFjdG9yOjMwLDE"
+    ]) {
+        id
+        filmsWithMixedResolverKeys {
+            id
+        }
+    }
+}
