@@ -60,7 +60,7 @@ public final class CatalogBuilder {
     private static CompletionData.Table buildTable(
         JooqCatalog jooq, String tableName, Path sourceRoot, String pkgPath
     ) {
-        Optional<JooqCatalog.TableEntry> entryOpt = jooq.findTable(tableName);
+        Optional<JooqCatalog.TableEntry> entryOpt = jooq.findTable(tableName).asEntry();
         Table<?> jooqTable = entryOpt.map(JooqCatalog.TableEntry::table).orElse(null);
 
         var tableDefinition = jooqTable == null
@@ -111,7 +111,7 @@ public final class CatalogBuilder {
         String thisName = table.getName();
         for (String otherName : jooq.allTableSqlNames()) {
             if (otherName.equalsIgnoreCase(thisName)) continue;
-            Table<?> other = jooq.findTable(otherName).map(JooqCatalog.TableEntry::table).orElse(null);
+            Table<?> other = jooq.findTable(otherName).asEntry().map(JooqCatalog.TableEntry::table).orElse(null);
             if (other == null) continue;
             for (ForeignKey<?, ?> fk : other.getReferences()) {
                 if (fk.getKey().getTable().getName().equalsIgnoreCase(thisName)) {

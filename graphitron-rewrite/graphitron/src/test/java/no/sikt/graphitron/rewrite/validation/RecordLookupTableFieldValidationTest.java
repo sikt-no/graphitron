@@ -49,7 +49,7 @@ class RecordLookupTableFieldValidationTest {
 
         SINGLE_WITH_FK_PATH("single cardinality with FK path — emittable post-R61",
             new RecordLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)),
-                List.of(TestFixtures.fkJoin("language_film_id_fkey", null, null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
+                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
             List.of()),
 
@@ -61,7 +61,7 @@ class RecordLookupTableFieldValidationTest {
 
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
             new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),
-                List.of(TestFixtures.fkJoin("language_film_id_fkey", null, null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
+                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
                 List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
             List.of()),
 

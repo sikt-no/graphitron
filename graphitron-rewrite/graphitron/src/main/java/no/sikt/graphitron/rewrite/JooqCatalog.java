@@ -40,31 +40,73 @@ public class JooqCatalog {
 
     public JooqCatalog(String generatedJooqPackage) {
         this.catalog = loadDefaultCatalog(generatedJooqPackage);
+        if (this.catalog != null) {
+            this.catalog.schemaStream().forEach(JooqCatalog::verifyTablesClassPresent);
+        }
+    }
+
+    /**
+     * Build-time precondition: every schema in the live jOOQ catalog must publish a generated
+     * {@code Tables} class. A missing {@code Tables} class is a degenerate codegen state (jOOQ's
+     * {@code <tables>false</tables>} flag, or equivalent) that breaks every per-table emit site;
+     * surfacing it once at construction is friendlier than letting downstream lookups fail one
+     * by one. The Mojo wraps the thrown {@link IllegalStateException} into a build-boundary
+     * diagnostic.
+     */
+    static void verifyTablesClassPresent(Schema schema) {
+        verifyTablesClassPresent(schema.getName(), schema.getClass().getPackageName());
+    }
+
+    static void verifyTablesClassPresent(String schemaName, String packageName) {
+        try {
+            Class.forName(packageName + ".Tables");
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                "jOOQ codegen produced no `Tables` class for schema '" + schemaName
+                + "' (expected " + packageName + ".Tables). Set `<tables>true</tables>` in the"
+                + " jOOQ codegen configuration; graphitron's catalog resolution depends on the"
+                + " generated Tables constants and refuses to start when they are absent.");
+        }
     }
 
     /**
      * Find a table by its SQL name, with optional schema qualification. Accepts both
      * unqualified ({@code "film"}) and qualified ({@code "public.film"}) values; the input is
-     * routed through {@link #parseQualifiedTableName(String)} and the appropriate two-arg
-     * form below.
+     * routed through {@link #parseQualifiedTableName(String)} and either the unqualified
+     * resolver below or the two-arg {@link #findTable(String, String)} form.
      *
-     * <p>For unqualified values, the lookup scans all schemas and applies the strict ambiguity
-     * policy: when the same table name appears in two or more schemas, the lookup returns
-     * empty rather than first-schema-wins. Callers distinguish "not in catalog" from
-     * "ambiguous" via {@link #findCandidateSchemasFor(String)}.
+     * <p>Unqualified values fan out into the {@link TableResolution} sub-taxonomy:
+     * {@link TableResolution.Resolved} when exactly one schema carries the name,
+     * {@link TableResolution.Ambiguous} when two or more schemas carry it (the ambiguity
+     * fix R78 lifted from first-schema-wins), {@link TableResolution.NotInCatalog} otherwise.
+     * Qualified values resolve through the two-arg form and surface as {@code Resolved} or
+     * {@code NotInCatalog} only — qualification eliminates the ambiguity branch by construction.
+     * Schema and table matching is case-insensitive on both halves (consistent with
+     * {@link #findColumn}).
      *
-     * <p>For qualified values, the lookup is scoped to the named schema and returns empty
-     * when either the schema or the table-within-schema is missing. Schema and table matching
-     * is case-insensitive on both halves (consistent with {@link #findColumn}).
-     *
-     * <p>Single-schema setups behave identically to the prior first-wins semantics. Multi-
-     * schema setups with non-colliding table names also behave identically. Only collision
-     * sites are forced to qualify.
+     * <p>Single-schema setups never fan out into {@code Ambiguous}; multi-schema setups with
+     * non-colliding table names also stay on the resolved/missing axis. Only collision sites
+     * are forced to qualify.
      */
-    public Optional<TableEntry> findTable(String sqlName) {
-        return parseQualifiedTableName(sqlName).flatMap(qn -> qn.isQualified()
-            ? findTable(qn.schema().get(), qn.table())
-            : findUnqualifiedTable(qn.table()));
+    public TableResolution findTable(String sqlName) {
+        return parseQualifiedTableName(sqlName)
+            .map(qn -> qn.isQualified()
+                ? findTable(qn.schema().get(), qn.table())
+                    .<TableResolution>map(TableResolution.Resolved::new)
+                    .orElseGet(TableResolution.NotInCatalog::new)
+                : resolveUnqualified(qn.table()))
+            .orElseGet(TableResolution.NotInCatalog::new);
+    }
+
+    private TableResolution resolveUnqualified(String unqualifiedSqlName) {
+        var matches = findUnqualifiedTable(unqualifiedSqlName);
+        return switch (matches.size()) {
+            case 0 -> new TableResolution.NotInCatalog();
+            case 1 -> new TableResolution.Resolved(matches.get(0));
+            default -> new TableResolution.Ambiguous(matches.stream()
+                .map(e -> e.table().getSchema().getName())
+                .toList());
+        };
     }
 
     /**
@@ -87,29 +129,12 @@ public class JooqCatalog {
                 .findFirst());
     }
 
-    /**
-     * Returns the SQL schema names that contain a table with the given (unqualified) SQL
-     * name, in catalog iteration order. Empty when the name is not in any schema; one element
-     * when unique; two or more when ambiguous. Used by classifiers to distinguish "not in
-     * catalog" from "ambiguous" when {@link #findTable(String)} returns empty for an
-     * unqualified directive value.
-     */
-    public List<String> findCandidateSchemasFor(String unqualifiedSqlName) {
+    private List<TableEntry> findUnqualifiedTable(String unqualifiedSqlName) {
         if (catalog == null) return List.of();
         return catalog.schemaStream()
-            .filter(s -> entriesIn(s).anyMatch(e -> e.table().getName().equalsIgnoreCase(unqualifiedSqlName)))
-            .map(Schema::getName)
-            .toList();
-    }
-
-    private Optional<TableEntry> findUnqualifiedTable(String unqualifiedSqlName) {
-        if (catalog == null) return Optional.empty();
-        var matches = catalog.schemaStream()
             .flatMap(s -> entriesIn(s)
                 .filter(e -> e.table().getName().equalsIgnoreCase(unqualifiedSqlName)))
-            .limit(2)
             .toList();
-        return matches.size() == 1 ? Optional.of(matches.get(0)) : Optional.empty();
     }
 
     private java.util.stream.Stream<TableEntry> entriesIn(Schema schema) {
@@ -191,7 +216,11 @@ public class JooqCatalog {
      * generated {@code *Record} class.
      */
     public Optional<Class<?>> findRecordClass(String tableSqlName) {
-        return findTable(tableSqlName).map(e -> e.table().getRecordType());
+        return switch (findTable(tableSqlName)) {
+            case TableResolution.Resolved r -> Optional.of(r.entry().table().getRecordType());
+            case TableResolution.NotInCatalog n -> Optional.empty();
+            case TableResolution.Ambiguous a -> Optional.empty();
+        };
     }
 
     /**
@@ -247,7 +276,7 @@ public class JooqCatalog {
      * not depend on jOOQ codegen output) or when no matching key is found.
      */
     public Optional<String> fkJavaConstantName(String sqlConstraintName) {
-        return findForeignKeyByName(sqlConstraintName).map(ForeignKeyRef::constantName);
+        return findForeignKeyByName(sqlConstraintName).asRef().map(ForeignKeyRef::constantName);
     }
 
     /**
@@ -258,12 +287,14 @@ public class JooqCatalog {
      * codegen layouts produce schema-segmented FQNs (e.g. {@code multischema_a.Keys}) without
      * any caller-side derivation.
      *
-     * <p>Empty when the catalog or schema {@code Keys} class is unavailable, or when no FK with
-     * the given constraint name exists in any schema. The match is case-insensitive on the SQL
-     * name (consistent with {@link #findForeignKey(String)}).
+     * <p>The returned {@link ForeignKeyResolution} is {@link ForeignKeyResolution.Resolved}
+     * carrying the {@link ForeignKeyRef} when the FK is found, otherwise
+     * {@link ForeignKeyResolution.NotInCatalog}. FK names are scoped to a {@code Keys} class so
+     * cross-schema ambiguity does not apply at this lookup. The match is case-insensitive on the
+     * SQL name (consistent with {@link #findForeignKey(String)}).
      */
-    public Optional<ForeignKeyRef> findForeignKeyByName(String sqlConstraintName) {
-        if (catalog == null) return Optional.empty();
+    public ForeignKeyResolution findForeignKeyByName(String sqlConstraintName) {
+        if (catalog == null) return new ForeignKeyResolution.NotInCatalog();
         return catalog.schemaStream()
             .flatMap(schema -> keysClass(schema).stream())
             .flatMap(cls -> Arrays.stream(cls.getFields()))
@@ -273,7 +304,9 @@ public class JooqCatalog {
                 ((ForeignKey<?, ?>) fieldValue(f)).getName(),
                 ClassName.get(f.getDeclaringClass()),
                 f.getName()))
-            .findFirst();
+            .findFirst()
+            .<ForeignKeyResolution>map(ForeignKeyResolution.Resolved::new)
+            .orElseGet(ForeignKeyResolution.NotInCatalog::new);
     }
 
     /**
@@ -333,7 +366,7 @@ public class JooqCatalog {
 
     @SuppressWarnings("unchecked")
     private Map<String, String> doBuildQualifierMap(String sourceTableSqlName) {
-        var tableEntry = findTable(sourceTableSqlName);
+        var tableEntry = findTable(sourceTableSqlName).asEntry();
         if (tableEntry.isEmpty()) return Map.of();
         var result = new HashMap<String, String>();
         for (var fk : (List<ForeignKey<?, ?>>) (List<?>) tableEntry.get().table().getReferences()) {
@@ -379,7 +412,7 @@ public class JooqCatalog {
      * in the table or when any column cannot be resolved.
      */
     public Optional<java.util.List<ColumnEntry>> findIndexColumns(String tableSqlName, String indexName) {
-        return findTable(tableSqlName).flatMap(te ->
+        return findTable(tableSqlName).asEntry().flatMap(te ->
             te.table().getIndexes().stream()
                 .filter(idx -> idx.getName().equalsIgnoreCase(indexName))
                 .findFirst()
@@ -395,7 +428,7 @@ public class JooqCatalog {
      * {@link #findColumn(Table, String)}.
      */
     public java.util.List<ColumnEntry> findPkColumns(String tableSqlName) {
-        return findTable(tableSqlName).map(te -> {
+        return findTable(tableSqlName).asEntry().map(te -> {
             var pk = te.table().getPrimaryKey();
             if (pk == null) return java.util.List.<ColumnEntry>of();
             return pk.getFields().stream()
@@ -462,7 +495,7 @@ public class JooqCatalog {
     }
 
     private NodeIdMetadataLookup doLookup(String tableSqlName) {
-        return findTable(tableSqlName).<NodeIdMetadataLookup>map(te -> {
+        return findTable(tableSqlName).asEntry().<NodeIdMetadataLookup>map(te -> {
             Class<?> tableClass = te.table().getClass();
             Object typeIdRaw;
             Object keyColumnsRaw;
@@ -536,7 +569,7 @@ public class JooqCatalog {
      * jOOQ table class. Returns an empty list when the table cannot be found.
      */
     public java.util.List<String> columnSqlNamesOf(String tableSqlName) {
-        return findTable(tableSqlName)
+        return findTable(tableSqlName).asEntry()
             .map(te -> Arrays.stream(te.table().getClass().getFields())
                 .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
                 .map(f -> ((org.jooq.Field<?>) instanceFieldValue(f, te.table())).getName())
@@ -551,7 +584,7 @@ public class JooqCatalog {
      * table cannot be found.
      */
     public java.util.List<String> columnJavaNamesOf(String tableSqlName) {
-        return findTable(tableSqlName)
+        return findTable(tableSqlName).asEntry()
             .map(te -> Arrays.stream(te.table().getClass().getFields())
                 .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
                 .map(f -> f.getName())
@@ -565,7 +598,7 @@ public class JooqCatalog {
      * and nullability. Returns an empty list when the table cannot be found.
      */
     public java.util.List<ColumnEntry> allColumnsOf(String tableSqlName) {
-        return findTable(tableSqlName)
+        return findTable(tableSqlName).asEntry()
             .map(te -> Arrays.stream(te.table().getClass().getFields())
                 .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
                 .map(f -> {
@@ -599,7 +632,7 @@ public class JooqCatalog {
      * {@link #findTable(String)} followed by {@link #findColumn(Table, String)}.
      */
     public Optional<ColumnEntry> findColumn(String tableSqlName, String columnName) {
-        return findTable(tableSqlName)
+        return findTable(tableSqlName).asEntry()
             .flatMap(e -> findColumn(e.table(), columnName));
     }
 
@@ -731,10 +764,11 @@ public class JooqCatalog {
 
         /**
          * The {@link ClassName} of the schema's {@code Tables} constants class
-         * (e.g. {@code multischema_a.Tables}). Empty when the schema package contains no
-         * generated {@code Tables} class — a degenerate consumer-side codegen state that
-         * R78 surfaces as {@link no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType}
-         * instead of hiding behind an empty-string fallback.
+         * (e.g. {@code multischema_a.Tables}). The catalog-construction precondition
+         * (see {@link JooqCatalog#verifyTablesClassPresent}) guarantees every schema in a live
+         * catalog has a generated {@code Tables} class; the {@link Optional} return is retained
+         * as a defence-in-depth wrapper around reflection but in practice is always present for
+         * any {@code TableEntry} produced by {@link JooqCatalog#findTable}.
          */
         public Optional<ClassName> constantsClass() {
             return catalog.tablesClass(table.getSchema()).map(ClassName::get);
@@ -763,18 +797,25 @@ public class JooqCatalog {
          * messages), not {@code entry.table().getName()} — the catalog lookup key is preserved
          * from the user-visible name even when jOOQ canonicalises differently.
          *
-         * <p>Empty when {@link #constantsClass()} is empty (a degenerate consumer-side
-         * codegen state where the schema package has no generated {@code Tables} class). The
-         * caller routes empty to {@link no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType}.
+         * <p>Non-{@link Optional} return: the catalog-construction precondition
+         * ({@link JooqCatalog#verifyTablesClassPresent}) guarantees every {@link TableEntry} produced
+         * by {@link JooqCatalog#findTable} has a resolvable {@code Tables} constants class. If the
+         * precondition is bypassed (only possible by constructing a {@code TableEntry} outside the
+         * normal catalog flow), the resulting {@link IllegalStateException} surfaces as a build
+         * failure rather than a silent partial result.
          */
-        public Optional<no.sikt.graphitron.rewrite.model.TableRef> toTableRef(String sqlName) {
-            return constantsClass().map(cc -> new no.sikt.graphitron.rewrite.model.TableRef(
+        public no.sikt.graphitron.rewrite.model.TableRef toTableRef(String sqlName) {
+            ClassName cc = constantsClass().orElseThrow(() -> new IllegalStateException(
+                "TableEntry for table '" + sqlName + "' (schema '" + table.getSchema().getName()
+                + "') has no resolvable Tables constants class — catalog-construction precondition"
+                + " should have rejected this state at JooqCatalog instantiation."));
+            return new no.sikt.graphitron.rewrite.model.TableRef(
                 sqlName,
                 javaFieldName,
                 tableClass(),
                 recordClass(),
                 cc,
-                pkColumnRefs()));
+                pkColumnRefs());
         }
     }
 
@@ -813,4 +854,61 @@ public class JooqCatalog {
      * the column's nullability as declared in the jOOQ data type.
      */
     public record ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable) {}
+
+    /**
+     * Sub-taxonomy of outcomes for {@link #findTable(String)}. Replaces the prior
+     * {@link Optional}{@code <TableEntry>} return: lookup failures fan out into
+     * {@link NotInCatalog} (the name resolves nowhere) and {@link Ambiguous} (the unqualified
+     * name resolves in two or more schemas — the multi-schema case R78 lifted from
+     * first-schema-wins). Diagnostic builders switch on the variant directly so each failure
+     * mode reaches the schema author with the right prose; callers that only care about the
+     * resolved entry use {@link #asEntry()}.
+     */
+    public sealed interface TableResolution {
+        /** The name resolves to exactly one table in the catalog. */
+        record Resolved(TableEntry entry) implements TableResolution {}
+
+        /** No schema in the catalog carries this table name. */
+        record NotInCatalog() implements TableResolution {}
+
+        /**
+         * Two or more schemas carry this (unqualified) table name. {@code schemas} carries the
+         * candidate schema names so the diagnostic builder can suggest qualified forms without
+         * a second catalog query. Qualified lookups never produce this variant.
+         */
+        record Ambiguous(List<String> schemas) implements TableResolution {
+            public Ambiguous {
+                schemas = List.copyOf(schemas);
+            }
+        }
+
+        /**
+         * Project to {@link Optional}{@code <TableEntry>} for callers that route every failure
+         * variant identically (e.g. internal pipeline lookups that already surface their own
+         * diagnostic). Diagnostic-bearing callers must switch on the variant instead.
+         */
+        default Optional<TableEntry> asEntry() {
+            return this instanceof Resolved r ? Optional.of(r.entry()) : Optional.empty();
+        }
+    }
+
+    /**
+     * Sub-taxonomy of outcomes for {@link #findForeignKeyByName(String)}. Symmetric in spirit to
+     * {@link TableResolution} with one failure arm: FK names are scoped to a {@code Keys} class
+     * so cross-schema ambiguity does not apply at this lookup. Lets
+     * {@link no.sikt.graphitron.rewrite.BuildContext#synthesizeFkJoin} distinguish "endpoint
+     * table missing" from "FK name missing" instead of conflating both into a single empty.
+     */
+    public sealed interface ForeignKeyResolution {
+        /** The FK constraint name resolves to exactly one FK in the catalog. */
+        record Resolved(ForeignKeyRef ref) implements ForeignKeyResolution {}
+
+        /** No schema's {@code Keys} class declares an FK with this constraint name. */
+        record NotInCatalog() implements ForeignKeyResolution {}
+
+        /** Project to {@link Optional}{@code <ForeignKeyRef>} for callers that ignore the failure mode. */
+        default Optional<ForeignKeyRef> asRef() {
+            return this instanceof Resolved r ? Optional.of(r.ref()) : Optional.empty();
+        }
+    }
 }

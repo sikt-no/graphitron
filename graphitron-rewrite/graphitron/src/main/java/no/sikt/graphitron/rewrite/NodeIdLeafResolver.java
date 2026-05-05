@@ -263,13 +263,11 @@ final class NodeIdLeafResolver {
         if (joinPath.error() != null) {
             return new Resolved.Rejected(Rejection.structural(joinPath.error()));
         }
-        Optional<TableRef> targetTableOpt = ctx.resolveTable(targetTableName);
-        if (targetTableOpt.isEmpty()) {
-            return new Resolved.Rejected(Rejection.structural(
-                "@nodeId(typeName: '" + refTypeName + "') target table '" + targetTableName
-                + "' is not in the jOOQ catalog"));
+        var targetTableResolution = ctx.catalog.findTable(targetTableName);
+        if (!(targetTableResolution instanceof JooqCatalog.TableResolution.Resolved targetTableResolved)) {
+            return new Resolved.Rejected(ctx.unknownTableRejection(targetTableResolution, targetTableName));
         }
-        TableRef targetTable = targetTableOpt.get();
+        TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
         var fkJoin = (FkJoin) joinPath.path().get(0);
         if (sameColumnsBySqlName(fkJoin.targetSideColumns(), keys.keyColumns())) {
             return new Resolved.FkTarget.DirectFk(
@@ -390,7 +388,7 @@ final class NodeIdLeafResolver {
                 return new JoinPathResult(null,
                     "@reference path on @nodeId must be a FK key, not a condition method");
             }
-            fkName = fkStep.fkName();
+            fkName = fkStep.fk().sqlName();
         } else {
             var inferred = ctx.catalog.findUniqueFkToTable(
                 containingTable.tableName(), targetTableName);
@@ -409,13 +407,17 @@ final class NodeIdLeafResolver {
         }
         // NodeId leafs are single-cardinality decoded keys against the parent's own table; the
         // shim's invariant places the FK on the parent (source) side, so selfRefFkOnSource=true.
-        Optional<FkJoin> fkStepOpt = ctx.synthesizeFkJoin(
+        var fkStepResolution = ctx.synthesizeFkJoin(
             fkOpt.get(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
-        if (fkStepOpt.isEmpty()) {
-            return new JoinPathResult(null,
-                "FK '" + fkName + "' on table '" + containingTable.tableName()
-                + "' touches a table whose schema package is not generated");
-        }
-        return new JoinPathResult(List.of(fkStepOpt.get()), null);
+        return switch (fkStepResolution) {
+            case BuildContext.FkJoinResolution.Resolved r ->
+                new JoinPathResult(List.of(r.fkJoin()), null);
+            case BuildContext.FkJoinResolution.UnknownTable u ->
+                new JoinPathResult(null,
+                    ctx.unknownTableRejection(u.failure(), u.requestedName()).message());
+            case BuildContext.FkJoinResolution.UnknownForeignKey uf ->
+                new JoinPathResult(null,
+                    ctx.unknownForeignKeyRejection(uf.fkName()).message());
+        };
     }
 }

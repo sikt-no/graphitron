@@ -243,7 +243,7 @@ final class ServiceDirectiveResolver {
      * applicable (the caller treats the actual reflection-captured return type as truth).
      *
      * <ul>
-     *   <li>{@code TableBoundReturnType} + Single → {@code <jooqPackage>.tables.records.<TableName>Record}</li>
+     *   <li>{@code TableBoundReturnType} + Single → {@code <schemaPackage>.tables.records.<TableName>Record}</li>
      *   <li>{@code TableBoundReturnType} + List → {@code org.jooq.Result<<RecordFqcn>>}</li>
      *   <li>{@code ResultReturnType} (with non-null fqClassName) + Single → {@code <fqClassName>}</li>
      *   <li>{@code ResultReturnType} (with non-null fqClassName) + List → {@code java.util.List<<fqClassName>>}</li>

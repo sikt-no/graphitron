@@ -356,7 +356,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField.class);
                 var pcrf = (no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField) f;
                 assertThat(pcrf.targetTable().tableName()).isEqualToIgnoringCase("film");
-                assertThat(pcrf.fkJoin().fkName()).isEqualToIgnoringCase("content_film_id_fkey");
+                assertThat(pcrf.fkJoin().fk().sqlName()).isEqualToIgnoringCase("content_film_id_fkey");
                 assertThat(pcrf.aliasName()).isEqualTo("FilmContent_rating");
                 assertThat(pcrf.column().sqlName()).isEqualToIgnoringCase("rating");
             }),

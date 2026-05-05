@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -65,7 +66,7 @@ class JoinSlotOrientationTest {
             new JoinSlot.FkSlot(PROJECT_ID, PROJECT_ID),
             new JoinSlot.FkSlot(ORG_CODE, ORG_CODE));
         var fkJoin = new JoinStep.FkJoin(
-            "project_note_project_fkey", null, parentTable, childTable,
+            TestFixtures.foreignKeyRef("project_note_project_fkey"), parentTable, childTable,
             slots, null, "notes_0");
 
         // Direction-blind reads through WithTarget.slots() / sourceSideColumns() / targetSideColumns().
