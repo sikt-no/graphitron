@@ -199,6 +199,93 @@ class ServiceCatalogTest {
     }
 
     @Test
+    void reflectServiceMethod_rootFieldNameMismatch_unambiguousReachablePath_suggestionIsPrefilled() {
+        // R84 Phase F (stretch): when the unmatched Java parameter's type matches exactly one
+        // reachable field under the available slots, the suggestion replaces the generic
+        // `<fieldName>` placeholder with the concrete dotted path. Schema authors get a
+        // copy-pasteable argMapping example instead of a doc lookup.
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("InputT")
+            .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("kvotesporsmalId").type(graphql.Scalars.GraphQLString).build())
+            .build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getByIdWithDsl", bindings(Map.of("input", "input")),
+            Set.of(), List.of(), null, slot);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("argMapping: \"id: input.kvotesporsmalId\"")
+            .contains("only field reachable")
+            .doesNotContain("<fieldName>");
+    }
+
+    @Test
+    void reflectServiceMethod_rootFieldNameMismatch_ambiguousReachablePath_falsBackToPlaceholder() {
+        // Two scalar fields of the same Java-type at the same depth: ambiguous, no prefill.
+        // The floor's `<fieldName>` placeholder still fires so the user sees the path-expression
+        // shape but has to fill in which field they meant.
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("InputT")
+            .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("idA").type(graphql.Scalars.GraphQLString).build())
+            .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("idB").type(graphql.Scalars.GraphQLString).build())
+            .build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getByIdWithDsl", bindings(Map.of("input", "input")),
+            Set.of(), List.of(), null, slot);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("argMapping: \"id: input.<fieldName>\"")
+            .doesNotContain("only field reachable");
+    }
+
+    @Test
+    void reflectServiceMethod_rootFieldNameMismatch_typeMismatchOnReachableField_falsBackToPlaceholder() {
+        // The slot has one nested scalar field, but its Java type doesn't match the unmatched
+        // parameter's Java type — no prefill. The hint still appears with the generic placeholder.
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("InputT")
+            .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("count").type(graphql.Scalars.GraphQLInt).build())
+            .build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getByIdWithDsl", bindings(Map.of("input", "input")),
+            Set.of(), List.of(), null, slot);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("argMapping: \"id: input.<fieldName>\"")
+            .doesNotContain("only field reachable");
+    }
+
+    @Test
+    void reflectServiceMethod_rootFieldNameMismatch_noSlotTypes_floorRenders() {
+        // 6-arg overload: no slot types passed. The stretch helper sees an empty map and
+        // returns null, so the suggestion falls back to the floor placeholder. Pins that the
+        // delegating overload doesn't accidentally suppress the path-expression hint.
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getByIdWithDsl", bindings(Map.of("input", "input")),
+            Set.of(), List.of(), null);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("argMapping: \"id: input.<fieldName>\"")
+            .doesNotContain("only field reachable");
+    }
+
+    @Test
     void reflectServiceMethod_rootFieldNameMismatch_noArgs_doesNotMentionPathExpression() {
         // The path-expression hint only fires when there is at least one available GraphQL
         // argument to point at — the no-args branch already steers the user toward adding an
