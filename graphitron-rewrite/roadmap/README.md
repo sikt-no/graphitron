@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Plan |
 |---|---|---|---|
 | `R88` | Validate `@record` accessor resolution against backing class at classify time | Spec | [plan](record-accessor-validation.md) |
-| `R77` | Bulk DML mutations: listed @table input arguments | Ready | [plan](bulk-dml-mutations.md) |
+| `R77` | Bulk DML mutations: listed @table input arguments | In Progress | [plan](bulk-dml-mutations.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
@@ -118,7 +118,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R77` [**Bulk DML mutations: listed @table input arguments**](bulk-dml-mutations.md) — Ready, architecture
+- `R77` [**Bulk DML mutations: listed @table input arguments**](bulk-dml-mutations.md) — In Progress, architecture
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Ready, architecture
 - `R75` [**Synthesize payload carrier for canonical data+errors shapes**](synthesize-payload-carrier.md) — Backlog, architecture, blocked by [error-handling-parity](error-handling-parity.md)
 - `R63` [**Type UPSERT dialect requirement on the model**](dml-dialect-requirement-on-model.md) — Spec, architecture
