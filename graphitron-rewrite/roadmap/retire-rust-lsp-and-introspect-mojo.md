@@ -12,7 +12,8 @@ depends-on: []
 
 R18 carved this out of Phase 7. The graphitron-rewrite delivery
 shipped the Java LSP that replaces the Rust one (R18 Phases 0–6;
-final commit `bec04f8`); the LSP module ships through
+see graphitron-rewrite/roadmap/changelog.md for the implementation
+commit anchors). The LSP module ships through
 graphitron-rewrite-parent's normal release cycle, so consumers can
 pick it up the moment the next release tag lands. What remains is
 the legacy retirement: archive the Rust LSP repo, delete the legacy

@@ -37,10 +37,12 @@ import java.util.stream.Stream;
  * off the JVM method descriptor — erased / unparameterised, but enough
  * for hover signatures and unknown-method diagnostics. Parameter names
  * come from the {@code MethodParameters} attribute when {@code -parameters}
- * was set on the consumer's compile; absent that, names fall back to
- * {@code arg0}, {@code arg1}, &hellip; mirroring reflection's behaviour
- * and giving the Phase 5c {@code -parameters}-missing diagnostic a
- * detection signal.
+ * was set on the consumer's compile; absent that attribute, the
+ * {@link CompletionData.Parameter#name()} slot is {@code null} (intentionally
+ * not the synthesised {@code arg0}/{@code arg1} reflection emits, since the
+ * Phase 5c {@code -parameters}-missing diagnostic uses {@code name == null}
+ * as its detection signal — a synthesised name would silently disable that
+ * warning).
  */
 public final class ClasspathScanner {
 
