@@ -1524,7 +1524,9 @@ public class TypeFetcherGenerator {
             + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
             + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.setFields() "
             + "as the typed non-@lookupKey ColumnField projection (no cast, no skip-during-walk). "
-            + "Invariant #4 guarantees setFields() is non-empty for the SET clause. "
+            + "Invariant #4 guarantees setFields() is non-empty as the codegen-time projection "
+            + "(the runtime SET map can still be empty when every setField key is absent from "
+            + "`in`; the no-set-fields-present check in postInGuard rejects that). "
             + "Bulk arm (tia.list() == true) is rejected at codegen until bulk fetcher emission lands.")
     private static MethodSpec buildMutationUpdateFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpdateTableField f,
                                                           String outputPackage) {
@@ -1534,23 +1536,37 @@ public class TypeFetcherGenerator {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
 
-        var setClause = CodeBlock.builder();
+        // Build the SET clause dynamically from the present-key set so absent fields drop out
+        // (PATCH semantics) and explicit-null fields bind typed null. The map
+        // is consumed by jOOQ's `.set(Map<? extends Field<?>, ?>)` overload, which preserves
+        // the chain shape (`UpdateSetMoreStep<R>` → `.where(...).returningResult(...)`).
+        var fieldClass = ClassName.get("org.jooq", "Field");
+        var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
+        var postInGuard = CodeBlock.builder();
+        postInGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
         for (var cf : tia.setFields()) {
-            setClause.add(".set($T.$L.$L, $T.val(in.get($S), $T.$L.$L.getDataType()))\n",
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
-                DSL, cf.name(),
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+            postInGuard.beginControlFlow("if (in.containsKey($S))", cf.name())
+                .addStatement("sets.put($T.$L.$L, $T.val(in.get($S), $T.$L.$L.getDataType()))",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                    DSL, cf.name(),
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
+                .endControlFlow();
         }
+        postInGuard.beginControlFlow("if (sets.isEmpty())")
+            .addStatement("throw new $T($S)", IllegalArgumentException.class,
+                "@mutation(typeName: UPDATE) call has no settable fields present; "
+                    + "only @lookupKey fields were provided")
+            .endControlFlow();
 
         var dmlChain = CodeBlock.builder()
             .add(".update($L)\n", tableLocal)
-            .add(setClause.build())
+            .add(".set(sets)\n")
             .add(".where(").add(buildLookupWhere(tia, tablesOnly, tableRef)).add(")\n")
             .build();
 
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain);
+            outputPackage, dmlChain, /*postDslGuard=*/ CodeBlock.of(""), postInGuard.build());
     }
 
     /**
@@ -1574,7 +1590,10 @@ public class TypeFetcherGenerator {
             + "as Direct-extracted ColumnField with a single cast for the col/val lists, "
             + "and tia.setFields() (typed non-@lookupKey ColumnField projection) for the SET "
             + "clause and the .doUpdate()/.doNothing() dispatch. Invariant #3 guarantees "
-            + "fieldBindings is non-empty (the ON CONFLICT key). "
+            + "fieldBindings is non-empty (the ON CONFLICT key). When tia.setFields() is "
+            + "non-empty (.doUpdate() mode), the runtime SET map can still be empty when every "
+            + "setField key is absent from `in`; the no-set-fields-present check in postInGuard "
+            + "rejects that. .doNothing() mode skips both walks. "
             + "Bulk arm (tia.list() == true) is rejected at codegen until bulk fetcher emission lands.")
     private static MethodSpec buildMutationUpsertFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpsertTableField f,
                                                           String outputPackage) {
@@ -1603,12 +1622,34 @@ public class TypeFetcherGenerator {
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
         }
 
-        var setClause = CodeBlock.builder();
-        for (var cf : tia.setFields()) {
-            setClause.add(".set($T.$L.$L, $T.val(in.get($S), $T.$L.$L.getDataType()))\n",
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
-                DSL, cf.name(),
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+        // When the .doUpdate() branch fires, build the SET map dynamically from
+        // the present-key set and bind each value to DSL.excluded(col) (the just-attempted
+        // INSERT cell). Combined with the per-row containsKey-gated INSERT cells above, an
+        // omitted column is DEFAULT on the INSERT branch *and* drops out of DO UPDATE SET on
+        // the conflict branch — so the existing row's value survives a conflict (PATCH
+        // semantics on the update branch). A naive `c = EXCLUDED.c` for every setFields()
+        // column would resolve EXCLUDED.c to the table default whenever the proposed INSERT
+        // row used DEFAULT, overwriting the existing row's value with the default; dynamic
+        // SET avoids that silent-data-loss footgun. The .doNothing() mode (setFields() empty
+        // at codegen) skips the walk entirely.
+        var fieldClass = ClassName.get("org.jooq", "Field");
+        var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
+        var postInGuard = CodeBlock.builder();
+        if (!tia.setFields().isEmpty()) {
+            postInGuard.addStatement("$T<$T<?>, Object> setsUpdate = new $T<>()", MAP, fieldClass, linkedHashMap);
+            for (var cf : tia.setFields()) {
+                postInGuard.beginControlFlow("if (in.containsKey($S))", cf.name())
+                    .addStatement("setsUpdate.put($T.$L.$L, $T.excluded($T.$L.$L))",
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                        DSL,
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
+                    .endControlFlow();
+            }
+            postInGuard.beginControlFlow("if (setsUpdate.isEmpty())")
+                .addStatement("throw new $T($S)", IllegalArgumentException.class,
+                    "@mutation(typeName: UPSERT) call has no settable fields present; "
+                        + "only @lookupKey fields were provided")
+                .endControlFlow();
         }
 
         var conflictCols = CodeBlock.builder();
@@ -1625,7 +1666,7 @@ public class TypeFetcherGenerator {
             .add(".values(\n").indent().add(valList.build()).add(")\n").unindent()
             .add(".onConflict(").add(conflictCols.build()).add(")\n");
         if (!tia.setFields().isEmpty()) {
-            dmlChain.add(".doUpdate()\n").add(setClause.build());
+            dmlChain.add(".doUpdate()\n").add(".set(setsUpdate)\n");
         } else {
             dmlChain.add(".doNothing()\n");
         }
@@ -1649,7 +1690,7 @@ public class TypeFetcherGenerator {
 
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain.build(), postDslGuard);
+            outputPackage, dmlChain.build(), postDslGuard, postInGuard.build());
     }
 
     /**
@@ -1695,15 +1736,10 @@ public class TypeFetcherGenerator {
             String outputPackage,
             CodeBlock dmlChain) {
         return buildDmlFetcher(ctx, fetcherName, rex, errorChannel, inputArgName, tableRef,
-            tablesOnly, tableLocal, outputPackage, dmlChain, /*postDslGuard=*/ CodeBlock.of(""));
+            tablesOnly, tableLocal, outputPackage, dmlChain,
+            /*postDslGuard=*/ CodeBlock.of(""), /*postInGuard=*/ CodeBlock.of(""));
     }
 
-    /**
-     * Six-arg overload that admits an optional {@code postDslGuard} {@link CodeBlock} emitted
-     * immediately after the {@code dsl} local is bound. Used by UPSERT to gate the Oracle
-     * dialect (jOOQ silently translates {@code .onConflict(...)} to {@code MERGE INTO} on
-     * Oracle, with semantics drift).
-     */
     private static MethodSpec buildDmlFetcher(
             TypeFetcherEmissionContext ctx,
             String fetcherName,
@@ -1716,6 +1752,39 @@ public class TypeFetcherGenerator {
             String outputPackage,
             CodeBlock dmlChain,
             CodeBlock postDslGuard) {
+        return buildDmlFetcher(ctx, fetcherName, rex, errorChannel, inputArgName, tableRef,
+            tablesOnly, tableLocal, outputPackage, dmlChain,
+            postDslGuard, /*postInGuard=*/ CodeBlock.of(""));
+    }
+
+    /**
+     * Two optional {@link CodeBlock} slots:
+     * <ul>
+     *   <li>{@code postDslGuard} — emitted immediately after the {@code dsl} local is bound,
+     *       before the {@code in} cast. Used by UPSERT to gate the Oracle dialect (jOOQ silently
+     *       translates {@code .onConflict(...)} to {@code MERGE INTO} on Oracle, with semantics
+     *       drift).</li>
+     *   <li>{@code postInGuard} — emitted immediately after the {@code in} cast and before
+     *       {@code tableLocal} is bound. Used by UPDATE / UPSERT to build the dynamic SET map
+     *       from the present-key set and run the no-set-fields-present runtime check before
+     *       chain construction. The slot is also the natural extension point for the bulk
+     *       arm's empty-list short-circuit, uniformity guard, and duplicate-tuple guard once
+     *       bulk fetcher emission lands.</li>
+     * </ul>
+     */
+    private static MethodSpec buildDmlFetcher(
+            TypeFetcherEmissionContext ctx,
+            String fetcherName,
+            no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
+            Optional<ErrorChannel> errorChannel,
+            String inputArgName,
+            TableRef tableRef,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            String tableLocal,
+            String outputPackage,
+            CodeBlock dmlChain,
+            CodeBlock postDslGuard,
+            CodeBlock postInGuard) {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         TypeName valueType = switch (rex) {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload p -> p.assembly().payloadClass();
@@ -1732,6 +1801,9 @@ public class TypeFetcherGenerator {
             builder.addCode(postDslGuard);
         }
         builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, inputArgName);
+        if (!postInGuard.isEmpty()) {
+            builder.addCode(postInGuard);
+        }
         builder.addStatement("$T $L = $T.$L",
             tablesOnly.jooqTableClass(), tableLocal,
             tablesOnly.tablesClass(), tableRef.javaFieldName());

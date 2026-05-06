@@ -986,8 +986,13 @@ input FilmCreateInput @table(name: "film") {
 # R22 Phase 4 fixture: minimal UPDATE input. `filmId` is the @lookupKey (covers the single-column
 # PK); `title` is the SET-clause field. Invariant #4 requires at least one non-@lookupKey field.
 input FilmUpdateInput @table(name: "film") {
-    filmId: Int!    @field(name: "film_id") @lookupKey
-    title:  String! @field(name: "title")
+    filmId:      Int!    @field(name: "film_id") @lookupKey
+    title:       String! @field(name: "title")
+    # R77 Phase C: optional non-@lookupKey field used by the missing-vs-null
+    # execution tests on single-row UPDATE. Sakila's `description` is a nullable
+    # `text` column: omitting drops it from the SET clause (PATCH semantics);
+    # explicit null binds typed null (writes SQL NULL).
+    description: String  @field(name: "description")
 }
 
 # R22 Phase 5 fixture: minimal UPSERT input. `filmId` is the ON CONFLICT key; `title` and
@@ -995,9 +1000,16 @@ input FilmUpdateInput @table(name: "film") {
 # (SET clause). UPSERT is exempt from Invariant #4's non-@lookupKey-required gate (an
 # upsert with no SET-clause fields is `INSERT ... ON CONFLICT DO NOTHING`, a legitimate shape).
 input FilmUpsertInput @table(name: "film") {
-    filmId:     Int!    @field(name: "film_id") @lookupKey
-    title:      String! @field(name: "title")
-    languageId: Int!    @field(name: "language_id")
+    filmId:         Int!    @field(name: "film_id") @lookupKey
+    title:          String! @field(name: "title")
+    languageId:     Int!    @field(name: "language_id")
+    # R77 Phase C: optional NOT-NULL-DEFAULT field. On the INSERT branch, omitting
+    # it lets `DEFAULT` land via Phase B's containsKey-gated cell emit. On the
+    # UPDATE branch, omitting it drops the column from `DO UPDATE SET` entirely
+    # (PATCH semantics), preserving the existing row's value rather than
+    # overwriting it. Type is nullable in GraphQL to preserve the absent-vs-null
+    # distinction; the column is NOT NULL with DEFAULT 3 in Sakila.
+    rentalDuration: Int     @field(name: "rental_duration")
 }
 
 type Mutation {
