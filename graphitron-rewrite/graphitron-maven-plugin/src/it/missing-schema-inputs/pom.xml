@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>no.sikt.graphitron.it</groupId>
-  <artifactId>basic-generate</artifactId>
+  <artifactId>missing-schema-inputs</artifactId>
   <version>1.0-SNAPSHOT</version>
   <packaging>jar</packaging>
 
@@ -13,7 +13,7 @@
     <plugins>
       <plugin>
         <groupId>no.sikt</groupId>
-        <artifactId>graphitron-maven</artifactId>
+        <artifactId>graphitron-maven-plugin</artifactId>
         <version>@project.version@</version>
         <executions>
           <execution>
@@ -24,7 +24,8 @@
             <configuration>
               <schemaInputs>
                 <schemaInput>
-                  <pattern>src/main/resources/schema.graphqls</pattern>
+                  <!-- Pattern deliberately matches nothing to test the zero-match error path. -->
+                  <pattern>nonexistent/**/*.graphqls</pattern>
                 </schemaInput>
               </schemaInputs>
               <outputPackage>no.sikt.it.generated</outputPackage>

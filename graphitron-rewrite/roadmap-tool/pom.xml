@@ -16,6 +16,7 @@
     <description>Renders graphitron-rewrite/roadmap/*.md (YAML front-matter) into roadmap/README.md.</description>
 
     <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
         <version.snakeyaml>2.5</version.snakeyaml>
         <!--
           Default subcommand for `mvn ... exec:java`. Override with

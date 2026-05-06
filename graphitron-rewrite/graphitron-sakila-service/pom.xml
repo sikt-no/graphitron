@@ -13,6 +13,10 @@
     <artifactId>graphitron-sakila-service</artifactId>
     <name>${project.groupId}:${project.artifactId}</name>
 
+    <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>no.sikt</groupId>

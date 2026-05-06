@@ -17,7 +17,7 @@
         <module>graphitron-fixtures-codegen</module>
         <module>graphitron-sakila-db</module>
         <module>graphitron-sakila-service</module>
-        <module>graphitron-maven</module>
+        <module>graphitron-maven-plugin</module>
         <module>graphitron-sakila-example</module>
         <module>graphitron-lsp</module>
         <module>roadmap-tool</module>
@@ -184,6 +184,16 @@
                     <artifactId>versions-maven-plugin</artifactId>
                     <version>2.21.0</version>
                 </plugin>
+                <plugin>
+                    <groupId>org.sonatype.central</groupId>
+                    <artifactId>central-publishing-maven-plugin</artifactId>
+                    <version>0.10.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-gpg-plugin</artifactId>
+                    <version>3.2.8</version>
+                </plugin>
             </plugins>
         </pluginManagement>
         <plugins>
@@ -228,6 +238,13 @@
         <developerConnection>scm:git:ssh://github.com:sikt-no/graphitron.git</developerConnection>
         <url>https://github.com/sikt-no/graphitron/tree/main</url>
     </scm>
+
+    <distributionManagement>
+        <snapshotRepository>
+            <id>central</id>
+            <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+        </snapshotRepository>
+    </distributionManagement>
     <licenses>
         <license>
             <name>MIT License</name>
@@ -243,6 +260,82 @@
                 <maven.test.skip>true</maven.test.skip>
                 <maven.javadoc.skip>true</maven.javadoc.skip>
             </properties>
+        </profile>
+        <profile>
+            <!-- Used to build the rewrite reactor for release to the Maven Central Publisher Portal.
+                 Includes signing, sources/javadoc jars, and central-publishing wiring. Snapshot
+                 deploys do not need this profile (the snapshotRepository in
+                 distributionManagement is enough). -->
+            <id>release</id>
+            <distributionManagement>
+                <repository>
+                    <id>central</id>
+                </repository>
+            </distributionManagement>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-deploy-plugin</artifactId>
+                        <configuration>
+                            <!-- Defer deploy until every artifact is built so a late failure rolls all of them back. -->
+                            <deployAtEnd>true</deployAtEnd>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                                <configuration>
+                                    <gpgArguments>
+                                        <arg>--pinentry-mode</arg>
+                                        <arg>loopback</arg>
+                                    </gpgArguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 </project>

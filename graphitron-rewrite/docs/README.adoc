@@ -25,7 +25,7 @@ Contributor-facing documentation for the Graphitron generator: how the pipeline 
 | `graphitron-sakila-service`
 | `@service` / `@externalField` / `@condition` implementations referenced from the example schemas (`FilmService`, `SampleQueryService`, `CategoryConditions`, ...). Compile-scope dep on `graphitron-sakila-db` for the jOOQ tables.
 
-| `graphitron-maven`
+| `graphitron-maven-plugin`
 | Maven plugin: `generate`, `validate`, and `dev` Mojos (the dev mojo provides the watch loop).
 
 | `graphitron-sakila-example`

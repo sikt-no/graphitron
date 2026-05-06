@@ -75,7 +75,7 @@ final class SchemaProblemDiagnostic {
         }
         if (missingQuery) {
             return "Hint: declare a 'type Query { ... }' in one of the loaded files,"
-                + "\nor add the missing file to <schemaInputs> in graphitron-maven.";
+                + "\nor add the missing file to <schemaInputs> in graphitron-maven-plugin.";
         }
         if (undeclaredDirective) {
             return "Hint: graphql-java does not bundle Apollo Federation directives."

@@ -154,11 +154,11 @@ The practical implication: when adding code to a generator, distinguish between 
 
 == Rewrite builds independently of legacy Graphitron modules
 
-`graphitron-rewrite/pom.xml` is a self-contained Maven aggregator. `mvn install -f graphitron-rewrite/pom.xml` on a clean local repo builds the rewrite modules (`graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-maven`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool`) without resolving any legacy artifact (`graphitron-common`, `graphitron-java-codegen`, `graphitron-maven-plugin`, `graphitron-schema-transform`). The rewrite tree publishes its own `graphitron-javapoet` at `10-SNAPSHOT`, distinct from the legacy `9-SNAPSHOT` coord.
+`graphitron-rewrite/pom.xml` is a self-contained Maven aggregator. `mvn install -f graphitron-rewrite/pom.xml` on a clean local repo builds the rewrite modules (`graphitron-javapoet`, `graphitron`, `graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-maven-plugin`, `graphitron-sakila-example`, `graphitron-lsp`, `roadmap-tool`) without resolving any legacy artifact (`graphitron-common`, `graphitron-java-codegen`, `graphitron-maven-plugin`, `graphitron-schema-transform`). The rewrite tree publishes its own `graphitron-javapoet` at `10-SNAPSHOT`, distinct from the legacy `9-SNAPSHOT` coord.
 
 The invariant is enforced by `graphitron-rewrite/scripts/verify-standalone-build.sh`, which runs the aggregator against a fresh empty local repo and greps the resulting repo for forbidden legacy coords. Any future change that pulls a legacy dep back into the rewrite tree fails this check.
 
-Rationale: rewrite is the successor; consumers migrating off the legacy generator should be able to depend on the rewrite aggregator alone. The rewrite-owned Maven plugin (`graphitron-maven`) is the entry point; the legacy plugin and schema-transform module remain available for consumers who haven't migrated yet, but rewrite code does not import from them.
+Rationale: rewrite is the successor; consumers migrating off the legacy generator should be able to depend on the rewrite aggregator alone. The rewrite-owned Maven plugin (`graphitron-maven-plugin`) is the entry point; the legacy plugin and schema-transform module remain available for consumers who haven't migrated yet, but rewrite code does not import from them.
 
 '''
 

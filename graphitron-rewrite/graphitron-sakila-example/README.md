@@ -12,7 +12,7 @@ If you're picking up Graphitron for a new project, this module is the answer to 
 | Wiring a GraphiQL playground onto your `/graphql` endpoint | [`src/main/resources/META-INF/resources/graphiql/`](src/main/resources/META-INF/resources/graphiql/) (committed pre-built assets), [`tools/graphiql-build/`](tools/graphiql-build/) (the Vite recipe to refresh them), the redirect branch in [`GraphqlResource`](src/main/java/no/sikt/graphitron/sakila/example/app/GraphqlResource.java) |
 | Pinning your schema's behaviour against PostgreSQL | [`src/test/java/.../querydb/`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/) |
 
-The `pom.xml` shows the shape you need (Quarkus BOM, the rewrite's `graphitron-maven` plugin, jOOQ codegen). Adjust dependencies and packages, drop in your schema, you're done.
+The `pom.xml` shows the shape you need (Quarkus BOM, the rewrite's `graphitron-maven-plugin` plugin, jOOQ codegen). Adjust dependencies and packages, drop in your schema, you're done.
 
 ## Runnable reference (the app)
 
@@ -24,7 +24,7 @@ Three files cover the runtime under [`src/main/java/no/sikt/graphitron/sakila/ex
 
 Why plain JAX-RS rather than `quarkus-smallrye-graphql`: SmallRye GraphQL ships its own engine and would collide with the `Graphitron`-built `GraphQL`. A single `/graphql` resource is the minimal correct shape.
 
-The runtime boots only the **non-federated** schema. Both `graphitron-maven` generator executions in `pom.xml` still run (`schema.graphqls` to `no.sikt.graphitron.generated`, `federated-schema.graphqls` to `no.sikt.graphitron.generated.federated`); the federated build stays a test-only artifact, exercised by [`FederationEntitiesDispatchTest`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/FederationEntitiesDispatchTest.java) and [`FederationBuildSmokeTest`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/FederationBuildSmokeTest.java) in-process.
+The runtime boots only the **non-federated** schema. Both `graphitron-maven-plugin` generator executions in `pom.xml` still run (`schema.graphqls` to `no.sikt.graphitron.generated`, `federated-schema.graphqls` to `no.sikt.graphitron.generated.federated`); the federated build stays a test-only artifact, exercised by [`FederationEntitiesDispatchTest`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/FederationEntitiesDispatchTest.java) and [`FederationBuildSmokeTest`](src/test/java/no/sikt/graphitron/rewrite/test/querydb/FederationBuildSmokeTest.java) in-process.
 
 ### Run the app
 

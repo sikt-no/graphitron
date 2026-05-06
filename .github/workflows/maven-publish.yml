@@ -1,49 +1,78 @@
-name: Maven Package
+name: Maven Publish (rewrite)
 
 on:
+  push:
+    branches:
+      - main
+      - claude/graphitron-rewrite
   release:
     types: [created]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  publish:
+  snapshot:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-    - name: Set up Java for publishing to Maven Central
-      uses: actions/setup-java@v5
-      with:
-        java-version: '21'
-        distribution: 'temurin'
-        server-id: central
-        server-username: MAVEN_USERNAME
-        server-password: MAVEN_PASSWORD
-        gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
-        gpg-passphrase: MAVEN_GPG_PASSPHRASE
+      - name: Set up Java for snapshot publishing
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
 
-    - name: Validate and extract version from release tag
-      run: |
-        # Extract version from GitHub release tag (e.g. v5.0.1 -> 5.0.1)
-        TAG=${GITHUB_REF#refs/tags/}
-        
-        # Validate the tag format (should be v<MAJOR>.<MINOR>.<PATCH>)
-        if ! [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "ERROR: Tag format is invalid. Must be v<MAJOR>.<MINOR>.<PATCH> (e.g. v7.1.2)"
-          exit 1
-        fi
-        
-        VERSION=${TAG#v}
-        echo "Extracted VERSION: $VERSION"
+      - name: Build and deploy snapshot
+        run: mvn -f graphitron-rewrite/pom.xml --batch-mode --errors -Plocal-db deploy
+        env:
+          MAVEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN }}
 
-        # Update the version for release
-        mvn versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false
+  release:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
 
-    - name: Build and publish to Maven Central
-      run: mvn --batch-mode --errors clean deploy -P release
-      env:
-        MAVEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
-        MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN }}
-        MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      - name: Set up Java for publishing to Maven Central
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Validate and extract version from release tag
+        run: |
+          # Extract version from GitHub release tag (e.g. v10.0.0 -> 10.0.0)
+          TAG=${GITHUB_REF#refs/tags/}
+
+          # Validate the tag format (should be v<MAJOR>.<MINOR>.<PATCH>)
+          if ! [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "ERROR: Tag format is invalid. Must be v<MAJOR>.<MINOR>.<PATCH> (e.g. v10.0.0)"
+            exit 1
+          fi
+
+          VERSION=${TAG#v}
+          echo "Extracted VERSION: $VERSION"
+
+          # Update the version for release across the rewrite reactor
+          mvn -f graphitron-rewrite/pom.xml versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false -DprocessAllModules=true
+
+      - name: Build and publish release to Maven Central
+        run: mvn -f graphitron-rewrite/pom.xml --batch-mode --errors -Plocal-db,release clean deploy
+        env:
+          MAVEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}

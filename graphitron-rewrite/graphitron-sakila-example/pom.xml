@@ -14,6 +14,7 @@
     <name>${project.groupId}:${project.artifactId}</name>
 
     <properties>
+        <maven.deploy.skip>true</maven.deploy.skip>
         <outputPackage>no.sikt.graphitron.generated</outputPackage>
         <quarkus.platform.version>3.34.5</quarkus.platform.version>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
@@ -233,7 +234,7 @@
             </plugin>
             <!--
                 Java-17 output ratchet. Generated source files emitted into
-                target/generated-sources by graphitron-maven must compile under Java 17
+                target/generated-sources by graphitron-maven-plugin must compile under Java 17
                 syntax; consumers may be on Java 17 and cannot upgrade the language level of
                 their own build. Pin the compile goal to release 17 so a Java-18+ syntax slip
                 (switch patterns, sealed permits, unnamed variables, etc.) in a generator
@@ -259,7 +260,7 @@
             </plugin>
             <plugin>
                 <groupId>no.sikt</groupId>
-                <artifactId>graphitron-maven</artifactId>
+                <artifactId>graphitron-maven-plugin</artifactId>
                 <version>${project.version}</version>
                 <executions>
                     <execution>
