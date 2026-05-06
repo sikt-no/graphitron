@@ -1,5 +1,5 @@
 ---
-name: spec-review-prompt
+name: srp
 description: Produce a single copy-pasteable code block that prompts another agent to perform a workflow-gate review on a graphitron-rewrite roadmap item. Use when the user asks for a "spec review prompt", "review prompt for R<n>", "Spec → Ready handoff", "In Review → Done handoff", or otherwise wants a hand-off prompt for the workflow-gate review on a specific roadmap item. The emitted prompt encodes the relevant reviewer-rule and pre-fills recent commit history so the next reviewer can apply the rule without digging.
 ---
 
@@ -16,7 +16,7 @@ The user names a roadmap item `R<n>` and asks for a hand-off prompt for the next
 - **Spec → Ready** (item is `status: Spec`). Reviewer reads the spec body and either signs off or requests revisions. Reviewer rule: ≠ last committer of the spec file.
 - **In Review → Done** (item is `status: In Review`). Reviewer reads the shipped implementation against the spec and either approves (delete the spec file, optionally entry the changelog) or requests rework. Reviewer rule: ≠ implementer.
 
-For other statuses (Backlog, Ready, In Progress), no formal review handoff applies; tell the user and stop. For paired sibling skills, see `roadmap` (state machine + ID lookup) and `reviewer-prompt` (architecture-focused code-diff review handoff).
+For other statuses (Backlog, Ready, In Progress), no formal review handoff applies; tell the user and stop. For paired sibling skills, see `roadmap` (state machine + ID lookup) and `reviewer-prompt` (architecture-focused code-diff review handoff). The `principles-architect` subagent is the *forward* counterpart to this skill; suggest it as a self-check when the user is preparing a Spec → Ready handoff and hasn't already consulted it (it's read-only and produces no verdict, so it doesn't compete with the reviewer-rule guard).
 
 ## Procedure
 
