@@ -466,6 +466,19 @@ type FilmCardWrapper @record(record: {className: "no.sikt.graphitron.rewrite.tes
     # single-cardinality RecordTableField rejection) so this fixture exercises the
     # AccessorKeyedSingle path end-to-end.
     film: Film
+    # R88 execution-tier fixture: exercises three accessor-resolution arms via the FilmCardData
+    # `example()` accessor. RecordExample's three fields each resolve through a different arm
+    # — see RecordExampleType's javadoc.
+    example: RecordExample
+}
+
+type RecordExample @record(record: {className: "no.sikt.graphitron.rewrite.test.services.RecordExampleType"}) {
+    # BareName: matches the canonical Java record component accessor `fieldA()`.
+    fieldA: String
+    # GetterPrefixed: matches the bean-style getter `getFieldB()`.
+    fieldB: String
+    # GetterPrefixed via @field(name:) override: resolves "rebound" → `getRebound()`.
+    fieldC: String @field(name: "rebound")
 }
 
 type Category @table(name: "category") {
