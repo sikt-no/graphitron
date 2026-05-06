@@ -64,24 +64,23 @@ Two activation surfaces ship together:
   rewritten and skipped sites. Targeted at consumers with many legacy
   sites (Sikt has ~49 known) where per-site clicking is friction.
 
-## Open design questions
+## Diagnostic shape
 
-- **Diagnostic severity.** WARN (matches the parse-time behaviour) or
-  INFO (the legacy form still works)? WARN aligns with the SDL
-  `@deprecated()` marker; INFO avoids drowning consumers with many
-  legacy sites in a noisy diagnostics panel during the migration
-  window. Pick at Spec.
+The legacy `name:` form is runtime-correct: it resolves via
+`RewriteContext.namedReferences()` to the same FQN that `className:`
+would carry, and the resolver builds an identical `MethodRef`. There
+is no consumer-facing problem to surface, so the LSP emits no
+diagnostic for legacy sites (no entry in the editor's problems
+panel). The quick-fix instead surfaces as an unprompted code action
+on every legacy `ExternalCodeReference` literal — discoverable when
+the cursor sits on the line, not preceded by a problem report.
 
-- **Interaction with R54.** R54 plans renaming `@externalField` to a
-  successor name and lists the LSP quick-fix as one migration-tooling
-  candidate (option b in its open questions). That migration is
-  directive-name → directive-name; this one is
-  input-field-name → input-field-name. The two actions live on
-  different SDL surfaces (the directive's `@<name>` token vs. the
-  `ExternalCodeReference` literal's `name:` field) and ship
-  independently. R54's Spec may choose to fold this item's
-  `WorkspaceEdit` plumbing into a shared migration-action
-  infrastructure if both ship close in time.
+The existing parse-time `LOG.warn(...)` in
+`FieldBuilder.parseExternalRef` (around line 3313, one entry per
+field) lives on a different channel (build log, not editor) and
+serves graphitron-developer migration-tracking rather than consumer
+feedback. Whether to downgrade it to DEBUG to match the LSP framing
+is a sibling decision, out of scope here.
 
 ## Out of scope
 
@@ -92,7 +91,15 @@ Two activation surfaces ship together:
   item's diagnostic can grow a "did you mean `<FQN>`?" hint as a
   follow-on; the base item ships without it.
 
-- Renaming the `@externalField` directive itself (R54).
+- Renaming the `@externalField` directive itself (R54). R93 and R54
+  target disjoint SDL surfaces (the input-field token `name:` inside an
+  `ExternalCodeReference` literal vs. the directive token `@externalField`
+  itself); the two literals never co-occur at the same character range,
+  and either fix is valid in isolation. The only forward-leaning effect
+  is that the per-site + bulk `WorkspaceEdit` machinery R93 lands becomes
+  reusable infrastructure for any future SDL-rewriting migration; if R54
+  picks the LSP-quick-fix migration option, it inherits that machinery
+  for free rather than repaving it.
 
 - Automating the consumer's `namedReferences` config edits when the
   user prefers to keep the legacy form working. The plugin config lives
