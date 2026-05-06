@@ -30,7 +30,7 @@ jobs:
           server-password: MAVEN_PASSWORD
 
       - name: Build and deploy snapshot
-        run: mvn -f graphitron-rewrite/pom.xml --batch-mode --errors -Plocal-db deploy
+        run: mvn -f graphitron-rewrite/pom.xml --batch-mode --errors deploy
         env:
           MAVEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN }}
@@ -71,7 +71,7 @@ jobs:
           mvn -f graphitron-rewrite/pom.xml versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false -DprocessAllModules=true
 
       - name: Build and publish release to Maven Central
-        run: mvn -f graphitron-rewrite/pom.xml --batch-mode --errors -Plocal-db,release clean deploy
+        run: mvn -f graphitron-rewrite/pom.xml --batch-mode --errors -Prelease clean deploy
         env:
           MAVEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN }}
