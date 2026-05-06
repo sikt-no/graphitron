@@ -198,10 +198,11 @@ public class GraphitronSchemaBuilder {
                 // but leaves per-field classification out. Matches pre-Phase-4 behaviour where
                 // such types had no entries in schema.fields().
                 if (parentType instanceof no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType) return;
+                Class<?> parentBackingClass = typeBuilder.recordBackingClasses().get(objType.getName());
                 objType.getFieldDefinitions().forEach(fieldDef ->
                     fields.put(
                         FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()),
-                        fieldBuilder.classifyField(fieldDef, objType.getName(), parentType)));
+                        fieldBuilder.classifyField(fieldDef, objType.getName(), parentType, parentBackingClass)));
             });
         var rewrites = promoteConnectionTypes(ctx);
         var rebuiltAssembled = rebuildAssembledForConnections(ctx.schema, ctx.types, rewrites);
