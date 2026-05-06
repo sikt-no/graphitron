@@ -8,22 +8,22 @@ import java.util.List;
  * constructor by parameter count matching the SDL field count rather than rejecting on the bare
  * presence of multiple constructors.
  *
- * <p>Mirrors {@link SakPayload}'s shape ({@code (String data, List<?> errors)}) so the same SDL
+ * <p>Mirrors {@link SakPayload}'s shape ({@code (String data, List<Object> errors)}) so the same SDL
  * fixtures exercise the canonical-ctor selection path.
  */
 public class MultiCtorSakPayload {
     private final String data;
-    private final List<?> errors;
+    private final List<Object> errors;
 
     public MultiCtorSakPayload() {
         this(null, List.of());
     }
 
-    public MultiCtorSakPayload(String data, List<?> errors) {
+    public MultiCtorSakPayload(String data, List<Object> errors) {
         this.data = data;
         this.errors = errors;
     }
 
     public String data() { return data; }
-    public List<?> errors() { return errors; }
+    public List<Object> errors() { return errors; }
 }

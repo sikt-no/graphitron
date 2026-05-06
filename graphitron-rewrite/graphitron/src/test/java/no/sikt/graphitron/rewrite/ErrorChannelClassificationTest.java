@@ -21,11 +21,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The fixtures use {@code SakPayload} (in {@code dummyreferences}) as the developer-supplied
  * payload class: a Java record with the all-fields constructor
- * {@code (String data, List<?> errors)}. The carrier classifier matches the errors slot by
+ * {@code (String data, List<Object> errors)}. The carrier classifier matches the errors slot by
  * channel-typed structural match: the parameter is the unique parameterised
  * List/Iterable/Collection whose element-type upper bound is a supertype of every channel
- * {@code @error} class. The fixture's {@code @error} types have no resolved backing class, so
- * the constraint is vacuous and {@code List<?>} (element bound {@code Object}) suffices.
+ * {@code @error} class. The {@code Object} element bound matches the source-direct dispatch
+ * contract: the per-fetcher catch arm and the wrapper's pre-execution Jakarta validation step
+ * push raw {@code Throwable}s and {@code GraphQLError}s into the list at runtime, so the slot
+ * must admit both unrelated bounds.
  */
 @UnitTier
 class ErrorChannelClassificationTest {
