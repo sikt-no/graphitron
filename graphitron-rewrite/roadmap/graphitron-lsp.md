@@ -81,9 +81,8 @@ Done, on trunk:
   the `@record` path that already worked. A pipeline-tier smoke
   test now drives completions / hovers / diagnostics through the
   real `ExternalCodeReference` shape so the bug cannot recur.
-  `argMapping` autocomplete and validation stay out of scope (the
-  string-content positions plus R84 dot-paths warrant their own
-  follow-up).
+  `argMapping` autocomplete and validation stay out of scope here;
+  tracked as Phase 4 of R90.
 - **Phase 6** (commits `232f8e0` → `0bbd6f3` → `9f41cdc` → `5c9109d`):
   jtreesitter migration + grammar vendoring. macOS x86_64 / aarch64
   wired; Windows + CI matrix follow-up tracked under R89.
@@ -184,7 +183,8 @@ endpoint.
   nested input-object); the left-hand side is the resolved
   method's Java parameter names. Both sides need string-content
   cursor decomposition rather than tree-sitter argument walking.
-  Deferred to a separate slice; tracked under R18 follow-ups.
+  Tracked as Phase 4 of R90 (`lsp-javaparser-javadoc-and-definitions.md`);
+  ships independently of the JavaParser-driven phases there.
 - LSP server architecture revisits. Single-process lsp4j over a
   loopback socket is the target.
 - Editor-side configuration tooling. Setup recipes ship as docs.
@@ -328,7 +328,8 @@ nested object. Phase 5d corrects this and adds a smoke test that
 exercises completion / hover / diagnostics through the real
 nested shape so the bug cannot recur. `argMapping` autocomplete
 and validation are out of scope here (string-content positions
-plus the R84 dot-path expressions warrant their own slice).
+plus R84 dot-path expressions warrant their own design); tracked
+as Phase 4 of R90 (`lsp-javaparser-javadoc-and-definitions.md`).
 
 The data shape on `CompletionData` (`ExternalReference` / `Method` /
 `Parameter`) is unchanged; `Parameter.source` (the
