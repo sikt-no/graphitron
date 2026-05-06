@@ -229,14 +229,19 @@ hands the recognizer a parsed `Condition`, the recognizer visits the AST, and
 the model carries only the typed `Recognized` outcome. The model never holds a
 SQL string.
 
-The recognizer (next subsection) is on the catalog-side of the boundary too,
-since it imports `org.jooq.Condition`. That's a deliberate, narrow exemption
-matching the existing four-file boundary list (`ServiceCatalog`,
+`ParsedCheckConstraint` is a *pre-classification handoff record*, visible only
+to `CheckRecognizer` and not part of the published model surface. Downstream
+sites (`TypeBuilder`'s classifier wiring, the emitter, the validator) consume
+only `CheckRecognition`. Future maintainers reading `ParsedCheckConstraint`
+should not interpret it as a place to plumb `Condition` deeper into the
+pipeline; the only legitimate consumer is the recognizer.
+
+The recognizer is on the catalog-side of the boundary too, since it imports
+`org.jooq.Condition`. That's a deliberate, narrow exemption matching the
+existing four-file boundary list (`ServiceCatalog`,
 `ServiceDirectiveResolver`, `BatchKeyLifterDirectiveResolver`, `FieldBuilder`):
 the recognizer is a fifth member, dedicated to lifting `Condition` AST shapes
-into typed `CheckRecognition` outcomes. Everything downstream (`TypeBuilder`'s
-classifier wiring, the emitter, the validator) consumes only
-`CheckRecognition`.
+into typed `CheckRecognition` outcomes.
 
 ### `CheckRecognizer`
 
@@ -416,9 +421,18 @@ wears the matching `@LoadBearingClassifierCheck` per key:
 
 | Key                                        | Invariant the emitter relies on                                              |
 |--------------------------------------------|-----------------------------------------------------------------------------|
-| `check-recognition.string-one-of-non-empty` | `StringOneOf.literals` is non-empty (regex compilation requires it)         |
+| `check-recognition.string-one-of-non-empty` | `StringOneOf.literals` is non-empty                                         |
 | `check-recognition.regex-is-java-pattern`   | `RegexMatch.regex` parses as a `java.util.regex.Pattern` (no Postgres-only constructs) |
 | `check-recognition.length-bounds-ordered`   | `LengthBound.min <= LengthBound.max`                                        |
+
+The emitter joins `StringOneOf.literals` with `Pattern.quote` per literal and
+`|` between, producing `^(\Qlit1\E|\Qlit2\E|...)$`. Per-literal regex
+quoting is the emitter's responsibility, not a recognizer invariant: the
+recognizer's contract ends at "the literal strings as the AST yielded them".
+A `StringOneOf(col, [])` would still fail at emit time without the
+non-empty key (`"^()$"` matches only the empty string, which is silently
+wrong rather than a compile error), which is why this single key is
+load-bearing.
 
 `LoadBearingGuaranteeAuditTest` covers all three keys automatically. A future
 relaxation of the recognizer (admitting an empty `StringOneOf`, say) would
@@ -490,11 +504,9 @@ The four-file delta (plus model + emitter glue):
   emits `GeneratedConstraintMapping` (the runtime artifact). Walks every
   classified `TableType` whose `columnConstraints` is non-empty plus every
   classified input bean whose fields map to those columns.
-- `JooqCatalog.java`: add `findCheckConstraints(Table<?>)` and the package-
-  private extraction helper (Option 1: `renderInlined(condition())`).
-- `BuildContext.java`: thread an `org.jooq.Parser` reference (from the
-  `DSLContext` already held there) so the recognizer can reparse the
-  rendered text into a stable AST.
+- `JooqCatalog.java`: add `findCheckConstraints(Table<?>)` returning
+  `List<ParsedCheckConstraint>`, where each entry holds jOOQ's already-parsed
+  `Condition` directly. No text rendering, no parser round-trip.
 - `TypeBuilder.buildResultType` (or the per-`@table` resolution site): walk
   `JooqCatalog.findCheckConstraints(table)`, run each through
   `CheckRecognizer.recognize(...)`, partition into `Recognized` and
@@ -532,19 +544,24 @@ guide:
 
 ### Unit-tier
 
-- `CheckRecognizerTest`: one method per recognized shape (input: a parsed
-  `Condition` built via `DSL.condition(...)`; expected: the matching
-  `Recognized` arm with typed fields). One method per `UnrecognizedReason`
-  with the reason captured.
-- `ColumnConstraintTest`: assertions on the carrier shape; not strictly
-  needed but pins the principle ("`Recognized.column()` accessor on the
-  sealed root").
+- `CheckRecognizerTest`: invariant-pinning only, not per-shape coverage.
+  Asserts the recognizer rejects a multi-column predicate with
+  `UnrecognizedReason.CROSS_COLUMN_PREDICATE` rather than partial
+  recognition; asserts an empty `IN ()` list (parser-allowed but
+  semantically empty) hits `UnrecognizedReason.UNSUPPORTED_OPERATOR`
+  rather than producing an empty `StringOneOf`. Per-shape behaviour is
+  pipeline-tier work below; this tier exists to pin invariants the
+  type system can't.
 
 ### Pipeline-tier (the primary behavioural tier)
 
 - `CheckConstraintClassificationTest`: an SDL with `@table` on a fixture table
   carrying recognized CHECKs goes through `GraphitronSchemaBuilder`; assert
   `TableType.columnConstraints()` is populated with the expected shapes.
+  One CHECK per recognized shape (`StringOneOf`, `NumericRange`,
+  `LengthBound`, `RegexMatch`, `NotNullCheck`); one execution path per
+  variant landing here (per *Pipeline tests are the primary behavioural
+  tier*).
 - `CheckConstraintStrictModeTest`: the same fixture with one unrecognized
   CHECK; assert `GraphitronSchemaValidator` reports
   `UnrecognizedCheckConstraint` under default strict mode and skips it under
@@ -586,7 +603,8 @@ phase 1 alone surfaces only the build-time strict-mode signal.
 
 ### Phase 1: recognizer and model
 
-- New model files (`CheckRecognition`, `ColumnConstraint`, `RawCheckConstraint`).
+- New model files (`CheckRecognition`, `ColumnConstraint`,
+  `JooqCatalog.ParsedCheckConstraint`).
 - `CheckRecognizer`.
 - `JooqCatalog.findCheckConstraints`.
 - Wire into `TypeBuilder` to populate `TableType.columnConstraints`.
@@ -643,14 +661,17 @@ the original motivation's "shorter loop" goal.
 1. *Strict-mode default.* ERROR (per the principle), with the directive
    opt-out. Open to flip if early-adopter feedback says it's too noisy on
    real consumer schemas.
-2. *Postgres normalisation: integration test pin.* The recognizer's
-   vocabulary list above is normative against jOOQ's `renderInlined` form.
-   That's what the recognizer eats; what the schema author wrote is
-   irrelevant once Postgres has parsed and re-rendered it. Phase 1 includes
-   a pipeline-tier test that round-trips one CHECK per shape through
-   Postgres (via the `local-db` profile) and asserts the recognizer
-   accepts the rendered text. This pins the recognizer against jOOQ's
-   actual output, not paper-schema assumptions.
+2. *Postgres normalisation: integration test pin.* The recognizer eats the
+   parsed `Condition` jOOQ hands back; what the schema author wrote is
+   irrelevant once Postgres has parsed and re-rendered it into the AST jOOQ
+   then ingests. The vocabulary list above is normative against the AST
+   shapes jOOQ produces from Postgres-normalised CHECK constraints. Phase 1
+   includes a pipeline-tier test that round-trips one CHECK per shape
+   through Postgres (via the `local-db` profile) and asserts the recognizer
+   classifies it correctly. This pins the recognizer against jOOQ's actual
+   AST output, not paper-schema assumptions. (`renderInlined` is used only
+   in the diagnostic `Unrecognized.renderedExpression` field for build-time
+   error messages; the recognizer never reads it.)
 3. *NOT NULL overlap.* Postgres synthesises `CHECK (col IS NOT NULL)` for
    every `NOT NULL` column. With `<includeSystemCheckConstraints>` off (the
    default), these don't appear in `getChecks()`; they live as the column's
@@ -672,7 +693,10 @@ the original motivation's "shorter loop" goal.
    split `Recognized` into `SingleColumn` (carrying `column()`) and a
    sibling `MultiColumn` (carrying its own column-set accessor) before
    adding the cross-column permit, rather than retrofitting a nullable
-   accessor on the existing root.
+   accessor on the existing root. Per *Sealed hierarchies over enums for
+   typed information* (rewrite-design-principles.adoc:25, "sealed sub-
+   interfaces per axis rather than inventing a god accessor whose
+   meaning depends on the variant").
 
 ---
 
@@ -688,7 +712,12 @@ the original motivation's "shorter loop" goal.
   validator class plus its `ConstraintValidator`) or a per-column
   `@Min`/`@Max` pair when the literals form a contiguous range. Both
   bigger surface than v1; tracked here so the strict-mode error message
-  can point at this entry.
+  can point at this entry. Worth noting: when the custom `@OneOf` lift
+  ships, `StringOneOf` should also migrate from `PatternDef` to
+  `@OneOf(String...)` so the string and numeric arms share one constraint
+  shape rather than splitting across two encodings (regex vs. value-set).
+  Until then, the asymmetry (string `IN` lists emit as `PatternDef`,
+  numeric `IN` lists reject) is deliberate and documented here.
 - *Custom `ConstraintValidator` per CHECK* for shapes the recognizer
   can't model. Costly (one generated class per CHECK; runtime evaluator
   for arbitrary SQL); rejected up front in the design conversation.
