@@ -10,7 +10,7 @@ Authoritative descriptions of every directive, every Maven plugin parameter, eve
 
 == Maven plugin
 
-* xref:mojo-configuration.adoc[Maven plugin configuration]: every parameter on every goal of `graphitron-maven`. Covers the three goals (`generate`, `validate`, `dev`), the shared `<configuration>` parameters (`outputDirectory`, `outputPackage`, `jooqPackage`, `schemaInputs`, `namedReferences`), the `dev`-only watch parameters (`port`, `debounceMs`, `skipInitial`), and the two complex POM bindings (`<schemaInput>`, `<namedReference>`).
+* xref:mojo-configuration.adoc[Maven plugin configuration]: every parameter on every goal of `graphitron-maven-plugin`. Covers the three goals (`generate`, `validate`, `dev`), the shared `<configuration>` parameters (`outputDirectory`, `outputPackage`, `jooqPackage`, `schemaInputs`, `namedReferences`), the `dev`-only watch parameters (`port`, `debounceMs`, `skipInitial`), and the two complex POM bindings (`<schemaInput>`, `<namedReference>`).
 
 == Diagnostics
 

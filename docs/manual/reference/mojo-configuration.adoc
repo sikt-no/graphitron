@@ -1,8 +1,8 @@
 = Maven plugin configuration
-:description: Every parameter of every goal on Graphitron's Maven plugin (graphitron-maven). Covers the three goals (generate, validate, dev), the four shared <configuration> parameters, the dev-only watch parameters, the two complex POM bindings (<schemaInput>, <namedReference>), and the CLI -D properties.
+:description: Every parameter of every goal on Graphitron's Maven plugin (graphitron-maven-plugin). Covers the three goals (generate, validate, dev), the four shared <configuration> parameters, the dev-only watch parameters, the two complex POM bindings (<schemaInput>, <namedReference>), and the CLI -D properties.
 :!toc:
 
-`graphitron-maven` exposes three Maven goals: `generate` (the build-time codegen pipeline), `validate` (a faster schema-only run that emits no Java), and `dev` (the editor-loop server). Each goal accepts the same handful of `<configuration>` parameters; `dev` adds three of its own. Two of the parameters (`<schemaInputs>` and `<namedReferences>`) are list-of-complex-objects with their own POM bindings.
+`graphitron-maven-plugin` exposes three Maven goals: `generate` (the build-time codegen pipeline), `validate` (a faster schema-only run that emits no Java), and `dev` (the editor-loop server). Each goal accepts the same handful of `<configuration>` parameters; `dev` adds three of its own. Two of the parameters (`<schemaInputs>` and `<namedReferences>`) are list-of-complex-objects with their own POM bindings.
 
 This page is the parameter-by-parameter reference. The xref:../tutorial/01-prerequisites.adoc[tutorial's first chapter] introduces the canonical `<configuration>` shape with one schema input and the two required packages; the directive reference under xref:directives/index.adoc[`reference/directives`] covers what each schema input declares.
 
@@ -28,7 +28,7 @@ This page is the parameter-by-parameter reference. The xref:../tutorial/01-prere
 | `<outputPackage>`, `<jooqPackage>`
 |===
 
-The plugin coordinates are `no.sikt:graphitron-maven`; bind a goal to a `<execution>` block under the rewrite plugin's `<executions>` to wire it into the standard Maven lifecycle, or invoke from the command line with `mvn graphitron:<goal>`.
+The plugin coordinates are `no.sikt:graphitron-maven-plugin`; bind a goal to a `<execution>` block under the rewrite plugin's `<executions>` to wire it into the standard Maven lifecycle, or invoke from the command line with `mvn graphitron:<goal>`.
 
 == Shared parameters
 
@@ -165,7 +165,7 @@ The canonical generate-and-deploy `<execution>` against the example schema:
 ----
 <plugin>
     <groupId>no.sikt</groupId>
-    <artifactId>graphitron-maven</artifactId>
+    <artifactId>graphitron-maven-plugin</artifactId>
     <version>${graphitron.version}</version>
     <executions>
         <execution>
@@ -189,7 +189,7 @@ For the dev loop add a second execution bound to no phase, or invoke `mvn graphi
 
 == Drift protection
 
-A bidirectional coverage test (`MojoDocCoverageTest` in `graphitron-maven`) asserts every `@Parameter`-annotated field on `AbstractRewriteMojo`, `GenerateMojo`, `ValidateMojo`, and `DevMojo` has a row in this page's parameter tables, and every parameter row corresponds to an annotated field on one of those Mojos. A new `@Parameter` field cannot land green without a doc row; a removed field forces the row's removal.
+A bidirectional coverage test (`MojoDocCoverageTest` in `graphitron-maven-plugin`) asserts every `@Parameter`-annotated field on `AbstractRewriteMojo`, `GenerateMojo`, `ValidateMojo`, and `DevMojo` has a row in this page's parameter tables, and every parameter row corresponds to an annotated field on one of those Mojos. A new `@Parameter` field cannot land green without a doc row; a removed field forces the row's removal.
 
 == See also
 

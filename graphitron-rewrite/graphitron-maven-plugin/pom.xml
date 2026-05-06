@@ -11,7 +11,7 @@
         <version>10-SNAPSHOT</version>
     </parent>
 
-    <artifactId>graphitron-maven</artifactId>
+    <artifactId>graphitron-maven-plugin</artifactId>
     <packaging>maven-plugin</packaging>
     <name>${project.groupId}:${project.artifactId}</name>
     <url>https://github.com/sikt-no/graphitron</url>
