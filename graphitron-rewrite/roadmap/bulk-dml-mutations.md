@@ -1,7 +1,7 @@
 ---
 id: R77
 title: "Bulk DML mutations: listed @table input arguments"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 1
 theme: mutations-errors
