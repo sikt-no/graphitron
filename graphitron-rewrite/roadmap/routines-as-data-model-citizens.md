@@ -66,10 +66,13 @@ These are the forks the Spec will need to land. None of them are settled here:
 - **Procedure-with-OUT-params support.** Mutation-shaped, separate item.
 - **Record-returning function support.** Walks the rewrite's record-mapping pipeline; separate item.
 - **Renaming or stabilising past the `experimental_` prefix** once the carrier is decided. Standard stabilisation step, separate item.
+- **A `mode:` / `target:` flag on the carrier** that re-defines argument-source semantics by structural presence (legacy's pattern). Heterogeneous binding sources are an attribute of each binding, not a directive-level mode switch; bundling them under one mode-flagged directive is precisely the legacy shape this item rejects.
 
 ## Adjacency
 
-- Legacy reference: PR sikt-no/graphitron#489 (`GG-129-input-procedures` branch) and the merged `baf8c10` precursor. Useful as a list of error cases the validator should cover, not as a shape to copy.
+- Legacy reference: PR sikt-no/graphitron#489 (`GG-129-input-procedures` branch) and the merged `baf8c10` precursor. Useful as a list of error cases the validator should cover, not as a shape to copy. Two concrete copy-targets for the day-one scalar-projection slice:
+    - **Error catalog floor.** Legacy's 12-entry `ProcedureCallError` enum (`graphitron-codegen-parent/graphitron-java-codegen/src/main/java/no/sikt/graphitron/validation/messages/ProcedureCallError.java`) names the minimum set of rejection arms a routine-directive resolver in the rewrite must cover: `UNKNOWN_ROUTINE`, `AMBIGUOUS_ROUTINE`, `NOT_A_FUNCTION`, `MISSING_TABLE`, `UNKNOWN_PARAMETER`, `MISSING_PARAMETER`, `NONEXISTENT_COLUMN`, `RETURN_TYPE_MISMATCH`, `ON_ROOT_OPERATION`, `ON_NON_SCALAR_FIELD_TYPE`, `ON_INTERFACE_DECLARATION`, `ILLEGAL_COMBINATION` (with `@field` / `@externalField` / `@reference`). Several are taxonomy-shaped checks the resolver must replicate regardless of carrier shape.
+    - **Validation fixture set.** Legacy's 18 minimal isolated fixtures under `graphitron-codegen-parent/graphitron-java-codegen/src/test/resources/validation/query/procedureCall*/schema.graphqls` each tie one error code to one schema. They translate directly into classification-tier coverage (one fixture per resolver rejection arm); preserve them rather than re-deriving from scratch.
 - Existing rewrite directive resolvers in `FieldBuilder` (ServiceDirectiveResolver, TableMethodDirectiveResolver, etc.) are the closest pattern to follow.
 - `RoutineReflection` in `graphitron-common` is reusable across legacy and rewrite.
 - `ArgBindingMap` / `ArgCallEmitter` are the existing mechanism for "GraphQL argument → Java parameter" binding and would be reused for the GraphQL-argument-source case, regardless of which carrier shape lands.
