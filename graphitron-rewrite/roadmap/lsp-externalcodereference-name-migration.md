@@ -50,6 +50,20 @@ diagnostic surfaces the unknown-name string but no auto-fix is offered
 (the LSP cannot invent the FQN; the user must either add the entry to
 `namedReferences` config or write `className:` explicitly).
 
+Two activation surfaces ship together:
+
+- **Per-site quick-fix.** Cursor on (or selection touching) a single
+  legacy `ExternalCodeReference` literal, code-action invocation
+  rewrites that one site.
+- **Workspace-level bulk action.** "Migrate all
+  `ExternalCodeReference.name` in this schema" composes the N
+  per-site edits into one `WorkspaceEdit` and applies them atomically.
+  Sites whose `name:` value does not resolve in `namedReferences` are
+  skipped (their diagnostics remain) so the bulk action never silently
+  loses information; the action's result message names the count of
+  rewritten and skipped sites. Targeted at consumers with many legacy
+  sites (Sikt has ~49 known) where per-site clicking is friction.
+
 ## Open design questions
 
 - **Diagnostic severity.** WARN (matches the parse-time behaviour) or
@@ -57,12 +71,6 @@ diagnostic surfaces the unknown-name string but no auto-fix is offered
   `@deprecated()` marker; INFO avoids drowning consumers with many
   legacy sites in a noisy diagnostics panel during the migration
   window. Pick at Spec.
-
-- **Bulk action.** Offer a workspace-level "migrate all
-  `ExternalCodeReference.name` in this schema" action alongside the
-  per-site quick-fix? Cheap if the per-site action is text-edit-shaped
-  (compose N edits into one `WorkspaceEdit`); valuable for consumers
-  with the ~49 known Sikt sites, where clicking each one is friction.
 
 - **Interaction with R54.** R54 plans renaming `@externalField` to a
   successor name and lists the LSP quick-fix as one migration-tooling
