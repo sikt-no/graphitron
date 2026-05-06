@@ -1,7 +1,7 @@
 ---
 id: R93
 title: "LSP quick-fix: ExternalCodeReference name → className migration"
-status: Backlog
+status: Spec
 bucket: Backlog
 priority: 18
 theme: legacy-migration
@@ -124,6 +124,135 @@ The split keeps the LSP classifier-aligned: the diagnostic mirrors the
 classifier's actual rejection arm (`lookupError`), not the deprecation
 arm (which is correctly silent at the LSP layer because the build
 channel already covers it).
+
+## Implementation sites
+
+New files under `graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/`:
+
+- `parsing/ExternalCodeReferenceBindings.java` — registry of every
+  `(directiveName, outerArgName, nestedPath?)` tuple where the parser
+  binds an `ExternalCodeReference`. Eight entries at landing time
+  (the seven directives plus `@reference(path: [{condition: …}])`).
+  Single source of truth for "where can an `ExternalCodeReference`
+  literal appear in the SDL".
+- `code_action/SdlMigration.java` — the reusable primitive (working
+  name; final shape per "Open architectural decisions" below). Two
+  slots: detector (returns the ranges to act on) and per-range
+  rewrite (produces the text edit per range).
+- `code_action/CodeActions.java` — entry-point provider. Receives the
+  LSP `textDocument/codeAction` request, runs the
+  `name → className` migration's `SdlMigration` instance, and emits
+  per-site quick-fix and workspace-level bulk-action code actions.
+
+Modified files in the same module:
+
+- `completions/ClassNameCompletions.java` — `outerArgOf` is replaced
+  by a call into `ExternalCodeReferenceBindings`. The five
+  previously unwired sites (`@externalField`, `@enum`, `@tableMethod`,
+  `@batchKeyLifter`, `ReferenceElement.condition`) start returning
+  candidates as a side effect.
+- `completions/MethodCompletions.java` — already delegates to
+  `ClassNameCompletions.outerArgOf`; no edit needed beyond the
+  upstream change. New sites gain method-name completion as the
+  same side effect.
+- `diagnostics/Diagnostics.java` — `compute()` (around line 41–49)
+  enumerates `(directive, outerArg)` tuples explicitly today; switches
+  to iterating `ExternalCodeReferenceBindings`. New sites gain the
+  existing `validateExternalCodeReference` arms (`lookupError`,
+  argMapping, etc.) automatically. Adds the legacy-and-unresolved
+  arm described in "Diagnostic shape" — error-severity diagnostic
+  mirroring `FieldBuilder.parseExternalRef`'s `ExternalRef.lookupError`
+  (around line 3318).
+- `server/GraphitronTextDocumentService.java` — wires `codeAction(...)`
+  to `CodeActions`, advertises `codeActionProvider` (and
+  `executeCommandProvider` for the bulk action) in
+  `serverCapabilities()`.
+- `state/Workspace.java` — exposes the `namedReferences` lookup the
+  code-action provider consumes (the `RewriteContext` it carries
+  already holds the map; the surface may need a thin getter).
+
+## Tests
+
+Four tests, organised by tier:
+
+### Unit-tier
+
+- `ExternalCodeReferenceBindingsTest`: assert the registry contains
+  all eight binding sites with the right
+  `(directive, outerArg, nestedPath?)` shape; assert lookup-by-
+  directive and iterate-all surfaces both work.
+- `SdlMigrationTest`: synthetic SDL fixture with mixed legacy /
+  modern shapes; the detector returns the expected literal ranges,
+  the rewrite slot produces the expected `TextEdit` per range,
+  resolvable vs. unresolvable sites partition correctly.
+
+### LSP-tier
+
+- `CodeActionsTest`: `textDocument/codeAction` requests against a
+  fixture document return the expected `WorkspaceEdit`. Cases:
+  per-site on a resolvable literal (one `TextEdit`); per-site on
+  an unresolvable literal (no quick-fix offered; diagnostic
+  present); workspace-level bulk action (one `WorkspaceEdit`
+  covering every resolvable site, unresolvable sites skipped).
+- `DiagnosticsTest` extension: legacy-and-resolves emits no
+  diagnostic; legacy-and-unresolved emits one error-severity
+  diagnostic naming the unresolved name and pointing at the two
+  fixes. Coverage extends to all eight binding sites — the test
+  fixture grows to include one example per site.
+- `ClassNameCompletionsTest` extension: existing three-site cases
+  pass after the `outerArgOf` migration (no behaviour change for
+  `@service` / `@condition` / `@record`); five new cases cover
+  the previously unwired sites.
+
+## Phasing
+
+Two slices, each independently shippable through the canonical
+Backlog → Spec → Ready → In Progress → In Review → Done flow.
+
+### Phase 1: registry + light up unwired sites
+
+- Introduce `ExternalCodeReferenceBindings`.
+- `ClassNameCompletions.outerArgOf` migrates onto it.
+- `Diagnostics.compute()` iterates the registry rather than its
+  hardcoded tuple list.
+- All five previously unwired sites gain completion + diagnostic
+  surface as a side effect.
+- `ExternalCodeReferenceBindingsTest` plus the
+  `ClassNameCompletionsTest` / `DiagnosticsTest` extensions.
+
+Acceptance: existing three-site coverage extends to all eight; no
+behaviour change for the existing three.
+
+### Phase 2: code-action surface
+
+- Introduce `SdlMigration` and the `name → className` instance.
+- `CodeActions` provider, registered in
+  `GraphitronTextDocumentService`.
+- The legacy-and-unresolved diagnostic arm in `Diagnostics`.
+- `SdlMigrationTest` and `CodeActionsTest`.
+
+Acceptance: editor users can right-click on a legacy `name:` literal
+and apply the migration; "Migrate all `ExternalCodeReference.name` in
+this schema" composes the resolvable sites into one `WorkspaceEdit`.
+Unresolvable sites surface as error diagnostics in the problems panel.
+
+## Open architectural decisions
+
+1. **`SdlMigration` final shape.** The spec uses the working name
+   to mean "detector returning ranges + per-range rewrite producing
+   text edit". Final shape (record? sealed interface? functional
+   interface taking the parsed tree-sitter node?) decided during
+   Phase 2 implementation; the choice does not affect Phase 1.
+2. **`outerArgOf` migration scope.** Phase 1 migrates
+   `ClassNameCompletions.outerArgOf` (the canonical lookup; both
+   `MethodCompletions` and the relevant `Diagnostics` call sites
+   already delegate through it). If implementation surfaces a
+   sibling hardcoded map elsewhere in the LSP, it joins Phase 1
+   silently rather than carrying a separate spec amendment.
+3. **Bulk-action result wording.** The structural commitment is
+   "report rewritten count, refer to per-site diagnostics for the
+   rest"; the literal string ("Migrated N legacy `name:` sites; M
+   unresolvable — see problems panel") is finalised at impl time.
 
 ## Out of scope
 
