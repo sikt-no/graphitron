@@ -1,7 +1,7 @@
 ---
 id: R94
 title: "Emit SDL input types as graphitron-internal Java records (validation seam)"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 7
 theme: mutations-errors
