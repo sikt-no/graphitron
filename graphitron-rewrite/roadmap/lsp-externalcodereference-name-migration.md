@@ -1,7 +1,7 @@
 ---
 id: R93
 title: "LSP quick-fix: ExternalCodeReference name → className migration"
-status: Ready
+status: In Progress
 bucket: Backlog
 priority: 5
 theme: legacy-migration

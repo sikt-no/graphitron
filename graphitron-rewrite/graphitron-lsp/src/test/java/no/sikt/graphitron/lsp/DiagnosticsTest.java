@@ -321,6 +321,101 @@ class DiagnosticsTest {
     }
 
     @Test
+    void unknownExternalFieldClassProducesError() {
+        var file = file("""
+            type Foo {
+                bar: Int @externalField(reference: {className: "com.example.Missing"})
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealService"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("Missing").contains("class");
+    }
+
+    @Test
+    void unknownEnumClassProducesError() {
+        var file = file("""
+            enum Foo @enum(enumReference: {className: "com.example.Missing"}) { A B }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealEnum"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("Missing");
+    }
+
+    @Test
+    void unknownTableMethodClassProducesError() {
+        var file = file("""
+            type Foo {
+                bar: Int @tableMethod(tableMethodReference: {className: "com.example.Missing", method: "foo"})
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealTableMethod"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("Missing");
+    }
+
+    @Test
+    void unknownBatchKeyLifterClassProducesError() {
+        var file = file("""
+            type Foo {
+                bar: Int @batchKeyLifter(lifter: {className: "com.example.Missing", method: "foo"}, targetColumns: ["id"])
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealLifter"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("Missing");
+    }
+
+    @Test
+    void unknownReferencePathConditionClassProducesError() {
+        var file = file("""
+            type Foo {
+                bar: Int @reference(path: [{condition: {className: "com.example.Missing", method: "foo"}}])
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealCondition"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("Missing");
+    }
+
+    @Test
+    void knownExternalFieldClassProducesNoError() {
+        var file = file("""
+            type Foo {
+                bar: Int @externalField(reference: {className: "com.example.RealService", method: "foo"})
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealService"));
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void unknownTableMethodMethodOnKnownClassProducesError() {
+        var file = file("""
+            type Foo {
+                bar: Int @tableMethod(tableMethodReference: {className: "com.example.FilmService", method: "ghost"})
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, classWithListMethod());
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("ghost");
+    }
+
+    @Test
     void emptyExternalReferencesSuppressesUnknownClassDiagnostic() {
         // Pre-`mvn compile` state: the scanner has nothing yet. Reporting
         // every reference as unknown in that state would be noise.
