@@ -55,14 +55,35 @@ Done, on trunk:
   jOOQ-generated source tree (file-level URIs; per-line refinement
   was originally folded into Phase 5 on top of JavaParser; deferred
   with the JavaParser follow-up).
-- **Phase 5** (commits `ed5ebf3` → `39ca34f` → this commit):
+- **Phase 5** (commits `ed5ebf3` → `39ca34f` → `a672c82` → 5d):
   `@service` / `@condition` / `@record` autocomplete, hover, and
   diagnostics. The classpath scanner walks `target/classes` via
   `java.lang.classfile` and surfaces public top-level classes plus
   their public methods with erased parameter types; the LSP offers
-  class-FQN completion in `class:` slots, method-name completion in
-  `method:` slots, and per-reference diagnostics for unknown class /
-  unknown method / `-parameters`-missing. A3 closes here.
+  class-FQN completion, method-name completion, and per-reference
+  diagnostics for unknown class / unknown method / `-parameters`-
+  missing. A3 closes here.
+
+  **Phase 5d (directive-shape correction).** Commits 5a/5b/5c shipped
+  against a flat-arg shape (`@service(class: "X", method: "foo")`)
+  that does not exist. The actual directive surface, defined by
+  `directives.graphqls`, takes a single nested `ExternalCodeReference`
+  input: `@service(service: {className:, method:, argMapping:})`,
+  `@condition(condition: {className:, method:, argMapping:})`, and
+  `@record(record: {className:})`. `@record`'s nested shape was
+  modelled correctly from the start; `@service` and `@condition`
+  silently returned no completions / hovers / diagnostics against
+  real schemas because their providers looked for top-level `class:`
+  and `method:` arguments that the parser never produced. 5d
+  rewrites the providers and validators to descend through the
+  outer `service:` / `condition:` / `record:` argument and operate
+  on the nested object's `className` / `method` fields, mirroring
+  the `@record` path that already worked. A pipeline-tier smoke
+  test now drives completions / hovers / diagnostics through the
+  real `ExternalCodeReference` shape so the bug cannot recur.
+  `argMapping` autocomplete and validation stay out of scope (the
+  string-content positions plus R84 dot-paths warrant their own
+  follow-up).
 - **Phase 6** (commits `232f8e0` → `0bbd6f3` → `9f41cdc` → `5c9109d`):
   jtreesitter migration + grammar vendoring. macOS x86_64 / aarch64
   wired; Windows + CI matrix follow-up tracked under R89.
@@ -158,6 +179,12 @@ endpoint.
   per-line `Column.definition` / `Method.definition` refinement,
   and `@externalField` source-walk completion. All deferred to a
   JavaParser-driven follow-up roadmap item.
+- `argMapping` autocomplete and validation. The right-hand side
+  is the field's GraphQL argument list (or a R84 dot-path into a
+  nested input-object); the left-hand side is the resolved
+  method's Java parameter names. Both sides need string-content
+  cursor decomposition rather than tree-sitter argument walking.
+  Deferred to a separate slice; tracked under R18 follow-ups.
 - LSP server architecture revisits. Single-process lsp4j over a
   loopback socket is the target.
 - Editor-side configuration tooling. Setup recipes ship as docs.
@@ -283,9 +310,25 @@ Class enumeration alternatives considered and rejected:
   consumers attach to service classes.** Adds an authoring step;
   surface stays empty until consumers migrate every service class.
 - **The POM's `namedReferences` map.** Covers only the legacy
-  `@service(name:)` form, and modern `@service(class:)` and
-  `@record(record: {className:})` schemas do not populate the map
-  at all; the autocomplete surface would be mostly empty.
+  `@service(name:)` form, and modern `@service(service:
+  {className:, method:})` / `@condition(condition: {className:,
+  method:})` / `@record(record: {className:})` schemas do not
+  populate the map at all; the autocomplete surface would be
+  mostly empty.
+
+The directive-argument shape was misread in commits 5a/5b/5c: the
+providers expected flat top-level `class:` and `method:` arguments
+on `@service` / `@condition` and only descended into a nested
+object for `@record`. The actual surface is uniform — every one
+of `@service`, `@condition`, `@record` takes a single nested
+`ExternalCodeReference` input under an outer arg whose name
+matches the directive (`service:` / `condition:` / `record:`),
+with `className`, `method`, and `argMapping` fields on the
+nested object. Phase 5d corrects this and adds a smoke test that
+exercises completion / hover / diagnostics through the real
+nested shape so the bug cannot recur. `argMapping` autocomplete
+and validation are out of scope here (string-content positions
+plus the R84 dot-path expressions warrant their own slice).
 
 The data shape on `CompletionData` (`ExternalReference` / `Method` /
 `Parameter`) is unchanged; `Parameter.source` (the
@@ -293,10 +336,13 @@ The data shape on `CompletionData` (`ExternalReference` / `Method` /
 classifier-driven population is generator-side work and the LSP does
 not need it for the autocomplete / hover surface that ships here.
 
-Phase 5 exit criteria, all met: schema author gets class-FQN
-completion on `@service(class:)` / `@condition(class:)` /
+Phase 5 exit criteria, all met (after 5d's shape correction):
+schema author gets class-FQN completion on
+`@service(service: {className:})` /
+`@condition(condition: {className:})` /
 `@record(record: {className:})`; method-name completion on
-`@service(method:)` / `@condition(method:)`; hover shows the method
+`@service(service: {method:})` and
+`@condition(condition: {method:})`; hover shows the method
 signature and a `-parameters`-missing hint when applicable;
 diagnostics flag unknown class / unknown method / parameters-missing
 per reference. A3 closed.

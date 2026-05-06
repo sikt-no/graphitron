@@ -14,10 +14,11 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end tests for the {@code @service} / {@code @condition} /
- * {@code @record} class-name completion provider. Each test parses a
- * fragment with the cursor inside the relevant slot and asserts the
- * scanner-derived FQN list comes back as completion items.
+ * Class-name completion against the actual {@code ExternalCodeReference}
+ * shape in {@code directives.graphqls}: each of {@code @service},
+ * {@code @condition}, and {@code @record} carries one outer arg whose
+ * key matches the directive name and whose value is an object with
+ * {@code className} / {@code method} / {@code argMapping} fields.
  */
 class ClassNameCompletionsTest {
 
@@ -31,8 +32,8 @@ class ClassNameCompletionsTest {
     );
 
     @Test
-    void serviceClassArgumentCompletesFqns() {
-        String source = "type Query { x: Int @service(class: \"\", method: \"foo\") }\n";
+    void serviceClassNameCompletesFqns() {
+        String source = "type Query { x: Int @service(service: {className: \"\", method: \"foo\"}) }\n";
         Point cursor = new Point(0, source.indexOf('"') + 1);
 
         var items = run(source, cursor, "service");
@@ -42,8 +43,8 @@ class ClassNameCompletionsTest {
     }
 
     @Test
-    void conditionClassArgumentCompletesFqns() {
-        String source = "type Query { x: Int @condition(class: \"\", method: \"foo\") }\n";
+    void conditionClassNameCompletesFqns() {
+        String source = "type Query { x: Int @condition(condition: {className: \"\", method: \"foo\"}) }\n";
         Point cursor = new Point(0, source.indexOf('"') + 1);
 
         var items = run(source, cursor, "condition");
@@ -52,7 +53,7 @@ class ClassNameCompletionsTest {
     }
 
     @Test
-    void recordClassNameNestedFieldCompletesFqns() {
+    void recordClassNameCompletesFqns() {
         String source = "input Foo @record(record: {className: \"\"}) { bar: Int }\n";
         Point cursor = new Point(0, source.indexOf('"') + 1);
 
@@ -62,9 +63,19 @@ class ClassNameCompletionsTest {
     }
 
     @Test
-    void cursorOutsideClassArgReturnsEmpty() {
-        // Cursor inside method:, not class:.
-        String source = "type Query { x: Int @service(class: \"com.example.FilmService\", method: \"\") }\n";
+    void cursorOutsideClassNameReturnsEmpty() {
+        // Cursor inside method:, not className:.
+        String source = "type Query { x: Int @service(service: {className: \"com.example.FilmService\", method: \"\"}) }\n";
+        Point cursor = new Point(0, source.lastIndexOf('"'));
+
+        var items = run(source, cursor, "service");
+
+        assertThat(items).isEmpty();
+    }
+
+    @Test
+    void cursorInArgMappingReturnsEmpty() {
+        String source = "type Query { x: Int @service(service: {className: \"com.example.FilmService\", method: \"foo\", argMapping: \"\"}) }\n";
         Point cursor = new Point(0, source.lastIndexOf('"'));
 
         var items = run(source, cursor, "service");

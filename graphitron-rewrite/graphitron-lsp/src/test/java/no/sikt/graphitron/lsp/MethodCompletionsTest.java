@@ -14,10 +14,10 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * End-to-end coverage for the {@code @service(method:)} / {@code @condition(method:)}
- * completion provider. The cursor sits inside the {@code method:} string;
- * the provider reads the sibling {@code class:} value to scope candidate
- * methods to that class.
+ * Method-name completion against the {@code ExternalCodeReference}
+ * shape: cursor inside {@code @service(service: {method: "..."})} or
+ * {@code @condition(condition: {method: "..."})} reads the sibling
+ * {@code className} field on the same nested object to scope candidates.
  */
 class MethodCompletionsTest {
 
@@ -38,11 +38,11 @@ class MethodCompletionsTest {
     );
 
     @Test
-    void methodArgumentCompletesMethodsOfSiblingClass() {
-        String source = "type Query { x: Int @service(class: \"com.example.FilmService\", method: \"\") }\n";
+    void serviceMethodCompletesMethodsOfSiblingClassName() {
+        String source = "type Query { x: Int @service(service: {className: \"com.example.FilmService\", method: \"\"}) }\n";
         Point cursor = new Point(0, source.lastIndexOf('"'));
 
-        var items = run(source, cursor);
+        var items = run(source, cursor, "service");
 
         assertThat(items).extracting(i -> i.getLabel())
             .containsExactlyInAnyOrder("list", "get");
@@ -51,43 +51,53 @@ class MethodCompletionsTest {
     }
 
     @Test
-    void unknownClassReturnsNoCompletions() {
-        String source = "type Query { x: Int @service(class: \"com.example.Missing\", method: \"\") }\n";
+    void conditionMethodCompletesMethodsOfSiblingClassName() {
+        String source = "type Query { x: Int @condition(condition: {className: \"com.example.FilmService\", method: \"\"}) }\n";
         Point cursor = new Point(0, source.lastIndexOf('"'));
 
-        var items = run(source, cursor);
+        var items = run(source, cursor, "condition");
+
+        assertThat(items).hasSize(2);
+    }
+
+    @Test
+    void unknownClassNameReturnsNoCompletions() {
+        String source = "type Query { x: Int @service(service: {className: \"com.example.Missing\", method: \"\"}) }\n";
+        Point cursor = new Point(0, source.lastIndexOf('"'));
+
+        var items = run(source, cursor, "service");
 
         assertThat(items).isEmpty();
     }
 
     @Test
-    void missingClassArgReturnsNoCompletions() {
-        String source = "type Query { x: Int @service(method: \"\") }\n";
+    void missingClassNameReturnsNoCompletions() {
+        String source = "type Query { x: Int @service(service: {method: \"\"}) }\n";
         Point cursor = new Point(0, source.lastIndexOf('"'));
 
-        var items = run(source, cursor);
+        var items = run(source, cursor, "service");
 
         assertThat(items).isEmpty();
     }
 
     @Test
-    void cursorOutsideMethodArgReturnsEmpty() {
-        // Cursor inside class:, not method:.
-        String source = "type Query { x: Int @service(class: \"com.example.FilmService\", method: \"foo\") }\n";
+    void cursorOutsideMethodReturnsEmpty() {
+        // Cursor inside className:, not method:.
+        String source = "type Query { x: Int @service(service: {className: \"com.example.FilmService\", method: \"foo\"}) }\n";
         Point cursor = new Point(0, source.indexOf('"') + 1);
 
-        var items = run(source, cursor);
+        var items = run(source, cursor, "service");
 
         assertThat(items).isEmpty();
     }
 
-    private static List<org.eclipse.lsp4j.CompletionItem> run(String source, Point cursor) {
+    private static List<org.eclipse.lsp4j.CompletionItem> run(String source, Point cursor, String directiveName) {
         var parser = new Parser();
         parser.setLanguage(GraphqlLanguage.get());
         var bytes = source.getBytes(StandardCharsets.UTF_8);
         var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
-        return MethodCompletions.generate(DATA, directive, cursor, bytes);
+        return MethodCompletions.generate(DATA, directive, cursor, bytes, directiveName);
     }
 }

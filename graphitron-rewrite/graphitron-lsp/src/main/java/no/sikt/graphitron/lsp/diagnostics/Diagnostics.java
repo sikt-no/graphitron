@@ -42,8 +42,9 @@ public final class Diagnostics {
                 case "table" -> validateTable(directive, file, catalog, out);
                 case "field" -> validateField(directive, file, catalog, out);
                 case "reference" -> validateReference(directive, file, catalog, out);
-                case "service", "condition" -> validateClassArg(directive, file, catalog, out);
-                case "record" -> validateRecordClassName(directive, file, catalog, out);
+                case "service" -> validateExternalCodeReference(directive, file, catalog, out, "service", true);
+                case "condition" -> validateExternalCodeReference(directive, file, catalog, out, "condition", true);
+                case "record" -> validateExternalCodeReference(directive, file, catalog, out, "record", false);
                 default -> { /* no validation yet */ }
             }
         }
@@ -136,28 +137,47 @@ public final class Diagnostics {
         }
     }
 
-    private static void validateClassArg(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+    /**
+     * Validates the nested {@code ExternalCodeReference} object on
+     * {@code @service} / {@code @condition} / {@code @record}. The schema
+     * directive surface is uniform: each carries one outer arg whose key
+     * matches the directive name and whose value is an object with
+     * {@code className} / {@code method} / {@code argMapping} fields.
+     *
+     * @param outerArg     the outer-arg key to descend into ({@code service},
+     *                     {@code condition}, or {@code record}).
+     * @param validateMethod whether to also validate {@code method} and
+     *                       emit the {@code -parameters}-missing warning.
+     *                       {@code @record} has no {@code method} field.
+     */
+    private static void validateExternalCodeReference(
+        Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
+        List<Diagnostic> out, String outerArg, boolean validateMethod
     ) {
         // Empty `externalReferences` means the classpath scan saw nothing
         // (typically: consumer hasn't run `mvn compile` yet). Reporting
         // every reference as unknown in that state would be noise; defer
         // until the scan has at least one entry to match against.
         if (catalog.externalReferences().isEmpty()) return;
-        Node classValue = stringArgValueNode(directive, "class", file.source());
-        if (classValue == null) return;
-        String fqn = Nodes.unquote(Nodes.text(classValue, file.source()));
+        Node outerValue = stringArgValueNode(directive, outerArg, file.source());
+        if (outerValue == null) return;
+
+        Node classNameValue = nestedFieldValue(outerValue, "className", file.source());
+        if (classNameValue == null) return;
+        String fqn = Nodes.unquote(Nodes.text(classNameValue, file.source()));
         if (fqn.isEmpty()) return;
+
         var refOpt = catalog.externalReferences().stream()
             .filter(r -> r.className().equals(fqn))
             .findFirst();
         if (refOpt.isEmpty()) {
-            out.add(diagnostic(file, classValue,
+            out.add(diagnostic(file, classNameValue,
                 "Unknown class '" + fqn + "'. Not found in compiled target/classes."));
             return;
         }
-        // Class resolved — also validate the sibling `method:` if present.
-        Node methodValue = stringArgValueNode(directive, "method", file.source());
+        if (!validateMethod) return;
+
+        Node methodValue = nestedFieldValue(outerValue, "method", file.source());
         if (methodValue == null) return;
         String methodName = Nodes.unquote(Nodes.text(methodValue, file.source()));
         if (methodName.isEmpty()) return;
@@ -187,32 +207,28 @@ public final class Diagnostics {
         }
     }
 
-    private static void validateRecordClassName(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
-    ) {
-        if (catalog.externalReferences().isEmpty()) return;
-        for (var arg : directive.arguments()) {
-            if (!"record".equals(Nodes.text(arg.key(), file.source()))) continue;
-            forEachObjectField(arg.value(), (field) -> {
-                Node nameNode = childOfKind(field, "name");
-                Node valueNode = childOfKind(field, "value");
-                if (nameNode == null || valueNode == null) return;
-                if (!"className".equals(Nodes.text(nameNode, file.source()))) return;
-                String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
-                if (fqn.isEmpty()) return;
-                if (!classKnown(catalog, fqn)) {
-                    out.add(diagnostic(file, valueNode,
-                        "Unknown class '" + fqn + "'. Not found in compiled target/classes."));
-                }
-            });
+    /**
+     * Returns the {@code value} node of the first nested {@code object_field}
+     * named {@code fieldName} found under {@code outerValue}, or {@code null}
+     * if no such field is present.
+     */
+    private static Node nestedFieldValue(Node outerValue, String fieldName, byte[] source) {
+        if (outerValue == null) return null;
+        if ("object_field".equals(outerValue.getType())) {
+            Node nameNode = childOfKind(outerValue, "name");
+            Node valueNode = childOfKind(outerValue, "value");
+            if (nameNode != null && valueNode != null
+                && fieldName.equals(Nodes.text(nameNode, source))) {
+                return valueNode;
+            }
         }
-    }
-
-    private static boolean classKnown(CompletionData catalog, String fqn) {
-        for (var ref : catalog.externalReferences()) {
-            if (ref.className().equals(fqn)) return true;
+        for (int i = 0; i < outerValue.getChildCount(); i++) {
+            Node child = outerValue.getChild(i).orElse(null);
+            if (child == null) continue;
+            Node found = nestedFieldValue(child, fieldName, source);
+            if (found != null) return found;
         }
-        return false;
+        return null;
     }
 
     private static Set<String> collectAllFkNames(CompletionData catalog) {

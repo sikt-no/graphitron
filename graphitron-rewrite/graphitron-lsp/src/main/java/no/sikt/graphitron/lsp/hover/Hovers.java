@@ -37,33 +37,57 @@ public final class Hovers {
             case "table" -> tableHover(directive, file, catalog, pos);
             case "field" -> fieldHover(directive, file, catalog, pos);
             case "reference" -> referenceHover(directive, file, catalog, pos);
-            case "service", "condition" -> classArgHover(directive, file, catalog, pos);
-            case "record" -> recordClassNameHover(directive, file, catalog, pos);
+            case "service" -> externalCodeReferenceHover(directive, file, catalog, pos, "service", true);
+            case "condition" -> externalCodeReferenceHover(directive, file, catalog, pos, "condition", true);
+            case "record" -> externalCodeReferenceHover(directive, file, catalog, pos, "record", false);
             default -> Optional.empty();
         };
     }
 
-    private static Optional<Hover> classArgHover(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Point pos
+    /**
+     * Hover content for the nested {@code ExternalCodeReference} object on
+     * {@code @service} / {@code @condition} / {@code @record}. The cursor
+     * position decides whether we surface class hover (cursor on
+     * {@code <outer>.className}) or method hover (cursor on
+     * {@code <outer>.method}); {@code @record} has no method field, so
+     * {@code supportsMethod = false} skips the second branch.
+     */
+    private static Optional<Hover> externalCodeReferenceHover(
+        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Point pos,
+        String outerArg, boolean supportsMethod
     ) {
-        var classValue = stringArgValueAt(directive, "class", pos, file.source());
-        if (classValue != null) {
-            String fqn = Nodes.unquote(Nodes.text(classValue, file.source()));
-            return findExternal(catalog, fqn).map(ref -> hover(file, classValue, formatClass(ref)));
-        }
-        var methodValue = stringArgValueAt(directive, "method", pos, file.source());
-        if (methodValue != null) {
-            return methodHoverContent(directive, file, catalog, methodValue);
+        for (var arg : directive.arguments()) {
+            if (!outerArg.equals(Nodes.text(arg.key(), file.source()))) continue;
+            Node field = innermostObjectFieldContaining(arg.value(), pos);
+            if (field == null) continue;
+            Node nameNode = childOfKind(field, "name");
+            Node valueNode = childOfKind(field, "value");
+            if (nameNode == null || valueNode == null) continue;
+            if (!Nodes.contains(valueNode, pos)) continue;
+            String nestedField = Nodes.text(nameNode, file.source());
+            if ("className".equals(nestedField)) {
+                String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
+                return findExternal(catalog, fqn)
+                    .map(ref -> hover(file, valueNode, formatClass(ref)));
+            }
+            if (supportsMethod && "method".equals(nestedField)) {
+                return methodHoverContent(arg.value(), file, catalog, valueNode);
+            }
+            return Optional.empty();
         }
         return Optional.empty();
     }
 
+    /**
+     * Looks up the resolved method for the cursor position by reading
+     * {@code className} off the same nested object.
+     */
     private static Optional<Hover> methodHoverContent(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Node methodValue
+        Node outerValue, WorkspaceFile file, CompletionData catalog, Node methodValue
     ) {
         String methodName = Nodes.unquote(Nodes.text(methodValue, file.source()));
         if (methodName.isEmpty()) return Optional.empty();
-        String classFqn = readSiblingClassFqn(directive, file.source());
+        String classFqn = readNestedString(outerValue, "className", file.source());
         if (classFqn == null || classFqn.isEmpty()) return Optional.empty();
         var refOpt = findExternal(catalog, classFqn);
         if (refOpt.isEmpty()) return Optional.empty();
@@ -73,10 +97,21 @@ public final class Hovers {
             .map(method -> hover(file, methodValue, formatMethod(refOpt.get(), method)));
     }
 
-    private static String readSiblingClassFqn(Directives.Directive directive, byte[] source) {
-        for (var arg : directive.arguments()) {
-            if (!"class".equals(Nodes.text(arg.key(), source))) continue;
-            return Nodes.unquote(Nodes.text(arg.value(), source));
+    private static String readNestedString(Node outerValue, String fieldName, byte[] source) {
+        if (outerValue == null) return null;
+        if ("object_field".equals(outerValue.getType())) {
+            Node nameNode = childOfKind(outerValue, "name");
+            Node valueNode = childOfKind(outerValue, "value");
+            if (nameNode != null && valueNode != null
+                && fieldName.equals(Nodes.text(nameNode, source))) {
+                return Nodes.unquote(Nodes.text(valueNode, source));
+            }
+        }
+        for (int i = 0; i < outerValue.getChildCount(); i++) {
+            Node child = outerValue.getChild(i).orElse(null);
+            if (child == null) continue;
+            String found = readNestedString(child, fieldName, source);
+            if (found != null) return found;
         }
         return null;
     }
@@ -110,24 +145,6 @@ public final class Hovers {
             sb.append("\n\n_Parameter names are unavailable; recompile with the `-parameters` flag to surface them._");
         }
         return sb.toString();
-    }
-
-    private static Optional<Hover> recordClassNameHover(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Point pos
-    ) {
-        for (var arg : directive.arguments()) {
-            if (!"record".equals(Nodes.text(arg.key(), file.source()))) continue;
-            Node field = innermostObjectFieldContaining(arg.value(), pos);
-            if (field == null) continue;
-            Node nameNode = childOfKind(field, "name");
-            Node valueNode = childOfKind(field, "value");
-            if (nameNode == null || valueNode == null) continue;
-            if (!"className".equals(Nodes.text(nameNode, file.source()))) continue;
-            if (!Nodes.contains(valueNode, pos)) continue;
-            String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
-            return findExternal(catalog, fqn).map(ref -> hover(file, valueNode, formatClass(ref)));
-        }
-        return Optional.empty();
     }
 
     private static Optional<CompletionData.ExternalReference> findExternal(CompletionData catalog, String fqn) {
