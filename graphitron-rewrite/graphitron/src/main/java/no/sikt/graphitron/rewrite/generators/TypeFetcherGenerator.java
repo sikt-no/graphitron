@@ -1492,8 +1492,11 @@ public class TypeFetcherGenerator {
             }
             colList.add("$T.$L.$L",
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
-            valList.add("$T.val(in.get($S), $T.$L.$L.getDataType())",
+            valList.add("in.containsKey($S) ? $T.val(in.get($S), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                cf.name(),
                 DSL, cf.name(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                DSL,
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
         }
 
@@ -1598,8 +1601,11 @@ public class TypeFetcherGenerator {
             }
             colList.add("$T.$L.$L",
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
-            valList.add("$T.val(in.get($S), $T.$L.$L.getDataType())",
+            valList.add("in.containsKey($S) ? $T.val(in.get($S), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                cf.name(),
                 DSL, cf.name(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                DSL,
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
         }
 
