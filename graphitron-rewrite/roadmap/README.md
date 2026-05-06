@@ -26,6 +26,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Ready | [plan](error-handling-parity.md) |
 | `R61` | Add Record1<T> source-shape support alongside Row1<T> | In Review | [plan](emit-record1-keys-instead-of-row1.md) |
+| `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | [plan](catalog-check-constraint-validation.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [retire-rust-lsp-and-introspect-mojo](retire-rust-lsp-and-introspect-mojo.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R68` | Diataxis user manual: absorb legacy README into the docs site | In Review | [plan](diataxis-user-manual.md) |
@@ -121,6 +122,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Ready, architecture
 - `R75` [**Synthesize payload carrier for canonical data+errors shapes**](synthesize-payload-carrier.md) — Backlog, architecture, blocked by [error-handling-parity](error-handling-parity.md)
 - `R63` [**Type UPSERT dialect requirement on the model**](dml-dialect-requirement-on-model.md) — Spec, architecture
+- `R92` [**Surface database CHECK constraints as Jakarta validation rules**](catalog-check-constraint-validation.md) — Spec, architecture
 
 ### pagination
 
