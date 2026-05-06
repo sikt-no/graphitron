@@ -3587,6 +3587,131 @@ class GraphQLQueryTest {
         }
     }
 
+    // ===== R77 Phase C: missing-vs-null on single-row UPDATE / UPSERT-update-branch =====
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void updateFilm_omittedFieldLeavesColumnAlone_explicitNullWritesNull() {
+        // R77 Phase C: dynamic SET. The runtime SET clause is built from `in.keySet()` so
+        // omitted fields drop out of the UPDATE entirely (PATCH semantics; preserves the
+        // existing row's value), while explicit-null fields bind typed null and write SQL
+        // NULL to the column. Pre-R77 the emitter wrote typed null on every setFields()
+        // entry regardless of whether the input map carried the key, silently nulling out
+        // omitted columns.
+        String originalTitle       = "R77-PHASE-C-FILM-" + java.util.UUID.randomUUID();
+        String originalDescription = "R77-PHASE-C-DESC-" + java.util.UUID.randomUUID();
+        String updatedTitle        = "R77-PHASE-C-FILM-UPDATED-" + java.util.UUID.randomUUID();
+        var filmTable = org.jooq.impl.DSL.table("film");
+        var filmIdCol = org.jooq.impl.DSL.field("film_id", Integer.class);
+        var titleCol = org.jooq.impl.DSL.field("title", String.class);
+        var descCol = org.jooq.impl.DSL.field("description", String.class);
+        Integer filmId = dsl.insertInto(filmTable)
+            .set(titleCol, originalTitle)
+            .set(descCol, originalDescription)
+            .set(org.jooq.impl.DSL.field("language_id"), (short) 1)
+            .returningResult(filmIdCol)
+            .fetchOne()
+            .value1();
+        try {
+            // Step 1: omit `description`. Only `title` is in the SET clause; description
+            // survives untouched.
+            execute("""
+                mutation {
+                    updateFilm(in: { filmId: %d, title: "%s" }) { filmId }
+                }
+                """.formatted(filmId, updatedTitle));
+            String dbDesc = dsl.select(descCol).from(filmTable).where(filmIdCol.eq(filmId)).fetchOne().value1();
+            assertThat(dbDesc).as("omitted description preserved").isEqualTo(originalDescription);
+            String dbTitle = dsl.select(titleCol).from(filmTable).where(filmIdCol.eq(filmId)).fetchOne().value1();
+            assertThat(dbTitle).as("present title written").isEqualTo(updatedTitle);
+
+            // Step 2: explicit null on `description`. The key is present, the value is null;
+            // typed null binds and the UPDATE writes SQL NULL to the column.
+            execute("""
+                mutation {
+                    updateFilm(in: { filmId: %d, title: "%s", description: null }) { filmId }
+                }
+                """.formatted(filmId, updatedTitle));
+            String dbDesc2 = dsl.select(descCol).from(filmTable).where(filmIdCol.eq(filmId)).fetchOne().value1();
+            assertThat(dbDesc2).as("explicit-null description written as SQL NULL").isNull();
+        } finally {
+            dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void upsertFilm_omittedFieldOnUpdateBranchLeavesColumnAlone() {
+        // R77 Phase C: UPSERT update-branch shares UPDATE's dynamic SET. When the conflict
+        // branch fires, the SET map walks `in`'s present-key set with `DSL.excluded(col)` as
+        // the value. An omitted column drops out of `DO UPDATE SET` entirely (PATCH semantics
+        // on the update branch), so the existing row's value survives the upsert. Without
+        // dynamic SET, a naive `c = EXCLUDED.c` for every setFields() column would resolve
+        // EXCLUDED.c to the table default whenever the proposed INSERT row used DEFAULT,
+        // overwriting the existing value with the default — silent data loss.
+        //
+        // Sakila's `rental_duration` is `smallint NOT NULL DEFAULT 3`. We pre-insert the row
+        // with `rental_duration = 7`, then upsert *without* `rentalDuration` in the input.
+        // The conflict fires; the dynamic SET map contains only the supplied keys (title,
+        // languageId), so rental_duration drops out of DO UPDATE SET and stays at 7. Pre-R77
+        // it would be overwritten with EXCLUDED.rental_duration which (because the INSERT
+        // branch's value cell was `DEFAULT`) resolves to 3.
+        String originalTitle = "R77-PHASE-C-UPSERT-" + java.util.UUID.randomUUID();
+        String upsertedTitle = "R77-PHASE-C-UPSERTED-" + java.util.UUID.randomUUID();
+        var filmTable = org.jooq.impl.DSL.table("film");
+        var filmIdCol = org.jooq.impl.DSL.field("film_id", Integer.class);
+        var rentalCol = org.jooq.impl.DSL.field("rental_duration", Integer.class);
+        Integer filmId = dsl.insertInto(filmTable)
+            .set(org.jooq.impl.DSL.field("title"), originalTitle)
+            .set(org.jooq.impl.DSL.field("language_id"), (short) 1)
+            .set(rentalCol, 7)
+            .returningResult(filmIdCol)
+            .fetchOne()
+            .value1();
+        try {
+            execute("""
+                mutation {
+                    upsertFilm(in: { filmId: %d, title: "%s", languageId: 1 }) { filmId }
+                }
+                """.formatted(filmId, upsertedTitle));
+            Integer dbRental = dsl.select(rentalCol).from(filmTable).where(filmIdCol.eq(filmId)).fetchOne().value1();
+            assertThat(dbRental).as("omitted rentalDuration preserved on upsert update branch").isEqualTo(7);
+            String dbTitle = dsl.select(org.jooq.impl.DSL.field("title", String.class))
+                .from(filmTable).where(filmIdCol.eq(filmId)).fetchOne().value1();
+            assertThat(dbTitle).as("present title written on upsert update branch").isEqualTo(upsertedTitle);
+        } finally {
+            dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void upsertFilm_omittedFieldOnInsertBranchUsesColumnDefault() {
+        // R77 Phase B + C: when the upsert hits the INSERT branch (no conflict), per-cell
+        // containsKey-gated DEFAULT applies. Sakila's `rental_duration` is NOT NULL DEFAULT 3.
+        // Omitting `rentalDuration` from the input lets DSL.defaultValue(...) bind in the
+        // VALUES list, and the DB default lands. Deferred from Phase B (FilmUpsertInput
+        // didn't carry rentalDuration until Phase C added it).
+        int filmId = 999_002;
+        String marker = "R77-PHASE-C-UPSERT-INSERT-BRANCH-" + java.util.UUID.randomUUID();
+        var filmTable = org.jooq.impl.DSL.table("film");
+        var filmIdCol = org.jooq.impl.DSL.field("film_id", Integer.class);
+        var rentalCol = org.jooq.impl.DSL.field("rental_duration", Integer.class);
+        // Pre-clean in case a prior failed run left the row behind.
+        dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
+        try {
+            execute("""
+                mutation {
+                    upsertFilm(in: { filmId: %d, title: "%s", languageId: 1 }) { filmId }
+                }
+                """.formatted(filmId, marker));
+            Integer dbRental = dsl.select(rentalCol).from(filmTable).where(filmIdCol.eq(filmId)).fetchOne().value1();
+            assertThat(dbRental).as("omitted rentalDuration takes column default on upsert insert branch").isEqualTo(3);
+        } finally {
+            dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
+        }
+    }
+
     // ===== R12 @error end-to-end (error-handling-parity.md) =====
     //
     // The query-side @error fixture exists for visibility, not for exhaustive coverage of every
