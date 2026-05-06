@@ -31,13 +31,37 @@ A first-pass spec carried (a) a `NotApplicable` arm on `AccessorResolution` so t
 
 - **Phase A — Sealed `AccessorResolution` model + `ClassAccessorResolver` + per-field carrier:** shipped at `0bcb6ebe`.
 - **Phase B — Validator wiring + emitter consumption + `@LoadBearingClassifierCheck` pair:** shipped at `b2d798a9`.
-- **Phase C — Test coverage (pipeline + execution + audit):** shipped at `bb5d883e`. Pipeline-tier tests landed in a new `RecordFieldAccessorValidationTest.java` (`@PipelineTier`) rather than the existing `@UnitTier` `RecordFieldValidationTest.java` — keeping tier discipline per file. Audit-tier coverage came for free through `LoadBearingGuaranteeAuditTest` auto-picking up the producer/consumer pair, no new test code needed.
-- **Phase D — Documentation refresh:** shipped at `bb5d883e`. Reflection roster in `docs/rewrite-design-principles.adoc:29` lists `ClassAccessorResolver` as the fifth permitted boundary-crossing file. `docs/code-generation-triggers.adoc` was checked and does not name the accessor heuristic, so no change there.
+- **Phase C — Test coverage (pipeline + execution + audit):** shipped at `e5f2dd2e`. Pipeline-tier tests landed in a new `RecordFieldAccessorValidationTest.java` (`@PipelineTier`) rather than the existing `@UnitTier` `RecordFieldValidationTest.java` — keeping tier discipline per file. Audit-tier coverage came for free through `LoadBearingGuaranteeAuditTest` auto-picking up the producer/consumer pair, no new test code needed.
+- **Phase D — Documentation refresh:** shipped at `e5f2dd2e`. Reflection roster in `docs/rewrite-design-principles.adoc:29` lists `ClassAccessorResolver` as the fifth permitted boundary-crossing file. `docs/code-generation-triggers.adoc` was checked and does not name the accessor heuristic, so no change there.
 
 ### Implementation deviations from spec
 
 - **Per-arg injection in the emitter** uses `Method.getParameters()` for argument names, requiring the backing class to be compiled with `-parameters`. The spec contemplated threading SDL argument names through the field arm, but per the spec's own "raise a Spec amendment rather than widen the threading ad hoc" clause, the parameter-name fallback is the lighter route. If `-parameters` is absent on a candidate method, `methodCallExpr` throws at emit time with a clear error, surfacing the case rather than producing silently-broken code.
-- **Defensive emitter fallback for `Rejected` / null accessor.** The spec said the emitter switches "exhaustively on the pre-resolved `Resolved` arms" and the validator surfaces `Rejected` as a `ValidationError`. When validation has not gated generation (test fixtures that bypass `validate()`), a `Rejected` or null accessor can reach the emitter; rather than throwing, the emitter falls back to the pre-R88 `toCamelCase + "get" + capitalize` heuristic so test flows stay deterministic. Production builds still surface `Rejected` as a hard validation error per Phase B's wiring.
+
+### Phase E — Rework: tighten accessor slot to `Resolved`; route `Rejected` through `UnclassifiedField`
+
+In-review feedback flagged the Phase B defensive fallback (the `propertyOrRecordValue` tail kept the pre-R88 `toCamelCase + "get" + capitalize` heuristic as a runtime fallback for `null` or `Rejected` accessors) as a regression on the spec's whole point. `GraphQLRewriteGenerator.generate()` calls `validateAndLogErrors` before any emit, so in production the fallback is unreachable; it exists only to keep test fixtures that bypass `validate()` deterministic, which is precisely "fallbacks for scenarios that can't happen". Worse, the emitter's `@DependsOnClassifierCheck.reliesOn` claim ("Reads pre-resolved `AccessorResolution.Resolved.method() / .field()` unconditionally") is materially false while the fallback lives — the audit-tier link passes, but the documented load-bearing guarantee no longer holds.
+
+The deeper bug Phase B exposed is a typing weakness: the accessor slot on `PropertyField` / `RecordField` is `AccessorResolution` (the union, including `Rejected`), so the emitter has to handle non-`Resolved` values at all, so a fallback looks necessary. Phase E removes the type weakness; the fallback then has nowhere to live.
+
+**Classifier (`FieldBuilder`).** When `ClassAccessorResolver.resolve()` returns `Rejected`, do **not** construct a `PropertyField` / `RecordField` with `accessor = Rejected`. Construct an `UnclassifiedField(Rejection.structural(rejected.reason()))` instead, mirroring the structural-rejection routing the spec called for at line 17 ("propagate `Rejected` through `UnclassifiedField`") and matching every other classify-time failure shape. The accessor-rejection reason flows into the same diagnostic surface the existing `UnclassifiedField` arms already use.
+
+**Field arms (`graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ChildField.java`).** Tighten the slot type: `PropertyField.accessor()` and `RecordField.accessor()` return `AccessorResolution.Resolved` (non-null), not the union. The static type now carries the load-bearing guarantee; the `@DependsOnClassifierCheck.reliesOn` claim becomes literally true and the audit-tier coverage is no longer documenting a runtime assertion.
+
+**Emitter (`FetcherEmitter.propertyOrRecordValue`).** Switch exhaustively on the three `Resolved` arms (`GetterPrefixed`, `BareName`, `FieldRead`); delete the `toCamelCase + "get" + capitalize` heuristic and the null/`Rejected` branches. A future arm added to `Resolved` becomes a compile error here, which is the point.
+
+**Validator (`GraphitronSchemaValidator`).** Drop the `Rejected`-from-accessor-slot pickup added in Phase B's `validatePropertyField` / `validateRecordField`; the existing `UnclassifiedField` validation path picks up the rejection (one pickup site, not two). The `@field(name:)` override hint that Phase B's pickup appended moves to wherever `UnclassifiedField` rejections format their diagnostic, gated on the rejection originating from `ClassAccessorResolver` (e.g. by carrying a small enum kind on the structural rejection, or by message-prefix discrimination — implementer's choice, but the override hint must still attach to accessor-rejections specifically).
+
+**Tests bypassing `validate()` (the original justification for the fallback).** Each fixture / test that tripped the fallback path falls into one of three categories; Phase E walks them all:
+1. Tests asserting on classifier behaviour without running the validator: assert on `UnclassifiedField` directly (which is what the field becomes under Phase E), not on the emitter.
+2. Tests wanting successful emission that were stumbling over a missing fixture method: fix the fixture (add the method or the `@field(name:)` override) so resolution succeeds and a real `Resolved` flows through.
+3. Tests of "emitter behaviour on a Rejected field": delete; this is testing a code path that no longer exists, and shouldn't.
+
+**Audit-tier.** No changes needed — `LoadBearingGuaranteeAuditTest` already exercises the producer/consumer pair; the difference is that the consumer's `reliesOn` claim is now type-system-enforceable rather than a runtime assertion.
+
+**Pipeline-tier and execution-tier coverage from Phases C and D.** No new tests required — the existing nine `RecordFieldAccessorValidationTest` cases still assert structural shape on `Resolved` arms (positive cases) and the resolver's diagnostic on rejection cases. The rejection cases will now route through `UnclassifiedField`, and the validator pickup is the same end-to-end. The execution-tier `RecordExampleType` fixture is unaffected (all three of its fields resolve to `Resolved`).
+
+**Out of scope for Phase E.** The `null fqClassName` `PropertyDataFetcher` fallback at `FetcherEmitter.java:211-212` (the explicit "no class to introspect" arm) stays. That's a different fallback — the parent type doesn't have a backing class at all, not "the backing class rejected resolution"; the existing "Out of scope" item already covers its eventual removal.
 
 ## Out of scope
 
