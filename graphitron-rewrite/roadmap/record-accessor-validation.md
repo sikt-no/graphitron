@@ -1,7 +1,7 @@
 ---
 id: R88
 title: "Validate `@record` accessor resolution against backing class at classify time"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 1
 theme: structural-refactor
