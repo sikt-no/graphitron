@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.keyAsTableRecordWithQueryHelper;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.queryHint;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyForResolverFieldOrThrow;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeySetForResolverFields;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ITERATOR;
@@ -70,7 +71,9 @@ public class FetchSingleTableInterfaceDBMethodGenerator extends FetchDBMethodGen
                 .add(createAliasDeclarations(context.getAliasSet()))
                 .add(orderFields)
                 .add("return $N.select($L)", VariableNames.VAR_CONTEXT, indentIfMultiline(selectCode))
-                .add("\n.from($L)\n", querySource)
+                .add("\n")
+                .add(queryHint(target))
+                .add(".from($L)\n", querySource)
                 .add(createSelectJoins(context.getJoinSet()))
                 .add("\n")
                 .add(whereBlock)

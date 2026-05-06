@@ -74,6 +74,15 @@ public class QueryCapturingExecuteListener implements ExecuteListener {
     }
 
     /**
+     * Returns the number of COUNT queries executed.
+     */
+    public List<String> getCountQueries() {
+        return executedQueries.stream()
+                .filter(q -> q.toLowerCase().contains("count("))
+                .toList();
+    }
+
+    /**
      * Clears all captured queries. Should be called before each test.
      */
     public void clear() {

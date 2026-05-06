@@ -66,6 +66,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .addCode(".select(")
                 .addCodeIf(!isRoot(),() -> CodeBlock.of("$L, ", resolverKeyAsTableRecord(context)))
                 .addCode("$T.count())\n", DSL.className)
+                .addCode(queryHint(target))
                 .addCode(".from($L)\n", targetSource)
                 .addCode(createSelectJoins(nextContext.getJoinSet()))
                 .addCode(where)
@@ -121,7 +122,9 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .add("\nreturn $N.select(", VAR_CONTEXT)
                 .addIf(!isRoot(),() -> CodeBlock.of("$N.field(0), $T.count())", UNION_COUNT_QUERY, DSL.className))
                 .addIf(isRoot(), "$T.sum($N.field($S, $T.class)))", DSL.className, UNION_COUNT_QUERY, COUNT_FIELD_NAME, INTEGER.className)
-                .add("\n.from($N)", UNION_COUNT_QUERY)
+                .add("\n")
+                .add(queryHint(target))
+                .add(".from($N)", UNION_COUNT_QUERY)
                 .addStatementIf(isRoot(), "\n.fetchOne(0, $T.class)", INTEGER.className)
                 .addIf(!isRoot(), "\n.groupBy($N.field(0))", UNION_COUNT_QUERY)
                 .addStatementIf(

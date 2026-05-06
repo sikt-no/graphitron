@@ -19,6 +19,7 @@ import java.util.stream.Stream;
 import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsEnabled;
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.indentIfMultiline;
+import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.queryHint;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.inferFieldTypeName;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.javapoet.CodeBlock.empty;
@@ -85,6 +86,7 @@ public class FetchMappedObjectDBMethodGenerator extends FetchDBMethodGenerator {
                 .indent()
                 .indent()
                 .addCode(".select($L)\n", selectBlock)
+                .addCode(queryHint(target))
                 .addCodeIf(!querySource.isEmpty() && (context.hasNonSubqueryFields() || context.hasApplicableTable()), ".from($L)\n", querySource)
                 .addCode(createSelectJoins(context.getJoinSet()))
                 .addCode(whereBlock)

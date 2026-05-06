@@ -78,6 +78,7 @@ public class FetchEntityImplementationDBMethodGenerator extends FetchDBMethodGen
                 .indent()
                 .indent()
                 .addCode(".select($L)\n", indentIfMultiline(selectBlock))
+                .addCode(queryHint(virtualReference))
                 .addCode(".from($L)\n", querySource)
                 .addCode(createSelectJoins(context.getJoinSet()))
                 .addCode(formatWhere(context, implementation))

@@ -47,4 +47,8 @@ public interface Generator {
     boolean generateUpsertAsStore();
 
     OptionalSelect getOptionalSelect();
+
+    boolean isQueryHintEnabled();
+
+    String getQueryHintBuildId();
 }

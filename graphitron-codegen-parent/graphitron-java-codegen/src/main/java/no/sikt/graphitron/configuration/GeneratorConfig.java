@@ -59,6 +59,9 @@ public class GeneratorConfig {
 
     private static OptionalSelect optionalSelect = new OptionalSelect();
 
+    private static boolean queryHintEnabled = false;
+    private static String queryHintBuildId = "";
+
     /**
      * Set the generator properties from code. Intended for tests.
      */
@@ -125,6 +128,8 @@ public class GeneratorConfig {
         validateOverlappingInputFields = mojo.validateOverlappingInputFields();
         generateUpsertAsStore = mojo.generateUpsertAsStore();
         failOnMerge = mojo.failOnMerge();
+        queryHintEnabled = mojo.isQueryHintEnabled();
+        queryHintBuildId = mojo.getQueryHintBuildId();
     }
 
     /**
@@ -386,5 +391,21 @@ public class GeneratorConfig {
 
     public static boolean optionalSelectOnSubqueriesIsEnabled() {
         return optionalSelect.onSubqueryReferences();
+    }
+
+    public static boolean isQueryHintEnabled() {
+        return queryHintEnabled;
+    }
+
+    public static String getQueryHintBuildId() {
+        return queryHintBuildId;
+    }
+
+    public static void setQueryHintEnabled(boolean enabled) {
+        queryHintEnabled = enabled;
+    }
+
+    public static void setQueryHintBuildId(String buildId) {
+        queryHintBuildId = buildId == null ? "" : buildId;
     }
 }

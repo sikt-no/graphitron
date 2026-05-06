@@ -90,6 +90,7 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
                 .indent()
                 .indent()
                 .addCode(".select($L)\n", indentIfMultiline(id))
+                .addCode(queryHint(virtualReference))
                 .addCode(".from($L)\n", querySource)
                 .addCode(createSelectJoins(context.getJoinSet()))
                 .addCode(".where($L)\n", whereCondition)

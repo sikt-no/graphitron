@@ -3,6 +3,7 @@ package no.sikt.graphitron.generators.codebuilding;
 import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.configuration.externalreferences.TransformScope;
 import no.sikt.graphitron.definitions.helpers.NodeConfiguration;
+import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
 import no.sikt.graphitron.definitions.mapping.MethodMapping;
 import no.sikt.graphitron.definitions.objects.EnumDefinition;
@@ -907,5 +908,24 @@ public class FormatCodeBlocks {
                 ofVar(variableName),
                 extractKeyAsTableRecord(variableName, recordClass)
         );
+    }
+
+    /**
+     * @return CodeBlock emitting a jOOQ {@code .hint(...)} call carrying the DataFetcher path
+     *         (Type.field) and configured build id, or empty when query hints are disabled.
+     *         Intended to be chained immediately after {@code .select(...)} on entry-point
+     *         queries so the DataFetcher and build are visible in database logs and query plans.
+     */
+    public static CodeBlock queryHint(FieldSpecification target) {
+        if (!GeneratorConfig.isQueryHintEnabled()) {
+            return CodeBlock.empty();
+        }
+        var hint = String.format(
+                "/* DataFetcher=%s.%s build=%s */",
+                target.getContainerTypeName(),
+                target.getName(),
+                GeneratorConfig.getQueryHintBuildId()
+        );
+        return CodeBlock.of(".hint($S)\n", hint);
     }
 }

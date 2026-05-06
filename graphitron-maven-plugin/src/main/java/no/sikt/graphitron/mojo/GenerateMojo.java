@@ -116,6 +116,23 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @SuppressWarnings("unused")
     protected boolean validateOverlappingInputFields;
 
+    /**
+     * Whether to emit a jOOQ {@code .hint(...)} call carrying the DataFetcher path and build id
+     * at the start of every generated entry-point query. Useful for identifying which DataFetcher
+     * and build produced a query when inspecting database logs or query plans.
+     */
+    @Parameter(property = "graphitron.queryHint.enabled", defaultValue = "true")
+    @SuppressWarnings("unused")
+    protected boolean queryHintEnabled;
+
+    /**
+     * Optional build/commit identifier appended to the query hint after the artifact coordinates
+     * (e.g. a short git SHA passed from CI). Empty by default.
+     */
+    @Parameter(property = "graphitron.queryHint.commitId", defaultValue = "")
+    @SuppressWarnings("unused")
+    protected String queryHintCommitId;
+
     @Override
     public Set<String> getUserSchemaFiles() {
         if (userSchemaFiles == null || userSchemaFiles.isEmpty()) {
@@ -258,5 +275,18 @@ public class GenerateMojo extends AbstractGraphitronMojo implements Generator {
     @Override
     public boolean failOnMerge() {
         return failOnMerge;
+    }
+
+    @Override
+    public boolean isQueryHintEnabled() {
+        return queryHintEnabled;
+    }
+
+    @Override
+    public String getQueryHintBuildId() {
+        var coordinates = String.format("%s:%s", project.getArtifactId(), project.getVersion());
+        return queryHintCommitId == null || queryHintCommitId.isBlank()
+                ? coordinates
+                : coordinates + "@" + queryHintCommitId;
     }
 }

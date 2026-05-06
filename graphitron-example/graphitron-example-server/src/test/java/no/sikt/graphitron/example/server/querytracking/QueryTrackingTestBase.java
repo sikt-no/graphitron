@@ -63,4 +63,11 @@ public abstract class QueryTrackingTestBase {
     protected long countCountQueries() {
         return LISTENER.countCountQueries();
     }
+
+    /**
+     * Returns all SQL queries executed since the last clear.
+     */
+    protected List<String> getCountQueries() {
+        return LISTENER.getCountQueries();
+    }
 }
