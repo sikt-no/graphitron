@@ -431,8 +431,19 @@ All five bullets below are R12 scope. The first three form a dependency chain
     constraints, an `@error` type with `{handler: VALIDATION}`, and an
     execute-tier driver covering the violation path (constraint produces
     a typed error via `ConstraintViolations.toGraphQLError`) and the happy
-    path. The default `GraphitronContext.getValidator` lazy holder
-    suffices for the fixture; no harness override needed.
+    path. *Blocked at execute tier on
+    [`emit-input-records.md`](emit-input-records.md) (R94).* The pre-step
+    today calls `validator.validate(env.getArgument(name))`, which receives
+    a `Map<?, ?>` (or a raw scalar) — neither carries Jakarta annotations,
+    so the validator returns no violations and the wire path is a no-op
+    end-to-end. R94 emits each SDL `input` type as a graphitron-internal
+    Java record under `<outputPackage>.inputs`, coerces the map at the
+    fetcher boundary, and gives the validator a real annotated bean to
+    inspect; once that seam is in place this fixture becomes a one-line
+    addition to the sakila execute-tier driver. R92 phase 3's input-side
+    `mapping.type(InputRecord.class).field(...)` chain shares the same
+    target. Pipeline-tier coverage of the emit shape is already pinned
+    (`TypeFetcherGeneratorTest:1033`, `FetcherPipelineTest:212+`).
 - Resolve `mappingsConstantName` collision suffix at classify time
   (subsumes the standalone §3 hash-suffix dedup follow-up): **landed**.
   The per-field classifier (`FieldBuilder.resolveErrorChannel`) stamps every
