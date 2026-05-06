@@ -512,7 +512,10 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # multi-table fetcher can return either through the shared interface contract.
     name:        String!      @field(name: "TITLE")
     description: String       @field(name: "DESCRIPTION")
-    rentalRate:  Float!       @field(name: "RENTAL_RATE")
+    rentalRate:     Float!       @field(name: "RENTAL_RATE")
+    # R77 Phase B fixture: smallint NOT NULL DEFAULT 3 in Sakila. Read-back column for the
+    # createFilm_omittedFieldUsesColumnDefault execution test (DSL.defaultValue lands the 3).
+    rentalDuration: Int          @field(name: "RENTAL_DURATION")
     rating:      MpaaRating   @field(name: "RATING")
     textRating:  String       @field(name: "TEXT_RATING")
     length:      Int          @field(name: "LENGTH")
@@ -970,8 +973,14 @@ type Project @table(name: "project") {
 # without defaults (`title`, `language_id`); everything else can be omitted and defaulted at
 # the DB. The classifier admits @lookupKey-free INSERT inputs (Invariant #5).
 input FilmCreateInput @table(name: "film") {
-    title:      String! @field(name: "title")
-    languageId: Int!    @field(name: "language_id")
+    title:          String! @field(name: "title")
+    languageId:     Int!    @field(name: "language_id")
+    # R77 Phase B fixture: nullable, no trailing `!`, so graphql-java's argument coercion
+    # preserves the absent-vs-explicit-null distinction (Map.containsKey) the
+    # createFilm_omittedField/explicitNull execution tests turn on. Sakila's `rental_duration`
+    # is `smallint NOT NULL DEFAULT 3`: omitted lets the column default land via DSL.defaultValue;
+    # explicit null surfaces a NOT-NULL constraint violation.
+    rentalDuration: Int     @field(name: "rental_duration")
 }
 
 # R22 Phase 4 fixture: minimal UPDATE input. `filmId` is the @lookupKey (covers the single-column

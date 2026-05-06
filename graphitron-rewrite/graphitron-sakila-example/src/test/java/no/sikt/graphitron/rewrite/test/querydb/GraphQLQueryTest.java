@@ -3413,6 +3413,58 @@ class GraphQLQueryTest {
         }
     }
 
+    // ===== R77 Phase B: missing-vs-null on single-row INSERT (containsKey-gated DEFAULT) =====
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilm_omittedFieldUsesColumnDefault() {
+        // R77 Phase B: omitted columns now bind DSL.defaultValue(...) per cell instead of typed
+        // null. Sakila's `rental_duration` is `smallint NOT NULL DEFAULT 3`; omitting it from
+        // the input lets the DB default land. Pre-R77, the emitter wrote typed null and
+        // surfaced a NOT-NULL constraint violation.
+        String marker = "R77-PHASE-B-OMIT-" + java.util.UUID.randomUUID();
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    createFilm(in: { title: "%s", languageId: 1 }) {
+                        filmId
+                        rentalDuration
+                    }
+                }
+                """.formatted(marker));
+
+            Map<String, Object> created = (Map<String, Object>) data.get("createFilm");
+            assertThat(((Number) created.get("rentalDuration")).intValue()).isEqualTo(3);
+        } finally {
+            dsl.deleteFrom(org.jooq.impl.DSL.table("film"))
+                .where(org.jooq.impl.DSL.field("title").eq(marker))
+                .execute();
+        }
+    }
+
+    @Test
+    void createFilm_explicitNullRaisesError() {
+        // R77 Phase B: explicit null is preserved by Map.containsKey == true and binds typed
+        // null via DSL.val(null, dataType). On `rental_duration` (NOT NULL no default) this
+        // surfaces an IntegrityConstraintViolationException; the fetcher's try/catch routes
+        // through ErrorRouter.redact (no error channel on createFilm), producing a single
+        // redacted error and null data. Locks in the explicit-null branch the missing-vs-null
+        // section explicitly accommodates.
+        String marker = "R77-PHASE-B-NULL-" + java.util.UUID.randomUUID();
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                createFilm(in: { title: "%s", languageId: 1, rentalDuration: null }) {
+                    filmId
+                }
+            }
+            """.formatted(marker));
+        assertThat(result.getErrors()).isNotEmpty();
+        // Defensive cleanup in case the ICV did not abort the statement (it should have).
+        dsl.deleteFrom(org.jooq.impl.DSL.table("film"))
+            .where(org.jooq.impl.DSL.field("title").eq(marker))
+            .execute();
+    }
+
     // ===== R22 Phase 4: UPDATE emitter (DML mutation, TableBoundReturnType) =====
 
     @Test
