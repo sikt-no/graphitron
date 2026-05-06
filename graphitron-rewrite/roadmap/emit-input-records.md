@@ -110,6 +110,13 @@ already designed and waiting for the seam:
    `Map<?,?>`-handling service callsites already extract scalars at the
    fetcher boundary; this item lets the emitter destructure the record into
    exactly the same scalar args, eliminating the cast-and-`get` pattern.
+   *Note this is a migration surface, not just a new capability:* every
+   existing `@service` field whose argument is an SDL `input` type gets its
+   fetcher callsite rewritten from `service.x(env.getArgument("in"))` to
+   the destructured form. The spec should enumerate the migration surface
+   so the implementer can size it; sakila has at least the four DML cases
+   at `MutationFetchers.java:55, 75, 80-86` plus any `@service` field
+   whose input arg is currently typed.
 4. **A `@constraint` SDL directive (future work)**, if we ever want
    developer-driven Jakarta annotations alongside R92's CHECK-derived ones,
    has a place to land: SDL `@constraint(min: 1, max: 10)` becomes a
@@ -123,45 +130,83 @@ prescriptive.
 
 - **DML migration.** Today's DML emitters read `in.get("title")` against a
   `Map<?,?>`. The straight-line lift is to read `in.title()` from the record
-  instead. That's a per-DML-emitter rewrite (insert / update / upsert /
-  delete) but each call is mechanical. Alternative: keep the map alive for
-  DML reads and emit the record purely for validation. The dual-emit shape is
+  instead — a per-DML-emitter rewrite (insert / update / upsert / delete)
+  but each call is mechanical. Alternative: keep the map alive for DML
+  reads and emit the record purely for validation. The dual-emit shape is
   smaller scope but leaves two parallel input representations co-existing,
-  which tends to drift. Recommended default: single record source of truth.
+  which tends to drift. The spec should pick: single source of truth
+  (cleaner, larger DML touch surface) vs. dual-emit (smaller diff,
+  long-term drift cost).
 
-- **Record component → service-param mapping.** When the emitter destructures
-  the record into a service call, how does it resolve which component maps
-  to which service parameter? Three candidate shapes: (a) **by name**, where
-  record component names match service parameter names verbatim
-  (`input.filmId()` → `Integer filmId`); requires `-parameters` on the
-  service module's compilation, which the project already recommends after
-  the recent compiler-flag change on trunk. (b) **by position**, where the
-  emitter walks the SDL input fields in declaration order and binds them to
-  service parameters in the same order; brittle to SDL reordering, and
-  loses the rest of the protection a service-call mismatch would otherwise
-  surface as a method-not-found build error. (c) **by an explicit SDL/directive
-  mapping**, e.g. `@service(method: "submit", paramMap: {filmId: "filmId",
-  rating: "rating"})`; redundant in the common case but lets the
-  service-side parameter naming diverge from SDL when the consumer wants.
-  R88's `ClassAccessorResolver` (now landed) already canonicalises name-based
-  resolution against jOOQ records and `@error` source classes; the same
-  resolver shape probably suffices here. Recommended default: (a) by name,
-  with (c) as the explicit override path when consumer wants divergent
-  naming. Spec needs to pin the resolution failure mode (build-time
-  `UnclassifiedField` vs warn-and-fall-through to position).
+- **Where does record component → service-param resolution land?** This is
+  the *generation-thinking* fork: the same name-mapping is needed by (a)
+  the fetcher emitter that destructures `input.filmId()` into the service
+  call, and (b) R92 phase 3's
+  `mapping.type(InputRecord.class).field(graphqlFieldName)...` chain.
+  Resolving twice — once per emitter — duplicates the predicate. Per
+  *Generation-thinking* (rewrite-design-principles.adoc:9, "if two consumers
+  evaluate the same predicate over a model field, the branch belongs in
+  the model"), the resolution belongs at classify time, producing a typed
+  carrier (`ServiceCallShape`-style) that both emitters consume. R88's
+  `ClassAccessorResolver` is the precedent: classify-time resolution
+  yielding a sealed `Resolved | Rejected`, with each emitter switching on
+  the variant. The spec should pin: (i) the carrier shape (likely a
+  per-input-component tuple `(sdlFieldName, javaComponentName, returnType,
+  …)`); (ii) the matching algorithm (by name with `-parameters`, by
+  position, or directive-driven `@service(paramMap: …)` for divergent
+  naming); (iii) the rejection shape (sealed `Rejected` arm carrying the
+  candidate hint, surfacing as `UnclassifiedField` per *Validator mirrors
+  classifier invariants*, rewrite-design-principles.adoc:103). Avoid
+  committing to (ii) up front; the "by name with `-parameters`" default
+  is convenient but should land via spec deliberation, not Backlog
+  recommendation.
 
 - **Map → record coercion.** graphql-java doesn't auto-coerce input
-  `Map<String,Object>` to a Java POJO; the rewrite has to do it. Two shapes:
-  (a) emit a static `FilmInput.fromMap(Map<String,Object>)` factory per
-  input type and call it once at the fetcher boundary; (b) register a
-  per-input-type graphql-java `Coercing<FilmInput, Map, Map>` so
-  `env.getArgument("in")` returns the record directly. Option (a) is simpler
-  and keeps coercion failures inside graphitron's emitted code; option (b)
-  pushes coercion into graphql-java's argument-binding pipeline. Recommended:
-  (a) as v1.
+  `Map<String,Object>` to a Java POJO; the rewrite has to do it. Two
+  candidate shapes: (a) emit a static `FilmInput.fromMap(Map<String,Object>)`
+  factory per input type and call it once at the fetcher boundary; (b)
+  register a per-input-type graphql-java `Coercing<FilmInput, Map, Map>`
+  so `env.getArgument("in")` returns the record directly. Option (a) keeps
+  coercion logic inside graphitron's emitted code (parse-boundary symmetry
+  with `ConnectionHelper.encodeCursor` / `decodeCursor`); option (b)
+  hands the contract to graphql-java's argument-binding pipeline.
+  Per *Wire-format encoding is a boundary concern* (rewrite-design-principles.adoc:83),
+  the DataFetcher boundary is the canonical decode site, so this is
+  primarily about *who emits the decoder*. Spec should weigh; not pre-judged.
+
+- **Emitted-record visibility (graphitron-internal enforcement).** The
+  architectural principle says "services never see them"; today that's
+  documentation. The type system can carry the constraint. Candidate
+  shapes: (a) place the records in `<outputPackage>.inputs` and rely on
+  package convention (no structural enforcement); (b) emit them under a
+  sealed marker interface (`GraphitronInternalInput`) so consumer code
+  can't extend or co-locate; (c) make the records package-private and
+  expose only their `fromMap` factories via a generated facade. Option (a)
+  is the lightest; (c) is the most defensive. Spec should pick — the
+  R94 principle is load-bearing enough to justify a structural choice
+  rather than a comment.
+
+- **Reachable-closure scope.** SDL frequently has `input` types that are
+  only referenced as nested children of other inputs, not directly as
+  field arguments. Does the emitter walk every declared SDL `input` and
+  emit a record per type, or only the reachable closure (every `input`
+  reachable from a field argument)? The validator-mapping target set R92
+  phase 3 walks depends on this answer. Recommended: emit the reachable
+  closure only — non-reachable input types are dead schema and the
+  emitter shouldn't carry them — but spec should confirm.
+
+- **Mixed scalar + input service signatures.** SDL like
+  `submitFilmReview(filmId: Int!, rating: Int!, metadata: ReviewMetadataInput)`
+  mixes scalar args with an input arg. The "service signature unchanged"
+  claim above implies the emitter destructures only the input arg
+  (`metadata`) and passes the scalars through directly, not hoisting all
+  three into a synthetic record. Spec should pin this — and decide whether
+  the validator pre-step runs against each Arg-sourced parameter
+  independently or whether mixed signatures get a synthetic compound
+  validation root.
 
 - **Nested input records.** SDL `input` types frequently nest other inputs
-  (`input FilmsByPathInput { ... films: [FilmIdItem!]! }`). The record
+  (`input FilmsByPathInput { … films: [FilmIdItem!]! }`). The record
   components for these are themselves records; the coercer recurses. No
   conceptual issue — but the spec needs to nail the recursion shape and the
   null-handling rule for missing optional sub-objects.
@@ -169,23 +214,39 @@ prescriptive.
 - **Annotation source v1.** Emit records *without* Jakarta annotations
   initially; R92 phase 3 attaches them programmatically via
   `ConstraintMapping`. This avoids designing a `@constraint` SDL directive on
-  day one and decouples the seam-emit from any annotation-source decision. A
-  separate Backlog item can lift `@constraint` later.
+  day one and decouples the seam-emit from any annotation-source decision.
+  A separate Backlog item can lift `@constraint` later.
 
-- **Coercion failure shape.** Bad input shape (e.g., string where an int is
-  expected) becomes a coercion failure inside the record's `fromMap` factory,
-  before the validator runs. The emit has to decide whether to surface that
-  as a `GraphQLError` (graphql-java already rejects most type mismatches at
-  query parse / variable coercion) or as a `ConstraintViolation`-shaped error
-  (so consumers see one consistent error shape). Graphql-java's pre-fetcher
-  variable coercion likely handles most of this, but the spec should pin the
-  contract.
+- **Coercion failure shape (sealed result, not a wishy-washy fallthrough).**
+  Bad input shape can fail the `fromMap` factory in three ways graphql-java
+  may not catch: (a) wrong type for a component (graphql-java may have
+  already coerced top-level scalars, but for nested inputs the depth at
+  which graphql-java stops vs. graphitron starts is non-obvious); (b)
+  missing required component; (c) extra unexpected keys (graphql-java
+  rejects unknown variables, but for inline input literals the contract
+  is fuzzier). Per *Builder-step results are sealed*
+  (rewrite-design-principles.adoc:61), the right shape is a typed
+  `FromMapResult.{Ok(record) | TypeMismatch(path, expected, actual) |
+  MissingRequired(path) | UnknownKey(path)}` rather than throwing or
+  returning null; that lets R12 §5's `ValidationHandler` pre-step
+  distinguish coercion failures from validation failures, which it
+  currently can't. Spec should pin both the sealed shape and how each
+  arm surfaces (each maps to a `GraphQLError` with a stable
+  `extensions.classification` distinct from `ConstraintViolation`).
 
 ## Non-goals
 
 - Exposing emitted records to service signatures. The architectural principle
   rules this out unconditionally; the spec should not be tempted to "let the
   service take the record directly for convenience".
+- **Service-side `validator.validate(...)` calls.** Validation is a
+  fetcher-boundary concern; the service never sees the record and therefore
+  cannot validate against it. R12 §5's `ConstraintViolations.toGraphQLError`
+  derives `getPropertyPath()` from the validator's bean-walk against the
+  emitted record at the fetcher boundary. A service author who programmatically
+  re-validates a value and re-throws would produce a violation whose leaf
+  node names a service-side type the emitter never registered, breaking the
+  R12 §5 path-translation contract. The seam runs *only* at the fetcher.
 - Designing the `@constraint` SDL directive. Tracked as future work; the seam
   this item ships is enough on its own.
 - Replacing the `Map`-based input handling for non-`@table`-decorated SDL
