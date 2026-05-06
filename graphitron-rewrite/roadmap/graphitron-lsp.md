@@ -19,12 +19,23 @@ depends-on: []
 > **Phases 0-4 have shipped.** The LSP runs end-to-end against real
 > jOOQ catalogs with completion, diagnostics, hover, and
 > goto-definition for `@table`, `@field`, and `@reference`.
-> **Phases 0-6 are on trunk.** Phase 5 (this commit) brings
-> `@service` / `@condition` / `@record` completion, hover, and
-> diagnostics off a JDK 25 `java.lang.classfile`-driven scan of
-> `target/classes`. Phase 6 swapped the bonede tree-sitter binding for
-> jtreesitter and vendored the grammar. **Remaining work: Phase 7.**
-> Phase 7 retires the Rust LSP and the legacy `IntrospectMojo`.
+> **All graphitron-rewrite delivery for this plan is on trunk
+> (Phases 0–6).** Phase 5 ships `@service` / `@condition` /
+> `@record` completion, hover, and diagnostics off a JDK 25
+> `java.lang.classfile`-driven scan of `target/classes`. Phase 6
+> swapped the bonede tree-sitter binding for jtreesitter and
+> vendored the grammar. The Java LSP module ships through
+> graphitron-rewrite-parent's normal release cycle, so consumers
+> can pick it up the moment the next release tag lands; nothing
+> in graphitron-rewrite blocks them.
+>
+> What was originally Phase 7 (archive the Rust LSP repo, delete
+> the legacy `IntrospectMojo`, document consumer migration) is
+> carved out into [R91](retire-rust-lsp-and-introspect-mojo.md).
+> That work runs on a different (consumer-facing) schedule — the
+> Rust LSP keeps running until the migration window closes — and
+> is not graphitron-rewrite-side code. R18 is feature-complete
+> from this repository's perspective.
 >
 > Javadoc surfacing (table / column / scalar / method descriptions
 > shown in hover) and per-line `Column.definition` /
@@ -90,18 +101,18 @@ Done, on trunk:
 Test suite: 90+ LSP + 48 graphitron-maven module tests, all green
 against the fixture jOOQ catalog.
 
-The remainder of this plan describes Phase 7 plus the Phase 5 design
-record. Sections below carry forward only the design pieces those
-phases extend; already-shipped rationale lives in the commit
-messages.
+The remainder of this plan is the design record for the work that
+shipped — kept for archaeology, not for in-flight implementation.
+The Phase 7 retirement work is tracked separately under R91 and
+runs on the consumer migration schedule, not graphitron-rewrite's.
 
 ## References
 
 - **Rust LSP being replaced**:
   [gitlab.sikt.no/fs/graphitron-lsp](https://gitlab.sikt.no/fs/graphitron-lsp).
-  Phase 7 archives this repo; until then it stays the production
-  LSP for consumers who have not migrated.
-- **Legacy `IntrospectMojo`** (Phase 7 deletion target):
+  Stays the production LSP for consumers who have not migrated.
+  Archival is tracked under R91.
+- **Legacy `IntrospectMojo`** (R91 deletion target):
   `graphitron-maven-plugin/src/main/java/no/sikt/graphitron/mojo/IntrospectMojo.java`
   (327 LOC).
 - **Shipped LSP module**: `graphitron-rewrite/graphitron-lsp/`.
@@ -115,13 +126,12 @@ messages.
 ## Goal
 
 Replace the Rust `graphitron-lsp` with a Java LSP that reaches
-feature parity (Phases 0-4, done) and then extends the contract to
-surface `@service` / `@condition` method help, `@record` class
-help, and Javadoc on tables / columns / scalars / methods (Phase 5).
-Catalog data arrives in-process from the rewrite generator's
-`buildCatalog()`; no JSON producer, no separate LSP binary. The
-introspect Maven goal in the legacy plugin closes by deletion in
-Phase 7.
+feature parity (Phases 0-4, done) and extend the contract to
+surface `@service` / `@condition` method help and `@record` class
+help (Phase 5). Catalog data arrives in-process from the rewrite
+generator's `buildCatalog()`; no JSON producer, no separate LSP
+binary. The introspect Maven goal in the legacy plugin closes by
+deletion under R91, after the consumer migration window.
 
 The user-facing surface is the single `mvn graphitron:dev` goal,
 already shipped: LSP on `127.0.0.1:8487` plus the schema-input
@@ -144,9 +154,9 @@ The "Dev loop" section in
 [`graphitron-rewrite/docs/getting-started.md`](../docs/getting-started.adoc)
 is the user-facing surface. It documents the three-step recipe
 (run, connect, edit), the `graphitron.dev.port` override, and the
-catalog-refresh-via-`mvn compile` flow. Phases 5-7 layer on the same
-copy: any new feature whose user story does not read cleanly there
-needs the docs revised before the phase lands.
+catalog-refresh-via-`mvn compile` flow. Phase 5 layered on the same
+copy. R91's consumer-migration section gets a separate addendum
+when the archival lands.
 
 Four audiences read that page, in priority order: IntelliJ, VS
 Code, and terminal-editor (Neovim / Emacs / etc.) developers, plus
@@ -169,11 +179,13 @@ endpoint.
 
 **In scope (remaining)**
 
-- Rust-LSP and `graphitron-maven-plugin:introspect` retirement
-  (Phase 7).
+- None. R18 is feature-complete from graphitron-rewrite's side.
 
 **Out of scope**
 
+- Rust-LSP archival and `graphitron-maven-plugin:introspect`
+  deletion. Carved out into R91; runs on the consumer migration
+  schedule.
 - Javadoc surfacing on table / column / scalar / method hovers,
   per-line `Column.definition` / `Method.definition` refinement,
   and `@externalField` source-walk completion. All deferred to a
@@ -272,12 +284,14 @@ migration takes over native sourcing for the same four platforms
 
 ## Phasing
 
-Each phase is a coherent landing unit with its own commit set, tests,
-and exit criteria. Consumers see the LSP improve incrementally; the
-Rust LSP keeps running until Phase 7.
+Each phase was a coherent landing unit with its own commit set,
+tests, and exit criteria. Consumers see the LSP improve
+incrementally; the Rust LSP keeps running until R91 archives it.
 
-Phases 0-6 are on trunk (see Status above for commit anchors). The
-remaining work:
+Phases 0-6 are on trunk (see Status above for commit anchors).
+The Phase 5 design record below carries forward only because the
+trade-off discussion is worth the archaeology; the implementation
+shipped.
 
 **Phase 5: `@service` / `@condition` / `@record` autocomplete (shipped).**
 
@@ -372,14 +386,19 @@ active; grammar source vendored and built per platform; tests
 pass on the four CI platforms (Linux x86_64, macOS x86_64,
 macOS arm64, Windows x86_64).
 
-**Phase 7: polish + retire.** Release the Java LSP through
-graphitron-rewrite's normal release cycle. Archive
-`graphitron-lsp-rust` (the existing repo). Delete
+**Phase 7 (carved out): retirement under R91.** The Java LSP
+already ships through graphitron-rewrite-parent's normal release
+cycle (graphitron-lsp is one of the parent's reactor modules), so
+"release the Java LSP" was a no-op the moment the Phase 5 commits
+landed. What remains — archiving `graphitron-lsp-rust`, deleting
 `graphitron-maven-plugin/src/main/java/no/sikt/graphitron/mojo/IntrospectMojo.java`
-and the `LspConfig` records; the umbrella roadmap entry "Retire
-`graphitron-maven-plugin` + `graphitron-schema-transform`" closes
-this sub-item by deletion. Exit criteria: legacy plugin no longer
-ships an `introspect` goal; consumer-side migration is documented.
+and the `LspConfig` records, and writing the consumer migration
+section in `getting-started.adoc` — runs on a different schedule
+(consumer-facing, gitlab admin) than graphitron-rewrite delivery.
+That work is tracked under
+[R91](retire-rust-lsp-and-introspect-mojo.md) and is also a sub-step
+under the umbrella `retire-maven-plugin.md` "Retire
+`graphitron-maven-plugin` + `graphitron-schema-transform`".
 
 ## Tests
 
@@ -408,20 +427,17 @@ Per-phase additions still ahead:
 - **Phase 6**: existing test suite must pass against the
   jtreesitter binding without test-side changes (validates the
   `GraphqlLanguage` swap is the only point that changed). Native
-  artefact build verified on the four CI platforms.
-- **Phase 7**: no new tests; the rollout is a deletion plus a
-  release.
+  artefact build verified on the available CI platforms (Linux
+  x86_64 verified; macOS / Windows tracked under R89).
 
-If any earlier-phase test breaks during Phase 5-7 implementation,
-the breakage is the implementer's bug, not a test-fixture
-rewrite.
+R91 is mostly a deletion; no graphitron-rewrite test surface.
 
 ## Rollout
 
-The Rust LSP keeps running until Phase 7. Phases 0-6 are on trunk;
-the autocomplete / hover / diagnostic surface for `@service` /
-`@condition` / `@record` is live with Phase 5. Once consumers are
-ready to switch:
+The Rust LSP keeps running until R91 archives it. Phases 0-6 are
+on trunk; the autocomplete / hover / diagnostic surface for
+`@service` / `@condition` / `@record` is live with Phase 5. Once
+consumers are ready to switch:
 
 1. Consumer runs `mvn graphitron:dev` in a terminal in their schema
    module. The LSP starts on `localhost:8487`; the watch loops
@@ -438,8 +454,8 @@ ready to switch:
    nothing else uses it (separately tracked under the umbrella
    "Retire `graphitron-maven-plugin`").
 
-Phase 7 then deletes the legacy `IntrospectMojo` from
-`graphitron-maven-plugin` and archives the Rust LSP repo.
+R91 then archives the Rust LSP repo and deletes the legacy
+`IntrospectMojo` from `graphitron-maven-plugin`.
 
 No breaking changes to the LSP protocol surface during the rollout:
 completions / hover / diagnostics behave the same on the wire. The
@@ -451,11 +467,12 @@ only consumer-visible difference and was settled by the
 
 This plan owns the umbrella sub-item "Java LSP rewrite + introspect
 retirement + `dev` goal" under
-[retire-maven-plugin.md](retire-maven-plugin.md). The umbrella's
-body points back here for the phase status; once Phase 7 lands, the
-umbrella entry collapses to a Done line citing the last commit and
-the test location, and this plan is deleted per the delete-on-done
-rule.
+[retire-maven-plugin.md](retire-maven-plugin.md). With Phase 7
+carved into R91, R18 closes once the In Review handoff approves the
+shipped work; the umbrella entry's "introspect retirement" half then
+points at R91 instead, and R18 is deleted per the delete-on-done
+rule. R90 (LSP follow-ups) and R89 (multi-platform native CI) are
+sibling backlog items, not part of R18.
 
 The standalone watch-goal sub-item closed implicitly: the
 `graphitron-rewrite:watch` Mojo was deleted in Phase 1 and
