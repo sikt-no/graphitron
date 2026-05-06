@@ -178,6 +178,18 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             method: "filmCount"
         })
+    # R87 Phase D: instance-@service fixture. SampleInstanceService is a non-final class with a
+    # public (DSLContext) constructor; the generated fetcher must emit
+    # `new SampleInstanceService(dsl).titleByFilmId(filmId)`. A regression in serviceCallTarget
+    # that re-emitted the static `SampleInstanceService.titleByFilmId(...)` call shape against
+    # this instance method would surface here as a javac rejection on the generated source, not
+    # a unit-test body-string mismatch — the compile tier is the structural backstop for the
+    # static-vs-instance fork (rewrite-design-principles.adoc:128, 136-140).
+    titleByFilmIdViaInstance(filmId: Int!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleInstanceService",
+            method: "titleByFilmId"
+        })
     # stub-interface-union-fetchers.md Track A: QueryTableInterfaceField fixture.
     # Content is a TableInterfaceType (@table + @discriminate); the generator emits a
     # fetcher that selects from the shared 'content' table and projects the discriminator

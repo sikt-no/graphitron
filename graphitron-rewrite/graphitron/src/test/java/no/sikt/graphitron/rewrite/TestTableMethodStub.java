@@ -57,4 +57,14 @@ class TestTableMethodStub {
     public static org.jooq.Table<?> getWithContext(org.jooq.Table<?> table, String tenantId) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * Instance method (no {@code static} modifier) — exists to provoke the
+     * {@code service-catalog-tablemethod-must-be-static} rejection arm in
+     * {@code ServiceCatalog.reflectTableMethod}. Used by
+     * {@code TableMethodFieldValidationTest.instanceTableMethod_validatorReportsAuthorError}.
+     */
+    public Film getFilmInstance(Film table) {
+        throw new UnsupportedOperationException();
+    }
 }

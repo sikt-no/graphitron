@@ -68,4 +68,32 @@ class TableMethodFieldValidationTest {
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());
     }
+
+    /**
+     * Drives the {@code service-catalog-tablemethod-must-be-static}
+     * {@code @LoadBearingClassifierCheck} (R87 Phase B) end-to-end: builds a real schema bound
+     * to {@link no.sikt.graphitron.rewrite.TestTableMethodStub}'s instance method
+     * {@code getFilmInstance}, runs through {@code GraphitronSchemaBuilder} +
+     * {@code GraphitronSchemaValidator}, and asserts the validator surfaces the new rejection
+     * arm. Mirrors the @service-side instance-holder validator test in
+     * {@code ServiceFieldValidationTest}; the two together pin "validator mirrors classifier
+     * invariants" for the static-vs-instance axis on both producer arms.
+     */
+    @org.junit.jupiter.api.Test
+    void instanceTableMethod_validatorReportsAuthorError() {
+        var schema = no.sikt.graphitron.rewrite.TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films: [Film!]!
+                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilmInstance"})
+            }
+            """);
+
+        var errors = validate(schema);
+        assertThat(errors).extracting(ValidationError::message)
+            .filteredOn(m -> m.contains("Query.films"))
+            .as("validator surfaces the @tableMethod must-be-static rejection through its own surface")
+            .singleElement()
+            .satisfies(message -> assertThat(message).contains("must be declared 'static'"));
+    }
 }

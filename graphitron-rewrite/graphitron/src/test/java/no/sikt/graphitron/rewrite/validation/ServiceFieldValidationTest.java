@@ -255,4 +255,37 @@ class ServiceFieldValidationTest {
             .extracting(ValidationError::message)
             .containsExactlyInAnyOrderElementsOf(tc.errors());
     }
+
+    // ===== Instance-holder rejection arm — validator-tier reachability (R87 Phase C) =====
+
+    /**
+     * Drives the {@code service-catalog-instance-service-holder-shape} {@code @LoadBearingClassifierCheck}
+     * end-to-end: builds a real schema bound to {@link no.sikt.graphitron.rewrite.TestInstanceServiceStubNoCtor}
+     * (an instance holder with no {@code (DSLContext)} constructor), runs it through
+     * {@code GraphitronSchemaBuilder} + {@code GraphitronSchemaValidator}, and asserts a single
+     * {@link ValidationError} surfaces with both fix options ("make the method static, or add the
+     * (DSLContext) constructor"). Existing {@code ServiceCatalogTest} coverage is unit-tier; this
+     * test pins reachability through the validator's own dispatch surface, matching
+     * {@code rewrite-design-principles.adoc:101-105} ("validator mirrors classifier invariants").
+     */
+    @org.junit.jupiter.api.Test
+    void instanceServiceHolderShape_noCtor_validatorReportsAuthorError() {
+        var schema = no.sikt.graphitron.rewrite.TestSchemaHelper.buildSchema("""
+            type Query {
+                film: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestInstanceServiceStubNoCtor", method: "getFilm"})
+            }
+            type Film @table(name: "film") {
+                title: String
+            }
+            """);
+
+        var errors = validate(schema);
+        assertThat(errors).extracting(ValidationError::message)
+            .filteredOn(m -> m.contains("Query.film"))
+            .as("validator surfaces the instance-holder rejection through the validator's own surface")
+            .singleElement()
+            .satisfies(message -> assertThat(message)
+                .contains("make the method static")
+                .contains("DSLContext"));
+    }
 }
