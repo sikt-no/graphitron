@@ -1,42 +1,24 @@
 name: Maven Publish (rewrite)
 
+# Releases are tag-driven. Publish a build by creating a GitHub Release whose
+# tag matches v<MAJOR>.<MINOR>.<PATCH> or v<MAJOR>.<MINOR>.<PATCH>-RC<n>:
+#
+#   v10.0.0-RC1, v10.0.0-RC2, ..., v10.0.0
+#
+# Maven version ordering treats `10.0.0-RC1` as strictly less than `10.0.0`,
+# so consumers asking for `[10.0.0,)` won't pick up RCs by accident. RCs are
+# published to Maven Central just like final releases (signed, sources +
+# javadoc jars, autoPublish=true via central-publishing-maven-plugin).
+
 on:
-  push:
-    branches:
-      - main
-      - claude/graphitron-rewrite
   release:
     types: [created]
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  snapshot:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Java for snapshot publishing
-        uses: actions/setup-java@v5
-        with:
-          java-version: '25'
-          distribution: 'temurin'
-          cache: maven
-          server-id: central
-          server-username: MAVEN_USERNAME
-          server-password: MAVEN_PASSWORD
-
-      - name: Build and deploy snapshot
-        run: mvn -f graphitron-rewrite/pom.xml --batch-mode --errors deploy
-        env:
-          MAVEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN }}
-
   release:
-    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -55,12 +37,12 @@ jobs:
 
       - name: Validate and extract version from release tag
         run: |
-          # Extract version from GitHub release tag (e.g. v10.0.0 -> 10.0.0)
+          # Extract version from GitHub release tag (e.g. v10.0.0-RC1 -> 10.0.0-RC1)
           TAG=${GITHUB_REF#refs/tags/}
 
-          # Validate the tag format (should be v<MAJOR>.<MINOR>.<PATCH>)
-          if ! [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "ERROR: Tag format is invalid. Must be v<MAJOR>.<MINOR>.<PATCH> (e.g. v10.0.0)"
+          # Validate the tag format (v<MAJOR>.<MINOR>.<PATCH> with optional -RC<n>)
+          if ! [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-RC[0-9]+)?$ ]]; then
+            echo "ERROR: Tag format is invalid. Must be v<MAJOR>.<MINOR>.<PATCH> or v<MAJOR>.<MINOR>.<PATCH>-RC<n> (e.g. v10.0.0, v10.0.0-RC1)"
             exit 1
           fi
 
