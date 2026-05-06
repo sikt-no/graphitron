@@ -130,11 +130,14 @@ bulk action's count-by-reason pivot is typed:
 ```java
 public record SdlAction(
     String displayName,                     // code-action title shown in the editor
-    Set<DeprecationTarget> targets,         // qualified <parent>.<member> the action migrates
+    Set<DeprecationTarget> targets,         // deprecation sites the action migrates
     Detector detector,
     Rewrite rewrite
 ) {
-    public record DeprecationTarget(String parent, String memberName) {}
+    public sealed interface DeprecationTarget permits Member, WholeDirective {
+        record Member(String parent, String memberName) implements DeprecationTarget {}
+        record WholeDirective(String directive) implements DeprecationTarget {}
+    }
 
     @FunctionalInterface
     public interface Detector {
@@ -171,35 +174,72 @@ Why these shapes:
   and lose typing on the skip reason.
 
 R93 instantiates `SdlAction` once for the `name → className`
-migration with `targets = { ExternalCodeReference.name }`. Future
-LSP-side SDL refactors (R54's `@externalField` directive rename if
-it picks the LSP-quick-fix migration option; any future rename or
-extract) instantiate it differently. Per-site quick-fix and both
-bulk surfaces consume `SdlAction` instances directly, so a new
-refactor ships all three activation points from one instantiation.
+migration with `targets = { Member("ExternalCodeReference", "name") }`.
+Future LSP-side SDL refactors instantiate it differently:
+member-deprecation migrations (any future input-field or argument
+rename) carry `Member` targets; whole-directive renames (R54's
+`@externalField` rename if it picks the LSP-quick-fix option)
+carry a `WholeDirective` target. Per-site quick-fix and both bulk
+surfaces consume `SdlAction` instances directly, so a new refactor
+ships all three activation points from one instantiation regardless
+of target shape.
 
 ## Drift protection
 
-The `SdlAction` registry and `directives.graphqls`'s `@deprecated()`
-markers must agree, both directions, modulo an allow-list for
-deprecations whose migration is intentionally manual:
+The `SdlAction` registry and the deprecation markers in
+`directives.graphqls` must agree, both directions, modulo an
+allow-list for deprecations whose migration is intentionally manual.
+Two marker shapes count as deprecation:
+
+- **Member-level: SDL `@deprecated()` directive on an argument or
+  input field.** The standard form, parsed straight from the SDL.
+  Today: `ExternalCodeReference.name` and
+  `@asConnection(connectionName:)`.
+- **Whole-directive: javadoc-style `@deprecated <reason>` token in
+  the directive's SDL description string.** SDL's `@deprecated`
+  directive cannot apply to a directive definition (the GraphQL
+  spec disallows it), so whole-directive deprecation needs a
+  parallel marker that lives in source close to the deprecation
+  target. The convention is a description-string token following
+  javadoc's `@deprecated` block tag, free-form reason after the
+  token. Today: `@index` (description currently carries the prose
+  "Deprecated: use `@order(index:)` instead"; this item rewrites it
+  into the structured form).
+
+The drift walker reads both. The invariants:
 
 - **Every `SdlAction.targets()` entry must point at an existing
   deprecation marker in `directives.graphqls`.** A stale
-  `SdlAction` (targets a directive / argument / input that has been
-  removed or undeprecated) breaks the build.
-- **Every `@deprecated()` marker in `directives.graphqls` must be
+  `SdlAction` (target whose deprecation was removed, or whose
+  directive / argument / input was renamed or deleted) breaks the
+  build. `Member` targets resolve against SDL `@deprecated()`
+  markers; `WholeDirective` targets resolve against the
+  description-string `@deprecated` token.
+- **Every deprecation marker in `directives.graphqls` must be
   covered by either an `SdlAction` or the
-  `MANUAL_MIGRATION_DEPRECATIONS` allow-list.** An orphan deprecation
-  (we said it's deprecated but offer no migration tooling and no
-  documented "manual" reason) breaks the build.
+  `MANUAL_MIGRATION_DEPRECATIONS` allow-list.** An orphan
+  deprecation (we said it's deprecated but offer no migration
+  tooling and no documented "manual" reason) breaks the build.
 
-The allow-list lives next to the test as a `Set<DeprecationTarget>`
-constant carrying a one-line "why" comment per entry. At R93
-landing time it covers `@asConnection.connectionName` (per-field
-semantics differ across instances; manual fix only) and is the
-intended landing point for the `@externalField` directive itself
-during R54's window if R54 chooses not to ship an `SdlAction`.
+The allow-list lives next to the test as a
+`Set<SdlAction.DeprecationTarget>` constant carrying a one-line
+"why" comment per entry. At R93 landing time it covers two entries:
+
+- `Member("@asConnection", "connectionName")`: per-field semantics
+  differ across instances (the override exists as a transition
+  mechanism for legacy schemas); no mechanical rewrite is correct.
+- `WholeDirective("index")`: the directive itself is deprecated,
+  superseded by `@order(index:)`, but the migration shape is a
+  per-call-site rewrite from `@index(name: "X")` on an enum value
+  to `@order(index: "X")`; tractable as a future `SdlAction` but
+  not in R93's scope. Allow-listed for now with a pointer to the
+  follow-on.
+
+The structured marker is also the intended landing point for the
+`@externalField` directive itself during R54's window if R54
+chooses not to ship an `SdlAction` — it would be added to the
+allow-list as `WholeDirective("externalField")` until the rename's
+parallel-support window closes.
 
 This mirrors the existing `DeprecationsDocCoverageTest` pattern (with
 its `WHOLE_DIRECTIVE_DEPRECATIONS` allow-list for spec-disallowed
@@ -207,7 +247,13 @@ whole-directive deprecations) one layer down: the docs test covers
 documentation drift between SDL and `reference/deprecations.adoc`;
 the new LSP test covers tooling drift between SDL and the
 `SdlAction` registry. Both are bidirectional drift seams against the
-same `directives.graphqls` source of truth.
+same `directives.graphqls` source of truth. The docs test currently
+hand-maintains its `WHOLE_DIRECTIVE_DEPRECATIONS` allow-list as a
+literal `Set.of("index")`; once R93's structured marker lands, that
+test could derive the same set from the SDL parse instead of holding
+a parallel constant. That migration is out of scope for R93 (the
+docs test stays put) but is a small, follow-on simplification once
+the marker convention exists.
 
 ## Diagnostic shape
 
@@ -259,6 +305,25 @@ New files under `graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphit
 - `code_action/SdlActions.java` — registry of every `SdlAction`
   instance plus the `MANUAL_MIGRATION_DEPRECATIONS` allow-list for
   deprecations whose migration is intentionally manual.
+- `parsing/DeprecationMarkers.java` — walks
+  `directives.graphqls` once and emits the canonical set of
+  deprecation targets: member-level via SDL `@deprecated()` on
+  arguments and input-type fields, whole-directive via the
+  javadoc-style `@deprecated <reason>` token in directive
+  description strings. Returns `Set<SdlAction.DeprecationTarget>`
+  for the drift test to compare against the registry. Same parser
+  is consumed by impl-tier code-action labels if needed (so the
+  reason string in the marker becomes hover-readable as a free
+  side-effect, but R93 doesn't surface it as a feature).
+
+Modified files outside the LSP module:
+
+- `graphitron-rewrite/graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls` —
+  `@index`'s description string converts the existing prose
+  "Deprecated: use `@order(index:)` instead" into the structured
+  javadoc-style form "@deprecated use `@order(index:)` instead"
+  so `DeprecationMarkers` can pick it up. No semantic change for
+  consumers; the prose deprecation hint stays human-readable.
 
 Modified files in the same module:
 
@@ -302,14 +367,30 @@ Four tests, organised by tier:
   rewrite slot returns `RewriteResult.Edit` for resolvable sites
   with the expected `TextEdit`, and `RewriteResult.Skip` carrying
   the unresolved name for unresolvable sites.
-- `SdlActionDriftTest`: walks `directives.graphqls`'s
-  `@deprecated()` markers and the `SdlActions` registry; asserts
-  both directions of the drift-protection invariant. Stale-target
-  test: every `SdlAction.targets()` entry corresponds to an
-  existing marker. Orphan-deprecation test: every marker is
-  covered by either an `SdlAction` or the
-  `MANUAL_MIGRATION_DEPRECATIONS` allow-list. Sibling pattern to
+- `SdlActionDriftTest`: walks the canonical deprecation-target
+  set from `DeprecationMarkers` (covering both SDL `@deprecated()`
+  on arguments / input-type fields and the description-string
+  `@deprecated <reason>` token on directive definitions) plus the
+  `SdlActions` registry; asserts both directions of the
+  drift-protection invariant. Stale-target test: every
+  `SdlAction.targets()` entry (`Member` and `WholeDirective` arms
+  both) corresponds to an existing marker. Orphan-deprecation
+  test: every marker is covered by either an `SdlAction` or the
+  `MANUAL_MIGRATION_DEPRECATIONS` allow-list. Per-arm fixture
+  cases assert the parser handles both marker shapes; the test
+  also asserts the at-landing-time set is exactly
+  `{ Member("ExternalCodeReference", "name"),
+  Member("@asConnection", "connectionName"),
+  WholeDirective("index") }`. Sibling pattern to
   `DeprecationsDocCoverageTest`'s SDL-to-docs invariant.
+- `DeprecationMarkersTest`: parser unit test against synthetic
+  SDL fixtures. Covers: SDL `@deprecated()` on directive args
+  (none today but possible); SDL `@deprecated()` on input-type
+  fields; description-string `@deprecated <reason>` token in
+  various positions (start of description, mid-description,
+  multi-line description); a description string carrying the
+  prose word "deprecated" but not the structured token (must not
+  match); a directive whose description is missing entirely.
 
 ### LSP-tier
 
@@ -359,25 +440,33 @@ to host future per-arg / per-directive features beyond R93.
 
 ### Phase 2: code-action surface
 
-- Introduce `SdlAction` (the primitive) and instantiate it for the
-  `name → className` migration with
-  `targets = { ExternalCodeReference.name }`.
+- Introduce `SdlAction` (the primitive, with the sealed
+  `DeprecationTarget { Member | WholeDirective }` shape) and
+  instantiate it for the `name → className` migration with
+  `targets = { Member("ExternalCodeReference", "name") }`.
 - `SdlActions` registry plus the `MANUAL_MIGRATION_DEPRECATIONS`
-  allow-list (covering `@asConnection.connectionName` at landing
-  time).
+  allow-list (covering `Member("@asConnection", "connectionName")`
+  and `WholeDirective("index")` at landing time).
+- `DeprecationMarkers` parser plus the structured-form rewrite of
+  `@index`'s description in `directives.graphqls`.
 - `CodeActions` provider, registered in
   `GraphitronTextDocumentService`. Three activation points: per-site,
   file-scoped bulk, workspace-scoped bulk.
 - The legacy-and-unresolved diagnostic arm in `Diagnostics`.
-- `SdlActionTest`, `CodeActionsTest`, and `SdlActionDriftTest`.
+- `SdlActionTest`, `CodeActionsTest`, `DeprecationMarkersTest`, and
+  `SdlActionDriftTest`.
 
-Acceptance: editor users can right-click on a legacy `name:` literal
-and apply the migration; "Migrate `name:` in this file" and "Migrate
-`name:` in this workspace" each compose the resolvable sites into one
-`WorkspaceEdit` at the named scope. Unresolvable sites surface as
-error diagnostics in the problems panel and skip the rewrite. The
-`SdlActionDriftTest` invariants pass: every action targets an
-existing marker, every marker is covered (action or allow-list).
+Acceptance: editor users can apply the migration on a legacy `name:`
+literal; "Migrate `name:` in this file" and "Migrate `name:` in this
+workspace" each compose the resolvable sites into one `WorkspaceEdit`
+at the named scope. Unresolvable sites surface as error diagnostics
+in the problems panel and skip the rewrite. The `SdlActionDriftTest`
+invariants pass: every action targets an existing marker (member or
+whole-directive), every marker is covered (action or allow-list).
+The at-landing-time canonical set is exactly
+`{ Member("ExternalCodeReference", "name"),
+Member("@asConnection", "connectionName"),
+WholeDirective("index") }`.
 
 ## Open architectural decisions
 
