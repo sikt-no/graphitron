@@ -16,4 +16,15 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
  * remaining columns are placeholders the framework re-fetches when the child Film is
  * selected.
  */
-public record FilmCardData(FilmRecord film) {}
+public record FilmCardData(FilmRecord film) {
+
+    /**
+     * R88 execution-tier hook: surfaces a {@link RecordExampleType} so the {@code example} field
+     * on the SDL {@code FilmCardWrapper} type exercises three accessor-resolution arms in one
+     * fixture. Same instance per call — the fixture covers the resolution + emit path, not
+     * value identity.
+     */
+    public RecordExampleType example() {
+        return new RecordExampleType("alpha");
+    }
+}

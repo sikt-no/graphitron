@@ -367,6 +367,28 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void filmCardWrapper_recordExample_resolvesAllThreeAccessorArms() {
+        // R88 execution-tier fixture: a @record-Java-backed type whose three SDL fields each
+        // exercise a different accessor-resolution arm — bare-name (Java record component
+        // fieldA()), get-prefixed (getFieldB()), and @field(name:) override redirecting to
+        // get-prefixed (getRebound()). The classifier resolves each arm at validate-time,
+        // and the emitter switches on the pre-resolved Method handles per
+        // FetcherEmitter.propertyOrRecordValue.
+        Map<String, Object> data = execute(
+            "{ inventoryById(inventory_id: [1]) { filmCardData { example { fieldA fieldB fieldC } } } }");
+        @SuppressWarnings("unchecked")
+        var rows = (List<Map<String, Object>>) data.get("inventoryById");
+        assertThat(rows).hasSize(1);
+        @SuppressWarnings("unchecked")
+        var filmCardData = (Map<String, Object>) rows.get(0).get("filmCardData");
+        @SuppressWarnings("unchecked")
+        var example = (Map<String, Object>) filmCardData.get("example");
+        assertThat(example).extractingByKey("fieldA").isEqualTo("alpha");
+        assertThat(example).extractingByKey("fieldB").isEqualTo("B-alpha");
+        assertThat(example).extractingByKey("fieldC").isEqualTo("rebound-alpha");
+    }
+
+    @Test
     void films_filteredBySameTableNodeId_returnsRowsMatchingDecodedIds() {
         // self-table-nodeid-filter.md: [ID!] @nodeId(typeName: "Film") on a film-bound input
         // → primary-key IN predicate. Encode 2 of the 5 PKs, expect exactly those 2 rows.
