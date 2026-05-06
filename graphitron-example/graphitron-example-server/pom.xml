@@ -140,6 +140,7 @@
                     <systemPropertyVariables>
                         <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
                         <maven.home>${maven.home}</maven.home>
+                        <approval.variant>${approval.variant}</approval.variant>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
