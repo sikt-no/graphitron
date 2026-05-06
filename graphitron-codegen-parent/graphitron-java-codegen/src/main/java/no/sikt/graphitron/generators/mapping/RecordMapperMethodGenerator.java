@@ -12,6 +12,7 @@ import java.util.ArrayList;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ARGS;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NEXT_ARGS;
 
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.outputPrefix;
@@ -30,13 +31,14 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
 
 
     protected CodeBlock iterateRecords(MapperContext context) {
-        return iterateRecords(context, VAR_ARGS);
+        return iterateRecords(context, 0);
     }
     /**
      * @return Code for setting the record data of previously defined records.
      */
     @NotNull
-    protected CodeBlock iterateRecords(MapperContext context, String argumentSetName) {
+    protected CodeBlock iterateRecords(MapperContext context, int argDepth) {
+        var argumentSetName = argDepth == 0 ? VAR_ARGS : VAR_NEXT_ARGS + (argDepth - 1);
         if (context.isIterable() && !context.hasTable() && context.hasSourceName()) {
             return CodeBlock.empty();
         }
@@ -75,13 +77,9 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
                 innerCode.add(innerContext.getRecordSetMappingBlock());
             } else if (!innerField.createsDataFetcher() && !innerContext.hasTable()) {
                 if(toRecord) {
-                    var nextArgsVar = nextArgPresenceVar();
-                    innerCode.add(
-                            CodeBlock.builder()
-                                    .declare(nextArgsVar, "$N.child($S)", argumentSetName, innerField.getName())
-                                    .add(iterateRecords(innerContext, nextArgsVar))
-                                    .build()
-                    );
+                    innerCode
+                            .declare(VAR_NEXT_ARGS + argDepth, "$N.child($S)", argumentSetName, innerField.getName())
+                            .add(iterateRecords(innerContext, argDepth + 1));
                 } else {
                     innerCode.add(iterateRecords(innerContext));
                 }

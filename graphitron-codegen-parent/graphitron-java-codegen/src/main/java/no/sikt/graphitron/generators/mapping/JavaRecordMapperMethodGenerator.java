@@ -40,14 +40,15 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
 
     @Override
     protected CodeBlock iterateRecords(MapperContext context){
-        return iterateRecords(context, VAR_ARGS);
+        return iterateRecords(context, 0);
     }
 
     /**
      * @return Code for setting the record data from input types.
      */
     @NotNull
-    protected CodeBlock iterateRecords(MapperContext context, String argumentSetName) {
+    protected CodeBlock iterateRecords(MapperContext context, int argDepth) {
+        var argumentSetName = argDepth == 0 ? VAR_ARGS : VAR_NEXT_ARGS + (argDepth - 1);
         if (context.isIterable() && !context.hasRecordReference()) {
             return CodeBlock.empty(); // Can not allow this, because input type may contain multiple fields. These can not be mapped to a single field in any reasonable way.
         }
@@ -86,10 +87,9 @@ public class JavaRecordMapperMethodGenerator extends AbstractMapperMethodGenerat
                 } else if (innerContext.hasRecordReference()) {
                     innerCode.add(innerContext.getRecordSetMappingBlock());
                 } else if (toRecord) {
-                    var nextArgsVar = nextArgPresenceVar();
-                    innerCode.
-                            declare(nextArgsVar, "$N.child($S)", argumentSetName, innerField.getName()).
-                            add(iterateRecords(innerContext, nextArgsVar));
+                    innerCode
+                            .declare(VAR_NEXT_ARGS + argDepth, "$N.child($S)", argumentSetName, innerField.getName())
+                            .add(iterateRecords(innerContext, argDepth + 1));
                 } else {
                     innerCode.add(iterateRecords(innerContext));
                 }
