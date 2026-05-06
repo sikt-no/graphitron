@@ -1397,24 +1397,6 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Transitional codegen guard. The classifier admits bulk {@code @table} input arguments
-     * ({@code in: [FilmInput!]!}), but the per-verb emit bodies in this file still assume a
-     * single-row {@code Map<?,?>} cast. Until the four {@code buildMutation*Fetcher} methods
-     * are rewired around a {@code List<Map<?,?>>} bulk arm, throw at codegen so a bulk schema
-     * surfaces a clear "not yet emitted" build-time error instead of a {@code ClassCastException}
-     * at request time.
-     */
-    private static void rejectBulkArmUntilSupported(no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia, String verb) {
-        if (tia.list()) {
-            throw new IllegalStateException(
-                "@mutation(typeName: " + verb + ") with a listed @table input argument ("
-                + tia.name() + ": [...]) classifies cleanly but the bulk fetcher body is not yet "
-                + "emitted; single-row inputs are unaffected. Drop the list wrapper or wait for "
-                + "the bulk fetcher implementation to ship.");
-        }
-    }
-
-    /**
      * Emits a fetcher for {@link MutationField.MutationDeleteTableField}: a synchronous static
      * method that runs {@code dsl.deleteFrom(table).where(<lookupKey predicates>)
      * .returningResult(<keys or $fields>).fetchOne(...)}.
@@ -1427,26 +1409,27 @@ public class TypeFetcherGenerator {
         key = "dml-mutation-shape-guarantees",
         reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
             + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
-            + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
-            + "without an extraction-arm dispatch. Bulk arm (tia.list() == true) is rejected "
-            + "at codegen until bulk fetcher emission lands; the classifier admits the shape "
-            + "but no fetcher is emitted.")
+            + "env.getArgument(tia.name()) to Map<?,?> when tia.list() == false, "
+            + "List<Map<?,?>> when tia.list() == true (Invariant #15 then guarantees the return "
+            + "shape is list-cardinality, so the projection terminator binds the matching "
+            + "*List arm); walks tia.fieldBindings() without an extraction-arm dispatch.")
     private static MethodSpec buildMutationDeleteFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationDeleteTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
-        rejectBulkArmUntilSupported(tia, "DELETE");
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
 
-        var dmlChain = CodeBlock.builder()
-            .add(".deleteFrom($L)\n", tableLocal)
-            .add(".where(").add(buildLookupWhere(tia, tablesOnly, tableRef)).add(")\n")
-            .build();
+        var dmlChain = CodeBlock.builder().add(".deleteFrom($L)\n", tableLocal);
+        if (tia.list()) {
+            dmlChain.add(".where(").add(buildBulkLookupRowIn(tia, tablesOnly, tableRef)).add(")\n");
+        } else {
+            dmlChain.add(".where(").add(buildLookupWhere(tia, tablesOnly, tableRef)).add(")\n");
+        }
 
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain);
+            outputPackage, dmlChain.build(), tia.list());
     }
 
     /**
@@ -1466,44 +1449,70 @@ public class TypeFetcherGenerator {
         key = "dml-mutation-shape-guarantees",
         reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
             + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
-            + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
-            + "as Direct-extracted ColumnField with a single cast (no extraction-arm dispatch). "
-            + "Bulk arm (tia.list() == true) is rejected at codegen until bulk fetcher emission lands.")
+            + "env.getArgument(tia.name()) to Map<?,?> when tia.list() == false, "
+            + "List<Map<?,?>> when tia.list() == true; walks tia.fields() as Direct-extracted "
+            + "ColumnField with a single cast (no extraction-arm dispatch). Per-cell "
+            + "missing-vs-null dispatch on map.containsKey(\"col\") emits "
+            + "DSL.defaultValue(dataType) when absent and DSL.val(value, dataType) when present, "
+            + "letting omitted columns take the DB-side default while explicit nulls bind typed null.")
     private static MethodSpec buildMutationInsertFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationInsertTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
-        rejectBulkArmUntilSupported(tia, "INSERT");
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
 
         var fields = tia.fields();
         var colList = CodeBlock.builder();
-        var valList = CodeBlock.builder();
         for (int i = 0; i < fields.size(); i++) {
             var cf = (InputField.ColumnField) fields.get(i);
-            if (i > 0) {
-                colList.add(", ");
-                valList.add(",\n");
-            }
+            if (i > 0) colList.add(", ");
             colList.add("$T.$L.$L",
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
-            valList.add("in.containsKey($S) ? $T.val(in.get($S), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
-                cf.name(),
-                DSL, cf.name(),
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
-                DSL,
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
         }
 
         var dmlChain = CodeBlock.builder()
-            .add(".insertInto($L, ", tableLocal).add(colList.build()).add(")\n")
-            .add(".values(\n").indent().add(valList.build()).add(")\n").unindent()
-            .build();
+            .add(".insertInto($L, ", tableLocal).add(colList.build()).add(")\n");
+        if (tia.list()) {
+            dmlChain.add(".valuesOfRows(in.stream()\n").indent()
+                .add(".map(row -> $T.row(\n", DSL).indent()
+                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row")).unindent()
+                .add("))\n")
+                .add(".toList())\n").unindent();
+        } else {
+            dmlChain.add(".values(\n").indent()
+                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in")).unindent()
+                .add(")\n");
+        }
 
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain);
+            outputPackage, dmlChain.build(), tia.list());
+    }
+
+    /**
+     * Per-cell missing-vs-null dispatch: emits one ternary expression per column at the supplied
+     * map-local (e.g. {@code in} for single-row, {@code row} for the bulk-stream lambda).
+     * Absent key → {@code DSL.defaultValue(dataType)} (jOOQ renders {@code DEFAULT}); present key
+     * (including explicit null) → {@code DSL.val(map.get("name"), dataType)} (typed bind).
+     * Comma-separated, newline-terminated per cell so the formatted output is readable.
+     */
+    private static CodeBlock buildPerCellValueList(
+            List<InputField> fields,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
+            String mapLocal) {
+        var b = CodeBlock.builder();
+        for (int i = 0; i < fields.size(); i++) {
+            var cf = (InputField.ColumnField) fields.get(i);
+            if (i > 0) b.add(",\n");
+            b.add("$L.containsKey($S) ? $T.val($L.get($S), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                mapLocal, cf.name(),
+                DSL, mapLocal, cf.name(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                DSL,
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+        }
+        return b.build();
     }
 
     /**
@@ -1522,22 +1531,31 @@ public class TypeFetcherGenerator {
         key = "dml-mutation-shape-guarantees",
         reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
             + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
-            + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.setFields() "
-            + "as the typed non-@lookupKey ColumnField projection (no cast, no skip-during-walk). "
-            + "Invariant #4 guarantees setFields() is non-empty as the codegen-time projection "
-            + "(the runtime SET map can still be empty when every setField key is absent from "
-            + "`in`; the no-set-fields-present check in postInGuard rejects that). "
-            + "Bulk arm (tia.list() == true) is rejected at codegen until bulk fetcher emission lands.")
+            + "env.getArgument(tia.name()) to Map<?,?> when tia.list() == false, "
+            + "List<Map<?,?>> when tia.list() == true; walks tia.setFields() as the typed "
+            + "non-@lookupKey ColumnField projection (no cast, no skip-during-walk). "
+            + "Invariant #4 guarantees setFields() is non-empty as the codegen-time projection. "
+            + "The SET clause is built at runtime from a presentKeys.contains(name) walk over "
+            + "tia.setFields() (single-row reads in.keySet(); bulk reads firstKeys captured from "
+            + "in.get(0).keySet() after the uniform-shape guard makes it a stable witness for "
+            + "every row). The no-set-fields-present runtime check rejects when every "
+            + "setField key is absent from presentKeys. The bulk arm's duplicate-lookup-key "
+            + "guard (HashSet<List<Object>> over per-row tuples) rejects same-key inputs before "
+            + "the chain executes; otherwise Postgres' implementation-defined join would "
+            + "silently drop one row's data.")
     private static MethodSpec buildMutationUpdateFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpdateTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
-        rejectBulkArmUntilSupported(tia, "UPDATE");
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
 
-        // Build the SET clause dynamically from the present-key set so absent fields drop out
-        // (PATCH semantics) and explicit-null fields bind typed null. The map
+        if (tia.list()) {
+            return buildBulkUpdateFetcher(ctx, f, outputPackage, tia, tableRef, tablesOnly, tableLocal);
+        }
+
+        // Single-row UPDATE: build the SET clause dynamically from the present-key set so absent
+        // fields drop out (PATCH semantics) and explicit-null fields bind typed null. The map
         // is consumed by jOOQ's `.set(Map<? extends Field<?>, ?>)` overload, which preserves
         // the chain shape (`UpdateSetMoreStep<R>` → `.where(...).returningResult(...)`).
         var fieldClass = ClassName.get("org.jooq", "Field");
@@ -1566,7 +1584,172 @@ public class TypeFetcherGenerator {
 
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain, /*postDslGuard=*/ CodeBlock.of(""), postInGuard.build());
+            outputPackage, dmlChain, /*postDslGuard=*/ CodeBlock.of(""), postInGuard.build(), tia.list());
+    }
+
+    /**
+     * Bulk UPDATE: emits a Postgres-only {@code UPDATE t SET c = v.c FROM (VALUES …) AS v(k, c…)
+     * WHERE t.k = v.k} statement. Three guards ride {@code postInGuard}:
+     * <ol>
+     *   <li><b>Uniform-shape</b> — every row's {@code keySet()} must equal the first row's;
+     *       a divergent row would need its own SET clause, which one statement can't carry.</li>
+     *   <li><b>No-set-fields-present</b> — at least one {@code tia.setFields()} entry must be
+     *       in {@code firstKeys}; otherwise {@code SET} would be empty and jOOQ rejects.</li>
+     *   <li><b>Duplicate-lookup-key</b> — distinct lookup-key tuples per row, otherwise
+     *       Postgres' implementation-defined join silently drops one row's data.</li>
+     * </ol>
+     * A separate {@code postDslGuard} rejects non-Postgres dialects: only Postgres speaks the
+     * {@code UPDATE … FROM (VALUES …)} form jOOQ renders here. R63 lifts both this guard and
+     * UPSERT's existing Oracle-dialect guard onto typed {@code DialectRequirement} later.
+     */
+    private static MethodSpec buildBulkUpdateFetcher(TypeFetcherEmissionContext ctx,
+                                                     MutationField.MutationUpdateTableField f,
+                                                     String outputPackage,
+                                                     no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+                                                     TableRef tableRef,
+                                                     GeneratorUtils.ResolvedTableNames tablesOnly,
+                                                     String tableLocal) {
+        var fieldClass = ClassName.get("org.jooq", "Field");
+        var arrayList = ClassName.get("java.util", "ArrayList");
+        var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
+        var hashSet = ClassName.get("java.util", "HashSet");
+        var rowClass = ClassName.get("org.jooq", "Row");
+        var tableClass = ClassName.get("org.jooq", "Table");
+        var bindings = tia.fieldBindings();
+
+        var postInGuard = CodeBlock.builder();
+        postInGuard.addStatement("$T<?> firstKeys = in.get(0).keySet()", SET);
+        postInGuard.add(buildUniformShapeGuard("UPDATE"));
+
+        // Build v-table column-name list: lookup-key columns (unconditional) + set-field columns
+        // present in firstKeys, in declaration order. Strings come from each Field's getName()
+        // so jOOQ's typed v.field(Field<T>) overload returns the correctly typed v-column.
+        postInGuard.addStatement("$T<String> vColNames = new $T<>()",
+            ClassName.get(List.class), arrayList);
+        for (var b : bindings) {
+            postInGuard.addStatement("vColNames.add($T.$L.$L.getName())",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), b.targetColumn().javaName());
+        }
+        for (var cf : tia.setFields()) {
+            postInGuard.beginControlFlow("if (firstKeys.contains($S))", cf.name())
+                .addStatement("vColNames.add($T.$L.$L.getName())",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
+                .endControlFlow();
+        }
+
+        // Build per-row v-table cells via stream, mirroring the column-name walk above so the
+        // cell-positions line up by construction. DSL.row(Field<?>...) packages the cells; the
+        // final List<Row> drives DSL.values(Row...) and the v-table alias.
+        postInGuard.addStatement("$T<$T> vRows = in.stream().map(row -> {\n"
+                + "    $T<$T<?>> cells = new $T<>();\n"
+                + "$L"
+                + "    return $T.row(cells.toArray(new $T<?>[0]));\n"
+                + "}).toList()",
+            ClassName.get(List.class), rowClass,
+            ClassName.get(List.class), fieldClass, arrayList,
+            buildBulkUpdateCellAdds(tia, tablesOnly, tableRef),
+            DSL, fieldClass);
+        postInGuard.addStatement("$T<?> v = $T.values(vRows.toArray(new $T[0])).as($S, vColNames.toArray(new String[0]))",
+            tableClass, DSL, rowClass, "v");
+
+        // SET map: same firstKeys-conditional walk over setFields, producing
+        // { t.col -> v.field(t.col) } entries. The typed Table.field(Field<T>) overload returns
+        // the matching v-column with the target column's type, so no cast is needed at the
+        // .set(Map<? extends Field<?>, ?>) call site.
+        postInGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
+        for (var cf : tia.setFields()) {
+            postInGuard.beginControlFlow("if (firstKeys.contains($S))", cf.name())
+                .addStatement("sets.put($T.$L.$L, v.field($T.$L.$L))",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
+                .endControlFlow();
+        }
+        postInGuard.beginControlFlow("if (sets.isEmpty())")
+            .addStatement("throw new $T($S)", IllegalArgumentException.class,
+                "@mutation(typeName: UPDATE) bulk call has no settable fields present in the input rows; "
+                    + "only @lookupKey fields were provided")
+            .endControlFlow();
+
+        // Duplicate-lookup-key guard: build a HashSet<List<Object>> over the per-row lookup-key
+        // tuples; throw when set size differs from row count. Value-equal tuples (List.of(...))
+        // ensure two rows with the same key collide regardless of bound-value identity.
+        var lookupKeyTuple = CodeBlock.builder().add("$T.of(", ClassName.get(List.class));
+        for (int i = 0; i < bindings.size(); i++) {
+            if (i > 0) lookupKeyTuple.add(", ");
+            lookupKeyTuple.add("row.get($S)", bindings.get(i).fieldName());
+        }
+        lookupKeyTuple.add(")");
+        postInGuard.addStatement("$T<$T<Object>> seenKeys = new $T<>()",
+            hashSet, ClassName.get(List.class), hashSet);
+        postInGuard.beginControlFlow("for (var row : in)")
+            .addStatement("seenKeys.add($L)", lookupKeyTuple.build())
+            .endControlFlow();
+        postInGuard.beginControlFlow("if (seenKeys.size() != in.size())")
+            .addStatement("throw new $T($S)", IllegalArgumentException.class,
+                "@mutation(typeName: UPDATE) bulk input contains rows with duplicate "
+                    + "@lookupKey tuples; one statement can join each parent row to at most "
+                    + "one input row")
+            .endControlFlow();
+
+        // WHERE clause joins t to v on the lookup-key columns (chained .and(...)). The lookup
+        // keys are unconditional in vColNames, so v.field(t.k) always resolves.
+        var whereExpr = CodeBlock.builder();
+        for (int i = 0; i < bindings.size(); i++) {
+            var b = bindings.get(i);
+            if (i > 0) whereExpr.add(".and(");
+            whereExpr.add("$T.$L.$L.eq(v.field($T.$L.$L))",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), b.targetColumn().javaName(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), b.targetColumn().javaName());
+            if (i > 0) whereExpr.add(")");
+        }
+
+        var dmlChain = CodeBlock.builder()
+            .add(".update($L)\n", tableLocal)
+            .add(".set(sets)\n")
+            .add(".from(v)\n")
+            .add(".where(").add(whereExpr.build()).add(")\n")
+            .build();
+
+        // Postgres-only dialect guard: UPDATE ... FROM (VALUES ...) is a Postgres extension.
+        // family() collapses POSTGRES, POSTGRESPLUS, YUGABYTEDB into POSTGRES.
+        var postDslGuard = CodeBlock.builder()
+            .beginControlFlow("if (!$S.equals(dsl.dialect().family().name()))", "POSTGRES")
+            .addStatement("throw new $T($S)", UnsupportedOperationException.class,
+                "@mutation(typeName: UPDATE) with a listed @table input requires PostgreSQL; "
+                    + "the UPDATE ... FROM (VALUES ...) form is a Postgres extension. "
+                    + "Use a single-row input for portability.")
+            .endControlFlow()
+            .build();
+
+        return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
+            tia.name(), tableRef, tablesOnly, tableLocal,
+            outputPackage, dmlChain, postDslGuard, postInGuard.build(), tia.list());
+    }
+
+    /**
+     * Per-row v-table cell builder for bulk UPDATE: emits {@code cells.add(DSL.val(...))} lines
+     * for each lookup-key (unconditional) and each {@code firstKeys}-conditional set-field.
+     * Order matches the {@code vColNames} walk in {@link #buildBulkUpdateFetcher}, so cell
+     * positions line up by construction.
+     */
+    private static CodeBlock buildBulkUpdateCellAdds(
+            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        var b = CodeBlock.builder().indent();
+        for (var binding : tia.fieldBindings()) {
+            b.addStatement("cells.add($T.val(row.get($S), $T.$L.$L.getDataType()))",
+                DSL, binding.fieldName(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+        }
+        for (var cf : tia.setFields()) {
+            b.beginControlFlow("if (firstKeys.contains($S))", cf.name())
+                .addStatement("cells.add($T.val(row.get($S), $T.$L.$L.getDataType()))",
+                    DSL, cf.name(),
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
+                .endControlFlow();
+        }
+        b.unindent();
+        return b.build();
     }
 
     /**
@@ -1586,39 +1769,36 @@ public class TypeFetcherGenerator {
         key = "dml-mutation-shape-guarantees",
         reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
             + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
-            + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
-            + "as Direct-extracted ColumnField with a single cast for the col/val lists, "
-            + "and tia.setFields() (typed non-@lookupKey ColumnField projection) for the SET "
-            + "clause and the .doUpdate()/.doNothing() dispatch. Invariant #3 guarantees "
-            + "fieldBindings is non-empty (the ON CONFLICT key). When tia.setFields() is "
-            + "non-empty (.doUpdate() mode), the runtime SET map can still be empty when every "
-            + "setField key is absent from `in`; the no-set-fields-present check in postInGuard "
-            + "rejects that. .doNothing() mode skips both walks. "
-            + "Bulk arm (tia.list() == true) is rejected at codegen until bulk fetcher emission lands.")
+            + "env.getArgument(tia.name()) to Map<?,?> when tia.list() == false, "
+            + "List<Map<?,?>> when tia.list() == true; walks tia.fields() as Direct-extracted "
+            + "ColumnField with a single cast for the col list and per-row VALUES cells, "
+            + "and tia.setFields() (typed non-@lookupKey ColumnField projection) for the "
+            + "DO UPDATE SET clause and the .doUpdate()/.doNothing() dispatch. Invariant #3 "
+            + "guarantees fieldBindings is non-empty (the ON CONFLICT key). Per-cell "
+            + "missing-vs-null dispatch on map.containsKey(\"col\") emits "
+            + "DSL.defaultValue(dataType) when absent and DSL.val(value, dataType) when present "
+            + "on insert-side cells. When tia.setFields() is non-empty (.doUpdate() mode), "
+            + "the DO UPDATE SET map is built from a presentKeys.contains(name) walk so an "
+            + "omitted column drops out of SET (PATCH semantics on the conflict branch); "
+            + "single-row reads in.keySet(), bulk reads firstKeys captured from in.get(0) "
+            + "after the uniform-shape guard. The no-set-fields-present check rejects when "
+            + "every setField key is absent from presentKeys. .doNothing() mode skips both "
+            + "walks. Duplicate-key detection is delegated to PostgreSQL: the engine "
+            + "hard-errors on duplicate ON CONFLICT keys (\"command cannot affect row a "
+            + "second time\"), so client-side detection would only duplicate the engine's check.")
     private static MethodSpec buildMutationUpsertFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpsertTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
-        rejectBulkArmUntilSupported(tia, "UPSERT");
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
 
         var fields = tia.fields();
         var colList = CodeBlock.builder();
-        var valList = CodeBlock.builder();
         for (int i = 0; i < fields.size(); i++) {
             var cf = (InputField.ColumnField) fields.get(i);
-            if (i > 0) {
-                colList.add(", ");
-                valList.add(",\n");
-            }
+            if (i > 0) colList.add(", ");
             colList.add("$T.$L.$L",
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
-            valList.add("in.containsKey($S) ? $T.val(in.get($S), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
-                cf.name(),
-                DSL, cf.name(),
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
-                DSL,
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
         }
 
@@ -1631,14 +1811,25 @@ public class TypeFetcherGenerator {
         // column would resolve EXCLUDED.c to the table default whenever the proposed INSERT
         // row used DEFAULT, overwriting the existing row's value with the default; dynamic
         // SET avoids that silent-data-loss footgun. The .doNothing() mode (setFields() empty
-        // at codegen) skips the walk entirely.
+        // at codegen) skips the walk entirely. On the bulk arm, the present-key set is
+        // captured once from the first row (firstKeys) after a uniformity guard ensures
+        // every row's keySet matches; one shared SET clause is correct because every
+        // conflicting INSERT row uses the same EXCLUDED column set.
         var fieldClass = ClassName.get("org.jooq", "Field");
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var postInGuard = CodeBlock.builder();
         if (!tia.setFields().isEmpty()) {
+            String presentKeysLocal;
+            if (tia.list()) {
+                postInGuard.addStatement("$T<?> firstKeys = in.get(0).keySet()", SET);
+                postInGuard.add(buildUniformShapeGuard("UPSERT"));
+                presentKeysLocal = "firstKeys";
+            } else {
+                presentKeysLocal = "in.keySet()";
+            }
             postInGuard.addStatement("$T<$T<?>, Object> setsUpdate = new $T<>()", MAP, fieldClass, linkedHashMap);
             for (var cf : tia.setFields()) {
-                postInGuard.beginControlFlow("if (in.containsKey($S))", cf.name())
+                postInGuard.beginControlFlow("if ($L.contains($S))", presentKeysLocal, cf.name())
                     .addStatement("setsUpdate.put($T.$L.$L, $T.excluded($T.$L.$L))",
                         tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
                         DSL,
@@ -1662,9 +1853,19 @@ public class TypeFetcherGenerator {
         }
 
         var dmlChain = CodeBlock.builder()
-            .add(".insertInto($L, ", tableLocal).add(colList.build()).add(")\n")
-            .add(".values(\n").indent().add(valList.build()).add(")\n").unindent()
-            .add(".onConflict(").add(conflictCols.build()).add(")\n");
+            .add(".insertInto($L, ", tableLocal).add(colList.build()).add(")\n");
+        if (tia.list()) {
+            dmlChain.add(".valuesOfRows(in.stream()\n").indent()
+                .add(".map(row -> $T.row(\n", DSL).indent()
+                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row")).unindent()
+                .add("))\n")
+                .add(".toList())\n").unindent();
+        } else {
+            dmlChain.add(".values(\n").indent()
+                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in")).unindent()
+                .add(")\n");
+        }
+        dmlChain.add(".onConflict(").add(conflictCols.build()).add(")\n");
         if (!tia.setFields().isEmpty()) {
             dmlChain.add(".doUpdate()\n").add(".set(setsUpdate)\n");
         } else {
@@ -1690,7 +1891,56 @@ public class TypeFetcherGenerator {
 
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain.build(), postDslGuard, postInGuard.build());
+            outputPackage, dmlChain.build(), postDslGuard, postInGuard.build(), tia.list());
+    }
+
+    /**
+     * Bulk-arm uniform-shape guard: emits a runtime walk across {@code in} that throws
+     * {@link IllegalArgumentException} when any row's {@code keySet()} diverges from
+     * {@code firstKeys}. Caller must have bound {@code firstKeys} immediately above (the
+     * code-block reads from that local). Used by bulk UPDATE (always when set-side fields
+     * are present) and bulk UPSERT (only when {@code tia.setFields()} is non-empty,
+     * i.e. {@code .doUpdate()} mode).
+     */
+    private static CodeBlock buildUniformShapeGuard(String verb) {
+        return CodeBlock.builder()
+            .beginControlFlow("for (int rowIdx = 1; rowIdx < in.size(); rowIdx++)")
+            .beginControlFlow("if (!in.get(rowIdx).keySet().equals(firstKeys))")
+            .addStatement("throw new $T(\"@mutation(typeName: $L) bulk input rows must share the same present-key set; row \" + rowIdx + \" has keys \" + in.get(rowIdx).keySet() + \" but row 0 has \" + firstKeys)",
+                IllegalArgumentException.class, verb)
+            .endControlFlow()
+            .endControlFlow()
+            .build();
+    }
+
+    /**
+     * Builds a bulk lookup-key row-tuple {@code IN} predicate from the TIA's
+     * {@code @lookupKey} {@code fieldBindings}: emits
+     * {@code DSL.row(t.k1, t.k2, ...).in(in.stream().map(row -> DSL.row(DSL.val(row.get(n1), …), DSL.val(row.get(n2), …))).toList())}.
+     * One shape regardless of key arity (PostgreSQL renders 1-key
+     * {@code (col) IN ((v))} identically to {@code col IN (v)}).
+     */
+    private static CodeBlock buildBulkLookupRowIn(
+            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        var bindings = tia.fieldBindings();
+        var b = CodeBlock.builder().add("$T.row(", DSL);
+        for (int i = 0; i < bindings.size(); i++) {
+            if (i > 0) b.add(", ");
+            b.add("$T.$L.$L",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(),
+                bindings.get(i).targetColumn().javaName());
+        }
+        b.add(").in(in.stream().map(row -> $T.row(", DSL);
+        for (int i = 0; i < bindings.size(); i++) {
+            if (i > 0) b.add(", ");
+            var binding = bindings.get(i);
+            b.add("$T.val(row.get($S), $T.$L.$L.getDataType())",
+                DSL, binding.fieldName(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+        }
+        b.add(")).toList())");
+        return b.build();
     }
 
     /**
@@ -1734,10 +1984,11 @@ public class TypeFetcherGenerator {
             GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
             String outputPackage,
-            CodeBlock dmlChain) {
+            CodeBlock dmlChain,
+            boolean listInput) {
         return buildDmlFetcher(ctx, fetcherName, rex, errorChannel, inputArgName, tableRef,
             tablesOnly, tableLocal, outputPackage, dmlChain,
-            /*postDslGuard=*/ CodeBlock.of(""), /*postInGuard=*/ CodeBlock.of(""));
+            /*postDslGuard=*/ CodeBlock.of(""), /*postInGuard=*/ CodeBlock.of(""), listInput);
     }
 
     private static MethodSpec buildDmlFetcher(
@@ -1751,25 +2002,32 @@ public class TypeFetcherGenerator {
             String tableLocal,
             String outputPackage,
             CodeBlock dmlChain,
-            CodeBlock postDslGuard) {
+            CodeBlock postDslGuard,
+            boolean listInput) {
         return buildDmlFetcher(ctx, fetcherName, rex, errorChannel, inputArgName, tableRef,
             tablesOnly, tableLocal, outputPackage, dmlChain,
-            postDslGuard, /*postInGuard=*/ CodeBlock.of(""));
+            postDslGuard, /*postInGuard=*/ CodeBlock.of(""), listInput);
     }
 
     /**
-     * Two optional {@link CodeBlock} slots:
+     * Two optional {@link CodeBlock} slots and the bulk-input cardinality bit:
      * <ul>
      *   <li>{@code postDslGuard} — emitted immediately after the {@code dsl} local is bound,
      *       before the {@code in} cast. Used by UPSERT to gate the Oracle dialect (jOOQ silently
      *       translates {@code .onConflict(...)} to {@code MERGE INTO} on Oracle, with semantics
-     *       drift).</li>
+     *       drift), and by bulk UPDATE to gate non-PostgreSQL dialects on the
+     *       {@code UPDATE ... FROM (VALUES ...)} form.</li>
      *   <li>{@code postInGuard} — emitted immediately after the {@code in} cast and before
-     *       {@code tableLocal} is bound. Used by UPDATE / UPSERT to build the dynamic SET map
-     *       from the present-key set and run the no-set-fields-present runtime check before
-     *       chain construction. The slot is also the natural extension point for the bulk
-     *       arm's empty-list short-circuit, uniformity guard, and duplicate-tuple guard once
-     *       bulk fetcher emission lands.</li>
+     *       {@code tableLocal} is bound (and after the empty-list short-circuit when
+     *       {@code listInput}). Used by UPDATE / UPSERT to build the dynamic SET map from the
+     *       present-key set and run the no-set-fields-present runtime check, and by bulk UPDATE
+     *       to run the uniform-shape and duplicate-lookup-key guards before chain construction.</li>
+     *   <li>{@code listInput} — when {@code true}, the {@code in} cast lifts to
+     *       {@code List<Map<?,?>>} and an empty-list short-circuit is emitted between the cast
+     *       and {@code postInGuard}, returning a typed empty {@link DataFetcherResult} without
+     *       round-tripping. Invariant #15 guarantees the bulk arm only reaches list-cardinality
+     *       return shapes (EncodedList / ProjectedList), so {@code valueType} is already
+     *       {@code List<X>} and {@code List.of()} is its typed empty.</li>
      * </ul>
      */
     private static MethodSpec buildDmlFetcher(
@@ -1784,7 +2042,8 @@ public class TypeFetcherGenerator {
             String outputPackage,
             CodeBlock dmlChain,
             CodeBlock postDslGuard,
-            CodeBlock postInGuard) {
+            CodeBlock postInGuard,
+            boolean listInput) {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         TypeName valueType = switch (rex) {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle es -> ClassName.get(String.class);
@@ -1805,7 +2064,19 @@ public class TypeFetcherGenerator {
         if (!postDslGuard.isEmpty()) {
             builder.addCode(postDslGuard);
         }
-        builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, inputArgName);
+        if (listInput) {
+            builder.addStatement("$T<$T<?, ?>> in = ($T<$T<?, ?>>) env.getArgument($S)",
+                ClassName.get(List.class), MAP, ClassName.get(List.class), MAP, inputArgName);
+            // Empty-list contract: no round-trip, return typed empty list. Bypasses the
+            // projection terminator entirely; jOOQ rejects empty VALUES on every verb, so the
+            // short-circuit is mandatory, not just an optimisation.
+            builder.beginControlFlow("if (in.isEmpty())")
+                .addStatement("return $T.<$T>newResult().data($T.of()).build()",
+                    DATA_FETCHER_RESULT, valueType, ClassName.get(List.class))
+                .endControlFlow();
+        } else {
+            builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, inputArgName);
+        }
         if (!postInGuard.isEmpty()) {
             builder.addCode(postInGuard);
         }
