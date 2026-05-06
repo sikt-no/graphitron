@@ -401,15 +401,38 @@ All five bullets below are R12 scope. The first three form a dependency chain
   `ServiceRecordField` payload returns; the table-bound variants get the
   uniform shape so the §4 check is no longer blanket-rejecting.
 
-- **Test fixture updates for source-direct dispatch.** *Not gated.*
-  `SakPayload` and `DeleteFilmPayload` errors slots become `List<Object>`
-  (the source-direct contract puts matched throwables and `GraphQLError`s
-  directly into the list, with no developer-supplied data class). SDL fixtures
-  stop using `@record` co-locations on `@error` types (the source-direct
-  contract removes the developer-supplied data class). New fixtures cover the
-  service-method-returns-domain-object shape (`ResultAssembly.Assembly` arm)
-  and the validator integration (`ValidationHandler` channel + Jakarta
-  pre-step).
+- **Test fixture updates for source-direct dispatch.** *Not gated.* Two
+  parts: the fixture-shape unwind (landed) and new end-to-end coverage
+  (still open).
+
+  *Fixture-shape unwind (landed).* `SakPayload` and `DeleteFilmPayload`
+  errors slots are `List<Object>` (source-direct: the per-fetcher catch arm
+  and the wrapper's pre-execution Jakarta validation step push raw
+  `Throwable`s and `GraphQLError`s into the list, so the slot must admit
+  both unrelated bounds; `List<?>` is read-only at the call site and would
+  not express the runtime add-into-list contract). The `MultiCtorSakPayload`
+  fixture and the `ErrorChannelClassificationTest` /
+  `TestServiceStub` doc references track the same shape. No SDL fixture
+  uses `@record` co-locations on `@error` types — the source-direct
+  contract precludes a developer-supplied data class for an `@error` type
+  and the existing fixture set already complies.
+
+  *Open: new end-to-end coverage.* Two new fixtures, both at sakila
+  execute-tier (the `GraphQLQueryTest:3556-3559` comment defers
+  DATABASE / VALIDATION end-to-end to here):
+  - **Service-method-returns-domain-object shape**
+    (`ResultAssembly.Assembly` arm): a `@service` field whose method
+    returns the domain object directly, exercising the carrier-side
+    `ResultAssembly` resolution and the emitter's success-arm payload
+    construction (currently covered at unit tier in
+    `TypeFetcherGeneratorTest` only).
+  - **Validator integration** (`ValidationHandler` channel + Jakarta
+    pre-step): a `@service` mutation whose input declares Jakarta
+    constraints, an `@error` type with `{handler: VALIDATION}`, and an
+    execute-tier driver covering the violation path (constraint produces
+    a typed error via `ConstraintViolations.toGraphQLError`) and the happy
+    path. The default `GraphitronContext.getValidator` lazy holder
+    suffices for the fixture; no harness override needed.
 - Resolve `mappingsConstantName` collision suffix at classify time
   (subsumes the standalone §3 hash-suffix dedup follow-up): **landed**.
   The per-field classifier (`FieldBuilder.resolveErrorChannel`) stamps every

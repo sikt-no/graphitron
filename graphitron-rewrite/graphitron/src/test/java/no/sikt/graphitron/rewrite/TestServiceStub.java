@@ -197,7 +197,7 @@ class TestServiceStub {
     /**
      * Returns the dummy {@link no.sikt.graphitron.codereferences.dummyreferences.SakPayload}
      * record, whose canonical constructor exposes one errors-slot parameter
-     * ({@code List<?>}) and one defaulted slot. Used by tests that exercise the carrier
+     * ({@code List<Object>}) and one defaulted slot. Used by tests that exercise the carrier
      * classifier's {@code ErrorChannel} resolution on {@code MutationServiceRecordField} /
      * {@code QueryServiceRecordField}.
      */
