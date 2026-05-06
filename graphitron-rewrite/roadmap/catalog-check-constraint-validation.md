@@ -654,6 +654,16 @@ database connection never invoked for the violating row.
 Acceptance: bad input rejected at step 1 (before any DB call), satisfying
 the original motivation's "shorter loop" goal.
 
+*Phase 3 depends on [`emit-input-records.md`](emit-input-records.md)
+(R94).* The "consumer's SDL input bean class" the `mapping.type(...)`
+chain references does not exist in the rewrite today — graphitron uses
+`Map<String, Object>` end-to-end for SDL inputs (`MutationFetchers.java:55,
+75`). R94 emits each SDL `input` type as a graphitron-internal Java
+record under `<outputPackage>.inputs`, which is exactly what phase 3
+needs as a target. Phases 1 and 2 do not depend on R94 (the record-side
+target is the consumer's jOOQ-generated `XxxRecord`, which already
+exists); only phase 3 blocks until R94 lands.
+
 ---
 
 ## Open architectural decisions
