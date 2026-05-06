@@ -1,7 +1,7 @@
 ---
 id: R87
 title: "Tighten instance-service @service design after architect review"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 4
 theme: service
