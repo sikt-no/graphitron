@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -25,7 +26,7 @@ class MutationServiceRecordFieldValidationTest {
         VALID("service mutation field with non-table return — passes validation (Invariants §1/§2 enforced at classifier time)",
             new MutationServiceRecordField("Mutation", "externalMutation", null,
                 new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null),
-                new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of()),
+                TestFixtures.staticServiceMethodRef("com.example.Service", "method", TypeName.VOID, List.of()),
                 Optional.empty(), Optional.empty()),
             List.of());
 

@@ -627,12 +627,12 @@ class ServiceCatalogTest {
     @Test
     void reflectServiceMethod_capturesDeclaredCheckedExceptions() {
         // ServiceCatalog reads Method.getExceptionTypes() and stores the FQNs on
-        // MethodRef.Basic.declaredExceptions(); the classifier's §4 match check consumes them.
+        // MethodRef#declaredExceptions(); the classifier's §4 match check consumes them.
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getThrowingSqlException", bindings(Map.of()), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
-        assertThat(((MethodRef.Basic) result.ref()).declaredExceptions())
+        assertThat(result.ref().declaredExceptions())
             .containsExactly("java.sql.SQLException");
     }
 
@@ -642,7 +642,7 @@ class ServiceCatalogTest {
             STUB_CLASS, "getThrowingSqlAndInterrupted", bindings(Map.of()), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
-        assertThat(((MethodRef.Basic) result.ref()).declaredExceptions())
+        assertThat(result.ref().declaredExceptions())
             .containsExactly("java.sql.SQLException", "java.lang.InterruptedException");
     }
 
@@ -652,31 +652,33 @@ class ServiceCatalogTest {
             STUB_CLASS, "get", bindings(Map.of()), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
-        assertThat(((MethodRef.Basic) result.ref()).declaredExceptions()).isEmpty();
+        assertThat(result.ref().declaredExceptions()).isEmpty();
     }
 
     // ===== Instance-method services =====
 
     @Test
-    void reflectServiceMethod_staticMethod_isStaticTrue() {
+    void reflectServiceMethod_staticMethod_classifiedAsStaticCallShape() {
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "get", bindings(Map.of()), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
-        assertThat(((MethodRef.Basic) result.ref()).isStatic()).isTrue();
+        assertThat(((MethodRef.Service) result.ref()).callShape())
+            .isInstanceOf(MethodRef.CallShape.Static.class);
     }
 
     @Test
-    void reflectServiceMethod_instanceMethodWithDslContextCtor_isStaticFalse() {
+    void reflectServiceMethod_instanceMethodWithDslContextCtor_classifiedAsInstanceWithDslHolder() {
         // Holder class exposes a public (DSLContext) constructor — matches the legacy
         // generator's `new ServiceName(_iv_transform.getCtx())` pattern. Instance methods
-        // on this shape classify cleanly with `isStatic == false`.
+        // on this shape classify as InstanceWithDslHolder.
         var result = newCatalog().reflectServiceMethod(
             "no.sikt.graphitron.rewrite.TestInstanceServiceStub", "getFilm",
             bindings(Map.of()), Set.of(), List.of(), null);
 
         assertThat(result.failed()).isFalse();
-        assertThat(((MethodRef.Basic) result.ref()).isStatic()).isFalse();
+        assertThat(((MethodRef.Service) result.ref()).callShape())
+            .isInstanceOf(MethodRef.CallShape.InstanceWithDslHolder.class);
     }
 
     @Test

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -8,6 +9,7 @@ import no.sikt.graphitron.rewrite.model.ForeignKeyRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -22,6 +24,82 @@ import java.util.List;
 public final class TestFixtures {
 
     private TestFixtures() {}
+
+    // ===== MethodRef factories =====
+
+    /**
+     * Builds a {@link MethodRef.StaticOnly} for the {@code @tableMethod} / {@code @externalField}
+     * / condition-join populations. Mirrors R81's {@code tableRef(...)} factory pattern: tests
+     * that don't care about declared exceptions or call shape stay on this concise overload.
+     */
+    public static MethodRef.StaticOnly staticOnlyMethodRef(String className, String methodName, TypeName returnType) {
+        return new MethodRef.StaticOnly(className, methodName, returnType, List.of(), List.of());
+    }
+
+    public static MethodRef.StaticOnly staticOnlyMethodRef(String className, String methodName, TypeName returnType,
+                                                            List<MethodRef.Param> params) {
+        return new MethodRef.StaticOnly(className, methodName, returnType, params, List.of());
+    }
+
+    public static MethodRef.StaticOnly staticOnlyMethodRef(String className, String methodName, TypeName returnType,
+                                                            List<MethodRef.Param> params, List<String> declaredExceptions) {
+        return new MethodRef.StaticOnly(className, methodName, returnType, params, declaredExceptions);
+    }
+
+    /**
+     * Builds a {@link MethodRef.Service} with the given {@link MethodRef.CallShape} explicit.
+     * Tests that exercise the static/instance fork directly (e.g. {@code MethodRefCallShapeTest})
+     * route through this overload.
+     */
+    public static MethodRef.Service serviceMethodRef(String className, String methodName, TypeName returnType,
+                                                      List<MethodRef.Param> params, MethodRef.CallShape callShape) {
+        return new MethodRef.Service(className, methodName, returnType, params, List.of(), callShape);
+    }
+
+    public static MethodRef.Service serviceMethodRef(String className, String methodName, TypeName returnType,
+                                                      List<MethodRef.Param> params, List<String> declaredExceptions,
+                                                      MethodRef.CallShape callShape) {
+        return new MethodRef.Service(className, methodName, returnType, params, declaredExceptions, callShape);
+    }
+
+    /**
+     * Convenience overload mirroring the pre-R87 default-static {@code MethodRef.Basic} compat
+     * constructor for {@code @service} fixtures: builds a {@link MethodRef.Service} with a
+     * {@link MethodRef.CallShape.Static} arm whose {@code needsDslLocal} is derived from the
+     * params (any param whose source is {@link ParamSource.DslContext} flips it on, matching
+     * what {@code ServiceCatalog.reflectServiceMethod} does at classify time).
+     */
+    public static MethodRef.Service staticServiceMethodRef(String className, String methodName, TypeName returnType,
+                                                            List<MethodRef.Param> params) {
+        boolean needsDslLocal = params.stream().anyMatch(p -> p.source() instanceof ParamSource.DslContext);
+        return new MethodRef.Service(className, methodName, returnType, params, List.of(),
+            new MethodRef.CallShape.Static(needsDslLocal));
+    }
+
+    public static MethodRef.Service staticServiceMethodRef(String className, String methodName, TypeName returnType,
+                                                            List<MethodRef.Param> params, List<String> declaredExceptions) {
+        boolean needsDslLocal = params.stream().anyMatch(p -> p.source() instanceof ParamSource.DslContext);
+        return new MethodRef.Service(className, methodName, returnType, params, declaredExceptions,
+            new MethodRef.CallShape.Static(needsDslLocal));
+    }
+
+    /**
+     * Convenience overload for instance-{@code @service} test fixtures: a {@link MethodRef.Service}
+     * with a {@link MethodRef.CallShape.InstanceWithDslHolder} arm. Used by tests that exercise
+     * the {@code new ServiceClass(dsl).method(...)} emit shape.
+     */
+    public static MethodRef.Service instanceServiceMethodRef(String className, String methodName, TypeName returnType,
+                                                              List<MethodRef.Param> params) {
+        return new MethodRef.Service(className, methodName, returnType, params, List.of(),
+            new MethodRef.CallShape.InstanceWithDslHolder());
+    }
+
+    public static MethodRef.Service instanceServiceMethodRef(String className, String methodName, TypeName returnType,
+                                                              List<MethodRef.Param> params, List<String> declaredExceptions) {
+        return new MethodRef.Service(className, methodName, returnType, params, declaredExceptions,
+            new MethodRef.CallShape.InstanceWithDslHolder());
+    }
+
 
     // ===== TableRef =====
 

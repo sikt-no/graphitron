@@ -32,7 +32,7 @@ class MutationServiceTableFieldValidationTest {
         VALID("service mutation field with resolved method — passes validation (Invariants §1/§2 enforced at classifier time)",
             new MutationServiceTableField("Mutation", "externalMutation", null,
                 FILM_RETURN,
-                new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of()),
+                TestFixtures.staticServiceMethodRef("com.example.Service", "method", TypeName.VOID, List.of()),
                 Optional.empty(), Optional.empty()),
             List.of());
 

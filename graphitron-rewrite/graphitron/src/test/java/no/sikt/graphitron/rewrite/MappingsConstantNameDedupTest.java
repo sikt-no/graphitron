@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
+import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -178,7 +179,7 @@ class MappingsConstantNameDedupTest {
             fieldName,
             null,
             new ReturnTypeRef.ResultReturnType("Payload", new FieldWrapper.Single(true), payloadFqn),
-            new MethodRef.Basic("com.example.SvcStub", "doStuff", TypeName.OBJECT, List.of()),
+            TestFixtures.staticServiceMethodRef("com.example.SvcStub", "doStuff", TypeName.OBJECT, List.of()),
             channel,
             Optional.empty());
     }

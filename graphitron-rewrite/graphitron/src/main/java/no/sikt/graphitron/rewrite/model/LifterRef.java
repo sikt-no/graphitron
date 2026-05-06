@@ -11,7 +11,7 @@ import no.sikt.graphitron.javapoet.ClassName;
  * {@code @tableMethod}); {@code HelperRef} models methods Graphitron itself emits;
  * {@code LifterRef} models the narrow case of a {@code @batchKeyLifter} static method whose
  * call-site signature is exactly {@code (ParentBackingClass) -> RowN<...>}. Reusing
- * {@code MethodRef.Basic} would force {@code params}/{@code returnType} slots that are
+ * {@code MethodRef.StaticOnly} would force {@code params}/{@code returnType} slots that are
  * fully recoverable from the {@link BatchKey.LifterRowKeyed#hop()} columns, and would risk
  * a lifter ref flowing through {@code MethodRef}-walking call sites (e.g. {@code ArgCallEmitter})
  * that have no semantics for it. Following the in-tree {@link HelperRef} precedent: a typed

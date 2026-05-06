@@ -8,7 +8,7 @@ import java.util.List;
  * A resolved reference to a user-provided Java method.
  *
  * <p>Used for all user-provided method references: {@code @service} methods, {@code @condition}
- * methods, and {@code @tableMethod} references.
+ * methods, {@code @tableMethod} references, and {@code @externalField} methods.
  *
  * <p>{@code className} is the binary class name, e.g. {@code "com.example.FilmService"}.
  *
@@ -24,32 +24,27 @@ import java.util.List;
  * <p>{@code params} is the list of parameters in declaration order; an empty list means the
  * method takes no parameters.
  *
- * <p>Implementors: {@link Basic} is the general-purpose record built from reflection data
- * (service methods, table methods) or directive configuration (join conditions).
- * {@link ConditionFilter} implements this interface directly — a {@code @condition} method IS a
- * method reference with the additional {@link WhereFilter} contract.
+ * <p>Sealed permits map each variant to its producer set and emit shape:
+ * <ul>
+ *   <li>{@link Service} — {@code @service} methods. The only variant whose call shape can vary;
+ *       {@link Service#callShape()} decides emit form on the {@code serviceCallTarget} path.
+ *       Producer: {@code ServiceCatalog.reflectServiceMethod}.</li>
+ *   <li>{@link StaticOnly} — static-by-construction method references. Rides the bare-class
+ *       static call-target on the {@code @tableMethod} / {@code @externalField} paths. Producers:
+ *       {@code ServiceCatalog.reflectTableMethod}, {@code reflectExternalField}, and
+ *       {@link no.sikt.graphitron.rewrite.EnumMappingResolver} when wrapping a {@link StaticOnly}
+ *       upstream.</li>
+ *   <li>{@link ConditionFilter} — {@code @condition} expressions. Rides the {@code @condition}
+ *       evaluator path; never reads as static-or-instance because the variant has no Java method
+ *       to be classified that way.</li>
+ * </ul>
  */
-public interface MethodRef {
+public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilter {
 
     String className();
     String methodName();
     TypeName returnType();
     List<Param> params();
-
-    /**
-     * Whether the underlying Java method is {@code static} and therefore callable as
-     * {@code ClassName.methodName(...)} at the emission site, vs an instance method that the
-     * emitter must invoke on a fresh holder via {@code new ClassName(dsl).methodName(...)}.
-     *
-     * <p>Defaults to {@code true} because every {@link MethodRef} producer except
-     * {@code @service} reflection is structurally static-only ({@code @condition} expressions,
-     * {@code @tableMethod} per its strict reflection contract, {@code @externalField} per its
-     * strict reflection contract, enum-mapping helpers). {@code ServiceCatalog.reflectServiceMethod}
-     * is the one site that may produce {@code false}: a developer {@code @service} method may be
-     * either a static utility or an instance method on a class with a {@code (DSLContext)}
-     * constructor (the legacy generator's per-call instantiation pattern).
-     */
-    default boolean isStatic() { return true; }
 
     /**
      * Fully qualified names of the checked exceptions the underlying Java method declares
@@ -132,46 +127,81 @@ public interface MethodRef {
     }
 
     /**
-     * The concrete record implementation for method references resolved from reflection
-     * (service methods, table methods) or from directive configuration (join conditions).
+     * Sub-interface for the {@code @condition}-incompatible populations: {@link Service} and
+     * {@link StaticOnly}. Consumers like {@link no.sikt.graphitron.rewrite.EnumMappingResolver
+     * #enrichArgExtractions} narrow their parameter type to {@link NonCondition} so that passing
+     * a {@link ConditionFilter} is a compile error rather than a runtime throw — the
+     * unreachable-by-construction case becomes unreachable structurally.
+     */
+    sealed interface NonCondition extends MethodRef permits Service, StaticOnly {}
+
+    /**
+     * The {@code @service} variant. The only {@link MethodRef} variant whose call shape can vary
+     * (static utility vs instance method on a {@code (DSLContext)}-ctor holder); the static-vs-
+     * instance fork is carried by {@link #callShape()}.
      *
      * <p>When resolution fails, the builder classifies the containing field as
      * {@link GraphitronField.UnclassifiedField}.
      */
-    record Basic(
+    record Service(
         String className,
         String methodName,
         TypeName returnType,
         List<Param> params,
         List<String> declaredExceptions,
-        boolean isStatic
-    ) implements MethodRef {
+        CallShape callShape
+    ) implements NonCondition {
 
-        public Basic {
+        public Service {
             declaredExceptions = List.copyOf(declaredExceptions);
         }
+    }
+
+    /**
+     * Static-by-construction method references: {@code @tableMethod}, {@code @externalField},
+     * and enum-mapping wrappers around either. The variant identity IS the static-call-shape
+     * guarantee — no {@code callShape()} accessor exists, so any consumer reading a
+     * {@link StaticOnly} can emit {@code ClassName.method(...)} unconditionally.
+     */
+    record StaticOnly(
+        String className,
+        String methodName,
+        TypeName returnType,
+        List<Param> params,
+        List<String> declaredExceptions
+    ) implements NonCondition {
+
+        public StaticOnly {
+            declaredExceptions = List.copyOf(declaredExceptions);
+        }
+    }
+
+    /**
+     * The static/instance fork on a {@link Service} variant. Sealed so the {@code serviceCallTarget}
+     * emitter can switch exhaustively; a hypothetical third arm (e.g. a {@code ServiceHolderFactory}
+     * extension point) would be a compile error at every consumer rather than a silent fall-through.
+     *
+     * <p>{@link Static#needsDslLocal()} is pre-resolved at classify time inside
+     * {@code ServiceCatalog.reflectServiceMethod} (the disjunction "any param has
+     * {@link ParamSource.DslContext}" is computed once at the parse boundary). The
+     * {@link InstanceWithDslHolder} arm has no field — {@code needsDsl} is always {@code true}
+     * by variant identity (the holder ctor needs the local regardless of the param list).
+     */
+    sealed interface CallShape permits CallShape.Static, CallShape.InstanceWithDslHolder {
 
         /**
-         * Compatibility constructor for the pre-instance-services world: callers that don't
-         * supply {@code isStatic} get {@code true} (i.e. the static-call emission shape). All
-         * non-{@code @service} producers stay on this constructor; {@code ServiceCatalog
-         * .reflectServiceMethod} uses the 6-arg form to thread the actual modifier.
+         * Static utility method. Emits {@code ClassName.method(...)} at the call site.
+         * {@code needsDslLocal} reflects whether any parameter has
+         * {@link ParamSource.DslContext}.
          */
-        public Basic(String className, String methodName, TypeName returnType,
-                     List<Param> params, List<String> declaredExceptions) {
-            this(className, methodName, returnType, params, declaredExceptions, true);
-        }
+        record Static(boolean needsDslLocal) implements CallShape {}
 
         /**
-         * Backward-compatible 4-arg constructor for call sites that don't (yet) populate
-         * declared exceptions: defaults to an empty list. {@code ServiceCatalog} reflection
-         * sites use the wider forms to capture {@code Method.getExceptionTypes()} and the
-         * static modifier; tests and non-reflection sites that don't care about either continue
-         * to use this 4-arg form.
+         * Instance method on a class with a {@code public ClassName(DSLContext)} constructor.
+         * Emits {@code new ClassName(dsl).method(...)} at the call site; the {@code dsl} local
+         * is unconditionally needed.
          */
-        public Basic(String className, String methodName, TypeName returnType, List<Param> params) {
-            this(className, methodName, returnType, params, List.of(), true);
-        }
+        record InstanceWithDslHolder() implements CallShape {}
     }
 
     /**

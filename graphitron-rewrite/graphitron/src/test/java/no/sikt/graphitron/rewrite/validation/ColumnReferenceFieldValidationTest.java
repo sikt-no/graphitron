@@ -38,7 +38,7 @@ class ColumnReferenceFieldValidationTest {
 
         CONDITION_METHOD("path resolved via condition method instead of a FK (stubbed)",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "languageCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
+                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "languageCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
                 new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()),
             List.of(stubbedError("Film.languageName", ColumnReferenceField.class))),
 

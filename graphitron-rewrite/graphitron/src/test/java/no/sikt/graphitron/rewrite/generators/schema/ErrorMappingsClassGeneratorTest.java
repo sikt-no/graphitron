@@ -15,6 +15,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -286,7 +287,7 @@ class ErrorMappingsClassGeneratorTest {
                 fieldName,
                 null,
                 returnType,
-                new MethodRef.Basic("com.example.SvcStub", "doStuff",
+                TestFixtures.staticServiceMethodRef("com.example.SvcStub", "doStuff",
                     ClassName.get(Object.class), List.of()),
                 Optional.of(channels.get(i)),
                 Optional.empty());

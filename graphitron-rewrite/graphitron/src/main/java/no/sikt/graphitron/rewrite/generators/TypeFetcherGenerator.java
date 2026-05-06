@@ -973,6 +973,11 @@ public class TypeFetcherGenerator {
         reliesOn = "Declares <SpecificTable> table = Method.x(...) with no downcast and feeds "
             + "the local directly into <SpecificTable>Type.$fields(...). A wider return type "
             + "would require a cast or a wildcard local.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "service-catalog-tablemethod-must-be-static",
+        reliesOn = "Emits 'ClassName.method(table, ...)' static-call shape unconditionally for "
+            + "@tableMethod refs; the catalog rejects instance @tableMethod methods at classify "
+            + "time so the emitter doesn't have to fork on call shape.")
     private static MethodSpec buildQueryTableMethodFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryTableMethodTableField qtmtf,
                                                             String outputPackage) {
         var tableRef = qtmtf.returnType().table();
@@ -1174,11 +1179,11 @@ public class TypeFetcherGenerator {
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "service-catalog-instance-service-holder-shape",
-        reliesOn = "Emits `new ServiceClass(dsl).method(...)` for non-static @service methods "
-            + "without checking the holder shape at emit time. ServiceCatalog rejects instance "
-            + "methods whose enclosing class is abstract / an interface or lacks the required "
-            + "public single-arg DSLContext constructor, so the emitter can lean on the existence "
-            + "of that constructor unconditionally.")
+        reliesOn = "Emits `new ServiceClass(dsl).method(...)` for the InstanceWithDslHolder "
+            + "CallShape arm without checking the holder shape at emit time. ServiceCatalog "
+            + "rejects instance methods whose enclosing class is abstract / an interface or lacks "
+            + "the required public single-arg DSLContext constructor, so the emitter can lean on "
+            + "the existence of that constructor unconditionally.")
     private static MethodSpec buildServiceFetcherCommon(TypeFetcherEmissionContext ctx, String fieldName, MethodRef method,
                                                         String parentTypeName, TypeName valueType,
                                                         Optional<ErrorChannel> errorChannel,
@@ -1188,13 +1193,9 @@ public class TypeFetcherGenerator {
         var serviceClass = ClassName.bestGuess(method.className());
         String conditionsClassName = outputPackage + ".conditions."
             + parentTypeName + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
-        // Instance services need a `dsl` local for the constructor regardless of whether the
-        // method itself declares a DSLContext parameter, since the holder is constructed via
-        // `new Service(dsl).method(...)`. Static services keep the previous "only when needed"
-        // policy.
-        boolean needsDsl = !method.isStatic()
-            || method.params().stream().anyMatch(p -> p.source() instanceof ParamSource.DslContext);
-        CodeBlock callTarget = serviceCallTarget(method, serviceClass);
+        var service = (MethodRef.Service) method;
+        boolean needsDsl = needsDsl(service.callShape());
+        CodeBlock callTarget = serviceCallTarget(service, serviceClass);
 
         var builder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -1241,17 +1242,38 @@ public class TypeFetcherGenerator {
 
     /**
      * Builds the call-target {@link CodeBlock} for a service method invocation: either the bare
-     * class name {@code ServiceClass} for static methods, or a fresh-instance expression
-     * {@code new ServiceClass(dsl)} for instance methods. The caller appends {@code .methodName(args)}.
+     * class name {@code ServiceClass} for the {@link MethodRef.CallShape.Static} arm, or a
+     * fresh-instance expression {@code new ServiceClass(dsl)} for
+     * {@link MethodRef.CallShape.InstanceWithDslHolder}. The caller appends
+     * {@code .methodName(args)}.
      *
      * <p>The instance form requires the surrounding method to declare a {@code DSLContext dsl}
      * local in scope before the call site; the root-fetcher and rows-method emitters both gate
-     * that local on {@link MethodRef#isStatic()}.
+     * that local on {@link #needsDsl(MethodRef.CallShape)} (which reads the same arm). Package-
+     * private to enable direct unit-tier exercise from {@code MethodRefCallShapeTest}.
      */
-    private static CodeBlock serviceCallTarget(MethodRef method, ClassName serviceClass) {
-        return method.isStatic()
-            ? CodeBlock.of("$T", serviceClass)
-            : CodeBlock.of("new $T(dsl)", serviceClass);
+    static CodeBlock serviceCallTarget(MethodRef.Service method, ClassName serviceClass) {
+        return switch (method.callShape()) {
+            case MethodRef.CallShape.Static ignored -> CodeBlock.of("$T", serviceClass);
+            case MethodRef.CallShape.InstanceWithDslHolder ignored -> CodeBlock.of("new $T(dsl)", serviceClass);
+        };
+    }
+
+    /**
+     * Decides whether the surrounding method needs a {@code DSLContext dsl} local. Single source
+     * of truth for the static-vs-instance fork; both {@link #buildServiceFetcherCommon} and
+     * {@link #buildServiceRowsMethod} route through here so the disjunction lives in one place.
+     * The {@link MethodRef.CallShape.Static#needsDslLocal()} flag is computed once at classify
+     * time inside {@code ServiceCatalog.reflectServiceMethod} (any param has
+     * {@link no.sikt.graphitron.rewrite.model.ParamSource.DslContext}); the
+     * {@link MethodRef.CallShape.InstanceWithDslHolder} arm always needs the local because the
+     * holder ctor takes the {@code DSLContext} regardless of the method's param list.
+     */
+    static boolean needsDsl(MethodRef.CallShape callShape) {
+        return switch (callShape) {
+            case MethodRef.CallShape.Static s -> s.needsDslLocal();
+            case MethodRef.CallShape.InstanceWithDslHolder ignored -> true;
+        };
     }
 
     /**
@@ -2419,9 +2441,7 @@ public class TypeFetcherGenerator {
             + "TableRecord sources.")
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "service-catalog-instance-service-holder-shape",
-        reliesOn = "Emits `new ServiceClass(dsl).method(...)` for non-static @service methods on "
-            + "the rows-method path without checking the holder shape at emit time; same "
-            + "guarantee as buildServiceFetcherCommon's static-vs-instance fork.")
+        reliesOn = "Same guarantee as buildServiceFetcherCommon's static-vs-instance fork.")
     private static MethodSpec buildServiceRowsMethod(
             TypeFetcherEmissionContext ctx,
             BatchKeyField bkf,
@@ -2443,11 +2463,9 @@ public class TypeFetcherGenerator {
         var serviceClass = ClassName.bestGuess(method.className());
         String conditionsClassName = outputPackage + ".conditions."
             + parentTypeName + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
-        // Mirror buildServiceFetcherCommon: instance services need a `dsl` local for the
-        // constructor regardless of whether the method itself takes a DSLContext parameter.
-        boolean needsDsl = !method.isStatic()
-            || method.params().stream().anyMatch(p -> p.source() instanceof ParamSource.DslContext);
-        CodeBlock callTarget = serviceCallTarget(method, serviceClass);
+        var service = (MethodRef.Service) method;
+        boolean needsDsl = needsDsl(service.callShape());
+        CodeBlock callTarget = serviceCallTarget(service, serviceClass);
 
         var builder = MethodSpec.methodBuilder(bkf.rowsMethodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)

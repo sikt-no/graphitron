@@ -150,7 +150,7 @@ class ServiceCatalog {
      * (e.g. {@code ScalarReturnType} or {@code ResultReturnType} with no backing class).
      * Comparison is via {@link TypeName#equals(Object)} so it is whitespace-tolerant and
      * structurally exact (a wildcard {@code ? extends Foo} is not equal to {@code Foo}).
-     * The captured return type stored on the resulting {@link MethodRef.Basic} is always
+     * The captured return type stored on the resulting {@link MethodRef.Service} is always
      * the parameterised form so emitters can declare matching fetcher return types
      * directly without parsing a string.
      */
@@ -162,11 +162,11 @@ class ServiceCatalog {
             + "(or XRecord) return rather than Object.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "service-catalog-instance-service-holder-shape",
-        description = "The checkServiceInstanceHolderShape arm rejects instance @service methods "
-            + "whose enclosing class is abstract / an interface, or lacks a public single-arg "
-            + "DSLContext constructor. Lets the emitter unconditionally emit "
-            + "`new ServiceClass(dsl).method(...)` for non-static methods without checking the "
-            + "holder shape at emit time.")
+        description = "The InstanceWithDslHolder arm rejects abstract / interface / no-(DSLContext)"
+            + "-ctor holders via checkServiceInstanceHolderShape, so a Service.callShape() of "
+            + "InstanceWithDslHolder structurally guarantees a usable holder. Lets the emitter "
+            + "unconditionally emit `new ServiceClass(dsl).method(...)` for the instance arm "
+            + "without checking the holder shape at emit time.")
     ServiceReflectionResult reflectServiceMethod(String className, String methodName,
             ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
             TypeName expectedReturnType) {
@@ -312,9 +312,17 @@ class ServiceCatalog {
                     params.add(new MethodRef.Param.Sourced(displayName, batchKey.get()));
                 }
             }
+            MethodRef.CallShape callShape;
+            if (isStatic) {
+                boolean needsDslLocal = params.stream()
+                    .anyMatch(p -> p.source() instanceof ParamSource.DslContext);
+                callShape = new MethodRef.CallShape.Static(needsDslLocal);
+            } else {
+                callShape = new MethodRef.CallShape.InstanceWithDslHolder();
+            }
             return new ServiceReflectionResult(
-                new MethodRef.Basic(className, methodName, actualReturnType, List.copyOf(params),
-                    declaredExceptionFqns(javaMethod), isStatic),
+                new MethodRef.Service(className, methodName, actualReturnType, List.copyOf(params),
+                    declaredExceptionFqns(javaMethod), callShape),
                 null);
         } catch (ClassNotFoundException e) {
             return new ServiceReflectionResult(null, Rejection.structural("class '" + className + "' could not be loaded"));
@@ -356,7 +364,7 @@ class ServiceCatalog {
 
     /**
      * Captures the developer method's declared exception classes as FQNs, in source order.
-     * Feeds {@link MethodRef.Basic#declaredExceptions()} so the classifier's match rule can
+     * Feeds {@link MethodRef#declaredExceptions()} so the classifier's match rule can
      * verify each declared exception is covered by an {@code @error} handler on the field's
      * channel. Returns the empty list when the method has no {@code throws} clause.
      */
@@ -432,6 +440,12 @@ class ServiceCatalog {
             + "whose return type is wider than the generated jOOQ table class for the field's "
             + "@table-bound return type. Lets the emitter declare <SpecificTable> table = "
             + "Method.x(...) without a downcast.")
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "service-catalog-tablemethod-must-be-static",
+        description = "The Modifier.isStatic check rejects instance @tableMethod methods. "
+            + "Lets the emitter unconditionally emit `ClassName.method(table, ...)` "
+            + "static-call shape for @tableMethod refs without forking on call shape — the "
+            + "MethodRef.StaticOnly variant produced here carries that guarantee structurally.")
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
             ArgBindingMap argBindings, Set<String> ctxKeys, ClassName expectedReturnClass) {
         var argByJavaName = argBindings.byJavaName();
@@ -454,6 +468,12 @@ class ServiceCatalog {
                         methodName, declaredMethodNames));
             }
             var javaMethod = methods.get(0);
+            if (!java.lang.reflect.Modifier.isStatic(javaMethod.getModifiers())) {
+                return new ServiceReflectionResult(null,
+                    Rejection.structural("method '" + methodName + "' in class '" + className
+                    + "' must be declared 'static' for @tableMethod — instance @tableMethod methods are not supported;"
+                    + " the call site emits 'ClassName.method(table, ...)' which requires a static method"));
+            }
             ClassName actualReturnClass = ClassName.get(javaMethod.getReturnType());
             if (expectedReturnClass != null
                     && !actualReturnClass.equals(expectedReturnClass)) {
@@ -505,7 +525,7 @@ class ServiceCatalog {
                     + "' has no Table<?> parameter — @tableMethod requires exactly one Table<?> parameter"));
             }
             return new ServiceReflectionResult(
-                new MethodRef.Basic(className, methodName,
+                new MethodRef.StaticOnly(className, methodName,
                     ClassName.get(javaMethod.getReturnType()), List.copyOf(params),
                     declaredExceptionFqns(javaMethod)),
                 null);
@@ -590,7 +610,7 @@ class ServiceCatalog {
                 paramName, p.getParameterizedType().getTypeName(), new ParamSource.Table()));
             TypeName returnTypeName = TypeName.get(genericReturn);
             return new ServiceReflectionResult(
-                new MethodRef.Basic(className, methodName, returnTypeName, params),
+                new MethodRef.StaticOnly(className, methodName, returnTypeName, params, List.of()),
                 null);
         } catch (ClassNotFoundException e) {
             return new ServiceReflectionResult(null, Rejection.structural("class '" + className + "' could not be loaded"));

@@ -198,7 +198,7 @@ final class EnumMappingResolver {
      *
      * <p>The generated static map field lives in the {@code *Fetchers} class for this type.
      */
-    MethodRef enrichArgExtractions(MethodRef method, GraphQLFieldDefinition fieldDef) {
+    MethodRef.NonCondition enrichArgExtractions(MethodRef.NonCondition method, GraphQLFieldDefinition fieldDef) {
         var argTypes = fieldDef.getArguments().stream()
             .collect(Collectors.toMap(
                 GraphQLArgument::getName,
@@ -217,8 +217,12 @@ final class EnumMappingResolver {
                 new ParamSource.Arg(new CallSiteExtraction.TextMapLookup(mapFieldName, textMapping),
                     arg.path()));
         }).toList();
-        return new MethodRef.Basic(method.className(), method.methodName(),
-            method.returnType(), newParams, method.declaredExceptions(), method.isStatic());
+        return switch (method) {
+            case MethodRef.Service s -> new MethodRef.Service(s.className(), s.methodName(),
+                s.returnType(), newParams, s.declaredExceptions(), s.callShape());
+            case MethodRef.StaticOnly so -> new MethodRef.StaticOnly(so.className(), so.methodName(),
+                so.returnType(), newParams, so.declaredExceptions());
+        };
     }
 
     /**
