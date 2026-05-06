@@ -17,7 +17,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R77` | Bulk DML mutations: listed @table input arguments | Spec | [plan](bulk-dml-mutations.md) |
 | `R88` | Validate `@record` accessor resolution against backing class at classify time | Spec | [plan](record-accessor-validation.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `R87` | Tighten instance-service @service design after architect review | In Review | [plan](instance-service-design-cleanup.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R70` | Support TableRecord-keyed Map returns on @service rows methods <sub>blocked by: [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)</sub> | In Review | [plan](service-rows-tablerecord-key-shape.md) |
@@ -108,7 +107,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R87` [**Tighten instance-service @service design after architect review**](instance-service-design-cleanup.md) — In Review, architecture
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R70` [**Support TableRecord-keyed Map returns on @service rows methods**](service-rows-tablerecord-key-shape.md) — In Review, feature, blocked by [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
