@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
-| `R93` | LSP quick-fix: ExternalCodeReference name → className migration | In Progress | [plan](lsp-externalcodereference-name-migration.md) |
+| `R93` | LSP quick-fix: ExternalCodeReference name → className migration | In Review | [plan](lsp-externalcodereference-name-migration.md) |
 | `R70` | Support TableRecord-keyed Map returns on @service rows methods <sub>blocked by: [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)</sub> | In Review | [plan](service-rows-tablerecord-key-shape.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) <sub>blocked by: [record-accessor-validation](record-accessor-validation.md)</sub> | Spec | [plan](emit-input-records.md) |
@@ -179,7 +179,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### legacy-migration
 
 - `R19` [**Rebase and squash rewrite branch onto main**](history-squash.md) — Ready
-- `R93` [**LSP quick-fix: ExternalCodeReference name → className migration**](lsp-externalcodereference-name-migration.md) — In Progress, Backlog
+- `R93` [**LSP quick-fix: ExternalCodeReference name → className migration**](lsp-externalcodereference-name-migration.md) — In Review, Backlog
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md) — Backlog, cleanup, blocked by [sis-rewrite-migration](sis-rewrite-migration.md)
 - `R95` [**Routines as data-model citizens (jOOQ-native routine support)**](routines-as-data-model-citizens.md) — Backlog, feature
 - `R47` [**Short class-name resolution for `@service` and `@externalField` (legacy parity)**](service-short-classname-resolution.md) — Backlog, cleanup

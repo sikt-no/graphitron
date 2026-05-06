@@ -1,7 +1,7 @@
 ---
 id: R93
 title: "LSP quick-fix: ExternalCodeReference name → className migration"
-status: In Progress
+status: In Review
 bucket: Backlog
 priority: 5
 theme: legacy-migration
@@ -421,22 +421,18 @@ Four tests, organised by tier:
 Two slices, each independently shippable through the canonical
 Backlog → Spec → Ready → In Progress → In Review → Done flow.
 
-### Phase 1: directive-vocabulary registry + light up unwired sites
+### Phase 1: directive-vocabulary registry + light up unwired sites — shipped at `19e18b23`
 
-- Introduce `DirectiveDefinitions` keyed on directive name, with
-  `argsByInputType(String)` as the derived view.
-- `ClassNameCompletions.outerArgOf` migrates onto
-  `DirectiveDefinitions.argsByInputType("ExternalCodeReference")`.
-- `Diagnostics.compute()` iterates the same view rather than its
-  hardcoded tuple list.
-- All five previously unwired sites gain completion + diagnostic
-  surface as a side effect.
-- `DirectiveDefinitionsTest` plus the `ClassNameCompletionsTest` /
-  `DiagnosticsTest` extensions.
+`DirectiveDefinitions` registry plus migration of completion / diagnostic
+dispatch onto its `argsByInputType("ExternalCodeReference")` view; all
+eight binding sites gain completion + diagnostic coverage. Population
+strategy was decision (a) (hand-written entries); parsing
+`directives.graphqls` at LSP startup remains a tractable follow-on but
+adds startup cost without changing the consumer surface.
 
-Acceptance: existing three-site coverage extends to all eight; no
-behaviour change for the existing three; the registry is positioned
-to host future per-arg / per-directive features beyond R93.
+Test surface: `DirectiveDefinitionsTest` pins the eight bindings;
+`ClassNameCompletionsTest` and `DiagnosticsTest` grow one case per new
+binding (133 LSP tests, 0 failures).
 
 ### Phase 2: code-action surface
 
