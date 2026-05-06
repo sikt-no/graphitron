@@ -469,7 +469,7 @@ public final class GraphitronSchemaClassGenerator {
     /**
      * Enumerates the types that need registration in the emitted {@code GraphitronSchema.build()}.
      *
-     * <p>Source of truth is {@link GraphitronSchema#types()}, which by Phase 6 contains every
+     * <p>Source of truth is {@link GraphitronSchema#types()}, which contains every
      * emittable type — objects, interfaces, unions, inputs, enums, SDL-declared and synthesised
      * alike. The assembled schema is no longer consulted here.
      */

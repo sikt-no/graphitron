@@ -77,8 +77,8 @@ public class JooqCatalog {
      *
      * <p>Unqualified values fan out into the {@link TableResolution} sub-taxonomy:
      * {@link TableResolution.Resolved} when exactly one schema carries the name,
-     * {@link TableResolution.Ambiguous} when two or more schemas carry it (the ambiguity
-     * fix R78 lifted from first-schema-wins), {@link TableResolution.NotInCatalog} otherwise.
+     * {@link TableResolution.Ambiguous} when two or more schemas carry it,
+     * {@link TableResolution.NotInCatalog} otherwise.
      * Qualified values resolve through the two-arg form and surface as {@code Resolved} or
      * {@code NotInCatalog} only — qualification eliminates the ambiguity branch by construction.
      * Schema and table matching is case-insensitive on both halves (consistent with
@@ -152,7 +152,7 @@ public class JooqCatalog {
      * <p>Returns empty for malformed input: {@code null}, blank, {@code "film."}, or
      * {@code ".film"}. Both halves must be non-empty when a {@code .} is present;
      * quoted-identifier syntax with literal dots ({@code "my.schema"."weird.table"}) is out
-     * of scope for R78 and parses as malformed (the unmatched quote leaves a blank half).
+     * of scope and parses as malformed (the unmatched quote leaves a blank half).
      *
      * <p>Inputs with multiple dots ({@code "a.b.c"}) parse as schema {@code "a"}, table
      * {@code "b.c"}; the resulting two-arg lookup will return empty because PostgreSQL
@@ -731,10 +731,9 @@ public class JooqCatalog {
      * the catalog used for derived lookups (PK columns, the schema's {@code Tables} class).
      *
      * <p>The accessor methods ({@link #tableClass()}, {@link #recordClass()},
-     * {@link #constantsClass()}, {@link #pkColumnRefs()}) replace the per-emit-site reflection
-     * and {@code <jooqPackage>}-concatenation that R78 retires. Each accessor reads schema-
-     * correct values from the resolved {@link Table}, so single-schema and multi-schema
-     * catalog layouts produce the same call shape with no per-caller derivation.
+     * {@link #constantsClass()}, {@link #pkColumnRefs()}) read schema-correct values from the
+     * resolved {@link Table}, so single-schema and multi-schema catalog layouts produce the
+     * same call shape with no per-caller derivation.
      *
      * <p>The catalog reference is intentionally part of the record's identity — within a build
      * all entries come from one {@code JooqCatalog} instance, so its presence in {@code equals}
@@ -856,13 +855,11 @@ public class JooqCatalog {
     public record ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable) {}
 
     /**
-     * Sub-taxonomy of outcomes for {@link #findTable(String)}. Replaces the prior
-     * {@link Optional}{@code <TableEntry>} return: lookup failures fan out into
+     * Sub-taxonomy of outcomes for {@link #findTable(String)}. Lookup failures fan out into
      * {@link NotInCatalog} (the name resolves nowhere) and {@link Ambiguous} (the unqualified
-     * name resolves in two or more schemas — the multi-schema case R78 lifted from
-     * first-schema-wins). Diagnostic builders switch on the variant directly so each failure
-     * mode reaches the schema author with the right prose; callers that only care about the
-     * resolved entry use {@link #asEntry()}.
+     * name resolves in two or more schemas). Diagnostic builders switch on the variant directly
+     * so each failure mode reaches the schema author with the right prose; callers that only
+     * care about the resolved entry use {@link #asEntry()}.
      */
     public sealed interface TableResolution {
         /** The name resolves to exactly one table in the catalog. */

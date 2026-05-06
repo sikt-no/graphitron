@@ -11,7 +11,7 @@ import no.sikt.graphitron.rewrite.PathExpr;
  * <ul>
  *   <li>{@link Arg} — the parameter is a GraphQL field argument; bound via
  *       {@code DataFetchingEnvironment.getArgument(path.headName())} for head-only paths, or
- *       Map traversal from the outer argument for multi-segment paths (R84 path expressions).</li>
+ *       Map traversal from the outer argument for multi-segment dot-path expressions.</li>
  *   <li>{@link Context} — the parameter is a context argument; bound via
  *       {@code GraphitronContext.getContextArgument(dfe, name)}.</li>
  *   <li>{@link Sources} — the DataLoader batch-key list; element type and construction strategy
@@ -35,10 +35,10 @@ public sealed interface ParamSource
      * A GraphQL field argument bound via the directive's argMapping rule.
      *
      * <p>{@code path} is the resolved {@link PathExpr} for this binding. The single-segment
-     * {@link PathExpr.Head} case is the R53 baseline ({@code env.getArgument(path.headName())}).
-     * The multi-segment {@link PathExpr.Step} chain case (R84) walks from the outer argument's
-     * map through nested input-field keys to the leaf value, with intermediate-null
-     * short-circuit (any null in the chain produces a null leaf without an NPE).
+     * {@link PathExpr.Head} case is the single-name baseline ({@code env.getArgument(path.headName())}).
+     * The multi-segment {@link PathExpr.Step} chain case walks from the outer argument's map
+     * through nested input-field keys to the leaf value, with intermediate-null short-circuit
+     * (any null in the chain produces a null leaf without an NPE).
      *
      * <p>{@code extraction} is the pre-resolved strategy for transforming the leaf value once
      * extracted. Set at classification time by

@@ -90,8 +90,8 @@ public class GraphitronTextDocumentService implements TextDocumentService {
     @Override
     public void didSave(DidSaveTextDocumentParams params) {
         // Save itself does not change buffer state for the LSP. The dev
-        // goal's filesystem watcher (Phase 1, slice 2) drives regeneration
-        // off disk writes, not off this notification.
+        // goal's filesystem watcher drives regeneration off disk writes,
+        // not off this notification.
     }
 
     /**

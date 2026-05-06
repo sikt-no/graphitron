@@ -108,7 +108,7 @@ public final class Diagnostics {
                 switch (fieldName) {
                     case "key" -> validateReferenceKey(valueNode, value, file, catalog, out);
                     case "table" -> validateReferenceTable(valueNode, value, file, catalog, out);
-                    default -> { /* condition: deferred to Phase 5 */ }
+                    default -> { /* condition: not yet validated */ }
                 }
             });
         }

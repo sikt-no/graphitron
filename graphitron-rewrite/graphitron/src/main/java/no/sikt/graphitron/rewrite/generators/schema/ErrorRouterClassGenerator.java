@@ -79,11 +79,11 @@ public final class ErrorRouterClassGenerator {
         var resultOfP = ParameterizedTypeName.get(DATA_FETCHER_RESULT, typeP);
 
         // Mapping interface: match(throwable), description(). The build() factory and the
-        // per-mapping (List<String>, String) -> Object closure are gone (R12 source-direct
-        // dispatch); the matched source object is placed directly into the errors list.
+        // per-mapping (List<String>, String) -> Object closure are gone under source-direct
+        // dispatch; the matched source object is placed directly into the errors list.
         var mappingInterface = buildMappingInterface();
 
-        // Concrete Mapping classes. ValidationHandler entries produce no Mapping: §5's wrapper
+        // Concrete Mapping classes. ValidationHandler entries produce no Mapping: the wrapper's
         // pre-execution validator step routes GraphQLError sources directly into the errors
         // slot, bypassing the dispatcher entirely.
         var exceptionMapping = buildExceptionMapping();
@@ -153,17 +153,16 @@ public final class ErrorRouterClassGenerator {
             .returns(boolean.class)
             .addParameter(THROWABLE, "throwable")
             .addJavadoc("Whether this mapping's criteria fire on {@code throwable}. The dispatch arm\n"
-                + "walks the cause chain outermost-first per mapping; the first match wins per\n"
-                + "{@code error-handling-parity.md} §3.\n")
+                + "walks the cause chain outermost-first per mapping; the first match wins.\n")
             .build();
 
         var description = MethodSpec.methodBuilder("description")
             .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
             .returns(STRING_CN)
             .addJavadoc("The {@code description} from the {@code @error} declaration, or {@code null}\n"
-                + "when none was set. Future emitter passes (R12 source-direct dispatch follow-on)\n"
-                + "will wrap the matched source in a description-overriding facade so graphql-java's\n"
-                + "{@code PropertyDataFetcher} reads the override at the SDL {@code message} field.\n")
+                + "when none was set. A future emitter pass will wrap the matched source in a\n"
+                + "description-overriding facade so graphql-java's {@code PropertyDataFetcher}\n"
+                + "reads the override at the SDL {@code message} field.\n")
             .build();
 
         return TypeSpec.interfaceBuilder(MAPPING_INTERFACE)
@@ -171,8 +170,8 @@ public final class ErrorRouterClassGenerator {
             .addJavadoc("One channel-flattened entry on the per-fetcher {@code Mapping[]} array. Each\n"
                 + "concrete variant ({@link ExceptionMapping}, {@link SqlStateMapping},\n"
                 + "{@link VendorCodeMapping}) implements {@link #match(Throwable)} against the\n"
-                + "thrown cause. No {@code build} factory: under the source-direct dispatch contract\n"
-                + "(R12 §2c, §3) the matched throwable itself goes into the errors list, and\n"
+                + "thrown cause. No {@code build} factory: under the source-direct dispatch\n"
+                + "contract the matched throwable itself goes into the errors list, and\n"
                 + "graphql-java's {@code PropertyDataFetcher} reads each declared {@code @error}\n"
                 + "field directly from the source.\n")
             .addMethod(match)
@@ -325,23 +324,23 @@ public final class ErrorRouterClassGenerator {
             .addParameter(mappingArray, "mappings")
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addParameter(payloadFactoryType, "payloadFactory")
-            .addJavadoc("Channel-mapped dispatch (R12 source-direct contract). For each mapping in\n"
+            .addJavadoc("Channel-mapped dispatch (source-direct contract). For each mapping in\n"
                 + "source-declaration order, walks the cause chain outermost-first; the first\n"
                 + "match places the matched {@code Throwable} itself into the errors list and\n"
                 + "returns the populated payload. Falls through to {@link #redact} on no match.\n"
                 + "graphql-java's {@code PropertyDataFetcher} reads each declared {@code @error}\n"
                 + "field directly from whatever source object happens to be in the slot;\n"
-                + "per-channel {@code TypeResolver}s (R12 §2c) dispatch each source to its SDL\n"
+                + "per-channel {@code TypeResolver}s dispatch each source to its SDL\n"
                 + "{@code @error} type at serialisation time.\n"
                 + "\n"
                 + "<p>{@code ValidationHandler} entries produce no {@code Mapping} and never\n"
                 + "reach this method: the wrapper invokes {@code jakarta.validation.Validator}\n"
-                + "as a pre-execution step (§5) and routes the resulting\n"
+                + "as a pre-execution step and routes the resulting\n"
                 + "{@code GraphQLError}s directly into the errors slot.\n"
                 + "\n"
                 + "<p>The {@code description} field on each {@link Mapping} is currently unused at\n"
                 + "the dispatch site; the description-overriding facade is a follow-on emitter\n"
-                + "concern (R12 §3 \"Concrete dispatch signature\", final paragraph).\n")
+                + "concern.\n")
             // ----- Source-order match -----
             .addCode("// Source-order match: first (mapping, cause) pair that satisfies the predicate.\n")
             .beginControlFlow("for ($T mapping : mappings)", mapping)

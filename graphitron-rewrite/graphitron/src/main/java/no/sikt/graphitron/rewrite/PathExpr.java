@@ -6,15 +6,15 @@ import java.util.List;
 /**
  * Pre-resolved path expression on the right-hand side of an {@code argMapping} entry.
  *
- * <p>R53 binds Java parameters to GraphQL slots by single name; R84 generalises that to a dot-path
- * walking into nested input fields (e.g. {@code input.kvotesporsmalId}). The head names a slot at
- * the directive's scope (a GraphQL argument for {@code @service} / {@code @tableMethod} /
+ * <p>Java parameters bind to GraphQL slots either by single name or by dot-path walking into
+ * nested input fields (e.g. {@code input.kvotesporsmalId}). The head names a slot at the
+ * directive's scope (a GraphQL argument for {@code @service} / {@code @tableMethod} /
  * argument-level {@code @condition}; an input field for input-field-level {@code @condition});
  * each subsequent segment names a field on the resolved input-object type at that depth.
  *
  * <p>{@code PathExpr} is a sub-taxonomy of the value side of {@link ArgBindingMap#byJavaName()}.
- * The R53 case reduces to a single-segment {@link Head}; multi-segment overrides produce a
- * chain of {@link Step} on top of a {@link Head}. The {@code liftsList} flag on each {@code Step}
+ * The single-name case reduces to a single-segment {@link Head}; multi-segment overrides produce
+ * a chain of {@link Step} on top of a {@link Head}. The {@code liftsList} flag on each {@code Step}
  * records whether the schema type at that depth was list-shaped, so the leaf Java type and the
  * runtime walking code are precomputed at classify time and the emitter never re-asks the GraphQL
  * schema (rewrite-design-principles "Generation-thinking").
@@ -51,9 +51,8 @@ public sealed interface PathExpr {
     /**
      * Single segment, naming a slot at the directive's scope.
      *
-     * <p>This is the wire-compatible R53 shape: an {@code argMapping} entry whose right-hand side
-     * is a bare name (no {@code .}) parses to {@code Head}; the existing identity entries for the
-     * no-override case are also {@code Head}.
+     * <p>An {@code argMapping} entry whose right-hand side is a bare name (no {@code .}) parses
+     * to {@code Head}; the identity entries for the no-override case are also {@code Head}.
      */
     record Head(String name) implements PathExpr {
         @Override public String headName() { return name; }

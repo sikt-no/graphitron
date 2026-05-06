@@ -44,11 +44,11 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
  *       Scalar/TableBound arms). Returns a non-null rejection reason on violation,
  *       {@code null} on success.</li>
  *   <li>{@link #resolveInput} — the main beast. Walks the field's arguments, finds the single
- *       {@code TableInputArg}, runs all Phase 1 mutation invariant checks on it (no
+ *       {@code TableInputArg}, runs the structural mutation invariant checks on it (no
  *       {@code @condition} on the {@code @table} arg, only {@code ColumnField} entries inside
  *       the input type, lookup-key + PK coverage rules per DML variant), and returns a sealed
  *       {@link Resolved} the caller switches on. Listed {@code @table} inputs
- *       ({@code in: [FilmInput!]!}) are admitted (R77); the bulk arm is dispatched via
+ *       ({@code in: [FilmInput!]!}) are admitted; the bulk arm is dispatched via
  *       {@link ArgumentRef.InputTypeArg.TableInputArg#list() TableInputArg.list()} downstream.</li>
  * </ul>
  *
@@ -59,9 +59,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
  *
  * <p>The resolver carries references to {@link ConditionResolver} (for argument-level
  * {@code @condition} resolution) and {@link EnumMappingResolver} (for the lookup-binding walk
- * over {@code @lookupKey}-bearing input fields). No reference to {@link FieldBuilder} is
- * needed since the enum-mapping axis lift in Phase 7 moved {@code buildLookupBindings} into
- * its own resolver.
+ * over {@code @lookupKey}-bearing input fields). The lookup-binding walk lives on
+ * {@link EnumMappingResolver} so {@link FieldBuilder} is not needed here.
  */
 final class MutationInputResolver {
 
@@ -166,8 +165,8 @@ final class MutationInputResolver {
      * <p>Returns a non-null rejection reason on violation; {@code null} when the return type
      * is acceptable. The {@link ReturnTypeRef.ResultReturnType Payload} arm is excluded from
      * #15 so bulk-input + single-payload routes through the deferred Payload+list rejection in
-     * {@link FieldBuilder#buildDmlField} (a separate "not yet supported" category that lifts
-     * when R75 lands), and bulk-input + list-payload still falls under #14's existing arm.
+     * {@link FieldBuilder#buildDmlField} (a separate "not yet supported" category), and
+     * bulk-input + list-payload still falls under #14's existing arm.
      */
     static String validateReturnType(ReturnTypeRef returnType, DmlKind kind, boolean listInput) {
         return switch (returnType) {
@@ -203,7 +202,7 @@ final class MutationInputResolver {
                 // optional defaulted slots and an optional errors slot. The shape check runs in
                 // FieldBuilder.resolveDmlPayloadAssembly during construction; this validator only
                 // screens for the wrapper shape (single, not list/connection). Bulk-input +
-                // single-Payload combinations route to the R75-deferred rejection in buildDmlField.
+                // single-Payload combinations route to the deferred rejection in buildDmlField.
                 if (r.wrapper().isList()) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + r.returnTypeName() + "' (list of @record) is not yet supported; "
@@ -219,7 +218,7 @@ final class MutationInputResolver {
 
     /**
      * Walks a DML {@code @mutation} field's arguments and resolves the single {@code @table}
-     * input argument that drives the statement. Enforces Phase 1 mutation invariants on the
+     * input argument that drives the statement. Enforces the structural mutation invariants on the
      * input shape: exactly one {@code TableInputArg}, no other argument shapes, no listed
      * input, no {@code @condition} on the {@code @table} arg, only {@code ColumnField} entries
      * inside the input type, and (for UPDATE / DELETE / UPSERT) at least one {@code @lookupKey}

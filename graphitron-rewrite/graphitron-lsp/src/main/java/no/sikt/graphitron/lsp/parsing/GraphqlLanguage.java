@@ -11,8 +11,8 @@ import java.lang.foreign.Arena;
  * through the {@link io.github.treesitter.jtreesitter.NativeLibraryLookup}
  * SPI registered under {@code META-INF/services}; that SPI extracts the
  * platform-appropriate shared library shipped under {@code lib/<os>-<arch>/}
- * inside this jar (Linux x86_64 today; macOS / Windows in R18 Phase 6
- * step 4). The combined library exports both jtreesitter's runtime symbols
+ * inside this jar (Linux x86_64 and macOS today). The combined library exports
+ * both jtreesitter's runtime symbols
  * and the grammar's {@code tree_sitter_graphql} entry point, so a single
  * {@link Language#load} call covers both.
  *

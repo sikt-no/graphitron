@@ -96,7 +96,7 @@ public final class BundledLibraryLookup implements NativeLibraryLookup {
             throw new UnsupportedOperationException(
                 "no bundled tree-sitter-graphql native library for os.name=" + os
                     + ", os.arch=" + arch + "; supported: linux-x86_64, macos-x86_64, "
-                    + "macos-aarch64. Windows is a follow-up to R18 Phase 6.");
+                    + "macos-aarch64.");
         }
         return "lib/" + dir + "/" + libName;
     }

@@ -100,7 +100,7 @@ public sealed interface BatchKey
      *       all share that single typed class.</li>
      * </ul>
      *
-     * <p>R61 added Record support without displacing Row: developers continue to choose
+     * <p>Record support coexists with Row support: developers choose
      * {@code Set<Row1<…>>} (Row surface, no {@code value1()}) or {@code Set<Record1<…>>}
      * (Record surface, with {@code value1()} value access). The classifier in
      * {@code ServiceCatalog} routes the source declaration to the matching variant; each

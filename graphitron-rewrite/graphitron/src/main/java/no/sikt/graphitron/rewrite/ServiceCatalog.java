@@ -175,7 +175,7 @@ class ServiceCatalog {
     }
 
     /**
-     * Stretch overload (R84 Phase F): identical to the 6-arg version, but accepts
+     * Suggestion-aware overload: identical to the 6-arg version, but accepts
      * {@code slotTypes} so a parameter-mismatch rejection can pre-fill an unambiguous
      * reachable path under one of the available slots in its argMapping suggestion.
      *
@@ -283,7 +283,7 @@ class ServiceCatalog {
                                 } else {
                                     pathExample = "argMapping: \"" + displayName + ": " + soleArg + ".<fieldName>\"";
                                     pathTrailer = " when the parameter pulls one field out of a wrapper input"
-                                        + " type — see R84 path expressions";
+                                        + " type";
                                 }
                                 suggestion = " — either rename the Java parameter to match one of the available argument names, or bind explicitly via the @service directive's argMapping field"
                                     + " (e.g. argMapping: \"" + displayName + ": " + soleArg + "\""
@@ -829,7 +829,7 @@ class ServiceCatalog {
             + " parents (not @service SOURCES)";
     }
 
-    // ===== R84 Phase F (stretch): suggestion-side path search =====
+    // ===== Suggestion-side path search =====
 
     /**
      * Walks every slot in {@code slotTypes} looking for a single nested input-object field
@@ -877,7 +877,7 @@ class ServiceCatalog {
             walk = nn.getWrappedType();
         }
         // Skip list-shaped intermediates: the path expression for an intermediate-list segment
-        // produces a List<X> Java parameter shape, which is fine for R84 emit but harder to
+        // produces a List<X> Java parameter shape, which is fine for emit but harder to
         // present in a one-line suggestion that doesn't surprise users. Restrict to flat paths.
         if (!(walk instanceof GraphQLInputObjectType inputObj)) return;
         if (!visited.add(inputObj.getName())) return;

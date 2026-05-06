@@ -135,9 +135,9 @@ public final class ArgCallEmitter {
 
     /**
      * Resolves the effective {@link CallSiteExtraction} for a {@link ParamSource.Arg} by routing
-     * multi-segment R84 path expressions through {@link CallSiteExtraction.NestedInputField}.
+     * multi-segment path expressions through {@link CallSiteExtraction.NestedInputField}.
      *
-     * <p>Single-segment {@link PathExpr.Head} (R53 baseline): returns {@code arg.extraction()}
+     * <p>Single-segment {@link PathExpr.Head} (single-name baseline): returns {@code arg.extraction()}
      * unchanged. The downstream emitter dispatches on {@code Direct} / {@code EnumValueOf} /
      * {@code TextMapLookup} / {@code JooqConvert} as today.
      *
@@ -461,9 +461,9 @@ public final class ArgCallEmitter {
         // its own instanceof guard validates the runtime shape -- so the inner pattern stays
         // "conditional" under -source 17 (no `(List<String>) ... instanceof List` chain).
         boolean nodeIdLeaf = leaf instanceof CallSiteExtraction.NodeIdDecodeKeys;
-        // When the outer arg has already been lifted to a typed Map<?, ?> local (R79 §5),
-        // depth 0 of the chain references the local directly under a null-check; otherwise
-        // it falls back to the inline `env.getArgument(outer) instanceof Map<?, ?> _m1` rebind.
+        // When the outer arg has already been lifted to a typed Map<?, ?> local, depth 0 of the
+        // chain references the local directly under a null-check; otherwise it falls back to the
+        // inline `env.getArgument(outer) instanceof Map<?, ?> _m1` rebind.
         String topBinding = liftedOuters != null ? liftedOuters.get(outerArgName) : null;
         CodeBlock root = topBinding != null
             ? CodeBlock.of("$L", topBinding)
@@ -483,8 +483,8 @@ public final class ArgCallEmitter {
 
     /**
      * Builds the depth-0 step's ternary, recursing for inner steps. When {@code topBinding} is
-     * non-null it names a local that is already a {@code Map<?, ?>} (R79 §5 lift), so depth 0
-     * skips the {@code instanceof Map<?, ?> _m1} check and emits {@code <topBinding> != null ?
+     * non-null it names a local that is already a {@code Map<?, ?>}, so depth 0 skips the
+     * {@code instanceof Map<?, ?> _m1} check and emits {@code <topBinding> != null ?
      * (..._)  : null} instead. Inner steps always rebind via {@code _m2, _m3, ...}.
      */
     private static CodeBlock buildMapChain(CodeBlock currentExpr, List<String> path, int depth,
@@ -526,7 +526,7 @@ public final class ArgCallEmitter {
     }
 
     /**
-     * Emits a list-aware nested traversal for an R84 path expression that contains one or more
+     * Emits a list-aware nested traversal for a path expression that contains one or more
      * intermediate {@code liftsList=true} segments. Each intermediate list lifts the rest of
      * the walk into a {@code .stream().map(...).toList()} producing one extra {@code List<>}
      * dimension on the result; the terminal segment, list-shaped or not, just casts the
@@ -556,10 +556,10 @@ public final class ArgCallEmitter {
      *   <li>The leaf transform must be {@link CallSiteExtraction.Direct}; the dispatcher
      *       {@link #emitArgExpression} rejects other leaf shapes before reaching this helper.</li>
      *   <li>The Java parameter type's {@code List<>} wrap count must equal the number of
-     *       {@code liftsList=true} segments on the path. The classifier (R84 path resolution
+     *       {@code liftsList=true} segments on the path. The classifier (path resolution
      *       in {@link no.sikt.graphitron.rewrite.ArgBindingMap}) trusts the schema; if the
      *       Java type drifts from the schema shape, the cast inside the lambda will fail at
-     *       runtime — which is the same failure mode as a wrong R53 binding.</li>
+     *       runtime — which is the same failure mode as a wrong single-name binding.</li>
      * </ul>
      */
     private static CodeBlock buildListAwarePathExtraction(PathExpr path, String leafTypeName) {

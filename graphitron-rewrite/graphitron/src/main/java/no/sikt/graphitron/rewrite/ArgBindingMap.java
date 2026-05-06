@@ -25,7 +25,7 @@ import java.util.Set;
  * GraphQL counterparts.
  *
  * <p>Keys are Java parameter names; values are {@link PathExpr} expressions that resolve to a
- * GraphQL slot (and, post-R84, optionally a path into a nested input field). Identity entries
+ * GraphQL slot, optionally a path into a nested input field. Identity entries
  * ({@code key.equals(value.headName()) && value.isHead()}) cover the no-override case; override
  * entries name a Java parameter that differs from the GraphQL argument's own name, optionally
  * walking into a nested input field via dot-segments.
@@ -66,9 +66,8 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
      * Result of {@link #parseArgMapping}.
      *
      * <p>{@code overrides} keys are Java parameter names; values are dot-segment chains.
-     * R53-shaped single-name overrides arrive as one-element segment lists; R84 path
-     * expressions arrive as multi-element lists with the head segment first. Single-segment
-     * overrides preserve full R53 wire-compat at every consumer.
+     * Single-name overrides arrive as one-element segment lists; dot-path expressions into
+     * nested input fields arrive as multi-element lists with the head segment first.
      */
     sealed interface ParsedArgMapping {
         record Ok(Map<String, List<String>> overrides) implements ParsedArgMapping {}
@@ -211,7 +210,7 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName) {
      * already handles this). Empty/null/blank input returns an {@link ParsedArgMapping.Ok}
      * with an empty map (identity-for-every-parameter).
      *
-     * <p>Single-name R53-shaped overrides (e.g. {@code "inputs: input"}) parse to a one-element
+     * <p>Single-name overrides (e.g. {@code "inputs: input"}) parse to a one-element
      * segment chain {@code ["input"]}; path expressions (e.g.
      * {@code "kvotesporsmal: input.kvotesporsmalId"}) parse to a multi-element chain
      * {@code ["input", "kvotesporsmalId"]}.

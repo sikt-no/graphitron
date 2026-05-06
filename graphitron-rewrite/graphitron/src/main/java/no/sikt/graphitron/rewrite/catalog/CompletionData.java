@@ -105,8 +105,7 @@ public record CompletionData(
     ) {}
 
     /**
-     * Service / condition / record class plus its public methods. Spike
-     * shape is minimal; method signatures and Javadoc land with Phase 5.
+     * Service / condition / record class plus its public methods.
      */
     public record ExternalReference(
         String name,
@@ -116,9 +115,7 @@ public record CompletionData(
     ) {}
 
     /**
-     * Method on an {@link ExternalReference}. Parameters and return type are
-     * placeholder fields in Phase 0; the {@code MethodRef.ParamSource} port
-     * (Phase 5) fills them in.
+     * Method on an {@link ExternalReference}.
      */
     public record Method(
         String name,

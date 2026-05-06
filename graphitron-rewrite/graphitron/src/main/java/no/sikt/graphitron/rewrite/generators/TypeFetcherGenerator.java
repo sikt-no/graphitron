@@ -243,7 +243,7 @@ public class TypeFetcherGenerator {
         Map.ofEntries(
             // ChildField stubs — TableTargetField sub-hierarchy
             // (ChildField.TableField and ChildField.LookupTableField are in PROJECTED_LEAVES —
-            // inline emission via TypeClassGenerator.$fields; see G5 and argres Phase 2a)
+            // inline emission via TypeClassGenerator.$fields)
             // ChildField stubs — remaining direct permits
             Map.entry(ChildField.ColumnReferenceField.class,
                 deferredFor(ChildField.ColumnReferenceField.class,
@@ -251,7 +251,7 @@ public class TypeFetcherGenerator {
             Map.entry(ChildField.CompositeColumnReferenceField.class,
                 deferredFor(ChildField.CompositeColumnReferenceField.class,
                     "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented"
-                    + " — JOIN-with-projection emission tracked in R24; rooted-at-parent fixture"
+                    + " — requires JOIN-with-projection emission; rooted-at-parent fixture"
                     + " (parent_node + child_ref) is in nodeidfixture and ready to drive coverage",
                     "nodeidreferencefield-join-projection-form")),
             Map.entry(ChildField.TableMethodField.class,
@@ -347,9 +347,9 @@ public class TypeFetcherGenerator {
                     builder.addMethod(buildSplitQueryDataFetcher(ctx, slf, slf.returnType(), parentTable, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForSplitLookupTable(ctx, slf, outputPackage));
                     // Emit the VALUES-building input-rows helper alongside the rows method.
-                    // Phase 2a's env-based variant (buildInputRowsMethod) reads args from
+                    // The env-based variant (buildInputRowsMethod) reads args from
                     // env.getArgument(name) — correct for a Split* fetcher whose @lookupKey args
-                    // live on the field itself (vs. Phase 2a's inline child-lookup path where
+                    // live on the field itself (vs. the inline child-lookup path where
                     // args live on a parent's SelectedField).
                     if (slf.lookupMapping() instanceof no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) {
                         var lookupTableRef = slf.returnType().table();
@@ -399,7 +399,7 @@ public class TypeFetcherGenerator {
                     if (f.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                         // Reference-side NodeId carrier: no fetcher method. The DataFetcher value
                         // is the runtime stub emitted by FetcherEmitter (rooted-at-parent emission
-                        // tracked in R24).
+                        // is not yet implemented).
                     } else {
                         builder.addMethod(stub(f));
                     }
@@ -1102,8 +1102,8 @@ public class TypeFetcherGenerator {
      * and no parent-batching context, so the emission delegates to the shared
      * {@link #buildServiceFetcherCommon} helper without alteration. The shared helper handles
      * the pre-execution Jakarta validation pre-step, the try/catch wrapper, and the
-     * §2c {@code resultAssembly} success-arm payload assembly uniformly across query and
-     * mutation services. Phase 6 of mutations.md.
+     * {@code resultAssembly} success-arm payload assembly uniformly across query and
+     * mutation services.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "service-catalog-strict-service-return",
@@ -1128,7 +1128,6 @@ public class TypeFetcherGenerator {
      * shape to {@link #buildQueryServiceRecordFetcher}. Both {@code ResultReturnType} (with or
      * without a {@code @record} backing class) and {@code ScalarReturnType} return shapes are
      * handled by {@link #computeMutationServiceRecordReturnType}, mirroring the query side.
-     * Phase 6 of mutations.md.
      */
     private static MethodSpec buildMutationServiceRecordFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationServiceRecordField msrf,
                                                                  String outputPackage) {
@@ -1398,29 +1397,27 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Transitional codegen guard for R77 Phase A. The classifier admits bulk
-     * {@code @table} input arguments ({@code in: [FilmInput!]!}) once the validator widening
-     * lands, but the per-verb emit bodies in this file still assume a single-row
-     * {@code Map<?,?>} cast. Until R77 Phase E rewires the four {@code buildMutation*Fetcher}
-     * methods around a {@code List<Map<?,?>>} bulk arm, throw at codegen so a bulk schema
+     * Transitional codegen guard. The classifier admits bulk {@code @table} input arguments
+     * ({@code in: [FilmInput!]!}), but the per-verb emit bodies in this file still assume a
+     * single-row {@code Map<?,?>} cast. Until the four {@code buildMutation*Fetcher} methods
+     * are rewired around a {@code List<Map<?,?>>} bulk arm, throw at codegen so a bulk schema
      * surfaces a clear "not yet emitted" build-time error instead of a {@code ClassCastException}
      * at request time.
      */
-    private static void rejectBulkArmUntilPhaseE(no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia, String verb) {
+    private static void rejectBulkArmUntilSupported(no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia, String verb) {
         if (tia.list()) {
             throw new IllegalStateException(
                 "@mutation(typeName: " + verb + ") with a listed @table input argument ("
-                + tia.name() + ": [...]) classifies cleanly but the bulk fetcher body lands in R77 "
-                + "Phase E (graphitron-rewrite/roadmap/bulk-dml-mutations.md); single-row inputs "
-                + "are unaffected. Drop the list wrapper or wait for Phase E to ship.");
+                + tia.name() + ": [...]) classifies cleanly but the bulk fetcher body is not yet "
+                + "emitted; single-row inputs are unaffected. Drop the list wrapper or wait for "
+                + "the bulk fetcher implementation to ship.");
         }
     }
 
     /**
      * Emits a fetcher for {@link MutationField.MutationDeleteTableField}: a synchronous static
      * method that runs {@code dsl.deleteFrom(table).where(<lookupKey predicates>)
-     * .returningResult(<keys or $fields>).fetchOne(...)}. See
-     * {@code graphitron-rewrite/roadmap/mutations.md} Phase 3.
+     * .returningResult(<keys or $fields>).fetchOne(...)}.
      *
      * <p>Empty-match semantics: {@code .fetchOne(...)} returns {@code null} when the WHERE clause
      * matches no row. graphql-java surfaces that as a GraphQL null on a nullable field, or a
@@ -1432,12 +1429,12 @@ public class TypeFetcherGenerator {
             + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
             + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
             + "without an extraction-arm dispatch. Bulk arm (tia.list() == true) is rejected "
-            + "at codegen until R77 Phase E lands; the classifier admits the shape but no "
-            + "fetcher is emitted.")
+            + "at codegen until bulk fetcher emission lands; the classifier admits the shape "
+            + "but no fetcher is emitted.")
     private static MethodSpec buildMutationDeleteFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationDeleteTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
-        rejectBulkArmUntilPhaseE(tia, "DELETE");
+        rejectBulkArmUntilSupported(tia, "DELETE");
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
@@ -1455,16 +1452,15 @@ public class TypeFetcherGenerator {
     /**
      * Emits a fetcher for {@link MutationField.MutationInsertTableField}: a synchronous static
      * method that runs {@code dsl.insertInto(table, cols...).values(vals...)
-     * .returningResult(<keys or $fields>).fetchOne(...)}. See
-     * {@code graphitron-rewrite/roadmap/mutations.md} Phase 2.
+     * .returningResult(<keys or $fields>).fetchOne(...)}.
      *
      * <p>Column list is every {@code InputField.ColumnField} in {@code tia.fields()} in
      * declaration order; values list is parallel, with each value bound via
      * {@code DSL.val(in.get("name"), Tables.T.COL.getDataType())} (the two-argument form
      * delegates coercion to the column's registered jOOQ {@code Converter}). {@code @lookupKey}
-     * fields are included verbatim — INSERT does not treat them specially. Phase 1B's
-     * load-bearing guarantee that every input field is a {@code Direct}-extracted
-     * {@code ColumnField} lets the loop walk {@code tia.fields()} with a single cast.
+     * fields are included verbatim — INSERT does not treat them specially. The classifier
+     * guarantees that every input field is a {@code Direct}-extracted {@code ColumnField},
+     * which lets the loop walk {@code tia.fields()} with a single cast.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "dml-mutation-shape-guarantees",
@@ -1472,11 +1468,11 @@ public class TypeFetcherGenerator {
             + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
             + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
             + "as Direct-extracted ColumnField with a single cast (no extraction-arm dispatch). "
-            + "Bulk arm (tia.list() == true) is rejected at codegen until R77 Phase E lands.")
+            + "Bulk arm (tia.list() == true) is rejected at codegen until bulk fetcher emission lands.")
     private static MethodSpec buildMutationInsertFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationInsertTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
-        rejectBulkArmUntilPhaseE(tia, "INSERT");
+        rejectBulkArmUntilSupported(tia, "INSERT");
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
@@ -1513,8 +1509,7 @@ public class TypeFetcherGenerator {
     /**
      * Emits a fetcher for {@link MutationField.MutationUpdateTableField}: a synchronous static
      * method that runs {@code dsl.update(table).set(col, val)... .where(<lookupKey predicates>)
-     * .returningResult(<keys or $fields>).fetchOne(...)}. See
-     * {@code graphitron-rewrite/roadmap/mutations.md} Phase 4.
+     * .returningResult(<keys or $fields>).fetchOne(...)}.
      *
      * <p>SET clause is {@code tia.setFields()} (the typed non-{@code @lookupKey}
      * {@code ColumnField} projection on {@code TableInputArg}). Invariant #4 guarantees this
@@ -1530,11 +1525,11 @@ public class TypeFetcherGenerator {
             + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.setFields() "
             + "as the typed non-@lookupKey ColumnField projection (no cast, no skip-during-walk). "
             + "Invariant #4 guarantees setFields() is non-empty for the SET clause. "
-            + "Bulk arm (tia.list() == true) is rejected at codegen until R77 Phase E lands.")
+            + "Bulk arm (tia.list() == true) is rejected at codegen until bulk fetcher emission lands.")
     private static MethodSpec buildMutationUpdateFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpdateTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
-        rejectBulkArmUntilPhaseE(tia, "UPDATE");
+        rejectBulkArmUntilSupported(tia, "UPDATE");
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
@@ -1561,8 +1556,7 @@ public class TypeFetcherGenerator {
     /**
      * Emits a fetcher for {@link MutationField.MutationUpsertTableField}: a synchronous static
      * method that runs {@code dsl.insertInto(table, cols...).values(vals...).onConflict(<keys>)
-     * .doUpdate().set(col, val)... .returningResult(<keys or $fields>).fetchOne(...)}. See
-     * {@code graphitron-rewrite/roadmap/mutations.md} Phase 5.
+     * .doUpdate().set(col, val)... .returningResult(<keys or $fields>).fetchOne(...)}.
      *
      * <p>Column/values lists are identical to INSERT (every {@code InputField.ColumnField} in
      * declaration order, {@code @lookupKey} fields included so the user-supplied PK lands on the
@@ -1581,11 +1575,11 @@ public class TypeFetcherGenerator {
             + "and tia.setFields() (typed non-@lookupKey ColumnField projection) for the SET "
             + "clause and the .doUpdate()/.doNothing() dispatch. Invariant #3 guarantees "
             + "fieldBindings is non-empty (the ON CONFLICT key). "
-            + "Bulk arm (tia.list() == true) is rejected at codegen until R77 Phase E lands.")
+            + "Bulk arm (tia.list() == true) is rejected at codegen until bulk fetcher emission lands.")
     private static MethodSpec buildMutationUpsertFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpsertTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
-        rejectBulkArmUntilPhaseE(tia, "UPSERT");
+        rejectBulkArmUntilSupported(tia, "UPSERT");
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
@@ -1708,7 +1702,7 @@ public class TypeFetcherGenerator {
      * Six-arg overload that admits an optional {@code postDslGuard} {@link CodeBlock} emitted
      * immediately after the {@code dsl} local is bound. Used by UPSERT to gate the Oracle
      * dialect (jOOQ silently translates {@code .onConflict(...)} to {@code MERGE INTO} on
-     * Oracle, with semantics drift; see Phase 5 in {@code roadmap/mutations.md}).
+     * Oracle, with semantics drift).
      */
     private static MethodSpec buildDmlFetcher(
             TypeFetcherEmissionContext ctx,
@@ -2246,7 +2240,7 @@ public class TypeFetcherGenerator {
      * <p>The body is emitted via {@link LookupValuesJoinEmitter}: a typed {@code Row[]} is
      * constructed by a companion helper, then the VALUES derived table is joined to the target
      * via {@code USING (…)} and ordered by the derived table's {@code idx} column to preserve
-     * input ordering. See {@code docs/argument-resolution.md} Phase 1 for design rationale.
+     * input ordering. See {@code docs/argument-resolution.adoc} for design rationale.
      *
      * <p>Generated code (single list key):
      * <pre>{@code
@@ -2535,10 +2529,11 @@ public class TypeFetcherGenerator {
      * picked by overload resolution from the {@code (keys, env) -> …} lambda shape. The older
      * service-stub template cited {@code newDataLoaderWithContext} which does not exist on
      * {@code DataLoaderFactory}; the rows-method-takes-SelectedField shape was based on a similar
-     * mis-cited {@code DataFetchingFieldSelectionSet.getField(String)} API — also absent. Phase 2b
-     * drops both: the rows method takes only {@code (List<KeyType>, DataFetchingEnvironment)}, and
-     * uses {@code env.getSelectionSet()} directly for projection (which is semantically identical
-     * to {@code sel.getSelectionSet()} when {@code sel} is the field being fetched).
+     * mis-cited {@code DataFetchingFieldSelectionSet.getField(String)} API — also absent.
+     * Both are dropped here: the rows method takes only
+     * {@code (List<KeyType>, DataFetchingEnvironment)}, and uses {@code env.getSelectionSet()}
+     * directly for projection (which is semantically identical to {@code sel.getSelectionSet()}
+     * when {@code sel} is the field being fetched).
      */
     private static MethodSpec buildSplitQueryDataFetcher(
             TypeFetcherEmissionContext ctx,

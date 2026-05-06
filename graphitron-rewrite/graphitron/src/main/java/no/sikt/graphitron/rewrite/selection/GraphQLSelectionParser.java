@@ -63,8 +63,8 @@ public final class GraphQLSelectionParser {
     /**
      * Parses {@code input} as a comma-separated list of {@code key: dotted.path} entries.
      *
-     * <p>This is the shared entry point for {@code argMapping} (R84) and
-     * {@code @experimental_constructType(selection: ...)} (R69). Both grammars accept the same
+     * <p>This is the shared entry point for {@code argMapping} dot-path expressions and
+     * {@code @experimental_constructType(selection: ...)}. Both grammars accept the same
      * shape: one or more entries, each {@code NAME COLON NAME}, where the value-side name may
      * contain dot-separated segments. Whitespace and commas between entries are insignificant
      * (standard GraphQL convention; the lexer already handles this).

@@ -152,9 +152,9 @@ public class QueryConditionsGenerator {
         // them to CallSiteExtraction.ContextArg in the filter's call params. ArgCallEmitter then
         // emits graphitronContext(env).getContextArgument(env, name) into the QueryConditions
         // class, which today has no graphitronContext helper — generated source fails to compile
-        // for users of the feature. R85 closes this gap by giving QueryConditionsGenerator its own
-        // EmissionContext and emitting the helper when requested. Until then, the throwaway ctx
-        // here records into a context nothing drains.
+        // for users of the feature. Closing this gap requires giving QueryConditionsGenerator its
+        // own EmissionContext and emitting the helper when requested. Until then, the throwaway
+        // ctx here records into a context nothing drains.
         var ctx = new TypeFetcherEmissionContext();
         if (filters.isEmpty()) {
             builder.addStatement("return $T.noCondition()", DSL);

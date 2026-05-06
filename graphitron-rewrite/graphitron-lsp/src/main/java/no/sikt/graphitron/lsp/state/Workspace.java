@@ -20,7 +20,7 @@ import java.util.Set;
  * <p>Thread-safe: lsp4j dispatches notifications and requests on a worker
  * pool; mutating operations and the recalculation queue are serialised
  * through {@code lock}. The catalog reference is {@code volatile} so a
- * Phase 1 catalog-refresh swap (driven by the {@code .class}-watcher in
+ * catalog-refresh swap (driven by the {@code .class}-watcher in
  * {@code DevMojo}) is observable on the next request without taking the
  * file lock.
  *
@@ -28,8 +28,7 @@ import java.util.Set;
  * enqueues the touched file plus any other file whose
  * {@code dependsOnDeclarations} overlaps the touched file's
  * {@code declaredTypes}, before or after the change. Diagnostic runs
- * drain the queue. Phase 1 only fills the queue; Phase 3 starts draining
- * it for diagnostics.
+ * drain the queue.
  */
 public final class Workspace {
 
@@ -86,8 +85,7 @@ public final class Workspace {
 
     /**
      * Drain the recalculation queue. Returned URIs are the files whose
-     * diagnostics must be recomputed. Phase 1 wires this; Phase 3 drives
-     * it from the diagnostic scheduler.
+     * diagnostics must be recomputed.
      */
     public List<String> drainRecalculate() {
         synchronized (lock) {
