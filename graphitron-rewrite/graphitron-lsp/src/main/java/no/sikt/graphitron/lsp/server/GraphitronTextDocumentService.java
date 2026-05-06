@@ -139,9 +139,10 @@ public class GraphitronTextDocumentService implements TextDocumentService {
 
     /**
      * For {@code @service} / {@code @condition}, the cursor decides whether
-     * we offer class-name FQNs (when in {@code class:}) or method names off
-     * the sibling class (when in {@code method:}). One of the two providers
-     * returns non-empty; the other returns empty.
+     * we offer class-name FQNs (when in {@code <outer>.className}) or
+     * method names off the sibling class (when in {@code <outer>.method}).
+     * One of the two providers returns non-empty; the other returns
+     * empty.
      */
     private static List<CompletionItem> serviceOrConditionCompletions(
         no.sikt.graphitron.lsp.state.Workspace workspace,
@@ -152,7 +153,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
     ) {
         var classItems = ClassNameCompletions.generate(workspace.catalog(), directive, pos, source, directiveName);
         if (!classItems.isEmpty()) return classItems;
-        return MethodCompletions.generate(workspace.catalog(), directive, pos, source);
+        return MethodCompletions.generate(workspace.catalog(), directive, pos, source, directiveName);
     }
 
     @Override

@@ -179,7 +179,7 @@ class DiagnosticsTest {
     void unknownServiceClassProducesError() {
         var file = file("""
             type Query {
-                x: Int @service(class: "com.example.Missing", method: "foo")
+                x: Int @service(service: {className: "com.example.Missing", method: "foo"})
             }
             """);
 
@@ -193,7 +193,7 @@ class DiagnosticsTest {
     void unknownConditionClassProducesError() {
         var file = file("""
             type Query {
-                x: Int @condition(class: "com.example.Missing", method: "foo")
+                x: Int @condition(condition: {className: "com.example.Missing", method: "foo"})
             }
             """);
 
@@ -221,7 +221,7 @@ class DiagnosticsTest {
     void knownServiceClassProducesNoError() {
         var file = file("""
             type Query {
-                x: Int @service(class: "com.example.RealService", method: "foo")
+                x: Int @service(service: {className: "com.example.RealService", method: "foo"})
             }
             """);
 
@@ -234,7 +234,7 @@ class DiagnosticsTest {
     void unknownMethodOnKnownClassProducesError() {
         var file = file("""
             type Query {
-                x: Int @service(class: "com.example.FilmService", method: "ghost")
+                x: Int @service(service: {className: "com.example.FilmService", method: "ghost"})
             }
             """);
 
@@ -248,7 +248,7 @@ class DiagnosticsTest {
     void knownMethodOnKnownClassProducesNoError() {
         var file = file("""
             type Query {
-                x: Int @service(class: "com.example.FilmService", method: "list")
+                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
             }
             """);
 
@@ -287,7 +287,7 @@ class DiagnosticsTest {
         );
         var file = file("""
             type Query {
-                x: Int @service(class: "com.example.FilmService", method: "list")
+                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
             }
             """);
 
@@ -311,7 +311,7 @@ class DiagnosticsTest {
         );
         var file = file("""
             type Query {
-                x: Int @service(class: "com.example.FilmService", method: "get")
+                x: Int @service(service: {className: "com.example.FilmService", method: "get"})
             }
             """);
 
@@ -326,7 +326,7 @@ class DiagnosticsTest {
         // every reference as unknown in that state would be noise.
         var file = file("""
             type Query {
-                x: Int @service(class: "com.example.RealService", method: "foo")
+                x: Int @service(service: {className: "com.example.RealService", method: "foo"})
             }
             """);
 

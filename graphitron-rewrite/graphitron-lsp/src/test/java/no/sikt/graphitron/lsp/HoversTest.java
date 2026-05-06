@@ -141,7 +141,7 @@ class HoversTest {
     void serviceClassHoverShowsClassFqn() {
         var file = file("""
             type Query {
-                x: Int @service(class: "com.example.FilmService", method: "list")
+                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
             }
             """);
         var pos = pointAt(file, 1, "FilmService");
@@ -171,7 +171,7 @@ class HoversTest {
     void unknownServiceClassReturnsEmpty() {
         var file = file("""
             type Query {
-                x: Int @service(class: "com.example.Missing", method: "list")
+                x: Int @service(service: {className: "com.example.Missing", method: "list"})
             }
             """);
         var pos = pointAt(file, 1, "Missing");
@@ -183,7 +183,7 @@ class HoversTest {
     void serviceMethodHoverShowsSignature() {
         var file = file("""
             type Query {
-                x: Int @service(class: "com.example.FilmService", method: "list")
+                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
             }
             """);
         var pos = pointAt(file, 1, "list");
@@ -212,7 +212,7 @@ class HoversTest {
         );
         var file = file("""
             type Query {
-                x: Int @service(class: "com.example.FilmService", method: "list")
+                x: Int @service(service: {className: "com.example.FilmService", method: "list"})
             }
             """);
         var pos = pointAt(file, 1, "list");
@@ -228,7 +228,7 @@ class HoversTest {
     void serviceMethodHoverWithUnknownMethodReturnsEmpty() {
         var file = file("""
             type Query {
-                x: Int @service(class: "com.example.FilmService", method: "missing")
+                x: Int @service(service: {className: "com.example.FilmService", method: "missing"})
             }
             """);
         var pos = pointAt(file, 1, "missing");

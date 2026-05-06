@@ -1,22 +1,24 @@
 package no.sikt.graphitron.lsp.completions;
 
 import no.sikt.graphitron.lsp.parsing.Directives;
+import no.sikt.graphitron.lsp.parsing.NestedArgs;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import io.github.treesitter.jtreesitter.Node;
+import io.github.treesitter.jtreesitter.Point;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
-import io.github.treesitter.jtreesitter.Point;
 
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Method-name completions for {@code @service(method:)} and
- * {@code @condition(method:)}. The candidate set is the public methods of
- * whichever class is named in the same directive's {@code class:}
- * argument. If {@code class:} is missing or names a class the scan does
- * not know about, the provider returns no completions: there's no
- * sensible cross-class union to fall back to.
+ * Method-name completions for {@code @service(service: {method: "..."})} and
+ * {@code @condition(condition: {method: "..."})}. The candidate set is the
+ * public methods of whichever class is named under {@code className} on the
+ * same {@code ExternalCodeReference} object. If {@code className} is missing
+ * or names a class the scan does not know about, the provider returns no
+ * completions.
  *
  * <p>The label on each item is the method name; {@link CompletionItem#detail}
  * carries the erased return-type-and-parameters signature so editors can
@@ -30,17 +32,19 @@ public final class MethodCompletions {
         CompletionData data,
         Directives.Directive directive,
         Point pos,
-        byte[] source
+        byte[] source,
+        String directiveName
     ) {
-        var argument = directive.arguments().stream()
-            .filter(a -> a.contains(pos))
-            .findFirst();
-        if (argument.isEmpty()) return List.of();
-        var arg = argument.get();
-        if (!"method".equals(Nodes.text(arg.key(), source))) return List.of();
-        if (!Nodes.contains(arg.value(), pos)) return List.of();
+        String outerArg = ClassNameCompletions.outerArgOf(directiveName);
+        if (outerArg == null) return List.of();
+        var nestedOpt = NestedArgs.findContaining(directive, pos, source);
+        if (nestedOpt.isEmpty()) return List.of();
+        var nested = nestedOpt.get();
+        if (!outerArg.equals(nested.outerArgumentName())) return List.of();
+        if (!"method".equals(nested.nestedFieldNameText())) return List.of();
+        if (!Nodes.contains(nested.nestedValue(), pos)) return List.of();
 
-        Optional<String> classFqn = readSiblingClassFqn(directive, source);
+        Optional<String> classFqn = readSiblingClassName(nested.outerArgument().value(), source);
         if (classFqn.isEmpty()) return List.of();
         Optional<CompletionData.ExternalReference> ref = data.externalReferences().stream()
             .filter(r -> r.className().equals(classFqn.get()))
@@ -52,16 +56,41 @@ public final class MethodCompletions {
     }
 
     /**
-     * Reads {@code class: "..."} off the same directive. Returns empty when
-     * the class arg is absent or its value is empty / non-string.
+     * Reads the {@code className} field off the same nested object the
+     * cursor sits in. Walks every {@code object_field} under
+     * {@code outerValue} and returns the first {@code className: "..."}
+     * value when present.
      */
-    private static Optional<String> readSiblingClassFqn(Directives.Directive directive, byte[] source) {
-        for (var arg : directive.arguments()) {
-            if (!"class".equals(Nodes.text(arg.key(), source))) continue;
-            String raw = Nodes.unquote(Nodes.text(arg.value(), source));
-            return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
+    static Optional<String> readSiblingClassName(Node outerValue, byte[] source) {
+        return readNestedStringField(outerValue, "className", source);
+    }
+
+    static Optional<String> readNestedStringField(Node outerValue, String fieldName, byte[] source) {
+        if (outerValue == null) return Optional.empty();
+        if ("object_field".equals(outerValue.getType())) {
+            Node nameNode = childOfKind(outerValue, "name");
+            Node valueNode = childOfKind(outerValue, "value");
+            if (nameNode != null && valueNode != null
+                && fieldName.equals(Nodes.text(nameNode, source))) {
+                String raw = Nodes.unquote(Nodes.text(valueNode, source));
+                return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
+            }
+        }
+        for (int i = 0; i < outerValue.getChildCount(); i++) {
+            Node child = outerValue.getChild(i).orElse(null);
+            if (child == null) continue;
+            var found = readNestedStringField(child, fieldName, source);
+            if (found.isPresent()) return found;
         }
         return Optional.empty();
+    }
+
+    private static Node childOfKind(Node parent, String kind) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            Node child = parent.getChild(i).orElse(null);
+            if (child != null && kind.equals(child.getType())) return child;
+        }
+        return null;
     }
 
     private static CompletionItem toCompletionItem(CompletionData.Method method) {
