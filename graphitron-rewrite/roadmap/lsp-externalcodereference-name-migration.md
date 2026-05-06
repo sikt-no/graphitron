@@ -129,10 +129,13 @@ bulk action's count-by-reason pivot is typed:
 
 ```java
 public record SdlAction(
-    String displayName,    // code-action title shown in the editor
+    String displayName,                     // code-action title shown in the editor
+    Set<DeprecationTarget> targets,         // qualified <parent>.<member> the action migrates
     Detector detector,
     Rewrite rewrite
 ) {
+    public record DeprecationTarget(String parent, String memberName) {}
+
     @FunctionalInterface
     public interface Detector {
         Stream<Node> detect(WorkspaceFile file);
@@ -168,12 +171,43 @@ Why these shapes:
   and lose typing on the skip reason.
 
 R93 instantiates `SdlAction` once for the `name → className`
-migration. Future LSP-side SDL refactors (R54's `@externalField`
-directive rename if it picks the LSP-quick-fix migration option;
-any future rename or extract) instantiate it differently. Per-site
-quick-fix and both bulk surfaces consume `SdlAction` instances
-directly, so a new refactor ships all three activation points from
-one instantiation.
+migration with `targets = { ExternalCodeReference.name }`. Future
+LSP-side SDL refactors (R54's `@externalField` directive rename if
+it picks the LSP-quick-fix migration option; any future rename or
+extract) instantiate it differently. Per-site quick-fix and both
+bulk surfaces consume `SdlAction` instances directly, so a new
+refactor ships all three activation points from one instantiation.
+
+## Drift protection
+
+The `SdlAction` registry and `directives.graphqls`'s `@deprecated()`
+markers must agree, both directions, modulo an allow-list for
+deprecations whose migration is intentionally manual:
+
+- **Every `SdlAction.targets()` entry must point at an existing
+  deprecation marker in `directives.graphqls`.** A stale
+  `SdlAction` (targets a directive / argument / input that has been
+  removed or undeprecated) breaks the build.
+- **Every `@deprecated()` marker in `directives.graphqls` must be
+  covered by either an `SdlAction` or the
+  `MANUAL_MIGRATION_DEPRECATIONS` allow-list.** An orphan deprecation
+  (we said it's deprecated but offer no migration tooling and no
+  documented "manual" reason) breaks the build.
+
+The allow-list lives next to the test as a `Set<DeprecationTarget>`
+constant carrying a one-line "why" comment per entry. At R93
+landing time it covers `@asConnection.connectionName` (per-field
+semantics differ across instances; manual fix only) and is the
+intended landing point for the `@externalField` directive itself
+during R54's window if R54 chooses not to ship an `SdlAction`.
+
+This mirrors the existing `DeprecationsDocCoverageTest` pattern (with
+its `WHOLE_DIRECTIVE_DEPRECATIONS` allow-list for spec-disallowed
+whole-directive deprecations) one layer down: the docs test covers
+documentation drift between SDL and `reference/deprecations.adoc`;
+the new LSP test covers tooling drift between SDL and the
+`SdlAction` registry. Both are bidirectional drift seams against the
+same `directives.graphqls` source of truth.
 
 ## Diagnostic shape
 
@@ -222,6 +256,9 @@ New files under `graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphit
   file-scoped bulk + workspace-scoped bulk code actions. Bulk actions
   emit multi-document `WorkspaceEdit`s directly (no
   `executeCommand` indirection unless impl finds a need).
+- `code_action/SdlActions.java` — registry of every `SdlAction`
+  instance plus the `MANUAL_MIGRATION_DEPRECATIONS` allow-list for
+  deprecations whose migration is intentionally manual.
 
 Modified files in the same module:
 
@@ -265,6 +302,14 @@ Four tests, organised by tier:
   rewrite slot returns `RewriteResult.Edit` for resolvable sites
   with the expected `TextEdit`, and `RewriteResult.Skip` carrying
   the unresolved name for unresolvable sites.
+- `SdlActionDriftTest`: walks `directives.graphqls`'s
+  `@deprecated()` markers and the `SdlActions` registry; asserts
+  both directions of the drift-protection invariant. Stale-target
+  test: every `SdlAction.targets()` entry corresponds to an
+  existing marker. Orphan-deprecation test: every marker is
+  covered by either an `SdlAction` or the
+  `MANUAL_MIGRATION_DEPRECATIONS` allow-list. Sibling pattern to
+  `DeprecationsDocCoverageTest`'s SDL-to-docs invariant.
 
 ### LSP-tier
 
@@ -315,18 +360,24 @@ to host future per-arg / per-directive features beyond R93.
 ### Phase 2: code-action surface
 
 - Introduce `SdlAction` (the primitive) and instantiate it for the
-  `name → className` migration.
+  `name → className` migration with
+  `targets = { ExternalCodeReference.name }`.
+- `SdlActions` registry plus the `MANUAL_MIGRATION_DEPRECATIONS`
+  allow-list (covering `@asConnection.connectionName` at landing
+  time).
 - `CodeActions` provider, registered in
   `GraphitronTextDocumentService`. Three activation points: per-site,
   file-scoped bulk, workspace-scoped bulk.
 - The legacy-and-unresolved diagnostic arm in `Diagnostics`.
-- `SdlActionTest` and `CodeActionsTest`.
+- `SdlActionTest`, `CodeActionsTest`, and `SdlActionDriftTest`.
 
 Acceptance: editor users can right-click on a legacy `name:` literal
 and apply the migration; "Migrate `name:` in this file" and "Migrate
 `name:` in this workspace" each compose the resolvable sites into one
 `WorkspaceEdit` at the named scope. Unresolvable sites surface as
-error diagnostics in the problems panel and skip the rewrite.
+error diagnostics in the problems panel and skip the rewrite. The
+`SdlActionDriftTest` invariants pass: every action targets an
+existing marker, every marker is covered (action or allow-list).
 
 ## Open architectural decisions
 
