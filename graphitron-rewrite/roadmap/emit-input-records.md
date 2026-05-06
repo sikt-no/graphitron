@@ -337,6 +337,28 @@ above).
   R12 §5 path-translation contract. The seam runs *only* at the fetcher.
 - Designing the `@constraint` SDL directive. Tracked as future work; the seam
   this item ships is enough on its own.
+- **`@record` on SDL `input` types.** R94 drops support for the
+  `@record` directive on `INPUT_OBJECT` (it stays valid on `OBJECT`).
+  The directive on inputs is redundant with method-signature
+  introspection: when an SDL input feeds an `@service` field, graphitron
+  reads the consumer's domain type directly off the service method's
+  parameter list (Layer 2 `Constructed` binding); when it feeds DML,
+  graphitron emits its own internal record at Layer 1 and binds columns
+  from there. `@record` adds a third source of truth that has to either
+  win against, defer to, or conflict with both — pure misconfiguration
+  surface for zero capability gain. Consumers who want to bring their
+  own type bring it to the *service signature*, not to the input
+  boundary; that's the seam the architectural principle of this item
+  pins. *Migration:* narrow `directives.graphqls:247` to
+  `on OBJECT`; remove the `@record`-driven classification arm in
+  `TypeBuilder.buildNonTableInputType` (~lines 720-770) along with
+  `JavaRecordInputType` and the `@table + @record` shadow rule; migrate
+  or delete `GraphitronSchemaBuilderTest` cases at 3102, 3113, 3124,
+  3137, 3152, 3163 (they specifically test `@record`-on-input behavior);
+  migrate LSP fixtures at `HoversTest.java:158`,
+  `ClassNameCompletionsTest.java:57`, `DiagnosticsTest.java:209`,
+  `DirectiveShapeSmokeTest.java:125` to plain (non-`@record`) inputs.
+  This migration lives in Phase 1.
 - Replacing the `Map`-based input handling for non-`@table`-decorated SDL
   inputs that don't drive a DML or `@service` callsite. If there is no
   validator and no DML to feed, the record-emit is still useful for
@@ -400,11 +422,20 @@ phases 2 and 3 ship the migration surface.
 - `LoadBearingClassifierCheck` keys land on the producer side
   (see *Classifier invariants* below); consumers wear
   `DependsOnClassifierCheck` in phases 2 and 3.
+- *Drop `@record` on input types* (per *Non-goals*): narrow
+  `directives.graphqls:247` to `on OBJECT`; remove the `@record`-driven
+  arm in `TypeBuilder.buildNonTableInputType` (lines ~720-770) along
+  with `JavaRecordInputType` and the `@table + @record` shadow rule;
+  surface any SDL still using `@record` on an input as
+  `UnclassifiedType` with a clear "use the service method's parameter
+  type instead" message. Migrate or delete the existing test fixtures
+  enumerated in the Non-goal entry.
 
 Acceptance: every reachable SDL `input` type produces a compiling
 record; sakila's compile picks up the `<outputPackage>.inputs` package
 without warnings; pipeline-tier covers the SDL → record-emit shape; no
-existing fetcher behavior changes.
+existing fetcher behavior changes; SDL with `@record` on inputs is
+rejected at classify time.
 
 ### Phase 2: flip `@service` callsites with SDL input args
 
