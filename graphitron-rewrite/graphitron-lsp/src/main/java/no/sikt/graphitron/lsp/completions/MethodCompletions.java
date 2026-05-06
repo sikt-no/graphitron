@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.completions;
 
+import no.sikt.graphitron.lsp.parsing.DirectiveDefinitions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.NestedArgs;
 import no.sikt.graphitron.lsp.parsing.Nodes;
@@ -13,12 +14,12 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Method-name completions for {@code @service(service: {method: "..."})} and
- * {@code @condition(condition: {method: "..."})}. The candidate set is the
- * public methods of whichever class is named under {@code className} on the
- * same {@code ExternalCodeReference} object. If {@code className} is missing
- * or names a class the scan does not know about, the provider returns no
- * completions.
+ * Method-name completions for the {@code method} field on every
+ * {@code ExternalCodeReference}-binding directive. The candidate set
+ * is the public methods of whichever class is named under
+ * {@code className} on the same {@code ExternalCodeReference} object.
+ * If {@code className} is missing or names a class the scan does not
+ * know about, the provider returns no completions.
  *
  * <p>The label on each item is the method name; {@link CompletionItem#detail}
  * carries the erased return-type-and-parameters signature so editors can
@@ -35,16 +36,20 @@ public final class MethodCompletions {
         byte[] source,
         String directiveName
     ) {
-        String outerArg = ClassNameCompletions.outerArgOf(directiveName);
-        if (outerArg == null) return List.of();
+        var binding = DirectiveDefinitions.argsByInputType("ExternalCodeReference").stream()
+            .filter(b -> b.directive().equals(directiveName))
+            .findFirst();
+        if (binding.isEmpty()) return List.of();
         var nestedOpt = NestedArgs.findContaining(directive, pos, source);
         if (nestedOpt.isEmpty()) return List.of();
         var nested = nestedOpt.get();
-        if (!outerArg.equals(nested.outerArgumentName())) return List.of();
         if (!"method".equals(nested.nestedFieldNameText())) return List.of();
         if (!Nodes.contains(nested.nestedValue(), pos)) return List.of();
+        if (!matchesBinding(binding.get(), nested, source)) return List.of();
 
-        Optional<String> classFqn = readSiblingClassName(nested.outerArgument().value(), source);
+        Node objectContainingMethod = nested.nestedField().getParent().orElse(null);
+        if (objectContainingMethod == null) return List.of();
+        Optional<String> classFqn = readSiblingClassName(objectContainingMethod, source);
         if (classFqn.isEmpty()) return List.of();
         Optional<CompletionData.ExternalReference> ref = data.externalReferences().stream()
             .filter(r -> r.className().equals(classFqn.get()))
@@ -55,14 +60,23 @@ public final class MethodCompletions {
             .toList();
     }
 
+    private static boolean matchesBinding(
+        DirectiveDefinitions.InputTypeBinding binding,
+        NestedArgs.Nested nested,
+        byte[] source
+    ) {
+        if (!binding.nestedPath()) {
+            return binding.argName().equals(nested.outerArgumentName());
+        }
+        return NestedArgs.hasAncestorObjectField(nested, binding.argName(), source);
+    }
+
     /**
      * Reads the {@code className} field off the same nested object the
-     * cursor sits in. Walks every {@code object_field} under
-     * {@code outerValue} and returns the first {@code className: "..."}
-     * value when present.
+     * cursor sits in.
      */
-    static Optional<String> readSiblingClassName(Node outerValue, byte[] source) {
-        return readNestedStringField(outerValue, "className", source);
+    static Optional<String> readSiblingClassName(Node objectValue, byte[] source) {
+        return readNestedStringField(objectValue, "className", source);
     }
 
     static Optional<String> readNestedStringField(Node outerValue, String fieldName, byte[] source) {

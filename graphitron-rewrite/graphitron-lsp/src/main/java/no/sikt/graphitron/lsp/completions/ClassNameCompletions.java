@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.completions;
 
+import no.sikt.graphitron.lsp.parsing.DirectiveDefinitions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.NestedArgs;
 import no.sikt.graphitron.lsp.parsing.Nodes;
@@ -9,20 +10,13 @@ import org.eclipse.lsp4j.CompletionItemKind;
 import io.github.treesitter.jtreesitter.Point;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
- * Class-name completions for the directives that take an
- * {@code ExternalCodeReference} input. The schema directive surface is
- * uniform: each of {@code @service}, {@code @condition}, and
- * {@code @record} carries a single nested object under an outer arg
- * whose name matches the directive, with {@code className} / {@code method}
- * / {@code argMapping} fields on the nested object:
- *
- * <ul>
- *   <li>{@code @service(service: {className: "...", method: "...", argMapping: "..."})}</li>
- *   <li>{@code @condition(condition: {className: "...", method: "...", argMapping: "..."})}</li>
- *   <li>{@code @record(record: {className: "..."})}</li>
- * </ul>
+ * Class-name completions for any directive that takes an
+ * {@code ExternalCodeReference} input. The candidate set is driven by
+ * {@link DirectiveDefinitions#argsByInputType(String)}; adding a new
+ * binding directive is a registry-entry change.
  *
  * <p>This provider lights up when the cursor is inside the nested
  * {@code className} value. Method completion in the sibling
@@ -39,32 +33,54 @@ public final class ClassNameCompletions {
         byte[] source,
         String directiveName
     ) {
-        String outerArg = outerArgOf(directiveName);
-        if (outerArg == null) return List.of();
+        var binding = bindingFor(directiveName);
+        if (binding.isEmpty()) return List.of();
         var nestedOpt = NestedArgs.findContaining(directive, pos, source);
         if (nestedOpt.isEmpty()) return List.of();
         var nested = nestedOpt.get();
-        if (!outerArg.equals(nested.outerArgumentName())) return List.of();
         if (!"className".equals(nested.nestedFieldNameText())) return List.of();
         if (!Nodes.contains(nested.nestedValue(), pos)) return List.of();
+        if (!matchesBinding(binding.get(), nested, source)) return List.of();
         return data.externalReferences().stream()
             .map(ClassNameCompletions::toCompletionItem)
             .toList();
     }
 
     /**
-     * Maps a directive name to the outer-arg key under which its
-     * {@link no.sikt.graphitron.rewrite.catalog.CompletionData.ExternalReference}
-     * input lives. Mirrors the directive definitions in
-     * {@code directives.graphqls}.
+     * Returns the (possibly nested) outer arg name for
+     * {@code ExternalCodeReference} on this directive, or empty if the
+     * directive does not bind {@code ExternalCodeReference}.
+     *
+     * <p>Migration aid for callers that only need the outer-arg name
+     * (e.g. {@link MethodCompletions} reading the sibling
+     * {@code className} value off the same nested object).
      */
-    static String outerArgOf(String directiveName) {
-        return switch (directiveName) {
-            case "service" -> "service";
-            case "condition" -> "condition";
-            case "record" -> "record";
-            default -> null;
-        };
+    static Optional<String> outerArgOf(String directiveName) {
+        return bindingFor(directiveName).map(DirectiveDefinitions.InputTypeBinding::argName);
+    }
+
+    private static Optional<DirectiveDefinitions.InputTypeBinding> bindingFor(String directiveName) {
+        return DirectiveDefinitions.argsByInputType("ExternalCodeReference").stream()
+            .filter(b -> b.directive().equals(directiveName))
+            .findFirst();
+    }
+
+    /**
+     * Confirms the cursor's nested-arg context lines up with the binding.
+     * For flat bindings the outer argument name must equal the binding's
+     * arg name. For {@code nestedPath} bindings the outer argument is
+     * the structured arg (e.g. {@code path}); the binding's arg name is
+     * the leaf {@code object_field} ancestor of the cursor.
+     */
+    private static boolean matchesBinding(
+        DirectiveDefinitions.InputTypeBinding binding,
+        NestedArgs.Nested nested,
+        byte[] source
+    ) {
+        if (!binding.nestedPath()) {
+            return binding.argName().equals(nested.outerArgumentName());
+        }
+        return NestedArgs.hasAncestorObjectField(nested, binding.argName(), source);
     }
 
     private static CompletionItem toCompletionItem(CompletionData.ExternalReference ref) {

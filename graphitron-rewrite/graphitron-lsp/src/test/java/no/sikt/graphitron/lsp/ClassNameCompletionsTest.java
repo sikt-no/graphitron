@@ -83,6 +83,69 @@ class ClassNameCompletionsTest {
         assertThat(items).isEmpty();
     }
 
+    @Test
+    void externalFieldClassNameCompletesFqns() {
+        String source = "type Query { x: Int @externalField(reference: {className: \"\"}) }\n";
+        Point cursor = new Point(0, source.indexOf('"') + 1);
+
+        var items = run(source, cursor, "externalField");
+
+        assertThat(items).hasSize(2);
+    }
+
+    @Test
+    void enumClassNameCompletesFqns() {
+        String source = "enum Foo @enum(enumReference: {className: \"\"}) { A B }\n";
+        Point cursor = new Point(0, source.indexOf('"') + 1);
+
+        var items = run(source, cursor, "enum");
+
+        assertThat(items).hasSize(2);
+    }
+
+    @Test
+    void tableMethodClassNameCompletesFqns() {
+        String source = "type Query { x: Int @tableMethod(tableMethodReference: {className: \"\", method: \"foo\"}) }\n";
+        Point cursor = new Point(0, source.indexOf('"') + 1);
+
+        var items = run(source, cursor, "tableMethod");
+
+        assertThat(items).hasSize(2);
+    }
+
+    @Test
+    void batchKeyLifterClassNameCompletesFqns() {
+        String source = "type Query { x: Int @batchKeyLifter(lifter: {className: \"\", method: \"foo\"}, targetColumns: [\"id\"]) }\n";
+        Point cursor = new Point(0, source.indexOf('"') + 1);
+
+        var items = run(source, cursor, "batchKeyLifter");
+
+        assertThat(items).hasSize(2);
+    }
+
+    @Test
+    void referencePathConditionClassNameCompletesFqns() {
+        String source = "type Query { x: Int @reference(path: [{condition: {className: \"\"}}]) }\n";
+        Point cursor = new Point(0, source.indexOf('"') + 1);
+
+        var items = run(source, cursor, "reference");
+
+        assertThat(items).hasSize(2);
+    }
+
+    @Test
+    void referencePathTopLevelClassNameDoesNotComplete() {
+        // No `condition` ancestor object_field: the className lives directly
+        // under a path[] element, which is a ReferenceElement, not an
+        // ExternalCodeReference. Must not light up the className completion.
+        String source = "type Query { x: Int @reference(path: [{className: \"\"}]) }\n";
+        Point cursor = new Point(0, source.indexOf('"') + 1);
+
+        var items = run(source, cursor, "reference");
+
+        assertThat(items).isEmpty();
+    }
+
     private static List<org.eclipse.lsp4j.CompletionItem> run(String source, Point cursor, String directiveName) {
         var parser = new Parser();
         parser.setLanguage(GraphqlLanguage.get());

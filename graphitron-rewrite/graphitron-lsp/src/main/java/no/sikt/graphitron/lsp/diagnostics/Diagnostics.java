@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.diagnostics;
 
+import no.sikt.graphitron.lsp.parsing.DirectiveDefinitions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
@@ -33,8 +34,20 @@ public final class Diagnostics {
 
     private static final String SOURCE = "graphitron-lsp";
 
+    /**
+     * Directives whose {@code ExternalCodeReference} binding's
+     * {@code method} slot is meaningful and should be validated against
+     * the resolved class. Excludes {@code @record} (wraps a type, no
+     * method invocation) and {@code @enum} (links to a Java enum, no
+     * method invocation).
+     */
+    private static final Set<String> VALIDATE_METHOD = Set.of(
+        "service", "condition", "externalField", "tableMethod", "batchKeyLifter", "reference"
+    );
+
     public static List<Diagnostic> compute(WorkspaceFile file, CompletionData catalog) {
         var out = new ArrayList<Diagnostic>();
+        var ecrBindings = DirectiveDefinitions.argsByInputType("ExternalCodeReference");
         var directives = Directives.findAll(file.tree().getRootNode());
         for (var directive : directives) {
             String name = Nodes.text(directive.nameNode(), file.source());
@@ -42,10 +55,12 @@ public final class Diagnostics {
                 case "table" -> validateTable(directive, file, catalog, out);
                 case "field" -> validateField(directive, file, catalog, out);
                 case "reference" -> validateReference(directive, file, catalog, out);
-                case "service" -> validateExternalCodeReference(directive, file, catalog, out, "service", true);
-                case "condition" -> validateExternalCodeReference(directive, file, catalog, out, "condition", true);
-                case "record" -> validateExternalCodeReference(directive, file, catalog, out, "record", false);
                 default -> { /* no validation yet */ }
+            }
+            for (var binding : ecrBindings) {
+                if (!binding.directive().equals(name)) continue;
+                validateExternalCodeReference(directive, file, catalog, out, binding,
+                    VALIDATE_METHOD.contains(name));
             }
         }
         return out;
@@ -138,30 +153,45 @@ public final class Diagnostics {
     }
 
     /**
-     * Validates the nested {@code ExternalCodeReference} object on
-     * {@code @service} / {@code @condition} / {@code @record}. The schema
-     * directive surface is uniform: each carries one outer arg whose key
-     * matches the directive name and whose value is an object with
-     * {@code className} / {@code method} / {@code argMapping} fields.
+     * Validates {@code ExternalCodeReference} bindings on a directive.
+     * Iterates the parsed argument list, dispatching on the binding's
+     * {@code nestedPath} flag. For flat bindings the outer arg matches
+     * the binding's name directly; for nested bindings (today only
+     * {@code @reference(path: [{condition: ...}])}) the binding's name
+     * identifies the leaf {@code object_field} containing the
+     * {@code ExternalCodeReference} object.
      *
-     * @param outerArg     the outer-arg key to descend into ({@code service},
-     *                     {@code condition}, or {@code record}).
      * @param validateMethod whether to also validate {@code method} and
      *                       emit the {@code -parameters}-missing warning.
-     *                       {@code @record} has no {@code method} field.
+     *                       Off for directives where the binding wraps a
+     *                       type rather than a method call ({@code @record}
+     *                       and {@code @enum}).
      */
     private static void validateExternalCodeReference(
         Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
-        List<Diagnostic> out, String outerArg, boolean validateMethod
+        List<Diagnostic> out, DirectiveDefinitions.InputTypeBinding binding,
+        boolean validateMethod
     ) {
         // Empty `externalReferences` means the classpath scan saw nothing
         // (typically: consumer hasn't run `mvn compile` yet). Reporting
         // every reference as unknown in that state would be noise; defer
         // until the scan has at least one entry to match against.
         if (catalog.externalReferences().isEmpty()) return;
-        Node outerValue = stringArgValueNode(directive, outerArg, file.source());
+        if (binding.nestedPath()) {
+            for (Node ecrObject : findNestedObjectFieldValues(directive, binding.argName(), file.source())) {
+                validateExternalCodeReferenceObject(file, catalog, out, ecrObject, validateMethod);
+            }
+            return;
+        }
+        Node outerValue = stringArgValueNode(directive, binding.argName(), file.source());
         if (outerValue == null) return;
+        validateExternalCodeReferenceObject(file, catalog, out, outerValue, validateMethod);
+    }
 
+    private static void validateExternalCodeReferenceObject(
+        WorkspaceFile file, CompletionData catalog, List<Diagnostic> out,
+        Node outerValue, boolean validateMethod
+    ) {
         Node classNameValue = nestedFieldValue(outerValue, "className", file.source());
         if (classNameValue == null) return;
         String fqn = Nodes.unquote(Nodes.text(classNameValue, file.source()));
@@ -204,6 +234,40 @@ public final class Diagnostics {
                 + "parameter help on '" + methodName + "' is unavailable. "
                 + "Set `<parameters>true</parameters>` on maven-compiler-plugin "
                 + "to surface parameter names."));
+        }
+    }
+
+    /**
+     * Collects every {@code object_field} value across all of
+     * {@code directive}'s argument trees whose key equals {@code fieldName}.
+     * Used for nested-path bindings (e.g. {@code @reference(path: [{condition: ECR}])})
+     * where the same leaf field can appear multiple times under one
+     * directive arg.
+     */
+    private static List<Node> findNestedObjectFieldValues(
+        Directives.Directive directive, String fieldName, byte[] source
+    ) {
+        var out = new ArrayList<Node>();
+        for (var arg : directive.arguments()) {
+            collectObjectFieldValues(arg.value(), fieldName, source, out);
+        }
+        return out;
+    }
+
+    private static void collectObjectFieldValues(
+        Node node, String fieldName, byte[] source, List<Node> out
+    ) {
+        if (node == null) return;
+        if ("object_field".equals(node.getType())) {
+            Node nameNode = childOfKind(node, "name");
+            Node valueNode = childOfKind(node, "value");
+            if (nameNode != null && valueNode != null
+                && fieldName.equals(Nodes.text(nameNode, source))) {
+                out.add(valueNode);
+            }
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            collectObjectFieldValues(node.getChild(i).orElse(null), fieldName, source, out);
         }
     }
 

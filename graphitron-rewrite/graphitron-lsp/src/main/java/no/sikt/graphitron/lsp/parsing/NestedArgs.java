@@ -67,6 +67,35 @@ public final class NestedArgs {
     }
 
     /**
+     * Returns {@code true} if any ancestor of {@code nested.nestedField()}
+     * (within the same directive arg) is an {@code object_field} whose
+     * name equals {@code fieldName}. Used by consumers of structured
+     * args like {@code @reference(path: [{condition: {className: ...}}])}
+     * to confirm the cursor's nesting walks through a particular
+     * intermediate field name.
+     */
+    public static boolean hasAncestorObjectField(Nested nested, String fieldName, byte[] source) {
+        Node start = nested.nestedField();
+        if (start == null) return false;
+        Node argRoot = nested.outerArgument().value();
+        Node cur = start.getParent().orElse(null);
+        while (cur != null) {
+            if ("object_field".equals(cur.getType())) {
+                Node nameNode = childOfKind(cur, "name");
+                if (nameNode != null && fieldName.equals(Nodes.text(nameNode, source))) {
+                    return true;
+                }
+            }
+            if (argRoot != null && cur.getStartByte() == argRoot.getStartByte()
+                && cur.getEndByte() == argRoot.getEndByte()) {
+                return false;
+            }
+            cur = cur.getParent().orElse(null);
+        }
+        return false;
+    }
+
+    /**
      * Recursive descent through value-wrappers ({@code list_value},
      * {@code object_value}, plain {@code value}) looking for the
      * deepest {@code object_field} that contains {@code pos}.
