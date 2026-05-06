@@ -1,7 +1,7 @@
 ---
 id: R93
 title: "LSP quick-fix: ExternalCodeReference name → className migration"
-status: Spec
+status: Ready
 bucket: Backlog
 priority: 5
 theme: legacy-migration
@@ -455,6 +455,14 @@ to host future per-arg / per-directive features beyond R93.
 - The legacy-and-unresolved diagnostic arm in `Diagnostics`.
 - `SdlActionTest`, `CodeActionsTest`, `DeprecationMarkersTest`, and
   `SdlActionDriftTest`.
+
+Landing-commit coupling: the `SdlActionDriftTest` invariants assert
+total coverage in both directions, so the test, the `SdlAction`
+instantiation for `name → className`, the `MANUAL_MIGRATION_DEPRECATIONS`
+allow-list entries (`Member("@asConnection", "connectionName")` and
+`WholeDirective("index")`), and `@index`'s structured-form
+description rewrite all land in the same commit. Splitting any of
+these across commits leaves the test red on intermediate revisions.
 
 Acceptance: editor users can apply the migration on a legacy `name:`
 literal; "Migrate `name:` in this file" and "Migrate `name:` in this
