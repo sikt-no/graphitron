@@ -40,12 +40,16 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
  *       {@link DmlKind#UPSERT}).</li>
  *   <li>{@link #validateReturnType} — validates Invariant #14 (mutation return must be
  *       {@code ID}, {@code [ID]}, {@code T}, or {@code [T]} where {@code T} is a {@code @table}
- *       type). Returns a non-null rejection reason on violation, {@code null} on success.</li>
+ *       type) and Invariant #15 (bulk-input + single-cardinality return is rejected on the
+ *       Scalar/TableBound arms). Returns a non-null rejection reason on violation,
+ *       {@code null} on success.</li>
  *   <li>{@link #resolveInput} — the main beast. Walks the field's arguments, finds the single
- *       {@code TableInputArg}, runs all Phase 1 mutation invariant checks on it (no listed
- *       input, no {@code @condition} on the {@code @table} arg, only {@code ColumnField}
- *       entries inside the input type, lookup-key + PK coverage rules per DML variant), and
- *       returns a sealed {@link Resolved} the caller switches on.</li>
+ *       {@code TableInputArg}, runs all Phase 1 mutation invariant checks on it (no
+ *       {@code @condition} on the {@code @table} arg, only {@code ColumnField} entries inside
+ *       the input type, lookup-key + PK coverage rules per DML variant), and returns a sealed
+ *       {@link Resolved} the caller switches on. Listed {@code @table} inputs
+ *       ({@code in: [FilmInput!]!}) are admitted (R77); the bulk arm is dispatched via
+ *       {@link ArgumentRef.InputTypeArg.TableInputArg#list() TableInputArg.list()} downstream.</li>
  * </ul>
  *
  * <p>Not a caller of {@link FieldBuilder#classifyArgument}: a mutation field has no parent
@@ -150,16 +154,33 @@ final class MutationInputResolver {
 
     /**
      * Validates Invariant #14 — DML {@code @mutation} return type must be {@code ID},
-     * {@code [ID]}, {@code T}, or {@code [T]} (where {@code T} is a {@code @table} type).
-     * Returns a non-null rejection reason on violation; {@code null} when the return type is
-     * acceptable.
+     * {@code [ID]}, {@code T}, or {@code [T]} (where {@code T} is a {@code @table} type) —
+     * and Invariant #15 — when the {@code @table} input is list-shaped
+     * ({@code in: [FilmInput!]!}), the return type must also be list-shaped on the
+     * {@link ReturnTypeRef.ScalarReturnType ID} and
+     * {@link ReturnTypeRef.TableBoundReturnType T} arms. Single-cardinality returns paired
+     * with bulk inputs would silently drop all-but-the-last-row data per jOOQ's
+     * "return last row" default; rejecting at classify time keeps that footgun from
+     * reaching authors.
+     *
+     * <p>Returns a non-null rejection reason on violation; {@code null} when the return type
+     * is acceptable. The {@link ReturnTypeRef.ResultReturnType Payload} arm is excluded from
+     * #15 so bulk-input + single-payload routes through the deferred Payload+list rejection in
+     * {@link FieldBuilder#buildDmlField} (a separate "not yet supported" category that lifts
+     * when R75 lands), and bulk-input + list-payload still falls under #14's existing arm.
      */
-    static String validateReturnType(ReturnTypeRef returnType, DmlKind kind) {
+    static String validateReturnType(ReturnTypeRef returnType, DmlKind kind, boolean listInput) {
         return switch (returnType) {
             case ReturnTypeRef.ScalarReturnType s -> {
                 if (!"ID".equals(s.returnTypeName())) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + s.returnTypeName() + "' is not yet supported; use ID or a @table type";
+                }
+                if (listInput && !s.wrapper().isList()) {
+                    yield "@mutation(typeName: " + kind + ") with a listed @table input "
+                        + "must return a list (found '" + s.returnTypeName() + "', "
+                        + "single-cardinality); use [ID!]! to avoid silent drop of "
+                        + "all-but-last-row data (Invariant #15)";
                 }
                 yield null;
             }
@@ -168,6 +189,12 @@ final class MutationInputResolver {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + tb.returnTypeName() + "' (Connection) is not yet supported; use ID or a @table type";
                 }
+                if (listInput && !tb.wrapper().isList()) {
+                    yield "@mutation(typeName: " + kind + ") with a listed @table input "
+                        + "must return a list (found '" + tb.returnTypeName() + "', "
+                        + "single-cardinality); use [" + tb.returnTypeName() + "!]! to avoid "
+                        + "silent drop of all-but-last-row data (Invariant #15)";
+                }
                 yield null;
             }
             case ReturnTypeRef.ResultReturnType r -> {
@@ -175,7 +202,8 @@ final class MutationInputResolver {
                 // constructor with one row-slot parameter (typed as the DML's table record) plus
                 // optional defaulted slots and an optional errors slot. The shape check runs in
                 // FieldBuilder.resolveDmlPayloadAssembly during construction; this validator only
-                // screens for the wrapper shape (single, not list/connection).
+                // screens for the wrapper shape (single, not list/connection). Bulk-input +
+                // single-Payload combinations route to the R75-deferred rejection in buildDmlField.
                 if (r.wrapper().isList()) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + r.returnTypeName() + "' (list of @record) is not yet supported; "
@@ -247,12 +275,6 @@ final class MutationInputResolver {
             return new Resolved.Rejected(Rejection.structural("no @table input argument found on @mutation field"));
         }
 
-        if (foundTia.list()) {
-            return new Resolved.Rejected(Rejection.structural("listed @table input arguments on @mutation fields are not yet supported"
-                    + " — declare the argument as a single non-list @table input wrapper"
-                    + " (e.g. 'argName: SomeInput' rather than 'argName: [SomeInput!]!') and"
-                    + " issue one mutation per row, or wait for bulk-mutation support to land"));
-        }
         if (foundTia.argCondition().isPresent()) {
             return new Resolved.Rejected(Rejection.structural("@condition on a @mutation field argument is not supported"));
         }
