@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -22,7 +23,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 @UnitTier
 class ComputedFieldValidationTest {
 
-    private static final MethodRef DUMMY_METHOD = new MethodRef.Basic(
+    private static final MethodRef DUMMY_METHOD = TestFixtures.staticServiceMethodRef(
         "com.example.Ext", "fullTitle",
         ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"), ClassName.get(String.class)),
         List.of(new MethodRef.Param.Typed("table", "com.example.tables.Film", new ParamSource.Table())));
@@ -40,7 +41,7 @@ class ComputedFieldValidationTest {
             new ComputedField("Film", "fullTitle", null,
                 new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)),
                 List.of(new JoinStep.ConditionJoin(
-                    new MethodRef.Basic("com.example.Conditions", "liftCondition",
+                    TestFixtures.staticServiceMethodRef("com.example.Conditions", "liftCondition",
                         ClassName.get("org.jooq", "Condition"), List.of()),
                     "")),
                 DUMMY_METHOD),

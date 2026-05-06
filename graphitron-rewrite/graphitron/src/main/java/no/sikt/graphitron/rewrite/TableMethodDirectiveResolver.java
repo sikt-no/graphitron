@@ -141,7 +141,7 @@ final class TableMethodDirectiveResolver {
         if (result.failed()) {
             return new Resolved.Rejected(result.rejection().prefixedWith("table method could not be resolved — "));
         }
-        MethodRef method = enumMapping.enrichArgExtractions(result.ref(), fieldDef);
+        MethodRef method = enumMapping.enrichArgExtractions((MethodRef.StaticOnly) result.ref(), fieldDef);
         return returnType instanceof ReturnTypeRef.TableBoundReturnType tb
             ? new Resolved.TableBound(tb, method)
             : new Resolved.NonTableBound(returnType, method);

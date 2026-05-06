@@ -52,7 +52,7 @@ class SplitTableFieldValidationTest {
 
         WITH_CONDITION_ONLY("single cardinality with condition-only join step — runtime stub, build error",
             new SplitTableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "actorCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
+                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
                 List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY),
             List.of(CONDITION_JOIN_STUB)),
 

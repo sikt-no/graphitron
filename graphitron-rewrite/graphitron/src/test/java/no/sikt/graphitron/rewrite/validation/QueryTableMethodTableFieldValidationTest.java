@@ -27,7 +27,7 @@ class QueryTableMethodTableFieldValidationTest {
         VALID("single cardinality — passes validation (Invariants §1 Connection-rejection enforced at classifier time)",
             new QueryTableMethodTableField("Query", "filmsByMethod", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.Single(true)),
-                new MethodRef.Basic("com.example.TableMethods", "filmsByMethod", ClassName.get("org.jooq", "Table"), List.of()),
+                TestFixtures.staticServiceMethodRef("com.example.TableMethods", "filmsByMethod", ClassName.get("org.jooq", "Table"), List.of()),
                 Optional.empty()),
             List.of());
 

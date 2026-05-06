@@ -328,7 +328,7 @@ class TypeFetcherGeneratorTest {
     private static GraphitronField serviceField(String parentType, String name, boolean isList) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = tableBoundFilm(returnWrapper);
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "no.example.FilmService", "getFilms", ClassName.get("java.util", "List"),
             List.of(
                 new MethodRef.Param.Sourced("keys",
@@ -384,7 +384,7 @@ class TypeFetcherGeneratorTest {
     private static GraphitronField mappedServiceField(String parentType, String name, boolean isList, BatchKey.ParentKeyed batchKey) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = tableBoundFilm(returnWrapper);
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "no.example.FilmService", "getFilms", ClassName.get("java.util", "Set"),
             List.of(new MethodRef.Param.Sourced("keys", batchKey)));
         return new ChildField.ServiceTableField(
@@ -640,7 +640,7 @@ class TypeFetcherGeneratorTest {
         // return type is Result<Record> for a List-cardinality @table-bound return. Body-shape
         // properties (specific-table local, $fields projection, .from(table) call) are behavioural
         // and asserted at execution tier — see GraphQLQueryTest.queryTableMethod_popularFilms_*.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             "popularFilms",
             ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables", "Film"),
@@ -668,7 +668,7 @@ class TypeFetcherGeneratorTest {
         // Result<FilmRecord> typed, not Object. Body-shape properties (the optional dsl local,
         // direct service call, no projection) are behavioural and asserted at execution tier —
         // see GraphQLQueryTest.queryServiceTable_filmsByService_*.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             "filmsByService",
             ParameterizedTypeName.get(
@@ -693,7 +693,7 @@ class TypeFetcherGeneratorTest {
         // declared return type — no widening to Object. Behavioural round-trip
         // (graphql-java coercing Integer to GraphQL Int!) is asserted at execution tier —
         // see GraphQLQueryTest.queryServiceRecord_filmCount_*.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             "filmCount",
             ClassName.get("java.lang", "Integer"),
@@ -715,7 +715,7 @@ class TypeFetcherGeneratorTest {
         // declare the primitive faithfully on the inner P slot — boxing to Integer only
         // happens because DataFetcherResult<P> requires a reference type for P, and the
         // primitive int boxes to Integer per R12 §3.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "filmCount", TypeName.INT, List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
             new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty(), Optional.empty());
@@ -730,7 +730,7 @@ class TypeFetcherGeneratorTest {
     void queryServiceRecordField_emittedFetcher_handlesArrayReturnType() {
         // Reflection of `String[] tags()` produces returnTypeName "java.lang.String[]". The
         // emitter must preserve the array shape faithfully via ArrayTypeName.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "tags",
             ArrayTypeName.of(ClassName.get("java.lang", "String")), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "tags", null,
@@ -746,7 +746,7 @@ class TypeFetcherGeneratorTest {
     void queryServiceRecordField_emittedFetcher_handlesMultiArgGenericReturnType() {
         // Reflection of `Map<String, Integer> stats()` produces a multi-arg type name. The
         // emitter's depth-aware comma splitter must yield ParameterizedTypeName with two args.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "stats",
             ParameterizedTypeName.get(
                 ClassName.get("java.util", "Map"),
@@ -765,7 +765,7 @@ class TypeFetcherGeneratorTest {
     void queryServiceRecordField_emittedFetcher_handlesBoundedWildcardReturnType() {
         // Reflection of `List<? extends Number> nums()` produces "java.util.List<? extends
         // java.lang.Number>". The emitter must preserve the wildcard via WildcardTypeName.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "nums",
             ParameterizedTypeName.get(
                 ClassName.get("java.util", "List"),
@@ -802,7 +802,7 @@ class TypeFetcherGeneratorTest {
         // arm calls ErrorRouter.dispatch with the channel's mapping-table constant and a
         // synthesized payload-factory lambda. No-channel fields still route through redact —
         // covered by every existing service-record test (all pass Optional.empty()).
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.TestServiceStub", "runSak",
             ClassName.bestGuess("com.example.SakPayload"), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "sak", null,
@@ -825,7 +825,7 @@ class TypeFetcherGeneratorTest {
     void queryServiceRecordField_withoutErrorChannel_catchArmStillRedacts() {
         // Counter-test: an absent channel keeps the redact disposition. Same fetcher shape as
         // the dispatch test above but with Optional.empty() for the channel.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "filmCount", ClassName.get("java.lang", "Integer"), List.of());
         var field = new QueryField.QueryServiceRecordField("Query", "filmCount", null,
             new ReturnTypeRef.ScalarReturnType("Int", single()), method, Optional.empty(), Optional.empty());
@@ -842,7 +842,7 @@ class TypeFetcherGeneratorTest {
     void queryServiceTableField_withErrorChannel_catchArmDispatchesThroughErrorRouter() {
         // Same dispatch wiring applies on the @table-bound service path
         // (buildQueryServiceTableFetcher → buildServiceFetcherCommon shared body shape).
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.TestServiceStub", "getFilm",
             ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord"),
             List.of());
@@ -871,7 +871,7 @@ class TypeFetcherGeneratorTest {
         // Asserting on the body's reference to the service class catches a regression to stub(f)
         // (which would emit `throw new UnsupportedOperationException(...)`), and asserts the
         // service class is the call target.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "createFilm",
             ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables.records", "FilmRecord"),
             List.of());
@@ -894,7 +894,7 @@ class TypeFetcherGeneratorTest {
     void mutationServiceTableField_listReturn_declaresResultOfRecord() {
         // Mirrors queryServiceTableField_listReturn_declaresResultOfRecord — the table-bound
         // mutation service shape is identical.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "createFilms",
             ParameterizedTypeName.get(
                 ClassName.get("org.jooq", "Result"),
@@ -912,7 +912,7 @@ class TypeFetcherGeneratorTest {
     @Test
     void mutationServiceRecordField_emittedFetcher_callsServiceMethod() {
         // Pipeline-tier: the non-table variant un-stubs and the body is the shared shape.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "doThing", ClassName.get("java.lang", "Integer"), List.of());
         var field = new MutationField.MutationServiceRecordField("Mutation", "doThing", null,
             new ReturnTypeRef.ScalarReturnType("Int", single()), method,
@@ -933,7 +933,7 @@ class TypeFetcherGeneratorTest {
         // ResultReturnType with a non-null fqClassName produces a typed declaration on the
         // fetcher's inner P slot — same policy as queryServiceRecord. Mirrors
         // queryServiceRecordField_emittedFetcher_declaresTypedReturn.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "createFilm",
             ClassName.bestGuess("com.example.Film"), List.of());
         var field = new MutationField.MutationServiceRecordField("Mutation", "createFilm", null,
@@ -952,7 +952,7 @@ class TypeFetcherGeneratorTest {
         // arm through ErrorRouter.dispatch with the channel's mapping table and synthesized
         // payload-factory lambda. Direct read-out of the un-stub: this contract previously only
         // applied to query services because the mutation switch emitted a stub.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.TestServiceStub", "createSak",
             ClassName.bestGuess("com.example.SakPayload"), List.of());
         var field = new MutationField.MutationServiceRecordField("Mutation", "createSak", null,
@@ -974,7 +974,7 @@ class TypeFetcherGeneratorTest {
         // too. Without this assertion, a regression that hard-wired dispatch in the mutation
         // emitter (rather than going through the shared common helper's fork) would slip
         // through.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "com.example.Service", "doThing", ClassName.get("java.lang", "Integer"), List.of());
         var field = new MutationField.MutationServiceRecordField("Mutation", "doThing", null,
             new ReturnTypeRef.ScalarReturnType("Int", single()), method,
@@ -988,54 +988,12 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void mutationServiceRecordField_instanceMethod_emitsNewServiceWithDsl() {
-        // Instance-method service (`isStatic == false`): the emitter produces
-        // `new ServiceClass(dsl).method(...)` instead of the static `ServiceClass.method(...)`,
-        // and unconditionally declares the `dsl` local even when the method itself takes no
-        // DSLContext parameter (the constructor needs it).
-        var method = new MethodRef.Basic(
-            "com.example.Service", "doThing", ClassName.get("java.lang", "Integer"),
-            List.of(), List.of(), /* isStatic */ false);
-        var field = new MutationField.MutationServiceRecordField("Mutation", "doThing", null,
-            new ReturnTypeRef.ScalarReturnType("Int", single()), method,
-            Optional.empty(), Optional.empty());
-        var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE);
-
-        var body = method(spec, "doThing").code().toString();
-        assertThat(body).contains("org.jooq.DSLContext dsl =");
-        assertThat(body).contains("new com.example.Service(dsl).doThing(");
-        assertThat(body).doesNotContain("com.example.Service.doThing(");
-    }
-
-    @Test
-    void mutationServiceRecordField_staticMethod_keepsStaticCallShape() {
-        // Counter-test for the instance-method shape: static services stay on the
-        // `ServiceClass.method(...)` call and skip the unconditional `dsl` local. Without
-        // this assertion an emitter regression that always emitted the instance form would
-        // slip through.
-        var method = new MethodRef.Basic(
-            "com.example.Service", "doThing", ClassName.get("java.lang", "Integer"),
-            List.of());
-        var field = new MutationField.MutationServiceRecordField("Mutation", "doThing", null,
-            new ReturnTypeRef.ScalarReturnType("Int", single()), method,
-            Optional.empty(), Optional.empty());
-        var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE);
-
-        var body = method(spec, "doThing").code().toString();
-        assertThat(body).contains("com.example.Service.doThing(");
-        assertThat(body).doesNotContain("new com.example.Service(");
-        assertThat(body).doesNotContain("DSLContext dsl");
-    }
-
-    @Test
     void mutationServiceRecordField_withValidationHandler_emitsValidatorPreStep() {
         // R12 §5 wrapper integration on the mutation side: when the channel carries any
         // ValidationHandler, the shared helper inserts the pre-execution Jakarta validation
         // block. The block is emitted ahead of the try, walks every Arg-sourced parameter, and
         // short-circuits with the payload's errors-arm filled by the violations.
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.TestServiceStub", "createSak",
             ClassName.bestGuess("com.example.SakPayload"),
             List.of(new MethodRef.Param.Typed("input", "com.example.SakInput",
@@ -1435,7 +1393,7 @@ class TypeFetcherGeneratorTest {
             String parentType, String name, boolean isList, BatchKey.ParentKeyed batchKey, no.sikt.graphitron.javapoet.TypeName perKeyType) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ScalarReturnType("String", returnWrapper);
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "no.example.Service", "getValues", perKeyType,
             List.of(new MethodRef.Param.Sourced("keys", batchKey)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
@@ -1447,7 +1405,7 @@ class TypeFetcherGeneratorTest {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType(
             "FilmDetails", returnWrapper, fqBackingClass);
-        var method = new MethodRef.Basic(
+        var method = TestFixtures.staticServiceMethodRef(
             "no.example.Service", "getDetails", ClassName.bestGuess(fqBackingClass),
             List.of(new MethodRef.Param.Sourced("keys", batchKey)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(

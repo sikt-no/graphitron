@@ -151,7 +151,7 @@ final class ServiceDirectiveResolver {
         if (result.failed()) {
             return new Resolved.Rejected(result.rejection().prefixedWith("service method could not be resolved — "));
         }
-        MethodRef method = enumMapping.enrichArgExtractions(result.ref(), fieldDef);
+        MethodRef method = enumMapping.enrichArgExtractions((MethodRef.Service) result.ref(), fieldDef);
 
         if (isRoot) {
             String invariant = validateRootInvariants(returnType, method);

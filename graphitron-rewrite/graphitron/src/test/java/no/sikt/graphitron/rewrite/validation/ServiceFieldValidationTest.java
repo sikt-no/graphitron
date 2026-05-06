@@ -34,7 +34,7 @@ class ServiceFieldValidationTest {
 
     // ===== ServiceRecordField — non-table return type =====
 
-    private static final MethodRef RESOLVED_METHOD = new MethodRef.Basic("com.example.Service", "method", TypeName.VOID, List.of());
+    private static final MethodRef RESOLVED_METHOD = TestFixtures.staticServiceMethodRef("com.example.Service", "method", TypeName.VOID, List.of());
     private static final BatchKey.ParentKeyed RESOLVED_BATCH_KEY = new BatchKey.RowKeyed(
         List.of(new ColumnRef("FILM_ID", "filmId", "java.lang.Integer")));
 
@@ -46,7 +46,7 @@ class ServiceFieldValidationTest {
 
         WITH_LIFT_CONDITION("lift condition with a resolved method — DEFERRED until the lift form ships",
             new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(
-                new JoinStep.ConditionJoin(new MethodRef.Basic("com.example.Conditions", "liftCondition", ClassName.get("org.jooq", "Condition"),
+                new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "liftCondition", ClassName.get("org.jooq", "Condition"),
                     List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))), "")),
                 RESOLVED_METHOD, RESOLVED_BATCH_KEY, Optional.empty()),
             List.of("Field 'Film.externalChild': @service with a @reference path "
@@ -86,7 +86,7 @@ class ServiceFieldValidationTest {
                     TestFixtures.tableRef("film", "FILM", "Film", List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))),
                     new FieldWrapper.Single(true)),
                 List.of(), List.of(), new OrderBySpec.None(), null,
-                new MethodRef.Basic("com.example.FilmService", "getFilms", TypeName.OBJECT,
+                TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
                     List.of(new MethodRef.Param.Sourced("filmKeys", new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))))),
                 new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))),
                 Optional.empty()),
@@ -98,7 +98,7 @@ class ServiceFieldValidationTest {
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     new FieldWrapper.Single(true)),
                 List.of(), List.of(), new OrderBySpec.None(), null,
-                new MethodRef.Basic("com.example.FilmService", "getFilms", TypeName.OBJECT, List.of()),
+                TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT, List.of()),
                 null,
                 Optional.empty()),
             List.of("Field 'Film.externalChild': @service on a table-bound return type requires a Sources parameter for DataLoader batching"));
@@ -167,7 +167,7 @@ class ServiceFieldValidationTest {
     private static ServiceTableField serviceField(BatchKey.ParentKeyed batchKey) {
         return new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
             List.of(), List.of(), new OrderBySpec.None(), null,
-            new MethodRef.Basic("com.example.FilmService", "getFilms", TypeName.OBJECT,
+            TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
                 List.of(new MethodRef.Param.Sourced("filmKeys", batchKey))),
             batchKey, Optional.empty());
     }
@@ -222,7 +222,7 @@ class ServiceFieldValidationTest {
             filmTableType(FILM_TABLE_SINGLE_PK),
             new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
                 List.of(), List.of(), new OrderBySpec.None(), null,
-                new MethodRef.Basic("com.example.FilmService", "getFilms", TypeName.OBJECT,
+                TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
                     List.of(
                         new MethodRef.Param.Sourced("filmKeys1", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
                         new MethodRef.Param.Sourced("filmKeys2", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())))),
