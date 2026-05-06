@@ -31,6 +31,50 @@ class ClasspathScannerTest {
     }
 
     @Test
+    void walksMultipleRootsLikeReactorModules(@TempDir Path moduleA, @TempDir Path moduleB) throws IOException {
+        // Simulate a reactor: schema module's own classes plus a sibling
+        // service module's classes. The LSP catalog needs both visible so
+        // @service(service: {className: "..."}) lit up against either.
+        writePublicClass(moduleA, "no.sikt.example.schema.SchemaSupport");
+        writePublicClass(moduleB, "no.sikt.example.service.SampleQueryService");
+        writePublicClass(moduleB, "no.sikt.example.service.CategoryConditions");
+
+        var refs = ClasspathScanner.scan(java.util.List.of(moduleA, moduleB), JOOQ_PKG);
+
+        assertThat(refs).extracting(CompletionData.ExternalReference::className)
+            .containsExactlyInAnyOrder(
+                "no.sikt.example.schema.SchemaSupport",
+                "no.sikt.example.service.SampleQueryService",
+                "no.sikt.example.service.CategoryConditions"
+            );
+    }
+
+    @Test
+    void deduplicatesSameClassFromOverlappingRoots(@TempDir Path moduleA, @TempDir Path moduleB) throws IOException {
+        // Possible (rare) when reactor configurations overlap: same FQN
+        // compiled into more than one output dir. The scanner must surface
+        // it once.
+        writePublicClass(moduleA, "no.sikt.example.SharedClass");
+        writePublicClass(moduleB, "no.sikt.example.SharedClass");
+
+        var refs = ClasspathScanner.scan(java.util.List.of(moduleA, moduleB), JOOQ_PKG);
+
+        assertThat(refs).hasSize(1);
+        assertThat(refs.get(0).className()).isEqualTo("no.sikt.example.SharedClass");
+    }
+
+    @Test
+    void skipsMissingRootsWithoutFailing(@TempDir Path real) throws IOException {
+        writePublicClass(real, "com.example.Real");
+        Path missing = real.resolveSibling("does-not-exist");
+
+        var refs = ClasspathScanner.scan(java.util.List.of(missing, real), JOOQ_PKG);
+
+        assertThat(refs).extracting(CompletionData.ExternalReference::className)
+            .containsExactly("com.example.Real");
+    }
+
+    @Test
     void picksUpPublicTopLevelClasses(@TempDir Path classes) throws IOException {
         writePublicClass(classes, "com.example.MyService");
         writePublicClass(classes, "com.example.OtherService");

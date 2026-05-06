@@ -1,7 +1,7 @@
 ---
 id: R18
 title: "Java LSP rewrite + introspect retirement + `dev` goal"
-status: In Review
+status: In Progress
 priority: 12
 theme: legacy-migration
 depends-on: []
@@ -66,14 +66,14 @@ Done, on trunk:
   jOOQ-generated source tree (file-level URIs; per-line refinement
   was originally folded into Phase 5 on top of JavaParser; deferred
   with the JavaParser follow-up).
-- **Phase 5** (commits `ed5ebf3` → `39ca34f` → `a672c82` → 5d):
+- **Phase 5** (commits `ed5ebf3` → `39ca34f` → `a672c82` → 5d → 5e):
   `@service` / `@condition` / `@record` autocomplete, hover, and
-  diagnostics. The classpath scanner walks `target/classes` via
-  `java.lang.classfile` and surfaces public top-level classes plus
-  their public methods with erased parameter types; the LSP offers
-  class-FQN completion, method-name completion, and per-reference
-  diagnostics for unknown class / unknown method / `-parameters`-
-  missing. A3 closes here.
+  diagnostics. The classpath scanner walks every reactor module's
+  `target/classes` via `java.lang.classfile` and surfaces public
+  top-level classes plus their public methods with erased parameter
+  types; the LSP offers class-FQN completion, method-name
+  completion, and per-reference diagnostics for unknown class /
+  unknown method / `-parameters`-missing. A3 closes here.
 
   **Phase 5d (directive-shape correction).** Commits 5a/5b/5c shipped
   against a flat-arg shape (`@service(class: "X", method: "foo")`)
@@ -94,6 +94,25 @@ Done, on trunk:
   real `ExternalCodeReference` shape so the bug cannot recur.
   `argMapping` autocomplete and validation stay out of scope here;
   tracked as Phase 4 of R90.
+
+  **Phase 5e (multi-module reactor visibility).** Phase 5a's scanner
+  walked only `<basedir>/target/classes`, missing service / condition /
+  record classes declared in sibling reactor modules. The sakila
+  example caught this: `graphitron-sakila-example`'s schema references
+  `no.sikt.graphitron.rewrite.test.services.SampleQueryService`, which
+  lives in the sibling `graphitron-sakila-service` module and was
+  invisible to the LSP catalog. 5e widens the scan to every reactor
+  project's compile-output directory by threading
+  `MavenSession.getAllProjects()` → `${project.build.outputDirectory}`
+  through a new `RewriteContext.classpathRoots` field. The scanner
+  iterates the list and deduplicates FQNs across roots; the dev-goal
+  classpath watcher widens with it so a `.class` write in any reactor
+  module triggers the same atomic catalog rebuild. External jars
+  (from `~/.m2`) are not scanned: services live in reactor source,
+  not third-party libraries. Unit-tier callers using the
+  `RewriteContext` six-arg back-compat overload still get the
+  pre-5e single-root behaviour (basedir fallback in
+  `CatalogBuilder.buildExternalReferences`).
 - **Phase 6** (commits `232f8e0` → `0bbd6f3` → `9f41cdc` → `5c9109d`):
   jtreesitter migration + grammar vendoring. macOS x86_64 / aarch64
   wired; Windows + CI matrix follow-up tracked under R89.
