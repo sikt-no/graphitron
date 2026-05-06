@@ -16,6 +16,7 @@ import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.JooqCatalog;
+import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.ChildField.ConstructorField;
@@ -1308,6 +1309,11 @@ class FieldBuilder {
     // ===== Field classification =====
 
     GraphitronField classifyField(GraphQLFieldDefinition fieldDef, String parentTypeName, GraphitronType parentType) {
+        return classifyField(fieldDef, parentTypeName, parentType, null);
+    }
+
+    GraphitronField classifyField(GraphQLFieldDefinition fieldDef, String parentTypeName, GraphitronType parentType,
+            Class<?> parentBackingClass) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
@@ -1341,7 +1347,7 @@ class FieldBuilder {
             return classifyChildFieldOnTableType(fieldDef, parentTypeName, tbt, Set.of());
         }
         if (parentType instanceof ResultType resultType) {
-            return classifyChildFieldOnResultType(fieldDef, parentTypeName, resultType);
+            return classifyChildFieldOnResultType(fieldDef, parentTypeName, resultType, parentBackingClass);
         }
         if (parentType instanceof ErrorType) {
             return classifyChildFieldOnErrorType(fieldDef, parentTypeName);
@@ -1354,7 +1360,7 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
         if (isScalarOrEnum(fieldDef)) {
-            return new PropertyField(parentTypeName, name, location, name, null);
+            return new PropertyField(parentTypeName, name, location, name, null, null);
         }
         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.invalidSchema("fields on @error types must be scalar or enum"));
     }
@@ -2561,7 +2567,7 @@ class FieldBuilder {
     }
 
     private GraphitronField classifyChildFieldOnResultType(GraphQLFieldDefinition fieldDef, String parentTypeName,
-            ResultType parentResultType) {
+            ResultType parentResultType, Class<?> parentBackingClass) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
@@ -2636,8 +2642,9 @@ class FieldBuilder {
             String columnName = fieldDef.hasAppliedDirective(DIR_FIELD)
                 ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
                 : name;
+            var accessor = resolveRecordAccessor(fieldDef, columnName, parentResultType, parentBackingClass);
             return new PropertyField(parentTypeName, name, location, columnName,
-                resolveColumnOnJooqTableRecord(columnName, parentResultType));
+                resolveColumnOnJooqTableRecord(columnName, parentResultType), accessor);
         }
 
         // Object return type on a result-mapped parent.
@@ -2682,10 +2689,12 @@ class FieldBuilder {
             }
             case ReturnTypeRef.ResultReturnType r ->
                 new RecordField(parentTypeName, name, location, r, columnName,
-                    resolveColumnOnJooqTableRecord(columnName, parentResultType));
+                    resolveColumnOnJooqTableRecord(columnName, parentResultType),
+                    resolveRecordAccessor(fieldDef, columnName, parentResultType, parentBackingClass));
             case ReturnTypeRef.ScalarReturnType s ->
                 new RecordField(parentTypeName, name, location, s, columnName,
-                    resolveColumnOnJooqTableRecord(columnName, parentResultType));
+                    resolveColumnOnJooqTableRecord(columnName, parentResultType),
+                    resolveRecordAccessor(fieldDef, columnName, parentResultType, parentBackingClass));
             case ReturnTypeRef.PolymorphicReturnType p -> {
                 var lift = liftToErrorsField(fieldDef, parentTypeName, p);
                 yield lift != null ? lift
@@ -2711,6 +2720,88 @@ class FieldBuilder {
         if (!(parentResultType instanceof GraphitronType.JooqTableRecordType jtrt)) return null;
         if (jtrt.table() == null) return null;
         return svc.resolveColumnInTable(columnName, jtrt.table().tableName()).orElse(null);
+    }
+
+    /**
+     * Resolves an SDL output field's accessor against the parent's backing Java class. Returns
+     * {@code null} when reflective accessor resolution does not apply: jOOQ-record-backed parents
+     * ({@link GraphitronType.JooqTableRecordType} / {@link GraphitronType.JooqRecordType}) reach
+     * their values through column projection, not bean-style accessors;
+     * {@link GraphitronType.PojoResultType} with a null {@code fqClassName} falls through to
+     * graphql-java's {@code PropertyDataFetcher}. Returns a non-null
+     * {@link AccessorResolution.Resolved} or {@link AccessorResolution.Rejected} only when the
+     * parent is a {@link GraphitronType.JavaRecordType} or a {@link GraphitronType.PojoResultType}
+     * with non-null {@code fqClassName} (the {@code parentBackingClass} threaded from
+     * {@link TypeBuilder#recordBackingClasses()}).
+     */
+    private AccessorResolution resolveRecordAccessor(GraphQLFieldDefinition fieldDef, String accessorBaseName,
+            GraphitronType.ResultType parentResultType, Class<?> parentBackingClass) {
+        if (parentBackingClass == null) return null;
+        if (!(parentResultType instanceof GraphitronType.JavaRecordType
+                || parentResultType instanceof GraphitronType.PojoResultType)) return null;
+        var order = parentResultType instanceof GraphitronType.JavaRecordType
+            ? ClassAccessorResolver.CandidateOrder.RECORD_FIRST
+            : ClassAccessorResolver.CandidateOrder.POJO_FIRST;
+        java.lang.reflect.Type expectedReturn = mapGraphQLTypeToReflectType(fieldDef.getType());
+        ClassAccessorResolver.ParamShape expectedArgs = mapArgsToParamShape(fieldDef);
+        return ClassAccessorResolver.resolve(parentBackingClass, accessorBaseName,
+            expectedReturn, expectedArgs, order);
+    }
+
+    private ClassAccessorResolver.ParamShape mapArgsToParamShape(GraphQLFieldDefinition fieldDef) {
+        var args = fieldDef.getArguments();
+        var argShapes = new ArrayList<ClassAccessorResolver.ArgShape>(args.size());
+        for (GraphQLArgument arg : args) {
+            argShapes.add(new ClassAccessorResolver.ArgShape(arg.getName(),
+                mapGraphQLTypeToReflectType(arg.getType())));
+        }
+        return new ClassAccessorResolver.PerArgument(argShapes);
+    }
+
+    /**
+     * Maps a graphql-java type (input or output) to a {@link java.lang.reflect.Type} for
+     * resolver-side assignability checks. Standard scalars map to their canonical Java types;
+     * {@code @record}-typed object types map to their backing class; everything else falls back
+     * to {@link Object} (assignability accepts any actual type, so the resolver matches by
+     * name and parameter shape only — sufficient for the user-facing-bug case which is the
+     * scalar return-type mismatch).
+     *
+     * <p>List wrappers map to {@code java.util.List} regardless of element type — generics are
+     * erased to raw classes for the assignability check.
+     */
+    private java.lang.reflect.Type mapGraphQLTypeToReflectType(GraphQLType t) {
+        GraphQLType current = t;
+        int listDepth = 0;
+        while (true) {
+            if (current instanceof GraphQLNonNull nn) { current = nn.getWrappedType(); continue; }
+            if (current instanceof GraphQLList l) { current = l.getWrappedType(); listDepth++; continue; }
+            break;
+        }
+        if (listDepth > 0) return java.util.List.class;
+        if (current instanceof GraphQLScalarType s) {
+            return switch (s.getName()) {
+                case "Int" -> Integer.class;
+                case "Float" -> Double.class;
+                case "String", "ID" -> String.class;
+                case "Boolean" -> Boolean.class;
+                default -> Object.class;
+            };
+        }
+        if (current instanceof GraphQLNamedType nt && ctx.types != null) {
+            var classified = ctx.types.get(nt.getName());
+            String fqcn = switch (classified) {
+                case GraphitronType.PojoResultType prt -> prt.fqClassName();
+                case GraphitronType.JavaRecordType jrt -> jrt.fqClassName();
+                case GraphitronType.JooqTableRecordType jtr -> jtr.fqClassName();
+                case GraphitronType.JooqRecordType jr -> jr.fqClassName();
+                case null, default -> null;
+            };
+            if (fqcn != null) {
+                try { return Class.forName(fqcn); }
+                catch (ClassNotFoundException e) { return Object.class; }
+            }
+        }
+        return Object.class;
     }
 
     /**

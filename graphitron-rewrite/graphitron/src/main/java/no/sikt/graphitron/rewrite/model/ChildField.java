@@ -487,6 +487,17 @@ public sealed interface ChildField extends GraphitronField
      *     {@link GraphitronType.PojoResultType} parents). When non-null, the generator emits a
      *     typed {@code Tables.X.COL} reference; when null, it falls back to
      *     {@code DSL.field("col_name")} or a bean/record accessor depending on the parent.
+     * @param accessor the resolved accessor outcome when the parent is a
+     *     {@link GraphitronType.JavaRecordType} or a {@link GraphitronType.PojoResultType}
+     *     with non-null {@code fqClassName} (i.e. a {@code @record}-Java-backed parent);
+     *     {@code null} otherwise. When non-null, exactly one of
+     *     {@link AccessorResolution.Resolved} (carries the resolved {@link java.lang.reflect.Method}
+     *     or {@link java.lang.reflect.Field}) or {@link AccessorResolution.Rejected} (carries
+     *     the diagnostic that {@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator}
+     *     surfaces). Mirrors the {@code @record} arm of
+     *     {@code FetcherEmitter.propertyOrRecordValue}; jOOQ-record-backed parents and
+     *     null-{@code fqClassName} parents do not run reflective resolution and carry
+     *     {@code null} here.
      */
     record RecordField(
         String parentTypeName,
@@ -494,7 +505,8 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef returnType,
         String columnName,
-        ColumnRef column
+        ColumnRef column,
+        AccessorResolution accessor
     ) implements ChildField {}
 
     /**
@@ -525,13 +537,20 @@ public sealed interface ChildField extends GraphitronField
      *     SQL column name maps to a real column; {@code null} otherwise. When non-null, the
      *     generator emits a typed {@code Tables.X.COL} reference; when null, it falls back to
      *     {@code DSL.field("col_name")} or a bean/record accessor depending on the parent.
+     * @param accessor the resolved accessor outcome when the parent is a
+     *     {@link GraphitronType.JavaRecordType} or a {@link GraphitronType.PojoResultType}
+     *     with non-null {@code fqClassName}; {@code null} otherwise (jOOQ-record parents,
+     *     null-{@code fqClassName} parents, and {@code @error}-type parents do not run
+     *     reflective accessor resolution). See {@link RecordField}'s analogous slot for the
+     *     full contract.
      */
     record PropertyField(
         String parentTypeName,
         String name,
         SourceLocation location,
         String columnName,
-        ColumnRef column
+        ColumnRef column,
+        AccessorResolution accessor
     ) implements ChildField {}
 
     record MultitableReferenceField(

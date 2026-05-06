@@ -103,10 +103,22 @@ class TypeBuilder {
 
     private final BuildContext ctx;
     private final ServiceCatalog svc;
+    private final Map<String, Class<?>> recordBackingClasses = new LinkedHashMap<>();
 
     TypeBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
+    }
+
+    /**
+     * Backing classes for {@code @record}-typed result types, keyed by GraphQL type name. Populated
+     * as a side-effect of {@link #buildResultType}; the schema builder threads each loaded class
+     * through {@link FieldBuilder#classifyField} so the per-field accessor resolver does not
+     * re-load. Per the rewrite design principles, the class is classifier-time scratch state and
+     * does not survive into the persisted model.
+     */
+    Map<String, Class<?>> recordBackingClasses() {
+        return recordBackingClasses;
     }
 
     // ===== Two-pass type map construction =====
@@ -527,6 +539,7 @@ class TypeBuilder {
         try {
             Class<?> cls = Class.forName(className);
             if (cls.isRecord()) {
+                recordBackingClasses.put(name, cls);
                 return new GraphitronType.JavaRecordType(name, location, className);
             }
             if (org.jooq.TableRecord.class.isAssignableFrom(cls)) {
@@ -536,6 +549,7 @@ class TypeBuilder {
             if (org.jooq.Record.class.isAssignableFrom(cls)) {
                 return new GraphitronType.JooqRecordType(name, location, className);
             }
+            recordBackingClasses.put(name, cls);
             return new GraphitronType.PojoResultType(name, location, className);
         } catch (ClassNotFoundException e) {
             return new UnclassifiedType(name, location, Rejection.structural(
