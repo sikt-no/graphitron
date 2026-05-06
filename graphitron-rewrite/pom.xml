@@ -238,13 +238,6 @@
         <developerConnection>scm:git:ssh://github.com:sikt-no/graphitron.git</developerConnection>
         <url>https://github.com/sikt-no/graphitron/tree/main</url>
     </scm>
-
-    <distributionManagement>
-        <snapshotRepository>
-            <id>central</id>
-            <url>https://central.sonatype.com/repository/maven-snapshots/</url>
-        </snapshotRepository>
-    </distributionManagement>
     <licenses>
         <license>
             <name>MIT License</name>

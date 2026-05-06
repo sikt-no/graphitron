@@ -79,3 +79,9 @@ The classification-only diagram in xref:code-generation-triggers.adoc[Code Gener
 . *xref:testing.adoc[Test-tier guide]*: canonical tier names (unit / pipeline / compilation / execution), decision rubric, file locations, tier meta-annotations, and build commands.
 . *xref:argument-resolution.adoc[Argument Resolution]*: unified argument classification, `@condition` support, lookup VALUES generation.
 . *xref:../roadmap/index.adoc[Rewrite Roadmap]*: remaining generator work. Per-item plan files are authored as markdown in `graphitron-rewrite/roadmap/`; this rendered view (status board, xref:../roadmap/by-theme.adoc[by-theme index], xref:../roadmap/changelog.adoc[changelog]) is regenerated on every build.
+
+== Publishing
+
+Trunk runs at `10-SNAPSHOT`; releases are cut from tag-driven GitHub Releases. The `.github/workflows/maven-publish.yml` workflow accepts `v<MAJOR>.<MINOR>.<PATCH>` and `v<MAJOR>.<MINOR>.<PATCH>-RC<n>`, sets the version across the rewrite reactor, signs (sources + javadoc + GPG), and pushes to Maven Central via the `central-publishing-maven-plugin` with `autoPublish=true`. Maven version ordering treats `10.0.0-RC1` as strictly less than `10.0.0`, so consumers asking for `[10.0.0,)` won't pick up RCs by accident. Snapshots aren't published; the rewrite parent declares no `<snapshotRepository>`, so an accidental `mvn deploy` on `10-SNAPSHOT` fails fast.
+
+Publishable surface: `graphitron-javapoet`, `graphitron`, `graphitron-lsp`, `graphitron-maven-plugin`. Test fixtures and example consumers (`graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-sakila-example`, `roadmap-tool`, `docs`) carry `<maven.deploy.skip>true</maven.deploy.skip>`.
