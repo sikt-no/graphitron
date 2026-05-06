@@ -139,7 +139,7 @@ public final class Hovers {
             // The detection signal mirrors the build-time
             // ServiceCatalog.emitParametersWarning path: a null name on
             // any parameter means the class was compiled without
-            // -parameters. Phase 5c also emits this as a workspace
+            // -parameters. The LSP also emits this as a workspace
             // diagnostic; surfacing it on hover is the immediate
             // editor-side hint.
             sb.append("\n\n_Parameter names are unavailable; recompile with the `-parameters` flag to surface them._");
@@ -154,8 +154,8 @@ public final class Hovers {
     }
 
     private static String formatClass(CompletionData.ExternalReference ref) {
-        // Phase 5a payload: just the FQN. Method list and Javadoc fold in
-        // with 5b and the JavaParser phase respectively.
+        // Hover payload: just the FQN. Method list and Javadoc surfacing
+        // are follow-on work.
         return "**Class** `" + ref.className() + "`";
     }
 

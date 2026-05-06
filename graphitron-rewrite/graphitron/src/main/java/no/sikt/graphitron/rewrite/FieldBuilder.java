@@ -212,7 +212,7 @@ class FieldBuilder {
      * @param anyNestedSameTable {@code true} iff any input-field leaf nested under an arg
      *                           input-type resolves to {@link NodeIdLeafResolver.Resolved.SameTable}
      *                           against the field's containing table. Gates the input-field-side
-     *                           {@code @asConnection} rejection alongside R50's existing
+     *                           {@code @asConnection} rejection alongside the existing
      *                           input-field path.
      * @param sameTableHit    when either {@code anyArgSameTable} or {@code anyNestedSameTable}
      *                        is {@code true}, the leafName/refTypeName/containingTable that
@@ -394,12 +394,11 @@ class FieldBuilder {
      */
     private TableFieldComponents resolveTableFieldComponents(
             GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan) {
-        // R40: @asConnection + same-table @nodeId leaf is incoherent at runtime — the result
+        // @asConnection + same-table @nodeId leaf is incoherent at runtime — the result
         // cardinality is bounded by the input id list (lookup semantics), not paginatable.
         // Reject before classification so the structural conflict surfaces with a pointed hint
         // instead of building a degenerate connection. Symmetric across argument-level and
-        // input-field leaves: closes the latent R50 gap where the input-field same-table case
-        // was already a silent runtime mismatch.
+        // input-field leaves.
         if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
                 && (plan.anyArgSameTable() || plan.anyNestedSameTable())
                 && plan.sameTableHit() != null) {
@@ -506,12 +505,12 @@ class FieldBuilder {
         }
 
         if (elementType instanceof InterfaceType interfaceType) {
-            // R36 Track B3: per-participant FK auto-discovery from parent table to each
-            // participant's table. parsePath looks for a unique FK between the two and falls
-            // back to a directive-stated path when the @reference path: array is non-empty.
-            // For B3 v1 we expect the auto-discovery branch; an explicit shared @reference path
-            // would apply ambiguously across heterogeneous participants, so callers should not
-            // declare one on multi-table interface child fields.
+            // Per-participant FK auto-discovery from parent table to each participant's table.
+            // parsePath looks for a unique FK between the two and falls back to a directive-
+            // stated path when the @reference path: array is non-empty. The auto-discovery
+            // branch is the expected one; an explicit shared @reference path would apply
+            // ambiguously across heterogeneous participants, so callers should not declare one
+            // on multi-table interface child fields.
             var resolved = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
                 location, parentTableType.table(), interfaceType.participants());
             if (resolved.error() != null) {
@@ -723,7 +722,7 @@ class FieldBuilder {
                 name, typeName, nonNull, list, argCondition, plainFields);
         }
 
-        // R40: @nodeId-decorated ID arg routes through NodeIdLeafResolver to pick same-table
+        // @nodeId-decorated ID arg routes through NodeIdLeafResolver to pick same-table
         // (lookup) vs FK-target (filter) shape. Sits before the legacy implicit scalar-ID arm
         // below, which keeps owning synthesised paths (no @nodeId declared, parent table has
         // nodeId metadata) per scope.
@@ -788,17 +787,16 @@ class FieldBuilder {
                         extraction, argCondition, fieldOverride);
                 }
                 case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated -> {
-                    // Pathological case (FK targetColumns ≠ NodeType keyColumns; e.g. R50
+                    // Pathological case (FK targetColumns ≠ NodeType keyColumns; e.g. the
                     // parent_node + child_ref fixture). Emission requires JOIN-with-translation
-                    // and is deferred to a sibling follow-on parallel to R24's output-side
-                    // JOIN-with-projection arm.
+                    // and is deferred until output-side JOIN-with-projection emission ships.
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                         translatedFkRejectionReason(translated.refTypeName(), rt.tableName()));
                 }
             }
         }
 
-        // R50 phase (f-D1)/(g-A): scalar ID arg on a node-type table folds onto a column-shaped
+        // Scalar ID arg on a node-type table folds onto a column-shaped
         // carrier with NodeIdDecodeKeys.ThrowOnMismatch. Arity-1 → ColumnArg (single key column);
         // arity ≥ 2 → CompositeColumnArg (per-row decode produces a Record<N>; bindings index
         // positionally). Both arms carry the per-NodeType decode<TypeName> helper.
@@ -947,9 +945,8 @@ class FieldBuilder {
         OrderBySpec orderBy = ((OrderByResolver.Resolved.Ok) orderByResolved).spec();
         var lookupMapping = lookupMappingResolver.resolve(refs, rt);
         // LookupField invariant: if any @lookupKey is present, the mapping must be non-empty.
-        // ColumnMapping must have at least one arg. (Pre-R50 phase (f-D), a NodeIdMapping arm
-        // covered scalar NodeId @lookupKey args; that's now folded onto ColumnMapping carrying
-        // ScalarLookupArg with NodeIdDecodeKeys.ThrowOnMismatch.)
+        // ColumnMapping must have at least one arg. Scalar NodeId @lookupKey args fold onto
+        // ColumnMapping carrying ScalarLookupArg with NodeIdDecodeKeys.ThrowOnMismatch.
         boolean emptyMapping = switch (lookupMapping) {
             case ColumnMapping cm -> cm.args().isEmpty();
         };
@@ -1049,7 +1046,7 @@ class FieldBuilder {
                         || (ca.argCondition().isPresent() && ca.argCondition().get().override());
                     // Lookup-key args are consumed by LookupMappingResolver → LookupMapping and
                     // emitted via VALUES+JOIN by LookupValuesJoinEmitter. They must not appear
-                    // as GeneratedConditionFilter bodyParams (per docs/argument-resolution.md Phase 1).
+                    // as GeneratedConditionFilter bodyParams.
                     if (!autoSuppressed && !ca.isLookupKey()) {
                         String javaType = javaTypeFor(ca.extraction(), ca.column());
                         bodyParams.add(ca.list()
@@ -1061,14 +1058,13 @@ class FieldBuilder {
                 case ArgumentRef.ScalarArg.CompositeColumnArg cca -> {
                     boolean autoSuppressed = cca.suppressedByFieldOverride()
                         || (cca.argCondition().isPresent() && cca.argCondition().get().override());
-                    // R40: composite-PK NodeId scalar args now reach this branch with
-                    // isLookupKey == false when @nodeId(typeName: T) targets the field's own
-                    // table without an explicit @lookupKey (the same-table arm synthesises
-                    // isLookupKey: true via classifyArgument; non-lookup-key composite-PK args
-                    // are top-level filter args under @condition / @field paths). Project to
-                    // BodyParam.RowEq (scalar) / RowIn (list) using the carrier's column tuple
-                    // and NodeIdDecodeKeys extraction; LookupMappingResolver consumes the
-                    // isLookupKey branch separately.
+                    // Composite-PK NodeId scalar args reach this branch with isLookupKey == false
+                    // when @nodeId(typeName: T) targets the field's own table without an explicit
+                    // @lookupKey (the same-table arm synthesises isLookupKey: true via
+                    // classifyArgument; non-lookup-key composite-PK args are top-level filter
+                    // args under @condition / @field paths). Project to BodyParam.RowEq (scalar)
+                    // / RowIn (list) using the carrier's column tuple and NodeIdDecodeKeys
+                    // extraction; LookupMappingResolver consumes the isLookupKey branch separately.
                     if (!autoSuppressed && !cca.isLookupKey()) {
                         bodyParams.add(cca.list()
                             ? new BodyParam.RowIn(cca.name(), cca.columns(), cca.nonNull(), cca.extraction())
@@ -1077,19 +1073,18 @@ class FieldBuilder {
                     cca.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
                 case ArgumentRef.ScalarArg.ColumnReferenceArg cra -> {
-                    // R40 FK-target arm. The carrier's column is the target NodeType's key
-                    // column; joinPath[0] holds the FK whose sourceColumns sit on the field's
-                    // own containing table. When the FK targetColumns positionally match the
-                    // NodeType key columns (the simple direct-FK case), emit the predicate
-                    // against the FK source columns directly — no JOIN needed, the decoded
-                    // keys feed BodyParam.Eq / In against table.<fkSourceColumn>.
+                    // FK-target arm. The carrier's column is the target NodeType's key column;
+                    // joinPath[0] holds the FK whose sourceColumns sit on the field's own
+                    // containing table. When the FK targetColumns positionally match the NodeType
+                    // key columns (the simple direct-FK case), emit the predicate against the FK
+                    // source columns directly — no JOIN needed, the decoded keys feed
+                    // BodyParam.Eq / In against table.<fkSourceColumn>.
                     //
                     // The pathological case (FK targetColumns ≠ NodeType keyColumns; e.g. the
-                    // R50 parent_node + child_ref fixture where the FK targets a non-PK unique
+                    // parent_node + child_ref fixture where the FK targets a non-PK unique
                     // column) is rejected at classify time, so this arm only sees the simple
-                    // case. JOIN-with-translation emission for the pathological case is the
-                    // sibling Backlog item filed alongside R40, parallel to R24 on the output
-                    // side.
+                    // case. JOIN-with-translation emission for the pathological case is deferred
+                    // until output-side JOIN-with-projection emission ships.
                     boolean autoSuppressed = cra.suppressedByFieldOverride()
                         || (cra.argCondition().isPresent() && cra.argCondition().get().override());
                     if (!autoSuppressed) {
@@ -1103,7 +1098,7 @@ class FieldBuilder {
                     cra.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
                 case ArgumentRef.ScalarArg.CompositeColumnReferenceArg ccra -> {
-                    // R40 FK-target composite arm. Analogous to ColumnReferenceArg but with a
+                    // FK-target composite arm. Analogous to ColumnReferenceArg but with a
                     // RowEq / RowIn predicate against the FK source-column tuple. Same
                     // direct-FK precondition; pathological cases are rejected at classify time.
                     boolean autoSuppressed = ccra.suppressedByFieldOverride()
@@ -1246,8 +1241,8 @@ class FieldBuilder {
             + containingTableName + "': the FK's target columns do not positionally"
             + " match NodeType '" + refTypeName + "''s key columns,"
             + " so emission requires JOIN-with-translation."
-            + " This pathological case is deferred to a sibling follow-on parallel"
-            + " to R24's output-side JOIN-with-projection emission.";
+            + " This pathological case is deferred until output-side"
+            + " JOIN-with-projection emission ships.";
     }
 
     /**
@@ -1435,7 +1430,7 @@ class FieldBuilder {
         return new ErrorsField(parentTypeName, name, location, errorTypes);
     }
 
-    // ===== Carrier classifier: ErrorChannel resolution (R12 §2c) =====
+    // ===== Carrier classifier: ErrorChannel resolution =====
 
     /**
      * Outcome of the carrier-side {@code ErrorChannel} resolution. Three terminal states:
@@ -1461,8 +1456,8 @@ class FieldBuilder {
     private static final ErrorChannelResult NO_CHANNEL = new ErrorChannelResult.NoChannel();
 
     /**
-     * Resolves the carrier-side {@link ErrorChannel} for a
-     * fetcher-emitting field per R12 §2c. Walks the payload type's GraphQL field defs to find an
+     * Resolves the carrier-side {@link ErrorChannel} for a fetcher-emitting field. Walks the
+     * payload type's GraphQL field defs to find an
      * {@code errors}-shaped field (structural match by polymorphic-of-all-{@code @error} list
      * shape), then reflects on the developer-supplied payload class to identify the
      * canonical-constructor errors slot and capture each parameter's default literal.
@@ -1472,7 +1467,7 @@ class FieldBuilder {
      * {@code ErrorsField}. The first matching field on the payload populates {@code mappedErrorTypes};
      * a second matching field is rejected at child classification time, not here.
      *
-     * <p>The errors slot is identified positionally per §2c: the SDL {@code ErrorsField}'s
+     * <p>The errors slot is identified positionally: the SDL {@code ErrorsField}'s
      * declaration index in the payload type maps directly to the canonical-constructor
      * parameter at the same index. Records preserve declaration order; hand-rolled payload
      * classes are expected to expose a canonical constructor matching SDL field order. The
@@ -1589,7 +1584,7 @@ class FieldBuilder {
             mappedErrorTypes, payloadClassName, errorsSlotIndex, defaultedSlots, mappingsConstantName));
     }
 
-    // ===== Carrier classifier: DML PayloadAssembly resolution (R12 DML chunk) =====
+    // ===== Carrier classifier: DML PayloadAssembly resolution =====
 
     /**
      * Outcome of the carrier-side {@code PayloadAssembly} resolution. Three terminal states,
@@ -1616,7 +1611,7 @@ class FieldBuilder {
     private static final DmlPayloadAssemblyResult NO_ASSEMBLY = new DmlPayloadAssemblyResult.NoAssembly();
 
     /**
-     * Resolves a DML mutation field's success-arm payload-construction recipe per R12. The
+     * Resolves a DML mutation field's success-arm payload-construction recipe. The
      * caller passes the field's return type and the SQL name of the table its single
      * {@code @table} input argument drives ({@code tia.inputTable().tableName()}); the resolver
      * looks up the table's record class on the jOOQ catalog, then walks the developer-supplied
@@ -1667,7 +1662,7 @@ class FieldBuilder {
 
         // The row slot is identified by class-equality against the jOOQ table record class.
         // No errors-slot disambiguation needed: the errors-slot's element type is Object
-        // (R12 source-direct), so it can't accidentally match the typed jOOQ Record class.
+        // (source-direct dispatch), so it can't accidentally match the typed jOOQ Record class.
         int rowSlotIndex = -1;
         for (int i = 0; i < parameters.length; i++) {
             var p = parameters[i];
@@ -1697,7 +1692,7 @@ class FieldBuilder {
             payloadClassName, rowSlotIndex, rowSlotType, defaultedSlots));
     }
 
-    // ===== Carrier classifier: service ResultAssembly resolution (R12 §2c, §5) =====
+    // ===== Carrier classifier: service ResultAssembly resolution =====
 
     /**
      * Outcome of the carrier-side {@code ResultAssembly} resolution for a service-backed field.
@@ -1724,7 +1719,7 @@ class FieldBuilder {
     private static final ResultAssemblyResult NO_RESULT_ASSEMBLY = new ResultAssemblyResult.NoAssembly();
 
     /**
-     * Resolves a service-backed field's success-arm payload-construction recipe per R12 §2c.
+     * Resolves a service-backed field's success-arm payload-construction recipe.
      * The caller passes the field's resolved {@link ReturnTypeRef} and the resolved
      * {@link MethodRef} for the service method; the resolver compares the service return type
      * against the SDL payload type (legacy match) and falls back to walking the payload class's
@@ -2091,12 +2086,12 @@ class FieldBuilder {
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "service-method.declared-exceptions-covered",
-        description = "R12 §4 declared-exception match check: every non-exempt checked "
+        description = "Declared-exception match check: every non-exempt checked "
             + "exception declared by the @service method must be covered by at least one "
             + "handler on the surrounding field's ErrorChannel (per CheckedExceptionMatcher's "
             + "match rule). Unmatched declared exceptions surface as UnclassifiedField at "
             + "classify time rather than redacting silently at runtime. Exempts "
-            + "InterruptedException and IOException per the §4 'Special cases' subsection.")
+            + "InterruptedException and IOException as special cases.")
     private GraphitronField buildServiceField(
             ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
             String parentTypeName, String fieldName,
@@ -2128,7 +2123,7 @@ class FieldBuilder {
     }
 
     /**
-     * R12 §4 declared-checked-exception match check. Returns a reason string when one or more
+     * Declared-checked-exception match check. Returns a reason string when one or more
      * non-exempt checked exceptions on the method's {@code throws} clause are not covered by
      * any handler on the channel; returns {@code null} when every declared checked exception
      * is either exempt or covered. The reason names the offending FQNs and points the schema
@@ -2176,7 +2171,7 @@ class FieldBuilder {
             boolean listInput,
             java.util.function.BiFunction<DmlReturnExpression, Optional<ErrorChannel>, GraphitronField> builder,
             Optional<HelperRef.Encode> encodeReturn) {
-        // Channel and DML payload assembly are independent under the R12 source-direct contract:
+        // Channel and DML payload assembly are independent under the source-direct contract:
         // the row slot is identified by jOOQ table-record class equality, and the errors slot
         // (if present) by the SDL ErrorsField's declaration index in resolveErrorChannel. They
         // share the payload class but resolve different concerns from one reflection pass each.
@@ -2196,10 +2191,9 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(r.reason()));
             }
         }
-        // Bulk-input + Payload return is deferred to R75 (synthesize-payload-carrier). Kept
-        // out of MutationInputResolver.validateReturnType so that function stays purely
-        // structural (Invariants #14 + #15); this is "not yet supported", a distinct
-        // category that lifts when R75 lands.
+        // Bulk-input + Payload return is deferred under the synthesize-payload-carrier slug.
+        // Kept out of MutationInputResolver.validateReturnType so that function stays purely
+        // structural (Invariants #14 + #15); this is "not yet supported", a distinct category.
         if (listInput && returnType instanceof ReturnTypeRef.ResultReturnType) {
             return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef,
                 Rejection.deferred("list @record payload returns are not yet supported", "synthesize-payload-carrier"));
@@ -2211,7 +2205,7 @@ class FieldBuilder {
     /**
      * Folds the pre-validated {@code returnType}, {@code encodeReturn} (populated for ID returns
      * that resolve to a {@code @node} type), and {@code payloadAssembly} (populated for
-     * R12 {@code @record} payload returns) into the single {@link DmlReturnExpression} arm the
+     * {@code @record} payload returns) into the single {@link DmlReturnExpression} arm the
      * DML emitter pattern-matches on. Total over Invariant #14's admitted return-type set;
      * unreachable on anything else (Invariant #14 already rejected it).
      */
@@ -3371,7 +3365,7 @@ class FieldBuilder {
     }
 
     /**
-     * R36 Track B3: resolves the per-participant FK chain from {@code parentTable} to each
+     * Resolves the per-participant FK chain from {@code parentTable} to each
      * {@link ParticipantRef.TableBound} participant's table. Each call to
      * {@link BuildContext#parsePath} for a different target table picks up a different
      * auto-discovered FK, so heterogeneous participants (each on its own table with its own
@@ -3449,9 +3443,9 @@ class FieldBuilder {
 
     /**
      * Builder-private carrier for an {@code ExternalCodeReference}. {@code argMapping} stores
-     * parsed segment chains keyed by Java target; single-segment chains cover the R53 wire-compat
-     * case, multi-segment chains cover R84 path expressions. Schema walking happens later when
-     * the consumer calls {@link ArgBindingMap#of}.
+     * parsed segment chains keyed by Java target; single-segment chains cover the single-name
+     * mapping case, multi-segment chains cover dot-path expressions into nested input fields.
+     * Schema walking happens later when the consumer calls {@link ArgBindingMap#of}.
      */
     record ExternalRef(String className, String methodName,
                        Map<String, java.util.List<String>> argMapping,

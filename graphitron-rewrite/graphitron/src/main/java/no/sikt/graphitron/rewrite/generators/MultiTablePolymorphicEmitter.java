@@ -100,7 +100,7 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Child-fetcher overload (R36 Track B3): same shape as the root form but each stage-1
+     * Child-fetcher overload: same shape as the root form but each stage-1
      * branch carries a {@code WHERE <participant>.<fk> = parentRecord.<parent pk>} predicate
      * derived from the participant's auto-discovered FK back to the parent table. The main
      * fetcher reads {@code parentRecord} from {@code env.getSource()} when
@@ -132,7 +132,7 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Connection-fetcher entry point (R36 Track B4a/B4b/B4c-2). Emits the public main fetcher
+     * Connection-fetcher entry point. Emits the public main fetcher
      * plus one private {@code select<Participant>For<Field>} helper per table-bound participant.
      * Two forms switch on {@code parentTable}:
      *
@@ -309,7 +309,7 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * R36 Track B4a/B4b root connection main fetcher. Mirrors {@link #buildMainFetcher} for the
+     * Root connection main fetcher. Mirrors {@link #buildMainFetcher} for the
      * list path but returns {@code DataFetcherResult<ConnectionResult>}: stage 1 wraps the
      * per-branch UNION ALL in a derived table {@code pages} and applies
      * {@code .orderBy/.seek/.limit} from a {@code ConnectionHelper.PageRequest} so cursor
@@ -532,7 +532,7 @@ public final class MultiTablePolymorphicEmitter {
      * PK columns aliased to {@code __pk0__..__pkN__}, plus a {@code __sort__} key. The composite-PK
      * sort key uses {@code DSL.jsonbArray(...)}; single-column PKs project the column directly.
      *
-     * <p>For the child-fetcher form (R36 Track B3), each branch additionally carries a
+     * <p>For the child-fetcher form, each branch additionally carries a
      * {@code .where(<parent-FK predicate>)} restricting that participant to rows whose FK
      * matches the carrier {@code parentRecord}'s PK. The predicate is derived from the
      * single-hop FK in {@code participantJoinPaths}; multi-hop chains and condition-joins are
@@ -655,7 +655,7 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * R36 Track B4c-2 main fetcher: registers a {@link org.dataloader.DataLoader} keyed on the
+     * Batched child-connection main fetcher: registers a {@link org.dataloader.DataLoader} keyed on the
      * parent table's PK and delegates to a {@code rows<Field>(List<RowN<PK1...PKn>>, env)}
      * batch loader. The body shape mirrors {@code TypeFetcherGenerator.buildSplitQueryDataFetcher}:
      * build the tenant-scoped DataLoader name, {@code computeIfAbsent} the loader, extract the
@@ -748,7 +748,7 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * R36 Track B4c-2 rows method: issues ONE SQL statement covering every parent in the
+     * Batched child-connection rows method: issues ONE SQL statement covering every parent in the
      * DataLoader batch, scatters typed Records into a {@code List<ConnectionResult>} indexed
      * 1:1 with the {@code keys} list.
      *
@@ -1076,8 +1076,8 @@ public final class MultiTablePolymorphicEmitter {
      * Stage-2 per-typename SELECT helper: takes the stage-1 binding tuples for one typename,
      * issues the {@code VALUES (idx, pk0, ..., pkN) JOIN <table> ON t.PK = input.pk0 ... ORDER BY idx}
      * SELECT, and scatters each typed Record back into {@code result[idx]}. Inherits the
-     * dispatcher-shape {@code .on(...)} (not {@code .using(...)}) per R55's class-Javadoc rationale
-     * on {@code SelectMethodBody}.
+     * dispatcher-shape {@code .on(...)} (not {@code .using(...)}); see {@code SelectMethodBody}'s
+     * class-level Javadoc for the rationale.
      */
     private static MethodSpec buildPerTypenameSelect(
             String fieldName, ParticipantRef.TableBound participant,
@@ -1120,7 +1120,7 @@ public final class MultiTablePolymorphicEmitter {
             arrayListOfField, arrayListOfField, typeClass, tableLocal);
         b.addStatement("fields.add($T.inline($S).as($S))", DSL, participant.typeName(), TYPENAME_COLUMN);
 
-        // Connection mode (R36 Track B4a + item 1): project the synthetic {@code __sort__} alias
+        // Connection mode: project the synthetic {@code __sort__} alias
         // on each typed stage-2 Record so {@code ConnectionHelper.encodeCursor(record,
         // [DSL.field("__sort__")])} can read it back when emitting per-edge cursors and
         // pageInfo.start/endCursor. Single-PK projects the PK column directly (typed by the PK

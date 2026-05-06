@@ -40,7 +40,7 @@ import java.util.stream.Stream;
  * was set on the consumer's compile; absent that attribute, the
  * {@link CompletionData.Parameter#name()} slot is {@code null} (intentionally
  * not the synthesised {@code arg0}/{@code arg1} reflection emits, since the
- * Phase 5c {@code -parameters}-missing diagnostic uses {@code name == null}
+ * {@code -parameters}-missing LSP diagnostic uses {@code name == null}
  * as its detection signal — a synthesised name would silently disable that
  * warning).
  */
@@ -151,7 +151,7 @@ public final class ClasspathScanner {
      * present (i.e. the class was compiled with {@code -parameters}).
      * Returns a list of {@code null}s otherwise, per the
      * {@link CompletionData.Parameter#name()} contract: a null name is
-     * the detection signal the Phase 5c diagnostic uses to warn the
+     * the detection signal the LSP diagnostic uses to warn the
      * schema author that parameter help is unavailable until the class
      * is recompiled with {@code -parameters}.
      */

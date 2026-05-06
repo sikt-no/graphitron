@@ -10,8 +10,8 @@ import java.util.List;
  * produce the segment list. {@code segments.get(0)} is the head; subsequent entries are tail
  * segments.
  *
- * <p>Both {@code @experimental_constructType(selection: ...)} (R69) and {@code argMapping}
- * path expressions (R84) consume this shape: R69 binds the head + tail to a column reference;
- * R84 walks the head + tail through the GraphQL input-type tree at the directive's scope.
+ * <p>Two consumers share this shape: {@code @experimental_constructType(selection: ...)} binds
+ * the head + tail to a column reference; {@code argMapping} dot-path expressions walk the head
+ * + tail through the GraphQL input-type tree at the directive's scope.
  */
 public record ParsedEntry(String key, List<String> segments) {}

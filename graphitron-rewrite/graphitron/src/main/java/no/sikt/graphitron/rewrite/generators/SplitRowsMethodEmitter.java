@@ -30,7 +30,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RECORD;
  * Builds the DataLoader rows-method MethodSpec for a {@link BatchKeyField} that emits a flat
  * correlated-batch SELECT keyed on a {@code VALUES (idx, parent_pk...)} derived table.
  *
- * <p>Emitted bodies follow argres Phase 2b's shape:
+ * <p>Emitted bodies have this shape:
  * <ol>
  *   <li>Empty-input short-circuit — returns {@code List.of()} without touching the DSL context.</li>
  *   <li>Parent-input {@code VALUES} table carrying {@code (idx, parent_pk...)} — one row per
@@ -46,7 +46,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RECORD;
  *       The earlier plan's Decision 7 cited {@code value1()} calls, but those live on
  *       {@code Record1/Record2/…}, not on {@code Row} — {@code Row} is a schema construct, not
  *       a data carrier.</li>
- *   <li>FK chain aliases identical to G5 / Phase 2a.</li>
+ *   <li>FK chain aliases identical to the inline-projection path.</li>
  *   <li>{@code .select($fields + parentInput.fieldsRow().field1().as("__idx__"))} — the
  *       {@code __idx__} column drives the Java-side scatter, see {@link #IDX_COLUMN}.</li>
  *   <li>Explicit {@code ON} predicate joining the first FK hop to {@code parentInput} via
@@ -75,7 +75,7 @@ public final class SplitRowsMethodEmitter {
     /**
      * Returns the jOOQ {@code RowN}/{@code RecordN} class name for a given arity. jOOQ has typed
      * Row1..Row22 and Record1..Record22 classes; arities &gt;22 fall back to raw {@code RowN} and
-     * {@code Record}. Phase 2b C1 rejects parent PKs &gt;22 cols at codegen time.
+     * {@code Record}. Parent PKs &gt;22 cols are rejected at codegen time.
      */
     private static ClassName rowClass(int arity) {
         return ClassName.get("org.jooq", "Row" + arity);
@@ -87,8 +87,7 @@ public final class SplitRowsMethodEmitter {
 
     /**
      * SELECT-projection alias for the parent-input {@code idx} column. Chosen to be
-     * collision-unlikely with any GraphQL field name or {@code @field(name:)} mapping; see
-     * argres Phase 2b plan Decision 6.
+     * collision-unlikely with any GraphQL field name or {@code @field(name:)} mapping.
      */
     public static final String IDX_COLUMN = "__idx__";
 
@@ -446,10 +445,10 @@ public final class SplitRowsMethodEmitter {
         body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
 
-        // Lookup-input VALUES (SplitLookupTableField only). Uses the env-based helper shape from
-        // Phase 1 — args live on env.getArgument(name) for a Split fetcher (not on a child
-        // SelectedField as in Phase 2a's inline projection). The helper method name follows
-        // Phase 2a's convention: <fieldName>InputRows.
+        // Lookup-input VALUES (SplitLookupTableField only). Uses the env-based helper shape:
+        // args live on env.getArgument(name) for a Split fetcher (not on a child SelectedField
+        // as in the inline-projection path). The helper method name follows the
+        // <fieldName>InputRows convention used by the inline-projection path.
         String lookupInputAlias = fieldName + "Input";
         if (lookupMapping instanceof LookupMapping.ColumnMapping columnMapping) {
             List<ColumnRef> lookupCols = columnMapping.slotColumns();
@@ -504,7 +503,7 @@ public final class SplitRowsMethodEmitter {
         // (FK targetColumns on the catalog-FK path, identical to joinOnCols on the lifter path).
         // We resolve the parentInput field by sqlName + Java type rather than positional index,
         // because @node(keyColumns: [...]) ordering may differ from FK column ordering. ON
-        // rather than USING dodges junction-column collisions, as Phase 2a C2 established.
+        // rather than USING dodges junction-column collisions in the inline-projection path.
         var onCond = CodeBlock.builder();
         for (int i = 0; i < joinOnCols.size(); i++) {
             if (i > 0) onCond.add(".and(");

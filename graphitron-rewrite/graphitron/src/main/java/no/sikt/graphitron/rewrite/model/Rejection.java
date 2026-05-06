@@ -8,7 +8,7 @@ import java.util.stream.Collectors;
  * Why a classifier failed to produce a model variant. The arms carry the structural
  * data each rejection class actually has; the validator and any downstream consumer
  * (LSP fix-its, watch-mode formatter) switch on the variant rather than parsing
- * prose. See plan {@code R58 lift-unclassified-field-onto-sealed-result}.
+ * prose.
  *
  * <p>{@link #message()} renders the variant's data as a single human-readable
  * sentence, for the build-time log surface that
@@ -25,8 +25,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * {@link Deferred}, {@code reason} otherwise). Used at wrap sites that thread caller-specific
      * context onto a producer's typed rejection ({@code "service method could not be resolved — "},
      * etc.) without collapsing typed components like {@link AuthorError.UnknownName#candidates} back
-     * into prose. Mirrors the leaf-arm switch shape that R58 Phase E generalises onto the
-     * nested-rewrap site.
+     * into prose. Each leaf arm switches on its variant.
      */
     Rejection prefixedWith(String prefix);
 
@@ -34,9 +33,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * Author-correctable. Two sub-arms because the data shapes diverge: most
      * AUTHOR_ERROR sites today are structural rule violations carrying just prose;
      * a minority resolve a name against a closed set and carry the lookup attempt
-     * + candidates. Mirrors R1's split of {@code BatchKey} into {@code ParentKeyed}
-     * / {@code RecordParentBatchKey}: each sub-arm's accessors apply uniformly to
-     * that arm.
+     * + candidates. Each sub-arm's accessors apply uniformly to that arm.
      */
     sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural {
 
@@ -165,10 +162,10 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * an entire variant class — or a feature-shape inline-defer with no leaf anchor, signalled by
      * a null {@link VariantClass#fieldClass}) and an emit-block key (a typed enum, used when a
      * variant classifies cleanly but a particular shape inside the emitter doesn't yet emit).
-     * R58 Phase C wires both forms into the validator's deferred gate via the shared
-     * {@link Deferred#message()} renderer; R58 Phase H collapsed the prior {@code None} arm into
-     * a nullable {@link VariantClass#fieldClass} since validator and emitter consumers treated
-     * {@code None} the same as {@code VariantClass} for log output.
+     * Both forms feed the validator's deferred gate via the shared {@link Deferred#message()}
+     * renderer. {@link VariantClass#fieldClass} is nullable: validator and emitter consumers
+     * treat a null {@code fieldClass} the same way they treat a {@code VariantClass} entry for
+     * log output.
      */
     sealed interface StubKey permits StubKey.VariantClass, StubKey.EmitBlock {
         /**
@@ -184,11 +181,9 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
     /**
      * Closed set of intra-emitter "this shape can't emit yet" reasons. One value
      * per {@code SplitRowsMethodEmitter.unsupportedReason} arm today; a new value
-     * lands when a new emit-block predicate is introduced. R58 Phase C wires these
-     * through the validator's deferred-gate path: each {@code unsupportedReason}
-     * arm builds a {@link Deferred} keyed by an {@link EmitBlock} of the matching
-     * value, and the validator projects it through the shared {@code Deferred.message()}
-     * renderer.
+     * lands when a new emit-block predicate is introduced. Each {@code unsupportedReason}
+     * arm builds a {@link Deferred} keyed by an {@link EmitBlock} of the matching value,
+     * and the validator projects it through the shared {@code Deferred.message()} renderer.
      */
     enum EmitBlockReason {
         SPLIT_TABLE_FIELD_CONDITION_JOIN_STEP,
@@ -222,10 +217,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * optional variant-class anchor. {@code planSlug} is the file basename under
      * {@code graphitron-rewrite/roadmap/} (no extension) or empty when the deferred message has
      * no associated plan; {@code fieldClass} is {@code null} when the rejection names a feature
-     * shape rather than a stubbed leaf class. R58 Phase H collapsed four factories
-     * ({@code deferred(summary)}, {@code deferred(summary, fieldClass)},
-     * {@code deferred(summary, planSlug, fieldClass)}, {@code deferredAt(summary, planSlug)})
-     * into this and the planSlug-only sibling below.
+     * shape rather than a stubbed leaf class.
      */
     static Rejection deferred(String summary, String planSlug, Class<? extends GraphitronField> fieldClass) {
         return new Deferred(summary, planSlug, new StubKey.VariantClass(fieldClass));

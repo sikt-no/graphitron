@@ -28,13 +28,13 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
  * {@code ON} dereferences the VALUES column via {@code input.field(terminal.COL)} and therefore
  * stays unambiguous regardless of what the FK chain brings in.
  *
- * <p>Relies on classifier invariants established by argres Phase 2a C1:
+ * <p>Relies on classifier invariants:
  * {@code LookupTableField.returnType().wrapper()} is neither {@link no.sikt.graphitron.rewrite.model.FieldWrapper.Connection}
- * (extended G5 C1 rejection) nor {@link no.sikt.graphitron.rewrite.model.FieldWrapper.Single}
- * (Single-cardinality {@code @lookupKey} rejected as a schema bug).
+ * nor {@link no.sikt.graphitron.rewrite.model.FieldWrapper.Single} (Single-cardinality
+ * {@code @lookupKey} is rejected as a schema bug).
  *
  * <p>{@link JoinStep.ConditionJoin} anywhere in the path triggers a runtime-throwing stub arm —
- * same limitation as G5, resolved by classification-vocabulary item 5.
+ * same limitation as the correlated-subquery path.
  *
  * <p>Threads the nested-alias parameter through every emitted Table-bound helper call — see
  * "Helper-locality" in {@code docs/rewrite-design-principles.md}.

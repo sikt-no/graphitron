@@ -108,7 +108,7 @@ public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
                 boolean list
             ) implements LookupArg {}
 
-            /** Composite-key Map-shaped input (R5's {@code @lookupKey} on input-object fields). */
+            /** Composite-key Map-shaped input ({@code @lookupKey} on input-object fields). */
             record MapInput(
                 String argName,
                 boolean list,

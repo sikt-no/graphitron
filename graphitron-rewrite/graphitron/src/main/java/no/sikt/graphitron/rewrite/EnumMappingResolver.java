@@ -227,8 +227,7 @@ final class EnumMappingResolver {
 
     /**
      * Walks a {@link GraphitronType.TableInputType} argument's fields and builds one
-     * {@link InputColumnBinding.MapBinding} per {@code @lookupKey}-bearing input field
-     * (argres Phase 3).
+     * {@link InputColumnBinding.MapBinding} per {@code @lookupKey}-bearing input field.
      *
      * <p>Only {@link InputField.ColumnField} entries contribute bindings: a {@code @lookupKey}
      * on a {@code @reference}-navigating, nesting, or NodeId input field is rejected here.

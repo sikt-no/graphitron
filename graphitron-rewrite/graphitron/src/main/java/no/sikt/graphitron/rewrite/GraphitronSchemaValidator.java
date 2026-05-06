@@ -367,8 +367,8 @@ public class GraphitronSchemaValidator {
                 field.location()
             ));
         } else {
-            // Lookup cardinality is determined by whether any @lookupKey arg is a list. Post argres
-            // Phase 1, lookup-key args live on LookupMapping; any legacy filter-carried list arg is
+            // Lookup cardinality is determined by whether any @lookupKey arg is a list.
+            // Lookup-key args live on LookupMapping; any legacy filter-carried list arg is
             // also considered (validator is input-shape-agnostic and covers both paths).
             boolean anyKeyIsList = switch (field.lookupMapping()) {
                     case no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping cm ->

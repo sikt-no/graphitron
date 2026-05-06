@@ -19,8 +19,7 @@ import no.sikt.graphitron.rewrite.model.Rejection;
  * as new.
  *
  * <p>{@code rejection} is the typed sealed-variant explanation of why classification or
- * validation failed. R58 Phase I lifted this from a flat {@code (RejectionKind kind, String
- * message)} pair onto the {@link Rejection} hierarchy so the validator's near-miss checks have
+ * validation failed. The {@link Rejection} hierarchy gives the validator's near-miss checks
  * an on-ramp to typed {@link Rejection.AuthorError.UnknownName} (with candidate lists), typed
  * {@link Rejection.InvalidSchema.DirectiveConflict} (with conflicting-directive lists), and
  * typed {@link Rejection.Deferred} (with planSlug + stubKey) without re-parsing prose.

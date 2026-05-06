@@ -89,7 +89,7 @@ public class GraphitronContextInterfaceGenerator {
             .returns(VALIDATOR)
             .addParameter(ENV, "env")
             .addStatement("return DefaultValidatorHolder.INSTANCE")
-            .addJavadoc("Returns the {@link $T} the wrapper's pre-execution validation step (R12 §5)\n"
+            .addJavadoc("Returns the {@link $T} the wrapper's pre-execution validation step\n"
                 + "should use for this fetch. Defaults to the JVM's default validator factory\n"
                 + "({@code Validation.buildDefaultValidatorFactory().getValidator()}); apps that\n"
                 + "want a custom factory (per-tenant message interpolators, alternative providers,\n"

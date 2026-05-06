@@ -930,8 +930,9 @@ class BuildContext {
      * {@link GraphQLDirectiveContainer} (field, argument, or input-object field).
      *
      * <p>{@code argMapping} stores parsed segment chains keyed by Java target; single-segment
-     * chains preserve R53 wire-compat, multi-segment chains carry R84 path expressions. The
-     * call site supplies the slot-type oracle when calling {@link ArgBindingMap#of}.
+     * chains cover the single-name mapping case, multi-segment chains carry dot-path expressions
+     * into nested input fields. The call site supplies the slot-type oracle when calling
+     * {@link ArgBindingMap#of}.
      */
     record ConditionDirective(
         String className,

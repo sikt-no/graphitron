@@ -26,10 +26,10 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
 
 /**
  * Emits the VALUES + JOIN lookup select for a {@link LookupField}, driven by its
- * {@link LookupMapping}. Two call sites consume this emitter — the Phase 1 root-lookup path
- * and the Phase 2a inline-child-lookup path — with slightly different plumbing at each.
+ * {@link LookupMapping}. Two call sites consume this emitter — the root-lookup path and the
+ * inline-child-lookup path — with slightly different plumbing at each.
  *
- * <p><b>Root-lookup path (Phase 1)</b> — {@link QueryField.QueryLookupTableField}.
+ * <p><b>Root-lookup path</b> — {@link QueryField.QueryLookupTableField}.
  * {@link #buildInputRowsMethod} emits the input-rows helper into the enclosing {@code *Fetchers}
  * class (args read from {@code DataFetchingEnvironment}). {@link #buildFetcherBody} emits the
  * fetcher body: helper call, empty short-circuit, {@code DSL.values(rows).as(...)} derived
@@ -38,7 +38,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
  * the root lookup's {@code FROM} side is the target table only — no FK chain can bring in a
  * duplicate column name.
  *
- * <p><b>Child-lookup path (Phase 2a)</b> — {@link ChildField.LookupTableField}.
+ * <p><b>Child-lookup path</b> — {@link ChildField.LookupTableField}.
  * {@link #buildChildInputRowsMethod} emits the input-rows helper into the enclosing type class
  * (e.g. {@code Film}); args come from a {@code SelectedField} instead of the outer
  * {@code DataFetchingEnvironment} because the lookup is projected inline by the parent's
@@ -210,7 +210,7 @@ final class LookupValuesJoinEmitter {
      * Child-field variant of {@link #buildInputRowsMethod}. Reads {@code @lookupKey} args from a
      * {@link graphql.schema.SelectedField} instead of a {@code DataFetchingEnvironment}, since
      * the args live on the child selection when the lookup is projected inline by a parent's
-     * {@code $fields} (argres Phase 2a). Row-construction core is shared with the root variant.
+     * {@code $fields}. Row-construction core is shared with the root variant.
      *
      * <p>Signature: {@code <fieldName>InputRows(SelectedField sf, <TargetTable> table) -> Row<N+1>[]}
      * with the same typed arity as the root variant.

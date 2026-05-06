@@ -31,7 +31,7 @@ import java.util.List;
  * would be a behavior change, separate from this lift.
  *
  * <p>Mapping projection ({@code projectForLookup}) lives in the dedicated
- * {@link LookupMappingResolver} (Phase 6a); this resolver is purely directive-level invariant
+ * {@link LookupMappingResolver}; this resolver is purely directive-level invariant
  * checking and holds no dependencies.
  */
 final class LookupKeyDirectiveResolver {

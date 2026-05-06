@@ -123,8 +123,8 @@ final class SelectMethodBody {
 
         // Empty WHERE clause keeps the chain symmetric with the lookup-site emission and gives
         // future filters a hook to AND into. Currently unused — when nothing AND-s into it,
-        // jOOQ folds DSL.noCondition() away at render time so there is no SQL impact. Planned
-        // consumer: R36 Track B (per-typename interface filters); remove this placeholder if R36
+        // jOOQ folds DSL.noCondition() away at render time so there is no SQL impact. Future
+        // consumer: per-typename interface filters; remove this placeholder if that work
         // ships with a different shape.
         b.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
 

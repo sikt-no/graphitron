@@ -17,9 +17,9 @@ import java.util.Optional;
  * Resolves cursor positions on known directive arguments to source
  * locations in the jOOQ-generated Java tree, so the editor's
  * "go-to-definition" jumps to the table class, column declaration, or
- * FK constant. Phase 4 scope: file-level URIs only (line range is
- * always 0:0); per-column line refinement waits until JavaParser is
- * adopted in Phase 5.
+ * FK constant. Current scope: file-level URIs only (line range is
+ * always 0:0); per-column line refinement is follow-on work pending
+ * JavaParser adoption.
  *
  * <p>Returns {@link Optional#empty()} when the cursor is not on a
  * known directive arg, when the arg value does not resolve in the

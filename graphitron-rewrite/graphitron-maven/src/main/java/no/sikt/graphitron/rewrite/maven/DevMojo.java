@@ -262,10 +262,8 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     private static Set<Path> resolveClasspathRoots(RewriteContext ctx) {
-        // Watch every reactor project's target/classes (Phase 5a widened
-        // from the jOOQ subtree to all of one module; Phase 5d-followup
-        // widens again to the full reactor so service/condition/record
-        // classes declared in sibling modules also trigger rebuilds).
+        // Watch every reactor project's target/classes so service/condition/record
+        // classes declared in sibling modules also trigger rebuilds.
         var roots = new java.util.LinkedHashSet<Path>();
         for (Path root : ctx.classpathRoots()) {
             if (java.nio.file.Files.isDirectory(root)) {

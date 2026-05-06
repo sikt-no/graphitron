@@ -14,10 +14,11 @@ import java.util.Map;
 /**
  * Emits the join chain and correlation predicates for a {@link JoinStep} list.
  *
- * <p>Shared by G5 (inline correlated subquery, INNER JOIN), argres Phase 2a (same shape with a
- * VALUES+JOIN keyset), and G6 (LEFT JOIN flat batch). The INNER/LEFT choice is the caller's; this
- * emitter uniformly produces {@code .join(...)} calls. The caller also composes any correlation
- * WHERE from step 0 against the parent alias (see {@link #emitCorrelationWhere}).
+ * <p>Shared by the inline correlated subquery (INNER JOIN), the inline-projection child-lookup
+ * path (same shape with a VALUES+JOIN keyset), and the flat-batch fetcher (LEFT JOIN). The
+ * INNER/LEFT choice is the caller's; this emitter uniformly produces {@code .join(...)} calls.
+ * The caller also composes any correlation WHERE from step 0 against the parent alias (see
+ * {@link #emitCorrelationWhere}).
  */
 public final class JoinPathEmitter {
 
