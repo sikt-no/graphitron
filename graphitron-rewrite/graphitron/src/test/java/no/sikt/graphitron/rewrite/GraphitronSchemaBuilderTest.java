@@ -5068,17 +5068,118 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.reason()).contains("@mutation fields only accept @table input arguments");
             }),
 
-        DML_LIST_INPUT_DEFERRED(
-            "DML mutation with listed input (in: [FilmInput]) → UnclassifiedField (Invariant #11)",
+        DML_INSERT_LIST_LIST_OK(
+            "DML INSERT with listed input + listed @table return → MutationInsertTableField with tia.list() == true",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
             type Query { x: String }
-            type Mutation { createFilm(in: [FilmInput!]!): Film @mutation(typeName: INSERT) }
+            type Mutation { createFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: INSERT) }
             """,
             schema -> {
-                var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
-                assertThat(f.reason()).contains("listed @table input arguments on @mutation fields are not yet supported");
+                var f = (MutationField.MutationInsertTableField) schema.field("Mutation", "createFilms");
+                assertThat(f.tableInputArg().list()).isTrue();
+                assertThat(f.returnExpression())
+                    .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList("Film"));
+            }),
+
+        DML_UPDATE_LIST_LIST_OK(
+            "DML UPDATE with listed input + listed @table return → MutationUpdateTableField with tia.list() == true",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id") @lookupKey
+                title: String
+            }
+            type Query { x: String }
+            type Mutation { updateFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilms");
+                assertThat(f.tableInputArg().list()).isTrue();
+                assertThat(f.returnExpression())
+                    .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList("Film"));
+            }),
+
+        DML_DELETE_LIST_LIST_OK(
+            "DML DELETE with listed input + listed @table return → MutationDeleteTableField with tia.list() == true",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id") @lookupKey
+            }
+            type Query { x: String }
+            type Mutation { deleteFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilms");
+                assertThat(f.tableInputArg().list()).isTrue();
+                assertThat(f.returnExpression())
+                    .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList("Film"));
+            }),
+
+        DML_UPSERT_LIST_LIST_OK(
+            "DML UPSERT with listed input + listed @table return → MutationUpsertTableField with tia.list() == true",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id") @lookupKey
+                title: String
+            }
+            type Query { x: String }
+            type Mutation { upsertFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: UPSERT) }
+            """,
+            schema -> {
+                var f = (MutationField.MutationUpsertTableField) schema.field("Mutation", "upsertFilms");
+                assertThat(f.tableInputArg().list()).isTrue();
+                assertThat(f.returnExpression())
+                    .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList("Film"));
+            }),
+
+        DML_INSERT_LIST_SINGLE_T_REJECTED(
+            "DML INSERT with listed input + single @table return → UnclassifiedField (Invariant #15)",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilms(in: [FilmInput!]!): Film @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilms");
+                assertThat(f.reason())
+                    .contains("must return a list")
+                    .contains("Invariant #15");
+            }),
+
+        DML_INSERT_LIST_SINGLE_ID_REJECTED(
+            "DML INSERT with listed input + single ID return → UnclassifiedField (Invariant #15, encoded-single arm)",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilms(in: [FilmInput!]!): ID @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilms");
+                assertThat(f.reason())
+                    .contains("must return a list")
+                    .contains("Invariant #15");
+            }),
+
+        DML_INSERT_LIST_PAYLOAD_DEFERRED(
+            "DML INSERT with listed input + @record payload return → UnclassifiedField (deferred, R75)",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
+                film: Film
+            }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilms(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilms");
+                assertThat(f.reason()).contains("list @record payload returns are not yet supported");
             }),
 
         DML_NON_ID_RETURN_REJECTED(

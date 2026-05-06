@@ -2173,6 +2173,7 @@ class FieldBuilder {
     private GraphitronField buildDmlField(
             ReturnTypeRef returnType, String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef, String dmlTableSqlName,
+            boolean listInput,
             java.util.function.BiFunction<DmlReturnExpression, Optional<ErrorChannel>, GraphitronField> builder,
             Optional<HelperRef.Encode> encodeReturn) {
         // Channel and DML payload assembly are independent under the R12 source-direct contract:
@@ -2194,6 +2195,14 @@ class FieldBuilder {
             case DmlPayloadAssemblyResult.Reject r -> {
                 return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(r.reason()));
             }
+        }
+        // Bulk-input + Payload return is deferred to R75 (synthesize-payload-carrier). Kept
+        // out of MutationInputResolver.validateReturnType so that function stays purely
+        // structural (Invariants #14 + #15); this is "not yet supported", a distinct
+        // category that lifts when R75 lands.
+        if (listInput && returnType instanceof ReturnTypeRef.ResultReturnType) {
+            return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef,
+                Rejection.deferred("list @record payload returns are not yet supported", "synthesize-payload-carrier"));
         }
         DmlReturnExpression returnExpression = buildDmlReturnExpression(returnType, encodeReturn, assembly);
         return builder.apply(returnExpression, channel);
@@ -2422,7 +2431,7 @@ class FieldBuilder {
                 String rawReturn = baseTypeName(fieldDef);
                 ReturnTypeRef returnType = ctx.resolveReturnType(rawReturn, buildWrapper(fieldDef));
 
-                String returnTypeError = MutationInputResolver.validateReturnType(returnType, kind);
+                String returnTypeError = MutationInputResolver.validateReturnType(returnType, kind, tia.list());
                 if (returnTypeError != null) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(returnTypeError));
                 }
@@ -2442,17 +2451,18 @@ class FieldBuilder {
 
                 Optional<HelperRef.Encode> enc = encodeReturn;
                 String dmlTableSqlName = tia.inputTable().tableName();
+                boolean listInput = tia.list();
                 return switch (kind) {
-                    case INSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                    case INSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName, listInput,
                         (rex, ch) -> new MutationField.MutationInsertTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
-                    case UPDATE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                    case UPDATE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName, listInput,
                         (rex, ch) -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
-                    case DELETE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                    case DELETE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName, listInput,
                         (rex, ch) -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
-                    case UPSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                    case UPSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName, listInput,
                         (rex, ch) -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
                 };

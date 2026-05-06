@@ -1398,6 +1398,25 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * Transitional codegen guard for R77 Phase A. The classifier admits bulk
+     * {@code @table} input arguments ({@code in: [FilmInput!]!}) once the validator widening
+     * lands, but the per-verb emit bodies in this file still assume a single-row
+     * {@code Map<?,?>} cast. Until R77 Phase E rewires the four {@code buildMutation*Fetcher}
+     * methods around a {@code List<Map<?,?>>} bulk arm, throw at codegen so a bulk schema
+     * surfaces a clear "not yet emitted" build-time error instead of a {@code ClassCastException}
+     * at request time.
+     */
+    private static void rejectBulkArmUntilPhaseE(no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia, String verb) {
+        if (tia.list()) {
+            throw new IllegalStateException(
+                "@mutation(typeName: " + verb + ") with a listed @table input argument ("
+                + tia.name() + ": [...]) classifies cleanly but the bulk fetcher body lands in R77 "
+                + "Phase E (graphitron-rewrite/roadmap/bulk-dml-mutations.md); single-row inputs "
+                + "are unaffected. Drop the list wrapper or wait for Phase E to ship.");
+        }
+    }
+
+    /**
      * Emits a fetcher for {@link MutationField.MutationDeleteTableField}: a synchronous static
      * method that runs {@code dsl.deleteFrom(table).where(<lookupKey predicates>)
      * .returningResult(<keys or $fields>).fetchOne(...)}. See
@@ -1412,10 +1431,13 @@ public class TypeFetcherGenerator {
         reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
             + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
             + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
-            + "without an extraction-arm dispatch.")
+            + "without an extraction-arm dispatch. Bulk arm (tia.list() == true) is rejected "
+            + "at codegen until R77 Phase E lands; the classifier admits the shape but no "
+            + "fetcher is emitted.")
     private static MethodSpec buildMutationDeleteFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationDeleteTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
+        rejectBulkArmUntilPhaseE(tia, "DELETE");
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
@@ -1449,10 +1471,12 @@ public class TypeFetcherGenerator {
         reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
             + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
             + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.fields() "
-            + "as Direct-extracted ColumnField with a single cast (no extraction-arm dispatch).")
+            + "as Direct-extracted ColumnField with a single cast (no extraction-arm dispatch). "
+            + "Bulk arm (tia.list() == true) is rejected at codegen until R77 Phase E lands.")
     private static MethodSpec buildMutationInsertFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationInsertTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
+        rejectBulkArmUntilPhaseE(tia, "INSERT");
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
@@ -1502,10 +1526,12 @@ public class TypeFetcherGenerator {
             + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
             + "env.getArgument(tia.name()) to Map<?,?> with no guard; walks tia.setFields() "
             + "as the typed non-@lookupKey ColumnField projection (no cast, no skip-during-walk). "
-            + "Invariant #4 guarantees setFields() is non-empty for the SET clause.")
+            + "Invariant #4 guarantees setFields() is non-empty for the SET clause. "
+            + "Bulk arm (tia.list() == true) is rejected at codegen until R77 Phase E lands.")
     private static MethodSpec buildMutationUpdateFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpdateTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
+        rejectBulkArmUntilPhaseE(tia, "UPDATE");
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
@@ -1551,10 +1577,12 @@ public class TypeFetcherGenerator {
             + "as Direct-extracted ColumnField with a single cast for the col/val lists, "
             + "and tia.setFields() (typed non-@lookupKey ColumnField projection) for the SET "
             + "clause and the .doUpdate()/.doNothing() dispatch. Invariant #3 guarantees "
-            + "fieldBindings is non-empty (the ON CONFLICT key).")
+            + "fieldBindings is non-empty (the ON CONFLICT key). "
+            + "Bulk arm (tia.list() == true) is rejected at codegen until R77 Phase E lands.")
     private static MethodSpec buildMutationUpsertFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpsertTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
+        rejectBulkArmUntilPhaseE(tia, "UPSERT");
         var tableRef = tia.inputTable();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
