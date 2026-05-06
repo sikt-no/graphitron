@@ -27,6 +27,7 @@ node_modules/
 CLAUDE.local.md
 thoughts/
 .claude/worktrees/
+.claude/commands/local/
 .claude/settings.local.json
 scratch/
 
