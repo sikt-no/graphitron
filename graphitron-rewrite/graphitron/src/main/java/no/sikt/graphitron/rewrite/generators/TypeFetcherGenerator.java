@@ -1787,8 +1787,13 @@ public class TypeFetcherGenerator {
             CodeBlock postInGuard) {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         TypeName valueType = switch (rex) {
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle es -> ClassName.get(String.class);
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList el ->
+                ParameterizedTypeName.get(ClassName.get(List.class), ClassName.get(String.class));
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle ps -> RECORD;
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList pl ->
+                ParameterizedTypeName.get(ClassName.get(List.class), RECORD);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload p -> p.assembly().payloadClass();
-            default -> ClassName.OBJECT;
         };
         var builder = MethodSpec.methodBuilder(fetcherName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)

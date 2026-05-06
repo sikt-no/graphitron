@@ -364,7 +364,8 @@ class FetcherPipelineTest {
     @Test
     void dmlDeleteField_tableReturn_keepsExistingRawRowEmissionAndRedacts() {
         // Regression check for the existing @table-return path: payloadAssembly empty, raw row
-        // returned, catch arm uses redact (today's behaviour, untouched by the lift).
+        // returned, catch arm uses redact. The valueType lift narrows the payload local from
+        // Object to org.jooq.Record on the ProjectedSingle arm.
         var sdl = """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
@@ -374,10 +375,12 @@ class FetcherPipelineTest {
         var deleteFilm = method(findSpec("MutationFetchers", sdl), "deleteFilm");
         var body = deleteFilm.code().toString();
         assertThat(body)
-            .contains("Object payload = dsl")
+            .contains("Record payload = dsl")
             .contains(".returningResult(")
             .contains("ErrorRouter.redact(e, env)")
             .doesNotContain("ErrorRouter.dispatch");
+        assertThat(deleteFilm.returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
     }
 
     // ===== Column fields → wired via ColumnFetcher =====
