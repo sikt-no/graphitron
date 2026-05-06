@@ -210,6 +210,8 @@ public class GeneratorConfig {
         recordValidation = new RecordValidation();
         codeGenerationThresholds = new CodeGenerationThresholds();
         generateUpsertAsStore = false;
+        queryHintEnabled = false;
+        queryHintBuildId = "";
     }
 
     public static Set<String> generatorSchemaFiles() {
