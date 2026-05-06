@@ -18,6 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R77` | Bulk DML mutations: listed @table input arguments | In Progress | [plan](bulk-dml-mutations.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
+| `R93` | LSP quick-fix: ExternalCodeReference name → className migration | Spec | [plan](lsp-externalcodereference-name-migration.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R70` | Support TableRecord-keyed Map returns on @service rows methods <sub>blocked by: [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)</sub> | In Review | [plan](service-rows-tablerecord-key-shape.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
@@ -31,7 +32,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [retire-rust-lsp-and-introspect-mojo](retire-rust-lsp-and-introspect-mojo.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R68` | Diataxis user manual: absorb legacy README into the docs site | In Review | [plan](diataxis-user-manual.md) |
-| `R93` | LSP quick-fix: ExternalCodeReference name → className migration | Spec | [plan](lsp-externalcodereference-name-migration.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
 
 ---
@@ -172,13 +172,13 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### legacy-migration
 
 - `R19` [**Rebase and squash rewrite branch onto main**](history-squash.md) — Ready
+- `R93` [**LSP quick-fix: ExternalCodeReference name → className migration**](lsp-externalcodereference-name-migration.md) — Spec, Backlog
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md) — Backlog, cleanup, blocked by [sis-rewrite-migration](sis-rewrite-migration.md)
 - `R47` [**Short class-name resolution for `@service` and `@externalField` (legacy parity)**](service-short-classname-resolution.md) — Backlog, cleanup
 - `R26` [**Retire `graphitron-maven-plugin` + `graphitron-schema-transform`**](retire-maven-plugin.md) — In Progress, blocked by [retire-rust-lsp-and-introspect-mojo](retire-rust-lsp-and-introspect-mojo.md)
 - `R34` [**sis-graphql-spec migration to graphitron-rewrite**](sis-rewrite-migration.md) — Backlog, cleanup
 - `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
-- `R93` [**LSP quick-fix: ExternalCodeReference name → className migration**](lsp-externalcodereference-name-migration.md) — Spec, Backlog
 - `R91` [**Retire Rust graphitron-lsp + delete IntrospectMojo**](retire-rust-lsp-and-introspect-mojo.md) — Backlog, Backlog
 
 ### (untagged)

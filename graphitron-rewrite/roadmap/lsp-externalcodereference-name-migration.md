@@ -3,7 +3,7 @@ id: R93
 title: "LSP quick-fix: ExternalCodeReference name → className migration"
 status: Spec
 bucket: Backlog
-priority: 18
+priority: 5
 theme: legacy-migration
 depends-on: []
 ---
@@ -22,10 +22,22 @@ detects the legacy shape in the SDL and rewrites it in place.
 ## Detection surface
 
 Any `ExternalCodeReference` literal in the SDL where `name:` is set and
-`className:` is not. The detector iterates an explicit
-`ExternalCodeReferenceBindings` registry (working name; final shape
-decided at Spec) that lists every `(directiveName, outerArgName,
-nestedPath?)` pair the parser binds to `ExternalCodeReference`:
+`className:` is not. R93's detection consumes a *derived view* on a
+new directive-vocabulary registry, `DirectiveDefinitions`, rather than
+keying on the input type directly.
+
+The registry's primary key is the directive name. Each entry carries
+the directive's argument list with each argument's input type:
+
+```java
+public record DirectiveDef(String name, List<ArgDef> args) {}
+public record ArgDef(String name, String inputType, boolean nestedPath) {}
+```
+
+The eight sites where `ExternalCodeReference` is bound become a derived
+view: `DirectiveDefinitions.argsByInputType("ExternalCodeReference")`
+returns the eight `(directive, argName, nestedPath?)` tuples R93's
+detection iterates. Listed for orientation:
 
 - `@externalField(reference: …)`
 - `@enum(enumReference: …)`
@@ -36,19 +48,28 @@ nestedPath?)` pair the parser binds to `ExternalCodeReference`:
 - `@condition(condition: …)`
 - `@reference(path: [{ condition: … }])` (nested `ReferenceElement.condition`)
 
-The registry is the single source of truth for "where can an
-`ExternalCodeReference` literal appear in the SDL". Today three sites
-(`@service`, `@condition`, `@record`) are hardcoded as parallel lookup
-maps in `Diagnostics.outerArgOf` and `ClassNameCompletions.outerArgOf`;
-R93 introduces the registry and migrates those existing sites onto it.
-The remaining five sites that appear in `directives.graphqls` but are
-unwired in the LSP today (`@externalField`, `@enum`, `@tableMethod`,
-`@batchKeyLifter`, `ReferenceElement.condition`) gain their detection
-/ completion / diagnostic surface as part of this work.
+Why directive-keyed and not input-type-keyed: the input-type-keyed
+framing is convenient for *this* migration but misshapen for the
+long-term LSP. Future features (per-arg hover, full completion of every
+arg, per-arg diagnostics) all key on directive name; an input-keyed
+registry would force every consumer to invert it. `DirectiveDefinitions`
+becomes the LSP's directive vocabulary catalog, with R93's migration
+view being the first of several derived views.
 
-Adding a new `ExternalCodeReference`-binding directive later is then a
-one-line registry add — not literally "free", but the surface where
-the change lands is named.
+Today three directives (`@service`, `@condition`, `@record`) are
+hardcoded as parallel lookup maps in `ClassNameCompletions.outerArgOf`
+(which `MethodCompletions` and the `Diagnostics` call sites delegate
+through). R93 introduces `DirectiveDefinitions` and migrates that
+existing lookup onto a derived view on it. The five sites that appear
+in `directives.graphqls` but are unwired in the LSP today
+(`@externalField`, `@enum`, `@tableMethod`, `@batchKeyLifter`,
+`ReferenceElement.condition`) gain their completion / diagnostic
+surface as a side effect of being added to the registry.
+
+Adding a new `ExternalCodeReference`-binding directive later is then
+a registry-entry add; the migration's derived view picks it up
+automatically, and so do the existing completion / diagnostic
+surfaces.
 
 ## Quick-fix shape
 
@@ -62,40 +83,97 @@ either add the entry to `namedReferences` config or write `className:`
 explicitly). The diagnostic stance for both arms lives in
 "Diagnostic shape" below.
 
-Two activation surfaces ship together:
+The migration surfaces as three activation points; the user picks
+which scope to apply per invocation:
 
 - **Per-site quick-fix.** Cursor on (or selection touching) a single
   legacy `ExternalCodeReference` literal, code-action invocation
   rewrites that one site.
-- **Workspace-level bulk action.** "Migrate all
-  `ExternalCodeReference.name` in this schema" composes the N
-  resolvable per-site edits into one `WorkspaceEdit` and applies them
-  atomically. Sites whose `name:` value does not resolve in
-  `namedReferences` are skipped; their per-site error diagnostics
-  (Diagnostic shape) carry the unresolved-name identity, so the user
-  navigates the editor's problems panel to reach each one. The bulk
-  action's result message reports the count of rewritten sites and
-  refers to those diagnostics for the rest. Targeted at consumers
-  with many legacy sites (Sikt has ~49 known) where per-site clicking
-  is friction.
+- **File-scoped bulk action.** "Migrate `name:` in this file"
+  composes every resolvable site in the current document into one
+  `WorkspaceEdit`.
+- **Workspace-scoped bulk action.** "Migrate `name:` in this
+  workspace" composes every resolvable site across every `.graphqls`
+  file in the `Workspace` into one multi-document `WorkspaceEdit`.
 
-## Reusable migration primitive
+For both bulk actions, sites whose `name:` value does not resolve in
+`namedReferences` are skipped; their per-site error diagnostics
+(Diagnostic shape) carry the unresolved-name identity, so the user
+navigates the editor's problems panel to reach each one.
 
-The per-site and bulk surfaces share the same shape — detector returns
-the ranges, edit-builder produces the textual replacement — so R93
-introduces the abstraction once: an `SdlMigration` carrier (working
-name) with two slots, the detector and the per-range rewrite. R93
-instantiates it for the `name → className` migration; future
-SDL-rewriting migrations (directive renames, argument-name changes,
-etc.) instantiate it differently. The per-site quick-fix and the
-workspace-level bulk action both consume `SdlMigration` instances
-directly, so adding a new migration ships both surfaces from one
-instantiation. The rewrite slot is a function of the matched range,
-not specific to any one directive.
+The result message follows three branches keyed on the rewritten
+count `N` and the unresolvable count `M`:
 
-R54's directive-rename is the immediate next consumer if it picks the
-LSP-quick-fix migration option; the primitive is sized for that use
-specifically.
+- `N>0, M=0`: `"Migrated N legacy ExternalCodeReference.name sites."`
+- `N>0, M>0`: `"Migrated N legacy ExternalCodeReference.name sites; M unresolvable, see problems panel."`
+- `N=0, M>0`: `"No resolvable legacy sites; M unresolvable, see problems panel."`
+
+The `N=0, M=0` case never fires: the bulk action is offered only
+when at least one site is detected.
+
+The migration's per-site quick-fix surfaces independently of any
+sibling diagnostic on the same range. A literal that carries, for
+instance, an unrelated malformed-`argMapping:` diagnostic still
+shows the migration quick-fix; the rewrite is mechanically safe
+(it preserves the `argMapping:` slot verbatim), and the sibling
+diagnostic stays put for its own quick-fix path.
+
+## SdlAction primitive
+
+Both surfaces (per-site, bulk) share the same underlying shape:
+detector returns the matched literals; per-match rewrite produces a
+text edit or signals skip. R93 introduces the abstraction once as
+`SdlAction` — sized for any LSP-side SDL refactor, not just
+deprecation migrations — with named slots and a sealed result so the
+bulk action's count-by-reason pivot is typed:
+
+```java
+public record SdlAction(
+    String displayName,    // code-action title shown in the editor
+    Detector detector,
+    Rewrite rewrite
+) {
+    @FunctionalInterface
+    public interface Detector {
+        Stream<Node> detect(WorkspaceFile file);
+    }
+
+    @FunctionalInterface
+    public interface Rewrite {
+        RewriteResult rewrite(WorkspaceFile file, Node match);
+    }
+
+    public sealed interface RewriteResult permits Edit, Skip {
+        record Edit(TextEdit edit) implements RewriteResult {}
+        record Skip(String reason) implements RewriteResult {}
+    }
+}
+```
+
+Why these shapes:
+
+- **`WorkspaceFile` not `(Node, byte[])`.** The pairing of a tree-sitter
+  `Node` with the source bytes that produced it is a contract; passing
+  a `Node` from one file with bytes from another silently produces
+  wrong byte offsets. `WorkspaceFile` already names that pairing
+  across `Diagnostics`, `Definitions`, `Hovers`, `Completions`.
+- **Named functional interfaces.** Per-slot domain role — the
+  `Detector` and `Rewrite` slots have distinct contracts (in-source
+  order, finite stream, eager consumption for the first; per-match
+  rewriting for the second). Named interfaces give javadoc a place
+  to live.
+- **Sealed `RewriteResult`.** The bulk action partitions matched sites
+  into rewritten-count vs. skip-reason for the result message; with
+  a nullable `TextEdit` return, the partition would be `null`-driven
+  and lose typing on the skip reason.
+
+R93 instantiates `SdlAction` once for the `name → className`
+migration. Future LSP-side SDL refactors (R54's `@externalField`
+directive rename if it picks the LSP-quick-fix migration option;
+any future rename or extract) instantiate it differently. Per-site
+quick-fix and both bulk surfaces consume `SdlAction` instances
+directly, so a new refactor ships all three activation points from
+one instantiation.
 
 ## Diagnostic shape
 
@@ -129,43 +207,43 @@ channel already covers it).
 
 New files under `graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/`:
 
-- `parsing/ExternalCodeReferenceBindings.java` — registry of every
-  `(directiveName, outerArgName, nestedPath?)` tuple where the parser
-  binds an `ExternalCodeReference`. Eight entries at landing time
-  (the seven directives plus `@reference(path: [{condition: …}])`).
-  Single source of truth for "where can an `ExternalCodeReference`
-  literal appear in the SDL".
-- `code_action/SdlMigration.java` — the reusable primitive (working
-  name; final shape per "Open architectural decisions" below). Two
-  slots: detector (returns the ranges to act on) and per-range
-  rewrite (produces the text edit per range).
-- `code_action/CodeActions.java` — entry-point provider. Receives the
-  LSP `textDocument/codeAction` request, runs the
-  `name → className` migration's `SdlMigration` instance, and emits
-  per-site quick-fix and workspace-level bulk-action code actions.
+- `parsing/DirectiveDefinitions.java` — the directive-vocabulary
+  registry. Keyed on directive name; each entry carries the
+  directive's argument list with each argument's input type plus the
+  nested-path flag for `ReferenceElement.condition`-style sites.
+  Exposes the derived view `argsByInputType(String)` consumed by
+  R93's migration plus by the existing `outerArgOf` callers after
+  migration.
+- `code_action/SdlAction.java` — the reusable primitive
+  (`Detector`, `Rewrite`, sealed `RewriteResult`).
+- `code_action/CodeActions.java` — entry-point provider. Handles
+  `textDocument/codeAction` requests, runs the `name → className`
+  migration's `SdlAction` instance, and emits per-site quick-fix +
+  file-scoped bulk + workspace-scoped bulk code actions. Bulk actions
+  emit multi-document `WorkspaceEdit`s directly (no
+  `executeCommand` indirection unless impl finds a need).
 
 Modified files in the same module:
 
-- `completions/ClassNameCompletions.java` — `outerArgOf` is replaced
-  by a call into `ExternalCodeReferenceBindings`. The five
-  previously unwired sites (`@externalField`, `@enum`, `@tableMethod`,
-  `@batchKeyLifter`, `ReferenceElement.condition`) start returning
-  candidates as a side effect.
+- `completions/ClassNameCompletions.java` — `outerArgOf` replaced by
+  a call into `DirectiveDefinitions.argsByInputType("ExternalCodeReference")`.
+  The five previously unwired sites (`@externalField`, `@enum`,
+  `@tableMethod`, `@batchKeyLifter`, `ReferenceElement.condition`)
+  start returning candidates as a side effect.
 - `completions/MethodCompletions.java` — already delegates to
-  `ClassNameCompletions.outerArgOf`; no edit needed beyond the
-  upstream change. New sites gain method-name completion as the
-  same side effect.
+  `ClassNameCompletions.outerArgOf`; no edit beyond the upstream
+  change. New sites gain method-name completion as the same side
+  effect.
 - `diagnostics/Diagnostics.java` — `compute()` (around line 41–49)
   enumerates `(directive, outerArg)` tuples explicitly today; switches
-  to iterating `ExternalCodeReferenceBindings`. New sites gain the
-  existing `validateExternalCodeReference` arms (`lookupError`,
-  argMapping, etc.) automatically. Adds the legacy-and-unresolved
-  arm described in "Diagnostic shape" — error-severity diagnostic
-  mirroring `FieldBuilder.parseExternalRef`'s `ExternalRef.lookupError`
-  (around line 3318).
+  to iterating the same `DirectiveDefinitions.argsByInputType` view.
+  New sites gain the existing `validateExternalCodeReference` arms
+  (`lookupError`, argMapping, etc.) automatically. Adds the
+  legacy-and-unresolved arm described in "Diagnostic shape" —
+  error-severity diagnostic mirroring `FieldBuilder.parseExternalRef`'s
+  `ExternalRef.lookupError` (around line 3318).
 - `server/GraphitronTextDocumentService.java` — wires `codeAction(...)`
-  to `CodeActions`, advertises `codeActionProvider` (and
-  `executeCommandProvider` for the bulk action) in
+  to `CodeActions`, advertises `codeActionProvider` in
   `serverCapabilities()`.
 - `state/Workspace.java` — exposes the `namedReferences` lookup the
   code-action provider consumes (the `RewriteContext` it carries
@@ -177,30 +255,38 @@ Four tests, organised by tier:
 
 ### Unit-tier
 
-- `ExternalCodeReferenceBindingsTest`: assert the registry contains
-  all eight binding sites with the right
-  `(directive, outerArg, nestedPath?)` shape; assert lookup-by-
-  directive and iterate-all surfaces both work.
-- `SdlMigrationTest`: synthetic SDL fixture with mixed legacy /
-  modern shapes; the detector returns the expected literal ranges,
-  the rewrite slot produces the expected `TextEdit` per range,
-  resolvable vs. unresolvable sites partition correctly.
+- `DirectiveDefinitionsTest`: assert the registry contains every
+  directive in `directives.graphqls` with the right argument list
+  per directive; assert `argsByInputType("ExternalCodeReference")`
+  returns the eight `(directive, argName, nestedPath?)` tuples;
+  assert iterate-all and lookup-by-directive surfaces both work.
+- `SdlActionTest`: synthetic SDL fixture with mixed legacy / modern
+  shapes; the detector returns the expected literal ranges; the
+  rewrite slot returns `RewriteResult.Edit` for resolvable sites
+  with the expected `TextEdit`, and `RewriteResult.Skip` carrying
+  the unresolved name for unresolvable sites.
 
 ### LSP-tier
 
-- `CodeActionsTest`: `textDocument/codeAction` requests against a
-  fixture document return the expected `WorkspaceEdit`. Cases:
+- `CodeActionsTest`: `textDocument/codeAction` requests against
+  fixture documents return the expected `WorkspaceEdit`s. Cases:
   per-site on a resolvable literal (one `TextEdit`); per-site on
   an unresolvable literal (no quick-fix offered; diagnostic
-  present); workspace-level bulk action (one `WorkspaceEdit`
-  covering every resolvable site, unresolvable sites skipped).
+  present); per-site on a literal carrying an unrelated sibling
+  diagnostic (quick-fix surfaces regardless); file-scoped bulk
+  action (one `WorkspaceEdit` covering every resolvable site in
+  the document, unresolvable sites skipped); workspace-scoped bulk
+  action (one multi-document `WorkspaceEdit` across multiple
+  fixture files); each bulk-action result message matches the
+  three-branch wording in "Quick-fix shape".
 - `DiagnosticsTest` extension: legacy-and-resolves emits no
   diagnostic; legacy-and-unresolved emits one error-severity
   diagnostic naming the unresolved name and pointing at the two
   fixes. Coverage extends to all eight binding sites — the test
   fixture grows to include one example per site.
 - `ClassNameCompletionsTest` extension: existing three-site cases
-  pass after the `outerArgOf` migration (no behaviour change for
+  pass after the `outerArgOf` migration onto
+  `DirectiveDefinitions.argsByInputType` (no behaviour change for
   `@service` / `@condition` / `@record`); five new cases cover
   the previously unwired sites.
 
@@ -209,50 +295,62 @@ Four tests, organised by tier:
 Two slices, each independently shippable through the canonical
 Backlog → Spec → Ready → In Progress → In Review → Done flow.
 
-### Phase 1: registry + light up unwired sites
+### Phase 1: directive-vocabulary registry + light up unwired sites
 
-- Introduce `ExternalCodeReferenceBindings`.
-- `ClassNameCompletions.outerArgOf` migrates onto it.
-- `Diagnostics.compute()` iterates the registry rather than its
+- Introduce `DirectiveDefinitions` keyed on directive name, with
+  `argsByInputType(String)` as the derived view.
+- `ClassNameCompletions.outerArgOf` migrates onto
+  `DirectiveDefinitions.argsByInputType("ExternalCodeReference")`.
+- `Diagnostics.compute()` iterates the same view rather than its
   hardcoded tuple list.
 - All five previously unwired sites gain completion + diagnostic
   surface as a side effect.
-- `ExternalCodeReferenceBindingsTest` plus the
-  `ClassNameCompletionsTest` / `DiagnosticsTest` extensions.
+- `DirectiveDefinitionsTest` plus the `ClassNameCompletionsTest` /
+  `DiagnosticsTest` extensions.
 
 Acceptance: existing three-site coverage extends to all eight; no
-behaviour change for the existing three.
+behaviour change for the existing three; the registry is positioned
+to host future per-arg / per-directive features beyond R93.
 
 ### Phase 2: code-action surface
 
-- Introduce `SdlMigration` and the `name → className` instance.
+- Introduce `SdlAction` (the primitive) and instantiate it for the
+  `name → className` migration.
 - `CodeActions` provider, registered in
-  `GraphitronTextDocumentService`.
+  `GraphitronTextDocumentService`. Three activation points: per-site,
+  file-scoped bulk, workspace-scoped bulk.
 - The legacy-and-unresolved diagnostic arm in `Diagnostics`.
-- `SdlMigrationTest` and `CodeActionsTest`.
+- `SdlActionTest` and `CodeActionsTest`.
 
 Acceptance: editor users can right-click on a legacy `name:` literal
-and apply the migration; "Migrate all `ExternalCodeReference.name` in
-this schema" composes the resolvable sites into one `WorkspaceEdit`.
-Unresolvable sites surface as error diagnostics in the problems panel.
+and apply the migration; "Migrate `name:` in this file" and "Migrate
+`name:` in this workspace" each compose the resolvable sites into one
+`WorkspaceEdit` at the named scope. Unresolvable sites surface as
+error diagnostics in the problems panel and skip the rewrite.
 
 ## Open architectural decisions
 
-1. **`SdlMigration` final shape.** The spec uses the working name
-   to mean "detector returning ranges + per-range rewrite producing
-   text edit". Final shape (record? sealed interface? functional
-   interface taking the parsed tree-sitter node?) decided during
-   Phase 2 implementation; the choice does not affect Phase 1.
-2. **`outerArgOf` migration scope.** Phase 1 migrates
-   `ClassNameCompletions.outerArgOf` (the canonical lookup; both
-   `MethodCompletions` and the relevant `Diagnostics` call sites
-   already delegate through it). If implementation surfaces a
-   sibling hardcoded map elsewhere in the LSP, it joins Phase 1
-   silently rather than carrying a separate spec amendment.
-3. **Bulk-action result wording.** The structural commitment is
-   "report rewritten count, refer to per-site diagnostics for the
-   rest"; the literal string ("Migrated N legacy `name:` sites; M
-   unresolvable — see problems panel") is finalised at impl time.
+The major shape decisions are pinned in the body above:
+`DirectiveDefinitions` keyed on directive name; `SdlAction` with
+named `Detector`/`Rewrite` interfaces and sealed `RewriteResult`;
+three-branch result wording locked in; bulk action emits
+multi-document `WorkspaceEdit`s directly; per-site quick-fix surfaces
+independently of sibling diagnostics. The remaining unknowns are
+scope-only:
+
+1. **Sibling hardcoded directive lookups elsewhere in the LSP.**
+   Phase 1 migrates `ClassNameCompletions.outerArgOf` (the canonical
+   lookup; `MethodCompletions` and the relevant `Diagnostics` call
+   sites delegate through it). If implementation surfaces another
+   hardcoded directive→arg map in `Hovers`, `Definitions`, or
+   elsewhere, it migrates onto `DirectiveDefinitions` as part of
+   Phase 1 silently rather than spawning a separate amendment.
+2. **`DirectiveDefinitions` population strategy.** Open between
+   (a) hand-written entries, kept in sync with `directives.graphqls`
+   by a build-tier drift test; (b) parsed from `directives.graphqls`
+   at LSP startup. (a) is cheaper, (b) is the longer-term shape.
+   Phase 1 picks (a) unless impl finds (b) free; either is opaque
+   to the migration's derived view.
 
 ## Out of scope
 
@@ -267,10 +365,10 @@ Unresolvable sites surface as error diagnostics in the problems panel.
   target disjoint SDL surfaces (the input-field token `name:` inside
   an `ExternalCodeReference` literal vs. the directive token
   `@externalField` itself); the two literals never co-occur at the
-  same character range. The "Reusable migration primitive" section
-  above names what R54 inherits if it picks the LSP-quick-fix option
-  (the `SdlMigration` shape; the per-site / bulk surfaces wrapping
-  it); beyond that R93 has no dependency on R54's direction or vice
+  same character range. The "SdlAction primitive" section above
+  names what R54 inherits if it picks the LSP-quick-fix option (the
+  `SdlAction` shape and the three activation points wrapping it);
+  beyond that R93 has no dependency on R54's direction or vice
   versa.
 
 - Automating the consumer's `namedReferences` config edits when the
