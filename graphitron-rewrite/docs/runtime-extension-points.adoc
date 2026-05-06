@@ -173,6 +173,21 @@ its configuration.
 rewriting); use it sparingly and prefer `Configuration` or a directive when
 either fits.
 
+=== Instance `@service` holders
+
+Instance `@service` classes are constructed per call via `new ClassName(DSLContext)`.
+The holder is created fresh per fetcher invocation; do not stash request-scoped state
+on instance fields, since each call gets its own holder. For per-tenant or per-request
+decisions inside the holder, ride into the holder via the `DSLContext`'s
+`Configuration`: `Configuration.data(key)` carries ad-hoc per-request values written
+by your `getDslContext` implementation, and `Configuration.settings()` plus registered
+`Converter` / `RecordMapperProvider` carry cross-cutting jOOQ behaviour. For
+SDL-visible per-request arguments, prefer a static method that takes the value via
+`getContextArgument`. The single-`(DSLContext)` constructor contract is a deliberate
+constraint, mirroring the legacy generator: every per-request seam already exists on
+`Configuration` or in the SDL, so a wider holder ctor would duplicate plumbing
+without adding capability.
+
 === jOOQ Configuration
 
 For most applications, jOOQ's `Configuration` is the most important
