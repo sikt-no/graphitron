@@ -1,7 +1,7 @@
 ---
 id: R77
 title: "Bulk DML mutations: listed @table input arguments"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 1
 theme: mutations-errors
@@ -66,7 +66,7 @@ needed; the four DML records do not need a per-arm bulk flag because
 All four `buildMutationXxxFetcher` methods today assume a single
 `Map<?,?> in = (Map<?,?>) env.getArgument(...)` and walk `tia.fields()` /
 `tia.setFields()` once at codegen time, baking each `in.get("col")` into
-the emitted statement (see e.g. [`TypeFetcherGenerator.java:1419-1437`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
+the emitted statement (see e.g. [`TypeFetcherGenerator.java:1453-1484`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
 for INSERT). The bulk shape inverts the codegen-vs-runtime split: the
 field set is still known at codegen time, but the row count is a runtime
 fact, so the emitted Java has to *loop over rows* rather than emit one
@@ -146,7 +146,7 @@ projection terminator):
   checks, plus `postDslGuard`'s dialect guard) execute *inside*
   `buildDmlFetcher`'s existing try-catch — the try opens before
   the `dsl` bind, so every slot lands inside it
-  ([`TypeFetcherGenerator.java:1655`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
+  ([`TypeFetcherGenerator.java:1701`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
   is the `beginControlFlow("try")`). The `IllegalArgumentException` /
   `UnsupportedOperationException` throws therefore route through
   `catchArm` → `ErrorRouter.redact` (no channel) or
@@ -248,8 +248,8 @@ emit conflates two distinct GraphQL inputs:
 Legacy graphitron has had bugs from collapsing these two cases; the
 rewrite has inherited the same conflation today (verified against
 `buildMutationInsertFetcher`/`buildMutationUpdateFetcher` at
-[`TypeFetcherGenerator.java:1421-1432`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
-and 1471-1477). R77 fixes this for all three verbs (INSERT, UPDATE,
+[`TypeFetcherGenerator.java:1463-1474`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
+and 1513-1519). R77 fixes this for all three verbs (INSERT, UPDATE,
 UPSERT) in the same pass that lifts the bulk arm, with two
 mechanisms:
 
@@ -379,7 +379,7 @@ short-circuit and (when `tia.setFields()` is non-empty) its
 uniform-shape guard and no-set-fields-present check.
 
 The current `buildDmlFetcher` derives `valueType` as `ClassName.OBJECT`
-for every non-`Payload` arm (`TypeFetcherGenerator.java:1648-1651`),
+for every non-`Payload` arm (`TypeFetcherGenerator.java:1692-1695`),
 so the fetcher's declared return is `DataFetcherResult<Object>` and
 the empty-list short-circuit can't produce a typed `List<X>` literal
 without losing the generic. R77 lifts `valueType` per arm:
@@ -431,7 +431,7 @@ sharpening.
   bullet below); bulk-input + list-payload is still caught by today's
   #14 `r.wrapper().isList()` arm. The widened method is called from
   one site in `FieldBuilder.classifyMutationField`
-  ([line 2374](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java));
+  ([line 2425](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java));
   pass `tia.list()` through. The rule is verb-neutral, so it lives
   upstream of the four `case INSERT/UPDATE/DELETE/UPSERT` arms rather
   than threaded into each.
@@ -613,7 +613,7 @@ sharpening.
   `FieldBuilder.buildDmlField` instead (see below).
 - [`FieldBuilder.classifyMutationField`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java) —
   pass `tia.list()` through to the widened `validateReturnType` call
-  at line 2374. No changes inside the four `case INSERT/UPDATE/DELETE/UPSERT`
+  at line 2425. No changes inside the four `case INSERT/UPDATE/DELETE/UPSERT`
   dispatch arms; the new invariant is verb-neutral.
 - [`FieldBuilder.buildDmlField`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java) —
   after `resolveDmlPayloadAssembly`, emit the deferred Payload+list
@@ -710,11 +710,11 @@ be cleaned up in the same pass:
 
 - [`DmlReturnExpression.java:11`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/model/DmlReturnExpression.java)
   ("defined by Invariant #14 in `graphitron-rewrite/roadmap/mutations.md`")
-- [`FieldBuilder.java:2114`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
+- [`FieldBuilder.java:2171`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java)
   ("Invariants #1 and #7-#13 in `mutations.md`")
 - [`TypeFetcherGenerator.java`](../graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java)
-  at lines 1107, 1133 ("Phase 6 of mutations.md"), 1362, 1395, 1448,
-  1494 ("Phase 2/3/4/5 of mutations.md"), and 1634 ("Phase 5 in
+  at lines 1106, 1131 ("Phase 6 of mutations.md"), 1404, 1437, 1490,
+  1536 ("Phase 2/3/4/5 of mutations.md"), and 1677 ("Phase 5 in
   roadmap/mutations.md")
 - [`GraphitronSchemaBuilderTest.java:4844`](../graphitron/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java)
   ("Phase 1 of mutation bodies; see roadmap/mutations.md")
