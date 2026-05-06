@@ -280,60 +280,151 @@ observed parameter names (`arg0`, `arg1`, ...), and a candidate hint
 pointing at either the compiler flag or an explicit `argMapping`.
 Rejection wire shape per *(iii) Rejection arm shape* below.
 
+### Rejection arm shape: six sealed arms, structured payload, surfaces on `UnclassifiedField`
+
+When the matching algorithm above fails — or when classification fails
+for any other reason during input-record / service-call resolution —
+the rejection surfaces as `UnclassifiedField` carrying a typed
+`Rejection`. The `Rejection` family follows the existing typed-rejection
+patterns in `Rejection.AuthorError.UnknownName` and R88's
+`ClassAccessorResolver.Rejected` precedent: sealed arms each carrying
+their own structured data, never a free-form string. Six arms enumerate
+every classification failure mode the input-record path can produce.
+
+```java
+sealed interface InputBindingRejection extends Rejection
+        permits NoParameters, NameMatchMiss, ArgMappingLhsMiss,
+                ArgMappingRhsMiss, ConstructedCtorParamMiss,
+                ConstructedTypeMismatch {
+
+    /** -parameters compiler flag not enabled on the service module;
+     *  reflected parameter names are `arg0`, `arg1`, etc. */
+    record NoParameters(
+        String serviceMethod,           // e.g. "com.example.FilmReviewService.submit"
+        List<String> observedNames      // e.g. ["arg0", "arg1"]
+    ) implements InputBindingRejection {}
+
+    /** A top-level service-method parameter has no graphitron-record
+     *  component with a matching name. */
+    record NameMatchMiss(
+        String serviceMethod,
+        String serviceParamName,        // e.g. "rating"
+        List<String> candidateComponents,
+        List<String> similarComponents  // Levenshtein-near, for "did you mean"
+    ) implements InputBindingRejection {}
+
+    /** argMapping entry's left-hand side names a service-method parameter
+     *  that doesn't exist. */
+    record ArgMappingLhsMiss(
+        String argMappingEntry,         // e.g. "rateng: input.rating"
+        String serviceMethod,
+        List<String> candidateParams,
+        List<String> similarParams
+    ) implements InputBindingRejection {}
+
+    /** argMapping path expression references a graphitron-record
+     *  component (or a nested path) that doesn't exist. */
+    record ArgMappingRhsMiss(
+        String argMappingEntry,
+        List<String> pathSegments,      // e.g. ["input", "itms", "id"]
+        String failedSegment,           // e.g. "itms"
+        int failedSegmentIndex,
+        List<String> candidatesAtFailedDepth,
+        List<String> similarCandidates
+    ) implements InputBindingRejection {}
+
+    /** A Layer 2 Constructed target's canonical constructor has a
+     *  parameter with no matching graphitron-record component. */
+    record ConstructedCtorParamMiss(
+        String surroundingService,      // back-reference to enclosing service-method param
+        ClassName targetClass,
+        String ctorParamName,
+        List<String> candidateComponents,
+        List<String> similarComponents
+    ) implements InputBindingRejection {}
+
+    /** A graphitron-record component matched by name has the wrong Java
+     *  type for the service param's (or constructor param's) expected
+     *  type. */
+    record ConstructedTypeMismatch(
+        String serviceMethod,
+        String paramName,
+        TypeName expectedType,
+        TypeName actualType,
+        String sourceComponent          // the graphitron-record component name
+    ) implements InputBindingRejection {}
+}
+```
+
+The carriers are structured payload, not preformatted strings: rendering
+into a human-readable message lives in the existing `Rejection`-rendering
+layer, mirroring `RejectionRenderingTest`'s pattern. LSP / IDE
+quick-fixes consume the structured form to suggest concrete actions
+(rename SDL field, add `argMapping`, change Java type, enable
+`-parameters`).
+
+Every arm surfaces as an `UnclassifiedField` scoped to the *consuming*
+`@service` field — that's where the binding actually lives. Even when
+the failure originates inside an input-type structure (e.g.
+`ArgMappingRhsMiss` walking into the input record), the rejection
+attaches to the `@service` field so the failure shows up where the
+schema author can act on it.
+
+Example rendered messages (one per arm, format pinned by the rendering
+layer; not part of the carrier):
+
+```
+Mutation.submitFilmReview: can't bind input components to
+service-method parameters of com.example.FilmReviewService.submit.
+Reflected parameter names are 'arg0', 'arg1' (compiled without
+-parameters). Either add <parameters>true</parameters> to the service
+module's maven-compiler-plugin config, or pin the binding via
+@service(method: "submit", argMapping: "filmId: input.filmId, rating:
+input.rating"). [NoParameters]
+
+Mutation.submitFilmReview: service-method parameter 'rating' has no
+matching graphitron-record component on SubmitReviewInput. Available
+components: [filmId, ratingValue]. Did you mean 'ratingValue'? Either
+rename the SDL field or pin the binding via @service(argMapping:
+"rating: input.ratingValue"). [NameMatchMiss]
+
+Mutation.submitFilmReview: @service(argMapping: "rateng: input.rating")
+names service-method parameter 'rateng' on
+com.example.FilmReviewService.submit. Service-method parameters are
+[filmId, rating]. Did you mean 'rating'? [ArgMappingLhsMiss]
+
+Mutation.filmsByPath: @service(argMapping: "filmIds: input.itms.id")
+path 'input.itms.id' fails at segment 'itms' on FilmsByPathInput.
+Available components at this depth: [items, query]. Did you mean
+'items'? [ArgMappingRhsMiss]
+
+Mutation.submitFilmReview: service-method parameter 'metadata:
+SubmissionMetadata' is a consumer record; constructing it requires
+graphitron-record components matching SubmissionMetadata's canonical
+constructor params (filmId: Integer, submitterId: Long).
+Component 'submitterId' has no match on SubmitReviewInput. Available
+components: [filmId, rating]. Either add 'submitterId' to the SDL
+input, or change SubmissionMetadata's constructor.
+[ConstructedCtorParamMiss]
+
+Mutation.submitFilmReview: service-method parameter 'rating' (Integer)
+matches graphitron-record component 'rating' on SubmitReviewInput,
+but the SDL field is typed String. Change the SDL field type to Int,
+or declare an explicit conversion via argMapping.
+[ConstructedTypeMismatch]
+```
+
+`ConstructedTypeMismatch` stays separate from
+`ClassAccessorResolver.Rejected.IncompatibleType` because the
+input-binding context (which SDL field, which service callsite) is
+different from the accessor-resolution context — the two surface in
+different classifier paths and need different rendering.
+
 ## Forks open at Spec stage
 
-Three forks below need to be settled before Spec → Ready. Three more
+Two forks below need to be settled before Spec → Ready. Three more
 (reachable-closure, nested-input recursion, annotation source v1) are
 implementer-confirmable.
-
-### Open: rejection arm shape
-
-When the matching algorithm above fails — or when classification
-fails for any other reason during input-record / service-call
-resolution — the rejection surfaces as `UnclassifiedField` carrying a
-typed `Rejection`. The shape of that `Rejection` is the open question:
-which sealed arms, what payload per arm, what candidate-hint format.
-
-Following the existing typed-rejection patterns in
-`Rejection.AuthorError.UnknownName` and the precedent set by R88's
-`ClassAccessorResolver.Rejected` (sealed arms each carrying their own
-data, never a free-form string), the shape needs to enumerate every
-classification failure mode the input-record path can produce. Initial
-candidate enumeration:
-
-- **`-parameters` not enabled.** The service method's reflected
-  parameters are `arg0`, `arg1`, etc. Carrier:
-  `(serviceMethod, observedNames)`.
-- **Name-match miss.** A service-method parameter has no
-  graphitron-record component with a matching name. Carrier:
-  `(serviceParamName, candidateComponents)` — the candidate list
-  enabling a "did you mean" hint.
-- **`argMapping` left-hand-side miss.** An `argMapping` entry names
-  a service-method parameter that doesn't exist. Carrier:
-  `(argMappingEntry, candidateParams)`.
-- **`argMapping` right-hand-side miss.** An `argMapping` path expression
-  references a graphitron-record component (or a nested path) that
-  doesn't exist. Carrier:
-  `(argMappingEntry, pathSegments, failedSegment, candidates)`.
-- **Constructed binding ctor-param miss.** A Layer 2 `Constructed`
-  target's canonical constructor has a parameter with no matching
-  graphitron-record component. Carrier:
-  `(targetClass, ctorParamName, candidateComponents)`.
-- **Constructed binding type mismatch.** A graphitron-record component
-  matched by name has the wrong Java type for the service param's
-  expected type. Carrier:
-  `(serviceParamName, expectedType, actualType)`.
-
-Spec should pin: (a) whether all six arms are needed in v1 or whether
-some collapse (e.g. is "constructed binding ctor-param miss" the same
-arm as "name-match miss" with a different scope?); (b) the per-arm
-candidate-hint message format (template strings vs. structured payload
-that the rejection-rendering layer formats); (c) whether the rejection
-carries the SDL-side location (input field, service-callsite field)
-in addition to the Java-side payload, since `UnclassifiedField` already
-carries the SDL field but the Java-side rejection details are the
-new content.
-  (`rewrite-design-principles.adoc:103`).
 
 ### Open: mixed scalar + input service signatures
 
