@@ -197,51 +197,142 @@ complicates the destructuring callsite without strengthening the
 principle (consumers who want to bypass the principle do so via
 reflection regardless).
 
+### Two-layer classify-time carrier
+
+The classifier produces two carriers, scope-separated. The split
+matches the project's classifier-scope pattern (type-level vs.
+field-level concerns separate); R92 phase 3's input-side mapping
+walks `InputRecordShape` only and never touches `ServiceCallShape`.
+
+```java
+// Type-level — owned by TypeBuilder, one per SDL input type
+record InputRecordShape(
+    ClassName recordClass,                  // e.g. com.example.inputs.SubmitReviewInput
+    List<InputComponent> components
+)
+record InputComponent(
+    String sdlFieldName,                    // e.g. "filmId"
+    String javaComponentName,               // e.g. "filmId"
+    TypeName javaType,                      // e.g. ClassName.get("java.lang", "Integer")
+    boolean nullable                        // SDL `!` → false
+)
+
+// Field-level — owned by FieldBuilder.buildServiceField (or successor),
+// one per @service callsite
+record ServiceCallShape(
+    InputRecordShape input,                 // back-reference for emit convenience
+    List<ParamBinding> bindings             // one per service-method parameter
+)
+
+sealed interface ParamBinding {
+    String paramName();
+
+    /** One graphitron-record component supplies the value directly. */
+    record Scalar(String paramName, InputComponent source) implements ParamBinding {}
+
+    /** Construct a consumer record / bean by matching its canonical
+     *  (or annotated) ctor params to graphitron-record components. */
+    record Constructed(
+        String paramName,
+        ClassName targetClass,
+        List<InputComponent> ctorArgs       // ordered to match the target ctor's param list
+    ) implements ParamBinding {}
+}
+```
+
+`Scalar` covers primitives, boxed scalars, `String`, `BigDecimal`,
+`LocalDate` etc. — anything graphql-java's coercer already produces
+as a leaf. `Constructed` covers consumer records, hand-rolled domain
+DTOs, anything with a resolvable canonical constructor. `Constructed`
+recurses: a target whose ctor params are themselves consumer records
+produces nested `Constructed` bindings at each depth.
+
+Validation runs at both layers: Layer 1 validates the
+`InputRecordShape`-typed input against R92-derived and SDL-declared
+constraints; Layer 2 validates each `Constructed` target against the
+consumer's own Jakarta annotations. Per-layer-accumulate
+(violations from multiple parallel `Constructed` bindings collect
+before short-circuit), between-layer-short-circuit (Layer 2 doesn't
+run if Layer 1 produced violations, since Layer 2 construction may
+NPE on Layer-1-rejected data).
+
+### Matching algorithm: name-match with `argMapping` escape valve
+
+Default: service-method param names match graphitron-record component
+names verbatim, requiring `-parameters` on the consumer's compile.
+The project recommends `<parameters>true</parameters>` after the
+recent compiler-flag commit on trunk; this is now load-bearing for
+the input-record seam.
+
+Escape valve: `argMapping` on the `@service` directive. R84 already
+ships path-expression syntax (`argMapping: "filmIds: input.items.id"`).
+R97 extends it with grouping for fan-out across multiple service
+params, subsuming the GG-376 `@param` proposal. Either path is the
+explicit override when name-match doesn't reach.
+
+Position-based matching is rejected: brittle to SDL reordering and
+loses the catch-mismatch-at-build-time property that name-match
+provides via reflection.
+
+Failure mode when `-parameters` is off and no `argMapping` is
+declared: classify-time rejection naming the service method, the
+observed parameter names (`arg0`, `arg1`, ...), and a candidate hint
+pointing at either the compiler flag or an explicit `argMapping`.
+Rejection wire shape per *(iii) Rejection arm shape* below.
+
 ## Forks open at Spec stage
 
 Three forks below need to be settled before Spec → Ready. Three more
 (reachable-closure, nested-input recursion, annotation source v1) are
 implementer-confirmable.
 
-### Open: where does record-component → service-param resolution land?
+### Open: rejection arm shape
 
-This is the *generation-thinking* fork: the same name-mapping is needed
-by (a) the fetcher emitter that destructures `input.filmId()` into the
-service call, and (b) R92 phase 3's
-`mapping.type(InputRecord.class).field(graphqlFieldName)...` chain.
-Resolving twice — once per emitter — duplicates the predicate. Per
-*Generation-thinking* (`rewrite-design-principles.adoc:9`, "if two
-consumers evaluate the same predicate over a model field, the branch
-belongs in the model"), the resolution belongs at classify time,
-producing a typed carrier that both emitters consume. R88's
-`ClassAccessorResolver` (now on trunk at
-`graphitron/src/main/java/no/sikt/graphitron/rewrite/ClassAccessorResolver.java`)
-is the shape this fork reuses: classify-time resolution yielding a
-sealed `Resolved | Rejected` with each emitter switching on the
-variant. The thirteen `Resolved`-returning resolvers under
-`FieldBuilder`, landed via R6, are sibling precedent for the same
-pattern.
+When the matching algorithm above fails — or when classification
+fails for any other reason during input-record / service-call
+resolution — the rejection surfaces as `UnclassifiedField` carrying a
+typed `Rejection`. The shape of that `Rejection` is the open question:
+which sealed arms, what payload per arm, what candidate-hint format.
 
-Three sub-decisions the spec must pin:
+Following the existing typed-rejection patterns in
+`Rejection.AuthorError.UnknownName` and the precedent set by R88's
+`ClassAccessorResolver.Rejected` (sealed arms each carrying their own
+data, never a free-form string), the shape needs to enumerate every
+classification failure mode the input-record path can produce. Initial
+candidate enumeration:
 
-- **(i) Carrier shape.** Most likely a per-input-component tuple list:
-  `record InputComponent(String sdlFieldName, String javaComponentName,
-  TypeName javaType, boolean nullable)` plus a top-level
-  `record InputRecordShape(ClassName recordClass, List<InputComponent> components)`.
-  Sub-fork: should the carrier also carry the per-`@service`-callsite
-  mapping (record-component → service-param), or is that a sibling
-  carrier?
-- **(ii) Matching algorithm (record-component → service-param).** Three
-  candidates: (a) by name with `-parameters` on the consumer's compile;
-  (b) by position; (c) directive-driven `@service(paramMap: ...)` for
-  divergent naming. The recent
-  `Recommend <parameters>true</parameters>` change on trunk leans toward
-  (a); the spec should commit and document the failure mode when
-  `-parameters` is off (build error vs. position fallback).
-- **(iii) Rejection arm.** Sealed `Rejected` carrying a candidate-hint
-  payload (per the typed-rejection patterns in
-  `Rejection.AuthorError.UnknownName`), surfacing through
-  `UnclassifiedField` per *Validator mirrors classifier invariants*
+- **`-parameters` not enabled.** The service method's reflected
+  parameters are `arg0`, `arg1`, etc. Carrier:
+  `(serviceMethod, observedNames)`.
+- **Name-match miss.** A service-method parameter has no
+  graphitron-record component with a matching name. Carrier:
+  `(serviceParamName, candidateComponents)` — the candidate list
+  enabling a "did you mean" hint.
+- **`argMapping` left-hand-side miss.** An `argMapping` entry names
+  a service-method parameter that doesn't exist. Carrier:
+  `(argMappingEntry, candidateParams)`.
+- **`argMapping` right-hand-side miss.** An `argMapping` path expression
+  references a graphitron-record component (or a nested path) that
+  doesn't exist. Carrier:
+  `(argMappingEntry, pathSegments, failedSegment, candidates)`.
+- **Constructed binding ctor-param miss.** A Layer 2 `Constructed`
+  target's canonical constructor has a parameter with no matching
+  graphitron-record component. Carrier:
+  `(targetClass, ctorParamName, candidateComponents)`.
+- **Constructed binding type mismatch.** A graphitron-record component
+  matched by name has the wrong Java type for the service param's
+  expected type. Carrier:
+  `(serviceParamName, expectedType, actualType)`.
+
+Spec should pin: (a) whether all six arms are needed in v1 or whether
+some collapse (e.g. is "constructed binding ctor-param miss" the same
+arm as "name-match miss" with a different scope?); (b) the per-arm
+candidate-hint message format (template strings vs. structured payload
+that the rejection-rendering layer formats); (c) whether the rejection
+carries the SDL-side location (input field, service-callsite field)
+in addition to the Java-side payload, since `UnclassifiedField` already
+carries the SDL field but the Java-side rejection details are the
+new content.
   (`rewrite-design-principles.adoc:103`).
 
 ### Open: mixed scalar + input service signatures
