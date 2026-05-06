@@ -12,6 +12,7 @@ import java.lang.reflect.AccessFlag;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -46,25 +47,42 @@ public final class ClasspathScanner {
     private ClasspathScanner() {}
 
     /**
-     * Returns class records in deterministic walk order. Empty when
-     * {@code classesRoot} does not exist on disk (the normal pre-{@code mvn
-     * compile} state).
+     * Walks one classes directory. Convenience overload kept for tests and
+     * single-root callers; production reads from {@link #scan(List, String)}.
      */
     public static List<CompletionData.ExternalReference> scan(Path classesRoot, String jooqPackage) {
-        if (!Files.isDirectory(classesRoot)) {
-            return List.of();
-        }
+        return scan(List.of(classesRoot), jooqPackage);
+    }
+
+    /**
+     * Walks every directory in {@code classesRoots} and returns class records
+     * in deterministic walk order. Each root is treated independently; FQNs
+     * deduplicated across roots so a class compiled into more than one
+     * directory (rare but possible with overlapping reactor configurations)
+     * surfaces once.
+     *
+     * <p>Roots that do not exist on disk are skipped silently; the normal
+     * pre-{@code mvn compile} state has zero existing roots and returns
+     * an empty list.
+     */
+    public static List<CompletionData.ExternalReference> scan(List<Path> classesRoots, String jooqPackage) {
         var jooqPrefix = jooqPackage.isEmpty() ? null : jooqPackage + ".";
+        var seen = new LinkedHashSet<String>();
         var refs = new ArrayList<CompletionData.ExternalReference>();
-        try (Stream<Path> walk = Files.walk(classesRoot)) {
-            walk.filter(Files::isRegularFile)
-                .filter(p -> p.getFileName().toString().endsWith(".class"))
-                .forEach(p -> {
-                    var ref = readIfCandidate(p, jooqPrefix);
-                    if (ref != null) refs.add(ref);
-                });
-        } catch (IOException e) {
-            throw new UncheckedIOException("classpath scan failed at " + classesRoot, e);
+        for (Path classesRoot : classesRoots) {
+            if (!Files.isDirectory(classesRoot)) continue;
+            try (Stream<Path> walk = Files.walk(classesRoot)) {
+                walk.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().endsWith(".class"))
+                    .forEach(p -> {
+                        var ref = readIfCandidate(p, jooqPrefix);
+                        if (ref != null && seen.add(ref.className())) {
+                            refs.add(ref);
+                        }
+                    });
+            } catch (IOException e) {
+                throw new UncheckedIOException("classpath scan failed at " + classesRoot, e);
+            }
         }
         return List.copyOf(refs);
     }

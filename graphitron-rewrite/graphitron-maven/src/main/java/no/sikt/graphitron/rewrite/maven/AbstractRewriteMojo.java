@@ -3,14 +3,19 @@ package no.sikt.graphitron.rewrite.maven;
 import graphql.schema.idl.errors.SchemaProblem;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -23,6 +28,9 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project}", readonly = true)
     MavenProject project;
+
+    @Parameter(defaultValue = "${session}", readonly = true)
+    MavenSession session;
 
     @Parameter
     List<SchemaInputBinding> schemaInputs;
@@ -82,8 +90,38 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             outAbs,
             effectiveOutput,
             effectiveJooq,
-            toNamedReferenceMap(namedReferences)
+            toNamedReferenceMap(namedReferences),
+            resolveClasspathRoots()
         );
+    }
+
+    /**
+     * Compile-output directories from every reactor project. The LSP catalog
+     * scans each one for service / condition / record class candidates, so a
+     * consumer running {@code mvn graphitron:dev} from one module sees
+     * services declared in sibling modules of the same reactor.
+     *
+     * <p>Falls back to the current project's own output directory when the
+     * Maven session is unavailable (e.g. unit-tier callers that bypass the
+     * full lifecycle); the result there is identical to pre-multi-module
+     * behaviour. External jars on the compile classpath ({@code ~/.m2}) are
+     * intentionally not scanned: services live in reactor source code, not
+     * third-party libraries.
+     */
+    private List<Path> resolveClasspathRoots() {
+        var roots = new LinkedHashSet<Path>();
+        Iterable<MavenProject> projects = session != null && session.getAllProjects() != null
+            ? session.getAllProjects()
+            : List.of(project);
+        for (MavenProject p : projects) {
+            String dir = p.getBuild() == null ? null : p.getBuild().getOutputDirectory();
+            if (dir == null) continue;
+            Path path = Path.of(dir).toAbsolutePath().normalize();
+            if (Files.isDirectory(path)) {
+                roots.add(path);
+            }
+        }
+        return new ArrayList<>(roots);
     }
 
     /**

@@ -53,10 +53,20 @@ public final class CatalogBuilder {
      * {@code @record} completion, with public methods of each populated
      * straight off the classfile (parameter names included when the
      * consumer compiled with {@code -parameters}).
+     *
+     * <p>Reads from {@link RewriteContext#classpathRoots()} — every reactor
+     * project's compile-output directory, populated by the mojo from
+     * {@code MavenSession.getAllProjects()}. Falls back to {@code
+     * <basedir>/target/classes} as a single-root default when the context
+     * carries no classpathRoots, so unit-tier callers built off
+     * {@link RewriteContext}'s six-arg overload still get the same scope
+     * pre-multi-module support shipped.
      */
     private static List<CompletionData.ExternalReference> buildExternalReferences(RewriteContext ctx) {
-        Path classesRoot = ctx.basedir().resolve("target/classes");
-        return ClasspathScanner.scan(classesRoot, ctx.jooqPackage());
+        var roots = ctx.classpathRoots().isEmpty()
+            ? List.of(ctx.basedir().resolve("target/classes"))
+            : ctx.classpathRoots();
+        return ClasspathScanner.scan(roots, ctx.jooqPackage());
     }
 
     private static List<CompletionData.Table> buildTables(

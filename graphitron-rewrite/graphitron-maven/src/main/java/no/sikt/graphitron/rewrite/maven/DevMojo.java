@@ -32,10 +32,12 @@ import java.util.Set;
  *       connects.</li>
  *   <li>Watches {@code <schemaInputs>} for {@code .graphqls} writes and
  *       re-runs the generator on every save (debounced).</li>
- *   <li>Watches all of {@code target/classes} for {@code .class} changes
- *       and rebuilds the in-process catalog atomically. Both jOOQ output
- *       (tables / columns / FKs) and consumer service / condition /
- *       record classes flow through the same rebuild trigger.</li>
+ *   <li>Watches every reactor project's {@code target/classes} for
+ *       {@code .class} changes and rebuilds the in-process catalog
+ *       atomically. Both jOOQ output (tables / columns / FKs) and
+ *       consumer service / condition / record classes — whether declared
+ *       in the schema module or a sibling reactor module — flow through
+ *       the same rebuild trigger.</li>
  * </ul>
  *
  * <p>Stop with Ctrl+C. See {@code getting-started.md}'s "Dev loop" for the
@@ -138,7 +140,7 @@ public class DevMojo extends AbstractRewriteMojo {
         Set<Path> roots = resolveClasspathRoots(ctx);
         if (roots.isEmpty()) {
             getLog().info("graphitron:dev: skipping classpath watcher; "
-                + "no compiled output yet at " + ctx.basedir().resolve("target/classes"));
+                + "no compiled output yet under any reactor project's target/classes");
             return;
         }
         this.classpathDebounce = new DebounceExecutor(debounceMs);
@@ -260,14 +262,24 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     private static Set<Path> resolveClasspathRoots(RewriteContext ctx) {
-        // Phase 5a: watch all of target/classes, not just the jOOQ subtree.
-        // The catalog now indexes consumer service / condition / record
-        // classes under their own packages too, so any .class write in the
-        // tree is a potential catalog refresh trigger.
-        Path classes = ctx.basedir().resolve("target/classes");
-        if (!java.nio.file.Files.isDirectory(classes)) {
-            return Set.of();
+        // Watch every reactor project's target/classes (Phase 5a widened
+        // from the jOOQ subtree to all of one module; Phase 5d-followup
+        // widens again to the full reactor so service/condition/record
+        // classes declared in sibling modules also trigger rebuilds).
+        var roots = new java.util.LinkedHashSet<Path>();
+        for (Path root : ctx.classpathRoots()) {
+            if (java.nio.file.Files.isDirectory(root)) {
+                roots.add(root);
+            }
         }
-        return Set.of(classes);
+        if (roots.isEmpty()) {
+            // Fallback for unit tests / non-reactor invocations: use
+            // basedir's own target/classes when populated.
+            Path own = ctx.basedir().resolve("target/classes");
+            if (java.nio.file.Files.isDirectory(own)) {
+                roots.add(own);
+            }
+        }
+        return roots;
     }
 }
