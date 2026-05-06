@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.KeyWrapper.getKeyTableRecordTypeName;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asCountMethodName;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapMap;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapSet;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_CONTEXT;
@@ -66,7 +67,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .addCode(".select(")
                 .addCodeIf(!isRoot(),() -> CodeBlock.of("$L, ", resolverKeyAsTableRecord(context)))
                 .addCode("$T.count())\n", DSL.className)
-                .addCode(queryHint(target))
+                .addCode(queryHint(target, asQueryClass(getLocalObject().getName()) + "." + asCountMethodName(target.getName(), getLocalObject().getName())))
                 .addCode(".from($L)\n", targetSource)
                 .addCode(createSelectJoins(nextContext.getJoinSet()))
                 .addCode(where)
@@ -123,7 +124,7 @@ public class FetchCountDBMethodGenerator extends FetchDBMethodGenerator {
                 .addIf(!isRoot(),() -> CodeBlock.of("$N.field(0), $T.count())", UNION_COUNT_QUERY, DSL.className))
                 .addIf(isRoot(), "$T.sum($N.field($S, $T.class)))", DSL.className, UNION_COUNT_QUERY, COUNT_FIELD_NAME, INTEGER.className)
                 .add("\n")
-                .add(queryHint(target))
+                .add(queryHint(target, asQueryClass(getLocalObject().getName()) + "." + asCountMethodName(target.getName(), getLocalObject().getName())))
                 .add(".from($N)", UNION_COUNT_QUERY)
                 .addStatementIf(isRoot(), "\n.fetchOne(0, $T.class)", INTEGER.className)
                 .addIf(!isRoot(), "\n.groupBy($N.field(0))", UNION_COUNT_QUERY)

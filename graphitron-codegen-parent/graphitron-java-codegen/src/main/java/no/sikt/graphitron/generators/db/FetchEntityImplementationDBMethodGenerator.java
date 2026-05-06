@@ -21,12 +21,15 @@ import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsE
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asEntitiesQueryName;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.*;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.*;
 import static no.sikt.graphitron.generators.db.FetchMultiTableDBMethodGenerator.VAR_FILTERED_REPRESENTATIONS;
 import static no.sikt.graphitron.generators.db.FetchMultiTableDBMethodGenerator.VAR_REPRESENTATIONS;
 import static no.sikt.graphitron.mappings.JavaPoetClassName.*;
+import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITIES_FIELD;
 import static no.sikt.graphql.naming.GraphQLReservedName.FEDERATION_ENTITY_UNION;
+import static no.sikt.graphql.naming.GraphQLReservedName.SCHEMA_QUERY;
 import static no.sikt.graphql.naming.GraphQLReservedName.TYPE_NAME;
 
 /**
@@ -78,7 +81,7 @@ public class FetchEntityImplementationDBMethodGenerator extends FetchDBMethodGen
                 .indent()
                 .indent()
                 .addCode(".select($L)\n", indentIfMultiline(selectBlock))
-                .addCode(queryHint(virtualReference))
+                .addCode(queryHint(SCHEMA_QUERY.getName(), FEDERATION_ENTITIES_FIELD.getName(), asQueryClass(implementation.getName()) + "." + asEntitiesQueryName(implementation.getName())))
                 .addCode(".from($L)\n", querySource)
                 .addCode(createSelectJoins(context.getJoinSet()))
                 .addCode(formatWhere(context, implementation))

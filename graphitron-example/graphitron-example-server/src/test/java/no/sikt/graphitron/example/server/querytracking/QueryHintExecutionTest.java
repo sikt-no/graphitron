@@ -70,7 +70,7 @@ public class QueryHintExecutionTest extends QueryTrackingTestBase {
                 """);
 
         assertThat(getCountQueries().size()).isEqualTo(1);
-        assertThat(getCountQueries().get(0)).contains("DataFetcher=Query.customers");
+        assertThat(getCountQueries().get(0)).contains("DataFetcher=Query.customers query=QueryDBQueries.countCustomersForQuery build=");
     }
 
     @Test
@@ -88,7 +88,7 @@ public class QueryHintExecutionTest extends QueryTrackingTestBase {
                 """);
 
         assertThat(getExecutedQueries()).hasSize(1);
-        assertThat(getExecutedQueries().get(0)).contains("DataFetcher=Query.languageOrStaff");
+        assertThat(getExecutedQueries().get(0)).contains("DataFetcher=Query.languageOrStaff build=");
     }
 
     @Test
@@ -115,6 +115,6 @@ public class QueryHintExecutionTest extends QueryTrackingTestBase {
                 .statusCode(200);
 
         assertThat(getExecutedQueries()).hasSize(1);
-        assertThat(getExecutedQueries().get(0)).contains("DataFetcher=Query._entity query=FederatedStaffDBQueries.federatedStaffFor_Entity build=");
+        assertThat(getExecutedQueries().get(0)).contains("DataFetcher=Query._entities query=FederatedStaffDBQueries.federatedStaffFor_Entity build=");
     }
 }

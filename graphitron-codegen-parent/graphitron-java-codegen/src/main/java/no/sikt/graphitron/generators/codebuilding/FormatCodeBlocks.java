@@ -917,15 +917,33 @@ public class FormatCodeBlocks {
      *         queries so the DataFetcher and build are visible in database logs and query plans.
      */
     public static CodeBlock queryHint(FieldSpecification target) {
+        return queryHint(target, null);
+    }
+
+    /**
+     * Variant of {@link #queryHint(FieldSpecification)} that also embeds a {@code query=Class.method}
+     * reference identifying the specific generated DB method. Use it where one DataFetcher
+     * dispatches to multiple generated methods (count, node, federation entity), so the hint
+     * disambiguates which method produced a given query in the database.
+     */
+    public static CodeBlock queryHint(FieldSpecification target, String queryMethodReference) {
+        return queryHint(target.getContainerTypeName(), target.getName(), queryMethodReference);
+    }
+
+    /**
+     * Fully-explicit variant for callers without a natural {@link FieldSpecification} describing
+     * the user-level GraphQL field (e.g. Apollo Federation entity resolution, where the dispatcher
+     * is {@code Query._entities} and is constructed at codegen time, not parsed as a regular field).
+     */
+    public static CodeBlock queryHint(String dataFetcherContainer, String dataFetcherName, String queryMethodReference) {
         if (!GeneratorConfig.isQueryHintEnabled()) {
             return CodeBlock.empty();
         }
-        var hint = String.format(
-                "/* DataFetcher=%s.%s build=%s */",
-                target.getContainerTypeName(),
-                target.getName(),
-                GeneratorConfig.getQueryHintBuildId()
-        );
+        var hint = queryMethodReference == null
+                ? String.format("/* DataFetcher=%s.%s build=%s */",
+                    dataFetcherContainer, dataFetcherName, GeneratorConfig.getQueryHintBuildId())
+                : String.format("/* DataFetcher=%s.%s query=%s build=%s */",
+                    dataFetcherContainer, dataFetcherName, queryMethodReference, GeneratorConfig.getQueryHintBuildId());
         return CodeBlock.of(".hint($S)\n", hint);
     }
 }

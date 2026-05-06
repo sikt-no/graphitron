@@ -20,6 +20,7 @@ import static no.sikt.graphitron.configuration.GeneratorConfig.optionalSelectIsE
 import static no.sikt.graphitron.configuration.GeneratorConfig.shouldMakeNodeStrategy;
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
 import static no.sikt.graphitron.generators.codebuilding.NameFormat.asNodeQueryName;
+import static no.sikt.graphitron.generators.codebuilding.NameFormat.asQueryClass;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.getStringSetTypeName;
 import static no.sikt.graphitron.generators.codebuilding.TypeNameFormat.wrapStringMap;
 import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NODE_STRATEGY;
@@ -90,7 +91,7 @@ public class FetchNodeImplementationDBMethodGenerator extends FetchDBMethodGener
                 .indent()
                 .indent()
                 .addCode(".select($L)\n", indentIfMultiline(id))
-                .addCode(queryHint(virtualReference))
+                .addCode(queryHint(target, asQueryClass(implementation.getName()) + "." + asNodeQueryName(implementation.getName())))
                 .addCode(".from($L)\n", querySource)
                 .addCode(createSelectJoins(context.getJoinSet()))
                 .addCode(".where($L)\n", whereCondition)
