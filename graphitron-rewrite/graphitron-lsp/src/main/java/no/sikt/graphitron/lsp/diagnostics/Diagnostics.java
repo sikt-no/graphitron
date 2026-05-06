@@ -202,8 +202,8 @@ public final class Diagnostics {
             out.add(diagnostic(file, methodValue, DiagnosticSeverity.Warning,
                 "Class '" + fqn + "' was compiled without `-parameters`; "
                 + "parameter help on '" + methodName + "' is unavailable. "
-                + "Add `<arg>-parameters</arg>` under maven-compiler-plugin "
-                + "compilerArgs to surface parameter names."));
+                + "Set `<parameters>true</parameters>` on maven-compiler-plugin "
+                + "to surface parameter names."));
         }
     }
 

@@ -648,12 +648,12 @@ class ServiceCatalog {
         if (!parametersWarningEmitted) {
             parametersWarningEmitted = true;
             LOGGER.warn("Parameter names are not available — the class was compiled without the -parameters flag.\n"
-                + "  To fix: add <compilerArg>-parameters</compilerArg> to maven-compiler-plugin in your pom.xml:\n"
+                + "  To fix: set <parameters>true</parameters> on maven-compiler-plugin in your pom.xml:\n"
                 + "    <plugin>\n"
                 + "      <groupId>org.apache.maven.plugins</groupId>\n"
                 + "      <artifactId>maven-compiler-plugin</artifactId>\n"
                 + "      <configuration>\n"
-                + "        <compilerArgs><arg>-parameters</arg></compilerArgs>\n"
+                + "        <parameters>true</parameters>\n"
                 + "      </configuration>\n"
                 + "    </plugin>");
         }
