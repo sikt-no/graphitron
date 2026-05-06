@@ -68,8 +68,8 @@ about does not require changing *when* it runs.
 
 R12 §5 has shipped the runtime machinery this item builds on. The wrapper
 emits a conditional pre-execution `Validator.validate(input)` step
-(`TypeFetcherGenerator.java:1207-1208`, calling `validatorPreStep` at
-`:1305`) gated on the channel carrying a `ValidationHandler`. Each `jakarta.validation.ConstraintViolation` translates
+(`TypeFetcherGenerator.java:1207-1208`, calling `validatorPreStep` defined
+at `:1326`) gated on the channel carrying a `ValidationHandler`. Each `jakarta.validation.ConstraintViolation` translates
 to a `GraphQLError` via `<outputPackage>.schema.ConstraintViolations`
 (emitted by `ConstraintViolationsClassGenerator`); the violation's
 `getAnnotation().annotationType().getSimpleName()` populates
@@ -165,8 +165,8 @@ The five `Recognized` arms cover the vocabulary the recognizer commits to in
 v1. Postgres normalises CHECK expressions to canonical AST text in
 `pg_constraint.consrc`, so the recognizer's surface is narrower than the
 syntactic surface a hand-written CHECK offers; it's the *output* of Postgres'
-parser that matters, not the input. See "Postgres normalisation" under "Open
-architectural decisions" below for the integration test that pins this.
+parser that matters, not the input. See *Postgres normalisation* under
+"Settled design notes" below for the integration test that pins this.
 
 `Unrecognized` carries a structured reason rather than a raw "didn't match
 anything" sentinel, so strict-mode rejection messages name the specific obstacle
@@ -237,11 +237,13 @@ should not interpret it as a place to plumb `Condition` deeper into the
 pipeline; the only legitimate consumer is the recognizer.
 
 The recognizer is on the catalog-side of the boundary too, since it imports
-`org.jooq.Condition`. That's a deliberate, narrow exemption matching the
-existing four-file boundary list (`ServiceCatalog`,
-`ServiceDirectiveResolver`, `BatchKeyLifterDirectiveResolver`, `FieldBuilder`):
-the recognizer is a fifth member, dedicated to lifting `Condition` AST shapes
-into typed `CheckRecognition` outcomes.
+`org.jooq.Condition`. That's a deliberate, narrow exemption to the canonical
+jOOQ-types boundary list at `rewrite-design-principles.adoc:29` (`JooqCatalog`,
+`TypeBuilder`, `FieldBuilder`, `ServiceCatalog`): the recognizer becomes a
+fifth member, dedicated to lifting `Condition` AST shapes into typed
+`CheckRecognition` outcomes. The principles-doc roster updates in this item's
+implementation commit to add `CheckRecognizer`, mirroring R88's planned
+addition of `ClassAccessorResolver` to the reflection roster.
 
 ### `CheckRecognizer`
 
@@ -366,8 +368,9 @@ backing it before phase 2 starts emitting record-side code.
 ### Validator wiring extends the existing seam
 
 `GraphitronContextInterfaceGenerator` already emits `getValidator(env)` with a
-`DefaultValidatorHolder` lazy-init holder
-(`GraphitronContextInterfaceGenerator.java:76-97`). The default body lazily
+`DefaultValidatorHolder` lazy-init holder (the holder built at
+`GraphitronContextInterfaceGenerator.java:76-85`; the `getValidator` seam that
+returns `DefaultValidatorHolder.INSTANCE` is at `:87-97`). The default body lazily
 builds `Validation.buildDefaultValidatorFactory().getValidator()`. R92
 extends the holder to thread `GeneratedConstraintMapping.toMapping(...)`
 through the configuration:
@@ -398,13 +401,16 @@ through their `GraphitronContext` impl (already supported by the seam);
 plain-SE apps use the default. The rewrite's own emitted code imports
 `jakarta.validation.*` and `org.hibernate.validator.*` only; no
 `jakarta.inject.*`, no `jakarta.enterprise.*`. The Hibernate Validator runtime
-dependency is already pinned (`graphitron-rewrite/pom.xml:80-87`); the new
-import in `DefaultValidatorHolder` is the first emitted reference to it.
+dependency is already pinned (`graphitron-rewrite/pom.xml:84-87`, alongside
+`jakarta.validation-api` at `:80-83`); the new import in
+`DefaultValidatorHolder` is the first emitted reference to Hibernate
+Validator.
 
 ### Where the wrapper validates
 
-R12 §5's wrapper today validates the SDL input bean
-(`TypeFetcherGenerator.java:1158-1170`). R92 adds *one* additional
+R12 §5's wrapper today validates the SDL input bean (the existing
+`Validator.validate(input)` call at `TypeFetcherGenerator.java:1207-1208`,
+emitted by `validatorPreStep` at `:1326`). R92 adds *one* additional
 `Validator.validate(...)` call inside the same wrapper, against the
 constructed record, conditional on (a) the channel carries a
 `ValidationHandler`, (b) the record class has a
@@ -657,8 +663,10 @@ the original motivation's "shorter loop" goal.
 *Phase 3 depends on [`emit-input-records.md`](emit-input-records.md)
 (R94).* The "consumer's SDL input bean class" the `mapping.type(...)`
 chain references does not exist in the rewrite today — graphitron uses
-`Map<String, Object>` end-to-end for SDL inputs (`MutationFetchers.java:55,
-75`). R94 emits each SDL `input` type as a graphitron-internal Java
+`Map<String, Object>` end-to-end for SDL inputs (the DML emitter sites at
+`TypeFetcherGenerator.java:1734` cast `env.getArgument(...)` to `Map<?, ?>`
+inline; the connection-arg emitter at `:2124` reads
+`Map<String, Object>` for `@orderBy`). R94 emits each SDL `input` type as a graphitron-internal Java
 record under `<outputPackage>.inputs`, which is exactly what phase 3
 needs as a target. Phases 1 and 2 do not depend on R94 (the record-side
 target is the consumer's jOOQ-generated `XxxRecord`, which already
@@ -666,13 +674,21 @@ exists); only phase 3 blocks until R94 lands.
 
 ---
 
-## Open architectural decisions
+## Open question for the reviewer
 
-1. *Strict-mode default.* ERROR (per the principle), with the directive
-   opt-out. Open to flip if early-adopter feedback says it's too noisy on
-   real consumer schemas.
-2. *Postgres normalisation: integration test pin.* The recognizer eats the
-   parsed `Condition` jOOQ hands back; what the schema author wrote is
+*Strict-mode default.* ERROR (per *Validator mirrors classifier invariants*),
+with the directive opt-out (`@graphitron(strictCheckConstraints: false)`).
+Genuinely open: flip to WARN if early-adopter feedback says ERROR is too noisy
+on real consumer schemas with hand-rolled CHECKs the recognizer's v1
+vocabulary doesn't cover. Reviewer input wanted before phase 1 lands.
+
+## Settled design notes
+
+These were called out during drafting as places where the spec could push
+against a principle; each is settled here so the implementer doesn't relitigate.
+
+1. *Postgres normalisation, pinned by integration test.* The recognizer eats
+   the parsed `Condition` jOOQ hands back; what the schema author wrote is
    irrelevant once Postgres has parsed and re-rendered it into the AST jOOQ
    then ingests. The vocabulary list above is normative against the AST
    shapes jOOQ produces from Postgres-normalised CHECK constraints. Phase 1
@@ -682,40 +698,41 @@ exists); only phase 3 blocks until R94 lands.
    AST output, not paper-schema assumptions. (`renderInlined` is used only
    in the diagnostic `Unrecognized.renderedExpression` field for build-time
    error messages; the recognizer never reads it.)
-3. *NOT NULL overlap.* Postgres synthesises `CHECK (col IS NOT NULL)` for
+2. *NOT NULL overlap.* Postgres synthesises `CHECK (col IS NOT NULL)` for
    every `NOT NULL` column. With `<includeSystemCheckConstraints>` off (the
    default), these don't appear in `getChecks()`; they live as the column's
    `IS_NULLABLE`. Default policy stays "off" to avoid duplicate
    `@NotNull` emit. Only user-declared `IS NOT NULL` CHECKs (rare; usually
    redundant) classify as `NotNullCheck`, and the emitter dedupes against
    the column's nullability.
-4. *Cross-column CHECKs.* `CHECK (start_date < end_date)` is out of scope.
-   The recognizer reports `UnrecognizedReason.CROSS_COLUMN_PREDICATE`. A
-   future arm could lift to a class-level Hibernate constraint
+3. *Cross-column CHECKs are out of scope.* `CHECK (start_date < end_date)`
+   classifies as `UnrecognizedReason.CROSS_COLUMN_PREDICATE`. A future arm
+   could lift to a class-level Hibernate constraint
    (`mapping.type(X.class).constraint(...)`), which is structurally
    supported by Hibernate Validator but adds significant emitter complexity
-   for a niche case. Defer.
-5. *Cross-column CHECK seal-fork.* The current sealed shape declares
+   for a niche case. Deferred to Future Evolution below.
+4. *Cross-column seal-fork plan.* The current sealed shape declares
    `Recognized.column()` on the root because every v1 arm constrains a
-   single column. A future cross-column arm (decision 4) would either
-   force `column()` to become `Optional` (breaking every existing switch)
-   or land in a sibling sealed sub-tree. When that future arm lifts,
-   split `Recognized` into `SingleColumn` (carrying `column()`) and a
-   sibling `MultiColumn` (carrying its own column-set accessor) before
-   adding the cross-column permit, rather than retrofitting a nullable
-   accessor on the existing root. Per *Sealed hierarchies over enums for
-   typed information* (rewrite-design-principles.adoc:25, "sealed sub-
-   interfaces per axis rather than inventing a god accessor whose
-   meaning depends on the variant").
+   single column; the accessor is homogeneous, not a god accessor, while
+   that holds. A future cross-column arm (note 3) would either force
+   `column()` to become `Optional` (breaking every existing switch) or land
+   in a sibling sealed sub-tree. When that future arm lifts, split
+   `Recognized` into `SingleColumn` (carrying `column()`) and a sibling
+   `MultiColumn` (carrying its own column-set accessor) *before* adding
+   the cross-column permit, rather than retrofitting a nullable accessor
+   on the existing root. Per *Sealed hierarchies over enums for typed
+   information* (`rewrite-design-principles.adoc:25`: "sealed sub-interfaces
+   per axis rather than inventing a god accessor whose meaning depends on
+   the variant").
 
 ---
 
 ## Future evolution (out of scope)
 
-- *Class-level constraints* for cross-column CHECKs (decision 4 above).
-  Implementation note: lift goes through the `SingleColumn`/`MultiColumn`
-  seal split flagged in decision 5, not by widening the existing
-  `Recognized.column()` accessor.
+- *Class-level constraints* for cross-column CHECKs (note 3 in "Settled
+  design notes" above). Implementation note: lift goes through the
+  `SingleColumn`/`MultiColumn` seal split flagged in note 4, not by
+  widening the existing `Recognized.column()` accessor.
 - *Numeric value lists.* `CHECK (col IN (1, 2, 3))` currently rejects with
   `UnrecognizedReason.NUMERIC_VALUE_LIST`. Lifting it requires either a
   custom `@OneOf(int...)` Hibernate constraint (graphitron emits the
