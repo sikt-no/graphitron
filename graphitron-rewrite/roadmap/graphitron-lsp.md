@@ -1,7 +1,7 @@
 ---
 id: R18
 title: "Java LSP rewrite + introspect retirement + `dev` goal"
-status: In Progress
+status: In Review
 priority: 12
 theme: legacy-migration
 depends-on: []
