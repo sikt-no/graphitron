@@ -6,9 +6,11 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
+import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -68,10 +70,10 @@ public final class FetcherEmitter {
             return CodeBlock.of("$T.fetching($S)", propertyDataFetcher, field.name());
         }
         if (field instanceof ChildField.PropertyField pf && resultType != null) {
-            return propertyOrRecordValue(pf.columnName(), pf.column(), resultType, outputPackage);
+            return propertyOrRecordValue(pf.columnName(), pf.column(), resultType, pf.accessor(), outputPackage);
         }
         if (field instanceof ChildField.RecordField rf && resultType != null) {
-            return propertyOrRecordValue(rf.columnName(), rf.column(), resultType, outputPackage);
+            return propertyOrRecordValue(rf.columnName(), rf.column(), resultType, rf.accessor(), outputPackage);
         }
         if (field instanceof ChildField.ColumnField cf && parentTable != null) {
             if (cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys enc) {
@@ -182,9 +184,14 @@ public final class FetcherEmitter {
         return CodeBlock.of("$T::$L", fetchersClass, field.name());
     }
 
+    @DependsOnClassifierCheck(
+        key = "class-accessor-resolver-shape-guarantee",
+        reliesOn = "Reads pre-resolved AccessorResolution.Resolved.method() / .field() unconditionally; "
+            + "the resolver rejects mismatched shapes at classify time so the emitter doesn't fork "
+            + "on candidate-name fallback or guess at runtime.")
     private static CodeBlock propertyOrRecordValue(
             String columnName, ColumnRef column, GraphitronType.ResultType resultType,
-            String outputPackage) {
+            AccessorResolution accessor, String outputPackage) {
         var columnFetcherClass = ClassName.get(outputPackage + ".util",
             ColumnFetcherClassGenerator.CLASS_NAME);
         if (resultType instanceof GraphitronType.JooqTableRecordType jtrt
@@ -196,19 +203,65 @@ public final class FetcherEmitter {
                 || resultType instanceof GraphitronType.JooqRecordType) {
             return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, columnName);
         }
-        if (resultType instanceof GraphitronType.JavaRecordType jrt) {
-            var backingClass = ClassName.bestGuess(jrt.fqClassName());
-            var accessor = toCamelCase(columnName);
-            return CodeBlock.of("($T env) -> (($T) env.getSource()).$L()", DATA_FETCHING_ENV, backingClass, accessor);
+        if (resultType instanceof GraphitronType.PojoResultType prt && prt.fqClassName() == null) {
+            var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
+            return CodeBlock.of("$T.fetching($S)", propertyDataFetcher, columnName);
         }
-        var prt = (GraphitronType.PojoResultType) resultType;
-        if (prt.fqClassName() != null) {
-            var backingClass = ClassName.bestGuess(prt.fqClassName());
-            var accessorBase = toCamelCase(columnName);
-            var getter = "get" + Character.toUpperCase(accessorBase.charAt(0)) + accessorBase.substring(1);
-            return CodeBlock.of("($T env) -> (($T) env.getSource()).$L()", DATA_FETCHING_ENV, backingClass, getter);
+        // @record-Java-backed parent: read the pre-resolved accessor handle. The resolver wired
+        // in Phase A guarantees Resolved here when validation has run; the fall-through below
+        // covers the Rejected / null case (validator surfaces Rejected as a ValidationError) and
+        // mirrors the pre-R88 string-derived heuristic so test fixtures that bypass validation
+        // gating stay deterministic.
+        String fqClassName = (resultType instanceof GraphitronType.JavaRecordType jrt)
+            ? jrt.fqClassName()
+            : ((GraphitronType.PojoResultType) resultType).fqClassName();
+        var backingClass = ClassName.bestGuess(fqClassName);
+        if (accessor instanceof AccessorResolution.Resolved resolved) {
+            return switch (resolved) {
+                case AccessorResolution.GetterPrefixed gp -> methodCallExpr(backingClass, gp.method());
+                case AccessorResolution.BareName bn -> methodCallExpr(backingClass, bn.method());
+                case AccessorResolution.FieldRead fr -> CodeBlock.of("($T env) -> (($T) env.getSource()).$L",
+                    DATA_FETCHING_ENV, backingClass, fr.field().getName());
+            };
         }
-        var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
-        return CodeBlock.of("$T.fetching($S)", propertyDataFetcher, columnName);
+        var accessorBase = toCamelCase(columnName);
+        String accessorName = (resultType instanceof GraphitronType.JavaRecordType)
+            ? accessorBase
+            : "get" + Character.toUpperCase(accessorBase.charAt(0)) + accessorBase.substring(1);
+        return CodeBlock.of("($T env) -> (($T) env.getSource()).$L()",
+            DATA_FETCHING_ENV, backingClass, accessorName);
+    }
+
+    /**
+     * Emits the method-call expression for a resolved accessor. Three injection forms:
+     * zero-arg ({@code .name()}), full-environment ({@code .name(env)} when the method takes a
+     * single {@code DataFetchingEnvironment}), or per-argument ({@code .name(($T) env.getArgument($S), …)}
+     * — uses the candidate method's reflected parameter names as the SDL argument keys, which
+     * holds when the consumer compiles with {@code -parameters}).
+     */
+    private static CodeBlock methodCallExpr(ClassName backingClass, java.lang.reflect.Method method) {
+        var paramTypes = method.getParameterTypes();
+        if (paramTypes.length == 0) {
+            return CodeBlock.of("($T env) -> (($T) env.getSource()).$L()",
+                DATA_FETCHING_ENV, backingClass, method.getName());
+        }
+        if (paramTypes.length == 1 && "graphql.schema.DataFetchingEnvironment".equals(paramTypes[0].getName())) {
+            return CodeBlock.of("($T env) -> (($T) env.getSource()).$L(env)",
+                DATA_FETCHING_ENV, backingClass, method.getName());
+        }
+        var parameters = method.getParameters();
+        var argsBuilder = CodeBlock.builder();
+        for (int i = 0; i < parameters.length; i++) {
+            if (i > 0) argsBuilder.add(", ");
+            if (!parameters[i].isNamePresent()) {
+                throw new IllegalStateException(
+                    "Cannot emit per-argument injection for " + method
+                    + ": compile the backing class with -parameters so SDL argument names are preserved.");
+            }
+            argsBuilder.add("($T) env.getArgument($S)",
+                ClassName.get(parameters[i].getType()), parameters[i].getName());
+        }
+        return CodeBlock.of("($T env) -> (($T) env.getSource()).$L($L)",
+            DATA_FETCHING_ENV, backingClass, method.getName(), argsBuilder.build());
     }
 }
