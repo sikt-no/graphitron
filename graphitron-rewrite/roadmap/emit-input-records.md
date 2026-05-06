@@ -49,11 +49,40 @@ same as on a regular bean.
 This is the load-bearing constraint: services are written in a domain
 vocabulary that does not depend on graphitron, exactly as if graphitron did
 not exist. A service signature like `submit(Integer filmId, Integer rating)`
-keeps that exact shape — graphitron destructures the emitted record and
-passes the components through to the existing scalar arguments. Likewise for
-DML mutations: the emitter consumes the record's accessors to bind jOOQ
-columns, but no jOOQ-record-side or service-side type ever references the
-emitted input class.
+keeps that exact shape — graphitron destructures the emitted record at the
+call site and passes the components through to the existing scalar
+arguments. Likewise for DML mutations: the emitter consumes the record's
+accessors to bind jOOQ columns, but no jOOQ-record-side or service-side
+type ever references the emitted input class.
+
+Concretely, the call shape transforms like this. SDL today (scalar args):
+
+```graphql
+submitFilmReview(filmId: Int!, rating: Int!): FilmReviewPayload @service(...)
+```
+emits
+
+```java
+service.submit(env.getArgument("filmId"), env.getArgument("rating"));
+```
+
+SDL after R94 (input-type arg, **service signature unchanged**):
+
+```graphql
+submitFilmReview(input: SubmitReviewInput!): FilmReviewPayload @service(...)
+```
+emits
+
+```java
+SubmitReviewInput input = SubmitReviewInput.fromMap(env.getArgument("input"));
+// validator pre-step (R12 §5) runs against `input` here, when the channel
+// carries a ValidationHandler
+service.submit(input.filmId(), input.rating());
+```
+
+The service author still writes `static FilmReviewPayload submit(Integer
+filmId, Integer rating)`. The destructuring is the emitter's responsibility
+and lives entirely on graphitron's side of the seam.
 
 The record is a **fetcher-boundary receptacle**, not a public type. Two
 direct consequences:
@@ -99,6 +128,27 @@ prescriptive.
   DML reads and emit the record purely for validation. The dual-emit shape is
   smaller scope but leaves two parallel input representations co-existing,
   which tends to drift. Recommended default: single record source of truth.
+
+- **Record component → service-param mapping.** When the emitter destructures
+  the record into a service call, how does it resolve which component maps
+  to which service parameter? Three candidate shapes: (a) **by name**, where
+  record component names match service parameter names verbatim
+  (`input.filmId()` → `Integer filmId`); requires `-parameters` on the
+  service module's compilation, which the project already recommends after
+  the recent compiler-flag change on trunk. (b) **by position**, where the
+  emitter walks the SDL input fields in declaration order and binds them to
+  service parameters in the same order; brittle to SDL reordering, and
+  loses the rest of the protection a service-call mismatch would otherwise
+  surface as a method-not-found build error. (c) **by an explicit SDL/directive
+  mapping**, e.g. `@service(method: "submit", paramMap: {filmId: "filmId",
+  rating: "rating"})`; redundant in the common case but lets the
+  service-side parameter naming diverge from SDL when the consumer wants.
+  R88's `ClassAccessorResolver` (now landed) already canonicalises name-based
+  resolution against jOOQ records and `@error` source classes; the same
+  resolver shape probably suffices here. Recommended default: (a) by name,
+  with (c) as the explicit override path when consumer wants divergent
+  naming. Spec needs to pin the resolution failure mode (build-time
+  `UnclassifiedField` vs warn-and-fall-through to position).
 
 - **Map → record coercion.** graphql-java doesn't auto-coerce input
   `Map<String,Object>` to a Java POJO; the rewrite has to do it. Two shapes:
