@@ -134,9 +134,11 @@ public final class Diagnostics {
         WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
     ) {
         // Look across every table's references for a matching FK name.
-        // Path-step refinement (which step's table we are on) is deferred
-        // along with the path-aware completion.
-        if (!collectAllFkNames(catalog).contains(fkName)) {
+        // Match case-insensitively to mirror JooqCatalog.findForeignKeyByName,
+        // which the runtime resolver uses; the LSP must not flag names the
+        // generator would accept. Path-step refinement (which step's table we
+        // are on) is deferred along with the path-aware completion.
+        if (collectAllFkNames(catalog).stream().noneMatch(known -> known.equalsIgnoreCase(fkName))) {
             out.add(diagnostic(file, valueNode,
                 "Unknown foreign key '" + fkName + "'. Not present in the jOOQ catalog."));
         }
