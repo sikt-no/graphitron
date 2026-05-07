@@ -68,6 +68,14 @@ public record NodeConfiguration(String typeId, JOOQMapping targetTable, List<Str
     }
 
     /**
+     * @return CodeBlock with comma-separated node ID fields referencing the static table field directly.
+     * Example: {@code FILM.FILM_ID, FILM.TITLE}
+     */
+    public CodeBlock nodeIdFieldsWithStaticFieldBlock() {
+        return tableFieldsBlock(CodeBlock.of("$N", targetTable().getName()), keyColumnsJavaNames());
+    }
+
+    /**
      * @return CodeBlock with comma-separated node ID fields using a table alias variable.
      * Example: {@code _a_film.FILM_ID, _a_film.TITLE}
      */

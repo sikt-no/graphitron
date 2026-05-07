@@ -1,0 +1,9 @@
+# Test for custom conditions with node ID mapped to TableRecord
+{
+    customerWithNextCustomerId(customerId: "Q3VzdG9tZXI6MQ") { # Customer:1
+        id
+    }
+    customerWithSumOfCustomerIds(customerIds: ["Q3VzdG9tZXI6MQ", "Q3VzdG9tZXI6Mg"]) { # Customer:1, Customer:2
+        id
+    }
+}

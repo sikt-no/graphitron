@@ -28,6 +28,11 @@ public class VacationDestination extends TableImpl<VacationDestinationRecord> {
     }
 
     @Override
+    public Class<VacationDestinationRecord> getRecordType() {
+        return VacationDestinationRecord.class;
+    }
+
+    @Override
     public UniqueKey<VacationDestinationRecord> getPrimaryKey() {
         return Keys.VACATION_DESTINATION_PKEY;
     }
