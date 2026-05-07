@@ -1938,6 +1938,26 @@ class TypeFetcherGeneratorTest {
             "Actor", List.<JoinStep>of(actorFk));
     }
 
+    private static no.sikt.graphitron.rewrite.model.TableRef filmActorParentTableForList() {
+        // Single-column PK on FilmActor that doubles as the FK source on the participants' join
+        // paths (filmActorChildJoinPaths sources both FKs from last_update). After R102 the list
+        // arm constructs a BatchKey.RowKeyed over the parent PK; aligning the parent PK with the
+        // FK source columns lets the emitted JOIN parentInput predicate land on the same column
+        // the WHERE predicate used to read.
+        return TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor",
+            List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")));
+    }
+
+    private static no.sikt.graphitron.rewrite.model.BatchKey.RecordParentBatchKey filmActorParentKey() {
+        return new no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed(
+            filmActorParentTableForList().primaryKeyColumns());
+    }
+
+    private static no.sikt.graphitron.rewrite.model.GraphitronType.ResultType filmActorParentResultType() {
+        return new no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType(
+            "FilmActor", null, null, filmActorParentTableForList());
+    }
+
     private static ChildField.InterfaceField childInterfaceField(String parentType, String name, boolean isList) {
         var wrapper = isList ? (FieldWrapper) nonNullList() : single();
         var returnType = new ReturnTypeRef.PolymorphicReturnType("FilmOrActor", wrapper);
@@ -1948,7 +1968,8 @@ class TypeFetcherGeneratorTest {
                     List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
                 null));
         return new ChildField.InterfaceField(parentType, name, null,
-            returnType, participants, filmActorChildJoinPaths());
+            returnType, participants, filmActorChildJoinPaths(),
+            filmActorParentKey(), filmActorParentResultType());
     }
 
     private static ChildField.UnionField childUnionField(String parentType, String name, boolean isList) {
@@ -1961,7 +1982,8 @@ class TypeFetcherGeneratorTest {
                     List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
                 null));
         return new ChildField.UnionField(parentType, name, null,
-            returnType, participants, filmActorChildJoinPaths());
+            returnType, participants, filmActorChildJoinPaths(),
+            filmActorParentKey(), filmActorParentResultType());
     }
 
     @Test
@@ -2044,7 +2066,8 @@ class TypeFetcherGeneratorTest {
                     List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
                 null));
         return new ChildField.InterfaceField(parentType, name, null,
-            returnType, participants, filmActorChildJoinPaths());
+            returnType, participants, filmActorChildJoinPaths(),
+            filmActorParentKey(), filmActorParentResultType());
     }
 
     private static ChildField.UnionField childUnionConnectionField(
@@ -2058,7 +2081,8 @@ class TypeFetcherGeneratorTest {
                     List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
                 null));
         return new ChildField.UnionField(parentType, name, null,
-            returnType, participants, filmActorChildJoinPaths());
+            returnType, participants, filmActorChildJoinPaths(),
+            filmActorParentKey(), filmActorParentResultType());
     }
 
     /**
@@ -2279,8 +2303,15 @@ class TypeFetcherGeneratorTest {
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("ProjectNote", note, null),
             new ParticipantRef.TableBound("ProjectEvent", event, null));
+        var parentTable = compositePkParentTable();
+        var parentKey = (no.sikt.graphitron.rewrite.model.BatchKey.RecordParentBatchKey)
+            new no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed(parentTable.primaryKeyColumns());
+        var parentResultType = (no.sikt.graphitron.rewrite.model.GraphitronType.ResultType)
+            new no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType(
+                "Project", null, null, parentTable);
         return new ChildField.InterfaceField("Project", "itemsConnection", null,
-            returnType, participants, compositePkParentJoinPaths());
+            returnType, participants, compositePkParentJoinPaths(),
+            parentKey, parentResultType);
     }
 
     @Test

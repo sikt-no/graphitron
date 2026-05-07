@@ -121,7 +121,6 @@ public sealed interface BatchKey
     }
 
     private static TypeName rowNType(List<ColumnRef> keyColumns) {
-        if (keyColumns.isEmpty()) return ClassName.get("org.jooq", "Row");
         ClassName rowNClass = ClassName.get("org.jooq", "Row" + keyColumns.size());
         TypeName[] typeArgs = keyColumns.stream()
             .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
@@ -130,7 +129,6 @@ public sealed interface BatchKey
     }
 
     private static TypeName recordNType(List<ColumnRef> keyColumns) {
-        if (keyColumns.isEmpty()) return ClassName.get("org.jooq", "Record");
         ClassName recordNClass = ClassName.get("org.jooq", "Record" + keyColumns.size());
         TypeName[] typeArgs = keyColumns.stream()
             .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
@@ -148,8 +146,12 @@ public sealed interface BatchKey
                     TableRecordKeyed, MappedTableRecordKeyed {
 
         /**
-         * PK/FK columns from the parent table. May be empty when the parent type is a root
-         * operation type (no backing table).
+         * PK/FK columns from the parent table. Non-empty by canonical-constructor invariant on
+         * every permit: a {@link BatchKey} without key columns is not a coherent batch-key
+         * declaration and no producer in the codebase legitimately constructs one. Validator
+         * rejection of empty-PK parents (e.g.
+         * {@code GraphitronSchemaValidator.validateChildMultiTableParentPk}) keeps the
+         * canonical-constructor IAE unreachable on the fields it gates.
          */
         List<ColumnRef> parentKeyColumns();
     }
@@ -230,6 +232,13 @@ public sealed interface BatchKey
      * {@code @record} parents whose backing class has a catalog FK ({@link RecordParentBatchKey}).
      */
     record RowKeyed(List<ColumnRef> parentKeyColumns) implements ParentKeyed, RecordParentBatchKey {
+        public RowKeyed {
+            if (parentKeyColumns.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "BatchKey.RowKeyed requires a non-empty parentKeyColumns list");
+            }
+            parentKeyColumns = List.copyOf(parentKeyColumns);
+        }
         @Override
         public String javaTypeName() {
             return containerType("List", "Row", parentKeyColumns);
@@ -249,6 +258,13 @@ public sealed interface BatchKey
      * {@code List<RecordN<...>>} sources parameter; drives {@code newDataLoader(...)}.
      */
     record RecordKeyed(List<ColumnRef> parentKeyColumns) implements ParentKeyed {
+        public RecordKeyed {
+            if (parentKeyColumns.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "BatchKey.RecordKeyed requires a non-empty parentKeyColumns list");
+            }
+            parentKeyColumns = List.copyOf(parentKeyColumns);
+        }
         @Override
         public String javaTypeName() {
             return containerType("List", "Record", parentKeyColumns);
@@ -263,6 +279,13 @@ public sealed interface BatchKey
      * (variant identity tracks the developer's source shape).
      */
     record MappedRowKeyed(List<ColumnRef> parentKeyColumns) implements ParentKeyed {
+        public MappedRowKeyed {
+            if (parentKeyColumns.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "BatchKey.MappedRowKeyed requires a non-empty parentKeyColumns list");
+            }
+            parentKeyColumns = List.copyOf(parentKeyColumns);
+        }
         @Override
         public String javaTypeName() {
             return containerType("Set", "Row", parentKeyColumns);
@@ -275,6 +298,13 @@ public sealed interface BatchKey
      * {@code newMappedDataLoader(...)}.
      */
     record MappedRecordKeyed(List<ColumnRef> parentKeyColumns) implements ParentKeyed {
+        public MappedRecordKeyed {
+            if (parentKeyColumns.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "BatchKey.MappedRecordKeyed requires a non-empty parentKeyColumns list");
+            }
+            parentKeyColumns = List.copyOf(parentKeyColumns);
+        }
         @Override
         public String javaTypeName() {
             return containerType("Set", "Record", parentKeyColumns);
@@ -297,6 +327,13 @@ public sealed interface BatchKey
     record TableRecordKeyed(
             List<ColumnRef> parentKeyColumns,
             Class<? extends org.jooq.TableRecord<?>> elementClass) implements ParentKeyed {
+        public TableRecordKeyed {
+            if (parentKeyColumns.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "BatchKey.TableRecordKeyed requires a non-empty parentKeyColumns list");
+            }
+            parentKeyColumns = List.copyOf(parentKeyColumns);
+        }
         @Override
         public String javaTypeName() {
             return "java.util.List<" + elementClass.getName() + ">";
@@ -311,6 +348,13 @@ public sealed interface BatchKey
     record MappedTableRecordKeyed(
             List<ColumnRef> parentKeyColumns,
             Class<? extends org.jooq.TableRecord<?>> elementClass) implements ParentKeyed {
+        public MappedTableRecordKeyed {
+            if (parentKeyColumns.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "BatchKey.MappedTableRecordKeyed requires a non-empty parentKeyColumns list");
+            }
+            parentKeyColumns = List.copyOf(parentKeyColumns);
+        }
         @Override
         public String javaTypeName() {
             return "java.util.Set<" + elementClass.getName() + ">";
@@ -459,7 +503,6 @@ public sealed interface BatchKey
     }
 
     private static String containerType(String container, String shape, List<ColumnRef> cols) {
-        if (cols.isEmpty()) return "java.util." + container + "<?>";
         var typeArgs = cols.stream()
             .map(ColumnRef::columnClass)
             .collect(Collectors.joining(", "));

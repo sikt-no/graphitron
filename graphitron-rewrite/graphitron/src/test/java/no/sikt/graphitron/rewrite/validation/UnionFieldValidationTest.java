@@ -43,7 +43,7 @@ class UnionFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new UnionField("Address", "activities", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()));
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
         assertThat(validate(field)).isEmpty();
     }
 
@@ -54,7 +54,7 @@ class UnionFieldValidationTest {
             new ParticipantRef.TableBound("Kpis", NO_PK, null));
         var field = new UnionField("Address", "activities", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Kpis", List.of()));
+            participants, Map.of("Customer", List.of(), "Kpis", List.of()), null, null);
         assertHasKind(validate(field), RejectionKind.AUTHOR_ERROR,
             "Field 'Address.activities': participant 'Kpis' has no primary key");
     }
@@ -68,7 +68,7 @@ class UnionFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new UnionField("Bar", "activitiesConnection", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.Connection(false, 5)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()));
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
         var parentType = new GraphitronType.TableType("Bar", null, BAR);
         var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
         assertThat(errors).isEmpty();

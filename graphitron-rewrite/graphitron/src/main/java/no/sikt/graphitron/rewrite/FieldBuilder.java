@@ -421,6 +421,15 @@ class FieldBuilder {
      * ({@code TableInterfaceField}, {@code InterfaceField}, {@code UnionField}, {@code ServiceField},
      * {@code ComputedField}) are added in P3.
      */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven",
+        description = "ChildField.InterfaceField and ChildField.UnionField are constructed only "
+            + "here, with both parentKey: BatchKey.RecordParentBatchKey and parentResultType: "
+            + "GraphitronType.ResultType resolved at classification time. Lets the multi-table "
+            + "polymorphic emitter delegate to GeneratorUtils.buildRecordParentKeyExtraction with "
+            + "no parallel inline cast-to-Record path. Empty-PK parents are routed through "
+            + "UnclassifiedField above, so the BatchKey.RowKeyed canonical-constructor non-empty "
+            + "invariant is unreachable on this construction path.")
     private GraphitronField classifyObjectReturnChildField(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType parentTableType, Set<String> expandingTypes) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
@@ -517,9 +526,21 @@ class FieldBuilder {
             if (resolved.error() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(resolved.error()));
             }
+            var pkCols = parentTableType.table().primaryKeyColumns();
+            if (pkCols.isEmpty()) {
+                // Validator surfaces this as a structural rejection on the parent type's PK
+                // (validateChildMultiTableParentPk); routing through UnclassifiedField here keeps
+                // the canonical-constructor invariant on BatchKey.RowKeyed unreachable.
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    Rejection.structural("multi-table interface child field requires a non-empty "
+                        + "primary key on parent type '" + parentTypeName + "'"));
+            }
+            BatchKey.RecordParentBatchKey parentKey = new BatchKey.RowKeyed(pkCols);
+            GraphitronType.ResultType parentResultType =
+                new GraphitronType.JooqTableRecordType(parentTypeName, location, null, parentTableType.table());
             return new InterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
-                interfaceType.participants(), resolved.paths());
+                interfaceType.participants(), resolved.paths(), parentKey, parentResultType);
         }
 
         if (elementType instanceof UnionType unionType) {
@@ -528,9 +549,18 @@ class FieldBuilder {
             if (resolved.error() != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(resolved.error()));
             }
+            var pkCols = parentTableType.table().primaryKeyColumns();
+            if (pkCols.isEmpty()) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    Rejection.structural("multi-table union child field requires a non-empty "
+                        + "primary key on parent type '" + parentTypeName + "'"));
+            }
+            BatchKey.RecordParentBatchKey parentKey = new BatchKey.RowKeyed(pkCols);
+            GraphitronType.ResultType parentResultType =
+                new GraphitronType.JooqTableRecordType(parentTypeName, location, null, parentTableType.table());
             return new UnionField(parentTypeName, name, location,
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
-                unionType.participants(), resolved.paths());
+                unionType.participants(), resolved.paths(), parentKey, parentResultType);
         }
 
         // NestingField: a plain object type in the schema with no Graphitron domain classification.

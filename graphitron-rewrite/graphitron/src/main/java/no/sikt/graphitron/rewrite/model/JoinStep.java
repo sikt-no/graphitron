@@ -227,6 +227,12 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
     ) implements JoinStep, WithTarget {
 
         public LiftedHop {
+            if (slots.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "JoinStep.LiftedHop requires a non-empty slots list — every BatchKey permit "
+                    + "delegating its key columns through this hop (LifterRowKeyed, "
+                    + "AccessorKeyedSingle, AccessorKeyedMany) needs at least one column.");
+            }
             slots = List.copyOf(slots);
         }
 
