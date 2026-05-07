@@ -30,11 +30,17 @@ class ClassificationTraceTest {
     void enableTracing() {
         tracePath = tempDir.resolve("trace.jsonl");
         ClassificationTrace.resetForTesting(tracePath);
+        // The auto-registered ClassificationTraceContextExtension populates context with this
+        // class's name + "unit" tier in beforeAll. Clear it here so per-test field-set
+        // assertions can verify empty context behaviour explicitly; the
+        // emit_attributesRecordsToTestContext_setBySetContext test re-sets it.
+        ClassificationTrace.clearContext();
     }
 
     @AfterEach
     void disableTracing() {
         ClassificationTrace.resetForTesting(null);
+        ClassificationTrace.clearContext();
     }
 
     @Test
