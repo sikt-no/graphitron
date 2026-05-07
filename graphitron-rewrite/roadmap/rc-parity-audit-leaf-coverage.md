@@ -17,11 +17,13 @@ emitted code is correct end-to-end. The first release candidate of graphitron
 10 needs an explicit, leaf-by-leaf accounting of what is covered, what is not,
 and which gaps are RC-blocking versus deferrable.
 
-This item produces the **regenerable coverage table and the tooling that
-keeps it in sync with trunk**: registries that funnel classification writes,
+This item produces the **regenerable coverage table** at
+`graphitron-rewrite/roadmap/inference-axis-coverage.adoc`, the tooling that
+keeps it in sync with trunk (registries that funnel classification writes,
 a JSONL trace, a JUnit extension that tags records with the running test
-class and tier, and a `roadmap-tool leaf-coverage` post-processor. The
-*triage* step (classifying each leaf into Covered / Trivial gap /
+class and tier, and a `roadmap-tool leaf-coverage` post-processor), and
+the consumer-facing migration-guide section that the same tooling feeds.
+The *triage* step (classifying each leaf into Covered / Trivial gap /
 RC-blocker / Defer and spawning sibling Backlog items per gap) is a
 separate item that depends on this one: the table makes the triage trivial
 to do once, hard to do up-front.
@@ -116,46 +118,26 @@ site that needs another operation, add it symmetrically.
 The registries take ownership of trace emission. Each operation:
 1. Validates the prior-entry precondition.
 2. Writes to the private map.
-3. Emits a trace record if `-Dgraphitron.classification.trace` is set.
+3. Emits a JSONL record to the path set by
+   `-Dgraphitron.classification.trace=<path>` if the property is set.
+   Default off; production runs incur no cost.
 
 Java access modifiers do the architectural enforcement: with the maps
 private, a new bypass requires either adding a public method to the
 registry (visible in code review) or breaking encapsulation in a way that
 fails a basic visibility check.
 
-#### 1b. Rewrite call sites to use named operations
+Trace record fields:
 
-Touch points discovered in research:
-
-- `TypeBuilder.classifyType` → `registry.classify` (return value still
-  flows back to caller for use within `buildTypes`)
-- `TypeBuilder.buildTypes` enrichment pass (TypeBuilder.java:141-158,
-  the `replaceAll` over participant-enriched interface/union variants) →
-  `registry.enrich`
-- `TypeBuilder.validateNodeTypeIdUniqueness` (TypeBuilder.java:182) →
-  `registry.demote`
-- `EntityResolutionBuilder.build` (lines 104, 110, 128) →
-  `registry.demote`
-- `GraphitronSchemaBuilder.promoteConnectionTypes` (lines 373, 377, 386,
-  391) → `registry.synthesize`
-- `FieldBuilder.classifyField` (and the input-field path through
-  `BuildContext.classifyInputField`) → `fieldRegistry.classify`
-
-Emit a JSONL record per registry operation to the path set by
-`-Dgraphitron.classification.trace=<path>`. Default off; production runs
-incur no cost. Record fields:
-
-- `op`: one of `classify`, `enrich`, `demote`, `synthesize`. Four arms,
-  not three: the architect's review pointed out that the enrichment pass
-  (TypeBuilder.java:141-158, replacing empty `InterfaceType` /
-  `UnionType` with participant-resolved versions) and the validation
-  demotions (federation, node-id collision) are semantically different
-  and the audit consumer wants to filter on them differently. `enrich`
-  asserts "prior entry exists, structurally compatible replacement"
-  (always benign). `demote` asserts "prior entry exists, classification
-  regressed (typically to Unclassified)" (always worth scrutinising).
-  `classify` is primary, `synthesize` is graphitron-generated with no SDL
-  origin (connection/edge/pageinfo).
+- `op`: one of `classify`, `enrich`, `demote`, `synthesize`. The audit
+  consumer filters on these differently: `enrich` is benign by
+  construction (prior entry replaced by a structurally compatible richer
+  version, e.g. an `InterfaceType` gaining its resolved participants);
+  `demote` is always worth scrutinising (prior entry replaced by a
+  classification regression, typically to `UnclassifiedType` /
+  `UnclassifiedField`); `classify` is the primary case; `synthesize` is
+  a graphitron-generated entry with no SDL origin
+  (connection/edge/pageinfo).
 - `parent`: parent type name (empty for top-level types)
 - `name`: field/type name
 - `leaf`: fully-qualified record class, e.g. `ChildField.TableMethodField`
@@ -168,13 +150,14 @@ incur no cost. Record fields:
 - `rejection`: present only on `UnclassifiedField` / `UnclassifiedType`;
   carries the `RejectionKind` plus message so the post-processor can
   separate `[deferred]` (legitimately stub-tagged) from `[author-error]` /
-  `[invalid-schema]` (would be a real classification regression if seen on
-  a fixture we expected to pass)
+  `[invalid-schema]` (which would be a real classification regression if
+  seen on a fixture we expected to pass).
 - `test`: fully-qualified test class name when classification runs inside
   a JUnit lifecycle (populated by 1d). Empty when classification runs
   outside tests (e.g. `graphitron:generate` from a real consumer build).
 - `tier`: one of `unit`, `pipeline`, `compilation`, `execution`, or
-  `cross-cutting`, derived from the test class's tier annotation by 1d.
+  `cross-cutting` (the last covers tests carrying `@Tag("cross-cutting")`
+  instead of a tier annotation), derived from the test class by 1d.
   Empty when `test` is empty.
 
 Implementation note: the existing `BuildWarning` mechanism (`ctx.addWarning`)
@@ -182,6 +165,24 @@ is for *warnings* surfaced to schema authors and has the wrong semantics
 for routine classification trace. Keep the registries' emitter separate.
 The emitter is a no-op when the trace property is unset, so production
 generator runs (where the property is never set) pay nothing.
+
+#### 1b. Rewrite call sites to use named operations
+
+Touch points discovered in research:
+
+- `TypeBuilder.classifyType` → `registry.classify` (return value still
+  flows back to caller for use within `buildTypes`).
+- `TypeBuilder.buildTypes` enrichment pass (TypeBuilder.java:141-158, the
+  `replaceAll` over participant-enriched interface/union variants) →
+  `registry.enrich`.
+- `TypeBuilder.validateNodeTypeIdUniqueness` (TypeBuilder.java:182) →
+  `registry.demote`.
+- `EntityResolutionBuilder.build` (lines 104, 110, 128) →
+  `registry.demote`.
+- `GraphitronSchemaBuilder.promoteConnectionTypes` (lines 373, 377, 386,
+  391) → `registry.synthesize`.
+- `FieldBuilder.classifyField` and the input-field path through
+  `BuildContext.classifyInputField` → `fieldRegistry.classify`.
 
 #### 1c. Property and profile
 
@@ -214,11 +215,10 @@ stays free of JUnit dependencies. The `ClassificationTrace` emitter sits
 in main sources with a no-op default context and a setter the extension
 calls.
 
-#### Permits enumeration
+### 2. Build the `roadmap-tool leaf-coverage` post-processor
 
-The post-processor (step 2) enumerates the universe of leaves by parsing
-`permits` clauses from these sources, and reports any leaf that never
-appeared in the trace:
+Subcommand alongside the existing `directive-support`. Inputs: the trace
+JSONL emitted by step 1, plus the sealed-permits source files at:
 
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronField.java`
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/RootField.java`
@@ -226,16 +226,14 @@ appeared in the trace:
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/InputField.java`
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronType.java`
 
-`VariantCoverageTest`'s `NO_CASE_REQUIRED` map remains a useful
-cross-reference for documented classification gaps; entries there deserve
-scrutiny rather than blanket acceptance.
+The post-processor parses `permits` clauses from those sources to
+enumerate the universe of leaves; any leaf with zero trace records is a
+coverage hole. `VariantCoverageTest`'s `NO_CASE_REQUIRED` map remains a
+useful cross-reference for documented classification gaps; entries there
+deserve scrutiny rather than blanket acceptance.
 
-### 2. Build the `roadmap-tool leaf-coverage` post-processor
-
-Subcommand alongside the existing `directive-support`. Inputs: the trace
-JSONL emitted by step 1, plus the sealed-permits source files. Reads the
-roadmap directory for class-name mentions, same convention as the other
-subcommands.
+Reads the roadmap directory for class-name mentions, same convention as
+the other subcommands.
 
 Outputs:
 
@@ -252,18 +250,16 @@ Outputs:
   migration guide: a "supported schema shapes" list keyed off the leaf
   classification. Consumer-facing wording, internal columns elided.
 
-The post-processor enumerates leaves from sealed `permits` clauses and
-flags any leaf with zero trace records as a coverage hole. Tier
-classification per leaf is the *highest* `tier` value across all trace
-records for that leaf: a leaf with at least one record at `tier=execution`
-is execution-covered, otherwise the highest tier observed determines the
-ranking. Records with empty `tier` (classification outside any test, e.g.
-real generator runs) count as classification-tier coverage only.
+Tier classification per leaf is the *highest* `tier` value across all
+trace records for that leaf: a leaf with at least one record at
+`tier=execution` is execution-covered; otherwise the highest tier
+observed determines the ranking. Records with empty `tier`
+(classification outside any test, e.g. real generator runs) count as
+classification-tier coverage only.
 
-This is exact data: every record carries the test class that produced it,
-so the report can list "ChildField.TableField is exercised by
-TableFieldPipelineTest (pipeline) and GraphQLQueryTest (execution)" with
-no inference.
+Every record carries the test class that produced it, so the report can
+list "ChildField.TableField is exercised by TableFieldPipelineTest
+(pipeline) and GraphQLQueryTest (execution)" with no inference required.
 
 The classification trace must be regenerated before regenerating the report
 (running `mvn -Pleaf-coverage verify` produces the input). Document the
@@ -296,13 +292,14 @@ this fixture-covered" detail.
 - **Triage and gap-closure** (separate Backlog item, depends on this).
   Once `inference-axis-coverage.adoc` is regenerable, classify each leaf
   as Covered / Trivial gap / RC-blocker / Defer and spawn one sibling
-  Backlog item per RC-blocker. The architect's review pointed out that
-  the table makes this trivial to do once it exists, but hard to do
-  up-front. The triage item's scope should also include cross-referencing
-  the audit table against `LoadBearingGuaranteeAuditTest`'s nine keys
-  (consumer sites that depend on a load-bearing classifier check) so
-  load-bearing keys without execution-tier coverage are caught alongside
-  bare leaf-coverage holes.
+  Backlog item per RC-blocker. Doing this up-front (before the data
+  exists) requires re-deriving the table by hand; doing it once the
+  table is in front of you is a read-and-bucket exercise, hence the
+  split. The triage item's scope should also cross-reference the table
+  against `LoadBearingGuaranteeAuditTest`'s nine keys (consumer sites
+  that depend on a load-bearing classifier check) so load-bearing keys
+  without execution-tier evidence are caught alongside bare
+  leaf-coverage holes.
 
 ## Done definition
 
@@ -334,10 +331,9 @@ this fixture-covered" detail.
 - Adding a marker interface to tag surface-level inference leaves. The idea
   is recorded for post-RC; whether to add it is a fresh design decision once
   classification has run and the marker's payoff is concrete.
-- Closing every leaf gap. Some are correctly deferred; the audit produces
-  the list, the user (with the principles-architect subagent for fork
-  judgement) decides per item.
+- Triaging the table or closing the gaps. Both happen in the follow-up
+  Backlog item; this one ships the regenerable data.
 - Validating any axis outside the directive + sealed-leaf surface. Other
   RC-readiness concerns (plugin packaging, `graphitron:dev` polish, error
-  message ergonomics) are tracked separately; this item stays scoped to the
-  shape-inference and directive-coverage surface.
+  message ergonomics) are tracked separately; this item stays scoped to
+  the shape-inference and directive-coverage surface.
