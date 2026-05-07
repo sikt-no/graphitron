@@ -1,7 +1,7 @@
 ---
 id: R104
 title: "RC parity audit: classify GraphitronField/Type leaves and ship coverage gaps"
-status: Ready
+status: In Progress
 bucket: validation
 depends-on: []
 ---
