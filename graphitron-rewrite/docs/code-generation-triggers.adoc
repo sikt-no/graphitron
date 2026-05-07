@@ -40,22 +40,26 @@ Two independent classifications describe every field: the *source context* it is
 
 The type on which a field is defined.
 
-| Source context | Directive | What Graphitron generates |
-|---|---|---|
-| *Unmapped* | *(none ; Query, Mutation)* | Entry point. No SQL yet. |
-| *Table-mapped* | `@table` | Full SQL generation ; queries, joins, projections. |
-| *Result-mapped* | `@record` | Runtime wiring only. Graphitron validates types and wires data fetchers, but generates no SQL until a new scope starts. |
+|===
+| Source context | Directive | What Graphitron generates
+
+| *Unmapped* | *(none ; Query, Mutation)* | Entry point. No SQL yet.
+| *Table-mapped* | `@table` | Full SQL generation ; queries, joins, projections.
+| *Result-mapped* | `@record` | Runtime wiring only. Graphitron validates types and wires data fetchers, but generates no SQL until a new scope starts.
+|===
 
 === Target type
 
 The classification of the field's return type (the element type ; looked through `List` and `Connection` wrappers). Encoded as `ReturnTypeRef`.
 
-| Target type | `ReturnTypeRef` variant | When it appears |
-|---|---|---|
-| *Target table* | `TableBoundReturnType` | Return type has `@table` (or is a `@table` + `@discriminate` interface), or a `NestingField` inherits the parent's table context. Carries a fully resolved `TableRef`. |
-| *Target record* | `ResultReturnType` | Return type has `@record`. |
-| *Target scalar* | `ScalarReturnType` | Scalar, enum, or an unclassified type name (e.g. `@nodeId(typeName:)` argument types). |
-| *Target polymorphic* | `PolymorphicReturnType` | Interfaces/unions spanning multiple tables, and the Relay/Federation built-ins `node` / `_entities`. |
+|===
+| Target type | `ReturnTypeRef` variant | When it appears
+
+| *Target table* | `TableBoundReturnType` | Return type has `@table` (or is a `@table` + `@discriminate` interface), or a `NestingField` inherits the parent's table context. Carries a fully resolved `TableRef`.
+| *Target record* | `ResultReturnType` | Return type has `@record`.
+| *Target scalar* | `ScalarReturnType` | Scalar, enum, or an unclassified type name (e.g. `@nodeId(typeName:)` argument types).
+| *Target polymorphic* | `PolymorphicReturnType` | Interfaces/unions spanning multiple tables, and the Relay/Federation built-ins `node` / `_entities`.
+|===
 
 "Target table" is the pivot concept for scope transitions: every new scope is a query rooted in some target table, driven either by the root entering a table-mapped type or by a *record handoff* from a result-mapped source into a target-table return.
 
@@ -63,12 +67,14 @@ The classification of the field's return type (the element type ; looked through
 
 A Graphitron scope corresponds to one SQL statement. Fields within a scope contribute to the same query. Scope is determined by the *(source context, target type)* pair ; *independently* of `@lookupKey`, which is orthogonal.
 
-| Boundary | Trigger |
-|---|---|
-| *Enter* | An unmapped root field reaches a target-table type ; the first scope starts |
-| *Split* | `@splitQuery` on a table-mapped source ; a new scope via DataLoader, keyed by the parent's PK |
-| *Record handoff* | A target-table field on a result-mapped source, or any user-provided return (`@service`, `@tableMethod`) reaching a target-table type ; new scope via DataLoader, keyed by the parent's PK or a custom batch key |
-| *Exit* | `@service` fields create a *private scope* ; their SQL statement is independent of any Graphitron-managed scope |
+|===
+| Boundary | Trigger
+
+| *Enter* | An unmapped root field reaches a target-table type ; the first scope starts
+| *Split* | `@splitQuery` on a table-mapped source ; a new scope via DataLoader, keyed by the parent's PK
+| *Record handoff* | A target-table field on a result-mapped source, or any user-provided return (`@service`, `@tableMethod`) reaching a target-table type ; new scope via DataLoader, keyed by the parent's PK or a custom batch key
+| *Exit* | `@service` fields create a *private scope* ; their SQL statement is independent of any Graphitron-managed scope
+|===
 
 `@lookupKey` does not appear in this table on purpose. It shapes the batch (adds the derived target table and the N × M invariant) but does not by itself open or close a scope ; that is always decided by the source/target pair above.
 
@@ -83,43 +89,49 @@ Two kinds of `VALUES(…)` derived tables built by Graphitron when batching:
 
 === Conditions
 
-| Kind | Purpose | Source |
-|---|---|---|
-| *Reference condition* | How two tables are joined within a scope | `@reference` directive: FK key → `FkJoin`; condition method → `ConditionJoin` |
-| *Filter condition* | Narrows the result set of the current scope | `@condition` directive, arguments, cursor |
-| *Lookup condition* | Filters the (source × target) row pairs produced by a lookup's derived target table. Must preserve the N × M positional contract ; see <<derived-tables,Derived tables>> above. | `@condition` directive on a field with `@lookupKey` |
+|===
+| Kind | Purpose | Source
+
+| *Reference condition* | How two tables are joined within a scope | `@reference` directive: FK key → `FkJoin`; condition method → `ConditionJoin`
+| *Filter condition* | Narrows the result set of the current scope | `@condition` directive, arguments, cursor
+| *Lookup condition* | Filters the (source × target) row pairs produced by a lookup's derived target table. Must preserve the N × M positional contract ; see <<derived-tables,Derived tables>> above. | `@condition` directive on a field with `@lookupKey`
+|===
 
 === Structural properties
 
-| Property | Effect |
-|---|---|
-| *`@splitQuery`* | On a table-mapped source, forces a new scope via DataLoader: `TableField` (no `@lookupKey`) → `SplitTableField`; field with `@lookupKey` → `SplitLookupTableField`. On a result-mapped source it is redundant ; the record handoff already opens a new scope ; and should produce a build *warning*, not an error. |
-| *`@lookupKey`* | Argument values become the derived target table (see <<derived-tables,Derived tables>>). Blocks pagination (preserves the N × M result invariant). Without `@splitQuery` → `LookupTableField`; with `@splitQuery` → `SplitLookupTableField`. Orthogonal to scope ; see <<scope,Scope>>. |
+|===
+| Property | Effect
+
+| *`@splitQuery`* | On a table-mapped source, forces a new scope via DataLoader: `TableField` (no `@lookupKey`) → `SplitTableField`; field with `@lookupKey` → `SplitLookupTableField`. On a result-mapped source it is redundant ; the record handoff already opens a new scope ; and should produce a build *warning*, not an error.
+| *`@lookupKey`* | Argument values become the derived target table (see <<derived-tables,Derived tables>>). Blocks pagination (preserves the N × M result invariant). Without `@splitQuery` → `LookupTableField`; with `@splitQuery` → `SplitLookupTableField`. Orthogonal to scope ; see <<scope,Scope>>.
+|===
 
 '''
 
 == Type Classification
 
-| Directive Pattern on Type | `GraphitronType` Variant | Generator Output |
-|---|---|---|
-| `@table` (no `@node`, no `@discriminate`) | `TableType` | `*Fetchers` class + `*` class |
-| `@table` + `@node` | `NodeType` | `*Fetchers` class + `*` class (with Relay ID handling) |
-| `@record` | `ResultType`* | `*Fetchers` class only (no SQL scope of its own) |
-| `Query` or `Mutation` root type | `RootType` | `*Fetchers` class only |
-| Interface with `@table` + `@discriminate` | `TableInterfaceType` | `*Fetchers` class |
-| Interface without `@table` (multi-table) | `InterfaceType` | `*Fetchers` class |
-| Union type | `UnionType` | `*Fetchers` class |
-| `@error` | `ErrorType` | No generation (error mapping config) |
-| Input type with `@table` | `TableInputType` | Used in mutation generation |
-| Input type with `@table` + `@record` | `InputType`* (via `@record`) | On input types, `@record` dominates `@table`. When both are present, `@table` is ignored and the input classifies as if only `@record` were declared; a build warning names the shadowed directive. Clean up by removing `@table` from the input declaration ; the warning disappears naturally. |
-| Input type without `@table` | `InputType`* | No generation (developer-provided class) |
-| Input type with `@table` used on fields with conflicting return tables | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage |
-| Object type with no `@table` and no `@record` | `PlainObjectType` | No generation; nested under a parent table-bound or result-bound scope via `NestingField` |
-| GraphQL `enum` type | `EnumType` | No generation; enum values map to DB strings/ints at column-bind time |
-| Generated `*Connection` type (from `@asConnection` transform) | `ConnectionType` | Pagination wrapper; pairs with `EdgeType` and `PageInfoType` below |
-| Generated `*Edge` type | `EdgeType` | Edge wrapper carrying `node` + `cursor` for the connection |
-| Generated `PageInfo` type | `PageInfoType` | Connection page-info wrapper |
-| Conflicting or unresolvable directives | `UnclassifiedType` | Validation error ; build fails |
+|===
+| Directive Pattern on Type | `GraphitronType` Variant | Generator Output
+
+| `@table` (no `@node`, no `@discriminate`) | `TableType` | `*Fetchers` class + `*` class
+| `@table` + `@node` | `NodeType` | `*Fetchers` class + `*` class (with Relay ID handling)
+| `@record` | `ResultType`* | `*Fetchers` class only (no SQL scope of its own)
+| `Query` or `Mutation` root type | `RootType` | `*Fetchers` class only
+| Interface with `@table` + `@discriminate` | `TableInterfaceType` | `*Fetchers` class
+| Interface without `@table` (multi-table) | `InterfaceType` | `*Fetchers` class
+| Union type | `UnionType` | `*Fetchers` class
+| `@error` | `ErrorType` | No generation (error mapping config)
+| Input type with `@table` | `TableInputType` | Used in mutation generation
+| Input type with `@table` + `@record` | `InputType`* (via `@record`) | On input types, `@record` dominates `@table`. When both are present, `@table` is ignored and the input classifies as if only `@record` were declared; a build warning names the shadowed directive. Clean up by removing `@table` from the input declaration ; the warning disappears naturally.
+| Input type without `@table` | `InputType`* | No generation (developer-provided class)
+| Input type with `@table` used on fields with conflicting return tables | `PojoInputType` (unbound) | No generation ; column binding resolved per field-usage
+| Object type with no `@table` and no `@record` | `PlainObjectType` | No generation; nested under a parent table-bound or result-bound scope via `NestingField`
+| GraphQL `enum` type | `EnumType` | No generation; enum values map to DB strings/ints at column-bind time
+| Generated `*Connection` type (from `@asConnection` transform) | `ConnectionType` | Pagination wrapper; pairs with `EdgeType` and `PageInfoType` below
+| Generated `*Edge` type | `EdgeType` | Edge wrapper carrying `node` + `cursor` for the connection
+| Generated `PageInfo` type | `PageInfoType` | Connection page-info wrapper
+| Conflicting or unresolvable directives | `UnclassifiedType` | Validation error ; build fails
+|===
 
 *Intermediate sealed interfaces* (not shown in the table ; grouping nodes in the hierarchy):
 - `TableBackedType` ; groups `TableType`, `NodeType`, `TableInterfaceType`. Builders switch on this to detect table-mapped types.
@@ -134,92 +146,104 @@ Fields are classified separately for root types (Query/Mutation) and nested type
 
 === Query Fields
 
-| Schema Pattern | `QueryField` Variant | `*Fetchers` Generates |
-|---|---|---|
-| Any argument has `@lookupKey` | `QueryLookupTableField` | Async DataLoader fetcher + sync `lookup*()` rows method |
-| `@tableMethod` | `QueryTableMethodTableField` | Field method stub |
-| Field named `node` (Relay) | `QueryNodeField` | Field method stub |
-| Field named `nodes` (Relay; auto-emitted, batched-by-id) | `QueryNodesField` | Async DataLoader fetcher dispatching by NodeId |
-| Return: `@table`+`@discriminate` interface | `QueryTableInterfaceField` | Field method stub |
-| Return: multi-table interface | `QueryInterfaceField` | Field method stub |
-| Return: union | `QueryUnionField` | Field method stub |
-| `@service`, return `@table` type | `QueryServiceTableField` | Async DataLoader fetcher + `rows*()` method |
-| `@service`, return non-table type | `QueryServiceRecordField` | Field method stub |
-| Return: `@table` type (default) | `QueryTableField` | Full fetcher ; condition call + orderBy build + inline DSL chain (`dsl.select(Type.$fields(...)).from(table)...`) |
-| Anything else | `UnclassifiedField`** | Validation error ; build fails |
+|===
+| Schema Pattern | `QueryField` Variant | `*Fetchers` Generates
+
+| Any argument has `@lookupKey` | `QueryLookupTableField` | Async DataLoader fetcher + sync `lookup*()` rows method
+| `@tableMethod` | `QueryTableMethodTableField` | Field method stub
+| Field named `node` (Relay) | `QueryNodeField` | Field method stub
+| Field named `nodes` (Relay; auto-emitted, batched-by-id) | `QueryNodesField` | Async DataLoader fetcher dispatching by NodeId
+| Return: `@table`+`@discriminate` interface | `QueryTableInterfaceField` | Field method stub
+| Return: multi-table interface | `QueryInterfaceField` | Field method stub
+| Return: union | `QueryUnionField` | Field method stub
+| `@service`, return `@table` type | `QueryServiceTableField` | Async DataLoader fetcher + `rows*()` method
+| `@service`, return non-table type | `QueryServiceRecordField` | Field method stub
+| Return: `@table` type (default) | `QueryTableField` | Full fetcher ; condition call + orderBy build + inline DSL chain (`dsl.select(Type.$fields(...)).from(table)...`)
+| Anything else | `UnclassifiedField`** | Validation error ; build fails
+|===
 
 The federation `_entities` field is *not* modelled as a `QueryField` permit; it is resolved by `federation-graphql-java-support` directly and dispatched through the generated `EntityFetcherDispatch` runtime helper. The corresponding entity-resolution metadata is carried in `GraphitronSchema.entitiesByType`.
 
 === Mutation Fields
 
-| Schema Pattern | `MutationField` Variant | `*Fetchers` Generates |
-|---|---|---|
-| `@mutation(typeName: INSERT)` | `MutationInsertTableField` | Field method stub |
-| `@mutation(typeName: UPDATE)` | `MutationUpdateTableField` | Field method stub |
-| `@mutation(typeName: DELETE)` | `MutationDeleteTableField` | Field method stub |
-| `@mutation(typeName: UPSERT)` | `MutationUpsertTableField` | Field method stub |
-| `@service`, return `@table` type | `MutationServiceTableField` | Async DataLoader fetcher + `rows*()` method |
-| `@service`, return non-table type | `MutationServiceRecordField` | Field method stub |
-| Neither `@service` nor `@mutation` | `UnclassifiedField`** | Validation error ; build fails |
-| Both `@service` and `@mutation` | `UnclassifiedField`** | Validation error ; build fails |
+|===
+| Schema Pattern | `MutationField` Variant | `*Fetchers` Generates
+
+| `@mutation(typeName: INSERT)` | `MutationInsertTableField` | Field method stub
+| `@mutation(typeName: UPDATE)` | `MutationUpdateTableField` | Field method stub
+| `@mutation(typeName: DELETE)` | `MutationDeleteTableField` | Field method stub
+| `@mutation(typeName: UPSERT)` | `MutationUpsertTableField` | Field method stub
+| `@service`, return `@table` type | `MutationServiceTableField` | Async DataLoader fetcher + `rows*()` method
+| `@service`, return non-table type | `MutationServiceRecordField` | Field method stub
+| Neither `@service` nor `@mutation` | `UnclassifiedField`** | Validation error ; build fails
+| Both `@service` and `@mutation` | `UnclassifiedField`** | Validation error ; build fails
+|===
 
 === Child Fields (on `@table` parent)
 
 ==== Scalar / Enum return type
 
-| Schema Pattern | `ChildField` Variant | `*Fetchers` Generates |
-|---|---|---|
-| `@field(name:)` or matching column name | `ColumnField` (`compaction = Direct`) | Column method in `wiring()` |
-| `@reference` on scalar | `ColumnReferenceField` (`compaction = Direct`) | Column method in `wiring()` |
-| `@reference` on scalar declared on a `TableInterfaceType` participant | `ParticipantColumnReferenceField` | Column method in `wiring()`; picks up the participant-side FK rather than the interface-side resolver |
-| `@nodeId` (single-column PK), no typeName | `ColumnField` (`compaction = NodeIdEncodeKeys`) | Column method in `wiring()`; the projected column is wrapped in the per-Node `encode<TypeName>` helper |
-| `@nodeId(typeName:)`, single-column PK target | `ColumnReferenceField` (`compaction = NodeIdEncodeKeys`) | As above, against the FK-resolved target column |
-| `@nodeId` (composite PK), no typeName | `CompositeColumnField` | Column method in `wiring()`; projects `RowN<...>` of the parent's PK columns and wraps in `encode<TypeName>` |
-| `@nodeId(typeName:)`, composite PK target | `CompositeColumnReferenceField` | As above, against the FK-resolved target columns |
+|===
+| Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
+
+| `@field(name:)` or matching column name | `ColumnField` (`compaction = Direct`) | Column method in `wiring()`
+| `@reference` on scalar | `ColumnReferenceField` (`compaction = Direct`) | Column method in `wiring()`
+| `@reference` on scalar declared on a `TableInterfaceType` participant | `ParticipantColumnReferenceField` | Column method in `wiring()`; picks up the participant-side FK rather than the interface-side resolver
+| `@nodeId` (single-column PK), no typeName | `ColumnField` (`compaction = NodeIdEncodeKeys`) | Column method in `wiring()`; the projected column is wrapped in the per-Node `encode<TypeName>` helper
+| `@nodeId(typeName:)`, single-column PK target | `ColumnReferenceField` (`compaction = NodeIdEncodeKeys`) | As above, against the FK-resolved target column
+| `@nodeId` (composite PK), no typeName | `CompositeColumnField` | Column method in `wiring()`; projects `RowN<...>` of the parent's PK columns and wraps in `encode<TypeName>`
+| `@nodeId(typeName:)`, composite PK target | `CompositeColumnReferenceField` | As above, against the FK-resolved target columns
+|===
 
 ==== Object return type
 
-| Schema Pattern | `ChildField` Variant | `*Fetchers` Generates |
-|---|---|---|
-| `@externalField(reference: {className, method})` | `ComputedField` | Inlined call in `$fields()` (`<Class>.<method>(table).as("<name>")`) + `ColumnFetcher` registered by alias in `wiring()`. Method must be `public static Field<X> name(<ParentTable> table)`. |
-| `@tableMethod` | `TableMethodField` | Field method stub |
-| `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method |
-| `@service`, return non-table | `ServiceRecordField` | Field method stub |
-| Return `@table`, `@splitQuery` + `@lookupKey` | `SplitLookupTableField` | Async DataLoader fetcher + `rows*()` method |
-| Return `@table`, `@lookupKey` (no split) | `LookupTableField` | Field method stub (correlated subquery ; G5 pending) |
-| Return `@table`, `@splitQuery` | `SplitTableField` | Async DataLoader fetcher + `rows*()` method |
-| Return `@table` (default) | `TableField` | Field method stub (correlated subquery ; G5 pending) |
-| Return `@table`+`@discriminate` interface | `TableInterfaceField` | Field method stub |
-| Return multi-table interface | `InterfaceField` | Field method stub |
-| Return union | `UnionField` | Field method stub |
-| Return plain object (no `@table`) | `NestingField` | Field method stub (inherits parent table context) |
-| Constructor-mapped field | `ConstructorField` | Field method stub |
-| `@reference` to multi-table interface | `MultitableReferenceField` | Field method stub |
-| Conflicting directives | `UnclassifiedField`** | Validation error; build fails |
-| `@notGenerated` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; fields must be fully described by the schema. |
+|===
+| Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
+
+| `@externalField(reference: {className, method})` | `ComputedField` | Inlined call in `$fields()` (`<Class>.<method>(table).as("<name>")`) + `ColumnFetcher` registered by alias in `wiring()`. Method must be `public static Field<X> name(<ParentTable> table)`.
+| `@tableMethod` | `TableMethodField` | Field method stub
+| `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method
+| `@service`, return non-table | `ServiceRecordField` | Field method stub
+| Return `@table`, `@splitQuery` + `@lookupKey` | `SplitLookupTableField` | Async DataLoader fetcher + `rows*()` method
+| Return `@table`, `@lookupKey` (no split) | `LookupTableField` | Field method stub (correlated subquery ; G5 pending)
+| Return `@table`, `@splitQuery` | `SplitTableField` | Async DataLoader fetcher + `rows*()` method
+| Return `@table` (default) | `TableField` | Field method stub (correlated subquery ; G5 pending)
+| Return `@table`+`@discriminate` interface | `TableInterfaceField` | Field method stub
+| Return multi-table interface | `InterfaceField` | Field method stub
+| Return union | `UnionField` | Field method stub
+| Return plain object (no `@table`) | `NestingField` | Field method stub (inherits parent table context)
+| Constructor-mapped field | `ConstructorField` | Field method stub
+| `@reference` to multi-table interface | `MultitableReferenceField` | Field method stub
+| Conflicting directives | `UnclassifiedField`** | Validation error; build fails
+| `@notGenerated` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; fields must be fully described by the schema.
+|===
 
 === Child Fields (on `@record` parent)
 
-| Schema Pattern | `ChildField` Variant | `*Fetchers` Generates |
-|---|---|---|
-| Scalar/enum with `@field` | `PropertyField` | Column method in `wiring()` |
-| Return `@table`, `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `RecordLookupTableField` (with `BatchKey.RecordParentBatchKey`) | Async DataLoader fetcher + `rows*()` method |
-| Return `@table` (default; catalog FK from parent's jOOQ TableRecord) | `RecordTableField` (with `BatchKey.RecordParentBatchKey`) | Async DataLoader fetcher + `rows*()` method |
-| Return `@table` with `@batchKeyLifter` (parent is `PojoResultType` or `JavaRecordType`; no catalog FK required) | `RecordTableField` / `RecordLookupTableField` (with `BatchKey.LifterRowKeyed`) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows |
-| Return non-table type | `RecordField` | Column method in `wiring()` |
-| `errors:` slot on a service payload (one entry per `@error` mapping) | `ErrorsField` | Passthrough; graphql-java's default `PropertyDataFetcher` reads the list the carrier's try/catch wrapper or the service-method body produced |
-| `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method |
-| `@service`, return non-table | `ServiceRecordField` | Field method stub |
+|===
+| Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
+
+| Scalar/enum with `@field` | `PropertyField` | Column method in `wiring()`
+| Return `@table`, `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `RecordLookupTableField` (with `BatchKey.RecordParentBatchKey`) | Async DataLoader fetcher + `rows*()` method
+| Return `@table` (default; catalog FK from parent's jOOQ TableRecord) | `RecordTableField` (with `BatchKey.RecordParentBatchKey`) | Async DataLoader fetcher + `rows*()` method
+| Return `@table` with `@batchKeyLifter` (parent is `PojoResultType` or `JavaRecordType`; no catalog FK required) | `RecordTableField` / `RecordLookupTableField` (with `BatchKey.LifterRowKeyed`) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows
+| Return non-table type | `RecordField` | Column method in `wiring()`
+| `errors:` slot on a service payload (one entry per `@error` mapping) | `ErrorsField` | Passthrough; graphql-java's default `PropertyDataFetcher` reads the list the carrier's try/catch wrapper or the service-method body produced
+| `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method
+| `@service`, return non-table | `ServiceRecordField` | Field method stub
+|===
 
 === Input Fields (on `@table` input parent)
 
-| Schema Pattern | `InputField` Variant | Used for |
-|---|---|---|
-| `@field(name:)` or matching column name | `InputField.ColumnField` | Maps input argument to a table column |
-| `@reference` on input scalar | `InputField.ColumnReferenceField` | Maps input argument to a FK column |
-| `@nodeId` on input scalar, composite PK | `InputField.CompositeColumnField` | Decodes a composite-PK NodeId into the input's PK columns (carries `NodeIdDecodeKeys` extraction) |
-| `@nodeId(typeName:)` on input scalar, composite PK | `InputField.CompositeColumnReferenceField` | Decodes a composite-PK NodeId into FK columns referencing the typeName target |
-| Return plain object (no `@table`) | `InputField.NestingField` | Expands nested input fields inline against parent table |
+|===
+| Schema Pattern | `InputField` Variant | Used for
+
+| `@field(name:)` or matching column name | `InputField.ColumnField` | Maps input argument to a table column
+| `@reference` on input scalar | `InputField.ColumnReferenceField` | Maps input argument to a FK column
+| `@nodeId` on input scalar, composite PK | `InputField.CompositeColumnField` | Decodes a composite-PK NodeId into the input's PK columns (carries `NodeIdDecodeKeys` extraction)
+| `@nodeId(typeName:)` on input scalar, composite PK | `InputField.CompositeColumnReferenceField` | Decodes a composite-PK NodeId into FK columns referencing the typeName target
+| Return plain object (no `@table`) | `InputField.NestingField` | Expands nested input fields inline against parent table
+|===
 
 `InputField` is a separate top-level sub-hierarchy of `GraphitronField`, alongside `RootField` and `ChildField`. It classifies fields on `TableInputType` for mutation input processing.
 
@@ -229,12 +253,14 @@ The federation `_entities` field is *not* modelled as a `QueryField` permit; it 
 
 Four categories of DataLoader-backed child field, distinguished by `@splitQuery` and `@lookupKey`:
 
-| Category | DataLoader | Derived tables | `@condition` / non-`@lookupKey` args | Pagination |
-|---|---|---|---|---|
-| *`QueryLookupTableField`* (root lookup, no `@splitQuery`) | No ; synchronous | Derived target only | Allowed ; must preserve N × M contract† | Never ; result count = M exactly |
-| *`LookupTableField`* (`@lookupKey`, no `@splitQuery`, table-mapped parent) | No ; correlated subquery | Derived target + correlated parent join | Allowed ; must preserve N × M contract† | Never |
-| *`SplitTableField`* (`@splitQuery`, no `@lookupKey`) | Yes | Derived source only | Allowed | Allowed |
-| *`SplitLookupTableField`* (`@splitQuery` + `@lookupKey`, result-mapped parent) | Yes | Both | Allowed ; must preserve N × M contract† | Never ; result count = N × M |
+|===
+| Category | DataLoader | Derived tables | `@condition` / non-`@lookupKey` args | Pagination
+
+| *`QueryLookupTableField`* (root lookup, no `@splitQuery`) | No ; synchronous | Derived target only | Allowed ; must preserve N × M contract† | Never ; result count = M exactly
+| *`LookupTableField`* (`@lookupKey`, no `@splitQuery`, table-mapped parent) | No ; correlated subquery | Derived target + correlated parent join | Allowed ; must preserve N × M contract† | Never
+| *`SplitTableField`* (`@splitQuery`, no `@lookupKey`) | Yes | Derived source only | Allowed | Allowed
+| *`SplitLookupTableField`* (`@splitQuery` + `@lookupKey`, result-mapped parent) | Yes | Both | Allowed ; must preserve N × M contract† | Never ; result count = N × M
+|===
 
 † See <<derived-tables,Derived tables>> for the contract definition.
 
@@ -244,11 +270,13 @@ Four categories of DataLoader-backed child field, distinguished by `@splitQuery`
 
 Not all classification requires directives. The builder also classifies based on:
 
-| Schema Pattern | Classification Effect |
-|---|---|
-| Field name matches column name (on `@table` type) | `ColumnField` ; direct column mapping |
-| Field returns `*Connection` type (from `@asConnection` transform) | `FieldWrapper.Connection` ; pagination logic |
-| GraphQL enum on `@table` field | Enum-to-DB string/int mapping |
+|===
+| Schema Pattern | Classification Effect
+
+| Field name matches column name (on `@table` type) | `ColumnField` ; direct column mapping
+| Field returns `*Connection` type (from `@asConnection` transform) | `FieldWrapper.Connection` ; pagination logic
+| GraphQL enum on `@table` field | Enum-to-DB string/int mapping
+|===
 
 '''
 
@@ -258,47 +286,53 @@ All source lives under `graphitron-rewrite/graphitron/src/main/java/no/sikt/grap
 
 === Model (`model/`)
 
-| Concept | File | What to look for |
-|---|---|---|
-| Type hierarchy | `GraphitronType.java` | Sealed interface ; all type variants and their record components |
-| Field hierarchy | `GraphitronField.java` | Sealed interface ; `RootField`/`ChildField`/`InputField` sub-hierarchies |
-| SQL-generating marker | `SqlGeneratingField.java` | Orthogonal interface ; `returnType()`, `filters()`, `orderBy()`, `pagination()` |
-| Method-backed marker | `MethodBackedField.java` | Orthogonal interface ; `method()` returning `MethodRef` |
-| DataLoader marker | `BatchKeyField.java` | Orthogonal interface ; `batchKey()`, `rowsMethodName()` |
-| Table reference | `TableRef.java` | Resolved jOOQ table with PK columns |
-| Column reference | `ColumnRef.java` | Resolved column with Java type |
-| Return type | `ReturnTypeRef.java` | `TableBound` / `Result` / `Scalar` / `Polymorphic` |
-| Cardinality | `FieldWrapper.java` | `Single` / `List` / `Connection` |
-| Join path | `JoinStep.java` | `FkJoin` / `ConditionJoin` / `LiftedHop` |
-| WHERE filters | `WhereFilter.java` | `GeneratedConditionFilter` / `ConditionFilter` ; call-site contract |
-| Service methods | `MethodRef.java` | Resolved Java method with `ParamSource` variants |
-| DataLoader keys | `BatchKey.java` | Two axis sub-hierarchies: `ParentKeyed` (`RowKeyed`, `RecordKeyed`, `MappedRowKeyed`, `MappedRecordKeyed`, `TableRecordKeyed`, `MappedTableRecordKeyed`) and `RecordParentBatchKey` (`RowKeyed`, `LifterRowKeyed`, `AccessorKeyedSingle`, `AccessorKeyedMany`) |
-| Ordering | `OrderBySpec.java` | `Fixed` / `Argument` / `None` |
-| Pagination | `PaginationSpec.java` | Relay cursor arguments |
-| Argument extraction | `CallSiteExtraction.java` | Five direct strategies (`Direct` / `EnumValueOf` / `TextMapLookup` / `ContextArg` / `JooqConvert`) plus two sealed sub-groupers: `NestedInputField` (descends an input-object graph for `@condition` on `INPUT_FIELD_DEFINITION`) and `NodeIdDecodeKeys` (`SkipMismatchedElement` / `ThrowOnMismatch`; arity-N NodeId decode at the call site) |
-| Input field hierarchy | `InputField.java` | Sealed interface ; `ColumnField` / `ColumnReferenceField` / `CompositeColumnField` / `CompositeColumnReferenceField` / `NestingField` for mutation inputs |
-| Condition params | `CallParam.java`, `BodyParam.java` | Call-site vs body-generation views |
+|===
+| Concept | File | What to look for
+
+| Type hierarchy | `GraphitronType.java` | Sealed interface ; all type variants and their record components
+| Field hierarchy | `GraphitronField.java` | Sealed interface ; `RootField`/`ChildField`/`InputField` sub-hierarchies
+| SQL-generating marker | `SqlGeneratingField.java` | Orthogonal interface ; `returnType()`, `filters()`, `orderBy()`, `pagination()`
+| Method-backed marker | `MethodBackedField.java` | Orthogonal interface ; `method()` returning `MethodRef`
+| DataLoader marker | `BatchKeyField.java` | Orthogonal interface ; `batchKey()`, `rowsMethodName()`
+| Table reference | `TableRef.java` | Resolved jOOQ table with PK columns
+| Column reference | `ColumnRef.java` | Resolved column with Java type
+| Return type | `ReturnTypeRef.java` | `TableBound` / `Result` / `Scalar` / `Polymorphic`
+| Cardinality | `FieldWrapper.java` | `Single` / `List` / `Connection`
+| Join path | `JoinStep.java` | `FkJoin` / `ConditionJoin` / `LiftedHop`
+| WHERE filters | `WhereFilter.java` | `GeneratedConditionFilter` / `ConditionFilter` ; call-site contract
+| Service methods | `MethodRef.java` | Resolved Java method with `ParamSource` variants
+| DataLoader keys | `BatchKey.java` | Two axis sub-hierarchies: `ParentKeyed` (`RowKeyed`, `RecordKeyed`, `MappedRowKeyed`, `MappedRecordKeyed`, `TableRecordKeyed`, `MappedTableRecordKeyed`) and `RecordParentBatchKey` (`RowKeyed`, `LifterRowKeyed`, `AccessorKeyedSingle`, `AccessorKeyedMany`)
+| Ordering | `OrderBySpec.java` | `Fixed` / `Argument` / `None`
+| Pagination | `PaginationSpec.java` | Relay cursor arguments
+| Argument extraction | `CallSiteExtraction.java` | Five direct strategies (`Direct` / `EnumValueOf` / `TextMapLookup` / `ContextArg` / `JooqConvert`) plus two sealed sub-groupers: `NestedInputField` (descends an input-object graph for `@condition` on `INPUT_FIELD_DEFINITION`) and `NodeIdDecodeKeys` (`SkipMismatchedElement` / `ThrowOnMismatch`; arity-N NodeId decode at the call site)
+| Input field hierarchy | `InputField.java` | Sealed interface ; `ColumnField` / `ColumnReferenceField` / `CompositeColumnField` / `CompositeColumnReferenceField` / `NestingField` for mutation inputs
+| Condition params | `CallParam.java`, `BodyParam.java` | Call-site vs body-generation views
+|===
 
 === Builders (root package)
 
-| Component | File | Responsibility |
-|---|---|---|
-| Entry point | `GraphitronSchemaBuilder.java` | Sole directive-reading boundary ; assembles `GraphitronSchema` |
-| Type classification | `TypeBuilder.java` | Two-pass: classify types, then enrich interfaces/unions with participants |
-| Field classification | `FieldBuilder.java` | Classifies fields based on parent type, directives, and return type |
-| jOOQ lookups | `JooqCatalog.java` | Lazy wrapper around jOOQ `Catalog` ; tables, columns, FKs, indexes, PKs |
-| Service reflection | `ServiceCatalog.java` | Reflects `@service`/`@tableMethod` Java methods into `MethodRef` |
+|===
+| Component | File | Responsibility
+
+| Entry point | `GraphitronSchemaBuilder.java` | Sole directive-reading boundary ; assembles `GraphitronSchema`
+| Type classification | `TypeBuilder.java` | Two-pass: classify types, then enrich interfaces/unions with participants
+| Field classification | `FieldBuilder.java` | Classifies fields based on parent type, directives, and return type
+| jOOQ lookups | `JooqCatalog.java` | Lazy wrapper around jOOQ `Catalog` ; tables, columns, FKs, indexes, PKs
+| Service reflection | `ServiceCatalog.java` | Reflects `@service`/`@tableMethod` Java methods into `MethodRef`
+|===
 
 === Generators (`generators/`)
 
 Four families, by what they emit. The Generators package holds emitter helpers (`SplitRowsMethodEmitter`, `InlineLookupTableFieldEmitter`, `LookupValuesJoinEmitter`, `JoinPathEmitter`, `MultiTablePolymorphicEmitter`, `ArgCallEmitter`, `FetcherEmitter`, `HandleMethodBody`, `SelectMethodBody`, `ValuesJoinRowBuilder`, etc.) alongside the entry-point generators below ; helpers are reached from inside a generator and don't appear in this table.
 
-| Family | Generators | What lands |
-|---|---|---|
-| Fetcher emission | `TypeFetcherGenerator`, `TypeClassGenerator`, `TypeConditionsGenerator` | `fetchers.*Fetchers` (wiring + field fetcher/rows methods); `types.*` (`$fields(sel, table, env)` projection); `conditions.*Conditions` (pure-function WHERE predicates) |
-| Schema emission (`schema/`) | `ObjectTypeGenerator`, `InputTypeGenerator`, `EnumTypeGenerator`, `GraphitronFacadeGenerator`, `GraphitronSchemaClassGenerator`, `FetcherRegistrationsEmitter`, `DirectiveDefinitionEmitter`, `AppliedDirectiveEmitter`, `GraphQLValueEmitter`, `InputDirectiveInputTypes` | The runtime SDL classes graphql-java consumes: per-type wiring entries, applied-directive emission, registration glue |
-| Error-handling emission (`schema/`) | `ConstraintViolationsClassGenerator`, `ErrorMappingsClassGenerator`, `ErrorRouterClassGenerator` | The typed-error classes service payloads project errors into; mappings constant + router that selects per-exception |
-| Runtime helpers (`util/`) | `ColumnFetcherClassGenerator`, `ConnectionResultClassGenerator`, `ConnectionHelperClassGenerator`, `GraphitronValuesClassGenerator`, `EntityFetcherDispatchClassGenerator`, `GraphitronContextInterfaceGenerator`, `NodeIdEncoderClassGenerator`, `OrderByResultClassGenerator`, `QueryNodeFetcherClassGenerator` | Per-app emitted runtime classes (`ColumnFetcher`, `ConnectionResult`, `ConnectionHelper`, `GraphitronValues`, `EntityFetcherDispatch`, `GraphitronContext`, `NodeIdEncoder`, `OrderByResult`, `QueryNodeFetcher`) — the runtime extension points graphql-java and the federation library plug into |
+|===
+| Family | Generators | What lands
+
+| Fetcher emission | `TypeFetcherGenerator`, `TypeClassGenerator`, `TypeConditionsGenerator` | `fetchers.*Fetchers` (wiring + field fetcher/rows methods); `types.*` (`$fields(sel, table, env)` projection); `conditions.*Conditions` (pure-function WHERE predicates)
+| Schema emission (`schema/`) | `ObjectTypeGenerator`, `InputTypeGenerator`, `EnumTypeGenerator`, `GraphitronFacadeGenerator`, `GraphitronSchemaClassGenerator`, `FetcherRegistrationsEmitter`, `DirectiveDefinitionEmitter`, `AppliedDirectiveEmitter`, `GraphQLValueEmitter`, `InputDirectiveInputTypes` | The runtime SDL classes graphql-java consumes: per-type wiring entries, applied-directive emission, registration glue
+| Error-handling emission (`schema/`) | `ConstraintViolationsClassGenerator`, `ErrorMappingsClassGenerator`, `ErrorRouterClassGenerator` | The typed-error classes service payloads project errors into; mappings constant + router that selects per-exception
+| Runtime helpers (`util/`) | `ColumnFetcherClassGenerator`, `ConnectionResultClassGenerator`, `ConnectionHelperClassGenerator`, `GraphitronValuesClassGenerator`, `EntityFetcherDispatchClassGenerator`, `GraphitronContextInterfaceGenerator`, `NodeIdEncoderClassGenerator`, `OrderByResultClassGenerator`, `QueryNodeFetcherClassGenerator` | Per-app emitted runtime classes (`ColumnFetcher`, `ConnectionResult`, `ConnectionHelper`, `GraphitronValues`, `EntityFetcherDispatch`, `GraphitronContext`, `NodeIdEncoder`, `OrderByResult`, `QueryNodeFetcher`) — the runtime extension points graphql-java and the federation library plug into
+|===
 
 `GeneratorUtils` (root of `generators/`) holds shared building blocks reached from any family ; `ResolvedTableNames`, key-type construction, constants. `QueryConditionsGenerator` is part of fetcher emission and emits the `(env, ...) -> typed-args` adapter that fronts user-written `*Conditions` composers (see the "Wire boundaries are typed adapter / composer pairs" principle in xref:rewrite-design-principles.adoc[Rewrite Design Principles]).
 
