@@ -1,0 +1,21 @@
+extend type Query {
+    activeCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "activeCustomers"}, override: true)
+    inactiveCustomers(lastNameStartingWith: String): [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions"}, override: true)
+    staff(input: StaffInput!): [Staff] @asConnection
+
+    # Conditions with node ID
+    customerWithNextCustomerId(customerId: ID! @nodeId(typeName: "Customer") @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "customerWithNextCustomerId"}, override: true)): Customer
+    customerWithNextCustomerIdWithNodeIdString(customerId: ID! @nodeId(typeName: "Customer") @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "customerWithNextCustomerIdWithNodeIdString"}, override: true)): Customer
+    customerWithSumOfCustomerIds(customerIds: [ID!]! @nodeId(typeName: "Customer") @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions", method: "customerWithSumOfCustomerIds"}, override: true)): Customer
+}
+
+input StaffInput {
+    username: String
+    isManager: Boolean @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions", method: "isManagerOfAStore"}, override: true)
+    addressId: Int @field(name: "ADDRESS_ID") @reference(path: [{table: "ADDRESS"}])
+    withAddressIdInCity300: Int @field(name: "ADDRESS_ID") @reference(path: [{key: "STAFF__STAFF_ADDRESS_ID_FKEY"}]) @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.StaffConditions"})
+}
+
+extend type Store {
+    inactiveCustomers: [Customer] @asConnection @condition(condition: {className: "no.sikt.graphitron.example.service.conditions.CustomerConditions"}, override: true)
+}
