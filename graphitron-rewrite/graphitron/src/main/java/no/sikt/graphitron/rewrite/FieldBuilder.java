@@ -2169,7 +2169,7 @@ class FieldBuilder {
             + "pattern-match a single sealed dispatch with no instanceof ScalarReturnType, no "
             + "wrapper().isList() lookup, no Optional.orElseThrow() on the encode helper, and "
             + "no payloadAssembly().isPresent() predicate. Combined with the input-shape "
-            + "invariants (Invariants #1 and #7-#13 in mutations.md), the entire DML emitter "
+            + "invariants (Invariants #1 and #7-#13), the entire DML emitter "
             + "branch is total without defensive checks.")
     private GraphitronField buildDmlField(
             ReturnTypeRef returnType, String parentTypeName, String fieldName,
