@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.BatchKey;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -28,7 +29,7 @@ class RecordTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), wrapper);
     }
 
-    private static final BatchKey.RecordParentBatchKey BATCH_KEY = new BatchKey.RowKeyed(List.of());
+    private static final BatchKey.RecordParentBatchKey BATCH_KEY = new BatchKey.RowKeyed(java.util.List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer")));
 
     // Validator messages for RecordTableField. Kept inline — a change to the production string
     // breaks this test loudly and must be updated in the same commit.

@@ -261,6 +261,19 @@ class ServiceCatalog {
                         // empty) the parameter must match a GraphQL argument or context key — point
                         // the user at the actual mismatch instead of an unrelated SOURCES-flavored
                         // hint (the lifter-directive roadmap doesn't help with arg-name typos).
+                        //
+                        // Exception: a SOURCES-shape parameter (List<RowN>, List<RecordN>,
+                        // List<TableRecord>) at root is its own diagnostic — `@service at the root
+                        // does not support List<Row>/List<Record>/List<Object> batch parameters`.
+                        // Phase A's canonical-constructor invariant on BatchKey blocks the empty
+                        // RowKeyed/etc. construction, so detection happens here on the parameter
+                        // type directly rather than on the constructed BatchKey.
+                        if (parentPkColumns.isEmpty() && looksLikeSourcesShape(p.getParameterizedType())) {
+                            return new ServiceReflectionResult(null,
+                                Rejection.structural("@service at the root does not support "
+                                + "List<Row>/List<Record>/List<Object> batch parameters — the root "
+                                + "has no parent context to batch against"));
+                        }
                         if (parentPkColumns.isEmpty()) {
                             String available = formatNameSet(argByJavaName.keySet());
                             String suggestion;
@@ -692,11 +705,35 @@ class ServiceCatalog {
      * <p>For all variants, {@code parentPkColumns} is used as the authoritative key column
      * list. The column types from the parent PK are used in the generated method signature;
      * the user's declared type args are used only to determine the arity and variant. Pass
-     * {@link List#of()} when no parent table context is available; the classifier returns
-     * {@link Optional#empty()} in that case so the caller's root/DTO-parent diagnostic fires
-     * instead of constructing an empty-keyed BatchKey (rejected by the canonical-constructor
-     * invariant on every {@link BatchKey.ParentKeyed} permit).
+     * {@link List#of()} when no parent table context is available; the caller (typically
+     * {@link #buildResolved}) recognises the SOURCES shape via {@link #looksLikeSourcesShape}
+     * and produces the root-only diagnostic ({@code @service at the root does not support
+     * List<Row>/...} ) instead of constructing an empty-keyed BatchKey (rejected by the
+     * canonical-constructor invariant on every {@link BatchKey.ParentKeyed} permit).
      */
+    /**
+     * Returns true if the parameter type is a {@code List<X>} or {@code Set<X>} where {@code X}
+     * is a {@code RowN}, {@code RecordN}, or concrete {@code TableRecord}. Used by the root-op
+     * diagnostic to detect SOURCES-shape parameters that {@link #classifySourcesType} cannot
+     * fully classify because the parent has no PK to populate the BatchKey.
+     */
+    private static boolean looksLikeSourcesShape(java.lang.reflect.Type paramType) {
+        var split = peelContainer(paramType, java.util.EnumSet.of(ContainerKind.LIST, ContainerKind.SET));
+        if (split.isEmpty()) return false;
+        java.lang.reflect.Type elementType = split.get().elementType();
+        if (elementType instanceof java.lang.reflect.ParameterizedType ept
+                && ept.getRawType() instanceof Class<?> rawClass) {
+            String rawName = rawClass.getName();
+            if (rawName.startsWith("org.jooq.Row")
+                    && rawName.substring("org.jooq.Row".length()).matches("\\d+")) return true;
+            if (rawName.startsWith("org.jooq.Record")
+                    && rawName.substring("org.jooq.Record".length()).matches("\\d+")) return true;
+        } else if (elementType instanceof Class<?> elementClass) {
+            return org.jooq.TableRecord.class.isAssignableFrom(elementClass);
+        }
+        return false;
+    }
+
     static Optional<BatchKey.ParentKeyed> classifySourcesType(java.lang.reflect.Type paramType,
             List<ColumnRef> parentPkColumns) {
         if (parentPkColumns.isEmpty()) {

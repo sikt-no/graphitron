@@ -103,8 +103,42 @@ class InterfaceFieldValidationTest {
         var parentType = new GraphitronType.TableType("Kpis", null, NO_PK);
         var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
         assertHasKind(errors, RejectionKind.AUTHOR_ERROR,
-            "Field 'Kpis.occupantsConnection': @asConnection on a multi-table interface/union "
-                + "child field requires the parent type 'Kpis' to have a primary key");
+            "Field 'Kpis.occupantsConnection': multi-table interface/union child field "
+                + "requires a non-empty primary key on the parent type 'Kpis', since the "
+                + "DataLoader key tuple is built from the parent's PK columns");
+    }
+
+    @Test
+    void rejects_listArm_onPkLessParent() {
+        // R102: the list arm now also requires a non-empty parent PK (DataLoader-batched).
+        // Mirrors the connection-arm rejection but on the list cardinality.
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
+            new ParticipantRef.TableBound("Staff", STAFF, null));
+        var field = new InterfaceField("Kpis", "occupants", null,
+            new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
+        var parentType = new GraphitronType.TableType("Kpis", null, NO_PK);
+        var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
+        assertHasKind(errors, RejectionKind.AUTHOR_ERROR,
+            "Field 'Kpis.occupants': multi-table interface/union child field "
+                + "requires a non-empty primary key on the parent type 'Kpis'");
+    }
+
+    @Test
+    void wellFormed_listArm_onSinglePkParent_noErrors() {
+        // List arm equivalent of the connection-arm well-formed acceptance test.
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
+            new ParticipantRef.TableBound("Staff", STAFF, null));
+        var field = new InterfaceField("Address", "occupants", null,
+            new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
+        var addressTable = TestFixtures.tableRef("address", "ADDRESS", "Address",
+            List.of(new ColumnRef("address_id", "ADDRESS_ID", "java.lang.Integer")));
+        var parentType = new GraphitronType.TableType("Address", null, addressTable);
+        var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
+        assertThat(errors).isEmpty();
     }
 
     @Test
