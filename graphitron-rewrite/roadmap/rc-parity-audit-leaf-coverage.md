@@ -1,7 +1,7 @@
 ---
 id: R104
 title: "RC parity audit: classify GraphitronField/Type leaves and ship coverage gaps"
-status: In Progress
+status: In Review
 bucket: validation
 depends-on: []
 ---
@@ -109,6 +109,28 @@ to do once, hard to do up-front.
   production classpath.
 
 ## Phase B scope (this item)
+
+**Status: every section below shipped.** Landing commits, by section:
+
+- Section 1a registries + 1b call-site rewrite: `14386cfc8` (production
+  registries) + `8ddfb272f` (unit tests for precondition contracts and
+  trace-emitter smoke).
+- Section 1c `-Pleaf-coverage` profile: `5bab9ca7f`.
+- Section 1d JUnit extension for test-class context: `a032c96f3`.
+- Section 2 `roadmap-tool leaf-coverage` post-processor: `8fd019605`.
+- Section 3 `directive-support --mode=migration` render: `7a6a87e69`.
+- Section 4 migration-guide section: `576e7da3a`.
+
+Honest deviation from the spec: the directive-support migration
+fragment intentionally has no verify-mode CI binding in roadmap-tool's
+verify phase, because the fragment depends on
+`graphitron-common/src/main/resources/directives.graphqls` (a legacy
+module) which the rewrite reactor explicitly does not resolve (per the
+"Rewrite builds independently of legacy modules" principle). The
+leaf-coverage report's verify-mode does run in CI and gates the
+heavier "classifier covers every leaf" guarantee; the directive-support
+fragment regenerates from the docs build instead, where the legacy
+path is in scope.
 
 ### 1. Add classifier trace emission to the generator
 
