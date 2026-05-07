@@ -17,12 +17,18 @@ emitted code is correct end-to-end. The first release candidate of graphitron
 10 needs an explicit, leaf-by-leaf accounting of what is covered, what is not,
 and which gaps are RC-blocking versus deferrable.
 
-This item is a tracker. The deliverables are a classification table, one or
-more sibling Backlog items per RC-blocking gap, an internal regenerable report,
-and a consumer-facing migration-guide section. The "if we don't generate then
-validation fails" rule means an `@ExecutionTier` test that includes shape X is
-the proof that X is fully supported (parses, classifies, validates, generates,
-executes). Pipeline-tier or unit-tier coverage alone does not count.
+The deliverables are a regenerable classification table driven by a
+classifier-trace mechanism, one or more sibling Backlog items per RC-blocking
+gap, and a consumer-facing migration-guide section. The "if we don't generate
+then validation fails" rule means an `@ExecutionTier` test that includes shape
+X is the proof that X is fully supported (parses, classifies, validates,
+generates, executes). Pipeline-tier or unit-tier coverage alone does not count.
+
+The reproducibility approach: the classifier already does all the work on
+every test run, so we make it emit a structured trace gated on a system
+property, and a roadmap-tool subcommand post-processes the trace into the
+coverage report. New fixtures and new tests then update the data
+automatically, with no separate registry to keep in sync.
 
 ## Phase A (already shipped)
 
@@ -42,16 +48,37 @@ executes). Pipeline-tier or unit-tier coverage alone does not count.
 
 ## Phase B scope (this item)
 
-### 1. Re-run the leaf-coverage survey against current trunk
+### 1. Add classifier trace emission to the generator
 
-A first-pass Explore-agent survey ran in the originating session and produced
-a 52-row table over `RootField`, `ChildField`, `InputField`, `GraphitronType`.
-That table is not durable input here; the implementer should re-run a fresh
-survey as the first step of In Progress so the data reflects current trunk
-(R102 / R103 were added after the first pass; the original survey's
-backlog-refs column was unreliable and should be re-derived per leaf).
+At the point where each `GraphitronField` / `GraphitronType` is built, emit a
+JSONL record to the path set by `-Dgraphitron.classification.trace=<path>`,
+gated so the property defaults off and production runs incur no cost. One
+record per classified field/type, fields:
 
-Hierarchy entry points:
+- `parent`: parent type name (empty for top-level types)
+- `name`: field/type name
+- `leaf`: fully-qualified record class, e.g. `ChildField.TableMethodField`
+- `source`: best-effort hint at which fixture/SDL drove the classification
+  (file path or logical fixture name from the schema-loader context)
+- `rejection`: present only on `UnclassifiedField` / `UnclassifiedType`;
+  carries the `RejectionKind` plus message so the post-processor can
+  separate `[deferred]` (legitimately stub-tagged) from `[author-error]` /
+  `[invalid-schema]` (would be a real classification regression if seen on
+  a fixture we expected to pass)
+
+Emission point: tail of `FieldBuilder` and the type-builder counterpart,
+after the sealed-variant decision is made. Keep it one short helper invoked
+from each construction path; do not scatter `if (traceEnabled)` checks.
+
+A Maven profile `-Pleaf-coverage` sets the property to
+`${session.executionRootDirectory}/target/leaf-coverage.jsonl`, truncates
+the file at the start of the test run, and runs `mvn verify` so the trace
+accumulates across all tiers in one file. The aggregate file is the input
+to step 2.
+
+The post-processor (step 2) enumerates the universe of leaves by parsing
+`permits` clauses from these sources, and reports any leaf that never
+appeared in the trace:
 
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronField.java`
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/RootField.java`
@@ -59,30 +86,44 @@ Hierarchy entry points:
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/InputField.java`
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronType.java`
 
-Per leaf, the survey collects: hierarchy, intent (one line from the record's
-javadoc), SDL trigger shape, whether sakila has the shape, which
-`@ExecutionTier` test exercises it, and any roadmap items whose body
-mentions the leaf class name. `UnclassifiedField` / `UnclassifiedType` are
-rejection buckets and need no fixture coverage. `VariantCoverageTest`'s
-`NO_CASE_REQUIRED` map is a useful cross-reference for known classification
-gaps; entries there deserve scrutiny rather than blanket acceptance.
+`VariantCoverageTest`'s `NO_CASE_REQUIRED` map remains a useful
+cross-reference for documented classification gaps; entries there deserve
+scrutiny rather than blanket acceptance.
 
-Confirmed clusters from the first-pass survey, to validate against trunk:
+### 2. Build the `roadmap-tool leaf-coverage` post-processor
 
-- **Composite-key paths** (`CompositeColumnField`, `CompositeColumnReferenceField`,
-  and the two `InputField` siblings): no fixture; pipeline-tier only.
-  Standard sakila has no composite-PK table. RC-blocking iff any consumer
-  schema uses composite primary keys.
-- **`ErrorsField`**: pipeline-only; awaits Phase C3 of R12 (error-handling-parity).
-- **`TableMethodField`**: shape exists in sakila (`Query.popularFilms`) but no
-  explicit `@ExecutionTier` assertion against the method body. Weaker proof.
-- **`JooqRecordType` / `JooqRecordInputType`**: plain `jOOQ Record<?>` (non-
-  TableRecord) has no fixture class. `VariantCoverageTest.NO_CASE_REQUIRED`
-  documents the gap.
-- **`ParticipantColumnReferenceField`**: shape in sakila, no explicit
-  assertion at execution tier; recently shipped, worth confirming.
+Subcommand alongside the existing `directive-support`. Inputs: the trace
+JSONL emitted by step 1, plus the sealed-permits source files. Reads the
+roadmap directory for class-name mentions, same convention as the other
+subcommands.
 
-### 2. Classify each leaf into one of four tiers
+Outputs:
+
+- **Internal report** at `graphitron-rewrite/roadmap/inference-axis-coverage.adoc`,
+  regenerated by the standard `roadmap-tool` exec target alongside
+  `README.md`. Verify-mode fails CI when the file drifts from current state,
+  same guard as the roadmap README. The report carries one row per leaf
+  with: hierarchy, intent (one-line javadoc), trace count, distinct
+  fixtures observed, classification tier (step 3), and roadmap mentions.
+- **`--mode=migration` AsciiDoc fragment** for `include::` from the
+  migration guide: a "supported schema shapes" list keyed off the leaf
+  classification. Consumer-facing wording, internal columns elided.
+
+The post-processor enumerates leaves from sealed `permits` clauses and
+flags any leaf with zero trace records as a coverage hole. Distinguishing
+exec-tier vs pipeline-tier coverage uses the cheap convention: the `source`
+field in the trace, joined to a small fixture-to-tier registry maintained
+in roadmap-tool. If the registry misclassifies, the fix is one entry per
+fixture, not a JUnit extension. A JUnit extension that puts the test class's
+tier annotation into the trace via MDC is recorded as a follow-up only if
+the registry approach proves insufficient.
+
+The classification trace must be regenerated before regenerating the report
+(running `mvn -Pleaf-coverage verify` produces the input). Document the
+two-step regeneration in `graphitron-rewrite/docs/workflow.adoc` alongside
+the existing roadmap README regeneration note.
+
+### 3. Classify each leaf into one of four tiers
 
 - **Covered**: sakila has the shape, an `@ExecutionTier` test asserts the
   generated behaviour, no further action.
@@ -100,42 +141,43 @@ The two-tier vs three-tier output question (must-ship / nice-to-have / post-RC)
 is a design decision left for Spec; the classification above is internal
 bookkeeping, not the final triage shape.
 
-### 3. Extend `directive-support` with a `--mode=migration` render
+### 4. Extend `directive-support` with a `--mode=migration` render
 
-Today the tool prints an internal report. Add a second render mode that emits
-an AsciiDoc fragment suitable for `include::` from the migration guide:
-supported directives, shape-change notes, and a "supported schema shapes" list
-keyed off the leaf classification. The internal mode (current default) stays
-unchanged. The roadmap item that owns the LSP / parser / migration guide
-infrastructure is `R9` (docs site) for the build wiring; this item only owns
-the rendering.
+Today the tool prints an internal report. Add a second render mode that
+emits an AsciiDoc fragment suitable for `include::` from the migration
+guide: supported directives and shape-change notes. The "supported schema
+shapes" portion comes from `leaf-coverage --mode=migration` (step 2); this
+fragment is directive-only, the two combine in the migration guide. The
+internal mode (current default) stays unchanged. The roadmap item that owns
+the docs build wiring is `R9` (docs site); this item only owns the
+rendering.
 
-### 4. Author the migration-guide section
+### 5. Author the migration-guide section
 
-Target: `docs/manual/how-to/migrating-from-legacy.adoc`. The section names what
-is supported (driven by the `--mode=migration` fragment), what changed in
-shape (already drafted; cross-link the existing entries), and what is removed
-(`@notGenerated`, `@multitableReference`, eventually anything else surfaced
-during classification). Consumer-facing wording; no internal "is this fixture-
-covered" detail.
-
-### 5. Author the internal coverage report
-
-Target: `graphitron-rewrite/roadmap/inference-axis-coverage.md`, regenerated
-by `roadmap-tool` similar to `README.md`. Carries the full leaf table and
-classification, kept in sync with trunk by the same regeneration pass.
-Verify-mode of the tool fails CI when the file drifts from current state, same
-guard as the roadmap README.
+Target: `docs/manual/how-to/migrating-from-legacy.adoc`. The section names
+what is supported (driven by both `--mode=migration` fragments: directive
+list from `directive-support`, shape list from `leaf-coverage`), what
+changed in shape (already drafted; cross-link the existing entries), and
+what is removed (`@notGenerated`, `@multitableReference`, anything else
+surfaced during classification). Consumer-facing wording; no internal "is
+this fixture-covered" detail.
 
 ## Done definition
 
+- Classifier-trace emission lands in graphitron, gated on
+  `-Dgraphitron.classification.trace=<path>`, with a `-Pleaf-coverage`
+  Maven profile that produces the aggregate trace file.
+- `roadmap-tool leaf-coverage` reads the trace and renders both an internal
+  report at `roadmap/inference-axis-coverage.adoc` and a
+  `--mode=migration` AsciiDoc fragment.
 - Every sealed leaf of `RootField`, `ChildField`, `InputField`,
-  `GraphitronType` has a classification entry.
+  `GraphitronType` has a classification entry in the internal report.
 - Every RC-blocker leaf has a corresponding sibling Backlog item.
-- `--mode=migration` renders an AsciiDoc fragment that the docs build
-  includes successfully.
+- `directive-support --mode=migration` renders an AsciiDoc fragment that
+  the docs build includes successfully.
 - The migration-guide section ships in `migrating-from-legacy.adoc`.
-- The internal coverage report regenerates cleanly and verify-mode passes.
+- Verify-mode of `roadmap-tool` fails CI when either the README or the
+  internal coverage report drifts from current state.
 
 ## Non-goals
 
