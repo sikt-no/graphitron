@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
-| `R77` | Bulk DML mutations: listed @table input arguments | In Progress | [plan](bulk-dml-mutations.md) |
+| `R77` | Bulk DML mutations: listed @table input arguments | In Review | [plan](bulk-dml-mutations.md) |
 | `R88` | Validate `@record` accessor resolution against backing class at classify time | In Review | [plan](record-accessor-validation.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
@@ -127,7 +127,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R77` [**Bulk DML mutations: listed @table input arguments**](bulk-dml-mutations.md) — In Progress, architecture
+- `R77` [**Bulk DML mutations: listed @table input arguments**](bulk-dml-mutations.md) — In Review, architecture
 - `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture, blocked by [record-accessor-validation](record-accessor-validation.md)
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Ready, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
