@@ -3734,6 +3734,49 @@ class GraphQLQueryTest {
         }
     }
 
+    // ===== R77 Phase F: no-set-fields-present runtime check, single-row analogues =====
+
+    @Test
+    void updateFilm_onlyLookupKeyFields_raisesError() {
+        // Single-row analogue of updateFilms_onlyLookupKeyFields_raisesError. The dynamic
+        // SET walk gates each cf in tia.setFields() on in.containsKey(name); when the input
+        // carries only the @lookupKey field, sets is empty and the no-set-fields-present
+        // runtime check throws IllegalArgumentException before any SQL dispatch.
+        var filmTable = org.jooq.impl.DSL.table("film");
+        var filmIdCol = org.jooq.impl.DSL.field("film_id", Integer.class);
+        Integer filmId = dsl.insertInto(filmTable)
+            .set(org.jooq.impl.DSL.field("title"), "R77-PHASE-F-UPD-LK-" + java.util.UUID.randomUUID())
+            .set(org.jooq.impl.DSL.field("language_id"), (short) 1)
+            .returningResult(filmIdCol).fetchOne().value1();
+        try {
+            graphql.ExecutionResult result = executeRaw(
+                "mutation { updateFilm(in: { filmId: " + filmId + " }) { filmId } }");
+            assertThat(result.getErrors())
+                .as("no-set-fields-present guard surfaces via the routed error envelope")
+                .isNotEmpty();
+        } finally {
+            dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
+        }
+    }
+
+    @Test
+    void upsertFilm_onlyLookupKeyFields_raisesError() {
+        // Single-row analogue of upsertFilms_onlyLookupKeyFields_raisesError. FilmUpsertInput
+        // has non-lookup setFields (title, languageId, rentalDuration), but the input map
+        // carries only filmId — the dynamic doUpdate SET walk gates each setField on
+        // in.containsKey(name) and produces an empty setsUpdate map; the no-set-fields-
+        // present check throws before any SQL dispatch.
+        int filmId = 999_701;
+        var filmTable = org.jooq.impl.DSL.table("film");
+        var filmIdCol = org.jooq.impl.DSL.field("film_id", Integer.class);
+        dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
+        graphql.ExecutionResult result = executeRaw(
+            "mutation { upsertFilm(in: { filmId: " + filmId + " }) { filmId } }");
+        assertThat(result.getErrors())
+            .as("no-set-fields-present guard surfaces via the routed error envelope on UPSERT .doUpdate() mode")
+            .isNotEmpty();
+    }
+
     // ===== R12 @error end-to-end (error-handling-parity.md) =====
     //
     // The query-side @error fixture exists for visibility, not for exhaustive coverage of every
