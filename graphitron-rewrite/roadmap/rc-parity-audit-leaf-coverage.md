@@ -46,29 +46,67 @@ automatically, with no separate registry to keep in sync.
   multi-table union, error-payload union): all four shapes confirmed in
   sakila with `@ExecutionTier` coverage.
 
+## Resolved design questions
+
+- **Trace emission point:** three funnels, not one.
+  `TypeBuilder.classifyType` (TypeBuilder.java:303),
+  `FieldBuilder.classifyField` (FieldBuilder.java:1311),
+  `BuildContext.classifyInputField` (BuildContext.java:1074). Each is the
+  single dispatch return for its sealed permits, so one helper invocation
+  per funnel covers everything.
+- **Source provenance:** `SourceLocation.getSourceName()` is reliable for
+  schemas loaded via `RewriteSchemaLoader` (uses
+  `MultiSourceReader.trackData(true)`) and empty for `TestSchemaHelper`
+  inline-string fixtures. Spec accepts the asymmetry.
+- **Tier of test:** not derivable from fixture path; the same fixture
+  serves multiple tiers. Step 2 uses an exec-tier fixture manifest
+  (currently sakila + federated) instead, since exec-tier fixtures are a
+  tiny, manually-curatable set.
+
 ## Phase B scope (this item)
 
 ### 1. Add classifier trace emission to the generator
 
-At the point where each `GraphitronField` / `GraphitronType` is built, emit a
-JSONL record to the path set by `-Dgraphitron.classification.trace=<path>`,
-gated so the property defaults off and production runs incur no cost. One
-record per classified field/type, fields:
+Three emission points, one for each construction funnel discovered in
+research:
+
+- `TypeBuilder.classifyType(GraphQLNamedType)` (TypeBuilder.java:303): the
+  single return-point for every `GraphitronType` permit. Wrap or
+  post-process the return value here.
+- `FieldBuilder.classifyField(...)` (FieldBuilder.java:1311): the dispatch
+  funnel for `RootField` / `ChildField` / `UnclassifiedField`. Each
+  per-parent classifier (`classifyRootField`, `classifyChildFieldOnTableType`,
+  etc.) returns a single `GraphitronField`; emit on the dispatch return.
+- `BuildContext.classifyInputField(...)` (BuildContext.java:1074): emit on
+  the wrapped `InputFieldResolution` return so all `InputField` permits are
+  captured at one site rather than at each `new InputField.X(...)` call.
+
+Emit a JSONL record per classified field/type to the path set by
+`-Dgraphitron.classification.trace=<path>`. Default off; production runs
+incur no cost. Record fields:
 
 - `parent`: parent type name (empty for top-level types)
 - `name`: field/type name
 - `leaf`: fully-qualified record class, e.g. `ChildField.TableMethodField`
-- `source`: best-effort hint at which fixture/SDL drove the classification
-  (file path or logical fixture name from the schema-loader context)
+- `source`: `SourceLocation.getSourceName()` from the field/type's SDL
+  location. Populated for schemas loaded via `RewriteSchemaLoader` (sakila,
+  federated, real generator runs); null/empty for `TestSchemaHelper`
+  inline-string fixtures used in unit and pipeline tests. Acceptable
+  asymmetry: the leaf still appears in the trace, it just lacks fixture
+  provenance.
 - `rejection`: present only on `UnclassifiedField` / `UnclassifiedType`;
   carries the `RejectionKind` plus message so the post-processor can
   separate `[deferred]` (legitimately stub-tagged) from `[author-error]` /
   `[invalid-schema]` (would be a real classification regression if seen on
   a fixture we expected to pass)
 
-Emission point: tail of `FieldBuilder` and the type-builder counterpart,
-after the sealed-variant decision is made. Keep it one short helper invoked
-from each construction path; do not scatter `if (traceEnabled)` checks.
+Implementation note: the existing `BuildWarning` mechanism (`ctx.addWarning`)
+is for *warnings* surfaced to schema authors and has the wrong semantics for
+routine classification trace. Add a dedicated trace emitter (one short
+helper, e.g. `ClassificationTrace.emit(parent, name, leaf, location)`)
+invoked from the three sites above. `FieldBuilder` already declares an
+unused `LOG` field at line 134; that's the same `LoggerFactory` import path
+to follow if the emitter is logger-backed.
 
 A Maven profile `-Pleaf-coverage` sets the property to
 `${session.executionRootDirectory}/target/leaf-coverage.jsonl`, truncates
@@ -111,12 +149,31 @@ Outputs:
 
 The post-processor enumerates leaves from sealed `permits` clauses and
 flags any leaf with zero trace records as a coverage hole. Distinguishing
-exec-tier vs pipeline-tier coverage uses the cheap convention: the `source`
-field in the trace, joined to a small fixture-to-tier registry maintained
-in roadmap-tool. If the registry misclassifies, the fix is one entry per
-fixture, not a JUnit extension. A JUnit extension that puts the test class's
-tier annotation into the trace via MDC is recorded as a follow-up only if
-the registry approach proves insufficient.
+exec-tier vs pipeline-tier coverage exploits the codebase reality
+discovered in research: the same fixture is classified by tests at multiple
+tiers (sakila's `schema.graphqls` is loaded by `NoFederationRegressionTest`
+at `@PipelineTier` and by `GraphQLQueryTest` / `MatchQueryExampleTest` /
+others at `@ExecutionTier`), so per-test tier tracking is the wrong
+abstraction.
+
+Instead, the post-processor uses an *exec-tier fixture manifest*: a short
+list of fixture file paths whose classification proves exec-tier coverage
+because at least one `@ExecutionTier` test class loads them. Today that
+list is two paths:
+
+- `graphitron-rewrite/graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`
+- `graphitron-rewrite/graphitron-sakila-example/src/main/resources/graphql/federated-schema.graphqls`
+
+A leaf with a trace record whose `source` matches a manifest entry is
+exec-tier covered. A leaf with only inline-fixture trace records (empty
+`source`) is at most pipeline-tier covered. A leaf with no trace records
+is uncovered.
+
+Maintained as a properties file in roadmap-tool resources. New exec-tier
+fixtures get added to the manifest; this is a tiny surface (the test suite
+only spins up PostgreSQL once or twice). A JUnit extension that puts the
+test class's tier annotation into the trace via MDC remains a follow-up
+only if the manifest approach proves insufficient.
 
 The classification trace must be regenerated before regenerating the report
 (running `mvn -Pleaf-coverage verify` produces the input). Document the
