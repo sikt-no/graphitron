@@ -397,18 +397,25 @@ type Customer @table {
 
 #### Resolve fields from database functions with @experimental_procedureCall
 The **experimental_procedureCall** directive resolves a field by calling a jOOQ-generated routine (a database function) inline
-as part of the query for the surrounding table. It is useful when the value of a field is produced by a database function
-whose inputs come from columns on the current row.
+as part of the surrounding query. The function call composes into the same `SELECT` that builds the parent row, so its inputs
+can be either columns on the current row or GraphQL arguments on the surrounding data-fetcher field.
 
 The _procedure_ parameter is the routine name as returned by jOOQ's `Routine.getName()`, matching the database routine name
 (matched case-insensitively). When the same routine name exists in multiple database schemas, qualify it as `schema.routine`
 (e.g. `public.last_day`) to disambiguate. If the procedure is unique across schemas, the name will suffice.
-The _arguments_ parameter maps the routine's IN parameter names to columns on the current table,
+The _arguments_ parameter maps the routine's IN parameter names to argument sources,
 using the same selection syntax as [@experimental_constructType](#construct-nested-types-from-table-columns-with-experimental_constructtype):
 - The key side is the routine parameter name exactly as returned by jOOQ's `Parameter.getName()` - typically snake_case (e.g. `p_inventory_id`).
-- The value side is the column name on the current table context (e.g. `INVENTORY_ID`).
+- The value side names either a column on the current table or a GraphQL argument, depending on the directive's mode (see below).
 - Argument order is deduced from the routine's IN parameter order; the map is keyed by parameter name, not positional.
 - _arguments_ may be omitted or empty only when the function has zero IN parameters.
+
+The directive has two modes, distinguished structurally by the presence of the `target` parameter.
+
+##### Inline mode (no `target`)
+
+The directive sits on a scalar field. Argument values name columns on the surrounding type's table, and the function call
+fills the cell of the directive-bearing field.
 
 ```graphql
 type InventoryWithHeldBy implements Node @node @table(name: "INVENTORY") {
@@ -426,14 +433,48 @@ Multiple arguments can be provided:
 someField: Int @experimental_procedureCall(procedure: "some_func", arguments: "p_first: FIRST_COLUMN, p_second: SECOND_COLUMN")
 ```
 
-**Restrictions:**
+##### Target mode (`target` set)
+
+The directive sits on a *data-fetcher field* (a root field, a field with arguments, or a `@splitQuery` field) whose return type
+is an object or a list of objects. The `target` parameter names a sibling scalar field on that return type whose cell the function
+call fills. Argument values name top-level GraphQL arguments on the directive-bearing field.
+
+```graphql
+type Query {
+  customerWithHeldBy(inventoryId: ID): Customer @experimental_procedureCall(
+    target: "heldBy",
+    procedure: "inventory_held_by_customer",
+    arguments: "p_inventory_id: inventoryId"
+  )
+}
+
+type Customer @table {
+  id: ID
+  heldBy: Int
+}
+```
+
+Mode discrimination is structural: setting `target` switches the meaning of every argument value from "column on the surrounding
+table" to "GraphQL argument on the data-fetcher field." Mixing the two within a single directive is not allowed.
+
+**Restrictions (apply to both modes):**
 - Only scalar-returning functions (`Field<T>`) are currently supported. OUT / INOUT parameters and record-returning procedures are not supported.
-- The containing type must have an associated table (via `@table` or inherited from an enclosing type).
-- The directive can not be placed on root `Query` or `Mutation` fields, on interface fields, or on fields with non-scalar return types.
-- Arguments are sourced exclusively from columns on the local table - GraphQL inputs, literals and context variables are not supported.
-- Every mapped column must exist on the surrounding table, and every IN parameter of the routine must be mapped.
-- The routine's return type must match the GraphQL field's Java type.
+- Every IN parameter of the routine must be mapped, and the routine's return type must match the cell's Java type
+  (the directive-bearing field in inline mode, the target field in target mode).
+- The routine name must resolve unambiguously, qualified with `schema.` when needed.
 - Can not be combined with `@field`, `@externalField`, or `@reference` on the same field.
+- Can not be placed on interface fields.
+
+**Inline mode-specific:**
+- The containing type must have an associated table (via `@table` or inherited from an enclosing type).
+- The directive can not be placed on root `Query` or `Mutation` fields, or on fields with non-scalar return types.
+- Every mapped argument value must name a column on the surrounding table.
+
+**Target mode-specific:**
+- The return type (or a type above it in the chain) must have an associated table.
+- The return type must be an object, or a list of objects (interfaces and unions are not yet supported).
+- The named target must be a scalar field on the return type, with no `@field`, `@externalField`, or `@experimental_procedureCall` of its own.
+- Every mapped argument value must name a top-level GraphQL argument on the directive-bearing field. Nested input-field paths are not yet supported.
 
 ### Tables, joins and records
 #### Link types to database tables with @table
