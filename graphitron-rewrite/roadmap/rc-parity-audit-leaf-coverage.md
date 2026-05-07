@@ -48,27 +48,28 @@ automatically, with no separate registry to keep in sync.
 
 ## Resolved design questions
 
-- **Trace emission point:** one walk, not three funnels. The classifier
-  has post-classification mutations (federation demotions in
-  `EntityResolutionBuilder`, node-id collision demotions in
-  `TypeBuilder.validateNodeTypeIdUniqueness`, and synthesized
-  connection/edge/pageinfo types in `GraphitronSchemaBuilder.promoteConnectionTypes`)
-  that bypass `classifyType` / `classifyField`. Trace at
-  `GraphitronSchemaBuilder.buildSchema` immediately before
-  `new GraphitronSchema(...)` is constructed (around
-  GraphitronSchemaBuilder.java:216), walking `ctx.types` and the final
-  `fields` map. That is the single source of truth for what the consumer
-  actually receives.
+- **Trace emission point:** introduce a `TypeRegistry` and `FieldRegistry`
+  that wrap the previously-bare `BuildContext.types` field and the
+  `fields` map in `GraphitronSchemaBuilder.buildSchema`. The maps become
+  private. All writes go through named operations (`classify`,
+  `reclassify`, `synthesize`) that carry the trace emission internally.
+  This replaces the original "walk the final maps" approach with funnel
+  tracing again, but the funnels are now enforced architecturally rather
+  than by convention: the federation demotions in `EntityResolutionBuilder`,
+  the node-id collision demotion in
+  `TypeBuilder.validateNodeTypeIdUniqueness`, and the connection-type
+  synthesis in `GraphitronSchemaBuilder.promoteConnectionTypes` each pick
+  a named operation. Java access modifiers prevent new bypass sites; no
+  separate enforcement test is needed.
 - **Source provenance:** `SourceLocation.getSourceName()` is reliable for
   schemas loaded via `RewriteSchemaLoader` (uses
   `MultiSourceReader.trackData(true)`) and empty for `TestSchemaHelper`
   inline-string fixtures. Spec accepts the asymmetry.
 - **Tier of test:** captured per trace record via a JUnit extension (step
-  1c) that auto-registers and writes the running test class plus its tier
-  annotation into a ThreadLocal context. The trace emitter reads that
-  context and tags every record. This avoids both a fragile fixture
-  manifest and a brittle naming-convention scan; the runtime is the source
-  of truth.
+  1d) that auto-registers and writes the running test class plus its tier
+  annotation into a ThreadLocal context. The registries read that context
+  and tag every record. This avoids both a fragile fixture manifest and a
+  brittle naming-convention scan; the runtime is the source of truth.
 - **Test-to-leaf mapping:** captured implicitly by the JUnit extension
   (every leaf classified during a test's lifecycle is attributed to that
   test). Existing javadoc and naming convention (`TableFieldPipelineTest`
@@ -83,37 +84,75 @@ automatically, with no separate registry to keep in sync.
 
 ### 1. Add classifier trace emission to the generator
 
-Three sub-pieces: the emitter itself (1a), the property/profile that turns
-it on (1b), and a JUnit extension that supplies test-class context (1c).
+Two sub-pieces of refactor (1a registries, 1b operation rewrite), plus the
+property/profile that turns tracing on (1c) and a JUnit extension that
+supplies test-class context (1d).
 
-#### 1a. Emitter
+#### 1a. Introduce `TypeRegistry` and `FieldRegistry`
 
-Single emission site: `GraphitronSchemaBuilder.buildSchema` immediately
-before `new GraphitronSchema(...)` is invoked (around
-GraphitronSchemaBuilder.java:216). At that point both `ctx.types` and the
-deduplicated `fields` map are final and complete. The emitter walks both
-and writes one JSONL record per entry.
+Replace the bare `Map<String, GraphitronType>` currently held as
+`BuildContext.types` with a `TypeRegistry` whose backing map is private.
+Three named operations replace direct `put` calls:
 
-This deliberately *replaces* a three-funnel approach
-(`TypeBuilder.classifyType`, `FieldBuilder.classifyField`,
-`BuildContext.classifyInputField`) because the funnel approach misses
-post-classification mutations:
+- `classify(name, type)`: primary classification, asserts no prior entry
+  for that name. Used by `TypeBuilder.classifyType`.
+- `reclassify(name, type)`: demotion of an already-classified type to
+  `UnclassifiedType` (or any other reclassification), asserts a prior
+  entry exists. Used by `EntityResolutionBuilder.build` for federation
+  validation failures and by `TypeBuilder.validateNodeTypeIdUniqueness`
+  for `@nodeId` collisions.
+- `synthesize(name, type)`: graphitron-generated type with no SDL origin,
+  asserts no prior entry. Used by
+  `GraphitronSchemaBuilder.promoteConnectionTypes` for `ConnectionType` /
+  `EdgeType` / `PageInfoType`.
 
-- `EntityResolutionBuilder.build` (federation pass) demotes types to
-  `UnclassifiedType` via direct `types.put` (lines 104, 110, 128).
-- `TypeBuilder.validateNodeTypeIdUniqueness` demotes on `@nodeId`
-  collisions via direct `types.put` (line 182).
-- `GraphitronSchemaBuilder.promoteConnectionTypes` synthesizes
-  `ConnectionType` / `EdgeType` / `PageInfoType` entries and writes them
-  via direct `types.put` (lines 373, 377, 386, 391).
+Same pattern for the local `fields` map in
+`GraphitronSchemaBuilder.buildSchema`, lifted into a `FieldRegistry`.
+Initial scope is just `classify`; research found no demotion or synthesis
+of fields outside `classifyField`. If the refactor surfaces a site that
+needs `reclassify` or `synthesize`, add the operation symmetrically.
 
-Walking the final maps captures what the consumer actually receives, which
-is what we want to audit.
+The registries take ownership of trace emission. Each operation:
+1. Validates the prior-entry precondition.
+2. Writes to the private map.
+3. Emits a trace record if `-Dgraphitron.classification.trace` is set.
 
-Emit a JSONL record per entry to the path set by
+Java access modifiers do the architectural enforcement: with the maps
+private, a new bypass requires either adding a public method to the
+registry (visible in code review) or breaking encapsulation in a way that
+fails a basic visibility check.
+
+#### 1b. Rewrite call sites to use named operations
+
+Touch points discovered in research:
+
+- `TypeBuilder.classifyType` → registry.classify (return value still
+  flows back to caller for use within `buildTypes`)
+- `TypeBuilder.validateNodeTypeIdUniqueness` (TypeBuilder.java:182) →
+  registry.reclassify
+- `EntityResolutionBuilder.build` (lines 104, 110, 128) →
+  registry.reclassify
+- `GraphitronSchemaBuilder.promoteConnectionTypes` (lines 373, 377, 386,
+  391) → registry.synthesize
+- `FieldBuilder.classifyField` (and the input-field path through
+  `BuildContext.classifyInputField`) → field-registry.classify
+
+The enrichment pass at TypeBuilder.java:141-158 (`replaceAll` over the
+result of the first `buildTypes` pass) needs decision: it currently
+mutates the map in place to swap empty `InterfaceType`/`UnionType` for
+participant-resolved versions. Treat as `reclassify` because the entries
+exist and are being replaced, even though the replacement is enrichment
+rather than demotion. Acceptable because `reclassify` semantically means
+"prior entry exists, new entry replaces it."
+
+Emit a JSONL record per registry operation to the path set by
 `-Dgraphitron.classification.trace=<path>`. Default off; production runs
 incur no cost. Record fields:
 
+- `op`: one of `classify`, `reclassify`, `synthesize`. Lets the
+  post-processor distinguish primary classifications from demotions
+  (which often produce `UnclassifiedType` and indicate validation forks)
+  and synthesized types (which never came from user SDL).
 - `parent`: parent type name (empty for top-level types)
 - `name`: field/type name
 - `leaf`: fully-qualified record class, e.g. `ChildField.TableMethodField`
@@ -129,20 +168,19 @@ incur no cost. Record fields:
   `[invalid-schema]` (would be a real classification regression if seen on
   a fixture we expected to pass)
 - `test`: fully-qualified test class name when classification runs inside
-  a JUnit lifecycle (populated by 1c). Empty when classification runs
+  a JUnit lifecycle (populated by 1d). Empty when classification runs
   outside tests (e.g. `graphitron:generate` from a real consumer build).
 - `tier`: one of `unit`, `pipeline`, `compilation`, `execution`, or
-  `cross-cutting`, derived from the test class's tier annotation by 1c.
+  `cross-cutting`, derived from the test class's tier annotation by 1d.
   Empty when `test` is empty.
 
 Implementation note: the existing `BuildWarning` mechanism (`ctx.addWarning`)
-is for *warnings* surfaced to schema authors and has the wrong semantics for
-routine classification trace. Add a dedicated trace emitter (one short
-helper, e.g. `ClassificationTrace.dump(types, fields)`) invoked once from
-`GraphitronSchemaBuilder.buildSchema` just before the schema record is
-constructed. The emitter is a no-op when the trace property is unset.
+is for *warnings* surfaced to schema authors and has the wrong semantics
+for routine classification trace. Keep the registries' emitter separate.
+The emitter is a no-op when the trace property is unset, so production
+generator runs (where the property is never set) pay nothing.
 
-#### 1b. Property and profile
+#### 1c. Property and profile
 
 A Maven profile `-Pleaf-coverage` sets the property to
 `${session.executionRootDirectory}/target/leaf-coverage.jsonl`, truncates
@@ -150,7 +188,7 @@ the file at the start of the test run, and runs `mvn verify` so the trace
 accumulates across all tiers in one file. The aggregate file is the input
 to step 2.
 
-#### 1c. JUnit extension for test-class context
+#### 1d. JUnit extension for test-class context
 
 A JUnit 5 extension auto-registered via
 `META-INF/services/org.junit.jupiter.api.extension.Extension` (plus
@@ -267,7 +305,14 @@ this fixture-covered" detail.
 
 ## Done definition
 
-- Classifier-trace emission lands in graphitron, gated on
+- `TypeRegistry` and `FieldRegistry` replace the bare maps that previously
+  held classification results; all writes go through `classify` /
+  `reclassify` / `synthesize` operations and the underlying maps are
+  private. All known bypass sites
+  (`EntityResolutionBuilder`, `validateNodeTypeIdUniqueness`,
+  `promoteConnectionTypes`, the enrichment `replaceAll` pass) call the
+  appropriate named operation.
+- Classifier-trace emission lives inside the registries, gated on
   `-Dgraphitron.classification.trace=<path>`, with a `-Pleaf-coverage`
   Maven profile that produces the aggregate trace file.
 - A JUnit 5 extension auto-registers in the test classpath and tags every
