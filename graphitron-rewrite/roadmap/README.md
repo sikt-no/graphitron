@@ -14,8 +14,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
-| `R88` | Validate `@record` accessor resolution against backing class at classify time | Ready | [plan](record-accessor-validation.md) |
 | `R77` | Bulk DML mutations: listed @table input arguments | In Progress | [plan](bulk-dml-mutations.md) |
+| `R88` | Validate `@record` accessor resolution against backing class at classify time | In Progress | [plan](record-accessor-validation.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
@@ -157,7 +157,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R88` [**Validate `@record` accessor resolution against backing class at classify time**](record-accessor-validation.md) — Ready, architecture
+- `R88` [**Validate `@record` accessor resolution against backing class at classify time**](record-accessor-validation.md) — In Progress, architecture
 - `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md) — Backlog, architecture
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
