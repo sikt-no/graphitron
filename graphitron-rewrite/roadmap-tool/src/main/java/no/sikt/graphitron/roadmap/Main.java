@@ -67,10 +67,18 @@ public final class Main {
     private Main() {}
 
     public static void main(String[] args) throws IOException {
-        if (args.length < 2) {
+        if (args.length < 1) {
             usage();
         }
         String mode = args[0];
+        if ("directive-support".equals(mode)) {
+            int rc = DirectiveSupportReport.run(sliceArgs(args, 1));
+            if (rc != 0) System.exit(rc);
+            return;
+        }
+        if (args.length < 2) {
+            usage();
+        }
         Path dir = Path.of(args[1]).toAbsolutePath().normalize();
         if (!Files.isDirectory(dir)) {
             System.err.println("not a directory: " + dir);
@@ -95,6 +103,8 @@ public final class Main {
         System.err.println("  create      <roadmap-dir> <slug> --title \"<title>\""
             + " [--bucket <bucket>] [--priority <n>] [--theme <theme>]");
         System.err.println("  render-adoc <roadmap-dir> <output-dir>");
+        System.err.println("  directive-support <legacy-directives.graphqls>"
+            + " <rewrite-directives.graphqls> <fixture-dir>[:<fixture-dir>...]");
         System.exit(64);
     }
 
