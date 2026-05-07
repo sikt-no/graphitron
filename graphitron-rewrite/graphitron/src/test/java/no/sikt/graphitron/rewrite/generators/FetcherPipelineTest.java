@@ -527,7 +527,7 @@ class FetcherPipelineTest {
             .contains("if (firstKeys.contains(\"title\"))")
             .contains("if (firstKeys.contains(\"description\"))")
             .as("imperative for-loop builds vRows (control flow inside, not a stream lambda)")
-            .contains("for (var row : in)")
+            .contains("for (java.util.Map<?, ?> row : in)")
             .contains("vRows.add(")
             .contains("org.jooq.impl.DSL.values(vRows.toArray(")
             .contains(".as(\"v\", vColNames.toArray")
@@ -547,6 +547,36 @@ class FetcherPipelineTest {
             .contains(".where(");
         assertThat(updateFilms.returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void dmlUpsertField_bulkInput_doNothingMode_omitsUniformShapeAndSetMapEmits() {
+        // Fixture's input has only a @lookupKey field, so tia.setFields() is empty.
+        // The emitter gates the firstKeys / uniform-shape guard / setsUpdate walk on
+        // !setFields().isEmpty(); with that empty, all three should drop out of the
+        // generated source. The dispatched SQL is INSERT ... ON CONFLICT (...) DO
+        // NOTHING — no DO UPDATE branch. The execution tier can't observe this
+        // shape because PostgreSQL enforces NOT NULL before ON CONFLICT (Sakila's
+        // film table has multiple NOT NULL columns without defaults), so the
+        // structural pin lives here at the tier that reads the emitted source.
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            input FilmUpsertNoSetInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id") @lookupKey
+            }
+            type Query { dummy: String }
+            type Mutation { upsertFilms(in: [FilmUpsertNoSetInput!]!): [Film!]! @mutation(typeName: UPSERT) }
+            """;
+        var upsertFilms = method(findSpec("MutationFetchers", sdl), "upsertFilms");
+        var body = upsertFilms.code().toString();
+        assertThat(body)
+            .contains("java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument")
+            .as("doNothing mode: no firstKeys capture, no uniform-shape guard, no setsUpdate walk")
+            .doesNotContain("firstKeys")
+            .doesNotContain("setsUpdate")
+            .doesNotContain(".doUpdate()")
+            .contains(".onConflict(")
+            .contains(".doNothing()");
     }
 
     @Test

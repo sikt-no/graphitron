@@ -1025,6 +1025,14 @@ input FilmUpsertInput @table(name: "film") {
     rentalDuration: Int     @field(name: "rental_duration")
 }
 
+# R77 Phase F fixture: minimal DELETE input. `filmId` carries the @lookupKey;
+# the bulk-DELETE arm emits `DSL.row(film_id).in(in.stream().map(row -> DSL.row(...)).toList())`,
+# locking the row-tuple `IN` shape for execution-tier coverage. Sakila has no
+# single-row DELETE mutation today; this surface is the first DELETE test fixture.
+input FilmDeleteInput @table(name: "film") {
+    filmId: Int! @field(name: "film_id") @lookupKey
+}
+
 type Mutation {
     # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$fields>).fetchOne(r -> r)`.
@@ -1037,6 +1045,17 @@ type Mutation {
     #  .returningResult(<$fields>).fetchOne(r -> r)`. Generated method runtime-guards against
     # the Oracle dialect (jOOQ silently translates ON CONFLICT to MERGE).
     upsertFilm(in: FilmUpsertInput!): Film @mutation(typeName: UPSERT)
+
+    # R77 Phase F: bulk DML mutations. Each takes a list of @table inputs and dispatches
+    # the per-verb bulk arm in TypeFetcherGenerator (INSERT: valuesOfRows + per-cell
+    # containsKey dispatch; UPDATE: VALUES join with uniform-shape, no-set-fields, and
+    # duplicate-tuple guards; UPSERT: valuesOfRows + dynamic doUpdate SET; DELETE:
+    # row-tuple IN). Return shapes deliberately mix [Film!]! (ProjectedList) and
+    # [ID!]! (EncodedList) to cover both terminator arms.
+    createFilms(in: [FilmCreateInput!]!): [Film!]! @mutation(typeName: INSERT)
+    updateFilms(in: [FilmUpdateInput!]!): [Film!]! @mutation(typeName: UPDATE)
+    upsertFilms(in: [FilmUpsertInput!]!): [Film!]! @mutation(typeName: UPSERT)
+    deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE)
 
     # R12 fixture (error-handling-parity.md): mutation-side @error end-to-end. The
     # @service-backed mutation classifies as MutationServiceRecordField (same shape that
