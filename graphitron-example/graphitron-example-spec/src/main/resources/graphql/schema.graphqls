@@ -23,6 +23,8 @@ type Query {
     filmLookupWithAdditionalField(filmId: [String!]! @lookupKey @field(name: "FILM_ID"), title: [String!] @lookupKey): [Film]
     filmLookupWithInputObject(filmIds: [FilmLookupInput] @lookupKey): [Film]
 
+    filmActorLookup(ids: [ID!]! @lookupKey @nodeId(typeName: "FilmActor")): [FilmActor]
+
     filmLists(category: String, categoryAsId: ID @field(name: "CATEGORY")): [FilmList]
     filmListsWithEnumRecord(input: FilmListEnumInput!): FilmList
     filmsWithDescriptionInput(input: [FilmDescriptionInput]): [Film]

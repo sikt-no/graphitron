@@ -1,0 +1,30 @@
+{
+    "data": {
+        "filmActorLookup": [
+            {
+                "id": "RmlsbUFjdG9yOjEsMQ",
+                "filmsWithMixedResolverKeys": null
+            },
+            {
+                "id": "RmlsbUFjdG9yOjEwLDE",
+                "filmsWithMixedResolverKeys": null
+            },
+            {
+                "id": "RmlsbUFjdG9yOjIwLDE",
+                "filmsWithMixedResolverKeys": [
+                    {
+                        "id": "RmlsbTox"
+                    }
+                ]
+            },
+            {
+                "id": "RmlsbUFjdG9yOjMwLDE",
+                "filmsWithMixedResolverKeys": [
+                    {
+                        "id": "RmlsbTox"
+                    }
+                ]
+            }
+        ]
+    }
+}

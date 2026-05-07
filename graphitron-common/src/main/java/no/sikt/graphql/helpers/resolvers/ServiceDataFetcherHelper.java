@@ -6,6 +6,7 @@ import no.sikt.graphql.helpers.selection.SelectionSet;
 import no.sikt.graphql.helpers.transform.AbstractTransformer;
 import no.sikt.graphql.relay.ConnectionImpl;
 import org.apache.commons.lang3.tuple.Pair;
+import org.jooq.UpdatableRecord;
 
 import java.util.List;
 import java.util.Map;
@@ -205,12 +206,34 @@ public class ServiceDataFetcherHelper<A extends AbstractTransformer> extends Abs
             return CompletableFuture.completedFuture(Map.of());
         }
 
-        var idSet = keys.stream().map(KeyWithPath::key).collect(Collectors.toSet());
         return CompletableFuture.completedFuture(
-                resultAsMap(keys, dbFunction.apply(idSet))
+                resultAsMapWithPkOnlyKeys(keys, dbFunction)
                         .entrySet()
                         .stream()
                         .collect(Collectors.toMap(Map.Entry::getKey, it -> dbTransform.transform(abstractTransformer, it.getValue())))
         );
+    }
+
+    /**
+     * Like {@link #resultAsMap}, but strips non-PK columns from {@link UpdatableRecord} keys
+     * returned by the service so equality with the requested PK-only lookup keys holds.
+     */
+    protected <K, V> Map<KeyWithPath<K>, V> resultAsMapWithPkOnlyKeys(Set<KeyWithPath<K>> keys, Function<Set<K>, Map<K, V>> dbFunction) {
+        var keySet = keys.stream().map(KeyWithPath::key).collect(Collectors.toSet());
+        var stripped = dbFunction.apply(keySet).entrySet().stream()
+                .collect(Collectors.toMap(e -> stripNonPkColumns(e.getKey()), Map.Entry::getValue));
+        return resultAsMap(keys, stripped);
+    }
+
+    /**
+     * Returns an {@link UpdatableRecord} key with non-PK columns stripped; other keys are
+     * returned unchanged.
+     */
+    @SuppressWarnings("unchecked")
+    static <K> K stripNonPkColumns(K key) {
+        if (key instanceof UpdatableRecord<?> record) {
+            return (K) record.key().into(record.getClass());
+        }
+        return key;
     }
 }
