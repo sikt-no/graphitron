@@ -1,7 +1,7 @@
 ---
 id: R93
 title: "LSP quick-fix: ExternalCodeReference name → className migration"
-status: In Review
+status: Ready
 bucket: Backlog
 priority: 5
 theme: legacy-migration
@@ -524,3 +524,66 @@ scope-only:
   for graphitron developers. If a future change relaxes the WARN's
   severity or removes it, R93's no-diagnostic stance for
   legacy-and-resolves needs revisiting before that change ships.
+
+## Reviewer feedback (cycle 1)
+
+In Review → Done declined; status flipped back to Ready. Findings to
+address before the next In Review handoff:
+
+- **Legacy-and-unresolved diagnostic arm has zero tests.**
+  `Diagnostics.java:196-213` (introduced in Phase 2, `5258d16f`) emits
+  the error, but `DiagnosticsTest` constructs every fixture catalog via
+  the 3-arg `CompletionData` constructor, so `namedReferences` is
+  permanently empty and neither the resolves-silent arm nor the
+  unresolved-error arm ever fires under test. The "## Tests / LSP-tier"
+  section above promised "Coverage extends to all eight binding sites:
+  the test fixture grows to include one example per site". Action: add
+  one fixture per arm at minimum (resolves-silent on one site,
+  unresolved-error on a different site, asserting the message names the
+  unresolved name and points at the two fixes); ideally one example per
+  site as the spec promised, threading a non-empty `namedReferences`
+  map through the 4-arg catalog.
+
+- **`CodeActionsTest` missing the sibling-diagnostic case.** The
+  "## Quick-fix shape" section's last paragraph promised the per-site
+  quick-fix surfaces independently of any sibling diagnostic on the same
+  range, and the LSP-tier test surface explicitly named "per-site on a
+  literal carrying an unrelated sibling diagnostic (quick-fix surfaces
+  regardless)". `CodeActionsTest` (Phase 2) has no fixture where a
+  literal carries an unrelated diagnostic. The production path's
+  `intersects(...)` filter is range-driven so the assertion would pass;
+  the regression seam is what's missing.
+
+- **The `## Tests` section above contradicts what shipped in Phase 1.**
+  `DirectiveDefinitionsTest` only pins the eight `ExternalCodeReference`
+  bindings, not "every directive in `directives.graphqls` with the
+  right argument list per directive" (`DirectiveDefinitions` only
+  carries the eight ECR-binding directives; non-ECR directives like
+  `@table`, `@field`, `@asConnection`, `@order`, etc. are absent from
+  the registry). The Phase 1 collapse note tacitly narrowed the test
+  surface, but the body the gate would archive on Done still carries
+  the unfulfilled contract. Action: rewrite `## Tests` (and, if needed,
+  the "## Detection surface" / "## Implementation sites" framing of
+  the registry as the LSP's directive vocabulary catalog) to match
+  what shipped, or move the "every directive" expectation into a
+  follow-on item with an explicit pointer.
+
+Optional follow-ups (not blockers, but worth thinking about before next
+review):
+
+- `CodeActions.countableNoun(displayName)` ignores its parameter and
+  hardcodes the R93 noun. Fine for one action; brittle once a second
+  `SdlAction` lands. Either thread a per-action noun through
+  `SdlAction`, or rename the method so the hardcoding is explicit.
+- The `applyAll` / `countResolvable` / `countSkipped` helpers in
+  `CodeActions` each iterate the matches and re-invoke the (pure)
+  rewrite, three full passes per file per request. A single partition
+  pass producing `(edits, skipCount)` together would be cleaner.
+
+Build state at review time: `mvn -f graphitron-rewrite/pom.xml install
+-P!docs -Plocal-db` returns BUILD SUCCESS at HEAD `a4c5ed12` with no
+surefire reports showing non-zero `errors=` or `failures=`; the two
+pre-existing-trunk-failures noted in the In Review handoff
+(`NodeIdLeafResolverTest`, `SynthesizeFkJoinReorderedKeysTest`) are
+not present at HEAD, so this review could neither corroborate nor
+refute the "unrelated to R93" claim. Not material to this gate.
