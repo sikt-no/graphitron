@@ -1,7 +1,7 @@
 ---
 id: R93
 title: "LSP quick-fix: ExternalCodeReference name → className migration"
-status: In Progress
+status: In Review
 bucket: Backlog
 priority: 5
 theme: legacy-migration
@@ -528,63 +528,32 @@ scope-only:
   severity or removes it, R93's no-diagnostic stance for
   legacy-and-resolves needs revisiting before that change ships.
 
-## Cycle 2 status
+## Cycle 2: regression-seam tests — shipped at `75bee87b`
 
-Cycle 1 shipped Phase 1 (`19e18b23`) and Phase 2 (`5258d16f`); the
-production paths for both (registry-driven completion / diagnostic
-dispatch, and the three-activation-point code-action surface) are
-correct. Cycle 1's In Review → Done was declined on three regression-
-seam gaps captured below; cycle 2 closes them in-place rather than
-reshaping the design.
+Cycle 1 shipped Phase 1 (`19e18b23`) and Phase 2 (`5258d16f`); production
+paths were correct but cycle-1 In Review → Done declined on three
+regression-seam gaps. Cycle 2 closes them in-place: `DiagnosticsTest`
+gains nine cases (one resolves-silent + eight per-site unresolved-error,
+covering every `ExternalCodeReference` binding); `CodeActionsTest` gains
+one sibling-diagnostic coexistence case; the original `## Tests`
+section's `DirectiveDefinitionsTest` bullet was rewritten to match what
+Phase 1 actually shipped (registry holds the eight ECR-binding
+directives, not every directive in `directives.graphqls`). 171 LSP
+tests, 0 failures, 2 skipped (`NativeBuildSmokeTest` unchanged); full
+`graphitron-rewrite install` green.
 
-Cycle 2 work:
+## Carried follow-ups
 
-- **`DiagnosticsTest` extension.** Add fixtures exercising the
-  legacy arms in `Diagnostics.validateExternalCodeReferenceObject`
-  (the legacy-and-unresolved arm at the `classNameValue == null`
-  branch). One per binding site for the unresolved-error arm
-  (eight: `@externalField`, `@enum`, `@service`, `@tableMethod`,
-  `@record`, `@batchKeyLifter`, `@condition`, and the nested
-  `@reference(path: [{condition: ...}])`); one fixture for the
-  resolves-silent arm sufficient to demonstrate the gating. The
-  fixtures thread a non-empty `namedReferences` map through the
-  4-arg `CompletionData` constructor; the existing 3-arg fixtures
-  stay untouched. Message-content assertion (names the unresolved
-  name; points at the two fixes) on the canonical `@service` case;
-  the per-site cases just assert "an error fires at the legacy
-  name range" so the regression seam covers every dispatch path
-  without fixture duplication.
+These cycle-1 optional notes are unresolved and not in R93's scope; they
+remain visible here so the next `SdlAction` author / refactor pass picks
+them up.
 
-- **`CodeActionsTest` sibling-diagnostic case.** One additional
-  fixture where the request carries a non-empty
-  `CodeActionContext` diagnostics list; assert the per-site
-  quick-fix is still emitted. The production path's
-  `intersects(...)` filter ignores the context's diagnostic list,
-  so the assertion is a guard rather than a behaviour change.
-
-- **`## Tests` section housekeeping** (already updated alongside
-  this status note: the `DirectiveDefinitionsTest` bullet now
-  matches what Phase 1 shipped — registry holds only the eight
-  ECR-binding directives).
-
-Cycle 1 optional follow-ups (not addressed in cycle 2; named for
-posterity):
-
-- `CodeActions.countableNoun(displayName)` ignores its parameter
-  and hardcodes the R93 noun. Fine for one action; brittle once a
-  second `SdlAction` lands. Either thread a per-action noun
-  through `SdlAction`, or rename the method so the hardcoding is
-  explicit. Tracked here for the next `SdlAction` author to pick up.
+- `CodeActions.countableNoun(displayName)` ignores its parameter and
+  hardcodes the R93 noun. Fine for one action; brittle once a second
+  `SdlAction` lands. Either thread a per-action noun through
+  `SdlAction`, or rename the method so the hardcoding is explicit.
 - The `applyAll` / `countResolvable` / `countSkipped` helpers in
   `CodeActions` each iterate the matches and re-invoke the (pure)
-  rewrite, three full passes per file per request. A single
-  partition pass producing `(edits, skipCount)` together would be
-  cleaner. Pure-functions correctness, just wasteful; left for a
-  later refactor.
-
-Cycle 1 build state at review (`a4c5ed12`): BUILD SUCCESS, no
-non-zero surefire `errors=` / `failures=`. The two pre-existing-
-trunk-failures named in the cycle-1 In Review handoff
-(`NodeIdLeafResolverTest`, `SynthesizeFkJoinReorderedKeysTest`)
-were not present at HEAD; cycle 1 review could neither corroborate
-nor refute the "unrelated to R93" claim. Not material.
+  rewrite, three full passes per file per request. A single partition
+  pass producing `(edits, skipCount)` together would be cleaner. Pure-
+  functions correctness, just wasteful.
