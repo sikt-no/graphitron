@@ -1,7 +1,7 @@
 ---
 id: R102
 title: "Batched key extraction for ChildField.UnionField / ChildField.InterfaceField via BatchKey"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 2
 theme: structural-refactor
@@ -9,6 +9,18 @@ depends-on: []
 ---
 
 # Batched key extraction for ChildField.UnionField / ChildField.InterfaceField via BatchKey
+
+> **Shipped on `claude/r102-spec-ready` at `1973fb9f` (Phases A–D) and `3a0086ca` (Phase E).**
+>
+> One deviation: spec called for lifting the connection-arm participant single-PK check at
+> `MultiTablePolymorphicEmitter.java:824` into the validator. The existing
+> graphitron-sakila-example schema's `Query.pagedItems → PagedA/PagedB` uses composite-PK
+> participants on a connection that quietly works on the truncation, so the lift was deferred
+> to a follow-up; the emitter's truncation behavior is preserved unchanged.
+>
+> Out-of-scope follow-ups carried forward: the original list (R105's `@record`-parent classifier
+> arm; remaining four-permit `RecordParentBatchKey` coverage) plus the new participant single-PK
+> validator lift (above).
 
 `MultiTablePolymorphicEmitter` is the one batched-fetcher path in the codebase that does *not* delegate parent-object key extraction to `GeneratorUtils.buildRecordParentKeyExtraction` (`GeneratorUtils.java:186-196`), the canonical sealed-switch helper that handles all four parent-object shapes (`JooqTableRecordType`, `JooqRecordType`, `JavaRecordType`, `PojoResultType`) against all four `BatchKey.RecordParentBatchKey` permits (`RowKeyed`, `LifterRowKeyed`, `AccessorKeyedSingle`, `AccessorKeyedMany`). Both arms cast `env.getSource()` to `org.jooq.Record` inline — the connection arm at `MultiTablePolymorphicEmitter.java:735-736`, the list arm at `:240` — and read PK columns straight off the parent's `TableRef`. The assumption "parent is a jOOQ Record" is structural, not a runtime hazard today (classification rejects multi-table polymorphic on `@record` parents at `FieldBuilder.java:2703` with `Rejection.deferred(…)` so the emitter never sees them) but it's the wrong shape for the model: the emitter sees an object via `env.getSource()`, and the abstraction that matches the model is the existing four-shape × four-permit helper.
 
