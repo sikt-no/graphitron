@@ -169,10 +169,10 @@ public final class MultiTablePolymorphicEmitter {
     /**
      * Connection-fetcher entry point. Emits the public main fetcher
      * plus one private {@code select<Participant>For<Field>} helper per table-bound participant.
-     * Two forms switch on {@code parentTable}:
+     * Two forms switch on {@code parentKey}:
      *
      * <ul>
-     *   <li><b>{@code parentTable == null}</b> (root) — the main fetcher returns a
+     *   <li><b>{@code parentKey == null}</b> (root) — the main fetcher returns a
      *       {@code DataFetcherResult<ConnectionResult>}; stage 1 wraps the UNION-ALL of
      *       per-branch projections in a derived table {@code pages} so cursor decode + seek +
      *       LIMIT N+1 apply uniformly across the union; stage 2 reuses the VALUES-JOIN dispatch
@@ -180,7 +180,7 @@ public final class MultiTablePolymorphicEmitter {
      *       {@code ConnectionHelper.encodeCursor} can read the sort key. {@code totalCount}
      *       runs a polymorphic {@code SELECT count(*) FROM (UNION ALL) AS pages} via the same
      *       UNION-ALL derived table the page query uses (B4b), lazy on selection.</li>
-     *   <li><b>{@code parentTable != null}</b> (DataLoader-batched windowed CTE; B4c-2) —
+     *   <li><b>{@code parentKey != null}</b> (DataLoader-batched windowed CTE; B4c-2) —
      *       emits a {@code DataLoader}-registering main fetcher plus a
      *       {@code rows<Field>(List<RowN<...>>, env)} rows method. The rows method builds a typed
      *       {@code parentInput} {@code VALUES (idx, parent_pk...)} table, runs ONE polymorphic
@@ -419,7 +419,7 @@ public final class MultiTablePolymorphicEmitter {
      * is no derived table to count.
      *
      * <p>Root-only: child interface/union connections route through
-     * {@link #buildBatchedConnectionFetcher} via the {@code parentTable != null} arm of
+     * {@link #buildBatchedConnectionFetcher} via the {@code parentKey != null} arm of
      * {@link #emitConnectionMethods}.
      */
     private static MethodSpec buildRootConnectionFetcher(
