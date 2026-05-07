@@ -434,43 +434,33 @@ Test surface: `DirectiveDefinitionsTest` pins the eight bindings;
 `ClassNameCompletionsTest` and `DiagnosticsTest` grow one case per new
 binding (133 LSP tests, 0 failures).
 
-### Phase 2: code-action surface
+### Phase 2: code-action surface — shipped at `66525a32`
 
-- Introduce `SdlAction` (the primitive, with the sealed
-  `DeprecationTarget { Member | WholeDirective }` shape) and
-  instantiate it for the `name → className` migration with
-  `targets = { Member("ExternalCodeReference", "name") }`.
-- `SdlActions` registry plus the `MANUAL_MIGRATION_DEPRECATIONS`
-  allow-list (covering `Member("@asConnection", "connectionName")`
-  and `WholeDirective("index")` at landing time).
-- `DeprecationMarkers` parser plus the structured-form rewrite of
-  `@index`'s description in `directives.graphqls`.
-- `CodeActions` provider, registered in
-  `GraphitronTextDocumentService`. Three activation points: per-site,
-  file-scoped bulk, workspace-scoped bulk.
-- The legacy-and-unresolved diagnostic arm in `Diagnostics`.
-- `SdlActionTest`, `CodeActionsTest`, `DeprecationMarkersTest`, and
-  `SdlActionDriftTest`.
+`SdlAction` primitive with sealed `DeprecationTarget { Member |
+WholeDirective }` and `RewriteResult { Edit | Skip }`; instantiated
+for `name → className` migration. `SdlActions` registry plus
+`MANUAL_MIGRATION_DEPRECATIONS` allow-list covering
+`Member("@asConnection", "connectionName")` and
+`WholeDirective("index")`. `DeprecationMarkers` regex parser reads
+both shapes off `directives.graphqls`; `@index`'s description
+rewritten to the structured `@deprecated <reason>` form.
+`CodeActions` provider exposes three activation points (per-site,
+file-bulk, workspace-bulk); legacy-and-unresolved diagnostic arm
+landed in `Diagnostics`. `CompletionData` gained a
+`namedReferences` slot (4-arg canonical constructor; 3-arg
+secondary kept for test fixtures). `Workspace.openUris()` exposed
+for the workspace-scoped bulk action.
 
-Landing-commit coupling: the `SdlActionDriftTest` invariants assert
-total coverage in both directions, so the test, the `SdlAction`
-instantiation for `name → className`, the `MANUAL_MIGRATION_DEPRECATIONS`
-allow-list entries (`Member("@asConnection", "connectionName")` and
-`WholeDirective("index")`), and `@index`'s structured-form
-description rewrite all land in the same commit. Splitting any of
-these across commits leaves the test red on intermediate revisions.
+Test surface: `SdlActionTest` (7 cases), `CodeActionsTest` (7
+cases), `DeprecationMarkersTest` (10 cases including bundled
+`directives.graphqls`), `SdlActionDriftTest` (4 cases including
+the at-landing-time canonical-set pin). 161 LSP tests, 0 failures.
 
-Acceptance: editor users can apply the migration on a legacy `name:`
-literal; "Migrate `name:` in this file" and "Migrate `name:` in this
-workspace" each compose the resolvable sites into one `WorkspaceEdit`
-at the named scope. Unresolvable sites surface as error diagnostics
-in the problems panel and skip the rewrite. The `SdlActionDriftTest`
-invariants pass: every action targets an existing marker (member or
-whole-directive), every marker is covered (action or allow-list).
-The at-landing-time canonical set is exactly
-`{ Member("ExternalCodeReference", "name"),
-Member("@asConnection", "connectionName"),
-WholeDirective("index") }`.
+The landing-commit coupling held: `SdlAction` instantiation,
+allow-list entries, `@index` description rewrite, and
+`SdlActionDriftTest` all landed in this commit; the drift test's
+bidirectional invariants would have gone red on any intermediate
+revision.
 
 ## Open architectural decisions
 

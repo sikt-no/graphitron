@@ -47,6 +47,7 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
         capabilities.setHoverProvider(true);
         capabilities.setCompletionProvider(new CompletionOptions(false, null));
         capabilities.setDefinitionProvider(true);
+        capabilities.setCodeActionProvider(true);
         return CompletableFuture.completedFuture(new InitializeResult(capabilities));
     }
 

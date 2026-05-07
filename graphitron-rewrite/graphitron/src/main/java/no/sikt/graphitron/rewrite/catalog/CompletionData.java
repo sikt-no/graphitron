@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.catalog;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -15,11 +16,25 @@ import java.util.Optional;
 public record CompletionData(
     List<Table> tables,
     List<TypeData> types,
-    List<ExternalReference> externalReferences
+    List<ExternalReference> externalReferences,
+    Map<String, String> namedReferences
 ) {
 
+    /**
+     * Backwards-compatible 3-arg constructor for tests and callers that
+     * don't carry a {@code namedReferences} map. Defaults to an empty
+     * map (no legacy {@code name:} resolution available).
+     */
+    public CompletionData(
+        List<Table> tables,
+        List<TypeData> types,
+        List<ExternalReference> externalReferences
+    ) {
+        this(tables, types, externalReferences, Map.of());
+    }
+
     public static CompletionData empty() {
-        return new CompletionData(List.of(), List.of(), List.of());
+        return new CompletionData(List.of(), List.of(), List.of(), Map.of());
     }
 
     public Optional<Table> getTable(String name) {

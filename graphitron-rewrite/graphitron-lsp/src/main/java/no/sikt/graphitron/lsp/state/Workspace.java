@@ -84,6 +84,17 @@ public final class Workspace {
     }
 
     /**
+     * Snapshot of every open file URI in registration order. Used by
+     * the workspace-scoped code-action provider to compose
+     * cross-document {@link org.eclipse.lsp4j.WorkspaceEdit}s.
+     */
+    public List<String> openUris() {
+        synchronized (lock) {
+            return List.copyOf(files.keySet());
+        }
+    }
+
+    /**
      * Drain the recalculation queue. Returned URIs are the files whose
      * diagnostics must be recomputed.
      */
