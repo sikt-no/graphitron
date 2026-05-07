@@ -420,9 +420,73 @@ input-binding context (which SDL field, which service callsite) is
 different from the accessor-resolution context — the two surface in
 different classifier paths and need different rendering.
 
+### Coercion failure: two-arm sealed `FromMapResult` + emitted `CoercionFailures`
+
+graphql-java's runtime input coercion enforces SDL non-null
+(`MissingRequired` is dead in practice) and rejects unknown fields
+(`UnknownKey` is dead in practice). The remaining failure mode at the
+`fromMap` boundary is a runtime type mismatch — typically a broken
+custom-scalar `Coercing` implementation, or an edge case in nested
+input materialization — where the coerced map value's runtime type
+doesn't match the graphitron-record component's Java type. Rare but
+not impossible, and a runtime failure deserves a typed wire surface
+rather than redaction.
+
+Per *Builder-step results are sealed*
+(`rewrite-design-principles.adoc:61`), the runtime coercion produces a
+sealed `FromMapResult`:
+
+```java
+sealed interface FromMapResult<R> permits Ok, TypeMismatch {
+    record Ok<R>(R record) implements FromMapResult<R> {}
+    record TypeMismatch<R>(
+        List<String> path,        // dot-segment path into the input, e.g. ["input", "rating"]
+        TypeName expectedType,    // e.g. ClassName.get("java.lang", "Integer")
+        TypeName actualType       // e.g. ClassName.get("java.lang", "String")
+    ) implements FromMapResult<R> {}
+}
+```
+
+`MissingRequired` and `UnknownKey` are dropped from v1 since
+graphql-java's upstream coercion makes them unreachable; they can be
+added back as new arms if real cases surface (the seal forces
+matching emitter handling, so adding an arm is a controlled change).
+
+Symmetric with R12 §5's `ConstraintViolations.toGraphQLError`, a new
+graphitron-emitted artifact translates `TypeMismatch` to a
+`GraphQLError`:
+
+```java
+package <outputPackage>.schema;
+
+public final class CoercionFailures {
+    private CoercionFailures() {}
+
+    /** Translate a TypeMismatch FromMapResult arm into a GraphQLError
+     *  with stable extensions.classification = "InputCoercion.TypeMismatch". */
+    public static GraphQLError toGraphQLError(
+        FromMapResult.TypeMismatch<?> failure,
+        DataFetchingEnvironment env,
+        String argName
+    ) { ... }
+}
+```
+
+`extensions.classification` for `TypeMismatch`:
+`"InputCoercion.TypeMismatch"`. Distinct from
+`ConstraintViolation`'s classification (the constraint annotation's
+simple name) so frontends can route the two kinds of input failures
+separately.
+
+The fetcher emit catches `TypeMismatch` from `fromMap` and dispatches
+through `CoercionFailures.toGraphQLError` directly, joining the same
+violation list R12 §5's pre-step populates. Coercion failures and
+validation violations both flow through R12 §5's ErrorChannel-aware
+catch arm and surface in the typed `errors` slot of the payload.
+
 ## Forks open at Spec stage
 
-Two forks below need to be settled before Spec → Ready. Three more
+One fork below needs to be settled before Spec → Ready. Three more
 (reachable-closure, nested-input recursion, annotation source v1) are
 implementer-confirmable.
 
@@ -442,35 +506,6 @@ three into a synthetic record. Spec must pin:
   pre-step block: one against the synthetic-list of scalars, one
   against the record), or whether mixed signatures get a synthetic
   compound validation root.
-
-### Open: coercion failure shape and surface
-
-`fromMap` can fail in three ways graphql-java may not catch: (a) wrong
-type for a component (graphql-java may have already coerced top-level
-scalars, but for nested inputs the depth at which graphql-java stops
-vs. graphitron starts is non-obvious); (b) missing required component;
-(c) extra unexpected keys (graphql-java rejects unknown variables, but
-for inline input literals the contract is fuzzier). Per *Builder-step
-results are sealed* (`rewrite-design-principles.adoc:61`), the right
-shape is a typed
-`FromMapResult.{Ok(record) | TypeMismatch(path, expected, actual) |
-MissingRequired(path) | UnknownKey(path)}` rather than throwing or
-returning null; that lets R12 §5's `ValidationHandler` pre-step
-distinguish coercion failures from validation failures, which it
-currently can't.
-
-The spec must pin both:
-
-- **The sealed-result shape** (the four arms above are a starting
-  point; the spec confirms or extends).
-- **How each arm surfaces.** Symmetric with R12's
-  `ConstraintViolations.toGraphQLError`: a graphitron-emitted
-  `<outputPackage>.schema.CoercionFailures.toGraphQLError(...)`
-  translates each arm into a `GraphQLError` with a stable
-  `extensions.classification` distinct from `ConstraintViolation`
-  (suggested string values: `"InputCoercion.TypeMismatch"`,
-  `"InputCoercion.MissingRequired"`, `"InputCoercion.UnknownKey"`).
-  Spec confirms the strings and the file shape.
 
 ## Forks the implementer can confirm during In Progress
 
