@@ -330,5 +330,60 @@
                 </plugins>
             </build>
         </profile>
+        <profile>
+            <!-- Per-module classifier-trace emission. Each child module runs its surefire / failsafe
+                 fork with -Dgraphitron.classification.trace=${project.build.directory}/leaf-coverage.jsonl
+                 and truncates that file in process-test-resources so a re-run does not append
+                 on top of stale records. The post-processor (roadmap-tool leaf-coverage) reads
+                 every module's file via DuckDB read_json_auto over the
+                 graphitron-rewrite/**/target/leaf-coverage.jsonl glob, so cross-module unification
+                 happens at read time and no reactor-shared file is needed. Modules that do not
+                 classify (graphitron-javapoet, roadmap-tool, graphitron-sakila-db, etc.) still
+                 receive the truncation phase but produce no records, leaving an empty file that
+                 the glob ignores. -->
+            <id>leaf-coverage</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <graphitron.classification.trace>${project.build.directory}/leaf-coverage.jsonl</graphitron.classification.trace>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <graphitron.classification.trace>${project.build.directory}/leaf-coverage.jsonl</graphitron.classification.trace>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>truncate-leaf-coverage-trace</id>
+                                <phase>process-test-resources</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <mkdir dir="${project.build.directory}"/>
+                                        <delete file="${project.build.directory}/leaf-coverage.jsonl" quiet="true"/>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 </project>
