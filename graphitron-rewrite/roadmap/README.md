@@ -15,14 +15,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Plan |
 |---|---|---|---|
 | `R77` | Bulk DML mutations: listed @table input arguments | In Review | [plan](bulk-dml-mutations.md) |
-| `R88` | Validate `@record` accessor resolution against backing class at classify time | In Review | [plan](record-accessor-validation.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R70` | Support TableRecord-keyed Map returns on @service rows methods <sub>blocked by: [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)</sub> | In Review | [plan](service-rows-tablerecord-key-shape.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec | [plan](custom-scalar-java-types.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
-| `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) <sub>blocked by: [record-accessor-validation](record-accessor-validation.md)</sub> | Spec | [plan](emit-input-records.md) |
+| `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R74` | Row/Record return shapes for typed accessor batch keys | Spec | [plan](accessor-row-record-shapes.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
@@ -129,7 +128,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### mutations-errors
 
 - `R77` [**Bulk DML mutations: listed @table input arguments**](bulk-dml-mutations.md) — In Review, architecture
-- `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture, blocked by [record-accessor-validation](record-accessor-validation.md)
+- `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Ready, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
 - `R75` [**Synthesize payload carrier for canonical data+errors shapes**](synthesize-payload-carrier.md) — Backlog, architecture, blocked by [error-handling-parity](error-handling-parity.md)
@@ -158,7 +157,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R88` [**Validate `@record` accessor resolution against backing class at classify time**](record-accessor-validation.md) — In Review, architecture
 - `R102` [**Batch DataLoader for non-connection ChildField.UnionField / ChildField.InterfaceField**](batch-multitable-polymorphic-child-fetcher.md) — Backlog, architecture
 - `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture

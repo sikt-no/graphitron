@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 7
 theme: mutations-errors
-depends-on: [record-accessor-validation]
+depends-on: []
 ---
 
 # Emit SDL input types as graphitron-internal Java records (validation seam)
