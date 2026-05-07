@@ -56,4 +56,11 @@ class RejectionKindProjectionTest {
         assertThat(RejectionKind.INVALID_SCHEMA.displayName()).isEqualTo("invalid-schema");
         assertThat(RejectionKind.DEFERRED.displayName()).isEqualTo("deferred");
     }
+
+    @Test
+    void messageLabelRendersSentenceCased() {
+        assertThat(RejectionKind.AUTHOR_ERROR.messageLabel()).isEqualTo("Author error");
+        assertThat(RejectionKind.INVALID_SCHEMA.messageLabel()).isEqualTo("Invalid schema");
+        assertThat(RejectionKind.DEFERRED.messageLabel()).isEqualTo("Deferred");
+    }
 }
