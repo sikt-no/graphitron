@@ -1,7 +1,7 @@
 ---
 id: R93
 title: "LSP quick-fix: ExternalCodeReference name → className migration"
-status: Ready
+status: In Progress
 bucket: Backlog
 priority: 5
 theme: legacy-migration
@@ -357,11 +357,14 @@ Four tests, organised by tier:
 
 ### Unit-tier
 
-- `DirectiveDefinitionsTest`: assert the registry contains every
-  directive in `directives.graphqls` with the right argument list
-  per directive; assert `argsByInputType("ExternalCodeReference")`
-  returns the eight `(directive, argName, nestedPath?)` tuples;
-  assert iterate-all and lookup-by-directive surfaces both work.
+- `DirectiveDefinitionsTest`: assert
+  `argsByInputType("ExternalCodeReference")` returns the eight
+  `(directive, argName, nestedPath?)` tuples; assert iterate-all and
+  lookup-by-directive surfaces both work over the registered set.
+  The registry today carries only the eight ECR-binding directives
+  (the surface R93's migration consumes); broadening it to every
+  directive in `directives.graphqls` is a future enhancement, not
+  in R93's scope.
 - `SdlActionTest`: synthetic SDL fixture with mixed legacy / modern
   shapes; the detector returns the expected literal ranges; the
   rewrite slot returns `RewriteResult.Edit` for resolvable sites
@@ -525,65 +528,63 @@ scope-only:
   severity or removes it, R93's no-diagnostic stance for
   legacy-and-resolves needs revisiting before that change ships.
 
-## Reviewer feedback (cycle 1)
+## Cycle 2 status
 
-In Review → Done declined; status flipped back to Ready. Findings to
-address before the next In Review handoff:
+Cycle 1 shipped Phase 1 (`19e18b23`) and Phase 2 (`5258d16f`); the
+production paths for both (registry-driven completion / diagnostic
+dispatch, and the three-activation-point code-action surface) are
+correct. Cycle 1's In Review → Done was declined on three regression-
+seam gaps captured below; cycle 2 closes them in-place rather than
+reshaping the design.
 
-- **Legacy-and-unresolved diagnostic arm has zero tests.**
-  `Diagnostics.java:196-213` (introduced in Phase 2, `5258d16f`) emits
-  the error, but `DiagnosticsTest` constructs every fixture catalog via
-  the 3-arg `CompletionData` constructor, so `namedReferences` is
-  permanently empty and neither the resolves-silent arm nor the
-  unresolved-error arm ever fires under test. The "## Tests / LSP-tier"
-  section above promised "Coverage extends to all eight binding sites:
-  the test fixture grows to include one example per site". Action: add
-  one fixture per arm at minimum (resolves-silent on one site,
-  unresolved-error on a different site, asserting the message names the
-  unresolved name and points at the two fixes); ideally one example per
-  site as the spec promised, threading a non-empty `namedReferences`
-  map through the 4-arg catalog.
+Cycle 2 work:
 
-- **`CodeActionsTest` missing the sibling-diagnostic case.** The
-  "## Quick-fix shape" section's last paragraph promised the per-site
-  quick-fix surfaces independently of any sibling diagnostic on the same
-  range, and the LSP-tier test surface explicitly named "per-site on a
-  literal carrying an unrelated sibling diagnostic (quick-fix surfaces
-  regardless)". `CodeActionsTest` (Phase 2) has no fixture where a
-  literal carries an unrelated diagnostic. The production path's
-  `intersects(...)` filter is range-driven so the assertion would pass;
-  the regression seam is what's missing.
+- **`DiagnosticsTest` extension.** Add fixtures exercising the
+  legacy arms in `Diagnostics.validateExternalCodeReferenceObject`
+  (the legacy-and-unresolved arm at the `classNameValue == null`
+  branch). One per binding site for the unresolved-error arm
+  (eight: `@externalField`, `@enum`, `@service`, `@tableMethod`,
+  `@record`, `@batchKeyLifter`, `@condition`, and the nested
+  `@reference(path: [{condition: ...}])`); one fixture for the
+  resolves-silent arm sufficient to demonstrate the gating. The
+  fixtures thread a non-empty `namedReferences` map through the
+  4-arg `CompletionData` constructor; the existing 3-arg fixtures
+  stay untouched. Message-content assertion (names the unresolved
+  name; points at the two fixes) on the canonical `@service` case;
+  the per-site cases just assert "an error fires at the legacy
+  name range" so the regression seam covers every dispatch path
+  without fixture duplication.
 
-- **The `## Tests` section above contradicts what shipped in Phase 1.**
-  `DirectiveDefinitionsTest` only pins the eight `ExternalCodeReference`
-  bindings, not "every directive in `directives.graphqls` with the
-  right argument list per directive" (`DirectiveDefinitions` only
-  carries the eight ECR-binding directives; non-ECR directives like
-  `@table`, `@field`, `@asConnection`, `@order`, etc. are absent from
-  the registry). The Phase 1 collapse note tacitly narrowed the test
-  surface, but the body the gate would archive on Done still carries
-  the unfulfilled contract. Action: rewrite `## Tests` (and, if needed,
-  the "## Detection surface" / "## Implementation sites" framing of
-  the registry as the LSP's directive vocabulary catalog) to match
-  what shipped, or move the "every directive" expectation into a
-  follow-on item with an explicit pointer.
+- **`CodeActionsTest` sibling-diagnostic case.** One additional
+  fixture where the request carries a non-empty
+  `CodeActionContext` diagnostics list; assert the per-site
+  quick-fix is still emitted. The production path's
+  `intersects(...)` filter ignores the context's diagnostic list,
+  so the assertion is a guard rather than a behaviour change.
 
-Optional follow-ups (not blockers, but worth thinking about before next
-review):
+- **`## Tests` section housekeeping** (already updated alongside
+  this status note: the `DirectiveDefinitionsTest` bullet now
+  matches what Phase 1 shipped — registry holds only the eight
+  ECR-binding directives).
 
-- `CodeActions.countableNoun(displayName)` ignores its parameter and
-  hardcodes the R93 noun. Fine for one action; brittle once a second
-  `SdlAction` lands. Either thread a per-action noun through
-  `SdlAction`, or rename the method so the hardcoding is explicit.
+Cycle 1 optional follow-ups (not addressed in cycle 2; named for
+posterity):
+
+- `CodeActions.countableNoun(displayName)` ignores its parameter
+  and hardcodes the R93 noun. Fine for one action; brittle once a
+  second `SdlAction` lands. Either thread a per-action noun
+  through `SdlAction`, or rename the method so the hardcoding is
+  explicit. Tracked here for the next `SdlAction` author to pick up.
 - The `applyAll` / `countResolvable` / `countSkipped` helpers in
   `CodeActions` each iterate the matches and re-invoke the (pure)
-  rewrite, three full passes per file per request. A single partition
-  pass producing `(edits, skipCount)` together would be cleaner.
+  rewrite, three full passes per file per request. A single
+  partition pass producing `(edits, skipCount)` together would be
+  cleaner. Pure-functions correctness, just wasteful; left for a
+  later refactor.
 
-Build state at review time: `mvn -f graphitron-rewrite/pom.xml install
--P!docs -Plocal-db` returns BUILD SUCCESS at HEAD `a4c5ed12` with no
-surefire reports showing non-zero `errors=` or `failures=`; the two
-pre-existing-trunk-failures noted in the In Review handoff
-(`NodeIdLeafResolverTest`, `SynthesizeFkJoinReorderedKeysTest`) are
-not present at HEAD, so this review could neither corroborate nor
-refute the "unrelated to R93" claim. Not material to this gate.
+Cycle 1 build state at review (`a4c5ed12`): BUILD SUCCESS, no
+non-zero surefire `errors=` / `failures=`. The two pre-existing-
+trunk-failures named in the cycle-1 In Review handoff
+(`NodeIdLeafResolverTest`, `SynthesizeFkJoinReorderedKeysTest`)
+were not present at HEAD; cycle 1 review could neither corroborate
+nor refute the "unrelated to R93" claim. Not material.
