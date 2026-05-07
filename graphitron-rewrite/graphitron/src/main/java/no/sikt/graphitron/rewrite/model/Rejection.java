@@ -35,7 +35,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * a minority resolve a name against a closed set and carry the lookup attempt
      * + candidates. Each sub-arm's accessors apply uniformly to that arm.
      */
-    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural {
+    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch {
 
         /**
          * The classifier resolved a name (column, table, FK, service method,
@@ -73,6 +73,25 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
             @Override public Rejection prefixedWith(String prefix) {
                 return new Structural(prefix + reason);
+            }
+        }
+
+        /**
+         * The {@code @record}-Java-backed parent's class doesn't expose an accessor matching the
+         * SDL field's name, parameter shape, and return type. Produced by
+         * {@link no.sikt.graphitron.rewrite.ClassAccessorResolver}; the {@code reason} carries the
+         * resolver's enumeration of candidates tried with rejection cause for each. The
+         * {@code @field(name:)} override hint is a property of the diagnostic kind itself, so it
+         * attaches in {@link #message()} rather than at the validator's prefixing site.
+         */
+        record AccessorMismatch(String reason) implements AuthorError {
+            @Override public String message() {
+                return reason
+                    + "\n  Hint: use @field(name: \"…\") to bind this SDL field to a differently-named accessor.";
+            }
+
+            @Override public Rejection prefixedWith(String prefix) {
+                return new AccessorMismatch(prefix + reason);
             }
         }
     }
@@ -197,6 +216,17 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
     /** {@link AuthorError.Structural} factory; the majority shape. */
     static Rejection structural(String reason) {
         return new AuthorError.Structural(reason);
+    }
+
+    /**
+     * {@link AuthorError.AccessorMismatch} factory. Produced by
+     * {@link no.sikt.graphitron.rewrite.ClassAccessorResolver} when a {@code @record}-Java-backed
+     * parent's class doesn't expose an accessor matching the SDL field's name, parameter shape,
+     * and return type. {@code reason} is the resolver's enumeration of candidates tried; the
+     * {@code @field(name:)} override hint is appended automatically by {@link #message()}.
+     */
+    static Rejection accessorMismatch(String reason) {
+        return new AuthorError.AccessorMismatch(reason);
     }
 
     /** {@link InvalidSchema.Structural} factory; the majority shape. */

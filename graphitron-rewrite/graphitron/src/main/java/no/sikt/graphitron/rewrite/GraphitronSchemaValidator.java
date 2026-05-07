@@ -803,7 +803,9 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateRecordField(no.sikt.graphitron.rewrite.model.ChildField.RecordField field, List<ValidationError> errors) {
-        validateAccessorResolution(field.qualifiedName(), field.location(), field.accessor(), errors);
+        // Accessor-resolution rejection routes through UnclassifiedField at classify time
+        // (FieldBuilder), so the slot here is statically AccessorResolution.Resolved or null.
+        // Nothing to validate at this site.
     }
 
     private void validateComputedField(no.sikt.graphitron.rewrite.model.ChildField.ComputedField field, List<ValidationError> errors) {
@@ -819,24 +821,7 @@ public class GraphitronSchemaValidator {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
     }
     private void validatePropertyField(no.sikt.graphitron.rewrite.model.ChildField.PropertyField field, List<ValidationError> errors) {
-        validateAccessorResolution(field.qualifiedName(), field.location(), field.accessor(), errors);
-    }
-
-    /**
-     * Surfaces an {@link no.sikt.graphitron.rewrite.model.AccessorResolution.Rejected} attached to
-     * a {@code PropertyField} or {@code RecordField} whose parent is {@code @record}-Java-backed.
-     * Mirrors the classifier-side {@link ClassAccessorResolver} guarantee per
-     * <em>validator mirrors classifier invariants</em>: the validator does not re-run reflection,
-     * just reports what the resolver decided. The trailing override hint is unconditional —
-     * fuzzy-matching nearby method names is out of scope (the resolver already lists each
-     * candidate it tried with the reason it was rejected).
-     */
-    private void validateAccessorResolution(String qualifiedName, SourceLocation location,
-            no.sikt.graphitron.rewrite.model.AccessorResolution accessor, List<ValidationError> errors) {
-        if (!(accessor instanceof no.sikt.graphitron.rewrite.model.AccessorResolution.Rejected r)) return;
-        String message = "Field '" + qualifiedName + "': " + r.reason()
-            + "\n  Hint: use @field(name: \"…\") to bind this SDL field to a differently-named accessor.";
-        errors.add(new ValidationError(qualifiedName, Rejection.invalidSchema(message), location));
+        // See validateRecordField: classifier-side routing leaves nothing for this site to do.
     }
     private void validateMultitableReferenceField(no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField field, List<ValidationError> errors) {
         errors.add(new ValidationError(

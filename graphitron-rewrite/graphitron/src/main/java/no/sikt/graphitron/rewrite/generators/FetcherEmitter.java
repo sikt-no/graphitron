@@ -17,7 +17,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
-import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.toCamelCase;
 
 /**
  * Builds the {@code DataFetcher} value expression for a single classified field.
@@ -186,12 +185,13 @@ public final class FetcherEmitter {
 
     @DependsOnClassifierCheck(
         key = "class-accessor-resolver-shape-guarantee",
-        reliesOn = "Reads pre-resolved AccessorResolution.Resolved.method() / .field() unconditionally; "
-            + "the resolver rejects mismatched shapes at classify time so the emitter doesn't fork "
-            + "on candidate-name fallback or guess at runtime.")
+        reliesOn = "Reads the pre-resolved Method or Field handle off AccessorResolution.Resolved. "
+            + "FieldBuilder routes Rejected through UnclassifiedField, and the slot type on "
+            + "PropertyField/RecordField is AccessorResolution.Resolved (statically), so the @record-Java "
+            + "branch below has no Rejected or runtime-heuristic case to fall back to.")
     private static CodeBlock propertyOrRecordValue(
             String columnName, ColumnRef column, GraphitronType.ResultType resultType,
-            AccessorResolution accessor, String outputPackage) {
+            AccessorResolution.Resolved accessor, String outputPackage) {
         var columnFetcherClass = ClassName.get(outputPackage + ".util",
             ColumnFetcherClassGenerator.CLASS_NAME);
         if (resultType instanceof GraphitronType.JooqTableRecordType jtrt
@@ -207,29 +207,17 @@ public final class FetcherEmitter {
             var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
             return CodeBlock.of("$T.fetching($S)", propertyDataFetcher, columnName);
         }
-        // @record-Java-backed parent: read the pre-resolved accessor handle. The resolver wired
-        // in Phase A guarantees Resolved here when validation has run; the fall-through below
-        // covers the Rejected / null case (validator surfaces Rejected as a ValidationError) and
-        // mirrors the pre-R88 string-derived heuristic so test fixtures that bypass validation
-        // gating stay deterministic.
+        // @record-Java-backed parent: read the pre-resolved accessor handle.
         String fqClassName = (resultType instanceof GraphitronType.JavaRecordType jrt)
             ? jrt.fqClassName()
             : ((GraphitronType.PojoResultType) resultType).fqClassName();
         var backingClass = ClassName.bestGuess(fqClassName);
-        if (accessor instanceof AccessorResolution.Resolved resolved) {
-            return switch (resolved) {
-                case AccessorResolution.GetterPrefixed gp -> methodCallExpr(backingClass, gp.method());
-                case AccessorResolution.BareName bn -> methodCallExpr(backingClass, bn.method());
-                case AccessorResolution.FieldRead fr -> CodeBlock.of("($T env) -> (($T) env.getSource()).$L",
-                    DATA_FETCHING_ENV, backingClass, fr.field().getName());
-            };
-        }
-        var accessorBase = toCamelCase(columnName);
-        String accessorName = (resultType instanceof GraphitronType.JavaRecordType)
-            ? accessorBase
-            : "get" + Character.toUpperCase(accessorBase.charAt(0)) + accessorBase.substring(1);
-        return CodeBlock.of("($T env) -> (($T) env.getSource()).$L()",
-            DATA_FETCHING_ENV, backingClass, accessorName);
+        return switch (accessor) {
+            case AccessorResolution.GetterPrefixed gp -> methodCallExpr(backingClass, gp.method());
+            case AccessorResolution.BareName bn -> methodCallExpr(backingClass, bn.method());
+            case AccessorResolution.FieldRead fr -> CodeBlock.of("($T env) -> (($T) env.getSource()).$L",
+                DATA_FETCHING_ENV, backingClass, fr.field().getName());
+        };
     }
 
     /**
