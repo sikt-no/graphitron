@@ -23,18 +23,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * R102 execution-tier coverage for the list-arm DataLoader-batched multi-table polymorphic
  * child fetcher. Exercises {@code Address.occupants: [AddressOccupant!]!} (union of
- * {@code Customer | Staff}) over a fanout of customers selecting their address occupants;
- * pins the batched-statement count so a regression to per-parent fanout (the pre-R102 shape,
- * which fired 14 statements for a 5-customer query) fails loudly.
+ * {@code Customer | Staff}) over the full sakila customer fanout selecting their address
+ * occupants; pins the batched-statement count so a regression to per-parent fanout (the
+ * pre-R102 shape, which fired ~N+1 statements per parent) fails loudly.
  *
- * <p>Pre-R102: per-parent inline fetcher → ~N stage-1 unions plus ~N participant SELECTs
- * each. For 5 customers selecting {@code address.occupants} that was 5 stage-1 + 9 stage-2
- * = 14 child statements.
+ * <p>Pre-R102: per-parent inline fetcher → one stage-1 UNION ALL plus one per-typename SELECT
+ * per typename present, repeated for every parent invocation. The count grew linearly with
+ * the customer count.
  *
- * <p>Post-R102: one DataLoader-batched stage-1 UNION ALL with {@code JOIN parentInput}, plus
- * one stage-2 SELECT per participant typename. For the same fanout: 1 stage-1 + 2 stage-2 =
- * 3 child statements (regardless of how many distinct address PKs appear in the batch). The
- * top-level customers query brings the total to 4.
+ * <p>Post-R102: one DataLoader-batched stage-1 UNION ALL with {@code JOIN parentInput} over
+ * the distinct address PKs, plus one stage-2 SELECT per participant typename — three child
+ * statements regardless of customer count. The top-level customers query brings the total
+ * to 4. The dedup over repeated address PKs is exercised because sakila has multiple
+ * customers per address.
  *
  * <p>Exact-count is the right grain: each of the four statements maps to a documented
  * architectural commitment (one parent-rows query, one DataLoader-batched stage-1 union, one
@@ -134,9 +135,9 @@ class AddressOccupantsListBatchingTest {
         // the batch (sakila has multiple customers per address, so the dedup is exercised).
         assertThat(QUERY_COUNT.get())
             .as("R102: list-arm DataLoader-batched multi-table polymorphic child fires exactly "
-                + "4 statements for the 5-customer fanout (1 customers + 1 stage-1 union + 2 "
-                + "stage-2 typename SELECTs); regression to the pre-R102 per-parent fanout would "
-                + "show ~14")
+                + "4 statements for the customers→address.occupants fanout (1 customers + 1 "
+                + "stage-1 union + 2 stage-2 typename SELECTs); regression to the pre-R102 "
+                + "per-parent fanout would scale linearly with customer count")
             .isEqualTo(4);
 
         // Stage-1 UNION ALL references parentInput VALUES table joining on the parent address PK.

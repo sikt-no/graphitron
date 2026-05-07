@@ -156,4 +156,54 @@ class InterfaceFieldValidationTest {
         var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
         assertThat(errors).isEmpty();
     }
+
+    @Test
+    void rejects_connection_onParentPkArityOver21() {
+        assertHasKind(validateAgainstWidePkParent(new FieldWrapper.Connection(false, 5), 22),
+            RejectionKind.AUTHOR_ERROR,
+            "Field 'Wide.occupants': multi-table interface/union child field whose parent type "
+                + "'Wide' has a primary key with 22 columns exceeds jOOQ's typed Row22 cap "
+                + "(parent PK + idx must fit in Row<N+1>)");
+    }
+
+    @Test
+    void rejects_listArm_onParentPkArityOver21() {
+        // R102 finding #5: list arm widens to Row<N+1> via the shared parentInput VALUES emitter
+        // exactly like connection, so the arity cap is uniformly 21 across both arms (a 22-PK
+        // parent would generate a reference to non-existent org.jooq.Row23 inside the rows
+        // method). Validator rejects it before codegen.
+        assertHasKind(validateAgainstWidePkParent(new FieldWrapper.List(false, false), 22),
+            RejectionKind.AUTHOR_ERROR,
+            "Field 'Wide.occupants': multi-table interface/union child field whose parent type "
+                + "'Wide' has a primary key with 22 columns exceeds jOOQ's typed Row22 cap "
+                + "(parent PK + idx must fit in Row<N+1>)");
+    }
+
+    @Test
+    void wellFormed_connection_onParentPkArity21_noErrors() {
+        // Boundary case: 21 PK columns + idx = Row22 fits. One under the cap is well-formed.
+        assertThat(validateAgainstWidePkParent(new FieldWrapper.Connection(false, 5), 21)).isEmpty();
+    }
+
+    @Test
+    void wellFormed_listArm_onParentPkArity21_noErrors() {
+        assertThat(validateAgainstWidePkParent(new FieldWrapper.List(false, false), 21)).isEmpty();
+    }
+
+    private static java.util.List<no.sikt.graphitron.rewrite.ValidationError> validateAgainstWidePkParent(
+            FieldWrapper wrapper, int pkArity) {
+        var pkCols = new java.util.ArrayList<ColumnRef>();
+        for (int i = 0; i < pkArity; i++) {
+            pkCols.add(new ColumnRef("k" + i, "K" + i, "java.lang.Integer"));
+        }
+        var wide = TestFixtures.tableRef("wide", "WIDE", "Wide", pkCols);
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
+            new ParticipantRef.TableBound("Staff", STAFF, null));
+        var field = new InterfaceField("Wide", "occupants", null,
+            new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", wrapper),
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
+        var parentType = new GraphitronType.TableType("Wide", null, wide);
+        return validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
+    }
 }

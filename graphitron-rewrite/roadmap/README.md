@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Plan |
 |---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `R102` | Batched key extraction for ChildField.UnionField / ChildField.InterfaceField via BatchKey | In Review | [plan](batch-multitable-polymorphic-child-fetcher.md) |
+| `R102` | Batched key extraction for ChildField.UnionField / ChildField.InterfaceField via BatchKey | In Progress | [plan](batch-multitable-polymorphic-child-fetcher.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R70` | Support TableRecord-keyed Map returns on @service rows methods <sub>blocked by: [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)</sub> | In Review | [plan](service-rows-tablerecord-key-shape.md) |
@@ -157,7 +157,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R102` [**Batched key extraction for ChildField.UnionField / ChildField.InterfaceField via BatchKey**](batch-multitable-polymorphic-child-fetcher.md) — In Review, architecture
+- `R102` [**Batched key extraction for ChildField.UnionField / ChildField.InterfaceField via BatchKey**](batch-multitable-polymorphic-child-fetcher.md) — In Progress, architecture
 - `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
