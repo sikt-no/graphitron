@@ -48,12 +48,17 @@ automatically, with no separate registry to keep in sync.
 
 ## Resolved design questions
 
-- **Trace emission point:** three funnels, not one.
-  `TypeBuilder.classifyType` (TypeBuilder.java:303),
-  `FieldBuilder.classifyField` (FieldBuilder.java:1311),
-  `BuildContext.classifyInputField` (BuildContext.java:1074). Each is the
-  single dispatch return for its sealed permits, so one helper invocation
-  per funnel covers everything.
+- **Trace emission point:** one walk, not three funnels. The classifier
+  has post-classification mutations (federation demotions in
+  `EntityResolutionBuilder`, node-id collision demotions in
+  `TypeBuilder.validateNodeTypeIdUniqueness`, and synthesized
+  connection/edge/pageinfo types in `GraphitronSchemaBuilder.promoteConnectionTypes`)
+  that bypass `classifyType` / `classifyField`. Trace at
+  `GraphitronSchemaBuilder.buildSchema` immediately before
+  `new GraphitronSchema(...)` is constructed (around
+  GraphitronSchemaBuilder.java:216), walking `ctx.types` and the final
+  `fields` map. That is the single source of truth for what the consumer
+  actually receives.
 - **Source provenance:** `SourceLocation.getSourceName()` is reliable for
   schemas loaded via `RewriteSchemaLoader` (uses
   `MultiSourceReader.trackData(true)`) and empty for `TestSchemaHelper`
@@ -83,21 +88,29 @@ it on (1b), and a JUnit extension that supplies test-class context (1c).
 
 #### 1a. Emitter
 
-Three emission points, one for each construction funnel discovered in
-research:
+Single emission site: `GraphitronSchemaBuilder.buildSchema` immediately
+before `new GraphitronSchema(...)` is invoked (around
+GraphitronSchemaBuilder.java:216). At that point both `ctx.types` and the
+deduplicated `fields` map are final and complete. The emitter walks both
+and writes one JSONL record per entry.
 
-- `TypeBuilder.classifyType(GraphQLNamedType)` (TypeBuilder.java:303): the
-  single return-point for every `GraphitronType` permit. Wrap or
-  post-process the return value here.
-- `FieldBuilder.classifyField(...)` (FieldBuilder.java:1311): the dispatch
-  funnel for `RootField` / `ChildField` / `UnclassifiedField`. Each
-  per-parent classifier (`classifyRootField`, `classifyChildFieldOnTableType`,
-  etc.) returns a single `GraphitronField`; emit on the dispatch return.
-- `BuildContext.classifyInputField(...)` (BuildContext.java:1074): emit on
-  the wrapped `InputFieldResolution` return so all `InputField` permits are
-  captured at one site rather than at each `new InputField.X(...)` call.
+This deliberately *replaces* a three-funnel approach
+(`TypeBuilder.classifyType`, `FieldBuilder.classifyField`,
+`BuildContext.classifyInputField`) because the funnel approach misses
+post-classification mutations:
 
-Emit a JSONL record per classified field/type to the path set by
+- `EntityResolutionBuilder.build` (federation pass) demotes types to
+  `UnclassifiedType` via direct `types.put` (lines 104, 110, 128).
+- `TypeBuilder.validateNodeTypeIdUniqueness` demotes on `@nodeId`
+  collisions via direct `types.put` (line 182).
+- `GraphitronSchemaBuilder.promoteConnectionTypes` synthesizes
+  `ConnectionType` / `EdgeType` / `PageInfoType` entries and writes them
+  via direct `types.put` (lines 373, 377, 386, 391).
+
+Walking the final maps captures what the consumer actually receives, which
+is what we want to audit.
+
+Emit a JSONL record per entry to the path set by
 `-Dgraphitron.classification.trace=<path>`. Default off; production runs
 incur no cost. Record fields:
 
@@ -125,10 +138,9 @@ incur no cost. Record fields:
 Implementation note: the existing `BuildWarning` mechanism (`ctx.addWarning`)
 is for *warnings* surfaced to schema authors and has the wrong semantics for
 routine classification trace. Add a dedicated trace emitter (one short
-helper, e.g. `ClassificationTrace.emit(parent, name, leaf, location)`)
-invoked from the three sites above. `FieldBuilder` already declares an
-unused `LOG` field at line 134; that's the same `LoggerFactory` import path
-to follow if the emitter is logger-backed.
+helper, e.g. `ClassificationTrace.dump(types, fields)`) invoked once from
+`GraphitronSchemaBuilder.buildSchema` just before the schema record is
+constructed. The emitter is a no-op when the trace property is unset.
 
 #### 1b. Property and profile
 
