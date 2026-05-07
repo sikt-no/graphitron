@@ -434,7 +434,7 @@ Test surface: `DirectiveDefinitionsTest` pins the eight bindings;
 `ClassNameCompletionsTest` and `DiagnosticsTest` grow one case per new
 binding (133 LSP tests, 0 failures).
 
-### Phase 2: code-action surface — shipped at `66525a32`
+### Phase 2: code-action surface — shipped at `5258d16f`
 
 `SdlAction` primitive with sealed `DeprecationTarget { Member |
 WholeDirective }` and `RewriteResult { Edit | Skip }`; instantiated
