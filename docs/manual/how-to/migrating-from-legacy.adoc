@@ -6,6 +6,17 @@ The rewrite generator (`graphitron-rewrite`) is directive-compatible with the le
 
 This recipe is organised by *what changes for you*, not by which directive each topic touches. Run through the sections in order; each lands a class of migration steps before the next one introduces a new shape.
 
+[#supported-surface]
+== Authoritative supported surface
+
+The rewrite's directive surface and the schema shapes its classifier emits are both regenerated from the test suite. The two lists below are mechanically derived: every directive listed under "Supported directives" is declared in the rewrite's `directives.graphqls`, and every shape under "Supported schema shapes" has at least one execution-tier or pipeline-tier fixture that exercises it through end-to-end classification.
+
+A schema using only the directives and shapes named below should migrate cleanly. The remaining sections of this recipe cover the mechanical rewrites the legacy → rewrite migration requires.
+
+include::../_generated/supported-directives.adoc[]
+
+include::../_generated/supported-schema-shapes.adoc[]
+
 == The hard removal: `@notGenerated`
 
 The single directive the rewrite refuses to accept. Legacy schemas used it to mark fields the developer would wire by hand through `RuntimeWiring`; the rewrite requires every field to be fully described by the schema. Any application is rejected at build time:
