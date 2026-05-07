@@ -122,9 +122,13 @@ final class LeafCoverageReport {
         Path roadmapDir = root.resolve("roadmap");
         List<Mention> mentions = parseMentions(roadmapDir, leaves);
 
+        // Default output paths. Internal report lands next to the roadmap; migration fragment
+        // lands directly in the docs site tree so the asciidoctor build picks it up via
+        // include:: without an additional copy step. The root-dir argument points at
+        // graphitron-rewrite/, so the migration fragment goes one level up under docs/.
         Path outFile = outputOverride != null ? outputOverride
             : (migration
-                ? root.resolve("docs/manual/_generated/supported-schema-shapes.adoc")
+                ? root.resolveSibling("docs/manual/_generated/supported-schema-shapes.adoc")
                 : roadmapDir.resolve("inference-axis-coverage.adoc"));
 
         String rendered;
@@ -571,9 +575,18 @@ final class LeafCoverageReport {
             if (line.isEmpty()) continue;
             if (line.startsWith("@")) break;
             if (line.endsWith(".")) line = line.substring(0, line.length() - 1);
-            return line;
+            return cleanJavadocInline(line);
         }
         return "";
+    }
+
+    /** Strips Javadoc inline tags that confuse AsciiDoc rendering. */
+    private static String cleanJavadocInline(String line) {
+        // {@code X} → `X`. {@link X} / {@linkplain X} → X. Strip the wrapping braces only;
+        // AsciiDoc handles backticks for code spans.
+        line = line.replaceAll("\\{@code\\s+([^}]+)\\}", "`$1`");
+        line = line.replaceAll("\\{@link(?:plain)?\\s+([^}]+)\\}", "`$1`");
+        return line;
     }
 
     private static ParsedFile parseSourceFile(String content) {
