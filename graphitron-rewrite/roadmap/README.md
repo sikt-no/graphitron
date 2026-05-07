@@ -32,6 +32,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [retire-rust-lsp-and-introspect-mojo](retire-rust-lsp-and-introspect-mojo.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R68` | Diataxis user manual: absorb legacy README into the docs site | In Review | [plan](diataxis-user-manual.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
+| `R104` | RC parity audit: classify GraphitronField/Type leaves and ship coverage gaps | Spec | [plan](rc-parity-audit-leaf-coverage.md) |
 
 ---
 
@@ -85,7 +86,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 ### Validation
 
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md): `FieldBuilder.resolveDefaultOrderSpec()` falls back to `OrderBySpec.Fixed([pk ASC])` when a list field has no `@defaultOrder` or `@orderBy` and the table has a PK. For tables without a PK, it returns `OrderBySpec.None` instead, which the generators faithfully emit as an empty `List.of()` — no `ORDER BY` clause. The result is a non-deterministic list every time the query runs.
-- `R104` [**RC parity audit: classify GraphitronField/Type leaves and ship coverage gaps**](rc-parity-audit-leaf-coverage.md): graphitron's user-facing API is the directive surface plus a long list of shape-driven inference paths: which sealed leaf of `GraphitronField` / `GraphitronType` an SDL field/type lands on encodes "what graphitron decided". A leaf the consumer can reach but that no `@ExecutionTier` test exercises is an RC risk: validation may pass and codegen may run, but we have no proof that the emitted code is correct end-to-end. The first release candidate of graphitron 10 needs an explicit, leaf-by-leaf accounting of what is covered, what is not, and which gaps are RC-blocking versus deferrable.
 
 ### Other
 
