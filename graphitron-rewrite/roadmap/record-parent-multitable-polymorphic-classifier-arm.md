@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 5
 theme: structural-refactor
-depends-on: [batch-multitable-polymorphic-child-fetcher]
+depends-on: []
 ---
 
 # @record-parent multi-table polymorphic ChildField classifier arm
