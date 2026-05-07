@@ -1,7 +1,7 @@
 ---
 id: R102
 title: "Batched key extraction for ChildField.UnionField / ChildField.InterfaceField via BatchKey"
-status: In Review
+status: In Progress
 bucket: architecture
 priority: 2
 theme: structural-refactor
@@ -10,17 +10,49 @@ depends-on: []
 
 # Batched key extraction for ChildField.UnionField / ChildField.InterfaceField via BatchKey
 
-> **Shipped on `claude/r102-spec-ready` at `1973fb9f` (Phases A–D) and `3a0086ca` (Phase E).**
+> **Shipped on `claude/r102-spec-ready` at `1973fb9f` (Phases A–D) and `3a0086ca` (Phase E); in
+> rework following In Review feedback.**
 >
-> One deviation: spec called for lifting the connection-arm participant single-PK check at
-> `MultiTablePolymorphicEmitter.java:824` into the validator. The existing
-> graphitron-sakila-example schema's `Query.pagedItems → PagedA/PagedB` uses composite-PK
-> participants on a connection that quietly works on the truncation, so the lift was deferred
-> to a follow-up; the emitter's truncation behavior is preserved unchanged.
+> One deviation carried over from the first In Review pass: spec called for lifting the
+> connection-arm participant single-PK check at `MultiTablePolymorphicEmitter.java:824` into the
+> validator. The existing graphitron-sakila-example schema's `Query.pagedItems → PagedA/PagedB`
+> uses composite-PK participants on a connection that quietly works on the truncation, so the
+> lift was deferred to a follow-up; the emitter's truncation behavior is preserved unchanged.
 >
-> Out-of-scope follow-ups carried forward: the original list (R105's `@record`-parent classifier
-> arm; remaining four-permit `RecordParentBatchKey` coverage) plus the new participant single-PK
-> validator lift (above).
+> ### Rework pass (In Review → Ready, then back through In Progress)
+>
+> The In Review pass surfaced five findings; #1 + #5 are correctness gaps, #2-#4 are quality
+> polish. All addressed in the rework commit:
+>
+> 1. **Missing >21 PK-arity validator test coverage** in both `InterfaceFieldValidationTest`
+>    and `UnionFieldValidationTest`. Spec acceptance criterion stated coverage for "empty PK,
+>    > 22 PK arity"; only empty-PK was covered, and only on Interface.
+> 2. **Union list-arm validator coverage didn't grow** alongside Interface (no list-arm
+>    rejection mirror, no list-arm well-formed mirror). Both arms hand off to the same shared
+>    `validateChildMultiTableParentPk`, but the test files exercise it independently — adding
+>    the mirror is cheap and matches what the spec promised.
+> 3. **Unused `wrapper` parameter on `validateMultiTableParticipants`.** Phase A-D added it for
+>    the connection-arm participant single-PK lift; Phase E rolled the lift back as a deferral
+>    but left the parameter (and its threading at six call sites) in place. Drop it; the
+>    deferred follow-up can re-add it cleanly when the lift lands.
+> 4. **Doc-comment drift in `AddressOccupantsListBatchingTest`.** Class doc-comment said "the
+>    canonical 5-customer fanout" but the query is `{ customers { ... } }` with no `first: 5`
+>    (sakila has 599 customers). The exact-count assertion stays correct because of DataLoader
+>    batching, but the doc-comment misleads.
+> 5. **List-arm parent-PK arity cap was wrong.** Validator branched
+>    `maxArity = isConnection ? 21 : 22` with comment "list arm only carries the parent PK so
+>    it caps at N=22". This contradicts the implementation: the shared
+>    `buildParentInputValuesEmitter` widens to `Row<N+1>` via the idx column for both arms (see
+>    its doc-comment: "Used by every batched-rows method (list arm and connection arm)"), and
+>    `rowClass(arity)` tops out at `org.jooq.Row22`. A 22-PK parent on the list arm passes the
+>    validator and synthesises a reference to non-existent `org.jooq.Row23`. The real cap is
+>    N=21 on both arms; the wrapper-conditional was the spec's drafting mistake (the spec
+>    discussed a 22-cap variant for the list arm at line 131 because the connection-arm cap
+>    was framed as "parent PK + idx must fit in Row<N+1>", which equally applies to the list
+>    arm via the shared parentInput VALUES emitter).
+>
+> Out-of-scope follow-ups carried forward: R105's `@record`-parent classifier arm; remaining
+> four-permit `RecordParentBatchKey` coverage; participant single-PK validator lift (above).
 
 `MultiTablePolymorphicEmitter` is the one batched-fetcher path in the codebase that does *not* delegate parent-object key extraction to `GeneratorUtils.buildRecordParentKeyExtraction` (`GeneratorUtils.java:186-196`), the canonical sealed-switch helper that handles all four parent-object shapes (`JooqTableRecordType`, `JooqRecordType`, `JavaRecordType`, `PojoResultType`) against all four `BatchKey.RecordParentBatchKey` permits (`RowKeyed`, `LifterRowKeyed`, `AccessorKeyedSingle`, `AccessorKeyedMany`). Both arms cast `env.getSource()` to `org.jooq.Record` inline — the connection arm at `MultiTablePolymorphicEmitter.java:735-736`, the list arm at `:240` — and read PK columns straight off the parent's `TableRef`. The assumption "parent is a jOOQ Record" is structural, not a runtime hazard today (classification rejects multi-table polymorphic on `@record` parents at `FieldBuilder.java:2703` with `Rejection.deferred(…)` so the emitter never sees them) but it's the wrong shape for the model: the emitter sees an object via `env.getSource()`, and the abstraction that matches the model is the existing four-shape × four-permit helper.
 
@@ -73,7 +105,7 @@ The dead `containerType` empty-list fallback at `BatchKey.java:124` (and its `Re
 
 `GraphitronSchemaValidator.validateChildConnectionParentPk` (`GraphitronSchemaValidator.java:329-360`) is renamed to `validateChildMultiTableParentPk` and generalised to fire on both connection and non-connection arms. The `instanceof FieldWrapper.Connection` short-circuit at the head goes away, and the rejection message reframes from `@asConnection`-specific to the underlying invariant: "non-empty primary key on the parent type, since the DataLoader key tuple is built from the parent's PK columns." Both `validateInterfaceField` (`:551-555`) and `validateUnionField` (`:557-562`) already call into this method, so the new rejection fires uniformly across both arms with no new dispatch.
 
-The `IllegalStateException` at `MultiTablePolymorphicEmitter.java:682-693` for `parentKeyArity == 0` is removed; the type-system invariant from the previous section (non-empty `parentKeyColumns` enforced at `BatchKey.RowKeyed` construction) plus the validator rejection cover the case, per *Validator mirrors classifier invariants* and *Classifier guarantees shape emitter assumptions*. The arity > 22 throw stays — that's a structural jOOQ limit independent of the load-bearing classifier guarantee, and the validator gains a sibling rejection in the same method to mirror it.
+The `IllegalStateException` at `MultiTablePolymorphicEmitter.java:682-693` for `parentKeyArity == 0` is removed; the type-system invariant from the previous section (non-empty `parentKeyColumns` enforced at `BatchKey.RowKeyed` construction) plus the validator rejection cover the case, per *Validator mirrors classifier invariants* and *Classifier guarantees shape emitter assumptions*. The arity > 21 throw stays — that's a structural jOOQ limit independent of the load-bearing classifier guarantee (the shared `parentInput VALUES` emitter widens to `Row<N+1>` via the `idx` column on every batched-rows method, so `N+1 ≤ 22` ⇒ `N ≤ 21`), and the validator gains a sibling rejection in the same method to mirror it.
 
 Participant-side invariants follow the same pattern. The connection-arm helper at `:824` reads `participants.get(0).table().primaryKeyColumns().get(0)` — single-column participant PK is required, an invariant invented at emit time today rather than enforced at validate time. Implementation audits every `instanceof FieldWrapper.Connection` site in `GraphitronSchemaValidator.java` (seven sites today: `:334`, `:363`, `:507`, `:523`, `:534`, `:796`, `:864`) for multi-table-polymorphic-child applicability, generalises the gate where the list-arm batched form has the same requirement, and lifts the emit-time single-column participant-PK check at `:824` into `validateMultiTableParticipants` (`:270-311`) so both arms see the same rejection shape. Each lift is a small load-bearing decision the implementer should call out in the commit message rather than smuggle in.
 
@@ -117,7 +149,7 @@ The dispatch site at `TypeFetcherGenerator.java:436-461` collapses too: the `par
   - `childInterfaceField_listForm_keyTupleArityMatchesParentPk`: pin the DataLoader key element type to `RowN<…>` of the right arity for both single-PK (`address`) and composite-PK (`film_actor`) parent fixtures.
   - `childUnionField_listForm_emitsSameDataLoaderShapeAsInterfaceField`: equivalence pin between the two arms (mirrors the existing `childUnionField_emitsSameTwoStageStructureAsInterfaceField`).
   - `childInterfaceField_routesParentKeyExtractionThroughBuildRecordParentKeyExtraction`: structural assertion that the emitted body delegates to the helper, not an inline cast-to-Record. Same assertion against the connection arm. Through R102 only `RowKeyed` reaches classification; the four-permit `RecordParentBatchKey` matrix is R105's coverage, and the existing Interface/Union equivalence pin lets that future grid halve to one record kind.
-- **L3 (validator).** New parameterised cases in `InterfaceFieldValidationTest` and `UnionFieldValidationTest`: assert the new rejection ("non-empty primary key required on parent type for multi-table interface/union child") fires for both list and connection arms when the parent type has empty PK, and does not fire when the parent has a PK of any arity. Sibling case for the >22 PK arity rejection.
+- **L3 (validator).** New parameterised cases in `InterfaceFieldValidationTest` and `UnionFieldValidationTest`: assert the new rejection ("non-empty primary key required on parent type for multi-table interface/union child") fires for both list and connection arms when the parent type has empty PK, and does not fire when the parent has a PK of any arity. Sibling case for the >21 PK arity rejection (both arms hit the cap because of the shared `parentInput VALUES` emitter's `Row<N+1>` widening).
 - **L6 (execution).** New `AddressOccupantsListBatchingTest` in `graphitron-sakila-example`, modelled on `AccessorDerivedBatchKeyTest.java:44-113`. Registers an `org.jooq.ExecuteListener` via `DefaultExecuteListenerProvider`, runs a top-level `customers(first: 5)` query selecting `address.occupants { ... on Customer { … } ... on Staff { … } }`, asserts `QUERY_COUNT == 4` (one customers query plus one stage-1 UNION ALL plus two per-typename SELECTs — three child statements), down from today's 14 (5 stage-1 + 9 stage-2). Exact-count is the right grain because each of the four statements maps to a documented architectural commitment (one DataLoader registration, one stage-1 UNION ALL, one stage-2 SELECT per participant typename); upper-bound would let a regression to a 5- or 6-statement intermediate slip through. **Forward-pointer:** if a future change splits the batched UNION ALL across multiple SQL roundtrips (e.g. per-participant `loadMany` dispatch), the count rises and the test re-pins to the new architectural commitment; the exact-count grain stays correct because each new statement still maps to a specific design choice.
 - **Audit.** `LoadBearingGuaranteeAuditTest` is satisfied by the new annotation pair without test changes.
 
@@ -125,15 +157,15 @@ The dispatch site at `TypeFetcherGenerator.java:436-461` collapses too: the `par
 
 - `ChildField.InterfaceField` and `ChildField.UnionField` carry two new components: `BatchKey.RecordParentBatchKey parentKey` and `GraphitronType.ResultType parentResultType`. `FieldBuilder.classifyObjectReturnChildField` constructs both records with `parentKey = new BatchKey.RowKeyed(parentTable.primaryKeyColumns())` and `parentResultType` resolved from the enclosing parent type's classified `ResultType`. The slot type accepts all four `RecordParentBatchKey` permits to leave room for R105 without re-touching the records.
 - Every `BatchKey` permit with a key-column component enforces non-emptiness via a compact canonical constructor: six direct (`RowKeyed`, `RecordKeyed`, `MappedRowKeyed`, `MappedRecordKeyed`, `TableRecordKeyed`, `MappedTableRecordKeyed`), three via `JoinStep.LiftedHop`'s constructor (`LifterRowKeyed`, `AccessorKeyedSingle`, `AccessorKeyedMany`). The dead `containerType` empty-list fallbacks at `BatchKey.java:124` and `:133` are removed.
-- `GraphitronSchemaValidator.validateChildConnectionParentPk` is renamed to `validateChildMultiTableParentPk` and fires for both connection and non-connection arms when the parent type has empty PK or PK arity > 22; rejection message names "non-empty primary key" without `@asConnection` framing.
+- `GraphitronSchemaValidator.validateChildConnectionParentPk` is renamed to `validateChildMultiTableParentPk` and fires for both connection and non-connection arms when the parent type has empty PK or PK arity > 21; rejection message names "non-empty primary key" without `@asConnection` framing. The arity cap is N=21 on both arms (not just connection): the shared `parentInput VALUES` emitter widens the parent PK by an `idx` column on every batched-rows method, so the resulting `Row<N+1>` tuple tops out at jOOQ's `Row22`.
 - `MultiTablePolymorphicEmitter` no longer takes `parentTable` on any helper or entry-point signature. `buildMainFetcher` (`:219-309`) is replaced by `buildBatchedListFetcher` + `buildBatchedListRowsMethod`. The new helpers and the existing `buildBatchedConnectionFetcher` / `buildBatchedConnectionRowsMethod` all delegate parent-object key extraction to `GeneratorUtils.buildRecordParentKeyExtraction`, reading `parentKey()` and `parentResultType()` off the field record.
 - Inline `(($T) env.getSource()).get($T.$L.$L)` (`MultiTablePolymorphicEmitter.java:735-736`) and `Record parentRecord = (Record) env.getSource()` (`:240`) are removed; both arms route through the helper.
-- The empty-PK `IllegalStateException` at `MultiTablePolymorphicEmitter.java:682-693` is removed; the canonical-constructor invariant on `BatchKey.RowKeyed` plus the validator rejection cover the case. The arity > 22 throw is mirrored as a validator rejection in `validateChildMultiTableParentPk`.
+- The empty-PK `IllegalStateException` at `MultiTablePolymorphicEmitter.java:682-693` is removed; the canonical-constructor invariant on `BatchKey.RowKeyed` plus the validator rejection cover the case. The arity > 21 throw is mirrored as a validator rejection in `validateChildMultiTableParentPk` on both arms (the parentInput VALUES emitter widens the key tuple by `idx` on every batched-rows method, so the cap is uniform).
 - `emitMethods` and `emitConnectionMethods` stay as distinct entry points. Two helpers cover the uniformly-true moves: a parent-input `VALUES` table emitter (shared by all three call sites — list, root-connection, batched-connection-rows) and a per-typename stage-2 dispatcher (shared by list and root-connection only; batched-connection-rows has a structurally different stage-2 over the ranked CTE). Key extraction is delegated to existing `GeneratorUtils.buildRecordParentKeyExtraction`.
 - The new load-bearing-classifier-check pair (`multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven`) annotates `FieldBuilder.classifyObjectReturnChildField` (producer) and the multi-table emitter delegation site (consumer); `LoadBearingGuaranteeAuditTest` passes with no manual additions.
 - `TypeFetcherGeneratorTest` covers the list-arm DataLoader registration, key-tuple arity, Interface/Union equivalence, and the `buildRecordParentKeyExtraction` delegation pin on both single-PK and composite-PK parent tables. Coverage of the three non-`RowKeyed` `RecordParentBatchKey` permits is R105's responsibility; R102 ships `RowKeyed`-only.
 - `JoinStep.LiftedHop` rejects empty `targetSideColumns()` via a compact canonical constructor; every existing producer (`BatchKeyLifterDirectiveResolver` and the lifter / accessor derivation paths in `FieldBuilder`) is audited and confirmed compliant in the same commit.
-- `InterfaceFieldValidationTest` / `UnionFieldValidationTest` cover the new validator rejection on both arms (empty PK, > 22 PK arity).
+- `InterfaceFieldValidationTest` / `UnionFieldValidationTest` cover the new validator rejection on both arms (empty PK, > 21 PK arity). Both files carry the list-arm rejection mirror plus the well-formed list-arm acceptance case so the shared `validateChildMultiTableParentPk` is exercised independently from each entry point.
 - Implementation audits every `instanceof FieldWrapper.Connection` site in `GraphitronSchemaValidator.java` (seven sites: `:334`, `:363`, `:507`, `:523`, `:534`, `:796`, `:864`) for multi-table-polymorphic-child applicability and lifts the gate where the list-arm batched form has the same requirement; the audit outcome (which sites moved, which stayed Connection-specific) is captured in the implementation commit message.
 - `BatchKeyTest` covers the non-empty invariant on every permit and on `JoinStep.LiftedHop`.
 - `graphitron-sakila-example`'s `AddressOccupantsListBatchingTest` pins exactly four executed statements for the canonical 5-customer fanout, replacing today's 14, with the per-statement architectural-commitment mapping documented inline.
