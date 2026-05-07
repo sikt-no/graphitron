@@ -6,6 +6,8 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.CodeActionParams;
+import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
@@ -139,6 +141,35 @@ class CodeActionsTest {
     }
 
     @Test
+    void perSiteQuickFix_offeredEvenWithUnrelatedSiblingDiagnosticInContext() {
+        // The per-site quick-fix is mechanically safe; an unrelated
+        // diagnostic on the same range should not gate it. Production
+        // path's intersects(...) filter does not consult the
+        // CodeActionContext's diagnostic list, so the assertion is a
+        // regression seam: any future change that starts gating on
+        // context.diagnostics would flip this red.
+        var workspace = workspaceWith("file:///a.graphqls", """
+            type Query {
+                x: Int @service(service: {name: "FilmService", method: "list"})
+            }
+            """);
+        var siblingDiagnostic = new Diagnostic(
+            new Range(new Position(1, 0), new Position(1, 80)),
+            "unrelated: malformed argMapping",
+            DiagnosticSeverity.Warning, "graphitron-lsp");
+
+        var actions = invokeWithDiagnostics(
+            workspace, "file:///a.graphqls", cursorAt(1, 38),
+            List.of(siblingDiagnostic));
+
+        var perSite = perSiteOnly(actions);
+        assertThat(perSite).hasSize(1);
+        var edits = perSite.get(0).getEdit().getChanges().get("file:///a.graphqls");
+        assertThat(edits).hasSize(1);
+        assertThat(edits.get(0).getNewText()).isEqualTo("className: \"com.example.FilmService\"");
+    }
+
+    @Test
     void noActivationsWhenFileHasNoLegacySites() {
         var workspace = workspaceWith("file:///a.graphqls", """
             type Query {
@@ -184,8 +215,14 @@ class CodeActionsTest {
     private static List<? extends org.eclipse.lsp4j.jsonrpc.messages.Either<org.eclipse.lsp4j.Command, CodeAction>> invoke(
         Workspace workspace, String uri, Range range
     ) {
+        return invokeWithDiagnostics(workspace, uri, range, List.of());
+    }
+
+    private static List<? extends org.eclipse.lsp4j.jsonrpc.messages.Either<org.eclipse.lsp4j.Command, CodeAction>> invokeWithDiagnostics(
+        Workspace workspace, String uri, Range range, List<Diagnostic> diagnostics
+    ) {
         var params = new CodeActionParams(
-            new TextDocumentIdentifier(uri), range, new CodeActionContext(List.of()));
+            new TextDocumentIdentifier(uri), range, new CodeActionContext(diagnostics));
         return CodeActions.compute(params, workspace);
     }
 

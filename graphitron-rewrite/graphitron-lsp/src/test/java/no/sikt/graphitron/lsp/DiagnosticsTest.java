@@ -7,6 +7,7 @@ import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -430,6 +431,151 @@ class DiagnosticsTest {
         assertThat(diags).isEmpty();
     }
 
+    // Legacy `name:` arms on ExternalCodeReference. The runtime resolves
+    // `name:` via RewriteContext.namedReferences to a fully-qualified class.
+    // The LSP mirrors that lookup: when `name:` resolves, no diagnostic
+    // (the build-tier WARN is the migration-tracking signal); when it
+    // doesn't, an error mirroring FieldBuilder.parseExternalRef's
+    // lookupError arm. Coverage extends to all eight ExternalCodeReference
+    // bindings (one fixture per site).
+
+    @Test
+    void legacyName_resolves_emitsNoDiagnostic() {
+        var file = file("""
+            type Query {
+                x: Int @service(service: {name: "FilmService", method: "foo"})
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+            Map.of("FilmService", "com.example.FilmService"), "com.example.FilmService"));
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void legacyName_unresolved_service_messageNamesNameAndPointsAtFixes() {
+        var file = file("""
+            type Query {
+                x: Int @service(service: {name: "Ghost", method: "foo"})
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+            Map.of("FilmService", "com.example.FilmService"), "com.example.FilmService"));
+
+        assertThat(diags).hasSize(1);
+        var d = diags.get(0);
+        assertThat(d.getSeverity()).isEqualTo(DiagnosticSeverity.Error);
+        assertThat(d.getMessage())
+            .contains("'Ghost'")
+            .contains("namedReferences")
+            .contains("className");
+    }
+
+    @Test
+    void legacyName_unresolved_externalField() {
+        var file = file("""
+            type Foo {
+                bar: Int @externalField(reference: {name: "Ghost"})
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+            Map.of(), "com.example.RealService"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
+    }
+
+    @Test
+    void legacyName_unresolved_enum() {
+        var file = file("""
+            enum Foo @enum(enumReference: {name: "Ghost"}) { A B }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+            Map.of(), "com.example.RealEnum"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
+    }
+
+    @Test
+    void legacyName_unresolved_tableMethod() {
+        var file = file("""
+            type Foo {
+                bar: Int @tableMethod(tableMethodReference: {name: "Ghost", method: "foo"})
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+            Map.of(), "com.example.RealTableMethod"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
+    }
+
+    @Test
+    void legacyName_unresolved_record() {
+        var file = file("""
+            type Foo @record(record: {name: "Ghost"}) {
+                bar: Int
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+            Map.of(), "com.example.RealRecord"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
+    }
+
+    @Test
+    void legacyName_unresolved_batchKeyLifter() {
+        var file = file("""
+            type Foo {
+                bar: Int @batchKeyLifter(lifter: {name: "Ghost", method: "foo"}, targetColumns: ["id"])
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+            Map.of(), "com.example.RealLifter"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
+    }
+
+    @Test
+    void legacyName_unresolved_condition() {
+        var file = file("""
+            type Foo {
+                bar: Int @condition(condition: {name: "Ghost"})
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+            Map.of(), "com.example.RealCondition"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
+    }
+
+    @Test
+    void legacyName_unresolved_referencePathCondition() {
+        var file = file("""
+            type Foo {
+                bar: Int @reference(path: [{condition: {name: "Ghost"}}])
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+            Map.of(), "com.example.RealCondition"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
+    }
+
     private static CompletionData catalogWithKnownClass(String fqn) {
         // The class diagnostic now also validates the sibling `method:` slot
         // when the class resolves; include the method names referenced by
@@ -439,6 +585,21 @@ class DiagnosticsTest {
             List.of(),
             List.of(),
             List.of(new CompletionData.ExternalReference(fqn, fqn, "", List.of(foo)))
+        );
+    }
+
+    private static CompletionData catalogWithNamedReferences(
+        Map<String, String> namedReferences, String knownClass
+    ) {
+        // Non-empty externalReferences satisfies the gate in
+        // validateExternalCodeReference; namedReferences is what the
+        // legacy `name:` arm queries.
+        var foo = new CompletionData.Method("foo", "String", "", List.of());
+        return new CompletionData(
+            List.of(),
+            List.of(),
+            List.of(new CompletionData.ExternalReference(knownClass, knownClass, "", List.of(foo))),
+            namedReferences
         );
     }
 
