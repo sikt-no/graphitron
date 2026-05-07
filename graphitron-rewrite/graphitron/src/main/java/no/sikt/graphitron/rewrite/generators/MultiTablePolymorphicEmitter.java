@@ -157,7 +157,7 @@ public final class MultiTablePolymorphicEmitter {
                 participantJoinPaths, parentKey, outputPackage));
         } else {
             methods.add(buildScalarPerParentFetcher(ctx, fieldName, tableBoundParticipants,
-                participantJoinPaths, parentKey, parentResultType, isList, outputPackage));
+                participantJoinPaths, isList, outputPackage));
         }
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, false,
@@ -317,8 +317,6 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
-            BatchKey.RecordParentBatchKey parentKey,
-            GraphitronType.ResultType parentResultType,
             boolean isList, String outputPackage) {
 
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
