@@ -49,16 +49,22 @@ to do once, hard to do up-front.
 - **Trace emission point:** introduce a `TypeRegistry` and `FieldRegistry`
   that wrap the previously-bare `BuildContext.types` field and the
   `fields` map in `GraphitronSchemaBuilder.buildSchema`. The maps become
-  private. All writes go through named operations (`classify`, `enrich`,
-  `demote`, `synthesize`) that carry the trace emission internally.
-  This replaces the original "walk the final maps" approach with funnel
-  tracing again, but the funnels are now enforced architecturally rather
-  than by convention: the federation demotions in `EntityResolutionBuilder`,
-  the node-id collision demotion in
-  `TypeBuilder.validateNodeTypeIdUniqueness`, and the connection-type
-  synthesis in `GraphitronSchemaBuilder.promoteConnectionTypes` each pick
-  a named operation. Java access modifiers prevent new bypass sites; no
-  separate enforcement test is needed.
+  private. Type and output-field writes go through named operations
+  (`classify`, `enrich`, `demote`, `synthesize`) that carry trace
+  emission internally; the input-field path (`BuildContext.classifyInputField`)
+  routes through a sibling `FieldRegistry.classifyInput` operation that
+  is trace-only, since input fields are stored embedded in their parent
+  type rather than in a central map. This replaces the original "walk
+  the final maps" approach with funnel tracing again, but the funnels
+  are now enforced architecturally for the central-map paths (the
+  federation demotions in `EntityResolutionBuilder`, the node-id
+  collision demotion in `TypeBuilder.validateNodeTypeIdUniqueness`, and
+  the connection-type synthesis in
+  `GraphitronSchemaBuilder.promoteConnectionTypes` each pick a named
+  operation, and Java access modifiers prevent new bypass sites). The
+  input-field path remains funneled by convention since there is no
+  central state to make private; section 1a names the trade-off
+  honestly rather than fighting it.
 - **Source provenance:** `SourceLocation.getSourceName()` is reliable for
   schemas loaded via `RewriteSchemaLoader` (uses
   `MultiSourceReader.trackData(true)`) and empty for `TestSchemaHelper`
@@ -86,11 +92,15 @@ to do once, hard to do up-front.
   rather than as new imperative aggregators in Java. The justification
   is extensibility under known follow-on data, not data scale (the
   current data fits in memory trivially). DuckDB is in-process and
-  ephemeral: `read_json_auto` reads the JSONL trace directly, permits
+  ephemeral: `read_json_auto` reads the JSONL traces directly via a
+  glob across all module `target/leaf-coverage.jsonl` files, permits
   and roadmap mentions are inserted into in-memory tables, the queries
-  run, the connection closes. No persisted `.duckdb` file: an auditor
-  who wants ad-hoc pivots can open the JSONL trace itself with the
-  `duckdb` CLI (`duckdb -c "SELECT ... FROM read_json_auto('...')"`),
+  run, the connection closes. The glob is what makes per-module
+  emission viable: each rewrite module truncates and writes its own
+  file, DuckDB unions them at read time without an aggregation step.
+  No persisted `.duckdb` file: an auditor who wants ad-hoc pivots can
+  open the JSONL traces themselves with the `duckdb` CLI
+  (`duckdb -c "SELECT ... FROM read_json_auto('graphitron-rewrite/**/target/leaf-coverage.jsonl')"`),
   which avoids carrying a staleness vector. SQL does joins, filters,
   and aggregates; Java does AsciiDoc shaping; the boundary stays
   there. Generator-side stays JSONL: append-only emission from forked
@@ -128,23 +138,47 @@ semantic assertion:
   `GraphitronSchemaBuilder.promoteConnectionTypes` for `ConnectionType` /
   `EdgeType` / `PageInfoType`.
 
-Same pattern for the local `fields` map in
-`GraphitronSchemaBuilder.buildSchema`, lifted into a `FieldRegistry`.
-Initial scope is just `classify`; research found no demotion, enrichment,
-or synthesis of fields outside `classifyField`. If the refactor surfaces a
-site that needs another operation, add it symmetrically.
+`FieldRegistry` covers both output-field and input-field classification;
+the asymmetry between "central map" (output) and "embedded in parent"
+(input) is honoured by two named operations rather than fought:
 
-The registries take ownership of trace emission. Each operation:
-1. Validates the prior-entry precondition.
-2. Writes to the private map.
-3. Emits a JSONL record to the path set by
+- `classify(coordinates, GraphitronField)`: output-field path. Writes
+  to a private `Map<FieldCoordinates, GraphitronField>` (the existing
+  `fields` map in `GraphitronSchemaBuilder.buildSchema`, lifted into
+  the registry) and emits a trace record. Asserts no prior entry.
+  Used at every call site of `FieldBuilder.classifyField`.
+- `classifyInput(parent, name, location, InputFieldResolution)`:
+  input-field path. Emits a trace record only — input fields are
+  embedded in the parent `InputType` / `TableInputType.inputFields`
+  (or `ArgumentRef.PlainInputArg.fields()`) by their owner, not stored
+  in a central map, so the registry doesn't own their persistence.
+  Accepts the sealed `InputFieldResolution` so both `Resolved` (leaf
+  is the contained `InputField`'s record class) and `Unresolved` (leaf
+  empty, `rejection` populated from the carried message) emit one
+  record per call. Used at every call site of
+  `BuildContext.classifyInputField`.
+
+Research found no demote/enrich/synthesize sites for either path; if
+the refactor surfaces one, add it symmetrically.
+
+Trace emission is uniform across operations:
+1. Validate the prior-entry precondition (`classify` / `synthesize`:
+   no prior; `enrich` / `demote`: prior must exist; `classifyInput`:
+   no precondition, the input-field path has no central state).
+2. Write to the private map (skipped by `classifyInput`, which has no
+   backing map).
+3. Emit a JSONL record to the path set by
    `-Dgraphitron.classification.trace=<path>` if the property is set.
    Default off; production runs incur no cost.
 
-Java access modifiers do the architectural enforcement: with the maps
-private, a new bypass requires either adding a public method to the
-registry (visible in code review) or breaking encapsulation in a way that
-fails a basic visibility check.
+Architectural enforcement is honestly asymmetric. For types and output
+fields, the private maps prevent a bypass without adding a public
+method on the registry (visible in code review). For input fields,
+the registry is the canonical trace point but `classifyInputField`
+remains the sole producer by convention; a future bypass would have
+to introduce a parallel input-classifier path that doesn't route
+through the registry. The asymmetry follows the underlying storage
+model rather than fighting it.
 
 Trace record fields:
 
@@ -200,22 +234,29 @@ Touch points discovered in research:
   `registry.demote`.
 - `GraphitronSchemaBuilder.promoteConnectionTypes` (lines 373, 377, 386,
   391) → `registry.synthesize`.
-- `FieldBuilder.classifyField` and the input-field path through
-  `BuildContext.classifyInputField` → `fieldRegistry.classify`.
+- `FieldBuilder.classifyField` callers → `fieldRegistry.classify`.
+- `BuildContext.classifyInputField` (every call site:
+  `TypeBuilder.buildTypes` for `@table` / plain input types,
+  `InputFieldResolver.resolve` for plain-input arguments, and the
+  recursive nested-input call within `classifyInputField` itself) →
+  `fieldRegistry.classifyInput`.
 
 #### 1c. Property and profile
 
 A Maven profile `-Pleaf-coverage` sets the property to
-`${session.executionRootDirectory}/target/leaf-coverage.jsonl` and runs
-`mvn verify` so the trace accumulates across all tiers in one file. The
-aggregate file is the input to step 2.
+`${project.build.directory}/leaf-coverage.jsonl` (per-module) and runs
+`mvn verify` so each module emits its own trace file under its own
+`target/`. The post-processor (step 2) reads them as a glob via
+DuckDB's `read_json_auto`, which unions records across files
+transparently — there is no reactor-shared file to coordinate.
 
-Truncate the file before any test fork starts (e.g. a maven-antrun
-binding in the `pre-integration-test` phase, or `process-test-resources`
-if classification runs in surefire), not from the emitter itself. Forked
-JVMs append concurrently and lock-free; baking truncation into the
-emitter would have the first writer in each fork wipe records the others
-already produced.
+Each module's pre-test phase deletes its own file (a `maven-antrun`
+binding in `process-test-resources` for surefire-classifying modules,
+`pre-integration-test` for failsafe-classifying ones) so a re-run
+doesn't append on top of stale records. Forked JVMs within one
+module append concurrently and lock-free; per-module scoping means
+one module's truncation never wipes another's records, which is the
+failure mode a reactor-shared file would have to avoid.
 
 #### 1d. JUnit extension for test-class context
 
@@ -245,14 +286,23 @@ calls.
 Subcommand alongside the existing `directive-support`, backed by embedded
 DuckDB (`org.duckdb:duckdb_jdbc`, roadmap-tool dependency only). DuckDB
 runs in-process and ephemeral: open an in-memory connection, register
-the JSONL trace as a view, stage the small parsed tables, run the
+the JSONL traces as a view, stage the small parsed tables, run the
 queries, render, close. No persisted `.duckdb` file. An auditor who
-wants ad-hoc pivots can point `duckdb` at the JSONL directly.
+wants ad-hoc pivots can point `duckdb` at the JSONL files directly.
+
+The `org.duckdb:duckdb_jdbc` artifact bundles JNI binaries for the
+platforms graphitron-rewrite is built on. Confirm linux-amd64,
+linux-arm64, and macOS-arm64 (the CI and common-developer platforms)
+resolve out-of-the-box during implementation; if a platform needs a
+classifier-jar, add it to the `roadmap-tool` dependency block.
 
 Inputs and staging:
 
-- The JSONL trace from step 1 (`target/leaf-coverage.jsonl`), exposed as
-  a view via `CREATE VIEW trace AS SELECT * FROM read_json_auto(...)`.
+- The per-module JSONL traces from step 1, exposed as a view via
+  `CREATE VIEW trace AS SELECT * FROM read_json_auto('graphitron-rewrite/**/target/leaf-coverage.jsonl', union_by_name = true)`.
+  The glob covers every module's `target/leaf-coverage.jsonl`;
+  `union_by_name` makes the view robust if a future module adds a
+  trace field the others don't.
 - Sealed `permits` clauses parsed from the model sources, inserted into a
   `leaves(hierarchy, leaf, intent)` table. Source files:
   - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronField.java`
@@ -342,19 +392,33 @@ this fixture-covered" detail.
 ## Done definition
 
 - `TypeRegistry` and `FieldRegistry` replace the bare maps that previously
-  held classification results; all writes go through `classify` / `enrich`
-  / `demote` / `synthesize` operations and the underlying maps are
-  private. All known bypass sites (`TypeBuilder.buildTypes` enrichment
-  pass, `EntityResolutionBuilder`, `validateNodeTypeIdUniqueness`,
-  `promoteConnectionTypes`) call the appropriate named operation.
+  held classification results; type / output-field writes go through
+  `classify` / `enrich` / `demote` / `synthesize` against private maps,
+  and the input-field path goes through `classifyInput` (trace-only,
+  no backing map). All known bypass sites (`TypeBuilder.buildTypes`
+  enrichment pass, `EntityResolutionBuilder`,
+  `validateNodeTypeIdUniqueness`, `promoteConnectionTypes`,
+  every call site of `BuildContext.classifyInputField`) call the
+  appropriate named operation.
+- Unit-tier `TypeRegistryTest` and `FieldRegistryTest` cover the
+  precondition contracts: `classify` / `synthesize` reject duplicate
+  entries; `enrich` / `demote` reject when the prior entry is missing;
+  `classifyInput` accepts both `Resolved` and `Unresolved` resolutions
+  without requiring central storage. A focused emitter smoke test
+  sets `-Dgraphitron.classification.trace` to a temp file, drives one
+  operation per arm, parses the JSONL output, and asserts the
+  documented field set (`op`, `parent`, `name`, `leaf`, `source`,
+  `rejection` where applicable, `test`, `tier`) is present.
 - Classifier-trace emission lives inside the registries, gated on
   `-Dgraphitron.classification.trace=<path>`, with a `-Pleaf-coverage`
-  Maven profile that produces the aggregate trace file.
+  Maven profile that produces a per-module trace file at each
+  module's `target/leaf-coverage.jsonl`.
 - A JUnit 5 extension auto-registers in the test classpath and tags every
   trace record with the running test class and its tier annotation.
-- `roadmap-tool leaf-coverage` reads the JSONL trace via DuckDB
-  `read_json_auto`, stages parsed `leaves` and `mentions` tables in an
-  in-memory connection, and renders both an internal report at
+- `roadmap-tool leaf-coverage` reads the per-module JSONL traces via
+  DuckDB `read_json_auto` over a `**/target/leaf-coverage.jsonl`
+  glob, stages parsed `leaves` and `mentions` tables in an in-memory
+  connection, and renders both an internal report at
   `roadmap/inference-axis-coverage.adoc` and a `--mode=migration`
   AsciiDoc fragment from SQL queries.
 - Every sealed leaf of `RootField`, `ChildField`, `InputField`,
