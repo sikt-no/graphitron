@@ -11,6 +11,9 @@ import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 
 import static no.sikt.graphitron.generators.codebuilding.FormatCodeBlocks.*;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_ARGS;
+import static no.sikt.graphitron.generators.codebuilding.VariableNames.VAR_NEXT_ARGS;
+
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.inputPrefix;
 import static no.sikt.graphitron.generators.codebuilding.VariablePrefix.outputPrefix;
 import static no.sikt.graphql.naming.GraphQLReservedName.ERROR_FIELD;
@@ -25,12 +28,17 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
         return getMapperSpecBuilder(target).build();
     }
 
+
+
+    protected CodeBlock iterateRecords(MapperContext context) {
+        return iterateRecords(context, 0);
+    }
     /**
      * @return Code for setting the record data of previously defined records.
      */
     @NotNull
-    @Override
-    protected CodeBlock iterateRecords(MapperContext context) {
+    protected CodeBlock iterateRecords(MapperContext context, int argDepth) {
+        var argumentSetName = argDepth == 0 ? VAR_ARGS : VAR_NEXT_ARGS + (argDepth - 1);
         if (context.isIterable() && !context.hasTable() && context.hasSourceName()) {
             return CodeBlock.empty();
         }
@@ -68,7 +76,13 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
             } else if (!previousHadSource) {
                 innerCode.add(innerContext.getRecordSetMappingBlock());
             } else if (!innerField.createsDataFetcher() && !innerContext.hasTable()) {
-                innerCode.add(iterateRecords(innerContext));
+                if(toRecord) {
+                    innerCode
+                            .declare(VAR_NEXT_ARGS + argDepth, "$N.child($S)", argumentSetName, innerField.getName())
+                            .add(iterateRecords(innerContext, argDepth + 1));
+                } else {
+                    innerCode.add(iterateRecords(innerContext));
+                }
             }
 
             if (!innerCode.isEmpty()) {
@@ -87,7 +101,7 @@ public class RecordMapperMethodGenerator extends AbstractMapperMethodGenerator {
                     fieldCode.add(
                             CodeBlock
                                     .builder()
-                                    .beginControlFlow("if ($L)", toRecord ? argumentPresenceLookup(innerContext.getPath(), false) : selectionSetLookup(innerContext.getPath(), false, false))
+                                    .beginControlFlow("if ($L)", toRecord ?  CodeBlock.of("$L.hasField($S)", argumentSetName, innerField.getName()) : selectionSetLookup(innerContext.getPath(), false, false))
                                     .addIf(isType && previousHadSource, declareBlock)
                                     .add(innerCode.build())
                                     .addIf(isType && previousHadSource && !innerField.createsDataFetcher(), () -> innerContext.getSetMappingBlock(outputPrefix(varName)))
