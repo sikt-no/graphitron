@@ -268,7 +268,8 @@ public class GraphitronSchemaValidator {
      *                      {@code "Query.search"}). Pass {@code field.qualifiedName()}.
      */
     private void validateMultiTableParticipants(String qualifiedName, SourceLocation location,
-            java.util.List<no.sikt.graphitron.rewrite.model.ParticipantRef> participants, List<ValidationError> errors) {
+            java.util.List<no.sikt.graphitron.rewrite.model.ParticipantRef> participants,
+            no.sikt.graphitron.rewrite.model.FieldWrapper wrapper, List<ValidationError> errors) {
         var tableBound = participants.stream()
             .filter(p -> p instanceof no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound)
             .map(p -> (no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound) p)
@@ -293,65 +294,96 @@ public class GraphitronSchemaValidator {
         var pkBearing = tableBound.stream()
             .filter(tb -> tb.table().hasPrimaryKey())
             .toList();
-        if (pkBearing.size() < 2) return;
-        int expected = pkBearing.get(0).table().primaryKeyColumns().size();
-        for (var tb : pkBearing.subList(1, pkBearing.size())) {
-            int actual = tb.table().primaryKeyColumns().size();
-            if (actual != expected) {
-                errors.add(new ValidationError(
-                    qualifiedName,
-            Rejection.structural("Field '" + qualifiedName + "': primary-key arity mismatch — '" + pkBearing.get(0).typeName()
-                        + "' has " + expected + " PK column" + (expected == 1 ? "" : "s")
-                        + " but '" + tb.typeName() + "' has " + actual
-                        + "; v1 multi-table interface/union fetchers require uniform PK arity across participants"),
-                    location
-                ));
-                return; // one mismatch is enough; subsequent ones are noise
+        if (pkBearing.size() >= 2) {
+            int expected = pkBearing.get(0).table().primaryKeyColumns().size();
+            for (var tb : pkBearing.subList(1, pkBearing.size())) {
+                int actual = tb.table().primaryKeyColumns().size();
+                if (actual != expected) {
+                    errors.add(new ValidationError(
+                        qualifiedName,
+                Rejection.structural("Field '" + qualifiedName + "': primary-key arity mismatch — '" + pkBearing.get(0).typeName()
+                            + "' has " + expected + " PK column" + (expected == 1 ? "" : "s")
+                            + " but '" + tb.typeName() + "' has " + actual
+                            + "; v1 multi-table interface/union fetchers require uniform PK arity across participants"),
+                        location
+                    ));
+                    return; // one mismatch is enough; subsequent ones are noise
+                }
+            }
+        }
+
+        // Connection mode requires a single-column participant PK: the windowed-CTE rows method
+        // sorts on a single typed sortField (cursor decode wraps a single PK column class). Lifted
+        // here from MultiTablePolymorphicEmitter.buildBatchedConnectionRowsMethod so authors see
+        // a clean diagnostic instead of a codegen-time IndexOutOfBoundsException.
+        if (wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
+            for (var tb : pkBearing) {
+                int arity = tb.table().primaryKeyColumns().size();
+                if (arity != 1) {
+                    errors.add(new ValidationError(
+                        qualifiedName,
+                Rejection.structural("Field '" + qualifiedName + "': @asConnection on multi-table "
+                            + "interface/union requires a single-column primary key on every participant; "
+                            + "participant '" + tb.typeName() + "' has " + arity + " PK columns. "
+                            + "Composite-PK participants in connection mode are tracked as a follow-up "
+                            + "(JSONB cursor round-trip)."),
+                        location
+                    ));
+                    return; // one is enough
+                }
             }
         }
     }
 
     /**
-     * Batched-child-connection guard: rejects {@code @asConnection} on a child interface/union
-     * field whose enclosing parent type is backed by a table with a primary key arity above
-     * jOOQ's typed Row22 cap. The DataLoader-batched windowed CTE form types its key element as
-     * {@code RowN<...>} (parent PK arity 1..21; the {@code parentInput VALUES} table widens to
-     * {@code Row<N+1>} including {@code idx}, which tops out at 22). Empty PK is also rejected
-     * (multi-table interface/union connections need a parent key for the DataLoader VALUES table).
+     * Multi-table polymorphic child guard (both list and connection arms): rejects empty parent
+     * PK and parent PK arity above jOOQ's typed Row22 cap. The DataLoader-batched form keys on
+     * the parent table's PK; the {@code parentInput VALUES} table widens to {@code Row<N+1>}
+     * (parent PK + {@code idx}), which tops out at 22 — so the field-level cap is parent PK
+     * arity 21 for connection (where {@code idx} is added) and 22 for list form.
      *
      * <p>Surfaces the constraint as a clean validator rejection (build-time AUTHOR_ERROR with
-     * file:line) instead of a codegen-time {@code IllegalStateException} thrown deep in
-     * {@code MultiTablePolymorphicEmitter.buildBatchedConnectionFetcher}.
+     * file:line) instead of a codegen-time {@code IllegalStateException}. Mirrors classifier
+     * intent: {@code FieldBuilder.classifyObjectReturnChildField} routes empty-PK parents
+     * through {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} so the
+     * canonical-constructor invariant on {@link no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed}
+     * is unreachable on this construction path.
      *
-     * <p>No-op for non-connection wrappers (the list-mode child path supports composite parent
-     * PK fine via {@code parentRecord.get(...)}) and for non-table-backed parent types.
+     * <p>No-op for non-table-backed parent types — the multi-table polymorphic emitter only
+     * fires for table-backed parents under R102 (R105 lifts {@code @record}-parent classification
+     * arms; their derivation is checked separately).
      */
-    private void validateChildConnectionParentPk(String qualifiedName, SourceLocation location,
+    private void validateChildMultiTableParentPk(String qualifiedName, SourceLocation location,
             no.sikt.graphitron.rewrite.model.FieldWrapper wrapper,
             String parentTypeName,
             Map<String, GraphitronType> types,
             List<ValidationError> errors) {
-        if (!(wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection)) return;
         var parentType = types.get(parentTypeName);
         if (!(parentType instanceof TableBackedType tbt)) return;
         var pkCols = tbt.table().primaryKeyColumns();
         if (pkCols.isEmpty()) {
             errors.add(new ValidationError(
                 qualifiedName,
-            Rejection.structural("Field '" + qualifiedName + "': @asConnection on a multi-table interface/union child "
-                    + "field requires the parent type '" + parentTypeName + "' to have a primary key; "
-                    + "the DataLoader-batched windowed CTE form keys on the parent table's PK"),
+            Rejection.structural("Field '" + qualifiedName + "': multi-table interface/union child "
+                    + "field requires a non-empty primary key on the parent type '" + parentTypeName
+                    + "', since the DataLoader key tuple is built from the parent's PK columns"),
                 location
             ));
             return;
         }
-        if (pkCols.size() > 21) {
+        // Connection arm packs idx into Row<N+1> so the cap is N=21; list arm only carries the
+        // parent PK so it caps at N=22. Branch the threshold on wrapper to keep the message
+        // honest without forking the gate itself.
+        boolean isConnection = wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection;
+        int maxArity = isConnection ? 21 : 22;
+        if (pkCols.size() > maxArity) {
             errors.add(new ValidationError(
                 qualifiedName,
-            Rejection.structural("Field '" + qualifiedName + "': @asConnection on a multi-table interface/union child "
+            Rejection.structural("Field '" + qualifiedName + "': multi-table interface/union child "
                     + "field whose parent type '" + parentTypeName + "' has a primary key with "
-                    + pkCols.size() + " columns exceeds jOOQ's typed Row22 cap (parent PK + idx "
-                    + "must fit in Row<N+1>). Use a narrower parent key or split the parent type"),
+                    + pkCols.size() + " columns exceeds jOOQ's typed Row" + (maxArity + (isConnection ? 1 : 0))
+                    + " cap" + (isConnection ? " (parent PK + idx must fit in Row<N+1>)" : "")
+                    + ". Use a narrower parent key or split the parent type"),
                 location
             ));
         }
@@ -409,11 +441,13 @@ public class GraphitronSchemaValidator {
     }
     private void validateQueryInterfaceField(no.sikt.graphitron.rewrite.model.QueryField.QueryInterfaceField field, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
+        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(),
+            field.returnType().wrapper(), errors);
     }
     private void validateQueryUnionField(no.sikt.graphitron.rewrite.model.QueryField.QueryUnionField field, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
+        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(),
+            field.returnType().wrapper(), errors);
     }
     private void validateQueryServiceTableField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceTableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         // Unresolved service method is caught by the builder (UnclassifiedField).
@@ -550,14 +584,16 @@ public class GraphitronSchemaValidator {
     }
     private void validateInterfaceField(no.sikt.graphitron.rewrite.model.ChildField.InterfaceField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
-        validateChildConnectionParentPk(field.qualifiedName(), field.location(),
+        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(),
+            field.returnType().wrapper(), errors);
+        validateChildMultiTableParentPk(field.qualifiedName(), field.location(),
             field.returnType().wrapper(), field.parentTypeName(), types, errors);
     }
     private void validateUnionField(no.sikt.graphitron.rewrite.model.ChildField.UnionField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
-        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
-        validateChildConnectionParentPk(field.qualifiedName(), field.location(),
+        validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(),
+            field.returnType().wrapper(), errors);
+        validateChildMultiTableParentPk(field.qualifiedName(), field.location(),
             field.returnType().wrapper(), field.parentTypeName(), types, errors);
     }
     private void validateNestingField(no.sikt.graphitron.rewrite.model.ChildField.NestingField field, List<ValidationError> errors) {

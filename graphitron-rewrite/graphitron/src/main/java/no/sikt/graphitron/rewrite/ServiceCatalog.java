@@ -692,10 +692,16 @@ class ServiceCatalog {
      * <p>For all variants, {@code parentPkColumns} is used as the authoritative key column
      * list. The column types from the parent PK are used in the generated method signature;
      * the user's declared type args are used only to determine the arity and variant. Pass
-     * {@link List#of()} when no parent table context is available.
+     * {@link List#of()} when no parent table context is available; the classifier returns
+     * {@link Optional#empty()} in that case so the caller's root/DTO-parent diagnostic fires
+     * instead of constructing an empty-keyed BatchKey (rejected by the canonical-constructor
+     * invariant on every {@link BatchKey.ParentKeyed} permit).
      */
     static Optional<BatchKey.ParentKeyed> classifySourcesType(java.lang.reflect.Type paramType,
             List<ColumnRef> parentPkColumns) {
+        if (parentPkColumns.isEmpty()) {
+            return Optional.empty();
+        }
         var split = peelContainer(paramType, java.util.EnumSet.of(ContainerKind.LIST, ContainerKind.SET));
         if (split.isEmpty()) {
             return Optional.empty();

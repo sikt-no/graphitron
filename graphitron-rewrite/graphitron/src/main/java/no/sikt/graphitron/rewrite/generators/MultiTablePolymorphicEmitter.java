@@ -8,7 +8,9 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.ValuesJoinRowBuilder;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
@@ -96,25 +98,52 @@ public final class MultiTablePolymorphicEmitter {
             List<ParticipantRef> participants,
             boolean isList,
             String outputPackage) {
-        return emitMethods(ctx, fieldName, participants, Map.of(), isList, outputPackage);
+        var tableBoundParticipants = participants.stream()
+            .filter(p -> p instanceof ParticipantRef.TableBound)
+            .map(p -> (ParticipantRef.TableBound) p)
+            .toList();
+        var methods = new ArrayList<MethodSpec>();
+        methods.add(buildMainFetcher(ctx, fieldName, tableBoundParticipants, isList, outputPackage));
+        for (var participant : tableBoundParticipants) {
+            methods.add(buildPerTypenameSelect(fieldName, participant, false, outputPackage));
+        }
+        return methods;
     }
 
     /**
-     * Child-fetcher overload: same shape as the root form but each stage-1
-     * branch carries a {@code WHERE <participant>.<fk> = parentRecord.<parent pk>} predicate
-     * derived from the participant's auto-discovered FK back to the parent table. The main
-     * fetcher reads {@code parentRecord} from {@code env.getSource()} when
-     * {@code participantJoinPaths} is non-empty.
+     * Child-fetcher overload. Routes on cardinality:
+     *
+     * <ul>
+     *   <li><b>List</b>: registers a {@link org.dataloader.DataLoader} keyed on the parent's
+     *       {@link BatchKey.RecordParentBatchKey} and emits a paired
+     *       {@code rows<Field>(List<RowN<…>>, env)} batch loader that runs ONE polymorphic
+     *       UNION ALL with {@code JOIN parentInput} per branch, scattering typed Records into
+     *       per-parent {@code List<Record>} buckets. Same SQL shape as the connection arm minus
+     *       the windowed-CTE pagination.</li>
+     *   <li><b>Single</b>: per-parent inline fetcher with structural ranking by
+     *       {@code parentRecord.<parent_pk>}-correlated WHERE on each branch. No batching is
+     *       available at this cardinality (one record per parent invocation; nothing to dedup).</li>
+     * </ul>
      *
      * @param participantJoinPaths typename-keyed FK chain from the parent table to each
-     *                              {@link ParticipantRef.TableBound} participant. Empty for
-     *                              root-fetcher emission. v1 supports only single-hop FK chains.
+     *                              {@link ParticipantRef.TableBound} participant. Non-empty.
+     *                              v1 supports only single-hop FK chains.
+     * @param parentKey             parent-object key extraction strategy. Through R102 only
+     *                              {@link BatchKey.RowKeyed} is reachable from classification
+     *                              (table-backed parents); R105 wires the {@code @record}-parent
+     *                              permits.
+     * @param parentResultType      the parent's classified {@link GraphitronType.ResultType};
+     *                              threaded into {@link GeneratorUtils#buildRecordParentKeyExtraction}
+     *                              so {@code env.getSource()} is cast and read against the right
+     *                              Java type.
      */
     public static List<MethodSpec> emitMethods(
             TypeFetcherEmissionContext ctx,
             String fieldName,
             List<ParticipantRef> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
+            BatchKey.RecordParentBatchKey parentKey,
+            GraphitronType.ResultType parentResultType,
             boolean isList,
             String outputPackage) {
         var tableBoundParticipants = participants.stream()
@@ -122,8 +151,14 @@ public final class MultiTablePolymorphicEmitter {
             .map(p -> (ParticipantRef.TableBound) p)
             .toList();
         var methods = new ArrayList<MethodSpec>();
-        methods.add(buildMainFetcher(ctx, fieldName, tableBoundParticipants,
-            participantJoinPaths, isList, outputPackage));
+        if (isList && !tableBoundParticipants.isEmpty()) {
+            methods.add(buildBatchedListFetcher(ctx, fieldName, parentKey, parentResultType, outputPackage));
+            methods.add(buildBatchedListRowsMethod(ctx, fieldName, tableBoundParticipants,
+                participantJoinPaths, parentKey, outputPackage));
+        } else {
+            methods.add(buildScalarPerParentFetcher(ctx, fieldName, tableBoundParticipants,
+                participantJoinPaths, parentKey, parentResultType, isList, outputPackage));
+        }
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, false,
                 outputPackage));
@@ -168,10 +203,15 @@ public final class MultiTablePolymorphicEmitter {
      *
      * @param participantJoinPaths typename-keyed FK chain from the parent table to each
      *                              {@link ParticipantRef.TableBound} participant. Must be
-     *                              {@code Map.of()} when {@code parentTable} is null;
+     *                              {@code Map.of()} when {@code parentKey} is null;
      *                              non-empty otherwise.
-     * @param parentTable           the enclosing parent type's {@link TableRef}; non-null for
-     *                              child connections, null for root queries.
+     * @param parentKey             parent-object key extraction strategy; non-null for child
+     *                              connections, null for root queries.
+     * @param parentResultType      the parent's classified {@link GraphitronType.ResultType};
+     *                              non-null when {@code parentKey} is non-null. Threaded into
+     *                              {@link GeneratorUtils#buildRecordParentKeyExtraction} so
+     *                              {@code env.getSource()} is cast and read against the right
+     *                              Java type.
      */
     public static List<MethodSpec> emitConnectionMethods(
             TypeFetcherEmissionContext ctx,
@@ -179,7 +219,8 @@ public final class MultiTablePolymorphicEmitter {
             List<ParticipantRef> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
             int defaultPageSize,
-            TableRef parentTable,
+            BatchKey.RecordParentBatchKey parentKey,
+            GraphitronType.ResultType parentResultType,
             String outputPackage) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
@@ -188,11 +229,11 @@ public final class MultiTablePolymorphicEmitter {
         var methods = new ArrayList<MethodSpec>();
         // The empty-tableBound defensive path falls into the root branch; both fetcher builders
         // emit a non-throwing empty payload when participants is empty.
-        if (parentTable != null && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildBatchedConnectionFetcher(ctx, fieldName, parentTable,
+        if (parentKey != null && !tableBoundParticipants.isEmpty()) {
+            methods.add(buildBatchedConnectionFetcher(ctx, fieldName, parentKey, parentResultType,
                 outputPackage));
             methods.add(buildBatchedConnectionRowsMethod(ctx, fieldName, tableBoundParticipants,
-                participantJoinPaths, defaultPageSize, parentTable, outputPackage));
+                participantJoinPaths, defaultPageSize, parentKey, outputPackage));
         } else {
             methods.add(buildRootConnectionFetcher(ctx, fieldName, tableBoundParticipants,
                 defaultPageSize, outputPackage));
@@ -205,30 +246,22 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * The main fetcher method. Runs stage 1 (narrow UNION ALL of per-branch
-     * {@code (typename, pk0..pkN, sort)} projections), groups results by
-     * {@code __typename} into binding tuples, dispatches per typename to the per-branch
-     * stage-2 helper, and merges the typed Records back in stage-1 order via the
-     * {@code Object[] result} scatter pattern shared with the federation dispatcher.
+     * Root-side fetcher (no parent-FK WHERE, no batching). Runs stage 1 (narrow UNION ALL of
+     * per-branch {@code (typename, pk0..pkN, sort)} projections), groups results by
+     * {@code __typename} into binding tuples, dispatches per typename to the per-branch stage-2
+     * helper, and merges the typed Records back in stage-1 order via the {@code Object[] result}
+     * scatter pattern shared with the federation dispatcher.
      *
-     * <p>When {@code participantJoinPaths} is non-empty (B3 child case), each stage-1 branch
-     * carries a parent-FK {@code WHERE} predicate. The fetcher then opens with
-     * {@code Record parentRecord = (Record) env.getSource();} so the WHERE predicates can
-     * read parent-side PK values directly off the carrier record.
+     * <p>Used for {@link QueryField.QueryInterfaceField} / {@link QueryField.QueryUnionField}'s
+     * non-connection arm; child cases fork off in {@link #emitMethods}'s child overload.
      */
     private static MethodSpec buildMainFetcher(
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
-            Map<String, List<JoinStep>> participantJoinPaths,
             boolean isList, String outputPackage) {
 
-        // Return shape: List<Record> for both list and single cardinality. Per-branch
-        // typed Records project different field shapes; graphql-java traverses the
-        // collection element-by-element, so List<Record> is the correct uniform carrier.
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName valueType = isList ? listOfRecord : RECORD;
-
-        boolean isChildFetcher = !participantJoinPaths.isEmpty();
 
         var builder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -236,15 +269,9 @@ public final class MultiTablePolymorphicEmitter {
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
-        if (isChildFetcher) {
-            builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
-        }
         builder.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall());
 
         if (participants.isEmpty()) {
-            // Empty participant set is rejected by the validator, but emit a defensive empty
-            // result so the generator output type-checks regardless of upstream classifier
-            // bugs. Equivalent to "no rows" without firing any SQL.
             if (isList) {
                 builder.addStatement("$T payload = $T.of()", listOfRecord, LIST);
             } else {
@@ -257,42 +284,12 @@ public final class MultiTablePolymorphicEmitter {
             return builder.build();
         }
 
-        // Stage 1: narrow UNION ALL of (typename, pk0..pkN, sort) per branch. For the child
-        // fetcher form, each branch carries a parent-FK WHERE predicate.
-        builder.addCode(buildStage1Block(participants, participantJoinPaths));
+        builder.addCode(buildStage1Block(participants, Map.of()));
 
-        // Stage 1.5: group stage-1 rows by __typename into (idx, pks) bindings.
         int pkArity = participants.get(0).table().primaryKeyColumns().size();
         builder.addStatement("Object[] result = new Object[stage1.size()]");
-        var listOfObjArray = ParameterizedTypeName.get(LIST, ArrayTypeName.of(ClassName.get(Object.class)));
-        var byTypeMap = ParameterizedTypeName.get(MAP, ClassName.get(String.class), listOfObjArray);
-        builder.addStatement("$T byType = new $T<>()", byTypeMap, LINKED_HASH_MAP);
-        builder.beginControlFlow("for (int i = 0; i < stage1.size(); i++)");
-        builder.addStatement("$T r = stage1.get(i)", RECORD);
-        builder.addStatement("String tn = r.get($S, String.class)", TYPENAME_COLUMN);
-        // Pull each PK slot by alias and pack into Object[] for the per-typename helper.
-        var pksBuilder = CodeBlock.builder().add("new Object[]{");
-        for (int s = 0; s < pkArity; s++) {
-            if (s > 0) pksBuilder.add(", ");
-            pksBuilder.add("r.get($S)", PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX);
-        }
-        pksBuilder.add("}");
-        builder.addStatement("Object[] pks = $L", pksBuilder.build());
-        builder.addStatement("byType.computeIfAbsent(tn, k -> new $T<>()).add(new Object[]{i, pks})", ARRAY_LIST);
-        builder.endControlFlow();
+        builder.addCode(buildPerTypenameDispatcher(participants, fieldName, pkArity));
 
-        // Stage 2: per-typename dispatch — one method call per participant typename.
-        for (var participant : participants) {
-            String typeName = participant.typeName();
-            builder.beginControlFlow("if (byType.containsKey($S))", typeName);
-            builder.addStatement("$L(byType.get($S), env, dsl, result)",
-                perTypenameMethodName(fieldName, typeName), typeName);
-            builder.endControlFlow();
-        }
-
-        // Merge: walk result[] in stage-1 order, dropping any unresolved slot. Non-null
-        // entries are jOOQ Records carrying the synthetic __typename column; the schema-class
-        // TypeResolver reads it back to route each element to its concrete GraphQL type.
         if (isList) {
             builder.addStatement("$T payload = new $T<>(stage1.size())", listOfRecord, ARRAY_LIST);
             builder.beginControlFlow("for (Object o : result)");
@@ -306,6 +303,104 @@ public final class MultiTablePolymorphicEmitter {
         builder.addCode(redactCatchArm(outputPackage));
         builder.endControlFlow();
         return builder.build();
+    }
+
+    /**
+     * Child non-list per-parent fetcher. Single-cardinality multi-table polymorphic child fields
+     * have nothing to batch (one record per parent invocation; nothing to dedup), so this stays
+     * inline per parent: opens with {@code Record parentRecord = (Record) env.getSource()},
+     * runs stage 1 with per-branch parent-FK {@code WHERE}, dispatches per typename, returns the
+     * single typed Record. List-cardinality children use the DataLoader-batched
+     * {@link #buildBatchedListFetcher} / {@link #buildBatchedListRowsMethod} path instead.
+     */
+    private static MethodSpec buildScalarPerParentFetcher(
+            TypeFetcherEmissionContext ctx,
+            String fieldName, List<ParticipantRef.TableBound> participants,
+            Map<String, List<JoinStep>> participantJoinPaths,
+            BatchKey.RecordParentBatchKey parentKey,
+            GraphitronType.ResultType parentResultType,
+            boolean isList, String outputPackage) {
+
+        var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        TypeName valueType = isList ? listOfRecord : RECORD;
+
+        var builder = MethodSpec.methodBuilder(fieldName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(syncResultType(valueType))
+            .addParameter(ENV, "env");
+
+        builder.beginControlFlow("try");
+        builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
+        builder.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall());
+
+        if (participants.isEmpty()) {
+            if (isList) {
+                builder.addStatement("$T payload = $T.of()", listOfRecord, LIST);
+            } else {
+                builder.addStatement("$T payload = ($T) null", RECORD, RECORD);
+            }
+            builder.addCode(returnSyncSuccess(valueType, "payload"));
+            builder.nextControlFlow("catch ($T e)", Exception.class);
+            builder.addCode(redactCatchArm(outputPackage));
+            builder.endControlFlow();
+            return builder.build();
+        }
+
+        builder.addCode(buildStage1Block(participants, participantJoinPaths));
+
+        int pkArity = participants.get(0).table().primaryKeyColumns().size();
+        builder.addStatement("Object[] result = new Object[stage1.size()]");
+        builder.addCode(buildPerTypenameDispatcher(participants, fieldName, pkArity));
+
+        if (isList) {
+            builder.addStatement("$T payload = new $T<>(stage1.size())", listOfRecord, ARRAY_LIST);
+            builder.beginControlFlow("for (Object o : result)");
+            builder.addStatement("if (o instanceof $T r) payload.add(r)", RECORD);
+            builder.endControlFlow();
+        } else {
+            builder.addStatement("$T payload = result.length == 0 ? null : ($T) result[0]", RECORD, RECORD);
+        }
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(redactCatchArm(outputPackage));
+        builder.endControlFlow();
+        return builder.build();
+    }
+
+    /**
+     * Shared per-typename dispatch helper. Groups stage-1 rows by {@code __typename} into
+     * {@code (idx, pks)} bindings, then dispatches per typename to the stage-2 helper that
+     * scatters typed Records back into {@code result[idx]}. Used by {@link #buildMainFetcher}
+     * (root) and {@link #buildScalarPerParentFetcher} (child non-list); the windowed-CTE
+     * connection-rows arm has a structurally different stage-2 over the ranked CTE and stays
+     * inline.
+     */
+    private static CodeBlock buildPerTypenameDispatcher(
+            List<ParticipantRef.TableBound> participants, String fieldName, int pkArity) {
+        var b = CodeBlock.builder();
+        var listOfObjArray = ParameterizedTypeName.get(LIST, ArrayTypeName.of(ClassName.get(Object.class)));
+        var byTypeMap = ParameterizedTypeName.get(MAP, ClassName.get(String.class), listOfObjArray);
+        b.addStatement("$T byType = new $T<>()", byTypeMap, LINKED_HASH_MAP);
+        b.beginControlFlow("for (int i = 0; i < stage1.size(); i++)");
+        b.addStatement("$T r = stage1.get(i)", RECORD);
+        b.addStatement("String tn = r.get($S, String.class)", TYPENAME_COLUMN);
+        var pksBuilder = CodeBlock.builder().add("new Object[]{");
+        for (int s = 0; s < pkArity; s++) {
+            if (s > 0) pksBuilder.add(", ");
+            pksBuilder.add("r.get($S)", PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX);
+        }
+        pksBuilder.add("}");
+        b.addStatement("Object[] pks = $L", pksBuilder.build());
+        b.addStatement("byType.computeIfAbsent(tn, k -> new $T<>()).add(new Object[]{i, pks})", ARRAY_LIST);
+        b.endControlFlow();
+        for (var participant : participants) {
+            String typeName = participant.typeName();
+            b.beginControlFlow("if (byType.containsKey($S))", typeName);
+            b.addStatement("$L(byType.get($S), env, dsl, result)",
+                perTypenameMethodName(fieldName, typeName), typeName);
+            b.endControlFlow();
+        }
+        return b.build();
     }
 
     /**
@@ -656,47 +751,37 @@ public final class MultiTablePolymorphicEmitter {
 
     /**
      * Batched child-connection main fetcher: registers a {@link org.dataloader.DataLoader} keyed on the
-     * parent table's PK and delegates to a {@code rows<Field>(List<RowN<PK1...PKn>>, env)}
-     * batch loader. The body shape mirrors {@code TypeFetcherGenerator.buildSplitQueryDataFetcher}:
-     * build the tenant-scoped DataLoader name, {@code computeIfAbsent} the loader, extract the
-     * parent PK from {@code env.getSource()} as a typed {@code RowN<...>}, then return
-     * {@code loader.load(key, env).thenApply(...).exceptionally(...)} — the same async-tail
-     * shape every other DataLoader-batched fetcher uses.
+     * parent's {@link BatchKey.RecordParentBatchKey} and delegates to a
+     * {@code rows<Field>(List<RowN<PK1...PKn>>, env)} batch loader. The body shape mirrors
+     * {@code TypeFetcherGenerator.buildSplitQueryDataFetcher}: build the tenant-scoped DataLoader
+     * name, {@code computeIfAbsent} the loader, extract the parent PK from {@code env.getSource()}
+     * via {@link GeneratorUtils#buildRecordParentKeyExtraction}, then return
+     * {@code loader.load(key, env).thenApply(...).exceptionally(...)}.
      *
-     * <p>Parent PK arity 1..22 supported (jOOQ's typed Row tops out at Row22 — see {@link #rowClass}).
-     * Empty-PK parent rejected at emit time as a defensive tripwire (the validator already
-     * rejects PK-less participants upstream; PK-less parent for a connection-mode child field
-     * would only get here through a validator bug).
+     * <p>Parent PK arity 1..21 enforced upstream (validator's
+     * {@code validateChildMultiTableParentPk}); the {@code parentInput} VALUES table widens to
+     * {@code Row<N+1>} including {@code idx}, which tops out at Row22.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven",
+        reliesOn = "Reads field.parentKey() and field.parentResultType() straight off the field "
+            + "record and hands them to GeneratorUtils.buildRecordParentKeyExtraction. The hard "
+            + "fail (no jOOQ-Record fallback at this site) is the form the load-bearing guarantee "
+            + "takes here: navigation and drift annunciation, not guard elision. Empty key "
+            + "columns are unreachable per the type-system invariant on BatchKey.RowKeyed and its "
+            + "siblings.")
     private static MethodSpec buildBatchedConnectionFetcher(
             TypeFetcherEmissionContext ctx,
-            String fieldName, TableRef parentTable,
+            String fieldName,
+            BatchKey.RecordParentBatchKey parentKey,
+            GraphitronType.ResultType parentResultType,
             String outputPackage) {
 
         var connectionResultClass = ClassName.get(outputPackage + ".util",
             no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
         TypeName valueType = connectionResultClass;
 
-        var pkCols = parentTable.primaryKeyColumns();
-        int parentKeyArity = pkCols.size();
-        if (parentKeyArity == 0) {
-            throw new IllegalStateException(
-                "B4c-2 batched child connection requires a parent PK; got 0 columns "
-                + "for parent table '" + parentTable.tableName() + "'. "
-                + "Validator should have rejected upstream.");
-        }
-        if (parentKeyArity > 22) {
-            throw new IllegalStateException(
-                "B4c-2 batched child connection: parent PK arity " + parentKeyArity
-                + " for parent table '" + parentTable.tableName()
-                + "' exceeds jOOQ's typed Row22 limit. Widen via DSL.rowField composite-key "
-                + "alternative or split the parent type.");
-        }
-        TypeName[] parentPkClasses = new TypeName[parentKeyArity];
-        for (int i = 0; i < parentKeyArity; i++) {
-            parentPkClasses[i] = ClassName.bestGuess(pkCols.get(i).columnClass());
-        }
-        TypeName keyType = ParameterizedTypeName.get(rowClass(parentKeyArity), parentPkClasses);
+        TypeName keyType = parentKey.keyElementType();
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
         String rowsMethodName = "rows" + cap(fieldName);
@@ -715,10 +800,6 @@ public final class MultiTablePolymorphicEmitter {
             .returns(asyncResultType(valueType))
             .addParameter(ENV, "env");
 
-        // DataLoader name: tenant + path. Inlined here (the helper lives on TypeFetcherGenerator
-        // and stays private there); the emitted bytes are identical so the batching scope is the
-        // same as Split* fetchers — graphql-java records aliases as path keys, so aliased uses
-        // get distinct DataLoaders.
         builder.addStatement(
             "$T name = $L.getTenantId(env) + $S + $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
             String.class, ctx.graphitronContextCall(), "/", String.class, "/");
@@ -727,17 +808,68 @@ public final class MultiTablePolymorphicEmitter {
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
             loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        // Parent PK extraction — N typed locals from the parent record, then DSL.row(...) into
-        // the typed RowN<...> key.
-        var keyArgs = CodeBlock.builder();
-        for (int i = 0; i < parentKeyArity; i++) {
-            ColumnRef pk = pkCols.get(i);
-            builder.addStatement("$T fk$L = (($T) env.getSource()).get($T.$L.$L)",
-                parentPkClasses[i], i, RECORD, parentTable.constantsClass(), parentTable.javaFieldName(), pk.javaName());
-            if (i > 0) keyArgs.add(", ");
-            keyArgs.add("fk$L", i);
-        }
-        builder.addStatement("$T key = $T.row($L)", keyType, DSL, keyArgs.build());
+        // Parent-object key extraction: delegated to the canonical four-shape × four-permit
+        // helper. Emits the typed {@code <KeyType> key = ...} statement consumed by load(key, env).
+        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentKey, parentResultType));
+
+        builder.addCode(CodeBlock.builder()
+            .add("return loader.load(key, env)\n")
+            .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
+            .build());
+
+        return builder.build();
+    }
+
+    /**
+     * Batched child-list main fetcher: registers a {@link org.dataloader.DataLoader} keyed on the
+     * parent's {@link BatchKey.RecordParentBatchKey} and delegates to a
+     * {@code rows<Field>(List<RowN<…>>, env)} batch loader returning {@code List<List<Record>>}
+     * (one bucket per parent in the batch). Same async-tail shape as the connection arm; only the
+     * value type differs ({@code List<Record>} per parent vs. {@code ConnectionResult}).
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven",
+        reliesOn = "Reads field.parentKey() and field.parentResultType() straight off the field "
+            + "record and hands them to GeneratorUtils.buildRecordParentKeyExtraction. Same "
+            + "load-bearing classifier check as the connection-arm fetcher.")
+    private static MethodSpec buildBatchedListFetcher(
+            TypeFetcherEmissionContext ctx,
+            String fieldName,
+            BatchKey.RecordParentBatchKey parentKey,
+            GraphitronType.ResultType parentResultType,
+            String outputPackage) {
+
+        TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        TypeName valueType = listOfRecord;
+
+        TypeName keyType = parentKey.keyElementType();
+        TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
+        TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
+        String rowsMethodName = "rows" + cap(fieldName);
+
+        var lambdaBlock = CodeBlock.builder()
+            .add("($T keys, $T batchEnv) -> {\n", lambdaKeysType, BATCH_LOADER_ENV)
+            .indent()
+            .addStatement("$T dfe = ($T) batchEnv.getKeyContextsList().get(0)", ENV, ENV)
+            .addStatement("return $T.completedFuture($L(keys, dfe))", COMPLETABLE_FUTURE, rowsMethodName)
+            .unindent()
+            .add("}")
+            .build();
+
+        var builder = MethodSpec.methodBuilder(fieldName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(asyncResultType(valueType))
+            .addParameter(ENV, "env");
+
+        builder.addStatement(
+            "$T name = $L.getTenantId(env) + $S + $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
+            String.class, ctx.graphitronContextCall(), "/", String.class, "/");
+        builder.addCode(
+            "$T loader = env.getDataLoaderRegistry()\n"
+            + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
+            loaderType, DATA_LOADER_FACTORY, lambdaBlock);
+
+        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentKey, parentResultType));
 
         builder.addCode(CodeBlock.builder()
             .add("return loader.load(key, env)\n")
@@ -794,7 +926,7 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
-            int defaultPageSize, TableRef parentTable,
+            int defaultPageSize, BatchKey.RecordParentBatchKey parentKey,
             String outputPackage) {
 
         var connectionResultClass = ClassName.get(outputPackage + ".util",
@@ -808,15 +940,11 @@ public final class MultiTablePolymorphicEmitter {
 
         String rowsMethodName = "rows" + cap(fieldName);
 
-        // Parent PK — arity 1..22 supported (validator + buildBatchedConnectionFetcher's
-        // emit-time tripwires gate empty PK and >22 arity upstream).
-        var parentPkCols = parentTable.primaryKeyColumns();
+        // Parent PK columns from the BatchKey's prelude side; arity 1..21 enforced upstream by
+        // validateChildMultiTableParentPk (idx adds one slot to the parentInput Row<N+1>).
+        var parentPkCols = parentKey.preludeKeyColumns();
         int parentKeyArity = parentPkCols.size();
-        TypeName[] parentPkClasses = new TypeName[parentKeyArity];
-        for (int i = 0; i < parentKeyArity; i++) {
-            parentPkClasses[i] = ClassName.bestGuess(parentPkCols.get(i).columnClass());
-        }
-        TypeName keyType = ParameterizedTypeName.get(rowClass(parentKeyArity), parentPkClasses);
+        TypeName keyType = parentKey.keyElementType();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
         TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);
 
@@ -840,41 +968,7 @@ public final class MultiTablePolymorphicEmitter {
             b.addStatement("$T $L = $T.$L", jooqTableClass, alias, participant.table().constantsClass(), participant.table().javaFieldName());
         }
 
-        // VALUES (idx, parent_pk0, ..., parent_pkN-1) → typed Row<N+1><Integer, T1...Tn>.
-        // Single-column parent PK collapses to Row2<Integer, ParentPkClass>; composite parent
-        // PK widens to Row<N+1>. Arity bounded at codegen by buildBatchedConnectionFetcher.
-        int parentRowArity = parentKeyArity + 1;
-        TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
-        parentRowTypeArgs[0] = integerClass;
-        for (int i = 0; i < parentKeyArity; i++) {
-            parentRowTypeArgs[i + 1] = parentPkClasses[i];
-        }
-        TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
-        TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
-        TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
-
-        b.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
-        b.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
-            parentRowType, parentRowType, rowClass(parentRowArity));
-        b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
-        b.addStatement("$T k = keys.get(i)", keyType);
-        // parentRows[i] = DSL.row(DSL.inline(i), k.field1(), k.field2(), ..., k.fieldN()).
-        var parentRowArgs = CodeBlock.builder();
-        parentRowArgs.add("$T.inline(i)", DSL);
-        for (int i = 0; i < parentKeyArity; i++) {
-            parentRowArgs.add(", k.field$L()", i + 1);
-        }
-        b.addStatement("parentRows[i] = $T.row($L)", DSL, parentRowArgs.build());
-        b.endControlFlow();
-
-        // VALUES alias: ("parentInput", "idx", pk_col_0_sqlName, ..., pk_col_N-1_sqlName).
-        var parentInputAliasArgs = CodeBlock.builder();
-        parentInputAliasArgs.add("$S, $S", "parentInput", "idx");
-        for (var col : parentPkCols) {
-            parentInputAliasArgs.add(", $S", col.sqlName());
-        }
-        b.addStatement("$T parentInput = $T.values(parentRows).as($L)",
-            parentInputTableType, DSL, parentInputAliasArgs.build());
+        b.add(buildParentInputValuesEmitter(parentPkCols, keyType));
 
         // Pagination args (shared across the batch — graphql-java resolves field args once per
         // selection regardless of fanout).
@@ -1173,6 +1267,190 @@ public final class MultiTablePolymorphicEmitter {
             .addParameter(ArrayTypeName.of(ClassName.get(Object.class)), "result")
             .addCode(b.build())
             .build();
+    }
+
+    /**
+     * Shared {@code parentInput VALUES} table emitter. Materialises the DataLoader keys into a
+     * typed {@code Row<N+1><Integer, T1...Tn>[]} array (idx + parent PK), then aliases as
+     * {@code parentInput("idx", pk_col_0_sqlName, ..., pk_col_N-1_sqlName)}. Used by every
+     * batched-rows method (list arm and connection arm) so the JOIN parentInput predicate has a
+     * consistent shape.
+     */
+    private static CodeBlock buildParentInputValuesEmitter(
+            List<ColumnRef> parentPkCols, TypeName keyType) {
+        var integerClass = ClassName.get(Integer.class);
+        int parentKeyArity = parentPkCols.size();
+        int parentRowArity = parentKeyArity + 1;
+        TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
+        parentRowTypeArgs[0] = integerClass;
+        for (int i = 0; i < parentKeyArity; i++) {
+            parentRowTypeArgs[i + 1] = ClassName.bestGuess(parentPkCols.get(i).columnClass());
+        }
+        TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
+        TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
+        TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
+
+        var b = CodeBlock.builder();
+        b.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
+        b.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
+            parentRowType, parentRowType, rowClass(parentRowArity));
+        b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
+        b.addStatement("$T k = keys.get(i)", keyType);
+        var parentRowArgs = CodeBlock.builder();
+        parentRowArgs.add("$T.inline(i)", DSL);
+        for (int i = 0; i < parentKeyArity; i++) {
+            parentRowArgs.add(", k.field$L()", i + 1);
+        }
+        b.addStatement("parentRows[i] = $T.row($L)", DSL, parentRowArgs.build());
+        b.endControlFlow();
+
+        var parentInputAliasArgs = CodeBlock.builder();
+        parentInputAliasArgs.add("$S, $S", "parentInput", "idx");
+        for (var col : parentPkCols) {
+            parentInputAliasArgs.add(", $S", col.sqlName());
+        }
+        b.addStatement("$T parentInput = $T.values(parentRows).as($L)",
+            parentInputTableType, DSL, parentInputAliasArgs.build());
+        return b.build();
+    }
+
+    /**
+     * Batched child-list rows method: issues ONE SQL statement covering every parent in the
+     * DataLoader batch and returns {@code List<List<Record>>} indexed 1:1 with the keys list.
+     * Same SQL shape as {@link #buildBatchedConnectionRowsMethod} minus the windowed CTE: stage
+     * 1 unions per-participant {@code SELECT ... JOIN parentInput} branches projecting
+     * {@code (typename, pk0..pkN, __idx__)}; stage 2 dispatches per typename and scatters typed
+     * Records into per-parent buckets via {@code __idx__}.
+     */
+    private static MethodSpec buildBatchedListRowsMethod(
+            TypeFetcherEmissionContext ctx,
+            String fieldName, List<ParticipantRef.TableBound> participants,
+            Map<String, List<JoinStep>> participantJoinPaths,
+            BatchKey.RecordParentBatchKey parentKey,
+            String outputPackage) {
+
+        var integerClass = ClassName.get(Integer.class);
+        var stringClass = ClassName.get(String.class);
+        String rowsMethodName = "rows" + cap(fieldName);
+
+        var parentPkCols = parentKey.preludeKeyColumns();
+        TypeName keyType = parentKey.keyElementType();
+        TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
+        TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
+
+        // Participant PK arity (uniform across participants — validator enforces). List form
+        // doesn't constrain to single-column the way connection does, so iterate per slot.
+        int participantPkArity = participants.get(0).table().primaryKeyColumns().size();
+
+        var b = CodeBlock.builder();
+
+        b.beginControlFlow("if (keys.isEmpty())");
+        b.addStatement("return $T.of()", LIST);
+        b.endControlFlow();
+
+        b.addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall());
+
+        for (var participant : participants) {
+            var jooqTableClass = participant.table().tableClass();
+            String alias = "stage1_" + participant.typeName();
+            b.addStatement("$T $L = $T.$L", jooqTableClass, alias,
+                participant.table().constantsClass(), participant.table().javaFieldName());
+        }
+
+        b.add(buildParentInputValuesEmitter(parentPkCols, keyType));
+
+        // Stage 1: per-branch UNION ALL projecting (typename, pk0..pkN, __idx__) plus
+        // JOIN parentInput. No windowed CTE — list arm has no per-parent pagination.
+        TypeName resultBound = ParameterizedTypeName.get(RESULT, WildcardTypeName.subtypeOf(RECORD));
+        b.add("$T stage1 = ", resultBound);
+        for (int p = 0; p < participants.size(); p++) {
+            var participant = participants.get(p);
+            String alias = "stage1_" + participant.typeName();
+            CodeBlock projection = batchedListBranchProjection(participant, alias);
+            CodeBlock joinPredicate = batchedBranchJoinPredicate(participant, participantJoinPaths);
+            if (p == 0) {
+                b.add("dsl.select($L)\n", projection);
+                b.add("    .from($L)\n", alias);
+                b.add("    .join(parentInput).on($L)\n", joinPredicate);
+            } else {
+                b.add("    .unionAll(dsl.select($L)\n", projection);
+                b.add("        .from($L)\n", alias);
+                b.add("        .join(parentInput).on($L))\n", joinPredicate);
+            }
+        }
+        b.add("    .fetch();\n");
+
+        // idx slot — used both for bucketing and per-typename dispatch carrying.
+        TypeName idxFieldType = ParameterizedTypeName.get(FIELD, integerClass);
+        b.addStatement("$T idxField = $T.field($T.name($S), $T.class)",
+            idxFieldType, DSL, DSL, "__idx__", integerClass);
+
+        // Bucketize: byType + parentIdxByOuter parallel array (mirrors connection-rows scatter).
+        b.addStatement("Object[] result = new Object[stage1.size()]");
+        TypeName listOfObjArray = ParameterizedTypeName.get(LIST, ArrayTypeName.of(ClassName.get(Object.class)));
+        TypeName byTypeMap = ParameterizedTypeName.get(MAP, stringClass, listOfObjArray);
+        b.addStatement("$T byType = new $T<>()", byTypeMap, LINKED_HASH_MAP);
+        b.addStatement("int[] parentIdxByOuter = new int[stage1.size()]");
+        b.beginControlFlow("for (int outerIdx = 0; outerIdx < stage1.size(); outerIdx++)");
+        b.addStatement("$T r = stage1.get(outerIdx)", RECORD);
+        b.addStatement("parentIdxByOuter[outerIdx] = r.get(idxField)");
+        b.addStatement("String tn = r.get($S, String.class)", TYPENAME_COLUMN);
+        var pksBuilder = CodeBlock.builder().add("new Object[]{");
+        for (int s = 0; s < participantPkArity; s++) {
+            if (s > 0) pksBuilder.add(", ");
+            pksBuilder.add("r.get($S)", PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX);
+        }
+        pksBuilder.add("}");
+        b.addStatement("Object[] pks = $L", pksBuilder.build());
+        b.addStatement("byType.computeIfAbsent(tn, k -> new $T<>()).add(new Object[]{outerIdx, pks})", ARRAY_LIST);
+        b.endControlFlow();
+
+        // Stage 2: per-typename dispatch — writes typed Records to result[outerIdx].
+        for (var participant : participants) {
+            String typeName = participant.typeName();
+            b.beginControlFlow("if (byType.containsKey($S))", typeName);
+            b.addStatement("$L(byType.get($S), env, dsl, result)",
+                perTypenameMethodName(fieldName, typeName), typeName);
+            b.endControlFlow();
+        }
+
+        // Scatter into per-parent buckets.
+        b.addStatement("$T buckets = new $T<>(keys.size())", listOfListOfRecord, ARRAY_LIST);
+        b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
+        b.addStatement("buckets.add(new $T<>())", ARRAY_LIST);
+        b.endControlFlow();
+        b.beginControlFlow("for (int outerIdx = 0; outerIdx < result.length; outerIdx++)");
+        b.beginControlFlow("if (result[outerIdx] instanceof $T r)", RECORD);
+        b.addStatement("buckets.get(parentIdxByOuter[outerIdx]).add(r)");
+        b.endControlFlow();
+        b.endControlFlow();
+        b.addStatement("return buckets");
+
+        return MethodSpec.methodBuilder(rowsMethodName)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(listOfListOfRecord)
+            .addParameter(keysListType, "keys")
+            .addParameter(ENV, "env")
+            .addCode(b.build())
+            .build();
+    }
+
+    /**
+     * List-arm per-branch projection: typename literal + ALL participant PK columns
+     * ({@code __pk0__..__pkN__}) + {@code __idx__}. Differs from the connection-arm projection
+     * ({@link #batchedBranchProjection}) by projecting the full PK arity (not just the first
+     * column) and by skipping {@code __sort__} (no cursor encoding on the list arm).
+     */
+    private static CodeBlock batchedListBranchProjection(ParticipantRef.TableBound participant, String tableAlias) {
+        var pks = participant.table().primaryKeyColumns();
+        var b = CodeBlock.builder();
+        b.add("$T.inline($S).as($S)", DSL, participant.typeName(), TYPENAME_COLUMN);
+        for (int s = 0; s < pks.size(); s++) {
+            b.add(", $L.$L.as($S)", tableAlias, pks.get(s).javaName(), PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX);
+        }
+        b.add(", parentInput.field(0, $T.class).as($S)", ClassName.get(Integer.class), "__idx__");
+        return b.build();
     }
 
     private static String perTypenameMethodName(String fieldName, String typeName) {

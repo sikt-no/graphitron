@@ -281,6 +281,12 @@ public sealed interface ChildField extends GraphitronField
      * <p>{@code participantJoinPaths} is keyed by participant typename — exactly one entry per
      * {@link ParticipantRef.TableBound} participant. {@link ParticipantRef.Unbound} participants
      * are absent from the map; they contribute no SQL branch.
+     *
+     * <p>{@code parentKey} and {@code parentResultType} are the parent-object key-extraction
+     * strategy and shape, threaded into {@code GeneratorUtils.buildRecordParentKeyExtraction}.
+     * The slot type accepts every {@link BatchKey.RecordParentBatchKey} permit; through R102 the
+     * classifier produces only {@link BatchKey.RowKeyed} (table-backed parents). The other three
+     * permits become reachable when R105 wires the {@code @record}-parent classifier arm.
      */
     record InterfaceField(
         String parentTypeName,
@@ -288,7 +294,9 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
-        java.util.Map<String, List<JoinStep>> participantJoinPaths
+        java.util.Map<String, List<JoinStep>> participantJoinPaths,
+        BatchKey.RecordParentBatchKey parentKey,
+        GraphitronType.ResultType parentResultType
     ) implements ChildField {
         public InterfaceField {
             participants = List.copyOf(participants);
@@ -307,7 +315,9 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
-        java.util.Map<String, List<JoinStep>> participantJoinPaths
+        java.util.Map<String, List<JoinStep>> participantJoinPaths,
+        BatchKey.RecordParentBatchKey parentKey,
+        GraphitronType.ResultType parentResultType
     ) implements ChildField {
         public UnionField {
             participants = List.copyOf(participants);
