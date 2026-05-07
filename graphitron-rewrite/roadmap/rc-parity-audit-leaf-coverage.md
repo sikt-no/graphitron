@@ -17,18 +17,14 @@ emitted code is correct end-to-end. The first release candidate of graphitron
 10 needs an explicit, leaf-by-leaf accounting of what is covered, what is not,
 and which gaps are RC-blocking versus deferrable.
 
-The deliverables are a regenerable classification table driven by a
-classifier-trace mechanism, one or more sibling Backlog items per RC-blocking
-gap, and a consumer-facing migration-guide section. The "if we don't generate
-then validation fails" rule means an `@ExecutionTier` test that includes shape
-X is the proof that X is fully supported (parses, classifies, validates,
-generates, executes). Pipeline-tier or unit-tier coverage alone does not count.
-
-The reproducibility approach: the classifier already does all the work on
-every test run, so we make it emit a structured trace gated on a system
-property, and a roadmap-tool subcommand post-processes the trace into the
-coverage report. New fixtures and new tests then update the data
-automatically, with no separate registry to keep in sync.
+This item produces the **regenerable coverage table and the tooling that
+keeps it in sync with trunk**: registries that funnel classification writes,
+a JSONL trace, a JUnit extension that tags records with the running test
+class and tier, and a `roadmap-tool leaf-coverage` post-processor. The
+*triage* step (classifying each leaf into Covered / Trivial gap /
+RC-blocker / Defer and spawning sibling Backlog items per gap) is a
+separate item that depends on this one: the table makes the triage trivial
+to do once, hard to do up-front.
 
 ## Phase A (already shipped)
 
@@ -51,8 +47,8 @@ automatically, with no separate registry to keep in sync.
 - **Trace emission point:** introduce a `TypeRegistry` and `FieldRegistry`
   that wrap the previously-bare `BuildContext.types` field and the
   `fields` map in `GraphitronSchemaBuilder.buildSchema`. The maps become
-  private. All writes go through named operations (`classify`,
-  `reclassify`, `synthesize`) that carry the trace emission internally.
+  private. All writes go through named operations (`classify`, `enrich`,
+  `demote`, `synthesize`) that carry the trace emission internally.
   This replaces the original "walk the final maps" approach with funnel
   tracing again, but the funnels are now enforced architecturally rather
   than by convention: the federation demotions in `EntityResolutionBuilder`,
@@ -92,15 +88,20 @@ supplies test-class context (1d).
 
 Replace the bare `Map<String, GraphitronType>` currently held as
 `BuildContext.types` with a `TypeRegistry` whose backing map is private.
-Three named operations replace direct `put` calls:
+Four named operations replace direct `put` calls, each carrying a clean
+semantic assertion:
 
-- `classify(name, type)`: primary classification, asserts no prior entry
-  for that name. Used by `TypeBuilder.classifyType`.
-- `reclassify(name, type)`: demotion of an already-classified type to
-  `UnclassifiedType` (or any other reclassification), asserts a prior
-  entry exists. Used by `EntityResolutionBuilder.build` for federation
-  validation failures and by `TypeBuilder.validateNodeTypeIdUniqueness`
-  for `@nodeId` collisions.
+- `classify(name, type)`: primary classification, asserts no prior entry.
+  Used by `TypeBuilder.classifyType`.
+- `enrich(name, type)`: replaces an entry with a structurally compatible
+  enriched version (e.g. `InterfaceType` with empty participants → with
+  resolved participants). Asserts prior entry exists. Used by the
+  enrichment pass at `TypeBuilder.buildTypes` (the `replaceAll` over the
+  result of the first pass).
+- `demote(name, type)`: replaces an entry with `UnclassifiedType` (or
+  any classification regression). Asserts prior entry exists. Used by
+  `EntityResolutionBuilder.build` for federation validation failures and
+  by `TypeBuilder.validateNodeTypeIdUniqueness` for `@nodeId` collisions.
 - `synthesize(name, type)`: graphitron-generated type with no SDL origin,
   asserts no prior entry. Used by
   `GraphitronSchemaBuilder.promoteConnectionTypes` for `ConnectionType` /
@@ -108,9 +109,9 @@ Three named operations replace direct `put` calls:
 
 Same pattern for the local `fields` map in
 `GraphitronSchemaBuilder.buildSchema`, lifted into a `FieldRegistry`.
-Initial scope is just `classify`; research found no demotion or synthesis
-of fields outside `classifyField`. If the refactor surfaces a site that
-needs `reclassify` or `synthesize`, add the operation symmetrically.
+Initial scope is just `classify`; research found no demotion, enrichment,
+or synthesis of fields outside `classifyField`. If the refactor surfaces a
+site that needs another operation, add it symmetrically.
 
 The registries take ownership of trace emission. Each operation:
 1. Validates the prior-entry precondition.
@@ -126,33 +127,35 @@ fails a basic visibility check.
 
 Touch points discovered in research:
 
-- `TypeBuilder.classifyType` → registry.classify (return value still
+- `TypeBuilder.classifyType` → `registry.classify` (return value still
   flows back to caller for use within `buildTypes`)
+- `TypeBuilder.buildTypes` enrichment pass (TypeBuilder.java:141-158,
+  the `replaceAll` over participant-enriched interface/union variants) →
+  `registry.enrich`
 - `TypeBuilder.validateNodeTypeIdUniqueness` (TypeBuilder.java:182) →
-  registry.reclassify
+  `registry.demote`
 - `EntityResolutionBuilder.build` (lines 104, 110, 128) →
-  registry.reclassify
+  `registry.demote`
 - `GraphitronSchemaBuilder.promoteConnectionTypes` (lines 373, 377, 386,
-  391) → registry.synthesize
+  391) → `registry.synthesize`
 - `FieldBuilder.classifyField` (and the input-field path through
-  `BuildContext.classifyInputField`) → field-registry.classify
-
-The enrichment pass at TypeBuilder.java:141-158 (`replaceAll` over the
-result of the first `buildTypes` pass) needs decision: it currently
-mutates the map in place to swap empty `InterfaceType`/`UnionType` for
-participant-resolved versions. Treat as `reclassify` because the entries
-exist and are being replaced, even though the replacement is enrichment
-rather than demotion. Acceptable because `reclassify` semantically means
-"prior entry exists, new entry replaces it."
+  `BuildContext.classifyInputField`) → `fieldRegistry.classify`
 
 Emit a JSONL record per registry operation to the path set by
 `-Dgraphitron.classification.trace=<path>`. Default off; production runs
 incur no cost. Record fields:
 
-- `op`: one of `classify`, `reclassify`, `synthesize`. Lets the
-  post-processor distinguish primary classifications from demotions
-  (which often produce `UnclassifiedType` and indicate validation forks)
-  and synthesized types (which never came from user SDL).
+- `op`: one of `classify`, `enrich`, `demote`, `synthesize`. Four arms,
+  not three: the architect's review pointed out that the enrichment pass
+  (TypeBuilder.java:141-158, replacing empty `InterfaceType` /
+  `UnionType` with participant-resolved versions) and the validation
+  demotions (federation, node-id collision) are semantically different
+  and the audit consumer wants to filter on them differently. `enrich`
+  asserts "prior entry exists, structurally compatible replacement"
+  (always benign). `demote` asserts "prior entry exists, classification
+  regressed (typically to Unclassified)" (always worth scrutinising).
+  `classify` is primary, `synthesize` is graphitron-generated with no SDL
+  origin (connection/edge/pageinfo).
 - `parent`: parent type name (empty for top-level types)
 - `name`: field/type name
 - `leaf`: fully-qualified record class, e.g. `ChildField.TableMethodField`
@@ -241,7 +244,10 @@ Outputs:
   `README.md`. Verify-mode fails CI when the file drifts from current state,
   same guard as the roadmap README. The report carries one row per leaf
   with: hierarchy, intent (one-line javadoc), trace count, distinct
-  fixtures observed, classification tier (step 3), and roadmap mentions.
+  fixtures observed, highest test tier observed, the test classes that
+  exercised the leaf, and roadmap mentions of the leaf class name.
+  Triage (Covered / Trivial gap / RC-blocker / Defer) is *not* in this
+  report; that lands in the follow-up triage item below.
 - **`--mode=migration` AsciiDoc fragment** for `include::` from the
   migration guide: a "supported schema shapes" list keyed off the leaf
   classification. Consumer-facing wording, internal columns elided.
@@ -264,25 +270,7 @@ The classification trace must be regenerated before regenerating the report
 two-step regeneration in `graphitron-rewrite/docs/workflow.adoc` alongside
 the existing roadmap README regeneration note.
 
-### 3. Classify each leaf into one of four tiers
-
-- **Covered**: sakila has the shape, an `@ExecutionTier` test asserts the
-  generated behaviour, no further action.
-- **Trivial gap**: sakila lacks the shape but a small fixture addition
-  closes it; pre-RC work, gets a sibling Backlog item.
-- **RC-blocker**: substantive work needed (new fixtures, generator changes,
-  or design decisions); gets a sibling Backlog item with appropriate
-  bucket and a `depends-on: [rc-parity-audit-leaf-coverage]` linkage if
-  this item is the source.
-- **Defer**: internal-only distinction (siblings collapse to the same
-  consumer surface), or stub-tagged for a future feature; documented and
-  excluded from RC.
-
-The two-tier vs three-tier output question (must-ship / nice-to-have / post-RC)
-is a design decision left for Spec; the classification above is internal
-bookkeeping, not the final triage shape.
-
-### 4. Extend `directive-support` with a `--mode=migration` render
+### 3. Extend `directive-support` with a `--mode=migration` render
 
 Today the tool prints an internal report. Add a second render mode that
 emits an AsciiDoc fragment suitable for `include::` from the migration
@@ -293,7 +281,7 @@ internal mode (current default) stays unchanged. The roadmap item that owns
 the docs build wiring is `R9` (docs site); this item only owns the
 rendering.
 
-### 5. Author the migration-guide section
+### 4. Author the migration-guide section
 
 Target: `docs/manual/how-to/migrating-from-legacy.adoc`. The section names
 what is supported (driven by both `--mode=migration` fragments: directive
@@ -303,15 +291,27 @@ what is removed (`@notGenerated`, `@multitableReference`, anything else
 surfaced during classification). Consumer-facing wording; no internal "is
 this fixture-covered" detail.
 
+## Follow-up items (spawned by this one)
+
+- **Triage and gap-closure** (separate Backlog item, depends on this).
+  Once `inference-axis-coverage.adoc` is regenerable, classify each leaf
+  as Covered / Trivial gap / RC-blocker / Defer and spawn one sibling
+  Backlog item per RC-blocker. The architect's review pointed out that
+  the table makes this trivial to do once it exists, but hard to do
+  up-front. The triage item's scope should also include cross-referencing
+  the audit table against `LoadBearingGuaranteeAuditTest`'s nine keys
+  (consumer sites that depend on a load-bearing classifier check) so
+  load-bearing keys without execution-tier coverage are caught alongside
+  bare leaf-coverage holes.
+
 ## Done definition
 
 - `TypeRegistry` and `FieldRegistry` replace the bare maps that previously
-  held classification results; all writes go through `classify` /
-  `reclassify` / `synthesize` operations and the underlying maps are
-  private. All known bypass sites
-  (`EntityResolutionBuilder`, `validateNodeTypeIdUniqueness`,
-  `promoteConnectionTypes`, the enrichment `replaceAll` pass) call the
-  appropriate named operation.
+  held classification results; all writes go through `classify` / `enrich`
+  / `demote` / `synthesize` operations and the underlying maps are
+  private. All known bypass sites (`TypeBuilder.buildTypes` enrichment
+  pass, `EntityResolutionBuilder`, `validateNodeTypeIdUniqueness`,
+  `promoteConnectionTypes`) call the appropriate named operation.
 - Classifier-trace emission lives inside the registries, gated on
   `-Dgraphitron.classification.trace=<path>`, with a `-Pleaf-coverage`
   Maven profile that produces the aggregate trace file.
@@ -321,8 +321,8 @@ this fixture-covered" detail.
   report at `roadmap/inference-axis-coverage.adoc` and a
   `--mode=migration` AsciiDoc fragment.
 - Every sealed leaf of `RootField`, `ChildField`, `InputField`,
-  `GraphitronType` has a classification entry in the internal report.
-- Every RC-blocker leaf has a corresponding sibling Backlog item.
+  `GraphitronType` has an entry in the internal report (as data, not
+  triage).
 - `directive-support --mode=migration` renders an AsciiDoc fragment that
   the docs build includes successfully.
 - The migration-guide section ships in `migrating-from-legacy.adoc`.
