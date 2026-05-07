@@ -1,7 +1,7 @@
 ---
 id: R104
 title: "RC parity audit: classify GraphitronField/Type leaves and ship coverage gaps"
-status: Spec
+status: Ready
 bucket: validation
 depends-on: []
 ---
@@ -79,10 +79,11 @@ to do once, hard to do up-front.
   test). Existing javadoc and naming convention (`TableFieldPipelineTest`
   documents "inline `ChildField.TableField` emission", roughly 80% of
   pipeline tests) remain useful for human navigation but are not the
-  machine-readable input. `GraphitronSchemaBuilderTest`'s `ClassificationCase`
-  enum and `VariantCoverageTest`'s `NO_CASE_REQUIRED` already give
-  classification-tier coverage statically; the trace covers everything
-  above classification.
+  machine-readable input. `GraphitronSchemaBuilderTest`'s per-shape
+  `ClassificationCase` enums (a sealed interface implemented by
+  `ColumnFieldCase`, `TableFieldCase`, etc.) and `VariantCoverageTest`'s
+  `NO_CASE_REQUIRED` already give classification-tier coverage
+  statically; the trace covers everything above classification.
 - **Analysis store:** the audit is a multi-source join (trace records ×
   sealed-permits enumeration × roadmap mentions), and the follow-up
   triage item adds at least two more sources (load-bearing keys,
@@ -211,7 +212,13 @@ Trace record fields:
 - `tier`: one of `unit`, `pipeline`, `compilation`, `execution`, or
   `cross-cutting` (the last covers tests carrying `@Tag("cross-cutting")`
   instead of a tier annotation), derived from the test class by 1d.
-  Empty when `test` is empty.
+  Empty when `test` is empty. The four-arm tier ordering used by the
+  post-processor's "highest tier observed" aggregation (step 2) is
+  `unit < pipeline < compilation < execution`; `cross-cutting`
+  records do not participate in the ordering and surface in a
+  separate report column (`cross-cutting: yes/no`) so a leaf
+  exercised only by cross-cutting tests is visibly distinct from a
+  leaf with no test coverage at all.
 
 Implementation note: the existing `BuildWarning` mechanism (`ctx.addWarning`)
 is for *warnings* surfaced to schema authors and has the wrong semantics
@@ -337,9 +344,13 @@ Outputs:
 
 Tier classification per leaf is computed in SQL as the *highest* `tier`
 value across that leaf's trace records (`unit < pipeline < compilation <
-execution`). Records with empty `tier` (classification outside any test,
-e.g. real generator runs) count as classification-tier coverage only.
-`VariantCoverageTest`'s `NO_CASE_REQUIRED` map remains a useful
+execution`). `cross-cutting` records are excluded from the `MAX()` and
+contribute to a separate boolean column (`cross-cutting`) in the report,
+so a leaf exercised only by cross-cutting tests reads as
+`tier: -, cross-cutting: yes` rather than collapsing into the
+no-coverage row. Records with empty `tier` (classification outside any
+test, e.g. real generator runs) count as classification-tier coverage
+only. `VariantCoverageTest`'s `NO_CASE_REQUIRED` map remains a useful
 cross-reference: a leaf there with non-zero trace records still warrants
 scrutiny.
 
@@ -428,7 +439,15 @@ this fixture-covered" detail.
   the docs build includes successfully.
 - The migration-guide section ships in `migrating-from-legacy.adoc`.
 - Verify-mode of `roadmap-tool` fails CI when either the README or the
-  internal coverage report drifts from current state.
+  internal coverage report drifts from current state. The CI workflow
+  runs `mvn -Pleaf-coverage verify` before the verify-mode check so the
+  per-module JSONL traces exist; verify-mode of `leaf-coverage`
+  short-circuits with a clear "no trace files found, skipping" diagnostic
+  (rather than failing) when the glob matches nothing, so a contributor
+  running `roadmap-tool` locally without the profile sees a useful
+  message instead of a confusing drift report. README verify-mode
+  remains unconditional; the coverage report's verify-mode is the only
+  one that depends on a prior trace step.
 
 ## Non-goals
 
