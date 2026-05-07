@@ -484,28 +484,75 @@ violation list R12 §5's pre-step populates. Coercion failures and
 validation violations both flow through R12 §5's ErrorChannel-aware
 catch arm and surface in the typed `errors` slot of the payload.
 
-## Forks open at Spec stage
+### Mixed scalar + input service signatures: per-arg destructuring, per-arg validation
 
-One fork below needs to be settled before Spec → Ready. Three more
-(reachable-closure, nested-input recursion, annotation source v1) are
-implementer-confirmable.
+When a service method has SDL args that mix scalars and input types
+(`submitFilmReview(filmId: Int!, rating: Int!, metadata:
+ReviewMetadataInput!)`), the iteration unit is the *SDL arg*, not a
+synthetic compound. No hoisting:
 
-### Open: mixed scalar + input service signatures
+- **Destructuring shape.** Only SDL `input`-typed args become
+  graphitron records (Layer 1) and trigger Layer 2 `Constructed`
+  bindings. Scalar SDL args stay as `env.getArgument(name)` calls
+  with the raw coerced scalar, exactly as today. The fetcher emits a
+  per-arg local for each Arg-sourced service-method parameter; only
+  the input-typed locals go through `RecordType.fromMap(...)`.
+- **Validator pre-step shape.** The pre-step iterates over each
+  SDL arg independently. One `validator.validate(...)` call per arg.
+  For input-typed args, the validation target is the coerced
+  graphitron record. For scalar args, the target is the raw value
+  (no Jakarta annotations on it; the call is a no-op for built-in
+  scalars and a defensive no-op for any custom scalar with no
+  consumer-attached annotations). Violations from all per-arg calls
+  accumulate before short-circuit.
 
-SDL like
-`submitFilmReview(filmId: Int!, rating: Int!, metadata: ReviewMetadataInput)`
-mixes scalar args with an input arg. The "service signature unchanged"
-claim above implies the emitter destructures only the input arg
-(`metadata`) and passes the scalars through directly, not hoisting all
-three into a synthetic record. Spec must pin:
+Worked example:
 
-- The destructuring shape: only the SDL `input`-typed args become
-  records; scalar args remain `env.getArgument(name)`.
-- Whether the validator pre-step runs against each `Arg`-sourced
-  parameter independently (two `validator.validate(...)` calls in the
-  pre-step block: one against the synthetic-list of scalars, one
-  against the record), or whether mixed signatures get a synthetic
-  compound validation root.
+```graphql
+type Mutation {
+    submitFilmReview(input: SubmitReviewInput!, rating: Int!): FilmReviewPayload
+        @service(...)
+}
+```
+
+with service signature
+`submit(SubmissionMetadata metadata, Integer rating)`:
+
+```java
+// Per-arg coercion + Layer 1 validation (one call per SDL arg)
+SubmitReviewInput in = SubmitReviewInput.fromMap(env.getArgument("input"));
+for (var v : validator.validate(in)) {
+    violations.add(ConstraintViolations.toGraphQLError(v, env, "input"));
+}
+Integer rating = env.getArgument("rating");
+for (var v : validator.validate(rating)) {  // no-op; defensive
+    violations.add(ConstraintViolations.toGraphQLError(v, env, "rating"));
+}
+if (!violations.isEmpty()) return /* dispatch */;
+
+// Layer 2 construction + validation
+SubmissionMetadata metadata = new SubmissionMetadata(in.filmId(), in.submitterId());
+for (var v : validator.validate(metadata)) {
+    violations.add(ConstraintViolations.toGraphQLError(v, env, "input"));
+}
+if (!violations.isEmpty()) return /* dispatch */;
+
+service.submit(metadata, rating);
+```
+
+The Layer 2 `Scalar` binding for `rating` reads from
+`env.getArgument("rating")` directly (it's a per-SDL-arg local); the
+Layer 2 `Constructed` binding for `metadata` reads from `in`'s
+components. The two layers don't merge into a synthetic super-record;
+each SDL arg is its own validation root, and the resolution paths stay
+independent.
+
+This keeps R12 §5's existing per-arg pre-step iteration shape almost
+unchanged — the only difference is that for input-typed args, the
+local that gets validated is the coerced record rather than the raw
+`Map`. For scalar args, nothing changes. R12's
+`validatorPreStep`-emitting code (`TypeFetcherGenerator.java:1326-1359`)
+is the existing implementation point.
 
 ## Forks the implementer can confirm during In Progress
 
