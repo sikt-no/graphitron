@@ -76,6 +76,11 @@ public final class Main {
             if (rc != 0) System.exit(rc);
             return;
         }
+        if ("leaf-coverage".equals(mode)) {
+            int rc = LeafCoverageReport.run(sliceArgs(args, 1));
+            if (rc != 0) System.exit(rc);
+            return;
+        }
         if (args.length < 2) {
             usage();
         }
@@ -105,6 +110,8 @@ public final class Main {
         System.err.println("  render-adoc <roadmap-dir> <output-dir>");
         System.err.println("  directive-support <legacy-directives.graphqls>"
             + " <rewrite-directives.graphqls> <fixture-dir>[:<fixture-dir>...]");
+        System.err.println("  leaf-coverage <root-dir> [--verify] [--mode=migration]"
+            + " [--output=<path>]");
         System.exit(64);
     }
 

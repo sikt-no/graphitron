@@ -19,6 +19,13 @@
         <maven.deploy.skip>true</maven.deploy.skip>
         <version.snakeyaml>2.5</version.snakeyaml>
         <!--
+          Embedded analytical SQL engine for the leaf-coverage post-processor (R104).
+          Pulls a JNI-bundled artifact; the binary covers linux-amd64, linux-arm64,
+          and macOS-arm64 out of the box (the platforms graphitron-rewrite is built on).
+          Roadmap-tool only; never on the production classpath.
+        -->
+        <version.duckdb>1.5.2.1</version.duckdb>
+        <!--
           Default subcommand for `mvn ... exec:java`. Override with
           -Dexec.args="next-id <dir>" or -Dexec.args="create <dir> <slug> [opts]".
           The verify-roadmap-readme execution below pins its own arguments and is
@@ -32,6 +39,12 @@
             <groupId>org.yaml</groupId>
             <artifactId>snakeyaml</artifactId>
             <version>${version.snakeyaml}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.duckdb</groupId>
+            <artifactId>duckdb_jdbc</artifactId>
+            <version>${version.duckdb}</version>
         </dependency>
 
         <dependency>
@@ -66,6 +79,19 @@
                             <arguments>
                                 <argument>verify</argument>
                                 <argument>${project.basedir}/../roadmap</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>verify-leaf-coverage-report</id>
+                        <phase>verify</phase>
+                        <goals><goal>java</goal></goals>
+                        <configuration>
+                            <mainClass>no.sikt.graphitron.roadmap.Main</mainClass>
+                            <arguments>
+                                <argument>leaf-coverage</argument>
+                                <argument>${project.basedir}/..</argument>
+                                <argument>--verify</argument>
                             </arguments>
                         </configuration>
                     </execution>
