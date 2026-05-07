@@ -183,7 +183,11 @@ class ServiceFieldValidationTest {
         ROW_KEYED_PARENT_NO_PK(
             "RowKeyed — parent table has no PK — missing PK error",
             filmTableType(FILM_TABLE_NO_PK),
-            serviceField(new BatchKey.RowKeyed(List.of())),
+            // BatchKey content is irrelevant here — the validator inspects the parent table's
+            // own primaryKeyColumns(); the BatchKey is just present to make the field
+            // structurally valid. Phase A's canonical-constructor invariant on
+            // BatchKey.RowKeyed prevents an empty list at this site.
+            serviceField(new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
             List.of("Field 'Film.externalChild': @service on a table-bound return type requires the " +
                 "parent table 'film' to have a primary key")),
 

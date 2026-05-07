@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.BatchKey;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
@@ -29,7 +30,7 @@ class SplitTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Actor", TestFixtures.tableRef("actor", "ACTOR", "Actor", List.of()), wrapper);
     }
 
-    private static final BatchKey.RowKeyed PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
+    private static final BatchKey.RowKeyed PARENT_BATCH_KEY = new BatchKey.RowKeyed(java.util.List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer")));
 
     // Emitter-level validator messages. Kept inline (rather than read from
     // SplitRowsMethodEmitter.unsupportedReason) so a change to the production string breaks

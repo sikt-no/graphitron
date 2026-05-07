@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.BatchKey;
+import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -29,7 +30,7 @@ class SplitLookupTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
     }
 
-    private static final BatchKey.RowKeyed PARENT_BATCH_KEY = new BatchKey.RowKeyed(List.of());
+    private static final BatchKey.RowKeyed PARENT_BATCH_KEY = new BatchKey.RowKeyed(java.util.List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer")));
 
     // Single-cardinality @splitQuery @lookupKey is rejected at classifier time in
     // FieldBuilder; the emitter-level validator no longer carries a fallback check

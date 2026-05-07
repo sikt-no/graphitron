@@ -1987,55 +1987,113 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void childInterfaceField_emitsParentRecordReadFromEnvSource() {
-        // R36 plan B3: child fetcher reads the parent jOOQ Record from env.getSource() so each
-        // stage-1 branch can reference parent PK values in its WHERE predicate.
+    void childInterfaceField_listForm_emitsOneDataLoaderRegistrationAndOneRowsMethod() {
+        // R102: list-arm child fetcher registers a DataLoader keyed on the parent table's PK
+        // (Row1<Timestamp> here) and delegates to a rows<Field>(keys, env) batch loader. The
+        // main fetcher contains no per-parent env.getSource() read against participant tables;
+        // all parent-side reads happen inside the key-extraction helper exactly once.
         var field = childInterfaceField("FilmActor", "related", true);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
+            filmActorParentTableForList(),
             null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "related").code().toString();
-        assertThat(body)
-            .as("child fetcher reads parent Record from env.getSource()")
-            .contains("parentRecord = (org.jooq.Record) env.getSource()");
+        var fetcher = method(spec, "related").code().toString();
+        assertThat(fetcher)
+            .as("DataLoader name uses tenant + path key, matching every batched fetcher in the codebase")
+            .contains("graphitronContext(env).getTenantId(env)")
+            .contains("env.getExecutionStepInfo().getPath().getKeysOnly()");
+        assertThat(fetcher)
+            .as("Loader value type is List<Record> per parent")
+            .contains("org.dataloader.DataLoader<org.jooq.Row1<java.sql.Timestamp>, java.util.List<org.jooq.Record>>")
+            .contains("DataLoaderFactory.newDataLoader");
+        assertThat(fetcher)
+            .as("Loader.load(key, env) tail with thenApply + exceptionally")
+            .contains("loader.load(key, env)")
+            .contains(".thenApply(payload -> graphql.execution.DataFetcherResult.")
+            .contains(".exceptionally(t -> ");
+        // Exactly one rows method emitted alongside the fetcher.
+        var rowsMethod = method(spec, "rowsRelated");
+        assertThat(rowsMethod).as("paired rows<Field> batch loader exists").isNotNull();
+        // Rows method takes List<RowN<…>> and returns List<List<Record>>.
+        assertThat(rowsMethod.code().toString())
+            .as("rows method emits a parentInput VALUES table and unions per-branch SELECTs")
+            .contains("parentInput")
+            .contains("DSL.values(parentRows)")
+            .contains(".join(parentInput).on(");
     }
 
     @Test
-    void childInterfaceField_emitsParentFkConditionPerBranch() {
-        // R36 plan B3 acceptance test: each branch of the stage-1 UNION ALL carries its own
-        // .where(participant.<fk> = parentRecord.<parent_pk>) predicate. The synthetic fixture
-        // sources both FKs from the parent's single PK column last_update (see
-        // filmActorChildJoinPaths), so each branch reads the same parentRecord column even
-        // though the participant-side FK column differs.
-        var field = childInterfaceField("FilmActor", "related", true);
-        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "related").code().toString();
-        assertThat(body)
-            .as("Film branch's WHERE references stage1 alias and typed parentRecord read of the FK source column")
-            .contains("stage1_Film.FILM_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"last_update\"), java.sql.Timestamp.class))");
-        assertThat(body)
-            .as("Actor branch's WHERE references stage1 alias and typed parentRecord read of the FK source column")
-            .contains("stage1_Actor.ACTOR_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"last_update\"), java.sql.Timestamp.class))");
+    void childInterfaceField_listForm_keyTupleArityMatchesParentPk() {
+        // Single-PK parent collapses to Row1<Timestamp>; composite-PK parent widens to RowN.
+        var singleField = childInterfaceField("FilmActor", "related", true);
+        var singleSpec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            filmActorParentTableForList(), null, List.of(singleField), DEFAULT_OUTPUT_PACKAGE);
+        assertThat(method(singleSpec, "related").code().toString())
+            .contains("org.dataloader.DataLoader<org.jooq.Row1<java.sql.Timestamp>");
+
+        var compositeField = compositePkChildListField();
+        var compositeSpec = TypeFetcherGenerator.generateTypeSpec("Project",
+            compositePkParentTable(), null, List.of(compositeField), DEFAULT_OUTPUT_PACKAGE);
+        assertThat(method(compositeSpec, "items").code().toString())
+            .as("Composite parent PK widens key element to Row2<Integer, Integer>")
+            .contains("org.dataloader.DataLoader<org.jooq.Row2<java.lang.Integer, java.lang.Integer>");
     }
 
     @Test
-    void childUnionField_emitsSameTwoStageStructureAsInterfaceField() {
-        // ChildField.UnionField shares MultiTablePolymorphicEmitter with ChildField.InterfaceField;
-        // body shape is identical apart from the participant-list source. Pin the equivalence so
-        // a future drift in either path fails fast.
-        var field = childUnionField("FilmActor", "related", true);
-        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor", List.of()),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "related").code().toString();
-        assertThat(body).contains("parentRecord = (org.jooq.Record) env.getSource()");
-        assertThat(body).contains(".unionAll(");
-        assertThat(body).contains("stage1_Film.FILM_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"last_update\"), java.sql.Timestamp.class))");
-        assertThat(body).contains("stage1_Actor.ACTOR_ID.eq(parentRecord.get(org.jooq.impl.DSL.name(\"last_update\"), java.sql.Timestamp.class))");
-        assertThat(body).contains("selectFilmForRelated(")
-            .contains("selectActorForRelated(");
+    void childUnionField_listForm_emitsSameDataLoaderShapeAsInterfaceField() {
+        // UnionField shares MultiTablePolymorphicEmitter with InterfaceField; body shape is
+        // identical apart from the participant-list source. Pin the equivalence so a future
+        // drift in either path fails fast.
+        var ifaceSpec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            filmActorParentTableForList(), null,
+            List.of(childInterfaceField("FilmActor", "related", true)), DEFAULT_OUTPUT_PACKAGE);
+        var unionSpec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            filmActorParentTableForList(), null,
+            List.of(childUnionField("FilmActor", "related", true)), DEFAULT_OUTPUT_PACKAGE);
+        var ifaceFetcher = method(ifaceSpec, "related").code().toString();
+        var unionFetcher = method(unionSpec, "related").code().toString();
+        assertThat(unionFetcher).isEqualTo(ifaceFetcher);
+        var ifaceRows = method(ifaceSpec, "rowsRelated").code().toString();
+        var unionRows = method(unionSpec, "rowsRelated").code().toString();
+        assertThat(unionRows).isEqualTo(ifaceRows);
+    }
+
+    @Test
+    void childInterfaceField_listForm_routesParentKeyExtractionThroughBuildRecordParentKeyExtraction() {
+        // Structural pin: the emitted key extraction uses the canonical four-shape helper
+        // (DSL.row(((Record) env.getSource()).get(...))) rather than an inline cast-then-read
+        // path that bypasses the helper. Mirrors the connection-arm assertion below.
+        var listSpec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            filmActorParentTableForList(), null,
+            List.of(childInterfaceField("FilmActor", "related", true)), DEFAULT_OUTPUT_PACKAGE);
+        assertThat(method(listSpec, "related").code().toString())
+            .as("DSL.row(...) is the canonical helper's emit shape")
+            .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row(((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE))");
+
+        var connSpec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
+            filmActorParentTableForBatched(), null,
+            List.of(childInterfaceConnectionField("FilmActor", "relatedConnection", 5)), DEFAULT_OUTPUT_PACKAGE);
+        assertThat(method(connSpec, "relatedConnection").code().toString())
+            .as("Connection arm shares the canonical helper pattern; same key shape")
+            .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row(((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE))");
+    }
+
+    private static ChildField.InterfaceField compositePkChildListField() {
+        var wrapper = new FieldWrapper.List(false, false);
+        var returnType = new ReturnTypeRef.PolymorphicReturnType("ProjectItem", wrapper);
+        var note = compositeFkParticipant("project_note", "PROJECT_NOTE", "ProjectNote", "note_id", "NOTE_ID");
+        var event = compositeFkParticipant("project_event", "PROJECT_EVENT", "ProjectEvent", "event_id", "EVENT_ID");
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("ProjectNote", note, null),
+            new ParticipantRef.TableBound("ProjectEvent", event, null));
+        var parentTable = compositePkParentTable();
+        var parentKey = (no.sikt.graphitron.rewrite.model.BatchKey.RecordParentBatchKey)
+            new no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed(parentTable.primaryKeyColumns());
+        var parentResultType = (no.sikt.graphitron.rewrite.model.GraphitronType.ResultType)
+            new no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType(
+                "Project", null, null, parentTable);
+        return new ChildField.InterfaceField("Project", "items", null,
+            returnType, participants, compositePkParentJoinPaths(),
+            parentKey, parentResultType);
     }
 
     @Test
@@ -2115,9 +2173,10 @@ class TypeFetcherGeneratorTest {
             .contains("org.jooq.Row1<java.sql.Timestamp>")
             .contains("DataLoaderFactory.newDataLoader");
         assertThat(body)
-            .as("Parent PK extraction from env.getSource() — single-column v1")
-            .contains("(org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE")
-            .contains("org.jooq.impl.DSL.row(fk0)");
+            .as("Parent PK extraction delegated to GeneratorUtils.buildRecordParentKeyExtraction "
+                + "(inline DSL.row over env.getSource() reads — no fk0/fk1 locals)")
+            .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row("
+                + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.FILM_ACTOR.LAST_UPDATE))");
         assertThat(body)
             .as("Async tail: thenApply lifts ConnectionResult into DataFetcherResult, exceptionally redacts")
             .contains("loader.load(key, env)")
@@ -2327,12 +2386,11 @@ class TypeFetcherGeneratorTest {
             .as("DataLoader<Row2<Integer, Integer>, ConnectionResult>")
             .contains("org.dataloader.DataLoader<org.jooq.Row2<java.lang.Integer, java.lang.Integer>");
         assertThat(fetcher)
-            .as("two typed parent-PK extractions from env.getSource()")
-            .contains("(org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.ORG_ID")
-            .contains("(org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.PROJECT_ID");
-        assertThat(fetcher)
-            .as("DSL.row(fk0, fk1) constructs the composite key")
-            .contains("org.jooq.impl.DSL.row(fk0, fk1)");
+            .as("Composite parent-PK extraction emits an inline DSL.row over both columns "
+                + "(no fk0/fk1 locals — buildRecordParentKeyExtraction emits a single statement)")
+            .contains("org.jooq.Row2<java.lang.Integer, java.lang.Integer> key = org.jooq.impl.DSL.row("
+                + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.ORG_ID), "
+                + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.Tables.PROJECT.PROJECT_ID))");
     }
 
     @Test

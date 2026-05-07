@@ -158,6 +158,68 @@ class BatchKeyTest {
     }
 
     /**
+     * R102 canonical-constructor invariant: every {@link BatchKey} permit whose semantics require
+     * a non-empty key-column tuple rejects empty input. The six direct permits enforce it on
+     * their {@code parentKeyColumns} component; the three {@link JoinStep.LiftedHop}-delegated
+     * permits inherit the invariant from {@code LiftedHop}'s own canonical-constructor check on
+     * {@code slots}. {@code TableRecord}-keyed permits also require a non-empty key list since
+     * the key tuple shape is the parent's PK.
+     */
+    @Test
+    void rowKeyed_emptyParentKeyColumns_throwsIllegalArgument() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new BatchKey.RowKeyed(List.of()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("RowKeyed");
+    }
+
+    @Test
+    void recordKeyed_emptyParentKeyColumns_throwsIllegalArgument() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new BatchKey.RecordKeyed(List.of()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("RecordKeyed");
+    }
+
+    @Test
+    void mappedRowKeyed_emptyParentKeyColumns_throwsIllegalArgument() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new BatchKey.MappedRowKeyed(List.of()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("MappedRowKeyed");
+    }
+
+    @Test
+    void mappedRecordKeyed_emptyParentKeyColumns_throwsIllegalArgument() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new BatchKey.MappedRecordKeyed(List.of()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("MappedRecordKeyed");
+    }
+
+    @Test
+    void tableRecordKeyed_emptyParentKeyColumns_throwsIllegalArgument() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new BatchKey.TableRecordKeyed(
+                List.of(),
+                no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("TableRecordKeyed");
+    }
+
+    @Test
+    void mappedTableRecordKeyed_emptyParentKeyColumns_throwsIllegalArgument() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new BatchKey.MappedTableRecordKeyed(
+                List.of(),
+                no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("MappedTableRecordKeyed");
+    }
+
+    @Test
+    void liftedHop_emptySlots_throwsIllegalArgument() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                new JoinStep.LiftedHop(FILM_TABLE, List.of(), "alias"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("LiftedHop");
+    }
+
+    /**
      * The sealed switch over {@link BatchKey.RecordParentBatchKey} is exhaustive across the
      * four permits at compile time. This test is a pattern-matching switch with no
      * {@code default} arm: if a future fifth permit is added without updating the switch, the
