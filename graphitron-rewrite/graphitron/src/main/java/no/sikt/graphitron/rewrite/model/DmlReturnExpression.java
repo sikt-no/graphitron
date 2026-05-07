@@ -7,8 +7,7 @@ package no.sikt.graphitron.rewrite.model;
  * each {@link MutationField.DmlTableField} carries it, and INSERT / UPDATE / DELETE / UPSERT
  * emitters read it without defensive checks.
  *
- * <p>Total over the admitted DML return-type set defined by Invariant #14 in
- * {@code graphitron-rewrite/roadmap/mutations.md}:
+ * <p>Total over the admitted DML return-type set defined by Invariant #14:
  * <ul>
  *   <li>{@code ScalarReturnType("ID")}, single — {@link EncodedSingle}</li>
  *   <li>{@code ScalarReturnType("ID")}, list — {@link EncodedList}</li>

@@ -4841,7 +4841,7 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== DML mutation classification (Phase 1 of mutation bodies; see roadmap/mutations.md) =====
+    // ===== DML mutation classification (Invariants #1, #7-#13 — see DmlReturnExpression and FieldBuilder.buildDmlField) =====
     //
     // Rich assertions for the four DML variants: input-shape invariants (one @table arg, no
     // listed input, no @condition, only ColumnField entries inside the input), @lookupKey gates

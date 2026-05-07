@@ -859,7 +859,7 @@ class TypeFetcherGeneratorTest {
 
     // ===== MutationServiceTableField / MutationServiceRecordField =====
     //
-    // Phase 6 of mutations.md: mutation services share buildServiceFetcherCommon with the query
+    // Mutation services share buildServiceFetcherCommon with the query
     // side, so the R12 §3 try/catch wrapper, §5 Jakarta validation pre-step, and §2c
     // resultAssembly success-arm assembly all carry over for free. Tests below assert that
     // the mutation switch arms reach the helper (rather than emitting a stub) and that the
