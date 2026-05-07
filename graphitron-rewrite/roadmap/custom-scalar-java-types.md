@@ -29,197 +29,230 @@ in their SDL. Sikt's own subgraphs *all* use
 so the rewrite is unusable in production without a story for
 extra-spec scalars.
 
-## What graphitron actually needs from a scalar at generate time
+## Design: name the scalar instance, reflect the rest
 
-Just the **Java type** the input record component / service param /
-projection field will use. Nothing else:
+The consumer points at the `public static final GraphQLScalarType`
+constant they want graphitron to use for the scalar:
 
-- The `Coercing` lives in the *consumer's* `RuntimeWiring`-equivalent
-  hook (`Graphitron.buildSchema(Consumer<GraphQLSchema.Builder>)`,
-  per the changelog entry at `81fa607` + follow-ups). Graphitron
-  does not register Coercings, does not depend on
-  `graphql-java-extended-scalars` at runtime, and does not need to
-  know the Coercing's class name. The consumer is already calling
-  `.additionalType(ExtendedScalars.GraphQLBigDecimal)` (or
-  equivalent) on the schema builder; graphitron's emitted types
-  just need to *type-check* against the resulting runtime
-  `Object`.
-- The Java type is enough to drive: input-record component
-  declarations (R94), record canonical-ctor synthesis, service
-  parameter binding (`ArgBindingMap`), `Field<X>` declarations on
-  fetcher row-shape projections, and arg-coercion diagnostics.
+```graphql
+scalar BigDecimal
+    @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+```
 
-## Three resolution sources, in priority order
+At codegen, graphitron:
+
+1. Loads the named class (`graphql.scalars.ExtendedScalars`) off the
+   consumer's compile classpath via the Maven plugin's project
+   classpath elements.
+2. Reads the named static field (`GraphQLBigDecimal`); confirms it
+   is `public static`, not null, and assignable to
+   `graphql.schema.GraphQLScalarType`.
+3. Pulls the `GraphQLScalarType`'s `Coercing` and reflects on
+   `coercing.getClass().getGenericInterfaces()` to recover the
+   `Coercing<I, O>` type parameters. The `I` (input) parameter is
+   the Java type input-record components, service params, and
+   `Field<X>` projections bind to.
+4. Emits `.additionalType(graphql.scalars.ExtendedScalars.GraphQLBigDecimal)`
+   into the synthesized `GraphitronSchema` so the consumer's
+   `Graphitron.buildSchema(...)` hook does not have to wire it.
+
+One reference, no second source of truth. The Java type and the
+runtime `Coercing` come from the same instance the consumer points
+at, so the misconfiguration class my earlier `javaClass:` sketch
+created — "directive says `BigDecimal`, Coercing serializes as
+`BigInteger`" — cannot occur by construction.
+
+## Resolution order
 
 1. **Spec built-ins** (`Int`, `Float`, `String`, `Boolean`, `ID`):
-   the existing hardcoded mapping, lifted into a shared registry.
-   Always wins; `@scalarType` on a spec built-in is a hard error
-   from the LSP / build (the GraphQL spec already defines these).
-2. **`@scalarType(javaClass: "...")` on a SCALAR declaration** in
-   the consumer's SDL: the explicit per-consumer escape. Takes
-   precedence over the convention layer; this is the migration
-   path for any scalar graphitron doesn't recognize by name and the
-   override knob for consumers who want a different Java type than
-   the convention picks (e.g. `BigDecimal` mapped to a domain
-   wrapper).
-3. **graphql-java-extended-scalars convention**: a built-in name →
-   Java-type registry that recognizes the names `extended-scalars`
-   exports (`GraphQLBigDecimal` → `BigDecimal`, `DateTime` →
-   `OffsetDateTime`, `Date` → `LocalDate`, `Time` → `LocalTime`,
-   `BigInteger`, `Long`, `Short`, `Byte`, `Duration`, `UUID`,
-   `URL`, `Object`, etc.). Convention layer; loses to
-   `@scalarType`.
+   resolved through the same reflection path against
+   `graphql.Scalars.GraphQL{Int, Float, String, Boolean, ID}`. Always
+   wins; `@scalarType` on a spec built-in name is a hard validation
+   error (the GraphQL spec already defines these and the runtime
+   already wires them).
+2. **`@scalarType(scalar: "...")` declaration** on the SCALAR: the
+   consumer's explicit reference. Beats the convention layer.
+3. **graphql-java-extended-scalars convention**: a built-in
+   *name → static-field-FQN* table — `GraphQLBigDecimal` →
+   `graphql.scalars.ExtendedScalars.GraphQLBigDecimal`,
+   `DateTime` → `…ExtendedScalars.DateTime`, etc. The table only
+   resolves when the named class is on the consumer's classpath; if
+   the consumer hasn't pulled the artifact, the convention misses
+   and the scalar surfaces unresolved. Same reflection path as the
+   directive.
 
-If none of the three resolves, the field surfaces as
-`UnclassifiedType` with a rejection that names the scalar and points
-at `@scalarType` as the fix. No silent fallback to `Object`.
+Unresolved → hard validation error at codegen with a message
+naming the scalar and pointing at `@scalarType(scalar:)` as the
+fix. No silent fallback to `Object`.
 
-The resolution-order ordering matters: convention loses to explicit
-override so a consumer who imports `extended-scalars` but wants
-`BigDecimal` modeled as their own `Money` wrapper can still get it
-without a fork; spec built-ins win over both because GraphQL itself
-binds them.
+The ordering matters: convention loses to explicit override, so a
+consumer who imports `extended-scalars` but wants `BigDecimal`
+modeled as their own `Money` wrapper just declares
+`@scalarType(scalar: "com.example.Scalars.Money")` and graphitron
+introspects their constant instead. Spec built-ins win over both
+because GraphQL itself binds them.
+
+## Failure modes are validation errors
+
+The reflection path has several ways to fail; all of them are loud
+validation errors at codegen, named by their failure mode:
+
+- **Class not found.** The class named in `scalar:` is not on the
+  consumer's classpath.
+- **Field not found / not public / not static.** Self-explanatory.
+- **Field is null at codegen time.** Static initialization side-effect
+  the consumer must own.
+- **Field is not a `GraphQLScalarType`.** The reference points at
+  something else.
+- **Coercing's type parameters erased to `Object`.** The Coercing
+  is declared as a raw type or as `Coercing<Object, Object>` so the
+  `I` parameter doesn't recover a concrete type. The error names
+  the Coercing's class and instructs the consumer to declare
+  concrete type parameters.
+- **`@scalarType` on a spec built-in.** Hard error per the
+  resolution order above.
+
+Each failure mode produces a typed `Rejection` carrier through the
+existing classifier infrastructure; the SDL author sees one error
+per misconfigured scalar declaration.
+
+Erasure is treated as a *consumer fix*, not a graphitron fallback.
+The original sketch carried a `javaClass:` fallback for this case;
+that's dropped. If erasure becomes a real obstacle in practice
+(some library ships its Coercings raw and the consumer can't fix
+it upstream), we'll reopen with a follow-up item — but the default
+position is "fix the Coercing's type parameters."
+
+## Built-in convention table
+
+Recognized names that resolve via the convention layer when the
+named static-field constants are on the classpath. Both the
+`GraphQL`-prefixed and the bare-name forms map to the same constant
+(`extended-scalars` exposes both styles depending on import idiom):
+
+| SDL scalar name      | Resolves to                                                 |
+|----------------------|-------------------------------------------------------------|
+| `BigDecimal`         | `graphql.scalars.ExtendedScalars.GraphQLBigDecimal`         |
+| `GraphQLBigDecimal`  | `graphql.scalars.ExtendedScalars.GraphQLBigDecimal`         |
+| `BigInteger`         | `graphql.scalars.ExtendedScalars.GraphQLBigInteger`         |
+| `GraphQLBigInteger`  | `graphql.scalars.ExtendedScalars.GraphQLBigInteger`         |
+| `Long`               | `graphql.scalars.ExtendedScalars.GraphQLLong`               |
+| `GraphQLLong`        | `graphql.scalars.ExtendedScalars.GraphQLLong`               |
+| `Short`              | `graphql.scalars.ExtendedScalars.GraphQLShort`              |
+| `GraphQLShort`       | `graphql.scalars.ExtendedScalars.GraphQLShort`              |
+| `Byte`               | `graphql.scalars.ExtendedScalars.GraphQLByte`               |
+| `GraphQLByte`        | `graphql.scalars.ExtendedScalars.GraphQLByte`               |
+| `DateTime`           | `graphql.scalars.ExtendedScalars.DateTime`                  |
+| `Date`               | `graphql.scalars.ExtendedScalars.Date`                      |
+| `Time`               | `graphql.scalars.ExtendedScalars.Time`                      |
+| `LocalTime`          | `graphql.scalars.ExtendedScalars.LocalTime`                 |
+| `LocalDateTime`      | `graphql.scalars.ExtendedScalars.LocalDateTime`             |
+| `Duration`           | `graphql.scalars.ExtendedScalars.Duration`                  |
+| `UUID`               | `graphql.scalars.ExtendedScalars.UUID`                      |
+| `Url`                | `graphql.scalars.ExtendedScalars.Url`                       |
+| `Object`             | `graphql.scalars.ExtendedScalars.Object`                    |
+| `JSON`               | `graphql.scalars.ExtendedScalars.Json`                      |
+| `NonNegativeInt`     | `graphql.scalars.ExtendedScalars.NonNegativeInt`            |
+| `NonNegativeFloat`   | `graphql.scalars.ExtendedScalars.NonNegativeFloat`          |
+| `PositiveInt`        | `graphql.scalars.ExtendedScalars.PositiveInt`               |
+| `PositiveFloat`      | `graphql.scalars.ExtendedScalars.PositiveFloat`             |
+| `NegativeInt`        | `graphql.scalars.ExtendedScalars.NegativeInt`               |
+| `NegativeFloat`      | `graphql.scalars.ExtendedScalars.NegativeFloat`             |
+
+Java types are not pre-baked into the table; the reflection path
+recovers them from the Coercing each time. The convention is
+pure-pointer; the Java side is whatever the named constant
+exposes. Final list locks at Spec time.
 
 ## Directive shape
 
 ```graphql
 """
-Declares the Java type a consumer-provided scalar maps to at
-codegen time. Graphitron uses this for input-record component types
-(@R94), service parameter types, and Field<X> projection types.
+Binds an SDL scalar to a `GraphQLScalarType` constant on the
+consumer's classpath. Graphitron reflects on the constant to
+recover the Java type for input records, service params, and
+Field<X> projections, and registers the constant on the synthesized
+schema so the consumer's buildSchema hook does not have to wire it.
 
-The actual Coercing lives in the consumer's GraphQLSchema.Builder
-hook; graphitron does not register it.
+Hard validation error if the reference does not resolve, the
+constant's Coercing has erased type parameters, or the directive is
+applied to a GraphQL spec built-in.
 """
-directive @scalarType(javaClass: String!) on SCALAR
+directive @scalarType(scalar: String!) on SCALAR
 ```
 
-No `coercing:` attribute. Graphitron has no use for it at codegen,
-and the consumer already wires the Coercing into their schema
-builder hook. Adding it here would duplicate the consumer's
-`additionalType(...)` call and create a class of "directive says X,
-runtime says Y" misconfigurations exactly analogous to the one R96
-removes for `@record`.
-
-`javaClass` is a fully-qualified class name (no `ExternalCodeReference`
-nesting; the `className: "..."` shape that R93 Phase 2 is currently
-migrating *away* from is not the future — `@scalarType` ships in the
-flat-string shape from day one).
-
-## Extended-scalars built-in registry
-
-The full name → Java-type mapping graphitron ships built-in. Drawn
-from `graphql-java-extended-scalars`'s public `ExtendedScalars`
-constants:
-
-| Scalar name        | Java type                     |
-|--------------------|-------------------------------|
-| `GraphQLBigDecimal`| `java.math.BigDecimal`        |
-| `BigDecimal`       | `java.math.BigDecimal`        |
-| `GraphQLBigInteger`| `java.math.BigInteger`        |
-| `BigInteger`       | `java.math.BigInteger`        |
-| `GraphQLLong`      | `java.lang.Long`              |
-| `Long`             | `java.lang.Long`              |
-| `GraphQLShort`     | `java.lang.Short`             |
-| `Short`            | `java.lang.Short`             |
-| `GraphQLByte`      | `java.lang.Byte`              |
-| `Byte`             | `java.lang.Byte`              |
-| `DateTime`         | `java.time.OffsetDateTime`    |
-| `Date`             | `java.time.LocalDate`         |
-| `Time`             | `java.time.OffsetTime`        |
-| `LocalTime`        | `java.time.LocalTime`         |
-| `LocalDateTime`    | `java.time.LocalDateTime`     |
-| `Duration`         | `java.time.Duration`          |
-| `UUID`             | `java.util.UUID`              |
-| `Url`              | `java.net.URL`                |
-| `Object`           | `java.lang.Object`            |
-| `JSON`             | `java.lang.Object`            |
-| `NonNegativeInt`   | `java.lang.Integer`           |
-| `NonNegativeFloat` | `java.lang.Double`            |
-| `PositiveInt`      | `java.lang.Integer`           |
-| `PositiveFloat`    | `java.lang.Double`            |
-| `NegativeInt`      | `java.lang.Integer`           |
-| `NegativeFloat`    | `java.lang.Double`            |
-
-Both the `GraphQL`-prefixed names and the bare names are recognized;
-extended-scalars itself uses both interchangeably depending on
-import style, and consumer SDLs in the wild do too. Final list
-locks at Spec time; the table above is the working draft.
-
-The registry lives next to the existing scalar-handling sites and is
-exposed as a single resolver entry-point (`ScalarTypeResolver` or
-similar). The classifier asks the resolver; emitters consume the
-result. No emitter directly imports the registry maps.
-
-## Misconfiguration risk
-
-A consumer who declares `scalar BigDecimal` and writes
-`@scalarType(javaClass: "java.math.BigInteger")` is asking for two
-different things in two places (their Coercing serializes as
-`BigDecimal`, graphitron generates `BigInteger`-typed accessors).
-Detecting this at codegen would require introspecting the
-consumer's runtime wiring, which graphitron explicitly doesn't do.
-Out of scope. The error surfaces at compile-time on the consumer's
-side as a type mismatch, which is loud enough.
-
-The convention layer handles the common case (recognize the name,
-pick the right type); the override is for the edge case
-(consumer's domain wrapper); the misconfiguration "I overrode but
-my Coercing is wrong" stays the consumer's problem.
-
-## Phasing
-
-### Phase 1: lift the four hardcoded sites into a shared resolver
-
-Extract the spec-built-in mapping (`Int` → `Integer` etc.) into a
-single `ScalarTypeResolver` consulted by `ServiceCatalog`,
-`FieldBuilder`, `RowsMethodShape`, and `ArgBindingMap`. Behavior-
-neutral: the same five names still resolve, anything else still
-surfaces as `UnclassifiedType`. Pure refactor; no SDL change.
-
-### Phase 2: extended-scalars convention layer
-
-Add the built-in name → Java-type registry above. Anything in the
-table now classifies; nothing in the table now-fails-loudly with a
-rejection naming `@scalarType` as the fix. No directive yet — the
-override comes in Phase 3.
-
-### Phase 3: `@scalarType` directive
-
-Declare `directive @scalarType(javaClass: String!) on SCALAR` in
-`directives.graphqls`. Wire the resolver's "explicit override"
-arm. Update LSP completion + diagnostics: completion on the
-`javaClass:` argument should suggest the convention's pick when
-the scalar is in the extended-scalars registry, so consumers see
-"this is what graphitron would pick anyway, click to confirm" and
-the override stays cheap.
-
-### Phase 4: housekeeping
-
-- Migration note in `changelog.md` naming the SHA where the
-  resolver lands and the SHA where the directive lands.
-- `code-generation-triggers.adoc` row for `@scalarType`.
-- Document the resolution order in `docs/README.adoc` (or wherever
-  the scalar story lives post-R9).
+A single argument named `scalar:` — what the SDL author thinks of
+("the scalar I want") rather than how the JVM resolves it ("a
+field on a class"). The string is a fully-qualified Java reference
+to a `public static final GraphQLScalarType`; the `Class.FIELD`
+shape is the only one supported (no factory methods, no dynamic
+construction; out of scope).
 
 ## Out of scope
 
-- **Coercing registration.** The consumer wires Coercings on their
-  `GraphQLSchema.Builder`. Graphitron neither imports
-  `graphql-java-extended-scalars` nor generates Coercing
-  registrations.
-- **A Maven-side scalar mapping configuration.** A pom-level
-  scalar→Java map was the original sketch, but it duplicates
+- **Coercings registered manually by the consumer.** A consumer
+  who has a `GraphQLScalarType` they construct dynamically (factory
+  method, builder pattern, conditional construction) has no
+  `@scalarType` story. They must hoist the construction into a
+  `public static final` constant graphitron can point at. If this
+  becomes a real friction point we'll reopen with a follow-up item;
+  the default position is "expose a constant."
+- **Coercings with erased type parameters.** Validation error per
+  *Failure modes* above. No `javaClass:` fallback.
+- **Maven-side scalar configuration.** A pom-level
+  scalar→Java-type map was the original sketch; it duplicates
   information that lives next to the `scalar X` SDL declaration and
   forks the source-of-truth. SDL-side `@scalarType` keeps the
   declaration in one place; the Maven plugin stays out of it.
 - **Coercion-failure error shape.** R94 already settled
-  `FromMapResult.{Ok | TypeMismatch}` for input-side coercion; this
-  item doesn't change that.
-- **Reflective scalar→type discovery from the runtime wiring.** The
-  generator runs before the consumer's `Graphitron.buildSchema`
-  hook does; introspecting it would require a separate runtime
-  pass and a hard runtime dep we're explicitly avoiding.
+  `FromMapResult.{Ok | TypeMismatch}` for input-side coercion;
+  this item doesn't change that.
+
+## Phasing
+
+### Phase 1: shared scalar resolver + reflection engine
+
+Lift the four hardcoded sites into a single
+`ScalarTypeResolver`. Build the reflection engine that loads a
+`public static final GraphQLScalarType` field off the consumer's
+compile classpath, introspects the Coercing's type parameters, and
+returns a `ScalarBinding(TypeName javaType, String constantFqn)`.
+Behavior-neutral: the resolver still drives only the spec built-ins
+through the existing hardcoded path; reflection engine exists but
+isn't yet wired into name resolution.
+
+### Phase 2: `@scalarType(scalar: "...")` directive
+
+Declare in `directives.graphqls`. Classifier reads. Resolver
+consults directive before convention. Each failure mode from
+*Failure modes* above produces a named typed rejection through the
+existing `Rejection` carrier.
+
+### Phase 3: convention layer
+
+Wire the built-in *name → static-field-FQN* table for
+graphql-java-extended-scalars. Convert the spec built-in tier to
+the same reflection path against `graphql.Scalars.GraphQL{Int,
+Float, String, Boolean, ID}` so the resolver has one code path,
+not two. After this phase the four-site hardcoded mapping is
+fully replaced.
+
+### Phase 4: runtime wiring emit + housekeeping
+
+- Emit `.additionalType(<scalar-fqn>)` into the synthesized
+  `GraphitronSchema` for each resolved scalar (whether convention
+  or directive). Consumer's `Graphitron.buildSchema(...)` hook does
+  not have to wire it.
+- LSP completion on `@scalarType(scalar: |)` for a `scalar X`
+  declaration: suggest the convention-table FQN if the SDL name
+  matches a recognized name; suggest static `GraphQLScalarType`
+  fields off the consumer's classpath otherwise.
+- LSP diagnostics surface the validation errors inline.
+- Migration note in `changelog.md` naming the SHA where Phases 2
+  and 4 land.
+- `code-generation-triggers.adoc` row for `@scalarType`.
+- Document the resolution order in `docs/README.adoc` (or wherever
+  the scalar story lives post-R9).
 
 ## Relation to R94 / R96 / R97 / R98
 
@@ -232,36 +265,46 @@ requires this item to ship.
 
 ## Tests
 
-- `ScalarTypeResolver` unit tests: spec built-ins resolve, extended
-  names resolve, override wins over convention, override on a spec
-  name is a hard error, unknown scalar surfaces a rejection that
-  names the scalar.
+- `ScalarTypeResolver` unit tests, one per failure mode in
+  *Failure modes*: class-not-found, field-not-found,
+  field-not-public-static, field-null, field-not-scalar,
+  Coercing-erased, `@scalarType`-on-spec-built-in.
+- `ScalarTypeResolver` resolution-order tests: directive beats
+  convention, convention beats unresolved, spec built-in beats
+  directive.
 - Pipeline test: a fixture SDL declaring `scalar BigDecimal` (no
-  directive) and using it on an input field generates a record
-  with a `BigDecimal` component.
+  directive, extended-scalars on classpath) generates a record
+  with a `BigDecimal` component and synthesizes
+  `.additionalType(graphql.scalars.ExtendedScalars.GraphQLBigDecimal)`
+  in the schema builder.
 - Pipeline test: a fixture SDL declaring `scalar Money` with
-  `@scalarType(javaClass: "no.sikt.example.Money")` generates a
-  record with a `Money` component.
-- Compilation test: the generated record compiles against a
-  consumer wiring that registers
-  `ExtendedScalars.GraphQLBigDecimal` on the schema builder. (The
-  sakila example currently uses zero custom scalars; this needs a
-  small new fixture in `graphitron-fixtures-codegen` or a dedicated
-  sub-fixture.)
-- LSP test: completion on `@scalarType(javaClass: |)` for a
+  `@scalarType(scalar: "com.example.Scalars.MONEY")` generates a
+  record with `Money` components and synthesizes
+  `.additionalType(com.example.Scalars.MONEY)`.
+- Compilation test: the generated record + synthesized schema
+  compile and instantiate without the consumer's `buildSchema`
+  hook touching the scalar. (The sakila example currently uses
+  zero custom scalars; this needs a small new fixture in
+  `graphitron-fixtures-codegen` or a dedicated sub-fixture.)
+- LSP test: completion on `@scalarType(scalar: |)` for a
   `scalar GraphQLBigDecimal` declaration suggests
-  `java.math.BigDecimal` from the convention table.
+  `graphql.scalars.ExtendedScalars.GraphQLBigDecimal` from the
+  convention table.
 
 ## Risk
 
-Low. Phase 1 is a pure refactor. Phase 2 expands the recognized set
-without breaking anything (names that were `UnclassifiedType` now
-classify). Phase 3 introduces a directive whose only behavioural
-weight is "override this convention pick"; absent the directive,
-behaviour is identical to Phase 2. Phase 4 is docs.
+Low. Phase 1 is a pure refactor. Phase 2 introduces a directive
+whose only behavioural weight is "explicit override"; absent the
+directive, behaviour is identical to Phase 1. Phase 3 expands the
+recognized set without breaking anything (names that previously
+classified as `UnclassifiedType` now resolve, names that previously
+resolved still resolve through the same engine). Phase 4 emits new
+schema-builder calls; the consumer's existing manual
+`.additionalType(...)` calls become redundant but not harmful
+(graphql-java tolerates duplicates).
 
-The one real risk is the convention table's coverage drift over
-time as `graphql-java-extended-scalars` adds scalars; the bound
-graphql-java-extended-scalars version (which graphitron *does not*
-take a runtime dep on, but tracks for the convention layer) is
-recorded in `docs/README.adoc` and bumped via changelog.
+The one drift surface is the convention table's coverage as
+`graphql-java-extended-scalars` adds scalars; the bound version
+(graphitron *does not* take a runtime dep on the artifact, but
+tracks for the convention table) is recorded in `docs/README.adoc`
+and bumped via changelog.
