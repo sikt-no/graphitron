@@ -1,7 +1,7 @@
 ---
 id: R101
 title: "Custom-scalar Java type configuration (extended-scalars built-in)"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 6
 theme: model-cleanup
@@ -15,12 +15,21 @@ generate time: it materializes input-record component types
 (R94), service-call argument types, and `Field<X>` projection types
 without a runtime introspection step. Today the mapping is
 hard-coded to the five spec built-ins (`Int`, `Float`, `String`,
-`Boolean`, `ID`) at four sites:
+`Boolean`, `ID`) at five sites:
 
 - `ServiceCatalog.java:937` (service-method parameter types)
 - `FieldBuilder.java:2783` (fetcher-side scalar projection)
 - `RowsMethodShape.java:71` (row-shape scalar coercion)
-- `ArgBindingMap.java:199` (argMapping diagnostics)
+- `AppliedDirectiveEmitter.java:149-152` (SDL default-value emission
+  via `Scalars.GraphQL{Name}`)
+- `GraphitronSchemaClassGenerator.java:197-201` (load-bearing for
+  Phase 4: this is the *current* authority on which scalars get
+  registered via `.additionalType(Scalars.GraphQLInt)`...).
+
+`ArgBindingMap.java:199` is *not* a Java-type producer — it's
+`GraphQLType` introspection for path-walk error messages — so it's
+not in the migration list, but a follow-up pass should route its
+diagnostic strings through the resolver for consistency.
 
 Anything else surfaces as `UnclassifiedType`. That's a hard wall the
 moment a consumer declares `scalar BigDecimal` or `scalar DateTime`
@@ -210,10 +219,20 @@ construction; out of scope).
 
 ## Phasing
 
+Each phase must leave the build green for *all* consumers, not
+just consumers who haven't reached for the new feature. The
+naive split — directive in one phase, runtime registration in
+another — would let a `@scalarType(...)`-using consumer
+generate a record whose `Field<BigDecimal>` projection compiles
+fine but whose synthesized schema fails to build at startup
+(graphql-java cannot resolve `BigDecimal` against any registered
+type). So the directive and its `additionalType` emit ship in the
+same phase.
+
 ### Phase 1: shared scalar resolver + reflection engine
 
-Lift the four hardcoded sites into a single
-`ScalarTypeResolver`. Build the reflection engine that loads a
+Lift the five hardcoded sites into a single `ScalarTypeResolver`.
+Build the reflection engine that loads a
 `public static final GraphQLScalarType` field off the consumer's
 compile classpath, introspects the Coercing's type parameters, and
 returns a `ScalarBinding(TypeName javaType, String constantFqn)`.
@@ -221,35 +240,57 @@ Behavior-neutral: the resolver still drives only the spec built-ins
 through the existing hardcoded path; reflection engine exists but
 isn't yet wired into name resolution.
 
-### Phase 2: `@scalarType(scalar: "...")` directive
+The resolver's "Coercing's type parameters are not erased to
+`Object`" guarantee carries
+`@LoadBearingClassifierCheck(key = "scalar-resolver.coercing-non-erased")`
+on the producing method. Phase 3's flip lands
+`@DependsOnClassifierCheck` on the three downstream consumers
+(R94's `InputComponent.javaType`, `ServiceCatalog`'s
+`mapToJavaTypeName`, `RowsMethodShape.standardScalarJavaType`) so
+a future relaxation of the erasure check ("fall back to `Object`
+for unknown") becomes a global review event rather than a silent
+regression in the input-record emitter.
 
-Declare in `directives.graphqls`. Classifier reads. Resolver
-consults directive before convention. Each failure mode from
-*Failure modes* above produces a named typed rejection through the
-existing `Rejection` carrier.
+### Phase 2: `@scalarType(scalar: "...")` directive + runtime registration
 
-### Phase 3: convention layer
+Declare `directive @scalarType(scalar: String!) on SCALAR` in
+`directives.graphqls`. Classifier reads. Resolver consults
+directive before convention. Each failure mode from *Failure modes*
+above produces a named typed rejection through the existing
+`Rejection` carrier.
+
+Same phase emits `.additionalType(<scalar-fqn>)` into the
+synthesized `GraphitronSchema` for every directive-resolved scalar,
+so a `@scalarType`-declaring consumer's schema builds end-to-end
+without any manual `.additionalType(...)` wiring on their side.
+This requires retiring the literal block at
+`GraphitronSchemaClassGenerator.java:197-201` and routing all
+scalar registration (spec built-in *and* custom) through the
+resolver — leaving the literal block in place would fork
+source-of-truth between the resolver and the generator.
+
+### Phase 3: convention layer + four-site flip
 
 Wire the built-in *name → static-field-FQN* table for
 graphql-java-extended-scalars. Convert the spec built-in tier to
 the same reflection path against `graphql.Scalars.GraphQL{Int,
 Float, String, Boolean, ID}` so the resolver has one code path,
-not two. After this phase the four-site hardcoded mapping is
-fully replaced.
+not two. Land `@DependsOnClassifierCheck` on the input-record
+emitter, the service-call binder, and `RowsMethodShape`. After
+this phase the five-site hardcoded mapping is fully replaced.
 
-### Phase 4: runtime wiring emit + housekeeping
+### Phase 4: housekeeping
 
-- Emit `.additionalType(<scalar-fqn>)` into the synthesized
-  `GraphitronSchema` for each resolved scalar (whether convention
-  or directive). Consumer's `Graphitron.buildSchema(...)` hook does
-  not have to wire it.
 - LSP completion on `@scalarType(scalar: |)` for a `scalar X`
   declaration: suggest the convention-table FQN if the SDL name
   matches a recognized name; suggest static `GraphQLScalarType`
   fields off the consumer's classpath otherwise.
 - LSP diagnostics surface the validation errors inline.
 - Migration note in `changelog.md` naming the SHA where Phases 2
-  and 4 land.
+  and 3 land, and instructing consumers to *remove* their manual
+  `.additionalType(...)` calls for any scalar graphitron now
+  resolves (graphql-java's `GraphQLSchema.Builder.additionalType`
+  rejects duplicate type names; see Risk).
 - `code-generation-triggers.adoc` row for `@scalarType`.
 - Document the resolution order in `docs/README.adoc` (or wherever
   the scalar story lives post-R9).
@@ -281,11 +322,25 @@ requires this item to ship.
   `@scalarType(scalar: "com.example.Scalars.MONEY")` generates a
   record with `Money` components and synthesizes
   `.additionalType(com.example.Scalars.MONEY)`.
+- **Pipeline test (resolution-order interaction):** a fixture SDL
+  declaring *both* `scalar BigDecimal` (no directive, falls to
+  convention) *and* `scalar Money @scalarType(...)` (directive
+  override) and using both in a single input record's components.
+  Catches a future refactor that accidentally short-circuits one
+  tier of the resolution order — the unit-tier resolver tests
+  cover the resolver in isolation; this is the SDL → emitted-record
+  end-to-end invariant.
 - Compilation test: the generated record + synthesized schema
   compile and instantiate without the consumer's `buildSchema`
   hook touching the scalar. (The sakila example currently uses
   zero custom scalars; this needs a small new fixture in
   `graphitron-fixtures-codegen` or a dedicated sub-fixture.)
+- **`ConventionTableAuditTest`:** when `graphql.scalars.ExtendedScalars`
+  is on the test classpath, reflect on its public static fields
+  and assert every `GraphQLScalarType` constant is covered by the
+  convention table or explicitly excluded (with a reason). Turns
+  the upstream-drift surface called out in *Risk* into a
+  build-time signal.
 - LSP test: completion on `@scalarType(scalar: |)` for a
   `scalar GraphQLBigDecimal` declaration suggests
   `graphql.scalars.ExtendedScalars.GraphQLBigDecimal` from the
@@ -293,18 +348,36 @@ requires this item to ship.
 
 ## Risk
 
-Low. Phase 1 is a pure refactor. Phase 2 introduces a directive
-whose only behavioural weight is "explicit override"; absent the
-directive, behaviour is identical to Phase 1. Phase 3 expands the
-recognized set without breaking anything (names that previously
-classified as `UnclassifiedType` now resolve, names that previously
-resolved still resolve through the same engine). Phase 4 emits new
-schema-builder calls; the consumer's existing manual
-`.additionalType(...)` calls become redundant but not harmful
-(graphql-java tolerates duplicates).
+Low. Phase 1 is a pure refactor. Phase 2 ships the directive
+together with its `additionalType` registration, so a consumer
+who reaches for `@scalarType` gets a schema that builds end-to-end
+in the same release that introduces the directive (no half-state
+where the type resolves but the schema fails to build). Phase 3
+expands the recognized set without breaking anything (names that
+previously classified as `UnclassifiedType` now resolve, names that
+previously resolved still resolve through the same engine).
 
-The one drift surface is the convention table's coverage as
-`graphql-java-extended-scalars` adds scalars; the bound version
+**Duplicate `additionalType` is not idempotent in graphql-java.**
+`GraphQLSchema.Builder.additionalType` rejects duplicate type names
+at build time — a consumer who keeps a manual
+`.additionalType(ExtendedScalars.GraphQLBigDecimal)` call after
+graphitron has registered the same scalar through the resolver
+will see a `SchemaProblem` / type-redefinition error from graphql-
+java, not silent tolerance. Mitigation:
+
+- Phase 2 ships with a smoke test that exercises a consumer
+  schema-build with both graphitron's registration *and* a manual
+  consumer-side `additionalType` for the same scalar, and asserts
+  the failure mode is recognizable (so the release notes can name
+  it precisely).
+- Phase 4's changelog entry instructs consumers to remove the
+  manual call. The migration is mechanical: any `.additionalType(s)`
+  where `s` resolves through graphitron's table or directive is
+  now redundant *and* an error.
+
+The one remaining drift surface is the convention table's coverage
+as `graphql-java-extended-scalars` adds scalars; the bound version
 (graphitron *does not* take a runtime dep on the artifact, but
 tracks for the convention table) is recorded in `docs/README.adoc`
-and bumped via changelog.
+and bumped via changelog. `ConventionTableAuditTest` (see *Tests*)
+reflects this into a build-time check.
