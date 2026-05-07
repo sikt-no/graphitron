@@ -1,7 +1,7 @@
 ---
 id: R102
 title: "Batched key extraction for ChildField.UnionField / ChildField.InterfaceField via BatchKey"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 2
 theme: structural-refactor
