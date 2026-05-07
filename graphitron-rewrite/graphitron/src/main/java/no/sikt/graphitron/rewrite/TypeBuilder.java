@@ -124,51 +124,56 @@ class TypeBuilder {
     // ===== Two-pass type map construction =====
 
     Map<String, GraphitronType> buildTypes() {
-        var result = new LinkedHashMap<String, GraphitronType>();
         ctx.schema.getAllTypesAsList().stream()
             .filter(t -> !t.getName().startsWith("__"))
             .forEach(namedType -> {
                 var gType = classifyType(namedType);
                 if (gType != null) {
-                    result.put(namedType.getName(), gType);
+                    ctx.typeRegistry.classify(namedType.getName(), gType);
                 }
             });
 
-        // Expose the first-pass result so that buildParticipantList can look up TableType entries
-        // during the second pass below.
-        ctx.types = result;
-
-        result.replaceAll((name, type) -> switch (type) {
-            case TableInterfaceType tit   -> enrichTableInterfaceType(tit);
-            case InterfaceType it         -> enrichInterfaceType(it);
-            case UnionType ut             -> enrichUnionType(ut);
-            case TableType ignored        -> type;
-            case NodeType ignored         -> type;
-            case ResultType ignored       -> type;
-            case RootType ignored         -> type;
-            case ErrorType ignored        -> type;
-            case InputType ignored        -> type;
-            case TableInputType ignored   -> type;
-            case ConnectionType ignored   -> type;
-            case EdgeType ignored         -> type;
-            case PageInfoType ignored     -> type;
-            case PlainObjectType ignored  -> type;
-            case no.sikt.graphitron.rewrite.model.GraphitronType.EnumType ignored -> type;
-            case UnclassifiedType ignored -> type;
-        });
+        // Second pass: enrich interface / union variants with their resolved participants.
+        // Snapshot the names so the iteration is independent of registry mutation; the
+        // registry's internal map is the live store.
+        var firstPassNames = List.copyOf(ctx.typeRegistry.entries().keySet());
+        for (var name : firstPassNames) {
+            var type = ctx.typeRegistry.get(name);
+            GraphitronType enriched = switch (type) {
+                case TableInterfaceType tit   -> enrichTableInterfaceType(tit);
+                case InterfaceType it         -> enrichInterfaceType(it);
+                case UnionType ut             -> enrichUnionType(ut);
+                case TableType ignored        -> type;
+                case NodeType ignored         -> type;
+                case ResultType ignored       -> type;
+                case RootType ignored         -> type;
+                case ErrorType ignored        -> type;
+                case InputType ignored        -> type;
+                case TableInputType ignored   -> type;
+                case ConnectionType ignored   -> type;
+                case EdgeType ignored         -> type;
+                case PageInfoType ignored     -> type;
+                case PlainObjectType ignored  -> type;
+                case no.sikt.graphitron.rewrite.model.GraphitronType.EnumType ignored -> type;
+                case UnclassifiedType ignored -> type;
+            };
+            if (enriched != type) {
+                ctx.typeRegistry.enrich(name, enriched);
+            }
+        }
 
         // NodeType typeId uniqueness: two types cannot share a typeId because Query.node(id:)
         // dispatch extracts the typeId prefix and routes to one GraphQL type. Colliding entries
         // demote symmetrically — we can't pick a winner without silently breaking the loser's
         // issued IDs, which would violate the durability invariant.
-        validateNodeTypeIdUniqueness(result);
+        validateNodeTypeIdUniqueness(ctx.typeRegistry);
 
-        return result;
+        return ctx.typeRegistry.entries();
     }
 
-    private static void validateNodeTypeIdUniqueness(Map<String, GraphitronType> types) {
+    private static void validateNodeTypeIdUniqueness(TypeRegistry registry) {
         var byTypeId = new LinkedHashMap<String, List<NodeType>>();
-        for (var type : types.values()) {
+        for (var type : registry.entries().values()) {
             if (type instanceof NodeType nt) {
                 byTypeId.computeIfAbsent(nt.typeId(), k -> new ArrayList<>()).add(nt);
             }
@@ -179,7 +184,7 @@ class TypeBuilder {
             List<String> colliding = entry.getValue().stream().map(NodeType::name).sorted().toList();
             String others = String.join(", ", colliding);
             for (var nt : entry.getValue()) {
-                types.put(nt.name(), new UnclassifiedType(nt.name(), nt.location(),
+                registry.demote(nt.name(), new UnclassifiedType(nt.name(), nt.location(),
                     Rejection.structural("typeId '" + typeId + "' is declared on multiple types (" + others
                     + ") — Query.node dispatch would be nondeterministic; pick one via @node(typeId:)")));
             }

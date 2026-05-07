@@ -177,7 +177,7 @@ public class GraphitronSchemaBuilder {
         var svc = new ServiceCatalog(bctx);
         bctx.svc = svc;
         var typeBuilder = new TypeBuilder(bctx, svc);
-        bctx.types = typeBuilder.buildTypes();
+        typeBuilder.buildTypes();
         return bctx;
     }
 
@@ -185,8 +185,7 @@ public class GraphitronSchemaBuilder {
 
     private static BuildResult buildSchema(BuildContext ctx, TypeBuilder typeBuilder, FieldBuilder fieldBuilder) {
         validateDirectiveSchema(ctx);
-        ctx.types = typeBuilder.buildTypes();
-        var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
+        typeBuilder.buildTypes();
         ctx.schema.getAllTypesAsList().stream()
             .filter(t -> t instanceof GraphQLObjectType && !t.getName().startsWith("__"))
             .map(t -> (GraphQLObjectType) t)
@@ -200,7 +199,7 @@ public class GraphitronSchemaBuilder {
                 if (parentType instanceof no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType) return;
                 Class<?> parentBackingClass = typeBuilder.recordBackingClasses().get(objType.getName());
                 objType.getFieldDefinitions().forEach(fieldDef ->
-                    fields.put(
+                    ctx.fieldRegistry.classify(
                         FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()),
                         fieldBuilder.classifyField(fieldDef, objType.getName(), parentType, parentBackingClass)));
             });
@@ -210,9 +209,9 @@ public class GraphitronSchemaBuilder {
         // rule to ErrorChannel.mappingsConstantName so the resolved name lands on the carrier
         // before the emitter runs. Pass-through for the common case (every payload class has at
         // most one channel shape).
-        var dedupedFields = MappingsConstantNameDedup.apply(fields);
+        var dedupedFields = MappingsConstantNameDedup.apply(ctx.fieldRegistry.entries());
         Map<String, EntityResolution> entitiesByType =
-            EntityResolutionBuilder.build(ctx.types, dedupedFields, rebuiltAssembled, ctx::addWarning);
+            EntityResolutionBuilder.build(ctx.typeRegistry, dedupedFields, rebuiltAssembled, ctx::addWarning);
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings());
         return new BuildResult(model, rebuiltAssembled);
@@ -370,25 +369,43 @@ public class GraphitronSchemaBuilder {
                 pageInfoShareable |= promotion.shareable();
                 var connSchema = promotion.connectionSchemaType();
                 var edgeSchema = promotion.edgeSchemaType();
-                ctx.types.put(promotion.connectionName(), new ConnectionType(
+                // Directive-driven connections: name does not exist in the SDL → synthesize.
+                // Structural connections: SDL declares the Connection / Edge object types with
+                // no domain directive, so the first pass classifies them as PlainObjectType;
+                // promotion replaces that with the typed ConnectionType / EdgeType (an enrich).
+                var connectionType = new ConnectionType(
                     promotion.connectionName(), null,
                     promotion.elementTypeName(), promotion.edgeName(),
-                    promotion.itemNullable(), promotion.shareable(), connSchema));
-                ctx.types.put(promotion.edgeName(), new EdgeType(
+                    promotion.itemNullable(), promotion.shareable(), connSchema);
+                if (ctx.typeRegistry.contains(promotion.connectionName())) {
+                    ctx.typeRegistry.enrich(promotion.connectionName(), connectionType);
+                } else {
+                    ctx.typeRegistry.synthesize(promotion.connectionName(), connectionType);
+                }
+                var edgeType = new EdgeType(
                     promotion.edgeName(), null,
                     promotion.elementTypeName(), promotion.itemNullable(),
-                    promotion.shareable(), edgeSchema));
+                    promotion.shareable(), edgeSchema);
+                if (ctx.typeRegistry.contains(promotion.edgeName())) {
+                    ctx.typeRegistry.enrich(promotion.edgeName(), edgeType);
+                } else {
+                    ctx.typeRegistry.synthesize(promotion.edgeName(), edgeType);
+                }
             }
         }
         if (anyConnectionSynthesised
                 && ctx.schema.getType("PageInfo") == null
                 && !(ctx.types.get("PageInfo") instanceof PageInfoType)) {
-            ctx.types.put("PageInfo", new PageInfoType(
+            ctx.typeRegistry.synthesize("PageInfo", new PageInfoType(
                 "PageInfo", null, pageInfoShareable, buildSynthesisedPageInfo(pageInfoShareable)));
         } else if (ctx.schema.getType("PageInfo") instanceof GraphQLObjectType pageInfoObj
                 && !(ctx.types.get("PageInfo") instanceof PageInfoType)) {
             boolean shareable = pageInfoObj.hasAppliedDirective("shareable");
-            ctx.types.put("PageInfo", new PageInfoType(
+            // SDL-declared PageInfo: first pass classified it as PlainObjectType (no domain
+            // directive). Connection promotion replaces that with PageInfoType so the
+            // connection-emitter can pick up the shareable flag and SDL-derived schema form.
+            // Structurally an enrich; the synthesise arm above handles the no-SDL case.
+            ctx.typeRegistry.enrich("PageInfo", new PageInfoType(
                 "PageInfo", null, shareable, pageInfoObj));
         }
         return rewrites;

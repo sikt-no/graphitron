@@ -131,10 +131,30 @@ class BuildContext {
     final JooqCatalog catalog;
     final RewriteContext ctx;
     /**
-     * Populated by {@link TypeBuilder#buildTypes()} at the end of its first pass.
-     * All accesses after that point are safe; nothing reads it before it is set.
+     * Type-axis classification registry. {@link TypeBuilder#buildTypes()} populates it via
+     * {@link TypeRegistry#classify}, {@link TypeRegistry#enrich}, {@link TypeRegistry#demote},
+     * and {@link TypeRegistry#synthesize} during the first build pass; downstream code reads
+     * via {@link TypeRegistry#get} / {@link TypeRegistry#entries}. Replaces the previously bare
+     * {@code Map<String, GraphitronType> types} field; the backing map is private so any new
+     * write site has to go through one of the four named operations (visible in code review).
      */
-    Map<String, GraphitronType> types;
+    final TypeRegistry typeRegistry = new TypeRegistry();
+    /**
+     * Field-axis classification registry. {@code GraphitronSchemaBuilder.buildSchema} routes
+     * output-field writes through {@link FieldRegistry#classify}; every call site of
+     * {@link #classifyInputField} also notifies via {@link FieldRegistry#classifyInput} for
+     * trace emission only (input fields are stored embedded in their parent type, not in a
+     * central map).
+     */
+    final FieldRegistry fieldRegistry = new FieldRegistry();
+    /**
+     * Live, read-only view of {@link #typeRegistry}. Reads delegate to the registry's
+     * backing map and reflect any subsequent {@code classify} / {@code enrich} / {@code demote}
+     * / {@code synthesize} calls. Mutating operations on this map throw
+     * {@link UnsupportedOperationException} — the only path to update classifications is the
+     * registry itself.
+     */
+    final Map<String, GraphitronType> types = typeRegistry.entries();
     /**
      * Set by {@link GraphitronSchemaBuilder} immediately after constructing {@link ServiceCatalog}.
      * Used by {@link #resolveConditionRef} for condition-join method reflection.
@@ -1064,6 +1084,19 @@ class BuildContext {
      * <p>{@code expandingTypes} guards against circular plain-input nesting; callers start
      * with an empty set.
      */
+    InputFieldResolution classifyInputField(
+            GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable,
+            Set<String> expandingTypes, List<String> errors) {
+        var resolution = classifyInputFieldInternal(field, parentTypeName, resolvedTable, expandingTypes, errors);
+        // Trace-only: input fields are stored embedded in their parent type rather than in a
+        // central map, so the registry doesn't own their persistence; this is the canonical
+        // emission point.
+        fieldRegistry.classifyInput(parentTypeName, field.getName(),
+            field.getDefinition() != null ? field.getDefinition().getSourceLocation() : null,
+            resolution);
+        return resolution;
+    }
+
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "nodeid-fk.direct-fk-keys-match",
         reliesOn = "The @nodeId FK-target arms construct InputField.ColumnReferenceField /"
@@ -1071,7 +1104,7 @@ class BuildContext {
             + " The TranslatedFk arm routes to InputFieldResolution.Unresolved with a deferred-emission"
             + " hint so emitter consumers (walkInputFieldConditions → implicit body params) never see"
             + " a JOIN-with-translation shape they cannot bind directly.")
-    InputFieldResolution classifyInputField(
+    private InputFieldResolution classifyInputFieldInternal(
             GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable,
             Set<String> expandingTypes, List<String> errors) {
         String name = field.getName();
