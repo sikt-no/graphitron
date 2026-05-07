@@ -100,8 +100,8 @@ public class GraphQLRewriteGenerator {
     public void validate() {
         var bundle = GraphitronSchemaBuilder.buildBundle(loadAttributedRegistry(), ctx);
         var schema = bundle.model();
-        logWarnings(schema, ctx.basedir());
-        var errors = validateAndLogErrors(schema, ctx.basedir());
+        logWarnings(schema);
+        var errors = validateAndLogErrors(schema);
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }
@@ -137,9 +137,9 @@ public class GraphQLRewriteGenerator {
         var assembled = bundle.assembled();
         boolean federationLink = bundle.federationLink();
 
-        logWarnings(schema, ctx.basedir());
+        logWarnings(schema);
 
-        var errors = validateAndLogErrors(schema, ctx.basedir());
+        var errors = validateAndLogErrors(schema);
         if (!errors.isEmpty()) {
             throw new ValidationFailedException(errors);
         }
@@ -218,38 +218,42 @@ public class GraphQLRewriteGenerator {
         }
     }
 
-    private static void logWarnings(GraphitronSchema schema, Path basedir) {
+    private static void logWarnings(GraphitronSchema schema) {
         schema.warnings().forEach(w -> {
             var loc = w.location();
             if (loc != null) {
-                LOGGER.warn("{}:{}:{}: warning: {}", relativiseSourceName(loc.getSourceName(), basedir), loc.getLine(), loc.getColumn(), w.message());
+                LOGGER.warn("{}:{}:{}: warning: {}", relativiseSourceName(loc.getSourceName()), loc.getLine(), loc.getColumn(), w.message());
             } else {
                 LOGGER.warn("warning: {}", w.message());
             }
         });
     }
 
-    private static List<ValidationError> validateAndLogErrors(GraphitronSchema schema, Path basedir) {
+    private static List<ValidationError> validateAndLogErrors(GraphitronSchema schema) {
         var errors = new GraphitronSchemaValidator().validate(schema);
         errors.forEach(e -> {
             var loc = e.location();
-            String kindPrefix = "[" + e.kind().displayName() + "] ";
+            String label = e.kind().messageLabel();
             if (loc != null) {
-                LOGGER.error("{}:{}:{}: error: {}{}", relativiseSourceName(loc.getSourceName(), basedir), loc.getLine(), loc.getColumn(), kindPrefix, e.message());
+                LOGGER.error("{}:{}:{}: {}: {}", relativiseSourceName(loc.getSourceName()), loc.getLine(), loc.getColumn(), label, e.message());
             } else {
-                LOGGER.error("error: {}{}", kindPrefix, e.message());
+                LOGGER.error("{}: {}", label, e.message());
             }
         });
         return errors;
     }
 
     /**
-     * Relativise an SDL source path against the Maven project's basedir so build logs show
-     * 'src/main/resources/schema/foo.graphqls' rather than the full absolute path. Falls back to
-     * the original string when the source is null, not absolute, or sits outside basedir (where
-     * relativising would yield a hard-to-read '../...' path).
+     * Relativise an SDL source path against the user's invocation directory so build logs show
+     * 'opptak-subgraph/src/main/resources/schema/foo.graphqls' (when {@code mvn} is run from the
+     * multi-module root) or 'src/main/resources/schema/foo.graphqls' (when run from the module
+     * itself). Anchored on {@code user.dir} rather than the per-module {@code basedir} so the
+     * printed path is always navigable from the shell that produced it; the per-module basedir
+     * gives the wrong answer for reactor builds invoked from the parent. Falls back to the
+     * original string when the source is null, not absolute, or sits outside the working
+     * directory (where relativising would yield a hard-to-read '../...' path).
      */
-    private static String relativiseSourceName(String sourceName, Path basedir) {
+    private static String relativiseSourceName(String sourceName) {
         if (sourceName == null) return null;
         Path src;
         try {
@@ -258,7 +262,7 @@ public class GraphQLRewriteGenerator {
             return sourceName;
         }
         if (!src.isAbsolute()) return sourceName;
-        Path base = basedir.toAbsolutePath().normalize();
+        Path base = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
         Path abs = src.normalize();
         if (!abs.startsWith(base)) return sourceName;
         return base.relativize(abs).toString();

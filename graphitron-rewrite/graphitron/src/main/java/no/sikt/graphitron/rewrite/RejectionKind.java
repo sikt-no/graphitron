@@ -50,10 +50,24 @@ public enum RejectionKind {
     }
 
     /**
-     * Kebab-case form for the {@code [<kind>] <message>} log prefix emitted by
-     * {@code GraphitronSchemaValidator} and consumers of validator output.
+     * Kebab-case form, used in compact aggregations like the watch formatter's per-error tag and
+     * its summary line ({@code "3 author-error, 1 deferred"}).
      */
     public String displayName() {
         return name().toLowerCase().replace('_', '-');
+    }
+
+    /**
+     * Sentence-cased label for the {@code <label>: <message>} prefix in single-line gcc-style
+     * validator output ({@code "file:line:col: Author error: <msg>"}). Replaces the older
+     * {@code "error: [<kebab>]"} prefix, which doubled the SLF4J/Maven {@code [ERROR]} level and
+     * read as a tag rather than a sentence.
+     */
+    public String messageLabel() {
+        return switch (this) {
+            case AUTHOR_ERROR   -> "Author error";
+            case INVALID_SCHEMA -> "Invalid schema";
+            case DEFERRED       -> "Deferred";
+        };
     }
 }
