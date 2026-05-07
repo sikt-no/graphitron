@@ -216,6 +216,12 @@ record InputComponent(
     TypeName javaType,                      // e.g. ClassName.get("java.lang", "Integer")
     boolean nullable                        // SDL `!` → false
 )
+// `javaType` population is delegated to whatever scalar-resolution
+// mechanism is current — today, the four-site hardcoded spec-built-in
+// mapping (`Int` → `Integer`, etc.); post-R101, the `ScalarTypeResolver`.
+// `InputRecordShape` is opaque about the derivation; an SDL field whose
+// scalar doesn't classify surfaces as `UnclassifiedField` per the
+// existing fail-mode and never reaches the input-record emitter.
 
 // Field-level — owned by FieldBuilder.buildServiceField (or successor),
 // one per @service callsite
@@ -788,6 +794,16 @@ following invariants the emitters rely on; emitters wear
   permit), not a `Map` or scalar. Producer: phase 2's wiring. Consumer:
   R12 §5's pre-step (so `getPropertyPath()` returns SDL-named
   segments for `ConstraintViolations.toGraphQLError`).
+
+R101 will land `@DependsOnClassifierCheck(key = "scalar-resolver.coercing-non-erased")`
+on the input-record emitter when the scalar resolver replaces the
+hardcoded mapping. The contract: `InputComponent.javaType` is the
+concrete `I` type parameter recovered from the scalar's
+`Coercing<I, O>`, never `Object` from a raw / erased Coercing. A
+future relaxation of that check ("fall back to `Object` for
+unknown") would silently break the input-record emitter's
+component-type assumption; the annotation pair turns the
+relaxation into a global review event per the principle.
 
 `LoadBearingGuaranteeAuditTest` picks up orphans automatically.
 
