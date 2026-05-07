@@ -1613,7 +1613,11 @@ public class TypeFetcherGenerator {
         var arrayList = ClassName.get("java.util", "ArrayList");
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var hashSet = ClassName.get("java.util", "HashSet");
-        var rowClass = ClassName.get("org.jooq", "Row");
+        // RowN is the right erased element type: DSL.row(Field<?>...) returns RowN, and
+        // DSL.values(RowN...) is the matching varargs overload. Using the parent Row would
+        // produce Row[], which has no DSL.values overload (varargs requires RowN[] or one
+        // of the typed Row1<T1>...Row22 forms).
+        var rowClass = ClassName.get("org.jooq", "RowN");
         var tableClass = ClassName.get("org.jooq", "Table");
         var bindings = tia.fieldBindings();
 
@@ -1644,7 +1648,7 @@ public class TypeFetcherGenerator {
         // not expressions.
         postInGuard.addStatement("$T<$T> vRows = new $T<>()",
             ClassName.get(List.class), rowClass, arrayList);
-        postInGuard.beginControlFlow("for (var row : in)");
+        postInGuard.beginControlFlow("for ($T<?, ?> row : in)", MAP);
         postInGuard.addStatement("$T<$T<?>> cells = new $T<>()",
             ClassName.get(List.class), fieldClass, arrayList);
         for (var b : bindings) {
@@ -1693,7 +1697,7 @@ public class TypeFetcherGenerator {
         lookupKeyTuple.add(")");
         postInGuard.addStatement("$T<$T<Object>> seenKeys = new $T<>()",
             hashSet, ClassName.get(List.class), hashSet);
-        postInGuard.beginControlFlow("for (var row : in)")
+        postInGuard.beginControlFlow("for ($T<?, ?> row : in)", MAP)
             .addStatement("seenKeys.add($L)", lookupKeyTuple.build())
             .endControlFlow();
         postInGuard.beginControlFlow("if (seenKeys.size() != in.size())")
