@@ -1637,18 +1637,30 @@ public class TypeFetcherGenerator {
                 .endControlFlow();
         }
 
-        // Build per-row v-table cells via stream, mirroring the column-name walk above so the
-        // cell-positions line up by construction. DSL.row(Field<?>...) packages the cells; the
-        // final List<Row> drives DSL.values(Row...) and the v-table alias.
-        postInGuard.addStatement("$T<$T> vRows = in.stream().map(row -> {\n"
-                + "    $T<$T<?>> cells = new $T<>();\n"
-                + "$L"
-                + "    return $T.row(cells.toArray(new $T<?>[0]));\n"
-                + "}).toList()",
-            ClassName.get(List.class), rowClass,
-            ClassName.get(List.class), fieldClass, arrayList,
-            buildBulkUpdateCellAdds(tia, tablesOnly, tableRef),
-            DSL, fieldClass);
+        // Build per-row v-table cells imperatively, mirroring the column-name walk above so
+        // the cell positions line up by construction. DSL.row(Field<?>...) packages the cells;
+        // the final List<Row> drives DSL.values(Row...) and the v-table alias. Imperative loop
+        // (rather than stream) because the firstKeys-conditional cell adds are control-flow,
+        // not expressions.
+        postInGuard.addStatement("$T<$T> vRows = new $T<>()",
+            ClassName.get(List.class), rowClass, arrayList);
+        postInGuard.beginControlFlow("for (var row : in)");
+        postInGuard.addStatement("$T<$T<?>> cells = new $T<>()",
+            ClassName.get(List.class), fieldClass, arrayList);
+        for (var b : bindings) {
+            postInGuard.addStatement("cells.add($T.val(row.get($S), $T.$L.$L.getDataType()))",
+                DSL, b.fieldName(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), b.targetColumn().javaName());
+        }
+        for (var cf : tia.setFields()) {
+            postInGuard.beginControlFlow("if (firstKeys.contains($S))", cf.name())
+                .addStatement("cells.add($T.val(row.get($S), $T.$L.$L.getDataType()))",
+                    DSL, cf.name(),
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
+                .endControlFlow();
+        }
+        postInGuard.addStatement("vRows.add($T.row(cells.toArray(new $T<?>[0])))", DSL, fieldClass);
+        postInGuard.endControlFlow();
         postInGuard.addStatement("$T<?> v = $T.values(vRows.toArray(new $T[0])).as($S, vColNames.toArray(new String[0]))",
             tableClass, DSL, rowClass, "v");
 
@@ -1724,32 +1736,6 @@ public class TypeFetcherGenerator {
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
             outputPackage, dmlChain, postDslGuard, postInGuard.build(), tia.list());
-    }
-
-    /**
-     * Per-row v-table cell builder for bulk UPDATE: emits {@code cells.add(DSL.val(...))} lines
-     * for each lookup-key (unconditional) and each {@code firstKeys}-conditional set-field.
-     * Order matches the {@code vColNames} walk in {@link #buildBulkUpdateFetcher}, so cell
-     * positions line up by construction.
-     */
-    private static CodeBlock buildBulkUpdateCellAdds(
-            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
-            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
-        var b = CodeBlock.builder().indent();
-        for (var binding : tia.fieldBindings()) {
-            b.addStatement("cells.add($T.val(row.get($S), $T.$L.$L.getDataType()))",
-                DSL, binding.fieldName(),
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
-        }
-        for (var cf : tia.setFields()) {
-            b.beginControlFlow("if (firstKeys.contains($S))", cf.name())
-                .addStatement("cells.add($T.val(row.get($S), $T.$L.$L.getDataType()))",
-                    DSL, cf.name(),
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
-                .endControlFlow();
-        }
-        b.unindent();
-        return b.build();
     }
 
     /**
