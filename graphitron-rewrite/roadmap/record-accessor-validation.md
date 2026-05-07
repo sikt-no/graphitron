@@ -1,7 +1,7 @@
 ---
 id: R88
 title: "Validate `@record` accessor resolution against backing class at classify time"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 1
 theme: structural-refactor
@@ -38,11 +38,11 @@ A first-pass spec carried (a) a `NotApplicable` arm on `AccessorResolution` so t
 
 - **Per-arg injection in the emitter** uses `Method.getParameters()` for argument names, requiring the backing class to be compiled with `-parameters`. The spec contemplated threading SDL argument names through the field arm, but per the spec's own "raise a Spec amendment rather than widen the threading ad hoc" clause, the parameter-name fallback is the lighter route. If `-parameters` is absent on a candidate method, `methodCallExpr` throws at emit time with a clear error, surfacing the case rather than producing silently-broken code.
 
-### Phase E — Rework: tighten accessor slot to `Resolved`; route `Rejected` through `UnclassifiedField`
+### Phase E — In progress: tighten accessor slot to `Resolved`; route `Rejected` through `UnclassifiedField`
 
-In-review feedback flagged the Phase B defensive fallback (the `propertyOrRecordValue` tail kept the pre-R88 `toCamelCase + "get" + capitalize` heuristic as a runtime fallback for `null` or `Rejected` accessors) as a regression on the spec's whole point. `GraphQLRewriteGenerator.generate()` calls `validateAndLogErrors` before any emit, so in production the fallback is unreachable; it exists only to keep test fixtures that bypass `validate()` deterministic, which is precisely "fallbacks for scenarios that can't happen". Worse, the emitter's `@DependsOnClassifierCheck.reliesOn` claim ("Reads pre-resolved `AccessorResolution.Resolved.method() / .field()` unconditionally") is materially false while the fallback lives — the audit-tier link passes, but the documented load-bearing guarantee no longer holds.
+Phase B carried a defensive fallback: when the accessor slot was `null` or `Rejected`, `FetcherEmitter.propertyOrRecordValue` fell back to the pre-R88 `toCamelCase + "get" + capitalize` heuristic. `GraphQLRewriteGenerator.generate()` calls `validateAndLogErrors` before any emit, so in production the fallback is unreachable; it exists only to keep test fixtures that bypass `validate()` deterministic, which is precisely the "fallbacks for scenarios that can't happen" smell. The emitter's `@DependsOnClassifierCheck.reliesOn` claim ("Reads pre-resolved `AccessorResolution.Resolved.method() / .field()` unconditionally") is materially false while the fallback lives — the audit-tier link passes, but the documented load-bearing guarantee does not hold.
 
-The deeper bug Phase B exposed is a typing weakness: the accessor slot on `PropertyField` / `RecordField` is `AccessorResolution` (the union, including `Rejected`), so the emitter has to handle non-`Resolved` values at all, so a fallback looks necessary. Phase E removes the type weakness; the fallback then has nowhere to live.
+The root cause is a typing weakness: the accessor slot on `PropertyField` / `RecordField` is `AccessorResolution` (the union, including `Rejected`), so the emitter has to handle non-`Resolved` values, so a fallback looks necessary. Phase E removes the type weakness; the fallback then has nowhere to live.
 
 **Classifier (`FieldBuilder`).** When `ClassAccessorResolver.resolve()` returns `Rejected`, do **not** construct a `PropertyField` / `RecordField` with `accessor = Rejected`. Construct an `UnclassifiedField(Rejection.structural(rejected.reason()))` instead, mirroring the structural-rejection routing the spec called for at line 17 ("propagate `Rejected` through `UnclassifiedField`") and matching every other classify-time failure shape. The accessor-rejection reason flows into the same diagnostic surface the existing `UnclassifiedField` arms already use.
 
