@@ -78,15 +78,23 @@ to do once, hard to do up-front.
   classification-tier coverage statically; the trace covers everything
   above classification.
 - **Analysis store:** the audit is a multi-source join (trace records ×
-  sealed-permits enumeration × roadmap mentions, with more sources to
-  come from the follow-up triage item). The post-processor uses
-  embedded DuckDB to query across these rather than imperative
-  aggregation in Java. DuckDB reads the JSONL trace directly via
-  `read_json_auto`; permits and roadmap mentions are parsed in Java and
-  inserted as tables. Renders are SQL-result-to-AsciiDoc. The persisted
-  `.duckdb` file is a browsable artefact for ad-hoc auditor queries.
-  Generator-side stays JSONL: append-only emission from many forked
-  JVMs is naturally lock-free, and we avoid pulling JDBC into the
+  sealed-permits enumeration × roadmap mentions), and the follow-up
+  triage item adds at least two more sources (load-bearing keys,
+  fixture-tier metadata) that join on `leaf` without changing the
+  aggregation shape. The post-processor uses embedded DuckDB so new
+  sources land as new staged tables joined into existing queries,
+  rather than as new imperative aggregators in Java. The justification
+  is extensibility under known follow-on data, not data scale (the
+  current data fits in memory trivially). DuckDB is in-process and
+  ephemeral: `read_json_auto` reads the JSONL trace directly, permits
+  and roadmap mentions are inserted into in-memory tables, the queries
+  run, the connection closes. No persisted `.duckdb` file: an auditor
+  who wants ad-hoc pivots can open the JSONL trace itself with the
+  `duckdb` CLI (`duckdb -c "SELECT ... FROM read_json_auto('...')"`),
+  which avoids carrying a staleness vector. SQL does joins, filters,
+  and aggregates; Java does AsciiDoc shaping; the boundary stays
+  there. Generator-side stays JSONL: append-only emission from forked
+  test JVMs is naturally lock-free, and JDBC stays out of the
   production classpath.
 
 ## Phase B scope (this item)
@@ -198,10 +206,16 @@ Touch points discovered in research:
 #### 1c. Property and profile
 
 A Maven profile `-Pleaf-coverage` sets the property to
-`${session.executionRootDirectory}/target/leaf-coverage.jsonl`, truncates
-the file at the start of the test run, and runs `mvn verify` so the trace
-accumulates across all tiers in one file. The aggregate file is the input
-to step 2.
+`${session.executionRootDirectory}/target/leaf-coverage.jsonl` and runs
+`mvn verify` so the trace accumulates across all tiers in one file. The
+aggregate file is the input to step 2.
+
+Truncate the file before any test fork starts (e.g. a maven-antrun
+binding in the `pre-integration-test` phase, or `process-test-resources`
+if classification runs in surefire), not from the emitter itself. Forked
+JVMs append concurrently and lock-free; baking truncation into the
+emitter would have the first writer in each fork wipe records the others
+already produced.
 
 #### 1d. JUnit extension for test-class context
 
@@ -229,7 +243,11 @@ calls.
 ### 2. Build the `roadmap-tool leaf-coverage` post-processor
 
 Subcommand alongside the existing `directive-support`, backed by embedded
-DuckDB (`org.duckdb:duckdb_jdbc`, roadmap-tool dependency only).
+DuckDB (`org.duckdb:duckdb_jdbc`, roadmap-tool dependency only). DuckDB
+runs in-process and ephemeral: open an in-memory connection, register
+the JSONL trace as a view, stage the small parsed tables, run the
+queries, render, close. No persisted `.duckdb` file. An auditor who
+wants ad-hoc pivots can point `duckdb` at the JSONL directly.
 
 Inputs and staging:
 
@@ -245,12 +263,12 @@ Inputs and staging:
 - Roadmap mentions (greps `roadmap/*.md` for leaf class names), inserted
   into a `mentions(leaf, roadmap_id)` table.
 
-The database persists at `target/leaf-coverage.duckdb` and is itself a
-deliverable artefact: an auditor with the `duckdb` CLI can run ad-hoc
-pivots without touching roadmap-tool. The follow-up triage item (and any
-later audits) can add new staged tables (e.g. `LoadBearingGuaranteeAuditTest`
-keys, fixture-tier metadata) that join on `leaf` without rewriting the
-post-processor.
+The follow-up triage item (and any later audits) add new staged tables
+(e.g. `LoadBearingGuaranteeAuditTest` keys, fixture-tier metadata) that
+join on `leaf` without rewriting the post-processor's aggregation
+shape. SQL absorbs the join logic; Java shapes the result rows into
+AsciiDoc. Keep the boundary clean: SQL does joins, filters, aggregates;
+Java does rendering.
 
 Outputs:
 
@@ -334,11 +352,11 @@ this fixture-covered" detail.
   Maven profile that produces the aggregate trace file.
 - A JUnit 5 extension auto-registers in the test classpath and tags every
   trace record with the running test class and its tier annotation.
-- `roadmap-tool leaf-coverage` ingests the trace into embedded DuckDB at
-  `target/leaf-coverage.duckdb` (alongside staged `leaves` and `mentions`
-  tables) and renders both an internal report at
+- `roadmap-tool leaf-coverage` reads the JSONL trace via DuckDB
+  `read_json_auto`, stages parsed `leaves` and `mentions` tables in an
+  in-memory connection, and renders both an internal report at
   `roadmap/inference-axis-coverage.adoc` and a `--mode=migration`
-  AsciiDoc fragment from SQL queries against that store.
+  AsciiDoc fragment from SQL queries.
 - Every sealed leaf of `RootField`, `ChildField`, `InputField`,
   `GraphitronType` has an entry in the internal report (as data, not
   triage).
