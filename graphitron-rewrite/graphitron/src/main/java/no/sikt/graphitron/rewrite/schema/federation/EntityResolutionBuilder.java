@@ -9,6 +9,7 @@ import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.rewrite.BuildWarning;
+import no.sikt.graphitron.rewrite.TypeRegistry;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
@@ -70,23 +71,22 @@ public final class EntityResolutionBuilder {
     /**
      * Walks the classified type map and returns an entity-resolution entry for every type
      * whose schema element carries at least one {@code @key} directive. Demotes types whose
-     * {@code @key} directives cannot be resolved to {@link UnclassifiedType} in place on
-     * {@code types}.
+     * {@code @key} directives cannot be resolved via {@link TypeRegistry#demote}.
      *
-     * @param types the classifier's type map (mutable: failed types are replaced in place)
+     * @param registry the classifier's type registry (writes go through {@code demote})
      * @param fields the classifier's field map (read-only)
      * @param assembled the assembled graphql-java schema (read-only)
      * @param warningSink receiver for non-fatal advisories (e.g. compound key on @node type
      *                    that includes "id"); typically {@code BuildContext::addWarning}
      */
     public static Map<String, EntityResolution> build(
-        Map<String, GraphitronType> types,
+        TypeRegistry registry,
         Map<FieldCoordinates, GraphitronField> fields,
         GraphQLSchema assembled,
         Consumer<BuildWarning> warningSink
     ) {
         var out = new LinkedHashMap<String, EntityResolution>();
-        for (var entry : List.copyOf(types.entrySet())) {
+        for (var entry : List.copyOf(registry.entries().entrySet())) {
             String typeName = entry.getKey();
             GraphitronType gType = entry.getValue();
             GraphQLNamedType assembledType = assembled.getType(typeName) instanceof GraphQLNamedType nt ? nt : null;
@@ -101,13 +101,13 @@ public final class EntityResolutionBuilder {
 
             // @key on a TableInterfaceType is rejected — see Non-goals on the federation plan.
             if (gType instanceof TableInterfaceType) {
-                types.put(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
+                registry.demote(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
                     "@key on TableInterfaceType is not supported; declare @key on the implementing types instead")));
                 continue;
             }
             // Federation entities require a backing table (the dispatcher SELECTs from it).
             if (!(gType instanceof TableType || gType instanceof NodeType)) {
-                types.put(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
+                registry.demote(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
                     "@key requires a @table-bound type; '" + typeName
                     + "' has no @table directive")));
                 continue;
@@ -125,7 +125,7 @@ public final class EntityResolutionBuilder {
                 }
             }
             if (error != null) {
-                types.put(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(error)));
+                registry.demote(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(error)));
                 continue;
             }
             // NodeTypes always get a NODE_ID alternative: it's the canonical SELECT path used
@@ -141,7 +141,7 @@ public final class EntityResolutionBuilder {
                     List.of(ID_FIELD), List.copyOf(nt.nodeKeyColumns()), true, KeyShape.NODE_ID));
             }
 
-            var tableBacked = (GraphitronType.TableBackedType) types.get(typeName);
+            var tableBacked = (GraphitronType.TableBackedType) registry.get(typeName);
             String nodeTypeId = tableBacked instanceof NodeType nt ? nt.typeId() : null;
             out.put(typeName, new EntityResolution(typeName, tableBacked.table(), List.copyOf(alternatives), nodeTypeId));
         }
