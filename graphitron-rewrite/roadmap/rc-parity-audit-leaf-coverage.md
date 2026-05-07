@@ -58,14 +58,30 @@ automatically, with no separate registry to keep in sync.
   schemas loaded via `RewriteSchemaLoader` (uses
   `MultiSourceReader.trackData(true)`) and empty for `TestSchemaHelper`
   inline-string fixtures. Spec accepts the asymmetry.
-- **Tier of test:** not derivable from fixture path; the same fixture
-  serves multiple tiers. Step 2 uses an exec-tier fixture manifest
-  (currently sakila + federated) instead, since exec-tier fixtures are a
-  tiny, manually-curatable set.
+- **Tier of test:** captured per trace record via a JUnit extension (step
+  1c) that auto-registers and writes the running test class plus its tier
+  annotation into a ThreadLocal context. The trace emitter reads that
+  context and tags every record. This avoids both a fragile fixture
+  manifest and a brittle naming-convention scan; the runtime is the source
+  of truth.
+- **Test-to-leaf mapping:** captured implicitly by the JUnit extension
+  (every leaf classified during a test's lifecycle is attributed to that
+  test). Existing javadoc and naming convention (`TableFieldPipelineTest`
+  documents "inline `ChildField.TableField` emission", roughly 80% of
+  pipeline tests) remain useful for human navigation but are not the
+  machine-readable input. `GraphitronSchemaBuilderTest`'s `ClassificationCase`
+  enum and `VariantCoverageTest`'s `NO_CASE_REQUIRED` already give
+  classification-tier coverage statically; the trace covers everything
+  above classification.
 
 ## Phase B scope (this item)
 
 ### 1. Add classifier trace emission to the generator
+
+Three sub-pieces: the emitter itself (1a), the property/profile that turns
+it on (1b), and a JUnit extension that supplies test-class context (1c).
+
+#### 1a. Emitter
 
 Three emission points, one for each construction funnel discovered in
 research:
@@ -99,6 +115,12 @@ incur no cost. Record fields:
   separate `[deferred]` (legitimately stub-tagged) from `[author-error]` /
   `[invalid-schema]` (would be a real classification regression if seen on
   a fixture we expected to pass)
+- `test`: fully-qualified test class name when classification runs inside
+  a JUnit lifecycle (populated by 1c). Empty when classification runs
+  outside tests (e.g. `graphitron:generate` from a real consumer build).
+- `tier`: one of `unit`, `pipeline`, `compilation`, `execution`, or
+  `cross-cutting`, derived from the test class's tier annotation by 1c.
+  Empty when `test` is empty.
 
 Implementation note: the existing `BuildWarning` mechanism (`ctx.addWarning`)
 is for *warnings* surfaced to schema authors and has the wrong semantics for
@@ -108,11 +130,38 @@ invoked from the three sites above. `FieldBuilder` already declares an
 unused `LOG` field at line 134; that's the same `LoggerFactory` import path
 to follow if the emitter is logger-backed.
 
+#### 1b. Property and profile
+
 A Maven profile `-Pleaf-coverage` sets the property to
 `${session.executionRootDirectory}/target/leaf-coverage.jsonl`, truncates
 the file at the start of the test run, and runs `mvn verify` so the trace
 accumulates across all tiers in one file. The aggregate file is the input
 to step 2.
+
+#### 1c. JUnit extension for test-class context
+
+A JUnit 5 extension auto-registered via
+`META-INF/services/org.junit.jupiter.api.extension.Extension` (plus
+`junit.jupiter.extensions.autodetection.enabled=true` in the test module's
+`junit-platform.properties`) so no test class needs `@ExtendWith`.
+
+`BeforeAllCallback`: read the test class's tier annotation
+(`@UnitTier` / `@PipelineTier` / `@CompilationTier` / `@ExecutionTier`, or
+the `@Tag("cross-cutting")` exemption) and set
+`ClassificationTrace.currentContext = (className, tier)` in a ThreadLocal.
+`AfterAllCallback`: clear it.
+
+`@BeforeAll` schema-building (e.g. `GraphQLQueryTest` spinning up
+PostgreSQL and loading sakila) runs inside the active context, so its
+classification records get tagged. Per-`@Test` granularity is unnecessary;
+class-level is enough.
+
+Lives in the test sources of the graphitron module so the production jar
+stays free of JUnit dependencies. The `ClassificationTrace` emitter sits
+in main sources with a no-op default context and a setter the extension
+calls.
+
+#### Permits enumeration
 
 The post-processor (step 2) enumerates the universe of leaves by parsing
 `permits` clauses from these sources, and reports any leaf that never
@@ -148,32 +197,17 @@ Outputs:
   classification. Consumer-facing wording, internal columns elided.
 
 The post-processor enumerates leaves from sealed `permits` clauses and
-flags any leaf with zero trace records as a coverage hole. Distinguishing
-exec-tier vs pipeline-tier coverage exploits the codebase reality
-discovered in research: the same fixture is classified by tests at multiple
-tiers (sakila's `schema.graphqls` is loaded by `NoFederationRegressionTest`
-at `@PipelineTier` and by `GraphQLQueryTest` / `MatchQueryExampleTest` /
-others at `@ExecutionTier`), so per-test tier tracking is the wrong
-abstraction.
+flags any leaf with zero trace records as a coverage hole. Tier
+classification per leaf is the *highest* `tier` value across all trace
+records for that leaf: a leaf with at least one record at `tier=execution`
+is execution-covered, otherwise the highest tier observed determines the
+ranking. Records with empty `tier` (classification outside any test, e.g.
+real generator runs) count as classification-tier coverage only.
 
-Instead, the post-processor uses an *exec-tier fixture manifest*: a short
-list of fixture file paths whose classification proves exec-tier coverage
-because at least one `@ExecutionTier` test class loads them. Today that
-list is two paths:
-
-- `graphitron-rewrite/graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`
-- `graphitron-rewrite/graphitron-sakila-example/src/main/resources/graphql/federated-schema.graphqls`
-
-A leaf with a trace record whose `source` matches a manifest entry is
-exec-tier covered. A leaf with only inline-fixture trace records (empty
-`source`) is at most pipeline-tier covered. A leaf with no trace records
-is uncovered.
-
-Maintained as a properties file in roadmap-tool resources. New exec-tier
-fixtures get added to the manifest; this is a tiny surface (the test suite
-only spins up PostgreSQL once or twice). A JUnit extension that puts the
-test class's tier annotation into the trace via MDC remains a follow-up
-only if the manifest approach proves insufficient.
+This is exact data: every record carries the test class that produced it,
+so the report can list "ChildField.TableField is exercised by
+TableFieldPipelineTest (pipeline) and GraphQLQueryTest (execution)" with
+no inference.
 
 The classification trace must be regenerated before regenerating the report
 (running `mvn -Pleaf-coverage verify` produces the input). Document the
@@ -224,6 +258,8 @@ this fixture-covered" detail.
 - Classifier-trace emission lands in graphitron, gated on
   `-Dgraphitron.classification.trace=<path>`, with a `-Pleaf-coverage`
   Maven profile that produces the aggregate trace file.
+- A JUnit 5 extension auto-registers in the test classpath and tags every
+  trace record with the running test class and its tier annotation.
 - `roadmap-tool leaf-coverage` reads the trace and renders both an internal
   report at `roadmap/inference-axis-coverage.adoc` and a
   `--mode=migration` AsciiDoc fragment.
