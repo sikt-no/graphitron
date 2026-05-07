@@ -2643,8 +2643,17 @@ class FieldBuilder {
                 ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
                 : name;
             var accessor = resolveRecordAccessor(fieldDef, columnName, parentResultType, parentBackingClass);
-            return new PropertyField(parentTypeName, name, location, columnName,
-                resolveColumnOnJooqTableRecord(columnName, parentResultType), accessor);
+            return switch (accessor) {
+                case AccessorResolution.Rejected r ->
+                    new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                        Rejection.accessorMismatch(r.reason()));
+                case AccessorResolution.Resolved ok ->
+                    new PropertyField(parentTypeName, name, location, columnName,
+                        resolveColumnOnJooqTableRecord(columnName, parentResultType), ok);
+                case null ->
+                    new PropertyField(parentTypeName, name, location, columnName,
+                        resolveColumnOnJooqTableRecord(columnName, parentResultType), null);
+            };
         }
 
         // Object return type on a result-mapped parent.
@@ -2687,14 +2696,10 @@ class FieldBuilder {
                 }
                 yield new RecordTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(), batchKey);
             }
-            case ReturnTypeRef.ResultReturnType r ->
-                new RecordField(parentTypeName, name, location, r, columnName,
-                    resolveColumnOnJooqTableRecord(columnName, parentResultType),
-                    resolveRecordAccessor(fieldDef, columnName, parentResultType, parentBackingClass));
-            case ReturnTypeRef.ScalarReturnType s ->
-                new RecordField(parentTypeName, name, location, s, columnName,
-                    resolveColumnOnJooqTableRecord(columnName, parentResultType),
-                    resolveRecordAccessor(fieldDef, columnName, parentResultType, parentBackingClass));
+            case ReturnTypeRef.ResultReturnType r -> recordFieldOrUnclassified(
+                fieldDef, parentTypeName, name, location, r, columnName, parentResultType, parentBackingClass);
+            case ReturnTypeRef.ScalarReturnType s -> recordFieldOrUnclassified(
+                fieldDef, parentTypeName, name, location, s, columnName, parentResultType, parentBackingClass);
             case ReturnTypeRef.PolymorphicReturnType p -> {
                 var lift = liftToErrorsField(fieldDef, parentTypeName, p);
                 yield lift != null ? lift
@@ -2746,6 +2751,30 @@ class FieldBuilder {
         ClassAccessorResolver.ParamShape expectedArgs = mapArgsToParamShape(fieldDef);
         return ClassAccessorResolver.resolve(parentBackingClass, accessorBaseName,
             expectedReturn, expectedArgs, order);
+    }
+
+    /**
+     * Object-arm helper for the {@code @record}-Java-backed parent paths: resolves the accessor and
+     * routes a {@link AccessorResolution.Rejected} through {@link UnclassifiedField} so the
+     * {@link RecordField} accessor slot only ever carries a {@link AccessorResolution.Resolved} or
+     * {@code null}. Mirrors the scalar-arm switch above.
+     */
+    private GraphitronField recordFieldOrUnclassified(GraphQLFieldDefinition fieldDef,
+            String parentTypeName, String name, SourceLocation location, ReturnTypeRef returnType,
+            String columnName, GraphitronType.ResultType parentResultType,
+            Class<?> parentBackingClass) {
+        var accessor = resolveRecordAccessor(fieldDef, columnName, parentResultType, parentBackingClass);
+        return switch (accessor) {
+            case AccessorResolution.Rejected r ->
+                new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                    Rejection.accessorMismatch(r.reason()));
+            case AccessorResolution.Resolved ok ->
+                new RecordField(parentTypeName, name, location, returnType, columnName,
+                    resolveColumnOnJooqTableRecord(columnName, parentResultType), ok);
+            case null ->
+                new RecordField(parentTypeName, name, location, returnType, columnName,
+                    resolveColumnOnJooqTableRecord(columnName, parentResultType), null);
+        };
     }
 
     private ClassAccessorResolver.ParamShape mapArgsToParamShape(GraphQLFieldDefinition fieldDef) {

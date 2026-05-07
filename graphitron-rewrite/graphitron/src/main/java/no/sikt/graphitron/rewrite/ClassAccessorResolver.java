@@ -85,8 +85,12 @@ public final class ClassAccessorResolver {
         key = "class-accessor-resolver-shape-guarantee",
         description = "AccessorResolution.Resolved guarantees a @record-backed SDL field's accessor "
             + "exists on the backing class with a return type assignable to the SDL field's Java "
-            + "type and a param shape matching the SDL field's argument list. Validator-tier "
-            + "coverage in RecordFieldValidationTest mirrors this guarantee.")
+            + "type and a param shape matching the SDL field's argument list. FieldBuilder routes a "
+            + "Rejected outcome through UnclassifiedField rather than attaching it to PropertyField/"
+            + "RecordField, so the slot the emitter consumes is statically AccessorResolution.Resolved "
+            + "(or null, for parents that don't run reflective resolution at all). The "
+            + "RecordFieldAccessorValidationTest pipeline tier exercises every Resolved arm and "
+            + "every Rejected reason this method produces.")
     public static AccessorResolution resolve(
             Class<?> backingClass,
             String accessorBaseName,

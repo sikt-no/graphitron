@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -51,6 +52,12 @@ class RecordFieldAccessorValidationTest {
                 && m.contains("getSakId")
                 && m.contains("sakId")
                 && m.contains("@field(name:"));
+        // Structural: the rejected field classifies as UnclassifiedField, not as a PropertyField
+        // carrying a Rejected accessor. The slot-type tightening on PropertyField/RecordField
+        // (AccessorResolution.Resolved) is enforced by routing the rejection through the
+        // Unclassified arm in FieldBuilder; this is the test that pins that routing change.
+        assertThat(schema.field("TestType", "sakId"))
+            .isInstanceOf(GraphitronField.UnclassifiedField.class);
     }
 
     @Test
@@ -62,6 +69,8 @@ class RecordFieldAccessorValidationTest {
                 && m.contains(FIXTURES_FQN_PREFIX + "MissingComponentRecord")
                 && m.contains("sakId")
                 && m.contains("@field(name:"));
+        assertThat(schema.field("TestType", "sakId"))
+            .isInstanceOf(GraphitronField.UnclassifiedField.class);
     }
 
     @Test
@@ -72,6 +81,8 @@ class RecordFieldAccessorValidationTest {
             m.contains("TestType.sakId")
                 && m.contains("getSakId")
                 && m.contains("not assignable to String"));
+        assertThat(schema.field("TestType", "sakId"))
+            .isInstanceOf(GraphitronField.UnclassifiedField.class);
     }
 
     @Test
