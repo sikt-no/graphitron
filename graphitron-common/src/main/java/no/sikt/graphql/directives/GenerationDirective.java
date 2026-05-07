@@ -35,7 +35,7 @@ public enum GenerationDirective {
     NODE("node", EnumSet.of(GenerationDirectiveParam.TYPE_ID, GenerationDirectiveParam.KEY_COLUMNS)),
     NODE_ID("nodeId", EnumSet.of(GenerationDirectiveParam.TYPE_NAME)),
     CONSTRUCT_TYPE("experimental_constructType", EnumSet.of(GenerationDirectiveParam.SELECTION)),
-    PROCEDURE_CALL("experimental_procedureCall", EnumSet.of(GenerationDirectiveParam.PROCEDURE, GenerationDirectiveParam.ARGUMENTS));
+    PROCEDURE_CALL("experimental_procedureCall", EnumSet.of(GenerationDirectiveParam.PROCEDURE, GenerationDirectiveParam.ARGUMENTS, GenerationDirectiveParam.TARGET));
 
     private final String name;
 

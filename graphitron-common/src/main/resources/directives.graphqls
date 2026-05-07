@@ -283,8 +283,18 @@ Specifies that this field should be resolved by calling a jOOQ-generated routine
 
 Currently:
 - Only scalar-returning functions (`Field<T>`) are supported. OUT / INOUT parameters and record-returning procedures are not supported.
-- Arguments are sourced from columns on the local table (no GraphQL input, literals, or context variables).
 - Argument order is deduced from the routine's IN parameter order. The `arguments` map is keyed by parameter name, not positional.
+
+The directive has two attachment points, distinguished structurally by the presence of `target`:
+
+1. **Inline mode** (no `target`): the directive sits on a scalar field, and the function call fills in that field inline in the query.
+   Every argument value names a column on the surrounding type's table.
+
+2. **Target mode** (`target` set): the directive sits on a *data-fetcher field* (root field, field with arguments, or `@splitQuery` field)
+   whose return type is an object or list of objects, and `target` names a sibling scalar field on that return type whose spot the
+   function call fills. Uses top-level GraphQL arguments on the directive-bearing field as inputs.
+
+Mixing column- and argument-sources within a single directive is not allowed.
 """
 directive @experimental_procedureCall(
   """
@@ -297,10 +307,12 @@ directive @experimental_procedureCall(
   """
   procedure: String!,
   """
-  Mapping of routine IN parameter names to columns on the current table, using the same syntax as `@experimental_constructType`'s `selection` argument.
+  Mapping of routine IN parameter names to argument sources, using the same syntax as `@experimental_constructType`'s `selection` argument.
 
   The key side is the routine parameter name exactly as returned by jOOQ's `Parameter.getName()` - this is typically snake_case (e.g. `p_inventory_id`).
-  The value side is the column name on the current table context (e.g. `INVENTORY_ID`).
+  The value side is interpreted according to the directive's mode:
+  - In **inline mode** (no `target`): a column name on the surrounding table (e.g. `INVENTORY_ID`).
+  - In **target mode** (`target` set): the name of a top-level GraphQL argument on the directive-bearing field (e.g. `inventoryId`).
 
   Empty `arguments` are only valid when the function has zero IN parameters.
 
@@ -311,7 +323,20 @@ directive @experimental_procedureCall(
       p_first: FIRST_COLUMN,
       p_second: SECOND_COLUMN
   \""")
+  @experimental_procedureCall(
+      procedure: "inventory_held_by_customer",
+      target: "heldBy",
+      arguments: "p_inventory_id: inventoryId"
+  )
   ```
   """
-  arguments: String
+  arguments: String,
+  """
+  Names a scalar field in the data-fetcher's return type whose cell the function call fills (target mode).
+  When set, the directive must sit on a data-fetcher field (root field, field with arguments, or `@splitQuery` field) whose return
+  type is an object or list thereof. The named target must be a scalar field on the return type. Argument values then name GraphQL arguments on the directive-bearing field.
+
+  Currently only a single field name is supported - nested paths (e.g. `foo.bar`) are not implemented.
+  """
+  target: String
 ) on FIELD_DEFINITION

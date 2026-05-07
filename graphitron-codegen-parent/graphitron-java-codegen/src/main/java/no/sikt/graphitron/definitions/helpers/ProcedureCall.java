@@ -10,23 +10,30 @@ import static no.sikt.graphql.directives.DirectiveHelpers.getOptionalDirectiveAr
 import static no.sikt.graphql.directives.GenerationDirective.PROCEDURE_CALL;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.ARGUMENTS;
 import static no.sikt.graphql.directives.GenerationDirectiveParam.PROCEDURE;
+import static no.sikt.graphql.directives.GenerationDirectiveParam.TARGET;
 
 /**
  * Wrapper for handling the configuration of a single {@code @experimental_procedureCall} directive usage on a field.
  *
- * @param procedureName The routine name as written by the user in the directive. Typically the unqualified database
- *                      name (matches jOOQ's {@code Routine.getName()}, usually snake_case). May be schema-qualified as
- *                      {@code schema.routine} when the bare name is ambiguous across schemas. Matched case-insensitively.
+ * @param procedureName The routine name as written by the user in the directive.
  * @param argumentMap   Mapping of routine IN parameter names (exactly what jOOQ's {@code Parameter.getName()} returns,
- *                      typically snake_case) to columns on the surrounding table. Iterates in directive source order;
- *                      the routine's declaration order is used at codegen time.
+ *                      typically snake_case) to argument sources. The interpretation depends on the directive's mode:
+ *                      in inline mode every value is a column;
+ *                      in target mode every value is a GraphQL input argument on the directive-bearing field.
+ * @param targetField   In target mode, the name of a scalar field in the data-fetcher's return type whose cell
+ *                      the function call fills. {@code null} or blank in inline mode.
  */
-public record ProcedureCall(String procedureName, Map<String, String> argumentMap) {
+public record ProcedureCall(String procedureName, Map<String, String> argumentMap, String targetField) {
     public <T extends NamedNode<T> & DirectivesContainer<T>> ProcedureCall(T field) {
         this(
                 getOptionalDirectiveArgumentString(field, PROCEDURE_CALL, PROCEDURE).orElse(""),
-                parseArguments(getOptionalDirectiveArgumentString(field, PROCEDURE_CALL, ARGUMENTS).orElse(""))
+                parseArguments(getOptionalDirectiveArgumentString(field, PROCEDURE_CALL, ARGUMENTS).orElse("")),
+                getOptionalDirectiveArgumentString(field, PROCEDURE_CALL, TARGET).orElse(null)
         );
+    }
+
+    public boolean hasTarget() {
+        return targetField != null && !targetField.isBlank();
     }
 
     private static Map<String, String> parseArguments(String rawArguments) {

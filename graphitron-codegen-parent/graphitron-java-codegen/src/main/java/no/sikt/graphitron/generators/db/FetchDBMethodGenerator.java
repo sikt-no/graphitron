@@ -4,6 +4,7 @@ import no.sikt.graphitron.configuration.GeneratorConfig;
 import no.sikt.graphitron.definitions.fields.*;
 import no.sikt.graphitron.definitions.helpers.InputComponents;
 import no.sikt.graphitron.definitions.helpers.InputCondition;
+import no.sikt.graphitron.definitions.helpers.ProcedureCall;
 import no.sikt.graphitron.definitions.interfaces.FieldSpecification;
 import no.sikt.graphitron.definitions.interfaces.GenerationField;
 import no.sikt.graphitron.definitions.interfaces.RecordObjectSpecification;
@@ -294,6 +295,11 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
     }
 
     protected CodeBlock getSelectCode(GenerationField field, FetchContext context) {
+        var outerCall = context.getReferenceObjectField().getProcedureCall();
+        if (outerCall != null && outerCall.hasTarget() && field.getName().equals(outerCall.targetField())) {
+            return generateProcedureCall(context, outerCall);
+        }
+
         if (processedSchema.invokesSubquery(field, context.getTargetTable())) {
             return generateCorrelatedSubquery(context.nextContext(field));
         }
@@ -307,7 +313,7 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         }
 
         if (field.hasProcedureCall()) {
-            return generateProcedureCall(field, context);
+            return generateProcedureCall(context, field.getProcedureCall());
         }
 
         return generateForField(field, context);
@@ -315,11 +321,9 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
 
     /**
      * Generates a static method call to the generated jOOQ {@code Routines} class for a field annotated with
-     * {@code @experimental_procedureCall}. Arguments are materialized as column references on the surrounding table,
-     * in the routine's declared IN-parameter order.
+     * {@code @experimental_procedureCall}. Arguments are materialized in the routine's declared IN-parameter order.
      */
-    protected CodeBlock generateProcedureCall(GenerationField field, FetchContext context) {
-        var call = field.getProcedureCall();
+    protected CodeBlock generateProcedureCall(FetchContext context, ProcedureCall call) {
         var matches = resolveRoutine(call.procedureName());
         if (matches.size() != 1) {
             throw new IllegalStateException("Routine '" + call.procedureName() + "' could not be resolved. Validation should have caught this.");
@@ -328,13 +332,15 @@ public abstract class FetchDBMethodGenerator extends DBMethodGenerator<ObjectFie
         var routinesClass = ClassName.bestGuess(getRoutinesClassName(routineName).orElseThrow());
         var methodName = getRoutineMethodName(routineName).orElseThrow();
 
+        var isTargetMode = call.hasTarget();
         var renderedSource = context.renderQuerySource(getLocalTable());
         var argBlocks = getInParameters(routineName)
                 .stream()
                 .map(Named::getName)
-                .map(it -> call.argumentMap().get(it).toUpperCase())
+                .map(it -> call.argumentMap().get(it))
+                .map(it -> isTargetMode ? inputPrefix(it) : it.toUpperCase())
                 .collect(CodeBlocks.varCollector())
-                .map(it -> CodeBlock.join(".", renderedSource, it));
+                .map(it -> isTargetMode ? it : CodeBlock.join(".", renderedSource, it));
 
         return getProcedureCall(routinesClass, methodName, argBlocks);
     }
