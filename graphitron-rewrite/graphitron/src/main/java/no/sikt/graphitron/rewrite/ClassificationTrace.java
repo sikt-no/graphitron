@@ -31,8 +31,14 @@ public final class ClassificationTrace {
 
     private static final String PROPERTY = "graphitron.classification.trace";
 
-    /** Empty when tracing is off; absent otherwise pays no overhead. */
-    private static final BufferedWriter WRITER = openWriter();
+    /**
+     * Lazily initialised on first {@link #emit} call against the path named by the system
+     * property at that moment. {@code null} when the property is unset; once opened, stays
+     * bound to the file for the lifetime of the JVM (or until {@link #resetForTesting} is
+     * invoked).
+     */
+    private static volatile BufferedWriter writer;
+    private static volatile boolean writerInitialised;
 
     private static final ThreadLocal<Context> CURRENT = ThreadLocal.withInitial(() -> Context.EMPTY);
 
@@ -61,7 +67,36 @@ public final class ClassificationTrace {
 
     /** True when the trace property is set; emits otherwise are pure no-ops. */
     public static boolean isEnabled() {
-        return WRITER != null;
+        return getOrInitWriter() != null;
+    }
+
+    /**
+     * Test-only: close any existing writer and rebind to {@code path}, bypassing the system
+     * property. Pass {@code null} to disable tracing for the rest of the JVM.
+     */
+    public static synchronized void resetForTesting(java.nio.file.Path path) {
+        if (writer != null) {
+            try { writer.close(); } catch (IOException ignored) {}
+            writer = null;
+        }
+        writerInitialised = true;
+        if (path == null) return;
+        try {
+            Path parent = path.getParent();
+            if (parent != null) Files.createDirectories(parent);
+            writer = new BufferedWriter(new OutputStreamWriter(
+                Files.newOutputStream(path, StandardOpenOption.CREATE, StandardOpenOption.APPEND),
+                StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static synchronized BufferedWriter getOrInitWriter() {
+        if (writerInitialised) return writer;
+        writer = openWriter();
+        writerInitialised = true;
+        return writer;
     }
 
     /**
@@ -79,7 +114,8 @@ public final class ClassificationTrace {
      */
     public static void emit(Op op, String parent, String name, String leaf, String source,
             RejectionKind rejection, String message) {
-        if (WRITER == null) return;
+        BufferedWriter w = getOrInitWriter();
+        if (w == null) return;
         var ctx = CURRENT.get();
         var sb = new StringBuilder(256);
         sb.append('{');
@@ -95,13 +131,13 @@ public final class ClassificationTrace {
         appendField(sb, "test", ctx.testClassName, false);
         appendField(sb, "tier", ctx.tier, false);
         sb.append('}').append('\n');
-        write(sb.toString());
+        write(w, sb.toString());
     }
 
-    private static synchronized void write(String line) {
+    private static synchronized void write(BufferedWriter w, String line) {
         try {
-            WRITER.write(line);
-            WRITER.flush();
+            w.write(line);
+            w.flush();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
