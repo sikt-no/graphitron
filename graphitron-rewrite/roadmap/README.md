@@ -85,6 +85,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 ### Validation
 
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md): `FieldBuilder.resolveDefaultOrderSpec()` falls back to `OrderBySpec.Fixed([pk ASC])` when a list field has no `@defaultOrder` or `@orderBy` and the table has a PK. For tables without a PK, it returns `OrderBySpec.None` instead, which the generators faithfully emit as an empty `List.of()` — no `ORDER BY` clause. The result is a non-deterministic list every time the query runs.
+- `R104` [**RC parity audit: classify GraphitronField/Type leaves and ship coverage gaps**](rc-parity-audit-leaf-coverage.md): graphitron's user-facing API is the directive surface plus a long list of shape-driven inference paths: which sealed leaf of `GraphitronField` / `GraphitronType` an SDL field/type lands on encodes "what graphitron decided". A leaf the consumer can reach but that no `@ExecutionTier` test exercises is an RC risk: validation may pass and codegen may run, but we have no proof that the emitted code is correct end-to-end. The first release candidate of graphitron 10 needs an explicit, leaf-by-leaf accounting of what is covered, what is not, and which gaps are RC-blocking versus deferrable.
 
 ### Other
 
@@ -198,6 +199,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md)
 - `R100` [**LSP validation and completions for @node and @nodeId directives**](node-directive-lsp-coverage.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
+- `R104` [**RC parity audit: classify GraphitronField/Type leaves and ship coverage gaps**](rc-parity-audit-leaf-coverage.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
 
 
