@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.server;
 
+import no.sikt.graphitron.lsp.code_action.CodeActions;
 import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
 import no.sikt.graphitron.lsp.completions.FieldCompletions;
 import no.sikt.graphitron.lsp.completions.MethodCompletions;
@@ -12,6 +13,9 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.state.Workspace;
+import org.eclipse.lsp4j.CodeAction;
+import org.eclipse.lsp4j.CodeActionParams;
+import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
@@ -107,6 +111,11 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
             });
         }
+    }
+
+    @Override
+    public CompletableFuture<List<Either<Command, CodeAction>>> codeAction(CodeActionParams params) {
+        return CompletableFuture.supplyAsync(() -> CodeActions.compute(params, workspace));
     }
 
     @Override

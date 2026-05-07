@@ -193,7 +193,25 @@ public final class Diagnostics {
         Node outerValue, boolean validateMethod
     ) {
         Node classNameValue = nestedFieldValue(outerValue, "className", file.source());
-        if (classNameValue == null) return;
+        if (classNameValue == null) {
+            // Legacy form: `name:` is set and `className:` is not. The
+            // build-tier resolves `name:` via RewriteContext.namedReferences;
+            // surface the unresolved arm here (mirrors
+            // FieldBuilder.parseExternalRef's lookupError) so the user
+            // sees the error before the build runs. Resolved sites
+            // remain silent (the WARN in parseExternalRef is the
+            // migration-tracking signal for graphitron developers).
+            Node nameValue = nestedFieldValue(outerValue, "name", file.source());
+            if (nameValue == null) return;
+            String legacyName = Nodes.unquote(Nodes.text(nameValue, file.source()));
+            if (legacyName.isEmpty()) return;
+            if (catalog.namedReferences().get(legacyName) != null) return;
+            out.add(diagnostic(file, nameValue,
+                "Unknown reference '" + legacyName + "'. Not present in `namedReferences` "
+                + "config. Add an entry mapping '" + legacyName + "' to a fully-qualified "
+                + "class name, or rewrite this site as `className: \"<FQN>\"` directly."));
+            return;
+        }
         String fqn = Nodes.unquote(Nodes.text(classNameValue, file.source()));
         if (fqn.isEmpty()) return;
 

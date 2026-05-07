@@ -44,7 +44,8 @@ public final class CatalogBuilder {
         return new CompletionData(
             buildTables(jooq, jooqSourceRoot, jooqPkgPath),
             buildScalars(assembled),
-            buildExternalReferences(ctx)
+            buildExternalReferences(ctx),
+            ctx.namedReferences()
         );
     }
 
