@@ -383,6 +383,204 @@ class FetcherPipelineTest {
             .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
     }
 
+    // ===== Bulk DML mutations (R77 Phase E) =====
+    //
+    // Pipeline-tier coverage of the four bulk-arm structural shapes. Per spec, no code-string
+    // assertions on the generated SQL chain itself; we assert on the structural invariants the
+    // emitter contracts: list-cast + empty-list short-circuit (both centralised in
+    // buildDmlFetcher), verb-specific row-loop shape (valuesOfRows for INSERT/UPSERT, row-tuple
+    // IN for DELETE, VALUES-join for UPDATE), per-cell missing-vs-null dispatch on
+    // INSERT/UPSERT, dynamic SET on UPDATE/UPSERT-with-doUpdate, and the bulk UPDATE guards
+    // (uniform-shape, duplicate-tuple) plus its Postgres dialect guard.
+
+    @Test
+    void dmlInsertField_bulkInput_emitsValuesOfRowsWithContainsKeyDispatchAndEmptyListShortCircuit() {
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") {
+                title: String! @field(name: "title")
+                languageId: Int! @field(name: "language_id")
+            }
+            type Query { dummy: String }
+            type Mutation { createFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: INSERT) }
+            """;
+        var createFilms = method(findSpec("MutationFetchers", sdl), "createFilms");
+        var body = createFilms.code().toString();
+        // JavaPoet writes fully-qualified type names; assertions track the canonical FQN so a
+        // change in import resolution would surface here, not as a brittle short-name regex.
+        assertThat(body)
+            .as("bulk arm casts in to List<Map<?,?>>")
+            .contains("java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument")
+            .as("empty-list short-circuit returns typed empty without round-trip")
+            .contains("if (in.isEmpty())")
+            .contains("graphql.execution.DataFetcherResult.<java.util.List<org.jooq.Record>>newResult().data(java.util.List.of()).build()")
+            .as("multi-row VALUES via stream + valuesOfRows")
+            .contains(".valuesOfRows(in.stream()")
+            .contains("org.jooq.impl.DSL.row(")
+            .contains(".toList()")
+            .as("per-cell missing-vs-null dispatch on row.containsKey")
+            .contains("row.containsKey(\"title\")")
+            .contains("row.containsKey(\"languageId\")")
+            .contains("org.jooq.impl.DSL.defaultValue(")
+            .contains("org.jooq.impl.DSL.val(row.get(")
+            .as("no single-row in.containsKey on the bulk arm")
+            .doesNotContain("in.containsKey(");
+        assertThat(createFilms.returnType().toString())
+            .as("DataFetcherResult parameter narrows from Object to List<Record> on the projected-list arm")
+            .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void dmlUpsertField_bulkInput_emitsValuesOfRowsAndDynamicDoUpdateSetWithUniformShapeGuard() {
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            input FilmUpsertInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id") @lookupKey
+                title: String! @field(name: "title")
+                description: String @field(name: "description")
+            }
+            type Query { dummy: String }
+            type Mutation { upsertFilms(in: [FilmUpsertInput!]!): [Film!]! @mutation(typeName: UPSERT) }
+            """;
+        var upsertFilms = method(findSpec("MutationFetchers", sdl), "upsertFilms");
+        var body = upsertFilms.code().toString();
+        assertThat(body)
+            .contains("java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument")
+            .contains("if (in.isEmpty())")
+            .as(".doUpdate() mode captures firstKeys + uniform-shape guard before SET map")
+            .contains("java.util.Set<?> firstKeys = in.get(0).keySet()")
+            .contains("if (!in.get(rowIdx).keySet().equals(firstKeys))")
+            .as("DO UPDATE SET map walks setFields conditionally on firstKeys")
+            .contains("if (firstKeys.contains(\"title\"))")
+            .contains("if (firstKeys.contains(\"description\"))")
+            .contains("setsUpdate.put(")
+            .contains("org.jooq.impl.DSL.excluded(")
+            .as("no-set-fields-present check rejects when nothing is settable")
+            .contains("if (setsUpdate.isEmpty())")
+            .contains("@mutation(typeName: UPSERT) call has no settable fields present")
+            .as("multi-row insert side via valuesOfRows + per-cell containsKey on INSERT cells")
+            .contains(".valuesOfRows(in.stream()")
+            .contains("row.containsKey(\"title\")")
+            .contains("org.jooq.impl.DSL.defaultValue(")
+            .contains(".onConflict(")
+            .contains(".doUpdate()")
+            .as("Oracle-dialect guard preserved for the silent-MERGE-INTO emulation")
+            .contains("dsl.dialect().name().startsWith(\"ORACLE\")");
+        assertThat(upsertFilms.returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void dmlDeleteField_bulkInput_emitsRowTupleInWithStreamMap() {
+        // Returns [Film!]! (ProjectedList) rather than [ID!]! to avoid the encoded-arm's
+        // @node-type-on-table requirement; the bulk DELETE shape is identical regardless of
+        // terminator, so ProjectedList is the right vehicle for the structural pin.
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            type Query { dummy: String }
+            type Mutation { deleteFilms(in: [FilmDeleteInput!]!): [Film!]! @mutation(typeName: DELETE) }
+            """;
+        var deleteFilms = method(findSpec("MutationFetchers", sdl), "deleteFilms");
+        var body = deleteFilms.code().toString();
+        assertThat(body)
+            .contains("java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument")
+            .contains("if (in.isEmpty())")
+            .contains("graphql.execution.DataFetcherResult.<java.util.List<org.jooq.Record>>newResult().data(java.util.List.of()).build()")
+            .as("row-tuple IN form, regardless of key arity")
+            .contains(".deleteFrom")
+            .contains("org.jooq.impl.DSL.row(")
+            .contains(".in(in.stream().map(row -> org.jooq.impl.DSL.row(")
+            .contains("org.jooq.impl.DSL.val(row.get(\"filmId\")")
+            .contains(".toList())")
+            .contains(".returningResult(")
+            .contains(".fetch(");
+        assertThat(deleteFilms.returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void dmlUpdateField_bulkInput_emitsValuesJoinWithUniformShapeAndDuplicateKeyAndDialectGuards() {
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            input FilmUpdateInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id") @lookupKey
+                title: String! @field(name: "title")
+                description: String @field(name: "description")
+            }
+            type Query { dummy: String }
+            type Mutation { updateFilms(in: [FilmUpdateInput!]!): [Film!]! @mutation(typeName: UPDATE) }
+            """;
+        var updateFilms = method(findSpec("MutationFetchers", sdl), "updateFilms");
+        var body = updateFilms.code().toString();
+        assertThat(body)
+            .as("Postgres dialect guard rides postDslGuard, before the in cast")
+            .contains("if (!\"POSTGRES\".equals(dsl.dialect().family().name()))")
+            .as("bulk arm casts in to List<Map<?,?>>")
+            .contains("java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument")
+            .contains("if (in.isEmpty())")
+            .as("uniform-shape guard runs before the SET map is built")
+            .contains("java.util.Set<?> firstKeys = in.get(0).keySet()")
+            .contains("if (!in.get(rowIdx).keySet().equals(firstKeys))")
+            .as("v-table column-name list and per-row cells walk firstKeys for setFields")
+            .contains("vColNames.add(")
+            .contains("if (firstKeys.contains(\"title\"))")
+            .contains("if (firstKeys.contains(\"description\"))")
+            .as("imperative for-loop builds vRows (control flow inside, not a stream lambda)")
+            .contains("for (var row : in)")
+            .contains("vRows.add(")
+            .contains("org.jooq.impl.DSL.values(vRows.toArray(")
+            .contains(".as(\"v\", vColNames.toArray")
+            .as("SET map references v.field(t.col), not bound values directly")
+            .contains("sets.put(")
+            .contains("v.field(")
+            .as("no-set-fields-present runtime check")
+            .contains("if (sets.isEmpty())")
+            .as("duplicate-lookup-key guard via HashSet<List<Object>>")
+            .contains("seenKeys")
+            .contains("java.util.List.of(row.get(\"filmId\"))")
+            .contains("if (seenKeys.size() != in.size())")
+            .as("chain shape: update().set().from(v).where()")
+            .contains(".update(")
+            .contains(".set(sets)")
+            .contains(".from(v)")
+            .contains(".where(");
+        assertThat(updateFilms.returnType().toString())
+            .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");
+    }
+
+    @Test
+    void dmlSingleRowUpdateField_emitsDynamicSetWalkOverInKeySet() {
+        // Phase E also fixes the legacy missing-vs-null bug on single-row UPDATE: omitted
+        // columns drop out of SET (PATCH semantics), explicit nulls bind typed null. Pin the
+        // structural shift from "unconditional walk over setFields()" to
+        // "if (in.containsKey(name)) { sets.put(...) }".
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            input FilmUpdateInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id") @lookupKey
+                title: String @field(name: "title")
+                description: String @field(name: "description")
+            }
+            type Query { dummy: String }
+            type Mutation { updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE) }
+            """;
+        var updateFilm = method(findSpec("MutationFetchers", sdl), "updateFilm");
+        var body = updateFilm.code().toString();
+        assertThat(body)
+            .as("single-row arm keeps Map<?,?> cast (no List<Map<?,?>>)")
+            .contains("java.util.Map<?, ?> in = (java.util.Map<?, ?>) env.getArgument")
+            .doesNotContain("java.util.List<java.util.Map<?, ?>>")
+            .as("dynamic SET walk gates each setField on in.containsKey")
+            .contains("if (in.containsKey(\"title\"))")
+            .contains("if (in.containsKey(\"description\"))")
+            .contains("sets.put(")
+            .contains("org.jooq.impl.DSL.val(in.get(")
+            .as("no-set-fields-present runtime check")
+            .contains("if (sets.isEmpty())")
+            .contains("@mutation(typeName: UPDATE) call has no settable fields present");
+    }
+
     // ===== Column fields → wired via ColumnFetcher =====
 
     @Test
