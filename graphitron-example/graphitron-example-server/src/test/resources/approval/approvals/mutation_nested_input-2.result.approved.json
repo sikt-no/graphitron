@@ -1,0 +1,14 @@
+{
+    "data": {
+        "testingNestedInputType": [
+            {
+                "id": "Q3VzdG9tZXI6MTAx",
+                "email": "PEGGY.MYERS@sakilacustomer.org",
+                "name": {
+                    "firstName": "OnlyFirst",
+                    "lastName": "OnlyLast"
+                }
+            }
+        ]
+    }
+}
