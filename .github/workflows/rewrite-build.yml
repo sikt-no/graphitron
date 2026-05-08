@@ -25,4 +25,8 @@ jobs:
           distribution: 'temurin'
           cache: maven
       - name: Build rewrite reactor
-        run: mvn -f graphitron-rewrite/pom.xml verify -Plocal-db --batch-mode
+        # -Pleaf-coverage emits the per-module classifier-trace JSONL files that
+        # `roadmap-tool leaf-coverage --verify` (bound to the verify phase) reads;
+        # without it, drift in roadmap/inference-axis-coverage.adoc would silently
+        # not be caught (the verify-mode short-circuits when traces are absent).
+        run: mvn -f graphitron-rewrite/pom.xml verify -Plocal-db -Pleaf-coverage --batch-mode

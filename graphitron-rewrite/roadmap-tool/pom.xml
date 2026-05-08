@@ -67,19 +67,24 @@
                 <version>3.5.0</version>
                 <configuration>
                     <mainClass>no.sikt.graphitron.roadmap.Main</mainClass>
-                    <commandlineArgs>${exec.args}</commandlineArgs>
                 </configuration>
                 <executions>
+                    <execution>
+                        <!-- Ad-hoc CLI usage. exec-maven-plugin 3.x picks `default-cli` for
+                             plain `mvn exec:java`, so the `${exec.args}` override flows through
+                             commandlineArgs without bleeding into the phase-bound executions
+                             below. Override with -Dexec.args='<subcommand> <args...>'. -->
+                        <id>default-cli</id>
+                        <configuration>
+                            <commandlineArgs>${exec.args}</commandlineArgs>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>verify-roadmap-readme</id>
                         <phase>verify</phase>
                         <goals><goal>java</goal></goals>
                         <configuration>
-                            <mainClass>no.sikt.graphitron.roadmap.Main</mainClass>
-                            <arguments>
-                                <argument>verify</argument>
-                                <argument>${project.basedir}/../roadmap</argument>
-                            </arguments>
+                            <commandlineArgs>verify ${project.basedir}/../roadmap</commandlineArgs>
                         </configuration>
                     </execution>
                     <execution>
@@ -87,12 +92,7 @@
                         <phase>verify</phase>
                         <goals><goal>java</goal></goals>
                         <configuration>
-                            <mainClass>no.sikt.graphitron.roadmap.Main</mainClass>
-                            <arguments>
-                                <argument>leaf-coverage</argument>
-                                <argument>${project.basedir}/..</argument>
-                                <argument>--verify</argument>
-                            </arguments>
+                            <commandlineArgs>leaf-coverage ${project.basedir}/.. --verify</commandlineArgs>
                         </configuration>
                     </execution>
                 </executions>

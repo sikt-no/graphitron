@@ -142,9 +142,12 @@ final class LeafCoverageReport {
             String existing = Files.exists(outFile) ? Files.readString(outFile) : "";
             if (!existing.equals(rendered)) {
                 System.err.println("leaf-coverage report at " + outFile + " is out of date. Regenerate with:");
-                System.err.println("  mvn -pl :graphitron-roadmap-tool exec:java"
-                    + " -Dexec.args='leaf-coverage " + root + "'"
-                    + (migration ? " (and --mode=migration --output=...)" : ""));
+                // Portable form: regenerate from the repo root; the trailing positional uses the
+                // project-relative path the contributor would type instead of the absolute one
+                // resolved at runtime, so CI logs and local error prints read the same.
+                System.err.println("  mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java"
+                    + " -Dexec.args='leaf-coverage graphitron-rewrite"
+                    + (migration ? " --mode=migration" : "") + "'");
                 return 1;
             }
             System.out.println("leaf-coverage report is up to date: " + outFile);
@@ -299,6 +302,15 @@ final class LeafCoverageReport {
 
     static String render(List<Path> traceFiles, List<Leaf> leaves, List<Mention> mentions,
             boolean migration) throws SQLException {
+        // Explicit registration: the exec-maven-plugin's plugin-classloader sometimes does not
+        // surface ServiceLoader-discovered drivers from the project's runtime classpath, so
+        // DriverManager.getConnection alone fails with "No suitable driver". The forName call
+        // is a no-op when ServiceLoader has already registered the driver.
+        try {
+            Class.forName("org.duckdb.DuckDBDriver");
+        } catch (ClassNotFoundException e) {
+            throw new SQLException("DuckDB driver not on classpath", e);
+        }
         try (Connection conn = DriverManager.getConnection("jdbc:duckdb:")) {
             stageLeaves(conn, leaves);
             stageMentions(conn, mentions);
@@ -720,10 +732,5 @@ final class LeafCoverageReport {
             i++;
         }
         return new ParsedFile(sealedTypes, records);
-    }
-
-    /** Public for parity with {@link DirectiveSupportReport#run}; called from {@link Main}. */
-    public static int runEntry(List<String> args) throws IOException {
-        return run(args);
     }
 }
