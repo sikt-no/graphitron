@@ -203,103 +203,139 @@ class FieldBuilder {
      * {@code findSameTableNodeIdUnderAsConnection}, {@code walkInputTypeForSameTableNodeId},
      * and {@code hasSameTableNodeIdAnywhere}.
      *
-     * @param byArgName       resolved outcome keyed by top-level argument name; covers every
-     *                        top-level argument carrying {@code @nodeId} (any arity, any arm).
-     *                        Non-{@code @nodeId} args are absent.
-     * @param anyArgSameTable {@code true} iff any top-level argument resolves to
-     *                        {@link NodeIdLeafResolver.Resolved.SameTable}. Gates the
-     *                        lookup-promotion path in {@link #classifyQueryField} and the
-     *                        argument-side {@code @asConnection} rejection.
-     * @param anyNestedSameTable {@code true} iff any input-field leaf nested under an arg
-     *                           input-type resolves to {@link NodeIdLeafResolver.Resolved.SameTable}
-     *                           against the field's containing table. Gates the input-field-side
-     *                           {@code @asConnection} rejection alongside the existing
-     *                           input-field path.
-     * @param sameTableHit    when either {@code anyArgSameTable} or {@code anyNestedSameTable}
-     *                        is {@code true}, the leafName/refTypeName/containingTable that
-     *                        triggered the first hit, used to build the rejection message.
+     * @param byArgName        resolved outcome keyed by top-level argument name; covers every
+     *                         top-level argument carrying {@code @nodeId} (any arity, any arm).
+     *                         Non-{@code @nodeId} args are absent.
+     * @param asConnectionGuard sealed signal carrying the {@code @asConnection} rejection state;
+     *                         {@link AsConnectionGuard.Required} iff at least one same-table
+     *                         {@code @nodeId} leaf is reached through an entirely non-null path
+     *                         (outer arg + every nested input-field wrapper). {@link AsConnectionGuard.None}
+     *                         otherwise — including the "all hits are optional" case, which
+     *                         post-R113 composes with {@code @asConnection}.
      */
     record NodeIdArgPlan(
             Map<String, NodeIdLeafResolver.Resolved> byArgName,
-            boolean anyArgSameTable,
-            boolean anyNestedSameTable,
-            SameTableHit sameTableHit) {
+            AsConnectionGuard asConnectionGuard) {
 
         /** Empty plan for non-table-bound fields and fields with no {@code @nodeId} leaves. */
-        static final NodeIdArgPlan EMPTY = new NodeIdArgPlan(Map.of(), false, false, null);
+        static final NodeIdArgPlan EMPTY = new NodeIdArgPlan(Map.of(), new AsConnectionGuard.None());
 
         record SameTableHit(String leafName, String refTypeName, String containingTableName) {}
+
+        /**
+         * State of the {@code @asConnection} + same-table {@code @nodeId} guard.
+         *
+         * <p>Hygiene-only: this carrier exists for an author-error rejection at
+         * {@code resolveTableFieldComponents}; it has no downstream emitter consumers and is
+         * not load-bearing in the classifier-guarantee sense. The connection emitter consumes
+         * {@code BodyParam.In} filters identically whether they came from a required leaf or
+         * an optional leaf, so the optional-vs-required distinction never reaches code
+         * generation. The guard flags confused author intent (mandatory id list always bounds
+         * the result; pagination adds no value), not a structural assumption emitter code
+         * relies on.
+         *
+         * <p>{@link Required} carries the first required hit in walk order (top-level args
+         * before nested input types) for the rejection message context. The semantic claim is
+         * {@code ∃ required same-table @nodeId leaf} across the whole arg set, not "first hit
+         * in walk order is required" — order-independence ensures the guard fires whether the
+         * required leaf is declared first or last in the SDL.
+         */
+        sealed interface AsConnectionGuard {
+            record None() implements AsConnectionGuard {}
+            record Required(SameTableHit hit) implements AsConnectionGuard {}
+        }
     }
 
     /**
      * Walks {@code fieldDef}'s argument set once: every {@code @nodeId}-decorated top-level
-     * argument resolves into {@code byArgName}; every same-table hit anywhere (top-level or
-     * nested under arg input-types) flips the matching boolean and seeds the first
-     * {@link NodeIdArgPlan.SameTableHit} for the rejection message. Cycle protection on nested
-     * input types follows the same {@code LinkedHashSet<String>} shape the previous walks
-     * carried.
+     * argument resolves into {@code byArgName}; every same-table hit (top-level or nested under
+     * arg input-types) is reported with a {@code pathRequired} bit. The first required hit in
+     * walk order (top-level args before nested input types) seeds the
+     * {@link NodeIdArgPlan.AsConnectionGuard.Required} payload for the rejection message. The
+     * predicate is order-independent at the field level: any required hit folds the guard to
+     * {@code Required}, regardless of SDL ordering.
+     *
+     * <p>Required-ness is conjunctive across the path: a leaf is required iff every wrapper
+     * from the field's argument-root down to the {@code ID}/{@code [ID]} carrier is non-null.
+     * Cycle protection on nested input types follows the same {@code LinkedHashSet<String>}
+     * shape the previous walks carried.
      */
     private NodeIdArgPlan buildNodeIdArgPlan(GraphQLFieldDefinition fieldDef, TableRef containingTable) {
         var resolver = ctx.nodeIdLeafResolver();
         var byArgName = new java.util.LinkedHashMap<String, NodeIdLeafResolver.Resolved>();
-        boolean anyArgSameTable = false;
-        boolean anyNestedSameTable = false;
-        NodeIdArgPlan.SameTableHit sameTableHit = null;
+        var firstRequiredHit = new NodeIdArgPlan.SameTableHit[]{null};
+        boolean anyHit = false;
         for (var arg : fieldDef.getArguments()) {
+            boolean argRequired = arg.getType() instanceof GraphQLNonNull;
             if (arg.hasAppliedDirective(DIR_NODE_ID)) {
                 var unwrapped = GraphQLTypeUtil.unwrapAll(arg.getType());
                 if (unwrapped instanceof GraphQLNamedType named && "ID".equals(named.getName())) {
                     var resolved = resolver.resolve(arg, arg.getName(), containingTable);
                     byArgName.put(arg.getName(), resolved);
                     if (resolved instanceof NodeIdLeafResolver.Resolved.SameTable st) {
-                        if (!anyArgSameTable) {
-                            sameTableHit = new NodeIdArgPlan.SameTableHit(
+                        anyHit = true;
+                        if (argRequired && firstRequiredHit[0] == null) {
+                            firstRequiredHit[0] = new NodeIdArgPlan.SameTableHit(
                                 arg.getName(), st.refTypeName(), containingTable.tableName());
                         }
-                        anyArgSameTable = true;
                     }
                 }
             }
             var argType = GraphQLTypeUtil.unwrapAll(arg.getType());
             if (argType instanceof GraphQLInputObjectType iot) {
-                var nestedHit = walkInputTypeForSameTableNodeId(
-                    resolver, iot, containingTable, new java.util.LinkedHashSet<>());
-                if (nestedHit != null) {
-                    if (!anyNestedSameTable && sameTableHit == null) {
-                        sameTableHit = nestedHit;
-                    }
-                    anyNestedSameTable = true;
-                }
+                boolean[] sawNested = {false};
+                walkInputTypeForSameTableNodeId(
+                    resolver, iot, containingTable, argRequired, new java.util.LinkedHashSet<>(),
+                    hit -> {
+                        sawNested[0] = true;
+                        if (hit.required() && firstRequiredHit[0] == null) {
+                            firstRequiredHit[0] = hit.hit();
+                        }
+                    });
+                if (sawNested[0]) anyHit = true;
             }
         }
-        if (byArgName.isEmpty() && !anyNestedSameTable) {
+        var guard = firstRequiredHit[0] != null
+            ? (NodeIdArgPlan.AsConnectionGuard) new NodeIdArgPlan.AsConnectionGuard.Required(firstRequiredHit[0])
+            : new NodeIdArgPlan.AsConnectionGuard.None();
+        if (byArgName.isEmpty() && !anyHit) {
             return NodeIdArgPlan.EMPTY;
         }
-        return new NodeIdArgPlan(Map.copyOf(byArgName), anyArgSameTable, anyNestedSameTable, sameTableHit);
+        return new NodeIdArgPlan(Map.copyOf(byArgName), guard);
     }
 
-    private NodeIdArgPlan.SameTableHit walkInputTypeForSameTableNodeId(
+    private record SameTableHitWithRequired(NodeIdArgPlan.SameTableHit hit, boolean required) {}
+
+    private void walkInputTypeForSameTableNodeId(
             NodeIdLeafResolver resolver, GraphQLInputObjectType iot, TableRef containingTable,
-            java.util.LinkedHashSet<String> visited) {
-        if (!visited.add(iot.getName())) return null;
-        for (var inputField : iot.getFieldDefinitions()) {
-            if (inputField.hasAppliedDirective(DIR_NODE_ID)) {
-                var unwrapped = GraphQLTypeUtil.unwrapAll(inputField.getType());
-                if (unwrapped instanceof GraphQLNamedType named && "ID".equals(named.getName())) {
-                    var resolved = resolver.resolve(inputField, inputField.getName(), containingTable);
-                    if (resolved instanceof NodeIdLeafResolver.Resolved.SameTable st) {
-                        return new NodeIdArgPlan.SameTableHit(
-                            inputField.getName(), st.refTypeName(), containingTable.tableName());
+            boolean pathRequiredSoFar, java.util.LinkedHashSet<String> visited,
+            java.util.function.Consumer<SameTableHitWithRequired> hits) {
+        if (!visited.add(iot.getName())) return;
+        try {
+            for (var inputField : iot.getFieldDefinitions()) {
+                boolean fieldRequired = inputField.getType() instanceof GraphQLNonNull;
+                boolean pathRequired = pathRequiredSoFar && fieldRequired;
+                if (inputField.hasAppliedDirective(DIR_NODE_ID)) {
+                    var unwrapped = GraphQLTypeUtil.unwrapAll(inputField.getType());
+                    if (unwrapped instanceof GraphQLNamedType named && "ID".equals(named.getName())) {
+                        var resolved = resolver.resolve(inputField, inputField.getName(), containingTable);
+                        if (resolved instanceof NodeIdLeafResolver.Resolved.SameTable st) {
+                            hits.accept(new SameTableHitWithRequired(
+                                new NodeIdArgPlan.SameTableHit(
+                                    inputField.getName(), st.refTypeName(), containingTable.tableName()),
+                                pathRequired));
+                        }
                     }
                 }
+                var nestedType = GraphQLTypeUtil.unwrapAll(inputField.getType());
+                if (nestedType instanceof GraphQLInputObjectType nestedIot) {
+                    walkInputTypeForSameTableNodeId(
+                        resolver, nestedIot, containingTable, pathRequired, visited, hits);
+                }
             }
-            var nestedType = GraphQLTypeUtil.unwrapAll(inputField.getType());
-            if (nestedType instanceof GraphQLInputObjectType nestedIot) {
-                var nestedHit = walkInputTypeForSameTableNodeId(resolver, nestedIot, containingTable, visited);
-                if (nestedHit != null) return nestedHit;
-            }
+        } finally {
+            visited.remove(iot.getName());
         }
-        return null;
     }
 
     private static String formatCtorSignatures(java.lang.reflect.Constructor<?>[] ctors) {
@@ -378,12 +414,14 @@ class FieldBuilder {
 
     private static String formatAsConnectionSameTableRejection(
             NodeIdArgPlan.SameTableHit hit, String fieldName) {
-        return "@nodeId(typeName: '" + hit.refTypeName() + "') on '" + hit.leafName() + "' resolves to '"
-            + hit.containingTableName() + "', the field's own backing table, which makes this"
-            + " argument a lookup key. Lookups don't compose with @asConnection (the result"
-            + " cardinality is bounded by the input list, not paginatable). Drop @asConnection"
-            + " from '" + fieldName + "', or use a filter argument that resolves to a different"
-            + " table via FK.";
+        return "@nodeId(typeName: '" + hit.refTypeName() + "') on '" + hit.leafName()
+            + "' (required) resolves to '" + hit.containingTableName()
+            + "', the field's own backing table. A required same-table @nodeId leaf"
+            + " bounds the result to the input id list, so @asConnection adds no value"
+            + " here — every page would equal the input set. Make '" + hit.leafName()
+            + "' nullable to compose with @asConnection (the filter is applied when ids"
+            + " are supplied, omitted otherwise), drop @asConnection from '" + fieldName
+            + "', or use a filter argument that resolves to a different table via FK.";
     }
 
     /**
@@ -395,15 +433,18 @@ class FieldBuilder {
      */
     private TableFieldComponents resolveTableFieldComponents(
             GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan) {
-        // @asConnection + same-table @nodeId leaf is incoherent at runtime — the result
-        // cardinality is bounded by the input id list (lookup semantics), not paginatable.
-        // Reject before classification so the structural conflict surfaces with a pointed hint
-        // instead of building a degenerate connection. Symmetric across argument-level and
-        // input-field leaves.
+        // @asConnection + a required same-table @nodeId leaf flags confused author intent:
+        // the result is always bounded by the mandatory input id list, so the connection's
+        // page is the input set (not broken at runtime — just useless). Optional same-table
+        // @nodeId leaves are fine: caller-omitted leaves drop the PK-IN filter and the
+        // connection paginates the full table; caller-supplied leaves narrow to a bounded
+        // set and paginate within it. Required-ness is conjunctive across the path: the
+        // guard fires iff the outer arg and every nested input wrapper down to the leaf
+        // are all non-null. ∃-required across all hits, not first-hit-wins.
         if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
-                && (plan.anyArgSameTable() || plan.anyNestedSameTable())
-                && plan.sameTableHit() != null) {
-            return new TableFieldComponents.Rejected(Rejection.structural(formatAsConnectionSameTableRejection(plan.sameTableHit(), fieldDef.getName())));
+                && plan.asConnectionGuard() instanceof NodeIdArgPlan.AsConnectionGuard.Required required) {
+            return new TableFieldComponents.Rejected(Rejection.structural(
+                formatAsConnectionSameTableRejection(required.hit(), fieldDef.getName())));
         }
         var errors = new ArrayList<String>();
         var refs = classifyArguments(fieldDef, table, plan, errors);

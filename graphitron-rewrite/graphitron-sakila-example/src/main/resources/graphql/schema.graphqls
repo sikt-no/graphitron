@@ -113,6 +113,15 @@ type Query {
     # arg as ordinary BodyParam predicates rather than being silently ignored under the
     # legacy lookup-promotion gate.
     filmsByNodeIdArgWithTitleFilter(ids: [ID!]! @nodeId(typeName: "Film"), title: String): [Film!]!
+    # R113: optional same-table @nodeId on @asConnection — guard now narrows to required leaves
+    # only. Caller-omitted leaf drops the PK-IN filter and paginates the full table; caller-
+    # supplied leaf narrows to a bounded set and paginates within it. Sibling scalar filter
+    # composes (R106 lift's promise on the connection rail).
+    filmsConnectionByOptionalIds(
+        ids: [ID!] @nodeId(typeName: "Film"),
+        title: String,
+        first: Int, last: Int, after: String, before: String
+    ): [Film!]! @asConnection @defaultOrder(primaryKey: true)
     filmsWithImplicitInput(filter: FilmImplicitInput): [Film!]!
     # implicit-input-conditions plan: outer @condition(override: true) on a field whose
     # @table input has no explicit @condition on its fields. The enclosingOverride flag

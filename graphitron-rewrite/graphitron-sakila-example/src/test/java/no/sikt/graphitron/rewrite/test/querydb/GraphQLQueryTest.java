@@ -470,6 +470,94 @@ class GraphQLQueryTest {
         assertThat(films).isEmpty();
     }
 
+    // ===== R113: optional same-table @nodeId on @asConnection — composes =====
+
+    @Test
+    void filmsConnectionByOptionalIds_idsSupplied_paginatesBoundedSet() {
+        // R113 acceptance: optional same-table @nodeId leaf composes with @asConnection. Three
+        // ids supplied, first: 2 → page 1 has 2 of the 3 films and hasNextPage=true; following
+        // the cursor returns the remaining 1 film with hasNextPage=false. The PK-IN filter
+        // bounds the result; pagination runs over the bounded set.
+        String id1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        String id3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
+        String id5 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 5);
+        Map<String, Object> page1 = execute(
+            "{ filmsConnectionByOptionalIds(ids: [\"" + id1 + "\", \"" + id3 + "\", \"" + id5 + "\"], first: 2) "
+            + "{ nodes { filmId } pageInfo { hasNextPage endCursor } } }");
+        var conn1 = assertThat(page1).extractingByKey("filmsConnectionByOptionalIds", as(MAP));
+        conn1.extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(2)
+            .extracting(n -> n.get("filmId")).containsExactly(1, 3);
+        String endCursor = (String) conn1.extractingByKey("pageInfo", as(MAP))
+            .containsEntry("hasNextPage", true)
+            .actual().get("endCursor");
+
+        Map<String, Object> page2 = execute(
+            "{ filmsConnectionByOptionalIds(ids: [\"" + id1 + "\", \"" + id3 + "\", \"" + id5 + "\"], "
+            + "first: 2, after: \"" + endCursor + "\") { nodes { filmId } pageInfo { hasNextPage } } }");
+        var conn2 = assertThat(page2).extractingByKey("filmsConnectionByOptionalIds", as(MAP));
+        conn2.extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(1)
+            .extracting(n -> n.get("filmId")).containsExactly(5);
+        conn2.extractingByKey("pageInfo", as(MAP)).containsEntry("hasNextPage", false);
+    }
+
+    @Test
+    void filmsConnectionByOptionalIds_idsOmitted_paginatesFullTable() {
+        // R113 acceptance: caller-omitted optional @nodeId leaf drops the PK-IN filter; the
+        // connection paginates the full film table. Test DB has 5 films; first: 3 returns 3
+        // with hasNextPage=true.
+        Map<String, Object> data = execute(
+            "{ filmsConnectionByOptionalIds(first: 3) { nodes { filmId } pageInfo { hasNextPage } } }");
+        var conn = assertThat(data).extractingByKey("filmsConnectionByOptionalIds", as(MAP));
+        conn.extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(3)
+            .extracting(n -> n.get("filmId")).containsExactly(1, 2, 3);
+        conn.extractingByKey("pageInfo", as(MAP)).containsEntry("hasNextPage", true);
+    }
+
+    @Test
+    void filmsConnectionByOptionalIds_idsNullExplicit_paginatesFullTable() {
+        // R113 acceptance: explicit ids: null behaves like the omitted case. The PK-IN filter
+        // is gated on a non-null id list (caller-side), so a null arg drops the filter and the
+        // connection paginates the full table.
+        Map<String, Object> data = execute(
+            "{ filmsConnectionByOptionalIds(ids: null, first: 3) "
+            + "{ nodes { filmId } pageInfo { hasNextPage } } }");
+        var conn = assertThat(data).extractingByKey("filmsConnectionByOptionalIds", as(MAP));
+        conn.extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(3)
+            .extracting(n -> n.get("filmId")).containsExactly(1, 2, 3);
+        conn.extractingByKey("pageInfo", as(MAP)).containsEntry("hasNextPage", true);
+    }
+
+    @Test
+    void filmsConnectionByOptionalIds_idsSuppliedWithSiblingFilter_composes() {
+        // R113 acceptance: PK-IN filter from same-table @nodeId composes with a sibling
+        // condition-driven filter (R106's "siblings compose" guarantee, now lifted onto the
+        // connection rail). Three ids span films with three different titles; constrain by
+        // one of those titles and a single film survives the AND.
+        String id1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        String id2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
+        String id3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
+        Map<String, Object> first = execute(
+            "{ filmsConnectionByOptionalIds(ids: [\"" + id1 + "\", \"" + id2 + "\", \"" + id3 + "\"], first: 5) "
+            + "{ nodes { filmId title } } }");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> firstFilms = (List<Map<String, Object>>)
+            ((Map<String, Object>) first.get("filmsConnectionByOptionalIds")).get("nodes");
+        String onlyTitle = (String) firstFilms.get(0).get("title");
+
+        Map<String, Object> filtered = execute(
+            "{ filmsConnectionByOptionalIds(ids: [\"" + id1 + "\", \"" + id2 + "\", \"" + id3 + "\"], "
+            + "title: \"" + onlyTitle + "\", first: 5) { nodes { filmId title } } }");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> filteredFilms = (List<Map<String, Object>>)
+            ((Map<String, Object>) filtered.get("filmsConnectionByOptionalIds")).get("nodes");
+        assertThat(filteredFilms).hasSize(1);
+        assertThat(filteredFilms.get(0).get("title")).isEqualTo(onlyTitle);
+    }
+
     @Test
     void filmsByNodeIdArg_emptyList_returnsNoRows() {
         // R40 phase 2: empty input list — the input-rows helper's row-count computation

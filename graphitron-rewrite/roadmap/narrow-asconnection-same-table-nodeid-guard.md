@@ -28,6 +28,15 @@ R113 also collapses the carrier signals the R106 commit-body called out as a fol
 
 ## Implementation
 
+> **Shipped.** Carrier collapsed to `NodeIdArgPlan.AsConnectionGuard.{None | Required(SameTableHit)}`,
+> walker rewritten to fold ∃-required across all hits with conjunctive path-required threading,
+> guard predicate / comment / message refreshed per the spec, hygiene-only Javadoc on
+> `AsConnectionGuard`. Pipeline tier now has 9 connection cases (required arg/input/conjunctive
+> rejected; optional arg/input/nested allowed; mixed-nullability ∃-required both orderings;
+> wording-pin; FK-target unchanged) plus the dedicated nullable-hint pin. Execution tier added
+> four `Query.filmsConnectionByOptionalIds` scenarios (ids supplied/omitted/null/composes-with-sibling).
+
+
 ### Carrier: replace the three same-table signals with a sealed `AsConnectionGuard`
 
 `NodeIdArgPlan` today (`FieldBuilder.java:222-232`):
