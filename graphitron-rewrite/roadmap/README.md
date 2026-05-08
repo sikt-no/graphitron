@@ -33,7 +33,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R68` | Diataxis user manual: absorb legacy README into the docs site | In Review | [plan](diataxis-user-manual.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | [plan](list-valued-external-field-multiset.md) |
-| `R112` | Operation-driven test corpus driving tests, runtime trace, and docs | Spec | [plan](operation-driven-test-corpus.md) |
+| `R112` | Operation-driven test corpus, capability catalog, and runtime trace | Spec | [plan](operation-driven-test-corpus.md) |
 
 ---
 
@@ -164,7 +164,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R76` [**Emit per-participant fieldsJoin and orderBy; replace SelectJoinStep mutation in interface fetchers**](participant-fieldsjoin-helpers.md) — Backlog, cleanup
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture
 - `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md) — Backlog, validation
-- `R112` [**Operation-driven test corpus driving tests, runtime trace, and docs**](operation-driven-test-corpus.md) — Spec, architecture
+- `R112` [**Operation-driven test corpus, capability catalog, and runtime trace**](operation-driven-test-corpus.md) — Spec, architecture
 
 ### docs
 
