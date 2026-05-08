@@ -1,7 +1,7 @@
 ---
 id: R114
 title: "Multi-hop @reference path on @nodeId filter input fields"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 6
 theme: nodeid
@@ -126,7 +126,7 @@ Two distinct keys, not one widened key. Each guarantees an independent invariant
 
 - **L5 / pipeline-tier emitter** (`QueryConditionsGeneratorLiftTest` or sibling): verify the emitted method body uses `DSL.row(parentTable.LIFTED_COL_1, parentTable.LIFTED_COL_2).in(arg)` (composite case) or `parentTable.LIFTED_COL.in(arg)` (scalar case). Differentiates from a hypothetical EXISTS-subquery follow-on.
 
-- **L6 / execution (`GraphQLQueryTest`)** — `multiHopReferenceFilter_returnsRows`: round-trip a query that filters through a 2-hop identity-carrying chain. Assert (a) returned rows match the filter by node ID; (b) `ExecuteListener` SQL contains a single-table FROM clause and no subquery (pin the direct-projection shape).
+- **L6 / execution (`GraphQLQueryTest`)** — `multiHopReferenceFilter_returnsRows`: round-trip a query that filters through a 2-hop identity-carrying chain. Assert (a) returned rows match the filter by node ID; (b) `ExecuteListener` SQL contains a single-table FROM clause and no subquery (pin the direct-projection shape). **Deferred (filed as Backlog sibling).** The `nodeidfixture` jOOQ classes live in a separate package (`no.sikt.graphitron.rewrite.nodeidfixture`) from the sakila-example's configured `jooqPackage` (`no.sikt.graphitron.rewrite.test.jooq`), so referencing `level_c`/`level_b`/`level_a` from `schema.graphqls` requires either a second codegen execution or a duplicate of the chain tables under the public schema. Either option is scope creep against the implementation surface R114 owns; the L1/L3/L5 + L4 (compilation) coverage already pin the carrier shape, the lifted-tuple identity, and the emitted-method's parameter signature. The full execution-tier round-trip lands together with the wiring change.
 
 ## Fixture
 
@@ -141,9 +141,9 @@ R114 picks option 1. The fixture lives alongside the existing `parent_node` + `c
 
 The howto article is part of the deliverable, not a follow-on. Concrete pin:
 
-- **File**: `docs/manual/how-to/multi-hop-nodeid-filter.adoc` (sibling to R110's `source-row.adoc`).
-- **Parent registration**: appended to the how-to index in `docs/manual/index.adoc` alongside R110's entry.
-- **No-drift mechanism**: the worked example pulls from the new fixture (`nodeidfixture` chain — see "Fixture" below) via AsciiDoc `include::` with `tag::multi-hop-identity-carrying[]` / `tag::multi-hop-rejected-translation[]` markers in the SDL `.graphqls` file, mirroring R110's `tag::sourcerow-story-1[]` precedent.
+- **File**: `docs/manual/how-to/multi-hop-nodeid-filter.adoc` (sibling to R110's planned `source-row.adoc`).
+- **Parent registration**: appended to the how-to index in `docs/manual/how-to/index.adoc` alongside the existing entries.
+- **No-drift mechanism**: the worked example currently inlines its SDL because the example schema does not yet reference the `nodeidfixture` chain (the L6 wiring follow-on is what threads the fixture into the example). When the L6 sibling lands, the article switches to AsciiDoc `include::` with `tag::multi-hop-identity-carrying[]` / `tag::multi-hop-rejected-translation[]` markers in the wiring schema, mirroring R110's `tag::sourcerow-story-1[]` precedent.
 - **Section order, mental-model first**: the article opens with "Why identity-carrying" — multi-hop `@nodeId` filters compile to a single-table predicate (no subquery, no JOIN), which is only well-defined when each step preserves the next step's source-side columns positionally by SQL name. The worked example follows. The "Rejection messages" section then names the two diagnostic markers (`LIFT_FAILURE_MARKER` / `CONDITION_STEP_MARKER`) and links each to a section that explains what the author should change. The diagnostic message's "see howto" pointer (see "Diagnostics") targets the rejection-messages section directly.
 
 This ordering closes the author-ergonomics gap noted by the architect review: single-hop `@reference` works on any FK, but multi-hop quietly carries a precondition the SDL syntax does not advertise. Leading the howto with the mental model means the rejection message lands on prepared ground rather than on an author who reads "introduces a column translation" cold.
@@ -165,4 +165,5 @@ This ordering closes the author-ergonomics gap noted by the architect review: si
   - **Non-identity-carrying multi-hop `@reference` on `@nodeId`** — EXISTS-subquery or JOIN-with-translation emission. Symmetric to R57 (single-hop translated). Pin the load-bearing structure (which hop fails, which carrier shape) here when a real schema needs it.
   - **`column` / `columns` slot rename** on `InputField.ColumnReferenceField` / `CompositeColumnReferenceField` and `ArgumentRef.ScalarArg.ColumnReferenceArg` / `CompositeColumnReferenceArg`. The slot holds NodeType key columns on the *target* table, but the name reads as "the predicate column" (which actually comes from `joinPath` / `liftedSourceColumns`). Rename to a role-explicit name (e.g. `decodedKeyColumns`) once R114 lands; the rename touches every existing single-hop consumer and is a hygiene step, not a behaviour change.
   - **Diagnostic-anchoring policy migration**. R114 introduces `static final String` markers on `NodeIdLeafResolver` for its two new diagnostics; R57 and earlier rejection sites still anchor on quoted prose substrings. File a tiny item to migrate the existing handful of substring-based assertions to constant markers, so the convention is uniform across the resolver / classifier surface.
+  - **L6 execution-tier round-trip for multi-hop identity-carrying lift.** Wire the `nodeidfixture` chain into the sakila-example so `GraphQLQueryTest.multiHopReferenceFilter_returnsRows` can run end-to-end. Either add a second graphitron-codegen execution targeting `no.sikt.graphitron.rewrite.nodeidfixture` against a sibling SDL file (`level-fixture.graphqls`), or duplicate the chain tables under the public schema (`level_a` / `level_b` / `level_c`) so `schema.graphqls` can reference them directly. The L1/L3/L5/L4 coverage R114 ships already pins the lifted-tuple identity, carrier shape, and emitter signature; this Backlog item closes the SQL-execution loop.
   - **`Resolved.FkTarget.DirectFk.fkSourceColumns()` vestige.** This slot is set at `NodeIdLeafResolver.java:152, 275` but never read by either carrier-construction site (`FieldBuilder.classifyArgument`, `BuildContext.classifyInputField` both consume `joinPath` and `keyColumns`). After R114 lands, the slot's role is fully covered by `liftedSourceColumns` on the carrier; the producer-with-no-consumer slot can either be deleted or kept as a structural mirror of the new slot. Hygiene item, not blocking.

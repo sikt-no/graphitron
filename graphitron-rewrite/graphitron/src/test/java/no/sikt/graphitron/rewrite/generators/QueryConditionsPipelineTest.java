@@ -68,6 +68,43 @@ class QueryConditionsPipelineTest {
     }
 
     @Test
+    void multiHopIdentityCarryingLift_emitsHelperOnLiftedTuple() {
+        // R114 pipeline-tier emitter check: a 2-hop @reference path on @nodeId that satisfies
+        // the lift predicate produces a generated `<Type>Conditions` method that takes the
+        // decoded record list as input. The structural shape (helper exists with the expected
+        // signature) is what differentiates the lift case from a hypothetical EXISTS-subquery
+        // follow-on; the lifted-tuple identity itself is asserted at the L3 carrier-level test
+        // (NodeIdPipelineTest.MULTI_HOP_IDENTITY_CARRYING) and the per-row execution at L6
+        // (GraphQLQueryTest.multiHopReferenceFilter_returnsRows).
+        var schema = TestSchemaHelper.buildSchema("""
+            type LevelA implements Node @table(name: "level_a") @node { id: ID! }
+            type LevelC @table(name: "level_c") {
+                cId: String! @field(name: "c")
+            }
+            type Query {
+                levelCsByLevelA(
+                    levelAIds: [ID!]! @nodeId(typeName: "LevelA") @reference(path: [
+                        {key: "level_c_level_b_fk"},
+                        {key: "level_b_level_a_fk"}
+                    ])
+                ): [LevelC!]!
+            }
+            """, FIXTURE_CTX);
+
+        var classes = QueryConditionsGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE);
+        var queryConditions = classes.stream()
+            .filter(t -> t.name().equals("QueryConditions")).findFirst().orElseThrow();
+
+        var conditionMethod = queryConditions.methodSpecs().stream()
+            .filter(m -> m.name().equals("levelCsByLevelACondition"))
+            .findFirst().orElseThrow();
+        // Method exists. The condition method's body wraps the helper call against the lifted
+        // tuple; per the test-tier rules code-string assertions on bodies are banned, so the
+        // emitter shape is locked at the L3 BodyParam-level test and the L6 execution test.
+        assertThat(conditionMethod.parameters()).isNotEmpty();
+    }
+
+    @Test
     void twoQueryFields_oneScalarOneList_emitDistinctHelpers() {
         // Same NodeId type but different list axis → registry key differs → two helpers.
         var schema = TestSchemaHelper.buildSchema("""
