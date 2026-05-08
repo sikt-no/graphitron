@@ -1,7 +1,7 @@
 ---
 id: R112
 title: "Operation-driven test corpus driving tests, runtime trace, and docs"
-status: Backlog
+status: Spec
 bucket: architecture
 theme: structural-refactor
 depends-on: []
