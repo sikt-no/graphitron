@@ -13,7 +13,24 @@ GraphQL documents already carry the structure a test-and-doc pipeline needs: nam
 
 The load-bearing design choice is `operation_key` as the natural join across every output. The `(document_path, operation_name)` tuple ties together (a) the JUnit test that exercises the operation, (b) the classification-trace row produced when codegen lowers the operation (R104, extended with the new column below), (c) the execution-trace row produced when the runtime fetches a non-trivial datafetcher under the operation, and (d) the AsciiDoctor render that emits the operation's description and body as a doc section. Same key, four outputs, no DSL on top of GraphQL.
 
-The `.graphql` corpus is the operation source-of-truth, not the test source-of-truth. Operations describe what to fetch; assertions describe what we expect about the result. Those are different concerns and they live in different places. The JUnit test that binds a document owns the imperative setup (`@BeforeEach`), the variable bindings (per-test or via `@MethodSource`), the assertions (AssertJ on the `ExecutionResult`), and the `loadOperation(path, name)` call that picks one operation out of the document. The `.graphql` file owns the operation: name, variables (with descriptions and defaults), selection set, fragments, and the operation description that becomes doc prose. The two are co-located via the test class loading the document, not via metadata on the operation.
+The `.graphql` corpus is the operation source-of-truth, not the test source-of-truth. Operations describe what to fetch; assertions describe what we expect about the result. Those are different concerns and they live in different places. The JUnit test that binds a document owns the imperative setup (`@BeforeEach`), the variable bindings, the assertions (AssertJ on the `ExecutionResult`), and the `OperationRunner.load(path, operationName)` call that picks one operation out of the document. The `.graphql` file owns the operation: name, variables (with descriptions and defaults), selection set, fragments, and the operation description that becomes doc prose. The two are co-located via the test class loading the document, not via metadata on the operation.
+
+*Runner shape: static helper.* `OperationRunner.load(path, operationName)` parses the document once per file (cached), validates against the schema, and returns a handle bound to one named operation. The handle's `execute(variables)` sets the operation name on the `ClassificationTrace.Context` ThreadLocal (parallel to the existing test-class tagging) so every classifier and execution-trace row produced under the call carries the right `operation_key`; the `Instrumentation` impl reads from the same ThreadLocal. No `@TestFactory`, no custom JUnit `TestEngine`, no `@ParameterizedTest` machinery: each test method names its operation explicitly, owns its `@BeforeEach`, and asserts in AssertJ. Per-operation reporting falls out of stock JUnit (test method name is the test ID). Corpus-coverage enforcement (every operation exercised by at least one test) doesn't live in the test machinery; it's a report query. Any operation with classification-trace rows but no execution-trace rows is unbound, which is the four-quadrant report's job. A worked test:
+
+```java
+class FilmsByYearTest {
+  @BeforeEach void setUp() { /* DB fixtures */ }
+
+  @Test
+  void filmsByYear_2006() {
+    var op = OperationRunner.load("films/by-year.graphql", "FilmsByYear");
+    var result = op.execute(Map.of("year", 2006));
+    assertThat(result.<List<?>>getData("filmsByYear")).hasSize(20);
+  }
+}
+```
+
+Module placement (`graphitron-fixtures-codegen` vs. `graphitron`) is left to the implementer, with `graphitron-fixtures-codegen` the likely home alongside other test fixtures.
 
 *Design rule: natural keys throughout.* Every DuckDB table is keyed by GraphQL-given natural identity; surrogate IDs are forbidden unless a fork explicitly justifies why no natural key exists. Operations are keyed by `(document_path, operation_name)` (graphql-java already enforces operation-name uniqueness within a document, and the path disambiguates across the corpus). Field-axis rows are keyed by schema coordinate `(parent_type, field_name)`. Execution invocations are keyed by `(operation_key, result_path)` where `result_path` is `graphql.execution.ResultPath`, the canonical identifier graphql-java already uses for any field invocation, including list-child indices like `/films[3]/director`. Roadmap items use `R<n>` directly. The cross-axis join key is `operation_key`; it ties classification trace, execution trace, and the AsciiDoctor render together. The roadmap join is leaf-mediated rather than direct: roadmap-mention rows reference leaves (R104), and classification-trace rows reference the same leaves, so an operation joins to a roadmap item transitively through its classified leaves rather than through metadata on the operation. Keeping every key natural keeps the joins readable and the schema extensible: any new axis (fragments, variable bindings) joins on the same `operation_key` without an FK fanout.
 
