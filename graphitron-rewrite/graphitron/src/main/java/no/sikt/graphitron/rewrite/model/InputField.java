@@ -75,9 +75,16 @@ public sealed interface InputField extends GraphitronField
         boolean list,
         ColumnRef column,
         List<JoinStep> joinPath,
+        List<ColumnRef> liftedSourceColumns,
         Optional<ArgConditionRef> condition,
         CallSiteExtraction extraction
-    ) implements InputField {}
+    ) implements InputField {
+
+        public ColumnReferenceField {
+            joinPath = List.copyOf(joinPath);
+            liftedSourceColumns = List.copyOf(liftedSourceColumns);
+        }
+    }
 
     /**
      * Composite-key input carrier on a {@code @table}-annotated input type. Carries
@@ -132,12 +139,15 @@ public sealed interface InputField extends GraphitronField
         boolean list,
         List<ColumnRef> columns,
         List<JoinStep> joinPath,
+        List<ColumnRef> liftedSourceColumns,
         Optional<ArgConditionRef> condition,
         CallSiteExtraction.NodeIdDecodeKeys extraction
     ) implements InputField {
 
         public CompositeColumnReferenceField {
             columns = List.copyOf(columns);
+            joinPath = List.copyOf(joinPath);
+            liftedSourceColumns = List.copyOf(liftedSourceColumns);
             if (columns.size() < 2) {
                 throw new IllegalArgumentException(
                     "InputField.CompositeColumnReferenceField requires arity >= 2 (got " + columns.size() + "); arity-1 routes to ColumnReferenceField");
