@@ -69,6 +69,8 @@ The emitted SQL is `DSL.row(sak.OPPTAKSTYPE_KODE, sak.OPPTAK_KODE).in(decodedKey
 - After parsing, every step must still be `JoinStep.FkJoin`. The loop replaces the existing single-element `instanceof FkJoin` check.
 - For length ≥ 2, run the lift predicate against each adjacent step pair. On failure, return a rejection (see "Diagnostics" for the exact text and constant name).
 
+**Multi-hop is always explicit.** The auto-discovery fallback (`JooqCatalog.findUniqueFkToTable`, taken when `@reference` is absent) stays single-hop only. Disambiguation among `A → ? → C` chains is the author's responsibility via per-hop `{ key: ... }`. The classifier never searches for a multi-hop path; if the author wants more than one hop, they must spell every hop explicitly. This keeps the auto-discovery path the same shape as today and pins the multi-hop opt-in to the SDL surface where the chain is visible at review time.
+
 `NodeIdLeafResolver.resolve`:
 
 - The `DirectFk` vs `TranslatedFk` decision (line 272: `sameColumnsBySqlName(fkJoin.targetSideColumns(), keys.keyColumns())`) switches from `joinPath.get(0)` to `joinPath.getLast()`. The terminal hop is the one whose target-side columns must positionally match the NodeType key columns; intermediate hops are constrained by the lift predicate above.
