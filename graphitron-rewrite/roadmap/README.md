@@ -19,8 +19,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R70` | Support TableRecord-keyed Map returns on @service rows methods <sub>blocked by: [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)</sub> | In Review | [plan](service-rows-tablerecord-key-shape.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec | [plan](custom-scalar-java-types.md) |
-| `R114` | Multi-hop @reference path on @nodeId filter input fields | Spec | [plan](multi-hop-nodeid-reference-filter.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
+| `R114` | Multi-hop @reference path on @nodeId filter input fields | In Progress | [plan](multi-hop-nodeid-reference-filter.md) |
 | `R113` | Demote @asConnection + same-table @nodeId guard to a warning | In Review | [plan](narrow-asconnection-same-table-nodeid-guard.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
@@ -117,7 +117,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
 - `R113` [**Demote @asConnection + same-table @nodeId guard to a warning**](narrow-asconnection-same-table-nodeid-guard.md) — In Review, validation
-- `R114` [**Multi-hop @reference path on @nodeId filter input fields**](multi-hop-nodeid-reference-filter.md) — Spec, architecture
+- `R114` [**Multi-hop @reference path on @nodeId filter input fields**](multi-hop-nodeid-reference-filter.md) — In Progress, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
 ### service
