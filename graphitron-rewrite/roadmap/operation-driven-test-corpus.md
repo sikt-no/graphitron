@@ -9,6 +9,8 @@ depends-on: [capability-catalog]
 
 # Operation-driven test corpus, capability catalog, and runtime trace
 
+This item contributes to the knowledge-base programme framed in R117: the DuckDB tables it lands (`operation`, `fetcher_call`, `generated_fetcher`, `capability`, `capability_coordinate`, `operation_exemplifies`) extend R104's coordinate × classification foundation toward a queryable model of graphitron's operation surface. Naming, joining, and emit conventions follow R117's programme principles (natural keys only, KB as projection, opt-in via build profile). R118 (graphitron MCP server) consumes the tables this item adds; nothing in this item depends on R117 having shipped, since R117 is a navigational programme rather than executable work.
+
 GraphQL documents already carry the structure a test-and-doc pipeline needs: named operations group variants of a query, descriptions narrate intent, and typed variables with defaults define an input grid. Today we use almost none of this. Execution-tier tests are imperative Java that reconstruct queries inline, the leaf-coverage report (R104) joins by test class rather than by operation, and worked examples in the docs site are hand-typed prose disconnected from any running test. The fix is to make three artefacts share one source of truth, joined by stable natural keys: the SDL (with a metadata directive labelling capabilities), an operation corpus (`.graphql` files), and a capability catalog (short prose under `graphitron-rewrite/capabilities/<slug>.adoc`). Tests, the runtime trace, and the docs site all compose off the same joins.
 
 The load-bearing decision is the *triangle of natural keys*. Three artefacts, three keys, every join walks one of them:
