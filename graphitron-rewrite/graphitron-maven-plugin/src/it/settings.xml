@@ -2,8 +2,11 @@
 <settings>
   <!--
     Settings for maven-invoker-plugin integration tests.
-    invoker:install puts the just-built plugin into the local repository before
-    the IT child sessions run. All other artifacts must already be present in
-    the local repository from a prior build.
+    invoker:install seeds the IT local repository with the just-built plugin
+    and its declared dependency tree (resolved from the reactor cache, so no
+    prior `mvn install` is required). Sibling reactor modules that only an
+    IT pom references must be listed under <extraArtifacts> on the
+    maven-invoker-plugin configuration in the parent pom; that is the seam
+    for adding a new sibling-module dependency, not a top-level install step.
   -->
 </settings>
