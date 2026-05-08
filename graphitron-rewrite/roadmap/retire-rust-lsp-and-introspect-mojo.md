@@ -4,7 +4,7 @@ title: "Retire Rust graphitron-lsp + delete IntrospectMojo"
 status: Backlog
 bucket: Backlog
 priority: 18
-theme: legacy-migration
+theme: lsp
 depends-on: []
 ---
 

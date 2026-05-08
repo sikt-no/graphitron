@@ -4,7 +4,7 @@ title: "LSP Javadoc surfacing + per-line definitions + @externalField + argMappi
 status: Backlog
 bucket: Backlog
 priority: 17
-theme: legacy-migration
+theme: lsp
 depends-on: []
 ---
 

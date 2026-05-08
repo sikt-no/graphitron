@@ -3,6 +3,7 @@ id: R100
 title: "LSP validation and completions for @node and @nodeId directives"
 status: Backlog
 bucket: feature
+theme: lsp
 depends-on: []
 ---
 

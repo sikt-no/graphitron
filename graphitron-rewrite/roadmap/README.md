@@ -195,21 +195,21 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R47` [**Short class-name resolution for `@service` and `@externalField` (legacy parity)**](service-short-classname-resolution.md) — Backlog, cleanup
 - `R26` [**Retire `graphitron-maven-plugin` + `graphitron-schema-transform`**](retire-maven-plugin.md) — In Progress, blocked by [retire-rust-lsp-and-introspect-mojo](retire-rust-lsp-and-introspect-mojo.md)
 - `R34` [**sis-graphql-spec migration to graphitron-rewrite**](sis-rewrite-migration.md) — Backlog, cleanup
-- `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
-- `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
-- `R91` [**Retire Rust graphitron-lsp + delete IntrospectMojo**](retire-rust-lsp-and-introspect-mojo.md) — Backlog, Backlog
 
 ### lsp
 
 - `R119` [**LSP directive registry sourced from directives.graphqls**](lsp-directive-registry-from-sdl.md) — Backlog, architecture
+- `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
+- `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
+- `R91` [**Retire Rust graphitron-lsp + delete IntrospectMojo**](retire-rust-lsp-and-introspect-mojo.md) — Backlog, Backlog
+- `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
+- `R100` [**LSP validation and completions for @node and @nodeId directives**](node-directive-lsp-coverage.md) — Backlog, feature
 
 ### (untagged)
 
 - `R86` [**Architecture chapter for the manual**](architecture-chapter.md)
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
-- `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md)
-- `R100` [**LSP validation and completions for @node and @nodeId directives**](node-directive-lsp-coverage.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
 
