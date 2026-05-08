@@ -229,7 +229,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, test.internal.GeneratorDeterminismTest
-| R23, R3, R5, R97
+| R23, R3, R97
 | `MultitableReferenceField`
 | _(no javadoc)_
 | 1
