@@ -86,6 +86,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 ### Validation
 
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md): `FieldBuilder.resolveDefaultOrderSpec()` falls back to `OrderBySpec.Fixed([pk ASC])` when a list field has no `@defaultOrder` or `@orderBy` and the table has a PK. For tables without a PK, it returns `OrderBySpec.None` instead, which the generators faithfully emit as an empty `List.of()` — no `ORDER BY` clause. The result is a non-deterministic list every time the query runs.
+- `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md): `LeafCoverageReport.parseMentions` (R104) joins each sealed leaf simple-name against every roadmap `*.md` body via a `\b<simpleName>\b` regex. The match is undifferentiated: backticked code spans, code-fenced blocks, and bare prose mentions all collapse into the same `Roadmap` cell. Two consequences. First, every roadmap edit that names a leaf in any form drifts `inference-axis-coverage.adoc` and trips the `verify-leaf-coverage-report` CI gate, which is the regen-friction tax R104 deferred. Second, a reviewer reading the column has no way to sanity-check a match — `Field` against `FieldType` is excluded by `\b`, but a phrase like "the field type" cannot be told apart from a deliberate `` `Field` `` symbol reference without re-reading the source spec body.
 
 ### Other
 
@@ -164,6 +165,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R66` [**Widen string-carrier intermediates onto Rejection (R58 follow-up)**](rejection-string-carrier-widening.md) — Backlog, architecture
 - `R76` [**Emit per-participant fieldsJoin and orderBy; replace SelectJoinStep mutation in interface fetchers**](participant-fieldsjoin-helpers.md) — Backlog, cleanup
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture
+- `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md) — Backlog, validation
 
 ### docs
 

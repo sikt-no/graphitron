@@ -86,7 +86,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
-| R106, R5
+| R106
 | `QueryNodeField`
 | _(no javadoc)_
 | 8
@@ -325,7 +325,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest
-| R104, R106, R23, R3, R39, R56
+| R104, R106, R23, R3, R39
 | `TableInterfaceField`
 | _(no javadoc)_
 | 5
@@ -411,7 +411,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | no
 | -
 | -
-| R104, R56
+| R104
 | `EdgeType`
 | A Relay edge object type — the inner wrapper whose fields are `cursor: String!` and
 | 0
@@ -419,7 +419,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | no
 | -
 | -
-| R104, R13, R56
+| R104, R13
 | `EnumType`
 | A GraphQL enum type. Classifier records it so `schema.types()` is complete for
 | 1694
@@ -507,7 +507,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | no
 | -
 | -
-| R104, R56
+| R104
 | `PlainObjectType`
 | A plain SDL object type — no `@table`, `@record`, `@error`, or other
 | 173
@@ -515,7 +515,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | ConnectionPromoterTest, GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, NestingFieldPipelineTest, TypeRegistryTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.ObjectTypeGeneratorTest, generators.schema.ObjectTypeRegisterFetchersTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest
-| R56
+| -
 | `PojoInputType`
 | A non-table input type backed by a plain Java class (POJO), or one whose backing class
 | 86
