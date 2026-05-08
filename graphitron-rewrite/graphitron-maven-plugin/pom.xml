@@ -90,6 +90,9 @@
                     <settingsFile>src/it/settings.xml</settingsFile>
                     <postBuildHookScript>verify.groovy</postBuildHookScript>
                     <showErrors>true</showErrors>
+                    <extraArtifacts>
+                        <extraArtifact>no.sikt:graphitron-sakila-db:${project.version}</extraArtifact>
+                    </extraArtifacts>
                 </configuration>
                 <executions>
                     <execution>
