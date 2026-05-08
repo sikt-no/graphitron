@@ -11,7 +11,7 @@ depends-on: []
 
 A common service shape is "child rows grouped by a category, exposed on the parent as a list of synthetic bucket types": e.g. `Opptak.grupperteOpptakshendelser: [GrupperteOpptakshendelser!]` where each bucket carries a category id, a category name, and the events in that category. Users today reach for `@service` and hand-write a `Map<ParentRecord, List<Bucket>>` batch loader: build a key set, issue the join query, bucket rows in Java, reconstruct the group records. The grouping is not declarative, the inner records are constructed outside Graphitron scope so sub-resolvers on them lose the framework's batching path, and the same pattern recurs across every service that has "events grouped by category", "lines grouped by status", "items grouped by tag".
 
-A code trace through the rewrite suggests the existing `@externalField` machinery already supports the obvious alternative, a static method returning `Field<Result<R>>` produced by jOOQ `multiset(...) GROUP BY ...`, with one small classifier tweak. The natural shape pushes the bucket Java record's inner-list accessor to be `Result<RentalRecord>` (jOOQ multiset's native materialisation), not `List<RentalRecord>`. The classifier currently rejects `Result<R>` accessors because `ServiceCatalog.peelContainer` (ServiceCatalog.java:816) does raw-class equality on `List.class` / `Set.class`. R109 widens that helper, validates the path end-to-end with a Sakila fixture, and writes the recipe.
+A code trace through the rewrite suggests the existing `@externalField` machinery already supports the obvious alternative, a static method returning `Field<Result<R>>` produced by jOOQ `multiset(...) GROUP BY ...`, plus a load-bearing classifier addition. The natural shape pushes the bucket Java record's inner-list accessor to be `Result<RentalRecord>` (jOOQ multiset's native materialisation), not `List<RentalRecord>`. The classifier currently rejects `Result<R>` accessors because `ServiceCatalog.peelContainer` (ServiceCatalog.java:816) does raw-class equality on `List.class` / `Set.class`. R109 adds `Result.class` to that recognition set as a first-class deliverable, validates the path end-to-end with a Sakila fixture, and writes the recipe.
 
 ## What we believe is true (and want to prove)
 
@@ -24,23 +24,30 @@ The structural argument that the path is mostly already wired:
 - `deriveBatchKeyFromTypedAccessor` (FieldBuilder.java:3033, load-bearing classifier check `accessor-rowkey-cardinality-matches-field` at FieldBuilder.java:3025) auto-derives `AccessorKeyedMany` on the second hop from a list-axis typed-`TableRecord` accessor on a Java-record parent, where the element class is a jOOQ `TableRecord` subtype.
 - `GraphitronSchemaValidator.validateComputedField` (GraphitronSchemaValidator.java:828) only rejects `ComputedField` carrying a join path (the deferred condition-join lift form), not list cardinality.
 
-The one structural gap: `ServiceCatalog.peelContainer` (ServiceCatalog.java:816) performs raw-class equality (`rawCls == List.class`, `rawCls == Set.class`) when classifying the container axis of an accessor's return type. `Result<R>` extends `List<R>` (jOOQ's `Result` interface, `R extends Record`) but the equality check rejects it; the accessor falls through to `AccessorDerivation.None` and the second-hop lift never fires. Recommending `List<R>` as the bucket-record accessor shape would force users to call `.convertFrom(...)` to coerce the multiset result and is contrary to jOOQ's idiomatic multiset usage. Widening `peelContainer` to accept any `List` / `Set` subtype is the natural fix and is the load-bearing change R109 absorbs.
+The one structural gap: `ServiceCatalog.peelContainer` (ServiceCatalog.java:816) performs raw-class equality (`rawCls == List.class`, `rawCls == Set.class`) when classifying the container axis of an accessor's return type. `Result<R>` extends `List<R>` (jOOQ's `Result` interface, `R extends Record`) but the equality check rejects it; the accessor falls through to `AccessorDerivation.None` and the second-hop lift never fires. Recommending `List<R>` as the bucket-record accessor shape would force users to call `.convertFrom(...)` to coerce the multiset result and is contrary to jOOQ's idiomatic multiset usage. Adding an explicit `Result.class` arm to `peelContainer` is the load-bearing change R109 absorbs.
 
 The empirical question is whether jOOQ's multiset round-trips cleanly through `ColumnFetcher`'s `record.get(DSL.field(name))` lookup on the parent select with the bucket Java record materialised correctly under that alias. Either it works as the trace predicts (modulo the `peelContainer` widening), or a small concrete gap surfaces, at which point R109 forks the gap into a follow-up plan and ships only what works.
 
 ## Classifier extension
 
-`ServiceCatalog.peelContainer` widens its container-axis recognition from raw-class equality to assignability:
+`ServiceCatalog.peelContainer` adds an explicit `org.jooq.Result.class` arm alongside the existing `List.class` / `Set.class` equality checks:
 
-- `List.class.isAssignableFrom(rawCls)` selects `ContainerKind.LIST`;
-- `Set.class.isAssignableFrom(rawCls)` selects `ContainerKind.SET`;
+- `rawCls == java.util.List.class || rawCls == org.jooq.Result.class` selects `ContainerKind.LIST`;
+- `rawCls == java.util.Set.class` selects `ContainerKind.SET`;
 - otherwise the existing `Optional.empty()` fall-through stands.
 
-Element-type extraction continues via `pt.getActualTypeArguments()[0]`, with a stated classifier guarantee that the element-type axis is the parameterised type's first type-argument. `Result<R>` satisfies this: `R` is its sole type variable and flows directly into the `List<R>` supertype. Subclasses that reorder type variables such that the element type is not the first type-argument (e.g. `class Tagged<K, T> extends ArrayList<T>`) are out of scope; they fall through to `AccessorDerivation.None` and require a `@batchKeyLifter` workaround. The existing `@LoadBearingClassifierCheck("accessor-rowkey-cardinality-matches-field")` at FieldBuilder.java:3025 continues to cover the cardinality contract; no new check is added.
+Element-type extraction continues via `pt.getActualTypeArguments()[0]`. `Result<R>`'s sole type variable `R` flows directly into the `List<R>` supertype, so the existing extraction is correct without any subtype-traversal logic. The arm is deliberately narrow rather than `List.class.isAssignableFrom(rawCls)`: the broader form would silently accept arbitrary `List` / `Set` subclasses (including ones that reorder type variables, such as `class Tagged<K, T> extends ArrayList<T>` where the element axis is not at type-argument zero), falling through to `AccessorDerivation.None` with no diagnostic. Keeping the producer narrow preserves the classifier guarantee that every accepted shape has type-argument zero as the element axis, which is what `deriveBatchKeyFromTypedAccessor` and the emitter arms downstream rely on.
+
+Two coordinated updates ride along:
+
+- The existing `@LoadBearingClassifierCheck("accessor-rowkey-shape-resolved")` description at FieldBuilder.java:3019 names the accepted shapes verbatim ("returning X, List<X>, or Set<X>"). Update it to read "X, List<X>, Set<X>, or Result<X>" so the producer-side documentation matches the producer-side code.
+- `peelContainer`'s javadoc names the accepted container raw classes; update it accordingly.
+
+The existing `@LoadBearingClassifierCheck("accessor-rowkey-cardinality-matches-field")` at FieldBuilder.java:3030 continues to cover the cardinality contract; no new check key is needed.
 
 ## Deliverables
 
-1. **Classifier extension and pipeline-tier coverage.** Widen `ServiceCatalog.peelContainer` per above; update its javadoc to state the first-type-argument element-axis guarantee. Add a `ResultPayload` fixture to `no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads` (a Java record with a `Result<FilmRecord>` accessor, FQN-cited from the SDL fixture). Add an enum arm to `GraphitronSchemaBuilderTest.AccessorDerivedBatchKeyCase` (GraphitronSchemaBuilderTest.java:2290) named `ACCESSOR_ROWKEYED_MANY_LIST_FIELD_RESULT_ACCESSOR` whose schema parents `films: [Film!]!` on a `Payload @record` backed by `ResultPayload`, and whose assertions match the existing `LIST_FIELD_LIST_ACCESSOR` arm at line 2291: `RecordTableField` with `BatchKey.AccessorKeyedMany`, accessor method name `films`, hop target-key columns equal to the element table's PK.
+1. **Classifier extension and pipeline-tier coverage.** Add the `Result.class` arm to `ServiceCatalog.peelContainer`; update its javadoc. Update the `accessor-rowkey-shape-resolved` `@LoadBearingClassifierCheck` description at FieldBuilder.java:3019 to include `Result<X>` alongside the existing `X / List<X> / Set<X>` shapes. Add a `ResultPayload` fixture to `no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads` (a Java record with a `Result<FilmRecord>` accessor, FQN-cited from the SDL fixture). Add an enum arm to `GraphitronSchemaBuilderTest.AccessorDerivedBatchKeyCase` named `ACCESSOR_ROWKEYED_MANY_LIST_FIELD_RESULT_ACCESSOR` whose schema parents `films: [Film!]!` on a `Payload @record` backed by `ResultPayload`, and whose assertions match the existing `ACCESSOR_ROWKEYED_MANY_LIST_FIELD_LIST_ACCESSOR` arm: `RecordTableField` with `BatchKey.AccessorKeyedMany`, accessor method name `films`, hop target-key columns equal to the element table's PK.
 2. **Sakila fixture** in `graphitron-sakila-service` proving the path end-to-end. Sakila has the right shape for this without a contrived domain model: rentals belong to inventory, which belongs to a film, which belongs to film-categories. A natural fixture is `Customer.rentalsByCategory: [RentalsByCategory!]` where each `RentalsByCategory` bucket carries the category id, the category name, and the customer's rentals in that category. Concretely:
    - A new `CustomerExtensions.rentalsByCategory(Customer customer)` returning `Field<Result<...>>` from a `multiset` correlated to the parent customer row, grouped by `film_category.category_id`.
    - A `RentalsByCategory` Java record with components `categoryId: Integer`, `categoryName: String`, `rentals: Result<RentalRecord>` so the second-hop classifier auto-derives `AccessorKeyedMany` from the typed `rentals()` accessor via the widened `peelContainer`.
@@ -52,7 +59,7 @@ Element-type extraction continues via `pt.getActualTypeArguments()[0]`, with a s
    - The motivating shape (parent → list of bucket records → list of inner table records).
    - The static-method signature and a worked Sakila example matching the fixture above.
    - The bucket Java record shape and why the typed `Result<RentalRecord>` accessor is what makes the inner lift work.
-   - An explicit recommendation of `Result<R>` over `List<R>` for the bucket-record accessor: jOOQ multiset materialises into `Result<R>` natively, so `convertFrom` coercion is unnecessary; either shape classifies as `AccessorKeyedMany` after the `peelContainer` widening, but `Result<R>` is the idiomatic jOOQ choice.
+   - An explicit recommendation of `Result<R>` over `List<R>` for the bucket-record accessor: jOOQ multiset materialises into `Result<R>` natively, so `convertFrom` coercion is unnecessary; either shape classifies as `AccessorKeyedMany` after the `peelContainer` arm is added, but `Result<R>` is the idiomatic jOOQ choice.
    - The cross-link to `result-types.adoc:133` for the broader `@record` decision tree.
    - A "constraints" bullet noting Postgres-only `multiset` support if relevant after fixture work.
    - A "see also" pointer back to the existing lift forms.
@@ -62,11 +69,11 @@ Element-type extraction continues via `pt.getActualTypeArguments()[0]`, with a s
 
 In order:
 
-1. Widen `ServiceCatalog.peelContainer` to accept `List` / `Set` subtypes; update its javadoc to state the first-type-argument element-axis guarantee.
-2. Add the `ResultPayload` fixture and the new `ACCESSOR_ROWKEYED_MANY_LIST_FIELD_RESULT_ACCESSOR` enum arm; confirm the pipeline-tier test passes via `mvn install -Plocal-db`.
+1. Add the `Result.class` arm to `ServiceCatalog.peelContainer`; update its javadoc and the `accessor-rowkey-shape-resolved` description at FieldBuilder.java:3019 in the same change.
+2. Add the `ResultPayload` fixture and the new `ACCESSOR_ROWKEYED_MANY_LIST_FIELD_RESULT_ACCESSOR` enum arm; confirm the pipeline-tier test passes via `mvn install -Plocal-db`. The classifier extension is independently load-bearing on the recipe's `Result<R>` recommendation and ships at this point regardless of what happens downstream.
 3. Add the schema, extension method, and Java record for the Sakila grouping fixture; confirm it builds.
-4. Add the execution-tier test with the assertions above; confirm it passes.
-5. If anything else in the trace turns out to be wrong (multiset round-trip fails through `ColumnFetcher`, bucket-record mapping needs jOOQ-side help, or another classifier path actually does reject the shape), capture the concrete gap as a follow-up Backlog item under a different `R<n>` and narrow this item's scope to the parts that succeed. Do not silently expand framework changes under R109 beyond the `peelContainer` widening above.
+4. Add the execution-tier test with the assertions above; confirm it passes. **Gating checkpoint:** if the test fails because `ColumnFetcher`'s `record.get(DSL.field(name))` lookup against a multiset-projected alias misbehaves (the empirical risk the trace did not eliminate), do not paper over it. Surface the concrete error, file a sibling Backlog item under a different `R<n>` for the `ColumnFetcher` gap, and ship R109 as classifier-only with the recipe and Sakila fixture deferred to that sibling.
+5. If any other trace assumption turns out wrong (bucket-record mapping needs jOOQ-side help, an unrelated classifier path rejects the shape), apply the same fork-then-narrow rule. Do not expand framework changes under R109 beyond the `peelContainer` arm and the description update.
 6. Write the `computed-fields.adoc` subsection from the working fixture.
 7. Add the cross-link from `result-types.adoc:133` and its "See also" block at line 149.
 8. Confirm the docs site renders cleanly: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` (no `-P!docs`) so the AsciiDoctor render exercises the new content.
@@ -80,7 +87,7 @@ In order:
 
 ## Out of scope
 
-- Subclasses of `List` / `Set` that reorder type variables such that the element type is not the parameterised type's first type-argument. The classifier falls through silently; users can reach for `@batchKeyLifter` instead.
+- Arbitrary `List` / `Set` subclasses beyond `Result`. The classifier extension is deliberately a narrow `Result.class` arm rather than open-ended subtype-assignability; user types that subclass `List` or `Set` continue to fall through to `AccessorDerivation.None` and require a `@batchKeyLifter` workaround. Adding further arms is fine in a follow-up if a concrete demand surfaces.
 - `Result<Record>` (untyped jOOQ `Record`) accessors. Element resolution requires the element class to be a `TableRecord` subtype via `svc.resolveTableByRecordClass`; this constraint is unchanged and continues to apply.
 - Multi-database `multiset` portability. Postgres-only via `JSON_ARRAYAGG` for now; documentation footnote, not a blocker.
 - Interaction with `@override` and `@splitQuery` from the motivating Opptak example. The trace did not exercise those compositions; the recipe should not claim they compose. Filing a follow-up if downstream demand surfaces is fine.
