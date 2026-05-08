@@ -127,7 +127,7 @@ type Query {
 }
 ----
 
-The Java method `argConditionRenamed(Table<?> table, String city)` receives the GraphQL argument `cityNames` as its `city` parameter. Whitespace around `:` and `,` is tolerated, multi-line text-block input is accepted for long mappings, and an empty `argMapping:` is identity. `argMapping:` is supported on `@condition`, `@service`, and `@tableMethod`, the directives whose Java targets receive GraphQL arguments. It is structurally inert on `@externalField`, `@enum`, `@record`, and `@batchKeyLifter`; applying it on those is rejected at parse time.
+The Java method `argConditionRenamed(Table<?> table, String city)` receives the GraphQL argument `cityNames` as its `city` parameter. Whitespace around `:` and `,` is tolerated, multi-line text-block input is accepted for long mappings, and an empty `argMapping:` is identity. `argMapping:` is supported on `@condition`, `@service`, and `@tableMethod`, the directives whose Java targets receive GraphQL arguments. It is structurally inert on `@externalField`, `@enum`, `@record`, and `@sourceRow`; applying it on those is rejected at parse time.
 
 Field-level placement mirrors the argument-level shape, `argMapping:` rebinds every parameter that needs a different Java name:
 
@@ -175,7 +175,7 @@ Two consequences worth pinning:
 * Parameter names bind GraphQL argument names. Compile the carrying module with `<parameters>true</parameters>` so the names survive reflection. Diverging names are reconciled by `argMapping:`, not by reordering the method.
 * `DSL.noCondition()` is the explicit no-op; return it for null or absent inputs. Returning `null` is undefined and currently throws at the predicate-folding site.
 * Argument-level placement sees only that argument; sibling arguments are invisible. Field-level placement sees every direct argument, including those bound to `@table` inputs (the input arrives as the carrier type the input is bound to). Input-field-level placement walks the GraphQL argument map by path and delivers the leaf scalar.
-* `argMapping:` is supported on `@condition`. It is not supported on `@externalField`, `@enum`, `@record`, or `@batchKeyLifter`.
+* `argMapping:` is supported on `@condition`. It is not supported on `@externalField`, `@enum`, `@record`, or `@sourceRow`.
 * `contextArguments:` keys flow through `GraphQLContext` unmodified; the runtime is responsible for placing each key. Typos surface as `null` at request time.
 * The override cascade and the divergence-from-legacy semantics live in xref:condition-cascade.adoc[How-to: Stacking and overriding conditions]. Read it before composing `@condition` with `override: true` across nested inputs.
 

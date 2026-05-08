@@ -6,7 +6,7 @@
 The rewrite generator declares the following directives. Each is documented in the architecture chapter and exercised by at least one execution-tier or pipeline-tier test fixture:
 
 * `@asConnection`
-* `@batchKeyLifter`
+* `@sourceRow`
 * `@condition`
 * `@defaultOrder`
 * `@discriminate`

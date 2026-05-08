@@ -21,14 +21,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R1 Phase 2f: end-to-end execution test for the {@code @batchKeyLifter} directive.
+ * R1 Phase 2f: end-to-end execution test for the {@code @sourceRow} directive.
  *
  * <p>The fixture shape lives in {@code graphitron-sakila-service}: a Java-record payload
  * ({@code CreateFilmPayload(Integer languageId)}), a static lifter
  * ({@code CreateFilmPayloadLifter.liftLanguageId}), and a hand-rolled service that returns
  * three deterministic payloads with {@code languageId}s {@code [1, 2, 1]}. The schema wires
  * these via {@code Query.recentlyCreatedFilms: [CreateFilmPayload!]!} (root {@code @service})
- * and {@code CreateFilmPayload.language: [Language!]!} (child {@code @batchKeyLifter}).
+ * and {@code CreateFilmPayload.language: [Language!]!} (child {@code @sourceRow}).
  *
  * <p>The test asserts:
  * <ul>

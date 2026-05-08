@@ -2,7 +2,9 @@
 :description: Plug a custom Java method into a directive that takes `ExternalCodeReference!`.
 :!toc:
 
-Seven of the rewrite's directives (`@service`, `@externalField`, `@tableMethod`, `@condition`, `@batchKeyLifter`, `@enum`, `@record`) hand the resolution of a slot off to a developer-supplied Java target. The mechanics are uniform across all seven: a fully-qualified class name on the rewrite plugin's classpath, an optional method name that defaults to the GraphQL field name, and an optional `argMapping:` for renaming Java parameters. This recipe walks through each piece once.
+Six of the rewrite's directives (`@service`, `@externalField`, `@tableMethod`, `@condition`, `@enum`, `@record`) hand the resolution of a slot off to a developer-supplied Java target via the shared `ExternalCodeReference` input. The mechanics are uniform across all six: a fully-qualified class name on the rewrite plugin's classpath, an optional method name that defaults to the GraphQL field name, and an optional `argMapping:` for renaming Java parameters. This recipe walks through each piece once.
+
+`@sourceRow` carries the same plugin-classpath requirement but exposes the lifter via flat `(className, method)` args rather than the `ExternalCodeReference` wrapper. See xref:source-row.adoc[Source-row directive] for the dedicated walk-through.
 
 == Make the class reachable
 
@@ -21,7 +23,7 @@ The rewrite's Maven plugin reflects on the named class at code-generation time (
     </executions>
     <dependencies>
         <!-- Carries the @service / @externalField / @tableMethod / @condition /
-             @batchKeyLifter / @enum / @record target classes. -->
+             @sourceRow / @enum / @record target classes. -->
         <dependency>
             <groupId>com.example</groupId>
             <artifactId>my-services</artifactId>
@@ -103,12 +105,11 @@ Each directive's `ExternalCodeReference!` parameter has its own name, but the co
 | `@externalField` | `reference:` | xref:../reference/directives/externalField.adoc[`@externalField`]
 | `@tableMethod` | `tableMethodReference:` | xref:../reference/directives/tableMethod.adoc[`@tableMethod`]
 | `@condition` | `condition:` | xref:../reference/directives/condition.adoc[`@condition`]
-| `@batchKeyLifter` | `lifter:` | xref:../reference/directives/batchKeyLifter.adoc[`@batchKeyLifter`]
 | `@enum` | `enumReference:` | xref:../reference/directives/enum.adoc[`@enum`]
 | `@record` | `record:` | xref:../reference/directives/record.adoc[`@record`]
 |===
 
-The slot names are historical (each directive was named before the shape was unified). Mechanically all seven slots accept the same `ExternalCodeReference` input.
+The slot names are historical (each directive was named before the shape was unified). Mechanically all six slots accept the same `ExternalCodeReference` input.
 
 == Constraints
 
@@ -124,6 +125,6 @@ The slot names are historical (each directive was named before the shape was uni
 * xref:../reference/directives/externalField.adoc[`@externalField`] uses a static method that returns a jOOQ `Field<T>` plugged into the parent's `SELECT` projection.
 * xref:../reference/directives/tableMethod.adoc[`@tableMethod`] uses a static method that returns a jOOQ `Table<R>` chosen at request time.
 * xref:../reference/directives/condition.adoc[`@condition`] uses a static method that returns a jOOQ `Condition` to splice into a query's `WHERE` clause.
-* xref:../reference/directives/batchKeyLifter.adoc[`@batchKeyLifter`] uses a static method that supplies the per-parent batch key for a `@record`-typed parent.
+* xref:source-row.adoc[Source-row directive] (`@sourceRow`) uses a static method that supplies the per-parent batch key for a `@record`-typed parent. Sibling pattern with flat `(className, method)` args instead of the `ExternalCodeReference` wrapper documented above.
 
 xref:index.adoc[← How-to index]

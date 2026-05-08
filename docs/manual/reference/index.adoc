@@ -28,7 +28,7 @@ a|
 === Alphabetical
 
 * xref:directives/asConnection.adoc[`@asConnection`]
-* xref:directives/batchKeyLifter.adoc[`@batchKeyLifter`]
+* xref:directives/sourceRow.adoc[`@sourceRow`]
 * xref:directives/condition.adoc[`@condition`]
 * xref:directives/defaultOrder.adoc[`@defaultOrder`]
 * xref:directives/discriminate.adoc[`@discriminate`]
@@ -61,7 +61,7 @@ a|
 xref:directives/table.adoc[`@table`], xref:directives/field.adoc[`@field`], xref:directives/enum.adoc[`@enum`], xref:directives/record.adoc[`@record`]
 
 *Joining* +
-xref:directives/reference.adoc[`@reference`], xref:directives/multitableReference.adoc[`@multitableReference`], xref:directives/batchKeyLifter.adoc[`@batchKeyLifter`]
+xref:directives/reference.adoc[`@reference`], xref:directives/multitableReference.adoc[`@multitableReference`], xref:directives/sourceRow.adoc[`@sourceRow`]
 
 *Querying* +
 xref:directives/asConnection.adoc[`@asConnection`], xref:directives/condition.adoc[`@condition`], xref:directives/experimental_constructType.adoc[`@experimental_constructType`], xref:directives/externalField.adoc[`@externalField`], xref:directives/lookupKey.adoc[`@lookupKey`], xref:directives/splitQuery.adoc[`@splitQuery`], xref:directives/tableMethod.adoc[`@tableMethod`]

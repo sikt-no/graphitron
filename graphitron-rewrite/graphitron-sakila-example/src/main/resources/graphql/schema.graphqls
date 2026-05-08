@@ -261,7 +261,7 @@ type Query {
     # batchedBranchJoinPredicate emits an AND-chain over the composite FK columns.
     projects: [Project!]!
 
-    # R1 Phase 2f fixture: @batchKeyLifter end-to-end. The service hand-rolls three
+    # R110 fixture: @sourceRow end-to-end (leaf-PK arm). The service hand-rolls three
     # CreateFilmPayload rows (no DB round-trip), and the lifter on CreateFilmPayload.language
     # extracts language_id keys for the DataLoader-batched lookup. MutationPayloadLifterTest
     # asserts one batched language query with two distinct keys for three payload rows.
@@ -296,26 +296,34 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService",
             method: "lookup"
         })
+
+    # R110 Story 1 fixture entry point. The service hand-rolls a CustomerAddressSummary row;
+    # the @sourceRow on `address` lets the rewrite generator emit a path-keyed DataLoader fetch
+    # via customer_address_id_fkey without requiring the DTO to carry jOOQ metadata.
+    customerAddressSummary(customerId: Int!): CustomerAddressSummary
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryService",
+            method: "lookup"
+        })
 }
 
-# R1 Phase 2f fixture: free-form (non-table-backed) @record payload. The backing class is a
+# R110 fixture: free-form (non-table-backed) @record payload. The backing class is a
 # Java record with a single Integer languageId field. The child `language` field uses
-# @batchKeyLifter to supply the key extraction the catalog cannot infer (no FK metadata on a
-# DTO parent). See batchkey-lifter-directive.md.
+# @sourceRow to supply the key extraction the catalog cannot infer (no FK metadata on a
+# DTO parent). See docs/manual/how-to/source-row.adoc.
 type CreateFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayload"}) {
     languageId: Int!
-    # @batchKeyLifter (RecordTableField + LifterRowKeyed): per-parent Row1<Integer> lift of the
-    # languageId, fed into the rows-method's `language_id IN (...)` batch. Phase 2e gates
-    # single-cardinality returns at the validator (Inv #10) — this list-cardinality return is
-    # the supported shape; each parent yields a 0..1-element Language list.
+    # @sourceRow leaf-PK case (RecordTableField + LifterLeafKeyed): the lifter's Row1<Integer>
+    # matches Language's PK directly, no @reference needed. Per-parent Row1<Integer> lift of
+    # the languageId, fed into the rows-method's `language_id IN (...)` batch. List-cardinality
+    # return; each parent yields a 0..1-element Language list.
+    # tag::sourcerow-leafpk[]
     language: [Language!]!
-        @batchKeyLifter(
-            lifter: {
-                className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayloadLifter",
-                method: "liftLanguageId"
-            },
-            targetColumns: ["language_id"]
+        @sourceRow(
+            className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayloadLifter",
+            method: "liftLanguageId"
         )
+    # end::sourcerow-leafpk[]
 }
 
 # R60 fixture: free-form @record with a typed List<FilmRecord> accessor. No batching directive
@@ -325,6 +333,24 @@ type CreateFilmsPayload @record(record: {className: "no.sikt.graphitron.rewrite.
     # AccessorKeyedMany(LIST). Each parent contributes N keys (one per FilmRecord); loadMany
     # supplies one record per element-PK key, returned as List<Record> matching the field shape.
     films: [Film!]!
+}
+
+# R110 Story 1 fixture: third-party-style DTO whose backing class carries the customer's
+# address_id but no jOOQ FK metadata. @sourceRow + @reference composes the navigation: the
+# lifter materialises the address_id value (matching the first FK hop's source-side column,
+# customer.address_id, on customer_address_id_fkey), and @reference walks the FK chain to the
+# leaf table `address`. This is the canonical path-keyed shape (BatchKey.LifterPathKeyed);
+# end-to-end compile-spec coverage flows through Query.customerAddressSummary below.
+type CustomerAddressSummary @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummary"}) {
+    customerId: Int!
+    # tag::sourcerow-story-1[]
+    address: [Address!]!
+        @sourceRow(
+            className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryLifter",
+            method: "addressIdOf"
+        )
+        @reference(path: [{key: "customer_address_id_fkey"}])
+    # end::sourcerow-story-1[]
 }
 
 # R12 fixture (error-handling-parity.md): query-side @error end-to-end. Two @error types

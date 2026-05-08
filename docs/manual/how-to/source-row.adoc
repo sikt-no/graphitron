@@ -1,0 +1,109 @@
+= How-to: Source-row directive
+:description: Bridge a non-jOOQ DTO parent to a @table child field with @sourceRow, optionally composed with @reference for multi-hop paths.
+:!toc:
+
+`@sourceRow` lets a `@record` parent whose backing class has no jOOQ FK metadata reach a child `@table`-bound field through a developer-supplied lifter method. Two shapes:
+
+* *Leaf-PK* (`@sourceRow` alone). The lifter returns the leaf table's primary-key value(s); the rewrite emits a single column-equality JOIN.
+* *Path-keyed* (`@sourceRow` composed with xref:join-with-references.adoc[`@reference`]). The lifter returns the first FK hop's source-side value(s); `@reference` walks the catalog FK chain to the leaf.
+
+The directive is rejected on `@table` parents (use xref:join-with-references.adoc[`@reference`] there) and on jOOQ-record parents (the catalog already drives batching). It applies only to plain Java records and POJOs whose backing class is declared via `@record(record: {className: "..."})`.
+
+== When to reach for `@sourceRow`
+
+The `@record` parent's backing class is not a jOOQ `Record` / `TableRecord`, and the child field returns a `@table`-bound type. The framework needs to extract a join key from the parent. The decision tree:
+
+* The parent class exposes a typed jOOQ accessor (e.g. `List<FilmRecord> films()`) → the classifier auto-derives the batch key. No directive needed; see xref:result-types.adoc[Result-type variants].
+* The parent class only carries the leaf table's primary-key value as a primitive → use `@sourceRow` alone (leaf-PK case).
+* The parent class carries an FK column whose target table is reached through a catalog FK chain → compose `@sourceRow` with xref:join-with-references.adoc[`@reference`] (path-keyed case).
+
+== Leaf-PK example
+
+The DTO carries the `language_id` value directly. The leaf table is `language`; the lifter's `Row1<Integer>` matches `language.language_id` (the primary key) without further composition.
+
+[source,graphql]
+----
+type CreateFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayload"}) {
+    languageId: Int!
+    language: [Language!]!
+        @sourceRow(
+            className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayloadLifter",
+            method: "liftLanguageId"
+        )
+}
+----
+
+[source,java]
+----
+public record CreateFilmPayload(Integer languageId) {}
+
+public final class CreateFilmPayloadLifter {
+    public static Row1<Integer> liftLanguageId(CreateFilmPayload p) {
+        return DSL.row(p.languageId());
+    }
+}
+----
+
+Per request the framework calls `liftLanguageId` once per parent, gathers the resulting `Row1<Integer>` keys, and dispatches a single `language_id IN (...)` batch keyed on those values. Each parent receives the matching `Language` row(s) at scatter time.
+
+== Path-keyed example
+
+The DTO carries the FK column's value (here, the customer's `address_id`). `@reference` resolves the FK chain from `customer.address_id` to `address.address_id`; the lifter's `Row1<Integer>` matches the first hop's source-side column (`customer.address_id`).
+
+[source,graphql]
+----
+type CustomerAddressSummary @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummary"}) {
+    customerId: Int!
+    address: [Address!]!
+        @sourceRow(
+            className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryLifter",
+            method: "addressIdOf"
+        )
+        @reference(path: [{key: "customer_address_id_fkey"}])
+}
+----
+
+[source,java]
+----
+public record CustomerAddressSummary(Integer customerId, Integer addressId) {}
+
+public final class CustomerAddressSummaryLifter {
+    public static Row1<Integer> addressIdOf(CustomerAddressSummary p) {
+        return DSL.row(p.addressId());
+    }
+}
+----
+
+The framework collects every `CustomerAddressSummary` parent, extracts the address_id values, and dispatches a single batch keyed on those values. The catalog's `customer_address_id_fkey` FK supplies the JOIN.
+
+== Rejection messages
+
+The resolver emits two distinct diagnostic templates for the arity / per-position-type mismatch case so the user-facing wording reflects which derivation was applied:
+
+* *Path-keyed (`@reference` present):* `@sourceRow on '<parent>.<field>': lifter '<method>' RowN type at position <i> ('<actual>') does not match first-hop source-side column '<col>' of FK '<fk>' (Java type '<expected>')`
+* *Leaf-PK (no `@reference`):* `@sourceRow on '<parent>.<field>': lifter '<method>' RowN type at position <i> ('<actual>') does not match primary key column '<col>' of '<leaf>' (Java type '<expected>')`
+
+Other rejections share the `@sourceRow on '<parent>.<field>'` prefix:
+
+* `lifter class '...' could not be loaded` — the `className:` argument did not resolve. Verify the FQCN and the rewrite plugin's classpath (see xref:external-code.adoc[Wire external Java code]).
+* `no static method named '...' on class '...'` — the `method:` argument did not match a static method. The diagnostic includes a candidate hint.
+* `lifter method '...' must return org.jooq.Row1..Row22` — the lifter's return type is not a `RowN`. `Long`, `Record1`, etc. fall here; declare the return as `Row1<Long>` instead.
+* `lifter method '...' parameter type '...' is not assignable from the parent's backing class '...'` — the single parameter does not accept the parent. Match the type to the `@record(record:)` class.
+* `is not supported on @asConnection fields` — connection fields route through pagination helpers that don't share the rows-method DataLoader path.
+* `has @reference parse error: ...` — `@reference`'s `path:` did not resolve (unknown FK key, broken connectivity). The parse error surfaces directly, without re-validating against the lifter.
+
+== Constraints
+
+* `className:` must be a fully-qualified class name on the rewrite plugin's classpath.
+* The static `method:` must take a single parameter assignable from the parent's backing class and return `Row1..Row22<...>`.
+* The lifter's `RowN` arity must equal the derived parent-side tuple size: `path.first().sourceSideColumns()` when `@reference` is present, or `targetTable.primaryKeyColumns()` otherwise.
+* Per-position Java types must match exactly. Wildcards (`Row1<? extends Number>`) are rejected at build time.
+
+== See also
+
+* xref:../reference/directives/sourceRow.adoc[`@sourceRow` reference] for the full directive surface.
+* xref:join-with-references.adoc[Join with references] for the catalog-driven counterpart on `@table` parents and the `@reference` composition target.
+* xref:external-code.adoc[Wire external Java code] for the shared mechanics of plugging custom Java classes into the rewrite (classpath, error reporting).
+* xref:result-types.adoc[Result-type variants] covers the four `@record` backing-class shapes and when the classifier auto-derives a batch key from a typed accessor instead.
+
+xref:index.adoc[← How-to index]

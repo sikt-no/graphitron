@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * R60: end-to-end execution test for the accessor-derived BatchKey path.
  *
- * <p>Cousin of {@link MutationPayloadLifterTest}: instead of the {@code @batchKeyLifter}
+ * <p>Cousin of {@link MutationPayloadLifterTest}: instead of the {@code @sourceRow}
  * directive, the parent {@code @record} type {@code CreateFilmsPayload} carries a typed
  * zero-arg accessor returning {@code List<FilmRecord>}, and the classifier auto-derives
  * {@link no.sikt.graphitron.rewrite.model.BatchKey.AccessorKeyedMany} without any

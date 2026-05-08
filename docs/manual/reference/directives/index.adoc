@@ -10,7 +10,7 @@ a|
 == Alphabetical
 
 * xref:asConnection.adoc[`@asConnection`]
-* xref:batchKeyLifter.adoc[`@batchKeyLifter`]
+* xref:sourceRow.adoc[`@sourceRow`]
 * xref:condition.adoc[`@condition`]
 * xref:defaultOrder.adoc[`@defaultOrder`]
 * xref:discriminate.adoc[`@discriminate`]
@@ -43,7 +43,7 @@ a|
 xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], xref:record.adoc[`@record`]
 
 *Joining* +
-xref:reference.adoc[`@reference`], xref:multitableReference.adoc[`@multitableReference`], xref:batchKeyLifter.adoc[`@batchKeyLifter`]
+xref:reference.adoc[`@reference`], xref:multitableReference.adoc[`@multitableReference`], xref:sourceRow.adoc[`@sourceRow`]
 
 *Querying* +
 xref:asConnection.adoc[`@asConnection`], xref:condition.adoc[`@condition`], xref:experimental_constructType.adoc[`@experimental_constructType`], xref:externalField.adoc[`@externalField`], xref:lookupKey.adoc[`@lookupKey`], xref:splitQuery.adoc[`@splitQuery`], xref:tableMethod.adoc[`@tableMethod`]

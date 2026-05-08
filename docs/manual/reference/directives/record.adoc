@@ -4,7 +4,7 @@
 
 Binds a GraphQL `OBJECT` or `INPUT_OBJECT` to an existing Java class. The class supplies the runtime carrier: rows materialise into the class on the read path, and inputs deserialize into the class on the mutation path. The class shape determines the variant the rewrite picks: a jOOQ `TableRecord` produces a `JooqTableRecordType` (output) / `JooqTableRecordInputType` (input), a jOOQ `Record` produces a `JooqRecordType` / `JooqRecordInputType`, and a plain Java record or POJO produces `JavaRecordType` / `PojoResultType` / `JavaRecordInputType` / `PojoInputType`.
 
-`@record` is also the seam between jOOQ-driven generation and developer-supplied containers. Service methods (xref:service.adoc[`@service`]) often return a Java record to combine multiple result shapes; child fields on a `@record` parent can reach back into the database via `@reference` (jOOQ-record parents) or via `@batchKeyLifter` plus a typed accessor (plain-record parents).
+`@record` is also the seam between jOOQ-driven generation and developer-supplied containers. Service methods (xref:service.adoc[`@service`]) often return a Java record to combine multiple result shapes; child fields on a `@record` parent can reach back into the database via `@reference` (jOOQ-record parents) or via `@sourceRow` plus a typed accessor (plain-record parents).
 
 == SDL signature
 
@@ -33,24 +33,21 @@ type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jo
 }
 ----
 
-A plain-Java-record `@record` (`JavaRecordType`) backed by a service-returned DTO. The catalog has no FK metadata for a hand-written class, so a child `@table`-returning field needs an explicit batch-key path: either xref:reference.adoc[`@reference`] is unavailable here, or — when the parent only carries the FK column as a primitive field — `@batchKeyLifter` extracts the key:
+A plain-Java-record `@record` (`JavaRecordType`) backed by a service-returned DTO. The catalog has no FK metadata for a hand-written class, so a child `@table`-returning field needs an explicit batch-key path: either xref:reference.adoc[`@reference`] is unavailable here, or — when the parent only carries the FK column as a primitive field — `@sourceRow` extracts the key:
 
 [source,graphql]
 ----
 type CreateFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayload"}) {
     languageId: Int!
     language: [Language!]!
-        @batchKeyLifter(
-            lifter: {
-                className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayloadLifter",
-                method: "liftLanguageId"
-            },
-            targetColumns: ["language_id"]
+        @sourceRow(
+            className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayloadLifter",
+            method: "liftLanguageId"
         )
 }
 ----
 
-A plain-Java-record `@record` whose canonical Java accessor returns a typed list of jOOQ records. The classifier auto-derives the batch-key from the typed accessor; no `@batchKeyLifter` is needed:
+A plain-Java-record `@record` whose canonical Java accessor returns a typed list of jOOQ records. The classifier auto-derives the batch-key from the typed accessor; no `@sourceRow` is needed:
 
 [source,graphql]
 ----
@@ -79,17 +76,17 @@ input EditCustomerInput @record(record: {className: "some.path.JavaCustomerRecor
 * A child `@table`-returning field on a *plain-Java-record* parent (no jOOQ FK metadata) requires either:
 +
 ** a typed accessor on the backing class returning the corresponding jOOQ table record (the classifier auto-derives an `AccessorKeyed` batch key), or
-** an explicit xref:batchKeyLifter.adoc[`@batchKeyLifter`] supplying the lift function and target columns.
+** an explicit xref:sourceRow.adoc[`@sourceRow`] supplying the lift function and target columns.
 +
 A bare child reference on such a parent is rejected with `RecordTableField (or RecordLookupTableField) requires a FK join path and a typed backing class for batch key extraction`.
-* `@batchKeyLifter` is rejected on jOOQ-record parents — the catalog already supplies the path. Use xref:reference.adoc[`@reference`] there instead.
+* `@sourceRow` is rejected on jOOQ-record parents — the catalog already supplies the path. Use xref:reference.adoc[`@reference`] there instead.
 * When a `@record` type is reachable from xref:service.adoc[`@service`] and contains `@table`-returning fields, the rewrite emits the re-entry queries automatically; explicit `@splitQuery` is not required on those child fields.
 
 == See also
 
 * xref:table.adoc[`@table`] is the catalog-bound counterpart. Choose `@table` when jOOQ already represents the backing class; choose `@record` when the carrier is a hand-written Java record/POJO or you want a different jOOQ row type than `@table` would resolve.
 * xref:service.adoc[`@service`] is the most common upstream of `@record` output types: the service method returns the Java class, and the resolver projects through it.
-* xref:batchKeyLifter.adoc[`@batchKeyLifter`] supplies the missing FK path for child `@table` fields on plain-Java-record parents.
+* xref:sourceRow.adoc[`@sourceRow`] supplies the missing FK path for child `@table` fields on plain-Java-record parents.
 * xref:../../how-to/result-types.adoc[How-to: Result-type variants] covers `JavaRecordType` / `PojoResultType` / `JooqRecordType` / `JooqTableRecordType` and how the rewrite picks among them.
 
 xref:../index.adoc[← Reference index]

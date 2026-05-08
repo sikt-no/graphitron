@@ -123,7 +123,7 @@ When the return type is a non-table GraphQL scalar (or list of scalars), the Jav
 When the return type is a `@record` type (a custom payload), each row in the service's result has children that the framework still resolves. Two paths drive the child-fetch dispatch:
 
 * *Auto-derived from accessor.* If the payload's canonical record-component accessor returns the right shape (a `TableRecord` subclass, `List<TableRecord>`, or `Set<TableRecord>` whose element matches the child field's `@table`), the classifier auto-derives a `BatchKey.AccessorKeyedSingle`/`AccessorKeyedMany` for the field. No extra directive is needed.
-* *Explicit `@batchKeyLifter`.* When the catalog cannot derive the key (e.g. the payload carries a raw FK column instead of a typed record), declare a lifter that takes the parent and returns a `RowN` of the FK column values.
+* *Explicit `@sourceRow`.* When the catalog cannot derive the key (e.g. the payload carries a raw FK column instead of a typed record), declare a lifter that takes the parent and returns a `RowN` of the FK column values.
 
 The `recentlyCreatedFilms` example exercises the lifter path:
 
@@ -132,9 +132,9 @@ The `recentlyCreatedFilms` example exercises the lifter path:
 type CreateFilmPayload @record(record: {className: "...CreateFilmPayload"}) {
     languageId: Int!
     language: [Language!]!
-        @batchKeyLifter(
-            lifter: {className: "...CreateFilmPayloadLifter", method: "liftLanguageId"},
-            targetColumns: ["language_id"]
+        @sourceRow(
+            className: "...CreateFilmPayloadLifter",
+            method: "liftLanguageId"
         )
 }
 
