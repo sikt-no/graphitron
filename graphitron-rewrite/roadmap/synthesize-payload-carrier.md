@@ -1,7 +1,7 @@
 ---
 id: R75
 title: "Synthesize payload carrier for canonical data+errors shapes"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 7
 theme: mutations-errors
@@ -73,53 +73,272 @@ non-errors slot and the service returns that slot's type, R12's existing
 `resolveServiceResultAssembly` walks all canonical-ctor parameters looking for a `TypeName`
 match and binds the single matching parameter. No new resolver shape is needed for that case.
 
-## Proposed direction
+## Phasing
 
-R75 adds three additive pieces to the R12 foundation:
+R75 ships in three phases ordered by user-visible value. Each phase is a discrete
+implementation track; downstream phases bind structurally to upstream ones but are not
+schedule-coupled.
 
-1. **Payload-record synthesis.** Make `@record(className: ...)` optional on payload types
-   whose SDL shape is "data fields + at most one errors-shaped field". When omitted,
-   emit a Java record matching the SDL field declaration order under the configured
-   synthesis package, then populate the carrier's `ResultReturnType.fqClassName()` with
-   the synthesized FQN so every downstream R12 resolver picks it up unchanged. The
-   synthesized record declares exactly one canonical constructor, so `findCanonicalCtor`
-   matches trivially.
+- **Phase 1: bulk DML payload synthesis (no error channel).** Closes the legacy-parity
+  gap on `@mutation` returning a plain Object payload with one or more data slots and
+  no `errors:` field. Specified in implementation-ready detail below.
+- **Phase 2: error-channel integration on synthesized payloads (sketch).** Lights up
+  when the SDL payload adds an `errors:` field; reuses R12's `ErrorChannel` against
+  the synthesized class. Sketch below; needs a Spec revision before implementation.
+- **Phase 3: service-side multi-slot flattening (sketch).** Extends the carrier
+  classifier so a `@service` method can return a domain record whose components map by
+  name to multiple non-errors payload slots. Sketch below; needs a Spec revision
+  before implementation.
 
-2. **Classifier reroute.** Today a plain SDL object type (no `@record`, no `@table`,
-   not interface/union) lands as `ReturnTypeRef.ScalarReturnType`, and
-   `MutationInputResolver.validateReturnType:174` rejects it with
-   *"return type 'X' is not yet supported; use ID or a @table type"*. The reroute either
-   reclassifies synthesizable payloads as `ResultReturnType` directly or runs synthesis
-   early enough that the synthesized class is on the classpath when classification looks.
-   Spec needs to pick a side; the second is cheaper (one synthesis pass, no classifier
-   change) and probably correct.
+This Spec body specifies Phase 1. Promoting R75 from Spec → Ready means signing off
+on Phase 1 only; Phases 2 and 3 each return to Spec for sharpening before Ready.
 
-3. **Multi-slot component flattening on `ResultAssembly`.** Today
-   `resolveServiceResultAssembly` is a *single-slot* binding: it walks ctor parameters
-   for a `TypeName` match against the service method's return type and binds one
-   parameter. R75's flattening shape is *multi-slot*: a service return record whose
-   components map by name (and assignable type) to multiple non-errors slots on the
-   payload's canonical constructor. Two architectural options:
+## Phase 1: bulk DML payload synthesis (no error channel)
 
-   - **Extend `ResultAssembly`** with a sealed split (`SingleSlot | Flattened`); both
-     arms reuse `defaultedSlots` and the catch-arm payload-factory walk.
-   - **Sibling resolution** (`FlattenedResultAssembly`) carried as a separate
-     `Optional<>` slot on the field variants.
-
-   Spec phase picks one. The first keeps `WithErrorChannel`-style consumers symmetric;
-   the second avoids overloading an existing record. Lean toward the sealed split.
-
-For the running example (assuming R75 lands), the consumer's payload SDL drops the
-`@record` directive entirely:
+### Reproduction case
 
 ```graphql
-type LagreKvotesporsmalSvarPayload {
-    svar: [KvoteSporsmalSvar!]!
-    errors: [LagreKvotesporsmalSvarError]
+input OpprettKvotesporsmalPreutfyllingInput @table(name: "kvotesporsmal_preutfylling") {
+    kvotesporsmalPreutfyllingKode: String! @field(name: "KVOTESPORSMAL_PREUTFYLLING_KODE")
+}
+
+type KvotesporsmalPreutfyllingPayload {
+    kvotesporsmalPreutfylling: [KvotesporsmalPreutfylling!]
+}
+
+type Mutation {
+    opprettKvotesporsmalPreutfylling(
+        input: OpprettKvotesporsmalPreutfyllingInput!
+    ): KvotesporsmalPreutfyllingPayload @mutation(typeName: INSERT)
 }
 ```
 
-…and the consumer's service collapses to either:
+Today this fails at `MutationInputResolver.validateReturnType:174-177` with *"return
+type 'KvotesporsmalPreutfyllingPayload' is not yet supported; use ID or a @table
+type"*. The plain Object type lands as `ReturnTypeRef.ScalarReturnType`, and the DML
+emitter has no path for "synthesize and bind a list-of-rows payload". Legacy graphitron
+handles this via `TypeDTOGenerator` synthesizing the payload POJO and wiring
+`INSERT … RETURNING` to a `Result<TableRecord>` that fills the data slot.
+
+### Trigger
+
+Synthesis fires for an SDL Object type that satisfies *all* of:
+
+1. Has no `@record` directive, *or* has `@record` without a `record.className` argument.
+2. Has no `@table` directive.
+3. Is not an interface or union.
+4. Is the return type of at least one `@mutation(typeName: …)` field.
+5. Declares no `errors:`-shaped field. (Phase 2 territory; until Phase 2 ships,
+   payloads with `errors:` fall through to today's rejection.)
+6. Every declared field's return type satisfies the **synthesizable slot rule** below.
+
+### Synthesizable slot rule
+
+A field on a candidate payload is synthesizable when its return type is one of:
+
+- A `@table`-mapped output type, in which case the synthesized slot is typed
+  `<TableRecordClass>` (single) or `List<TableRecordClass>` (list, with the SDL list
+  cardinality preserved).
+- A `@record(record: {className: ...})`-mapped output type, in which case the slot is
+  typed as the configured Java class.
+- A built-in scalar or an SDL enum, in which case the slot is typed by the existing
+  scalar-to-Java mapping.
+
+Off-shape fields (interface/union returns, fields with arguments, `@nodeId`-decoded
+fields) reject the payload as non-synthesizable; the carrier surfaces as
+`UnclassifiedField` with a reason naming the offending field.
+
+### Synthesis output
+
+For a triggering payload type `Foo`, emit a Java record at
+`<outputPackage>.synthesized.Foo`:
+
+```java
+package <outputPackage>.synthesized;
+
+public record Foo(<slot1Type> <slot1Name>, <slot2Type> <slot2Name>, ...) {}
+```
+
+Slot order matches SDL field declaration order. Slot names match SDL field names
+(no SCREAMING_SNAKE conversion). The synthesized record has exactly one canonical
+constructor, so `findCanonicalCtor` matches trivially.
+
+Cross-schema collision handling: when two schemas produce a `Foo` payload, the second
+gets a deterministic 8-hex SHA-256-derived suffix (mirrors `MappingsConstantNameDedup`).
+
+### Classifier reroute
+
+A new synthesis pass runs in `GraphitronSchemaBuilder.buildSchema` after `TypeBuilder`
+processes the type set but before `FieldBuilder` classifies fields:
+
+- Walk every SDL Object type. For each one matching the trigger, register it in a
+  side-table (`Map<String, ClassName>` of SDL type name → synthesized FQN).
+- Emit the synthesized record source files via a new `SynthesizedPayloadClassGenerator`
+  in the same generation pass that emits `ErrorMappings` and `ErrorRouter`.
+
+`TypeBuilder.buildResultType:528-562` consults the side-table when the SDL type has
+no `@record(className)`: when a synthesized FQN is registered, return
+`PojoResultType(name, location, synthesizedFqn)` instead of the current
+`PojoResultType(name, location, null)`. Downstream resolvers
+(`resolveDmlPayloadAssembly`, `resolveErrorChannel`, `resolveServiceResultAssembly`)
+already handle non-null `fqClassName` and pick up the synthesized class without
+further changes.
+
+The synthesis pass wears
+`@LoadBearingClassifierCheck(key = "synthesized-payload.class-emitted")` on the
+registration site; `resolveDmlPayloadAssembly`'s no-fqClassName short-circuit wears
+the matching `@DependsOnClassifierCheck`.
+
+### `PayloadAssembly` extension for list-cardinality row slots
+
+`PayloadAssembly` today is a flat record `(payloadClass, rowSlotIndex, rowSlotType,
+defaultedSlots)` where `rowSlotType` is the bare jOOQ table record `TypeName`.
+`resolveDmlPayloadAssembly:1771-1783` walks ctor parameters comparing against
+`tableRecordClass` via `Class.equals`.
+
+Lift to a sealed split keyed on row-slot cardinality:
+
+```java
+public sealed interface PayloadAssembly permits PayloadAssembly.SingleRow,
+    PayloadAssembly.RowList {
+    ClassName payloadClass();
+    int rowSlotIndex();
+    List<DefaultedSlot> defaultedSlots();
+
+    record SingleRow(ClassName payloadClass, int rowSlotIndex,
+        TypeName rowSlotType, List<DefaultedSlot> defaultedSlots)
+        implements PayloadAssembly {}
+
+    record RowList(ClassName payloadClass, int rowSlotIndex,
+        TypeName rowElementType, List<DefaultedSlot> defaultedSlots)
+        implements PayloadAssembly {}
+}
+```
+
+The resolver walks ctor parameters looking for *either* a parameter typed as
+`tableRecordClass` (→ `SingleRow`) *or* a parameter typed `List<tableRecordClass>`
+(→ `RowList`). At most one match: a payload with both shapes rejects with a
+descriptive reason.
+
+### DML emitter changes
+
+The four DML kinds (`MutationInsertTableField`, `MutationUpdateTableField`,
+`MutationUpsertTableField`, `MutationDeleteTableField`) all gain a switch on the
+`PayloadAssembly` arm:
+
+- `SingleRow`: existing path, `dsl.<dml>(...).where(...).returning().fetchOne()` →
+  bind to typed local `__row` → construct payload positionally.
+- `RowList`: emit `dsl.<dml>(...).where(...).returning().fetch()` → bind to typed
+  local `List<TableRecord> __rows` → construct payload with `__rows` at
+  `rowSlotIndex` and `defaultLiteral` elsewhere.
+
+The async wrapper, `DataFetcherResult` wrapping, and catch-arm dispatch (no channel
+in Phase 1, so always `ErrorRouter.redact`) are unchanged from today's `SingleRow`
+path.
+
+### Tests
+
+**Pipeline-tier** (`graphitron/src/test/java/no/sikt/graphitron/rewrite/`),
+new test class `SynthesizedPayloadPipelineTest`:
+
+- `payload_withSingleTableField_classifiesAsResultReturnType`: trigger fires;
+  classifier produces `ResultReturnType(_, _, synthesizedFqn)` instead of
+  `ScalarReturnType`.
+- `payload_withListOfTableField_synthesizedSlotIsListOfRecord`: synthesis emits a
+  record with `List<TableRecord>` slot, and `PayloadAssembly` resolves to `RowList`.
+- `payload_withErrorsField_doesNotSynthesize`: payload with `errors:` field falls
+  through to today's rejection (Phase 2 territory).
+- `payload_withInterfaceField_doesNotSynthesize`: off-shape field rejects.
+- `payload_notReachableFromMutation_doesNotSynthesize`: synthesis is conservative,
+  scoped to mutation returns.
+- `payload_withName_collidingAcrossSchemas_addsHashSuffix`: dedup behavior.
+- `dmlEmitter_withRowListSlot_emitsFetch`: emitter path for list-cardinality
+  pinned via `methodSpec.toString()` parity comparison against the `SingleRow` path
+  (modulo the `fetchOne` → `fetch` and slot-binding deltas).
+
+**Execution-tier** (`graphitron/src/test/java/no/sikt/graphitron/rewrite/sakila/`),
+new sakila fixture `SynthesizedPayloadInsertTest`:
+
+- SDL: `type ActorInsertPayload { actor: [Actor!] }` (Actor is the existing sakila
+  `@table` Actor type).
+- Mutation: `insertActor(input: ActorInsertInput!): ActorInsertPayload @mutation(...)`.
+- Driver: invoke the mutation against the testcontainer; assert response shape;
+  assert the inserted row is visible in the payload's `actor` list and queryable on
+  follow-up reads.
+
+**Audit-tier**: the `@LoadBearingClassifierCheck` ↔ `@DependsOnClassifierCheck`
+pair from the classifier-reroute section is picked up automatically by
+`LoadBearingGuaranteeAuditTest`; no new audit test needed.
+
+### Open questions for Phase 1
+
+1. **Synthesized-payload package location.** Proposal: `<outputPackage>.synthesized`.
+   Alternatives: `<outputPackage>.payloads`, or under the existing
+   `<outputPackage>.schema` package. The synthesized classes are graphitron-generated,
+   so a dedicated subpackage keeps them separable from consumer code. Lean toward
+   `synthesized`; spec phase confirms.
+2. **DML emitter coverage scope.** INSERT is the user's blocker; UPDATE and DELETE
+   are obvious siblings. UPSERT mechanics differ; needs implementer verification that
+   the same `RowList` path applies. Spec phase confirms whether UPSERT is in or out
+   for Phase 1.
+3. **Single-row data slot (`X` instead of `[X!]`).** The user's case is list-cardinality
+   (`[KvotesporsmalPreutfylling!]`); a single INSERT returning a singleton list is
+   tolerable. Should synthesis also admit a single-cardinality data slot (mapped to
+   `SingleRow` instead of `RowList`)? Restricting Phase 1 to list cardinality is
+   simpler; single-cardinality data slots fall through to today's rejection until a
+   later phase. Spec phase picks.
+4. **`@record`-typed data slots.** What if the SDL data slot is typed as a `@record`
+   type instead of `@table`? The Java slot type becomes `List<DomainClass>` rather
+   than `List<TableRecord>`. The DML emitter would need a "lift jOOQ row to the
+   domain class" step. Probably out of scope for Phase 1; restrict to `@table`-typed
+   data slots and let `@record` slots fall through to a "not yet supported" reason.
+5. **Co-existence with authored carriers.** `@record(record: {className: ...})`
+   payloads keep working unchanged; absent `className` triggers synthesis. Confirm no
+   path produces both a synthesized and an authored class for the same SDL type.
+
+## Phase 2: error-channel integration on synthesized payloads (sketch)
+
+When the SDL payload adds an `errors:` field, Phase 2 wires the synthesized class
+through R12's existing `ErrorChannel` machinery:
+
+- Synthesis includes the errors slot in the generated record (typed `List<Object>`
+  per R12's source-direct convention).
+- The Phase 1 trigger condition #5 ("declares no `errors:`-shaped field") flips:
+  Phase 2 fires synthesis precisely *because* an `errors:` field is present and the
+  field's classifier admits the channel.
+- `resolveErrorChannel` runs against the synthesized class as if it were authored;
+  no resolver-side change.
+- Catch-arm `payloadFactory` walks the synthesized ctor exactly as for authored
+  classes.
+
+Spec questions deferred to a Phase 2 revision pass:
+
+- Errors-slot type binding: keep R12's `List<Object>` source-direct, or revisit?
+- Interaction with `MappingsConstantNameDedup` when synthesized payloads share their
+  handler list with authored ones.
+- Whether Phase 2 implies any change to `@error` types' SDL surface, or stays purely
+  on the carrier side.
+
+## Phase 3: service-side multi-slot flattening (sketch)
+
+For `@service` mutations whose payload has multiple non-errors slots, allow the
+service to return a domain record whose components map by name to the payload's
+slots. R12's `resolveServiceResultAssembly:1838-1923` is *single-slot* today: it
+walks ctor parameters for a `TypeName` match against the service method's return
+type and binds one parameter.
+
+Architectural options:
+
+- Sealed split on `ResultAssembly` (`SingleSlot | Flattened`); the flattened arm
+  carries a `Map<String, Integer> componentToSlot` mapping. Both arms reuse
+  `defaultedSlots` and the catch-arm payload-factory walk.
+- Sibling resolution `FlattenedResultAssembly` carried as a separate `Optional<>`
+  slot on the field variants.
+
+Lean toward the sealed split: `WithErrorChannel`-style consumers stay symmetric and
+the existing catch-arm `payloadFactory` walk extends naturally.
+
+Example (assuming Phase 3 lands; service collapses to a domain record return):
 
 ```java
 public record LagreOgBeregnResultat(List<KvoteSporsmalSvar> svar) {}
@@ -128,72 +347,15 @@ public LagreOgBeregnResultat lagreOgBeregnKvoteplassering(
         List<KvotesporsmalSvarInput> svarListe) { ... }
 ```
 
-(flattening: payload's `svar` slot ← `serviceReturn.svar()`) or, since the payload has
-exactly one non-errors field, the bare-value form:
+Spec questions deferred to a Phase 3 revision pass:
 
-```java
-public List<KvoteSporsmalSvar> lagreOgBeregnKvoteplassering(
-        List<KvotesporsmalSvarInput> svarListe) { ... }
-```
-
-(R12's existing single-slot `ResultAssembly` binds the bare return directly; no R75-side
-flattening needed for this case). graphitron synthesizes
-`LagreKvotesporsmalSvarPayload` as a record with the canonical 2-arg constructor, and
-the success arm assembles `(svar, errors=List.of())` from whichever shape applied;
-the catch arm fills `(default-for-svar, errors)` via the existing `payloadFactory` lambda.
-
-This is the "service returns the domain object" promise from R12 §2c followed all the
-way through. R12 ships it for the single-slot case (one ctor parameter matching the
-service return type); R75 adds the multi-slot generalisation and the synthesis trigger
-that makes the consumer's authored carrier disappear entirely.
-
-## Spec questions
-
-Concretely the spec needs to settle:
-
-- **Trigger: locked to implicit.** No `@record(className)` on the payload type triggers
-  synthesis. Matches legacy and keeps the directive surface small. No `synthesize: true`
-  flag, no classpath-fallback ambiguity. `TypeBuilder.buildResultType:528-562` already
-  produces the no-className state today (returning `PojoResultType(_, _, null)`); the
-  synthesis pass keys off that.
-- **Reroute vs early-emit.** Today a plain object type (no `@record`/`@table`) lands as
-  `ReturnTypeRef.ScalarReturnType` and the mutation rejects it. Decide between
-  (a) extending the classifier to recognise synthesizable payloads as `ResultReturnType`,
-  or (b) running synthesis as a pre-classification pass that emits the Java record and
-  attaches a `@record(record: {className: ...})` to the SDL view the classifier sees.
-  Lean toward (b) — same classifier surface, minimal code-path change.
-- **Generated package and naming.** Mirror the SDL type name into a configured base
-  package, with the same `toScreamingSnake`-style derivation R12 already uses for
-  `mappingsConstantName` so two synthesized carriers in different schemas don't collide.
-- **`ResultAssembly` shape choice.** Sealed split (`ResultAssembly.SingleSlot |
-  ResultAssembly.Flattened`) vs sibling resolution (`FlattenedResultAssembly` as a
-  separate `Optional<>` slot on the field variants). Lean toward the sealed split:
-  `WithErrorChannel`-style consumers stay symmetric and the existing catch-arm
-  `payloadFactory` walk extends naturally.
-- **Flatten matching rules** (the new resolver arm). Component-by-component by name and
-  assignable type. Spec out the rejection wording for each failure mode: payload
-  non-errors field with no matching component on the service-return record; name match
-  but type mismatch; extra components on the service-return record that the payload
-  doesn't declare (probably accept and ignore, but call it out). Mirror the existing
-  `resolveServiceResultAssembly` rejection style at `FieldBuilder.java:1860-1916`.
-- **Bare-value shorthand.** Already supported as a side-effect of R12's single-slot
-  `ResultAssembly`: when the synthesized payload has one non-errors slot and the service
-  returns that slot's type, the existing walk binds it. Spec phase needs to confirm this
-  reaches the synthesized payload too once (a)/(b) above is settled, but no new resolver
-  code is needed.
-- **List-cardinality service fields.** R12's `resolveServiceResultAssembly:1861-1868`
-  already rejects list-cardinality with a specific message. Flattening doesn't apply at
-  list cardinality (no obvious answer to "which element gets the errors?"), so this
-  stays as-is: the consumer authors the payload class for `List<Payload>` returns; the
-  rejection wording is unchanged.
-- **Reference resolution.** R12 already wires `ResultReturnType.fqClassName()` through
-  every downstream resolver and emitter. Synthesis populates that slot from a generated
-  source file rather than from an authored one; no further plumbing.
-- **Co-existence with authored carriers.** Authored payloads with custom fields (counts,
-  timestamps, summary slots) keep working unchanged; the synthesis trigger is purely the
-  absence of `className` *and* the SDL shape matching "data fields + at most one
-  errors-shaped field". Off-shape object types (extras the synthesis arm can't populate)
-  fall back to today's rejection.
+- Component matching rules (by name and assignable type? Java-record components are
+  positional; how do they bind by name?).
+- Wrapper-record naming conventions and consumer ergonomics.
+- Whether single-slot flattening collapses to R12's existing `SingleSlot` shape or
+  stays in the new `Flattened` arm.
+- Bare-value shorthand (single-non-errors-field payloads): R12's existing single-slot
+  walk already covers this for free; document and confirm.
 
 ## Non-goals
 
@@ -205,29 +367,50 @@ Concretely the spec needs to settle:
 
 ## Relationship to R12
 
-R12 has shipped the foundation R75 binds to (`ErrorChannel`, `ResultAssembly`,
-canonical-ctor reflection, errors-slot-by-SDL-index, default-literal capture, catch-arm
-`payloadFactory` dispatch, mappings-constant dedup). R75 stays additive: it does not
-modify any of those types' shapes — it adds a synthesis pass that populates
-`ResultReturnType.fqClassName()`, a (possibly sealed) extension on `ResultAssembly` for
-multi-slot flattening, and (depending on the spec choice above) either a classifier
-reroute or a pre-classification synthesis pass. The bare-value shorthand falls out of
-R12's existing single-slot match for free.
+R12 has shipped the carrier-side foundation R75 binds to: `ErrorChannel`,
+`ResultAssembly`, `PayloadAssembly`, canonical-ctor reflection, errors-slot-by-SDL-index,
+default-literal capture, catch-arm `payloadFactory` dispatch, and
+`MappingsConstantNameDedup`. R75 stays additive across all phases:
 
-The remaining hard dependency on R12 is structural rather than schedule-bound: R75 needs
-the types R12 has shipped to remain in place. R12's open Remaining-work bullets
-(rule-6 relaxation, accessor reflection check, `extensions.constraint`,
-validator-integration fixture) are all `@error`-side, not payload-side; none of them
-gate R75. R75 can be promoted to Spec without waiting for R12 to reach Done, provided
-the spec acknowledges that R12's payload-side surface is treated as fixed.
+- **Phase 1** lifts `PayloadAssembly` to a sealed split (`SingleRow | RowList`) and
+  adds the synthesis pass that populates `ResultReturnType.fqClassName()`. R12's
+  existing single-row resolver and emitter become the `SingleRow` arm unchanged.
+- **Phase 2** uses R12's `ErrorChannel` resolver verbatim against the synthesized
+  class.
+- **Phase 3** lifts `ResultAssembly` to a sealed split (`SingleSlot | Flattened`).
+  R12's existing single-slot match becomes the `SingleSlot` arm unchanged; the
+  bare-value shorthand falls out for free.
 
-A forward-reference from R12's §2c to R75 (acknowledging that the authoring requirement
-is the planned ergonomic exit) is worth landing on R12 directly so future readers of R12
-see the trajectory.
+The remaining hard dependency on R12 is structural rather than schedule-bound. R12's
+open Remaining-work bullets (rule-6 relaxation, accessor reflection check,
+`extensions.constraint`, validator-integration fixture) are all `@error`-side, not
+payload-side; none of them gate any R75 phase. Phase 1 has no error-channel dependency
+and ships independently.
 
-## Success criteria (placeholder, to be sharpened in Spec)
+A forward-reference from R12's §2c to R75 (acknowledging that the authoring
+requirement is the planned ergonomic exit) is worth landing on R12 directly. Phase 2
+of R75 narrows that pointer to the synthesized-payload-with-errors-channel case.
 
-- A canonical-shape payload type with no authored class compiles and serves errors and data correctly through the same `ErrorRouter` path as today, with zero `@record(className)` declarations on the SDL.
-- The consumer's `@service` method can return either a domain record (whose components map by name to the payload's non-errors fields) or, when there is a single non-errors field, the bare value of that field's type. Neither shape mentions the synthesized payload class.
-- The author-error rejection that motivated this item ("payload class … has N declared constructors but none has parameter count …") fires only on authored payload types that actively chose to declare `className`.
-- Authored payloads with custom fields are unaffected: same generation, same rejection messages, same fixture coverage as after R12.
+## Success criteria
+
+**Phase 1 (this Spec body):**
+
+- The reproduction case at the top of Phase 1 (the consumer's
+  `KvotesporsmalPreutfyllingPayload` + `OpprettKvotesporsmalPreutfyllingInput`
+  fixture, simplified to sakila tables for the execute-tier coverage) compiles and
+  serves correctly through `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`,
+  with no `@record(className)` declaration on the SDL payload type.
+- The synthesized class is emitted at `<outputPackage>.synthesized.<TypeName>` (or
+  the location settled in open question 1).
+- All `SynthesizedPayloadPipelineTest` cases pass; the
+  `SynthesizedPayloadInsertTest` execute-tier driver passes against the sakila
+  testcontainer.
+- Authored payloads with `@record(record: {className: ...})` are unaffected: same
+  generation, same rejection messages, same fixture coverage as today (regression
+  pin via the existing R12 fixtures).
+- The legacy-parity claim is testable: a SDL fixture taken verbatim from a legacy
+  graphitron consumer (no `@record(className)` on the payload) compiles cleanly
+  on the rewrite.
+
+**Phases 2 and 3:** success criteria sharpened in their respective Spec revision
+passes.
