@@ -1,7 +1,7 @@
 ---
 id: R56
 title: "Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: structural-refactor
