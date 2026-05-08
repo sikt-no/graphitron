@@ -34,7 +34,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | [plan](list-valued-external-field-multiset.md) |
 | `R111` | Make graphitron-maven-plugin IT self-contained via extraArtifacts | Ready | [plan](maven-invoker-it-extra-artifacts.md) |
-| `R106` | Lift same-table `@nodeId` arg/field to a `WHERE pk IN (...)` filter, not a lookup | In Review | [plan](nodeid-lookup-ignores-filter-siblings.md) |
 
 ---
 
@@ -204,7 +203,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md)
 - `R100` [**LSP validation and completions for @node and @nodeId directives**](node-directive-lsp-coverage.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
-- `R106` [**Lift same-table `@nodeId` arg/field to a `WHERE pk IN (...)` filter, not a lookup**](nodeid-lookup-ignores-filter-siblings.md)
 - `R111` [**Make graphitron-maven-plugin IT self-contained via extraArtifacts**](maven-invoker-it-extra-artifacts.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
 
