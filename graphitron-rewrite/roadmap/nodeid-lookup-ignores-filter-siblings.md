@@ -65,21 +65,6 @@ No change to `NodeIdLeafResolver.resolve` itself: the arity-22 cap (`:243-249`),
 
 - `LoadBearingGuaranteeAuditTest`: any `@LoadBearingClassifierCheck` keys gated on `lookupPlan.anyArgSameTable()` need re-pinning. The audit-tier sweep catches orphaned guarantees automatically; updates land in the same commit.
 
-## Migration impact
-
-Existing schemas with a same-table `@nodeId` arg (today's lookup-by-id pattern) emit a different SQL shape after this lands: `WHERE pk IN (?)` filter on a plain table-bound select, not the `QueryLookupTableField` derived-table shape. Result correctness is unchanged for the pure-lookup case — both shapes return ≤1 row when the `@nodeId` is a single-arity scalar non-list arg. List-arity `@nodeId` (today's `[ID!]` lookup-by-ids) returns the same set of matching rows under the new filter shape; ordering relative to the input id list is no longer preserved (the lookup arm preserved input order via the derived-table join; the filter shape leaves it to `ORDER BY` or db default). Whether input-order preservation was a load-bearing contract for any consumer is the migration risk to weigh.
-
-If preservation is load-bearing for some consumers, the migration path is `@orderBy` on the field with an explicit ordering; the current implicit preservation is a side-effect of the lookup shape, not a documented guarantee. If reviewer judgement is that breaking it silently is unacceptable, the alternative is to keep `@lookupKey`-explicit lookups for callers who want input-order preservation (already the documented opt-in for the N×M shape) and document the migration in the changelog.
-
-## Open question for the reviewer
-
-*Input-order preservation under the lift.* Today's `QueryLookupTableField` preserves input id-list order in its derived-table join; the new filter shape does not. The pure-lookup-by-id migration is otherwise transparent. Two options:
-
-1. *Accept the change as the migration cost.* Document in the changelog; consumers who need ordering add `@orderBy`.
-2. *Preserve order conditionally.* The lift produces a `QueryTableField` whose emit detects the "single PK-IN filter, no other ordering signal" shape and adds an implicit `ORDER BY array_position(input_ids, pk)` (Postgres-specific) or equivalent. This re-introduces the lookup arm's behaviour as a special case of the filter arm.
-
-Lean: option 1 (cleaner, no special case). Option 2 is escape-hatch territory if real consumers break.
-
 ## Out of scope
 
 - The `@lookupKey` directive path. Explicit `@lookupKey` continues to opt into the N×M derived-table shape; this item only changes implicit same-table `@nodeId` promotion. The `inputTypeHasLookupKey` recursive walker (`FieldBuilder.java:2521-2530`) is untouched.
