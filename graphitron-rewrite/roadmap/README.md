@@ -21,8 +21,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
+| `R75` | Plain payload types via identity passthrough <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | [plan](synthesize-payload-carrier.md) |
 | `R74` | Row/Record return shapes for typed accessor batch keys | Spec | [plan](accessor-row-record-shapes.md) |
-| `R75` | Synthesize payload carrier for canonical data+errors shapes <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | [plan](synthesize-payload-carrier.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Ready | [plan](error-handling-parity.md) |
 | `R61` | Add Record1<T> source-shape support alongside Row1<T> | In Review | [plan](emit-record1-keys-instead-of-row1.md) |
@@ -136,7 +136,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Ready, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
-- `R75` [**Synthesize payload carrier for canonical data+errors shapes**](synthesize-payload-carrier.md) — Spec, architecture, blocked by [error-handling-parity](error-handling-parity.md)
+- `R75` [**Plain payload types via identity passthrough**](synthesize-payload-carrier.md) — Spec, architecture, blocked by [error-handling-parity](error-handling-parity.md)
 - `R63` [**Type UPSERT dialect requirement on the model**](dml-dialect-requirement-on-model.md) — Spec, architecture
 - `R92` [**Surface database CHECK constraints as Jakarta validation rules**](catalog-check-constraint-validation.md) — Spec, architecture
 
