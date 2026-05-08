@@ -189,10 +189,9 @@ final class SourceRowDirectiveResolver {
                 + "' is missing 'method'"));
         }
 
-        // 4. Reflect the lifter method (class load → method discovery → single-parameter
-        //    check → RowN raw-return + arity-bounds checks). Logic preserved from the
-        //    @batchKeyLifter resolver except for the directive-name strings; the
-        //    targetColumns arity check is removed entirely.
+        // 4. Reflect the lifter method: class load, method discovery, single-parameter
+        //    check, RowN raw-return + arity-bounds checks. The arity check against the
+        //    derived parent-side tuple lives in step 6, not here.
         Class<?> lifterClass;
         try {
             lifterClass = Class.forName(lifterClassName);
