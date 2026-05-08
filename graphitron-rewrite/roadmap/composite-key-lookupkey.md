@@ -1,7 +1,7 @@
 ---
 id: R5
 title: "Composite-key `@lookupKey` on list-of-input-object arguments"
-status: Spec
+status: In Progress
 bucket: architecture
 priority: 4
 theme: model-cleanup
