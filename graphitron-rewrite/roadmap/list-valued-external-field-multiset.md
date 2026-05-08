@@ -1,7 +1,7 @@
 ---
 id: R109
 title: "How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset"
-status: Backlog
+status: Spec
 depends-on: []
 ---
 
