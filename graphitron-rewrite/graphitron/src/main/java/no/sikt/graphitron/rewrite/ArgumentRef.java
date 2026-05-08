@@ -146,6 +146,7 @@ public sealed interface ArgumentRef {
             boolean list,
             ColumnRef column,
             List<JoinStep> joinPath,
+            List<ColumnRef> liftedSourceColumns,
             CallSiteExtraction.NodeIdDecodeKeys extraction,
             Optional<ArgConditionRef> argCondition,
             boolean suppressedByFieldOverride
@@ -153,6 +154,7 @@ public sealed interface ArgumentRef {
 
             public ColumnReferenceArg {
                 joinPath = List.copyOf(joinPath);
+                liftedSourceColumns = List.copyOf(liftedSourceColumns);
             }
         }
 
@@ -174,6 +176,7 @@ public sealed interface ArgumentRef {
             boolean list,
             List<ColumnRef> columns,
             List<JoinStep> joinPath,
+            List<ColumnRef> liftedSourceColumns,
             CallSiteExtraction.NodeIdDecodeKeys extraction,
             Optional<ArgConditionRef> argCondition,
             boolean suppressedByFieldOverride
@@ -187,6 +190,7 @@ public sealed interface ArgumentRef {
                 }
                 columns = List.copyOf(columns);
                 joinPath = List.copyOf(joinPath);
+                liftedSourceColumns = List.copyOf(liftedSourceColumns);
             }
         }
 

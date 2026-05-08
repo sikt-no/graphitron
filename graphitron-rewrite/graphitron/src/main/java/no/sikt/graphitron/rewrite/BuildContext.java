@@ -1187,11 +1187,33 @@ class BuildContext {
             if (nodeRefPath.hasError()) {
                 return new InputFieldResolution.Unresolved(name, null, nodeRefPath.errorMessage());
             }
+            // Multi-hop validation lives on NodeIdLeafResolver: every hop must be FkJoin and
+            // every adjacent pair must satisfy the identity-carrying lift predicate. Single-hop
+            // is the trivial case (no predicate to check). Lift failures route to Unresolved.
+            for (int i = 0; i < nodeRefPath.elements().size(); i++) {
+                if (!(nodeRefPath.elements().get(i) instanceof JoinStep.FkJoin)) {
+                    return new InputFieldResolution.Unresolved(name, null,
+                        "@reference path on @nodeId leaf '" + name + "': step " + (i + 1)
+                        + " is a condition step; every step in a multi-hop @nodeId path "
+                        + NodeIdLeafResolver.CONDITION_STEP_MARKER
+                        + " (use { key: ... } at every position).");
+                }
+            }
+            String liftErr = NodeIdLeafResolver.validateLift(nodeRefPath.elements(), name);
+            if (liftErr != null) {
+                return new InputFieldResolution.Unresolved(name, null, liftErr);
+            }
+            // Empty join path = same-table case (target table == containing table). The predicate
+            // fires against the parent's own NodeType key columns; populate the slot accordingly.
+            // Non-empty = lift through the chain to the parent's own table.
+            List<ColumnRef> liftedSourceColumns = nodeRefPath.elements().isEmpty()
+                ? targetKeyColumns
+                : NodeIdLeafResolver.liftSourceColumns(nodeRefPath.elements());
             Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
             return buildInputNodeIdReference(
                 parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ false,
                 resolvedTable, refTypeName, targetTable.tableName(), targetTypeId,
-                targetKeyColumns, nodeRefPath.elements(), cond);
+                targetKeyColumns, nodeRefPath.elements(), liftedSourceColumns, cond);
         }
         // [ID!] with @nodeId(typeName: T), optionally pinned by @reference(path: [{key: K}]):
         // same-table → ColumnField / CompositeColumnField (filter by own primary key);
@@ -1224,11 +1246,13 @@ class BuildContext {
                     if (direct.keyColumns().size() == 1) {
                         return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
                             parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                            direct.keyColumns().get(0), direct.joinPath(), cond, extraction));
+                            direct.keyColumns().get(0), direct.joinPath(),
+                            direct.liftedSourceColumns(), cond, extraction));
                     }
                     return new InputFieldResolution.Resolved(new InputField.CompositeColumnReferenceField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        direct.keyColumns(), direct.joinPath(), cond, extraction));
+                        direct.keyColumns(), direct.joinPath(),
+                        direct.liftedSourceColumns(), cond, extraction));
                 }
                 case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated ->
                     { return new InputFieldResolution.Unresolved(name, null,
@@ -1241,9 +1265,12 @@ class BuildContext {
             return svc.resolveColumnForReference(columnName, path.elements(), resolvedTable.tableName())
                 .<InputFieldResolution>map(col -> {
                     Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+                    // Plain (non-@nodeId) @reference: the predicate fires against the resolved
+                    // column directly. liftedSourceColumns carries that single column so the
+                    // emitter has one slot to read for both nodeId and non-nodeId carriers.
                     return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        col, path.elements(), cond,
+                        col, path.elements(), List.of(col), cond,
                         new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
                 })
                 .orElseGet(() -> new InputFieldResolution.Unresolved(name, columnName,
@@ -1349,12 +1376,14 @@ class BuildContext {
                             unknownTableRejection(shimTargetResolution, targetTableOpt.get()).message());
                     }
                     List<JoinStep> shimJoinPath = List.of(shimFkResolved.fkJoin());
+                    // Single-hop FK shim path: the lifted tuple is the first hop's source-side
+                    // columns by construction (length-1 path; lift predicate is vacuous).
                     return buildInputNodeIdReference(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
                         shimTargetResolved.entry().toTableRef(targetTableOpt.get()),
                         targetTypeOpt.get(), targetTableOpt.get(),
                         shimTargetMeta.get().typeId(), shimTargetMeta.get().keyColumns(),
-                        shimJoinPath, shimRefCond);
+                        shimJoinPath, shimFkResolved.fkJoin().sourceSideColumns(), shimRefCond);
                 }
             }
         }
@@ -1443,6 +1472,7 @@ class BuildContext {
             String typeName, boolean nonNull, boolean list, TableRef parentTable,
             String refTypeName, String targetTableName, String targetTypeId,
             List<ColumnRef> targetKeyColumns, List<JoinStep> joinPath,
+            List<ColumnRef> liftedSourceColumns,
             Optional<ArgConditionRef> cond) {
         if (targetKeyColumns.isEmpty()) {
             return new InputFieldResolution.Unresolved(name, null,
@@ -1462,11 +1492,11 @@ class BuildContext {
         var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(decodeMethod);
         if (targetKeyColumns.size() == 1) {
             return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(parentTypeName, name, location,
-                typeName, nonNull, list, targetKeyColumns.get(0), joinPath, cond,
+                typeName, nonNull, list, targetKeyColumns.get(0), joinPath, liftedSourceColumns, cond,
                 extraction));
         }
         return new InputFieldResolution.Resolved(new InputField.CompositeColumnReferenceField(parentTypeName, name, location,
-            typeName, nonNull, list, targetKeyColumns, joinPath, cond, extraction));
+            typeName, nonNull, list, targetKeyColumns, joinPath, liftedSourceColumns, cond, extraction));
     }
 
     /**

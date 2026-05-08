@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -76,6 +77,18 @@ import static no.sikt.graphitron.rewrite.BuildContext.argString;
 final class NodeIdLeafResolver {
 
     /**
+     * Load-bearing token in the lift-failure rejection text. Tests assert against this constant
+     * by name rather than copying the prose: copyediting the user-facing message text leaves
+     * the marker (and therefore the test) intact.
+     */
+    static final String LIFT_FAILURE_MARKER = "identity-carrying FKs";
+
+    /**
+     * Load-bearing token in the non-FK-step rejection text. Tests anchor on this constant.
+     */
+    static final String CONDITION_STEP_MARKER = "must be a foreign key";
+
+    /**
      * Outcome of {@link #resolve}. Three terminal arms; callers exhaustively switch.
      */
     sealed interface Resolved {
@@ -130,19 +143,36 @@ final class NodeIdLeafResolver {
             List<JoinStep> joinPath();
 
             /**
-             * Direct-FK arm: FK target-side columns positionally match {@code T}'s key columns.
-             * The body emitter binds decoded keys directly against {@code fkSourceColumns}
-             * (which are also reachable as {@code joinPath[0].sourceSideColumns()}; both are
-             * kept on the carrier so the emitter consumes the load-bearing slot directly
-             * without re-extracting it through the join path).
+             * Direct-FK arm: the terminal hop's target-side columns positionally match {@code T}'s
+             * key columns. The body emitter binds decoded keys directly against
+             * {@code liftedSourceColumns}, the resolver-computed column tuple on the field's own
+             * containing table that aligns positionally with {@code keyColumns}.
              *
-             * @param refTypeName     the resolved (or inferred) GraphQL type name of {@code T}
-             * @param targetTable     resolved {@link TableRef} for {@code T.table()}
-             * @param decodeMethod    {@code decode<TypeName>} helper resolved on the target NodeType
-             * @param keyColumns      {@code T}'s key columns
-             * @param fkSourceColumns FK source columns on the field's own containing table,
-             *                        positionally aligned with {@code keyColumns}
-             * @param joinPath        single-hop FK path from the containing table to {@code T.table()}
+             * <p>For single-hop paths, {@code liftedSourceColumns ==
+             * joinPath.get(0).sourceSideColumns()}; the slot is backward-compatible.
+             *
+             * <p>For multi-hop paths (length &ge; 2), each intermediate hop satisfies the lift
+             * predicate (its source-side columns are a positional sub-tuple of the previous hop's
+             * target-side columns by SQL name), so the terminal hop's source-side tuple lifts
+             * back through the chain to a sub-tuple of the first hop's source-side columns. The
+             * lifted tuple lives on the parent's own table and the emitter binds against it
+             * exactly the way single-hop direct-FK does. Predicate stays "row's column tuple ∈
+             * decoded keys"; chain length is a classifier-time concept only.
+             *
+             * <p>The legacy {@code fkSourceColumns} slot is retained for source compatibility with
+             * existing call-sites; new code should read {@code liftedSourceColumns}. For length-1
+             * paths the two are equal by construction; for length &ge; 2 the legacy slot still
+             * carries the first hop's full source-side tuple (whose sub-tuple is the lifted form).
+             *
+             * @param refTypeName          the resolved (or inferred) GraphQL type name of {@code T}
+             * @param targetTable          resolved {@link TableRef} for {@code T.table()}
+             * @param decodeMethod         {@code decode<TypeName>} helper resolved on the target NodeType
+             * @param keyColumns           {@code T}'s key columns
+             * @param fkSourceColumns      first hop's source-side columns (legacy slot)
+             * @param liftedSourceColumns  resolver-computed column tuple on the parent's own
+             *                             table, positionally aligned with {@code keyColumns}
+             * @param joinPath             FK path from the containing table to {@code T.table()};
+             *                             length-1 single-hop or length-&ge;2 identity-carrying chain
              */
             record DirectFk(
                     String refTypeName,
@@ -150,6 +180,7 @@ final class NodeIdLeafResolver {
                     HelperRef.Decode decodeMethod,
                     List<ColumnRef> keyColumns,
                     List<ColumnRef> fkSourceColumns,
+                    List<ColumnRef> liftedSourceColumns,
                     List<JoinStep> joinPath)
                 implements FkTarget {}
 
@@ -199,21 +230,35 @@ final class NodeIdLeafResolver {
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "nodeid-fk.direct-fk-keys-match",
-        description = "FK target-side columns positionally match NodeType key columns;"
-                    + " emission can bind decoded keys directly against the source-side columns."
-                    + " The resolver picks Resolved.FkTarget.DirectFk only when this holds;"
-                    + " the pathological case (FK target ≠ NodeType key) is sorted to"
-                    + " TranslatedFk and rejected at projection time. The projection arms for"
-                    + " ColumnReferenceArg / CompositeColumnReferenceArg /"
-                    + " InputField.{Column,CompositeColumn}ReferenceField read those source-side"
-                    + " columns straight into BodyParam.{Eq,In,RowEq,RowIn} and assume positional"
-                    + " correspondence with the decoded NodeType keys.")
+        description = "The terminal hop's target-side columns positionally match NodeType key"
+                    + " columns; emission can bind decoded keys directly against the lifted"
+                    + " source-side columns. The resolver picks Resolved.FkTarget.DirectFk only"
+                    + " when this holds; the pathological case (terminal hop's FK target ≠"
+                    + " NodeType key) is sorted to TranslatedFk and rejected at projection time."
+                    + " The projection arms for ColumnReferenceArg / CompositeColumnReferenceArg"
+                    + " / InputField.{Column,CompositeColumn}ReferenceField read"
+                    + " liftedSourceColumns straight into BodyParam.{Eq,In,RowEq,RowIn} and"
+                    + " assume positional correspondence with the decoded NodeType keys.")
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "nodeid-fk.identity-carrying-lift",
+        description = "Every intermediate hop in a multi-hop @reference path satisfies the lift"
+                    + " predicate: hop[i].sourceSideColumns is a positional sub-tuple of"
+                    + " hop[i-1].targetSideColumns by SQL name, for every i ≥ 1. The resolver"
+                    + " accepts only paths where this holds (single-hop is the trivial case);"
+                    + " other shapes route to a Rejected. The invariant guarantees that the"
+                    + " terminal hop's source-side tuple lifts back through the chain to a"
+                    + " sub-tuple of the first hop's source-side columns — i.e. a column tuple"
+                    + " on the parent's own table, positionally aligned with the decoded"
+                    + " NodeType keys. Emission then proceeds as a direct row predicate against"
+                    + " the parent table, no JOIN and no subquery, identical to single-hop"
+                    + " direct-FK.")
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "fk-join.slots-oriented-source-and-target",
-        reliesOn = "Reads fkJoin.targetSideColumns() to test the keyColumns-mirror predicate "
-            + "and fkJoin.sourceSideColumns() to populate Resolved.FkTarget.DirectFk's "
-            + "fkSourceColumns; depends on synthesis-time slot orientation so the same call "
-            + "works whether the parent or the child holds the FK constraint.")
+        reliesOn = "Reads each hop's targetSideColumns() / sourceSideColumns() to evaluate the"
+            + " lift predicate and to compute Resolved.FkTarget.DirectFk's"
+            + " liftedSourceColumns; depends on synthesis-time slot orientation so the same"
+            + " accessors work uniformly across hops regardless of which end of each catalog"
+            + " FK each hop's source / target maps to.")
     Resolved resolve(GraphQLDirectiveContainer leaf, String leafName, TableRef containingTable) {
         var typeNameInference = inferTypeName(leaf, containingTable);
         if (typeNameInference.error() != null) {
@@ -268,11 +313,12 @@ final class NodeIdLeafResolver {
             return new Resolved.Rejected(ctx.unknownTableRejection(targetTableResolution, targetTableName));
         }
         TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
-        var fkJoin = (FkJoin) joinPath.path().get(0);
-        if (sameColumnsBySqlName(fkJoin.targetSideColumns(), keys.keyColumns())) {
+        var firstHop = (FkJoin) joinPath.path().get(0);
+        var terminalHop = (FkJoin) joinPath.path().getLast();
+        if (sameColumnsBySqlName(terminalHop.targetSideColumns(), keys.keyColumns())) {
             return new Resolved.FkTarget.DirectFk(
                 refTypeName, targetTable, decodeMethod, keys.keyColumns(),
-                fkJoin.sourceSideColumns(), joinPath.path());
+                firstHop.sourceSideColumns(), joinPath.liftedSourceColumns(), joinPath.path());
         }
         return new Resolved.FkTarget.TranslatedFk(
             refTypeName, targetTable, decodeMethod, keys.keyColumns(), joinPath.path());
@@ -363,45 +409,67 @@ final class NodeIdLeafResolver {
             + " — annotate the target type with @node or surface the metadata via KjerneJooqGenerator");
     }
 
-    private record JoinPathResult(List<JoinStep> path, String error) {}
+    private record JoinPathResult(List<JoinStep> path, List<ColumnRef> liftedSourceColumns, String error) {}
 
     /**
-     * Resolves the single-hop FK join path from {@code containingTable} to {@code targetTableName}.
-     * Honours an explicit {@code @reference(path: [{key: ...}])} when present (single-hop only;
-     * multi-hop FK targets are not supported). Falls back to FK auto-discovery via
-     * {@link JooqCatalog#findUniqueFkToTable} when {@code @reference} is absent.
+     * Resolves the FK join path from {@code containingTable} to {@code targetTableName}.
+     *
+     * <p>Two intake shapes:
+     * <ul>
+     *   <li>Explicit {@code @reference(path: [{key: ...}, ...])}: parsed elements are taken as-is.
+     *       Length 1 (single-hop) is the existing direct-FK shape; length &ge; 2 (multi-hop) is
+     *       the identity-carrying-lift shape and only succeeds when every adjacent pair satisfies
+     *       the lift predicate. Every step must be a {@link FkJoin}; condition-only steps are
+     *       rejected with the {@link #CONDITION_STEP_MARKER} text.</li>
+     *   <li>No {@code @reference}: single-hop FK auto-discovery via
+     *       {@link JooqCatalog#findUniqueFkToTable}. Multi-hop is always explicit; auto-discovery
+     *       does not search past one hop.</li>
+     * </ul>
+     *
+     * <p>On success the result carries the resolved path and the lifted source-column tuple — the
+     * column tuple on the parent's own table that is positionally aligned with the decoded
+     * NodeType keys. For length-1 paths the lifted tuple equals the first hop's source-side
+     * columns (backward-compatible).
      */
     private JoinPathResult resolveFkJoinPath(GraphQLDirectiveContainer leaf, String leafName,
                                              TableRef containingTable, String targetTableName) {
-        String fkName;
         if (leaf.hasAppliedDirective(DIR_REFERENCE)) {
             var path = ctx.parsePath(leaf, leafName, containingTable.tableName(), targetTableName);
             if (path.hasError()) {
-                return new JoinPathResult(null, path.errorMessage());
+                return new JoinPathResult(null, null, path.errorMessage());
             }
-            if (path.elements().size() != 1) {
-                return new JoinPathResult(null,
-                    "@reference path on @nodeId must be single-hop;"
-                    + " multi-hop FK filters are not supported");
+            if (path.elements().isEmpty()) {
+                return new JoinPathResult(null, null,
+                    "@reference path on @nodeId leaf '" + leafName + "': path is empty");
             }
-            if (!(path.elements().get(0) instanceof FkJoin fkStep)) {
-                return new JoinPathResult(null,
-                    "@reference path on @nodeId must be a FK key, not a condition method");
+            for (int i = 0; i < path.elements().size(); i++) {
+                if (!(path.elements().get(i) instanceof FkJoin)) {
+                    return new JoinPathResult(null, null,
+                        "@reference path on @nodeId leaf '" + leafName + "': step " + (i + 1)
+                        + " is a condition step; every step in a multi-hop @nodeId path "
+                        + CONDITION_STEP_MARKER + " (use { key: ... } at every position).");
+                }
             }
-            fkName = fkStep.fk().sqlName();
-        } else {
-            var inferred = ctx.catalog.findUniqueFkToTable(
-                containingTable.tableName(), targetTableName);
-            if (inferred.isEmpty()) {
-                return new JoinPathResult(null,
-                    "no unique FK from '" + containingTable.tableName() + "' to '" + targetTableName
-                    + "'; declare @reference(path: [{key: ...}]) to disambiguate");
+            String liftError = validateLift(path.elements(), leafName);
+            if (liftError != null) {
+                return new JoinPathResult(null, null, liftError);
             }
-            fkName = inferred.get();
+            return new JoinPathResult(path.elements(), liftSourceColumns(path.elements()), null);
         }
+        // No @reference: single-hop FK auto-discovery. Multi-hop is always explicit; the
+        // auto-discovery fallback never searches past one hop. Disambiguation among A → ? → C
+        // chains is the author's responsibility via per-hop { key: ... }.
+        var inferred = ctx.catalog.findUniqueFkToTable(
+            containingTable.tableName(), targetTableName);
+        if (inferred.isEmpty()) {
+            return new JoinPathResult(null, null,
+                "no unique FK from '" + containingTable.tableName() + "' to '" + targetTableName
+                + "'; declare @reference(path: [{key: ...}]) to disambiguate");
+        }
+        String fkName = inferred.get();
         var fkOpt = ctx.catalog.findForeignKey(fkName);
         if (fkOpt.isEmpty()) {
-            return new JoinPathResult(null,
+            return new JoinPathResult(null, null,
                 "FK '" + fkName + "' on table '" + containingTable.tableName()
                 + "' not found in catalog");
         }
@@ -411,13 +479,85 @@ final class NodeIdLeafResolver {
             fkOpt.get(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
         return switch (fkStepResolution) {
             case BuildContext.FkJoinResolution.Resolved r ->
-                new JoinPathResult(List.of(r.fkJoin()), null);
+                new JoinPathResult(List.of(r.fkJoin()), r.fkJoin().sourceSideColumns(), null);
             case BuildContext.FkJoinResolution.UnknownTable u ->
-                new JoinPathResult(null,
+                new JoinPathResult(null, null,
                     ctx.unknownTableRejection(u.failure(), u.requestedName()).message());
             case BuildContext.FkJoinResolution.UnknownForeignKey uf ->
-                new JoinPathResult(null,
+                new JoinPathResult(null, null,
                     ctx.unknownForeignKeyRejection(uf.fkName()).message());
         };
+    }
+
+    /**
+     * Lift predicate. For each {@code i ≥ 1}, every column in {@code hop[i].sourceSideColumns}
+     * must match a column in {@code hop[i-1].targetSideColumns} by SQL name (case-insensitive).
+     * Returns {@code null} on success; otherwise a fully formatted rejection message anchored on
+     * {@link #LIFT_FAILURE_MARKER}.
+     */
+    static String validateLift(List<JoinStep> path, String leafName) {
+        for (int i = 1; i < path.size(); i++) {
+            var current = (FkJoin) path.get(i);
+            var previous = (FkJoin) path.get(i - 1);
+            var currentSources = current.sourceSideColumns();
+            var previousTargets = previous.targetSideColumns();
+            for (ColumnRef col : currentSources) {
+                boolean found = false;
+                for (ColumnRef t : previousTargets) {
+                    if (t.sqlName().equalsIgnoreCase(col.sqlName())) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    return "@reference path on @nodeId leaf '" + leafName + "': hop " + (i + 1)
+                        + " ('" + current.fk().sqlName() + "') introduces a column translation —"
+                        + " its source-side columns " + sqlNames(currentSources)
+                        + " are not a positional subset of the previous hop's target-side"
+                        + " columns " + sqlNames(previousTargets) + " by SQL name."
+                        + " Multi-hop @reference on @nodeId currently requires "
+                        + LIFT_FAILURE_MARKER + " at every step (the predicate compiles to"
+                        + " a single-table SELECT). See"
+                        + " docs/manual/how-to/multi-hop-nodeid-filter.adoc for the mental"
+                        + " model and rejection-messages section.";
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Computes the lifted source-column tuple. Walks back from the terminal hop's source-side
+     * tuple, replacing each column at step {@code i} with the corresponding column in
+     * {@code hop[i-1].sourceSideColumns} at the same position the column held in
+     * {@code hop[i-1].targetSideColumns}. Precondition: {@link #validateLift} has returned
+     * {@code null} for {@code path}.
+     */
+    static List<ColumnRef> liftSourceColumns(List<JoinStep> path) {
+        var lifted = new ArrayList<>(((FkJoin) path.getLast()).sourceSideColumns());
+        for (int i = path.size() - 1; i >= 1; i--) {
+            var prev = (FkJoin) path.get(i - 1);
+            var prevTargets = prev.targetSideColumns();
+            var prevSources = prev.sourceSideColumns();
+            var next = new ArrayList<ColumnRef>(lifted.size());
+            for (ColumnRef col : lifted) {
+                int pos = -1;
+                for (int j = 0; j < prevTargets.size(); j++) {
+                    if (prevTargets.get(j).sqlName().equalsIgnoreCase(col.sqlName())) {
+                        pos = j;
+                        break;
+                    }
+                }
+                next.add(prevSources.get(pos));
+            }
+            lifted = next;
+        }
+        return List.copyOf(lifted);
+    }
+
+    private static String sqlNames(List<ColumnRef> cols) {
+        var names = new ArrayList<String>(cols.size());
+        for (ColumnRef c : cols) names.add(c.sqlName());
+        return names.toString();
     }
 }

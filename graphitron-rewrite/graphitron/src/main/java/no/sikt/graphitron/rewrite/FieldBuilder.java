@@ -866,10 +866,12 @@ class FieldBuilder {
                     if (keys.size() == 1) {
                         return new ArgumentRef.ScalarArg.ColumnReferenceArg(
                             name, typeName, nonNull, list, keys.get(0), direct.joinPath(),
+                            direct.liftedSourceColumns(),
                             extraction, argCondition, fieldOverride);
                     }
                     return new ArgumentRef.ScalarArg.CompositeColumnReferenceArg(
                         name, typeName, nonNull, list, keys, direct.joinPath(),
+                        direct.liftedSourceColumns(),
                         extraction, argCondition, fieldOverride);
                 }
                 case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated -> {
@@ -1089,11 +1091,19 @@ class FieldBuilder {
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "nodeid-fk.direct-fk-keys-match",
         reliesOn = "The ColumnReferenceArg / CompositeColumnReferenceArg arms read"
-            + " joinPath[0].sourceColumns() straight into BodyParam.{Eq,In,RowEq,RowIn} on the"
-            + " assumption that those columns positionally correspond to the NodeType keys"
-            + " bound by the decoded record. NodeIdLeafResolver only produces these carriers"
-            + " on the DirectFk arm (TranslatedFk routes to UnclassifiedArg upstream), so the"
-            + " projection skips the per-position check it would otherwise need.")
+            + " liftedSourceColumns straight into BodyParam.{Eq,In,RowEq,RowIn} on the"
+            + " assumption that the terminal hop's target-side columns positionally correspond"
+            + " to the NodeType keys bound by the decoded record. NodeIdLeafResolver only"
+            + " produces these carriers on the DirectFk arm (TranslatedFk routes to"
+            + " UnclassifiedArg upstream), so the projection skips the per-position check it"
+            + " would otherwise need.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "nodeid-fk.identity-carrying-lift",
+        reliesOn = "The ColumnReferenceArg / CompositeColumnReferenceArg arms read the"
+            + " resolver-supplied liftedSourceColumns slot directly, never re-walking joinPath"
+            + " to compute the lift. The carrier construction path (FieldBuilder.classifyArgument"
+            + " on DirectFk) populates the slot from NodeIdLeafResolver.Resolved.FkTarget.DirectFk,"
+            + " which only succeeds when every adjacent hop pair satisfies the lift predicate.")
     private List<WhereFilter> projectFilters(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
                                              TableRef rt, String returnTypeName, List<String> errors) {
         var bodyParams = new ArrayList<BodyParam>();
@@ -1181,27 +1191,32 @@ class FieldBuilder {
                     boolean autoSuppressed = cra.suppressedByFieldOverride()
                         || (cra.argCondition().isPresent() && cra.argCondition().get().override());
                     if (!autoSuppressed) {
-                        var fkJoin = (JoinStep.FkJoin) cra.joinPath().get(0);
-                        ColumnRef fkSourceColumn = fkJoin.sourceSideColumns().get(0);
-                        String javaType = javaTypeFor(cra.extraction(), fkSourceColumn);
+                        // Read the resolver's liftedSourceColumns directly — the column tuple on
+                        // the parent's own table positionally aligned with the decoded NodeType
+                        // keys. Length-1 single-hop or length-≥2 identity-carrying chain lift to
+                        // the same shape; chain length is purely a classifier-time concept.
+                        ColumnRef liftedColumn = cra.liftedSourceColumns().get(0);
+                        String javaType = javaTypeFor(cra.extraction(), liftedColumn);
                         bodyParams.add(cra.list()
-                            ? new BodyParam.In(cra.name(), fkSourceColumn, javaType, cra.nonNull(), cra.extraction())
-                            : new BodyParam.Eq(cra.name(), fkSourceColumn, javaType, cra.nonNull(), cra.extraction()));
+                            ? new BodyParam.In(cra.name(), liftedColumn, javaType, cra.nonNull(), cra.extraction())
+                            : new BodyParam.Eq(cra.name(), liftedColumn, javaType, cra.nonNull(), cra.extraction()));
                     }
                     cra.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
                 case ArgumentRef.ScalarArg.CompositeColumnReferenceArg ccra -> {
                     // FK-target composite arm. Analogous to ColumnReferenceArg but with a
-                    // RowEq / RowIn predicate against the FK source-column tuple. Same
-                    // direct-FK precondition; pathological cases are rejected at classify time.
+                    // RowEq / RowIn predicate against the lifted source-column tuple on the
+                    // parent's own table. Same direct-FK precondition (terminal hop's target
+                    // columns positionally match NodeType keys); intermediate hops, if any, are
+                    // constrained by the lift predicate. Pathological cases are rejected at
+                    // classify time.
                     boolean autoSuppressed = ccra.suppressedByFieldOverride()
                         || (ccra.argCondition().isPresent() && ccra.argCondition().get().override());
                     if (!autoSuppressed) {
-                        var fkJoin = (JoinStep.FkJoin) ccra.joinPath().get(0);
-                        List<ColumnRef> fkSourceColumns = fkJoin.sourceSideColumns();
+                        List<ColumnRef> liftedColumns = ccra.liftedSourceColumns();
                         bodyParams.add(ccra.list()
-                            ? new BodyParam.RowIn(ccra.name(), fkSourceColumns, ccra.nonNull(), ccra.extraction())
-                            : new BodyParam.RowEq(ccra.name(), fkSourceColumns, ccra.nonNull(), ccra.extraction()));
+                            ? new BodyParam.RowIn(ccra.name(), liftedColumns, ccra.nonNull(), ccra.extraction())
+                            : new BodyParam.RowEq(ccra.name(), liftedColumns, ccra.nonNull(), ccra.extraction()));
                     }
                     ccra.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
                 }
@@ -1287,8 +1302,13 @@ class FieldBuilder {
                     if (implicitBodyParams != null && !enclosingOverride
                             && rf.condition().isEmpty()
                             && !lookupBoundNames.contains(rf.name())) {
+                        // Predicate fires against liftedSourceColumns — the column tuple on the
+                        // parent's own table positionally aligned with the decoded NodeType keys
+                        // (nodeId direct-fk, single-hop or identity-carrying multi-hop), or the
+                        // resolved reference column for plain @reference. Single source of truth.
                         implicitBodyParams.add(implicitBodyParam(
-                            rf.column(), rf.name(), rf.typeName(), rf.nonNull(), rf.list(),
+                            rf.liftedSourceColumns().get(0), rf.name(), rf.typeName(),
+                            rf.nonNull(), rf.list(),
                             rf.extraction(), outerArgName, leafPath));
                     }
                 }
@@ -1314,8 +1334,10 @@ class FieldBuilder {
                     if (implicitBodyParams != null && !enclosingOverride
                             && ccrf.condition().isEmpty()
                             && !lookupBoundNames.contains(ccrf.name())) {
+                        // Composite reference is nodeId-only (per record javadoc); read the
+                        // resolver-supplied liftedSourceColumns directly.
                         implicitBodyParams.add(compositeImplicitBodyParam(
-                            ccrf.columns(), ccrf.name(), ccrf.nonNull(), ccrf.list(),
+                            ccrf.liftedSourceColumns(), ccrf.name(), ccrf.nonNull(), ccrf.list(),
                             ccrf.extraction(), outerArgName, leafPath));
                     }
                 }
