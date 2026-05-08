@@ -61,6 +61,10 @@ The `mvn install -Plocal-db` command above runs the full pipeline (build-fixture
 
 Do not use em dashes (—) in documentation. Use a comma, semicolon, colon, or restructure the sentence instead.
 
+## Interaction style
+
+Do not use the `AskUserQuestion` tool for open-ended design dialog or spec exploration. The structured multi-choice format constrains a conversation that should be free-flowing prose, and the user has explicitly flagged it as friction. Surface design forks inline: state the choice, give your recommendation and the reasoning, invite redirect. The user answers with a sentence, pushes back on the framing, or pivots, none of which fit the question/options shape. Reserve `AskUserQuestion` for genuinely bounded decisions where the option set is closed and prose framing would be wasteful (for example "discard the merge conflict or keep your local copy"); even there, prose first is usually fine.
+
 ## Editing large files
 
 Prefer many small `Edit` calls over one large `Write` when trimming or rewriting a long file. Full-file writes on plans/docs of ~300+ lines tend to time out mid-response and leave the file half-written. Sequence of targeted `Edit` calls (remove section A, remove section B, replace section C) is both safer and faster.
