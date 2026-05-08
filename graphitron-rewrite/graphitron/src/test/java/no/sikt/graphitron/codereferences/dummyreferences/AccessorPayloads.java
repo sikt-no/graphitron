@@ -51,7 +51,7 @@ public final class AccessorPayloads {
      * Heterogeneous-element case: the accessor returns a {@code TableRecord} whose mapped
      * jOOQ table is <em>not</em> the field's {@code @table} return. The classifier should fall
      * through to the rewritten three-option AUTHOR_ERROR rather than auto-deriving (since the
-     * author may have intended a non-trivial transform that {@code @batchKeyLifter} can express).
+     * author may have intended a non-trivial transform that {@code @sourceRow} can express).
      */
     public record HeterogeneousElementPayload(LanguageRecord films) {}
 

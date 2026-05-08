@@ -1768,7 +1768,7 @@ class GraphitronSchemaBuilderTest {
      */
     enum SourceRowClassificationCase implements ClassificationCase {
         POJO_PARENT_VALID_ROW1_LIST(
-            "Pojo parent + valid Row1<Integer> lifter, list return → RecordTableField with LifterRowKeyed",
+            "Pojo parent + valid Row1<Integer> lifter + @reference, list return → RecordTableField with LifterPathKeyed",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
@@ -1797,7 +1797,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         POJO_PARENT_VALID_PLUS_LOOKUPKEY(
-            "Pojo parent + valid Row1 lifter + @lookupKey arg → RecordLookupTableField with LifterRowKeyed and lookupMapping populated",
+            "Pojo parent + valid Row1 lifter + @reference + @lookupKey arg → RecordLookupTableField with LifterPathKeyed and lookupMapping populated",
             """
             type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
             type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
@@ -2355,7 +2355,7 @@ class GraphitronSchemaBuilderTest {
                 var unc = (UnclassifiedField) schema.field("Payload", "films");
                 assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
                 // Falls through to the rewritten three-option message; the typed-accessor and
-                // @batchKeyLifter and @table TableRecord options should all be named.
+                // @sourceRow and @table TableRecord options should all be named.
                 assertThat(unc.reason()).contains("typed accessor");
                 assertThat(unc.reason()).contains("@sourceRow");
                 assertThat(unc.reason()).contains("typed jOOQ TableRecord");
@@ -4203,7 +4203,7 @@ class GraphitronSchemaBuilderTest {
             // R105 wires the @record-parent polymorphic classifier arm but defers the Pojo /
             // JavaRecord + single-cardinality shape (the single-cardinality emitter cannot
             // safely consume a non-jOOQ-Record source). The field falls into that deferred arm
-            // before reaching the @batchKeyLifter follow-up; the message reflects the
+            // before reaching the @sourceRow follow-up; the message reflects the
             // single-cardinality deferral, not the original "polymorphic not supported" wording.
             """
             type Cat @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
