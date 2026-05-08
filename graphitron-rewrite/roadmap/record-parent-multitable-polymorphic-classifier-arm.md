@@ -1,7 +1,7 @@
 ---
 id: R105
 title: "@record-parent multi-table polymorphic ChildField classifier arm"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 5
 theme: structural-refactor
@@ -9,6 +9,8 @@ depends-on: []
 ---
 
 # @record-parent multi-table polymorphic ChildField classifier arm
+
+**Shipped at 40390ab9 (classifier + LoadBearing key split + validator extension) and 01c75bd8 (pipeline-tier and validator-tier tests).** Three reachable permits on `ChildField.{InterfaceField, UnionField}` from `@record`-backed parents: `RowKeyed` (`JooqTableRecordType` parent), `AccessorKeyedSingle` (Pojo / JavaRecord parent with a typed single-cardinality TableRecord accessor), `AccessorKeyedMany` (Pojo / JavaRecord parent with a typed list / set TableRecord accessor). `LifterRowKeyed` for polymorphic returns remains deferred per Out of scope. The full build (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`) passes on 01c75bd8.
 
 Multi-table polymorphic interface / union child fields on `@record`-backed parents are deferred today: the `ReturnTypeRef.PolymorphicReturnType` arm of `FieldBuilder.classifyChildFieldOnResultType` (`FieldBuilder.java:2737`) returns `Rejection.deferred("@record type returning a polymorphic type is not yet supported", "")`. Schema authors using `@record` parents (POJO or Java record sources) cannot model unions or interfaces of multiple participant tables as child fields; the workarounds are to flatten the union into a single concrete type or move the parent to a table-backed source.
 
