@@ -324,50 +324,41 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * Multi-table polymorphic child guard (both list and connection arms): rejects empty parent
-     * PK and parent PK arity above jOOQ's typed Row22 cap. The cap is uniform across both arms
-     * because the shared {@code parentInput VALUES} emitter widens the parent PK by an
-     * {@code idx} column on every batched-rows method (see
-     * {@code MultiTablePolymorphicEmitter.buildParentInputValuesEmitter}), so the resulting
-     * {@code Row<N+1>} tops out at jOOQ's {@code Row22} on either arm. Field-level cap therefore
-     * is parent PK arity 21.
+     * Multi-table polymorphic child guard (both list and connection arms): rejects parent-key
+     * arity above jOOQ's typed Row22 cap. The cap is uniform across both arms because the
+     * shared {@code parentInput VALUES} emitter widens the parent key by an {@code idx} column
+     * on every batched-rows method (see {@code MultiTablePolymorphicEmitter.buildParentInputValuesEmitter}),
+     * so the resulting {@code Row<N+1>} tops out at jOOQ's {@code Row22} on either arm.
+     * Field-level cap therefore is parent-key arity 21.
      *
      * <p>Surfaces the constraint as a clean validator rejection (build-time AUTHOR_ERROR with
      * file:line) instead of a codegen-time {@code IllegalStateException} or a
-     * {@code Row23}-doesn't-exist compile failure. Mirrors classifier intent:
-     * {@code FieldBuilder.classifyObjectReturnChildField} routes empty-PK parents through
-     * {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField} so the
-     * canonical-constructor invariant on {@link no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed}
-     * is unreachable on this construction path.
+     * {@code Row23}-doesn't-exist compile failure.
      *
-     * <p>No-op for non-table-backed parent types — the multi-table polymorphic emitter only
-     * fires for table-backed parents under R102 (R105 lifts {@code @record}-parent classification
-     * arms; their derivation is checked separately).
+     * <p>Reads {@code field.parentKey().preludeKeyColumns()} uniformly across all four
+     * {@link no.sikt.graphitron.rewrite.model.BatchKey.RecordParentBatchKey} permits — the same
+     * accessor the rows-method prelude uses, so the validator's arity surface tracks the actual
+     * key tuple regardless of producer (table-backed parent → {@link no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed},
+     * @record parent → any of the four permits).
+     *
+     * <p>The non-empty invariant is enforced upstream at construction time: {@link no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed}'s
+     * canonical constructor and {@link no.sikt.graphitron.rewrite.model.JoinStep.LiftedHop}'s constructor
+     * both reject empty key columns; the classifier routes empty-PK / unresolved-hub parents
+     * through {@code UnclassifiedField} so those constructors are unreachable from the
+     * polymorphic-construction sites. The validator's job here is purely the upper-bound check.
      */
     private void validateChildMultiTableParentPk(String qualifiedName, SourceLocation location,
             String parentTypeName,
-            Map<String, GraphitronType> types,
+            no.sikt.graphitron.rewrite.model.BatchKey.RecordParentBatchKey parentKey,
             List<ValidationError> errors) {
-        var parentType = types.get(parentTypeName);
-        if (!(parentType instanceof TableBackedType tbt)) return;
-        var pkCols = tbt.table().primaryKeyColumns();
-        if (pkCols.isEmpty()) {
+        var keyCols = parentKey.preludeKeyColumns();
+        if (keyCols.size() > 21) {
             errors.add(new ValidationError(
                 qualifiedName,
             Rejection.structural("Field '" + qualifiedName + "': multi-table interface/union child "
-                    + "field requires a non-empty primary key on the parent type '" + parentTypeName
-                    + "', since the DataLoader key tuple is built from the parent's PK columns"),
-                location
-            ));
-            return;
-        }
-        if (pkCols.size() > 21) {
-            errors.add(new ValidationError(
-                qualifiedName,
-            Rejection.structural("Field '" + qualifiedName + "': multi-table interface/union child "
-                    + "field whose parent type '" + parentTypeName + "' has a primary key with "
-                    + pkCols.size() + " columns exceeds jOOQ's typed Row22 cap "
-                    + "(parent PK + idx must fit in Row<N+1>). Use a narrower parent key or "
+                    + "field whose parent type '" + parentTypeName + "' has a parent key with "
+                    + keyCols.size() + " columns exceeds jOOQ's typed Row22 cap "
+                    + "(parent key + idx must fit in Row<N+1>). Use a narrower parent key or "
                     + "split the parent type"),
                 location
             ));
@@ -569,13 +560,13 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
         validateChildMultiTableParentPk(field.qualifiedName(), field.location(),
-            field.parentTypeName(), types, errors);
+            field.parentTypeName(), field.parentKey(), errors);
     }
     private void validateUnionField(no.sikt.graphitron.rewrite.model.ChildField.UnionField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
         validateChildMultiTableParentPk(field.qualifiedName(), field.location(),
-            field.parentTypeName(), types, errors);
+            field.parentTypeName(), field.parentKey(), errors);
     }
     private void validateNestingField(no.sikt.graphitron.rewrite.model.ChildField.NestingField field, List<ValidationError> errors) {
         // List cardinality has no source-passthrough semantic: one parent Record in, one list value out.

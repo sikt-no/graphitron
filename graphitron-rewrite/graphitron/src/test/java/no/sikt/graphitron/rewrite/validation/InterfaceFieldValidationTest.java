@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RejectionKind;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -33,11 +34,24 @@ class InterfaceFieldValidationTest {
         List.of(new ColumnRef("customer_id", "CUSTOMER_ID", "java.lang.Integer")));
     private static final TableRef STAFF = TestFixtures.tableRef("staff", "STAFF", "Staff",
         List.of(new ColumnRef("staff_id", "STAFF_ID", "java.lang.Integer")));
-    private static final TableRef NO_PK = TestFixtures.tableRef("kpis", "KPIS", "Kpis", List.of());
+    private static final TableRef ADDRESS = TestFixtures.tableRef("address", "ADDRESS", "Address",
+        List.of(new ColumnRef("address_id", "ADDRESS_ID", "java.lang.Integer")));
     private static final TableRef BAR = TestFixtures.tableRef("bar", "BAR", "Bar",
         List.of(
             new ColumnRef("id_1", "ID_1", "java.lang.Integer"),
             new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
+
+    /**
+     * Single-PK BatchKey for a parent table — under R102+ the validator reads parent-key arity
+     * off {@code field.parentKey().preludeKeyColumns()}, so test fixtures must publish a real
+     * BatchKey. Empty-PK parents are unreachable through this validator: {@code RowKeyed}'s
+     * canonical constructor rejects empty key lists, and the classifier routes empty-PK parents
+     * through {@code UnclassifiedField} so {@code InterfaceField} / {@code UnionField} never
+     * carry one.
+     */
+    private static BatchKey.RecordParentBatchKey rowKeyedFor(TableRef table) {
+        return new BatchKey.RowKeyed(table.primaryKeyColumns());
+    }
 
     @Test
     void wellFormed_twoSameArityParticipants_noErrors() {
@@ -46,18 +60,19 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new InterfaceField("Address", "occupants", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(ADDRESS), null);
         assertThat(validate(field)).isEmpty();
     }
 
     @Test
     void rejects_participantWithoutPrimaryKey() {
+        var noPk = TestFixtures.tableRef("kpis", "KPIS", "Kpis", List.of());
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Customer", CUSTOMER, null),
-            new ParticipantRef.TableBound("Kpis", NO_PK, null));
+            new ParticipantRef.TableBound("Kpis", noPk, null));
         var field = new InterfaceField("Address", "occupants", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Kpis", List.of()), null, null);
+            participants, Map.of("Customer", List.of(), "Kpis", List.of()), rowKeyedFor(ADDRESS), null);
         assertHasKind(validate(field), RejectionKind.AUTHOR_ERROR,
             "Field 'Address.occupants': participant 'Kpis' has no primary key");
     }
@@ -69,7 +84,7 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Bar", BAR, null));
         var field = new InterfaceField("Address", "occupants", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Bar", List.of()), null, null);
+            participants, Map.of("Customer", List.of(), "Bar", List.of()), rowKeyedFor(ADDRESS), null);
         assertHasKind(validate(field), RejectionKind.AUTHOR_ERROR,
             "Field 'Address.occupants': primary-key arity mismatch");
     }
@@ -83,46 +98,10 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new InterfaceField("Bar", "occupantsConnection", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.Connection(false, 5)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(BAR), null);
         var parentType = new GraphitronType.TableType("Bar", null, BAR);
         var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
         assertThat(errors).isEmpty();
-    }
-
-    @Test
-    void rejects_connection_onPkLessParent() {
-        // Empty-PK parent has no key for the DataLoader VALUES table. Validator rejects with a
-        // clean AUTHOR_ERROR instead of letting codegen trip the emitter's defensive arity-0
-        // tripwire.
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
-            new ParticipantRef.TableBound("Staff", STAFF, null));
-        var field = new InterfaceField("Kpis", "occupantsConnection", null,
-            new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.Connection(false, 5)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
-        var parentType = new GraphitronType.TableType("Kpis", null, NO_PK);
-        var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
-        assertHasKind(errors, RejectionKind.AUTHOR_ERROR,
-            "Field 'Kpis.occupantsConnection': multi-table interface/union child field "
-                + "requires a non-empty primary key on the parent type 'Kpis', since the "
-                + "DataLoader key tuple is built from the parent's PK columns");
-    }
-
-    @Test
-    void rejects_listArm_onPkLessParent() {
-        // R102: the list arm now also requires a non-empty parent PK (DataLoader-batched).
-        // Mirrors the connection-arm rejection but on the list cardinality.
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
-            new ParticipantRef.TableBound("Staff", STAFF, null));
-        var field = new InterfaceField("Kpis", "occupants", null,
-            new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
-        var parentType = new GraphitronType.TableType("Kpis", null, NO_PK);
-        var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
-        assertHasKind(errors, RejectionKind.AUTHOR_ERROR,
-            "Field 'Kpis.occupants': multi-table interface/union child field "
-                + "requires a non-empty primary key on the parent type 'Kpis'");
     }
 
     @Test
@@ -133,10 +112,8 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new InterfaceField("Address", "occupants", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
-        var addressTable = TestFixtures.tableRef("address", "ADDRESS", "Address",
-            List.of(new ColumnRef("address_id", "ADDRESS_ID", "java.lang.Integer")));
-        var parentType = new GraphitronType.TableType("Address", null, addressTable);
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(ADDRESS), null);
+        var parentType = new GraphitronType.TableType("Address", null, ADDRESS);
         var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
         assertThat(errors).isEmpty();
     }
@@ -149,10 +126,8 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new InterfaceField("Address", "occupantsConnection", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.Connection(false, 5)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
-        var addressTable = TestFixtures.tableRef("address", "ADDRESS", "Address",
-            List.of(new ColumnRef("address_id", "ADDRESS_ID", "java.lang.Integer")));
-        var parentType = new GraphitronType.TableType("Address", null, addressTable);
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(ADDRESS), null);
+        var parentType = new GraphitronType.TableType("Address", null, ADDRESS);
         var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
         assertThat(errors).isEmpty();
     }
@@ -162,8 +137,8 @@ class InterfaceFieldValidationTest {
         assertHasKind(validateAgainstWidePkParent(new FieldWrapper.Connection(false, 5), 22),
             RejectionKind.AUTHOR_ERROR,
             "Field 'Wide.occupants': multi-table interface/union child field whose parent type "
-                + "'Wide' has a primary key with 22 columns exceeds jOOQ's typed Row22 cap "
-                + "(parent PK + idx must fit in Row<N+1>)");
+                + "'Wide' has a parent key with 22 columns exceeds jOOQ's typed Row22 cap "
+                + "(parent key + idx must fit in Row<N+1>)");
     }
 
     @Test
@@ -175,8 +150,8 @@ class InterfaceFieldValidationTest {
         assertHasKind(validateAgainstWidePkParent(new FieldWrapper.List(false, false), 22),
             RejectionKind.AUTHOR_ERROR,
             "Field 'Wide.occupants': multi-table interface/union child field whose parent type "
-                + "'Wide' has a primary key with 22 columns exceeds jOOQ's typed Row22 cap "
-                + "(parent PK + idx must fit in Row<N+1>)");
+                + "'Wide' has a parent key with 22 columns exceeds jOOQ's typed Row22 cap "
+                + "(parent key + idx must fit in Row<N+1>)");
     }
 
     @Test
@@ -202,7 +177,7 @@ class InterfaceFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new InterfaceField("Wide", "occupants", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", wrapper),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(wide), null);
         var parentType = new GraphitronType.TableType("Wide", null, wide);
         return validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
     }
