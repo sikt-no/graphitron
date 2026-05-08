@@ -1,7 +1,7 @@
 ---
 id: R56
 title: "Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 3
 theme: structural-refactor
@@ -39,12 +39,12 @@ var rebuiltAssembled = ConnectionPromoter.rebuildAssembledForConnections(ctx.sch
 
 ## Name-collision note
 
-`GraphitronSchemaBuilder` has a private `baseTypeName(GraphQLOutputType)`; `BuildContext` has a different `baseTypeName(GraphQLFieldDefinition)` that uses `GraphQLTypeUtil.unwrapAll`. They reach the same answer for connection-shaped types but differ subtly (the local form unwraps `NonNull → List → NonNull` in fixed order). Move the local form to `ConnectionPromoter` as a private helper; do **not** attempt to consolidate against `BuildContext.baseTypeName` — that's scope creep, and the unwrap shapes aren't trivially equivalent for arbitrary types. Three other resolvers (`OrderByResolver`, `ExternalFieldDirectiveResolver`, `ServiceDirectiveResolver`) keep their `import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName` and continue to use the `GraphQLFieldDefinition` form, untouched.
+`GraphitronSchemaBuilder` has a private `baseTypeName(GraphQLOutputType)`; `BuildContext` has a different `baseTypeName(GraphQLFieldDefinition)` that uses `GraphQLTypeUtil.unwrapAll`. They reach the same answer for connection-shaped types but differ subtly (the local form unwraps `NonNull → List → NonNull` in fixed order). Move the local form to `ConnectionPromoter` as a private helper; do **not** attempt to consolidate against `BuildContext.baseTypeName` — that's scope creep, and the unwrap shapes aren't trivially equivalent for arbitrary types. The five other call sites that `import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName` (`OrderByResolver`, `ExternalFieldDirectiveResolver`, `ServiceDirectiveResolver`, `TableMethodDirectiveResolver`, `FieldBuilder`) keep their static import and continue to use the `GraphQLFieldDefinition` form, untouched.
 
 ## Acceptance criteria
 
 1. `ConnectionPromoter.java` exists; `GraphitronSchemaBuilder.java` no longer references the moved methods/records (verified by `grep -n "promoteConnectionTypes\|rewriteCarrierField\|buildSynthesised\|promotionFor\|noSynthesisedTypes\|resolveConnectionName\|resolveDefaultFirstValue\|ConnectionPromotion" GraphitronSchemaBuilder.java` returning only the two `ConnectionPromoter.*` orchestration call sites).
-2. `GraphitronSchemaBuilder.java` shrinks by ≥230 lines (target: down to ~430 lines from 670).
+2. `GraphitronSchemaBuilder.java` shrinks by ≥230 lines (target: down to ~440 lines from 670).
 3. `ConnectionPromoter` is `final` with a private constructor (or all-static API), since it carries no per-build mutable state — `BuildContext` is the state holder.
 4. Full `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` is clean, including the existing `GraphitronSchemaBuilderTest` `@asConnection` cases and `ConnectionRegistrationsTest`.
 5. New focused-unit test class `ConnectionPromoterTest` exists with at least the cases listed under "Test plan" below.
