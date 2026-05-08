@@ -26,7 +26,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R75` | Synthesize payload carrier for canonical data+errors shapes <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | [plan](synthesize-payload-carrier.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Ready | [plan](error-handling-parity.md) |
-| `R110` | Replace @batchKeyLifter with @sourceRow composing with @reference | Ready | [plan](sourcerow-replaces-batchkeylifter.md) |
+| `R110` | Replace @batchKeyLifter with @sourceRow composing with @reference | In Progress | [plan](sourcerow-replaces-batchkeylifter.md) |
 | `R61` | Add Record1<T> source-shape support alongside Row1<T> | In Review | [plan](emit-record1-keys-instead-of-row1.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | [plan](catalog-check-constraint-validation.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
@@ -125,7 +125,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture, blocked by [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)
 - `R61` [**Add Record1<T> source-shape support alongside Row1<T>**](emit-record1-keys-instead-of-row1.md) — In Review, architecture
-- `R110` [**Replace @batchKeyLifter with @sourceRow composing with @reference**](sourcerow-replaces-batchkeylifter.md) — Ready, architecture
+- `R110` [**Replace @batchKeyLifter with @sourceRow composing with @reference**](sourcerow-replaces-batchkeylifter.md) — In Progress, architecture
 - `R74` [**Row/Record return shapes for typed accessor batch keys**](accessor-row-record-shapes.md) — Spec, architecture
 
 ### mutations-errors
