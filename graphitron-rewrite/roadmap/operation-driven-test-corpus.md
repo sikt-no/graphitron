@@ -32,7 +32,7 @@ class FilmsByYearTest {
 
 Module placement is pinned: `OperationRunner` lives in `graphitron-fixtures-codegen` alongside other test fixtures; the runtime `Instrumentation` impl lives in `graphitron`, dormant unless its system property is set, parallel to how `ClassificationTrace` is shipped.
 
-*Schema and emit machinery.* The four-quadrant report joins six DuckDB tables, all keyed naturally; surrogate IDs are forbidden unless a fork explicitly justifies why no natural key exists. The schema coordinate `(parent_type, field_name)` is the join PK across the per-coordinate tables; the others are catalogs and relations.
+*Schema and emit machinery.* The four-quadrant report joins six DuckDB tables, all keyed naturally; surrogate IDs are forbidden unless a fork explicitly justifies why no natural key exists. The schema coordinate `(parent_type, field_name)` is the join PK across the per-coordinate tables; the others are catalogs and relations. Many `fetcher_call` rows pile up at the same coordinate, since a single field gets fetched by many operations across many test runs. That redundancy is exactly where natural keys earn their keep: aggregations on the coordinate (`COUNT(DISTINCT operation) GROUP BY parent_type, field_name`, `COUNT(*) BY parent_type, field_name`, joins to `generated_fetcher` and `classification`) read off the natural identity directly, no join through a surrogate. The same property makes per-coordinate reporting cheap, e.g. "which coordinates are exercised by the most operations" sorts straight off a single GROUP BY.
 
 | table | grain | populated by |
 |---|---|---|
