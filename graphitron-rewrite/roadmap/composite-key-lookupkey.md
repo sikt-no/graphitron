@@ -10,7 +10,7 @@ depends-on: []
 
 # Composite-key `@lookupKey` on list-of-input-object arguments
 
-Shipped at `b55921d0`. Cleanup-and-hardening pass over the already-shipped composite-key path; no behavioural change.
+Shipped at `0480a6bd`. Cleanup-and-hardening pass over the already-shipped composite-key path; no behavioural change.
 
 What landed:
 
