@@ -163,7 +163,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
-- `R119` [**LSP directive registry sourced from directives.graphqls**](lsp-directive-registry-from-sdl.md) — Backlog, architecture
 - `R72` [**Slim ServiceCatalog down to a lookup primitive**](slim-servicecatalog-to-lookup.md) — Backlog, architecture
 - `R66` [**Widen string-carrier intermediates onto Rejection (R58 follow-up)**](rejection-string-carrier-widening.md) — Backlog, architecture
 - `R76` [**Emit per-participant fieldsJoin and orderBy; replace SelectJoinStep mutation in interface fetchers**](participant-fieldsjoin-helpers.md) — Backlog, cleanup
@@ -199,6 +198,10 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
 - `R91` [**Retire Rust graphitron-lsp + delete IntrospectMojo**](retire-rust-lsp-and-introspect-mojo.md) — Backlog, Backlog
+
+### lsp
+
+- `R119` [**LSP directive registry sourced from directives.graphqls**](lsp-directive-registry-from-sdl.md) — Backlog, architecture
 
 ### (untagged)
 

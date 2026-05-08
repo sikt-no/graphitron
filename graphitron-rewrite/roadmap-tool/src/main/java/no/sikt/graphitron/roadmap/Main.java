@@ -61,7 +61,8 @@ public final class Main {
         "structural-refactor",
         "docs",
         "testing",
-        "legacy-migration"
+        "legacy-migration",
+        "lsp"
     );
 
     private Main() {}
