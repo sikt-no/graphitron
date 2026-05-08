@@ -77,7 +77,9 @@ The lifter's `RowN` must equal the columns the field's first JOIN ON predicate c
 - **With `@reference`.** First-hop source-side columns. `BuildContext.parsePath` (`BuildContext.java:524-591`) already orients each `FkJoin` slot at synthesis time so `slot.sourceSide()` is the column on the source table of the hop. The expected tuple is `firstHop.sourceSideColumns()`.
 - **Without `@reference`.** Leaf target table's PK columns from `JooqCatalog.primaryKeyColumns(...)`. Single degenerate hop, parent_values → leaf, no FK involved.
 
-Both cases collapse to "the lifter's `RowN` matches the columns the JOIN's parent side reads from the parent_values CTE." The implicit-FK inference in `parsePath` — which today fires only when both endpoint tables are catalog-known — extends to fire whenever `@sourceRow` is present, because the lifter resolves the parent-side tuple's shape independently of catalog FK metadata.
+Both cases collapse to "the lifter's `RowN` matches a unique key on the parent side, materialised into the parent_values CTE." Stating the uniqueness invariant explicitly: **the parent-side tuple must represent a unique key on whatever it reads from** — trivially satisfied by leaf-PK and by FK-paired columns (which are unique by FK constraint), and the seam where any future non-PK unique-key extension would have to prove itself.
+
+The two cases route through different resolver paths and `BuildContext.parsePath` is **not** extended for this work. With `@reference`, the resolver delegates to `parsePath` exactly as today (its gate stays unchanged: catalog connectivity between known endpoints). Without `@reference`, the resolver bypasses `parsePath` and reads the leaf target's PK columns directly from `JooqCatalog.primaryKeyColumns(...)`. Routing the leaf-PK case through `parsePath` would conflate two unrelated triggers ("catalog can connect endpoints" vs. "directive present, derive parent-side") and push classification work out of the resolver into a generic path parser; the principles call for the directive-shaped fork to live in the resolver.
 
 ## Resolver
 
@@ -85,25 +87,25 @@ Both cases collapse to "the lifter's `RowN` matches the columns the JOIN's paren
 
 1. Validate parent shape: still POJO / JavaRecord with declared backing class. Same rejection messages as today, with the new directive name.
 2. Reflect the lifter method, validate single arg assignable from parent class, validate return is `Row1..Row22<...>`. Logic from `BatchKeyLifterDirectiveResolver.java:212-300` survives unchanged except for the directive-name strings.
-3. Parse `@reference` if present (call `BuildContext.parsePath` with the field's element type as the leaf target). Derive the expected parent-side column tuple:
-   - `@reference` resolved to a non-empty path: `firstHop.sourceSideColumns()`.
-   - `@reference` absent or empty: leaf target's PK columns.
+3. Derive the expected parent-side column tuple by directive shape:
+   - **`@reference` present.** Delegate to `BuildContext.parsePath` with the field's element type as the leaf target; expected tuple is `firstHop.sourceSideColumns()`. `parsePath`'s existing contract is untouched.
+   - **`@reference` absent.** Bypass `parsePath`; read the leaf target's PK columns directly via `JooqCatalog.primaryKeyColumns(...)`.
    - `@reference` parse failure: surface the parse error directly; do not double-validate against the lifter.
 4. Validate `RowN` arity and per-position erasure against the derived tuple. Two diagnostic messages distinguish the cases ("first-hop source-side columns of FK '..." vs. "primary key of '<leaf>'").
-5. Construct `BatchKey.LifterRowKeyed`. The `joinPath` published to the classifier is the resolved `@reference` path (with `LifterRowKeyed.lifter` carrying the parent-side extraction) or `[LiftedHop]` for the no-`@reference` leaf-PK case.
+5. Construct the appropriate `BatchKey` permit (see "Model" below): `LifterPathKeyed` for the `@reference` path, `LifterLeafKeyed` for the leaf-PK case. Each permit carries its own `joinPath` shape; classifier and emitters dispatch on permit identity, no per-instance branching.
 
 The `targetColumns` arg is removed entirely. Existing fixtures using `targetColumns` must migrate; since the directive has not been adopted outside the test suite, the migration is internal-only.
 
-## Model considerations
+## Model
 
 `BatchKey.LifterRowKeyed` (`BatchKey.java:337-362`) today holds a single `JoinStep.LiftedHop`, which encodes "no parent table, source-side == target-side, single column-equality JOIN against the leaf." That representation only fits the no-`@reference` case after the redesign. With `@reference`, the path is normal `FkJoin` steps and the lifter's tuple stands in for the (conceptual) source table at SQL generation time but the slot pairs are normal FK orientations.
 
-Two viable shapes for `LifterRowKeyed` after redesign, deferred to implementation:
+`LifterRowKeyed` splits into two permits, mirroring the variant-identity-tracks-shape rule applied four times already (R61 / R70 / R71 / R74):
 
-- **Single permit, polymorphic over path shape.** `LifterRowKeyed(List<JoinStep> path, LifterRef lifter, List<ColumnRef> parentSideColumns)`. The path's first step is `LiftedHop` (no `@reference`) or `FkJoin` (with). Prelude reads `parentSideColumns` directly; emitters consume `path` uniformly.
-- **Two permits.** `LifterLeafKeyed` (no `@reference`, holds `LiftedHop`) and `LifterPathKeyed` (with `@reference`, holds non-empty `FkJoin` chain). Mirrors the variant-identity-tracks-shape rule applied four times already (R61 / R70 / R71 / R74).
+- **`LifterLeafKeyed(JoinStep.LiftedHop hop, LifterRef lifter)`** — no `@reference`. Holds the existing single-`LiftedHop` shape. The hop's slots fold source-side and target-side onto the same column (leaf-PK column-equality).
+- **`LifterPathKeyed(List<JoinStep> path, LifterRef lifter, List<ColumnRef> parentSideColumns)`** — `@reference` resolved to a non-empty path. `path` is the resolved `FkJoin` chain; `parentSideColumns` is `path.first().sourceSideColumns()`, materialised on the permit so the prelude reads it without re-walking the path.
 
-The two-permit shape is more in-line with rewrite design principles; the single-permit shape is simpler to land. Pick during In Progress.
+The split puts the directive-shape fork in the type system and lets four distinct consumers (resolver step 5, prelude projection, validator diagnostics, emitter) dispatch on permit identity rather than re-deriving "is this the leaf-PK case?" from `path.first() instanceof LiftedHop`. Single-permit polymorphism was considered and rejected: the two shapes' downstream branches are independent, so collapsing them onto one record with conditional fields recreates the per-instance branching the encoding rule exists to eliminate.
 
 ## Scope kept unchanged
 
@@ -116,12 +118,12 @@ The two-permit shape is more in-line with rewrite design principles; the single-
 
 - Composite-key stories (lifter returning `RowN` for `N ≥ 2`) are admitted by the design but not driving it. Test fixtures cover `Row1` and `Row2` to exercise the path; we do not enumerate the full `Row1..Row22` matrix.
 - Per-parent arbitrary `Condition` joins (the "user method takes `(List<Record>, Table)` and returns `Condition`" alternative) are deferred. They would unlock range / function predicates the column-equality shape cannot express, but raise an unsolved result-ordering problem (DataLoader cannot align result rows to input keys without a column-equality projection or an explicit alignment column). The `@sourceRow` design does not foreclose that direction; it lives orthogonally.
-- Non-PK unique-key lookups on the leaf target (e.g. lifter returns `tmdb_id`, joins on `film.tmdb_id` UNIQUE constraint that is not the PK). Held out of this iteration; if the need arises, it likely lives as an extension to `@reference`'s first path element rather than as a new `@sourceRow` arg.
+- Non-PK unique-key lookups on the leaf target (e.g. lifter returns `tmdb_id`, joins on `film.tmdb_id` UNIQUE constraint that is not the PK). Held out of this iteration; if the need arises, it lives as an extension to `@reference`'s first path element rather than as a new `@sourceRow` arg. The uniqueness invariant stated in the composition rule above is the seam: any future extension must prove its derived tuple represents a unique key; the current shape's `LifterLeafKeyed` arm trivially satisfies that (PK is unique by definition) and `LifterPathKeyed` inherits it from the FK constraint.
 - Auto-derive accessor parity. The auto-derive accessor path on jOOQ-backed `@record` parents is governed by R74; that work and R110 are independent and can ship in either order.
 
 ## Tests
 
-- **L1 (model).** `BatchKey` test pins `keyElementType()` / `javaTypeName()` / `dispatch()` / `preludeKeyColumns()` for the redesigned `LifterRowKeyed` (or its split permits). Both no-`@reference` and with-`@reference` shapes covered.
+- **L1 (model).** `BatchKey` test pins `keyElementType()` / `javaTypeName()` / `dispatch()` / `preludeKeyColumns()` for `LifterLeafKeyed` and `LifterPathKeyed` separately. Variant-identity assertions cover the seal: existing exhaustive-`switch(batchKey)` sites must compile after the split.
 - **L3 (validator).** `SourceRowClassificationTest` (renamed from existing `BatchKeyLifterCase` in `GraphitronSchemaBuilderTest.java:1753-2272`) covers:
   - Story 1 SDL (`@sourceRow` + `@reference` single-hop) classifies as `RecordTableField` with the expected `LifterRowKeyed`.
   - Story 2 SDL (`@sourceRow` + `@reference` single-hop, different FK) same shape.
@@ -138,13 +140,14 @@ The two-permit shape is more in-line with rewrite design principles; the single-
 ## Acceptance criteria
 
 - `@batchKeyLifter` is removed from `directives.graphqls`. `@sourceRow(className, method)` replaces it; flat args, no `ExternalCodeReference` wrapper.
-- `BatchKeyLifterDirectiveResolver` → `SourceRowDirectiveResolver`. `targetColumns` validation removed; first-hop / leaf-PK derivation added.
-- `BuildContext.parsePath` extends to accept a no-table-known parent when `@sourceRow` is present, deriving the path's source endpoint from the lifter's tuple shape.
-- `BatchKey.LifterRowKeyed` (or its split-permit successor) carries enough to project the parent-side tuple in the prelude regardless of whether the path is leaf-PK or FK-chain.
+- `BatchKeyLifterDirectiveResolver` → `SourceRowDirectiveResolver`. `targetColumns` validation removed; first-hop / leaf-PK derivation added per the resolver section.
+- `BuildContext.parsePath`'s gate is **unchanged**. The leaf-PK case bypasses `parsePath` and reads `JooqCatalog.primaryKeyColumns(...)` directly.
+- `BatchKey.LifterRowKeyed` is split into `LifterLeafKeyed` and `LifterPathKeyed` permits. Every existing exhaustive `switch(batchKey)` site is walked (the seal makes this `javac`-checked).
 - `FieldBuilder` updates: directive lookup string, classifier integration, error message strings (the user-facing messages naming `@batchKeyLifter` switch to `@sourceRow`).
+- `@LoadBearingClassifierCheck` keys are audited and renamed: `lifter-classifies-as-record-table-field` → `sourcerow-classifies-as-record-table-field`; `lifter-batchkey-is-lifterrowkeyed` is replaced by per-permit keys (`sourcerow-leafkey-batchkey-is-lifterleafkeyed`, `sourcerow-pathkey-batchkey-is-lifterpathkeyed`).
 - All existing `BatchKeyLifterCase` test scenarios pass under the new directive name with the new resolver. New cases above are added.
 - `@sourceRow` works composed with `@reference` for ≥ 1-hop paths; rows-method emitter and parent VALUES projection work end-to-end on Sakila.
-- Documentation: rewrite-design-principles.adoc updated; `BatchKey` class-level Javadoc updated to reflect the redesigned `LifterRowKeyed`.
+- Documentation: rewrite-design-principles.adoc updated; `BatchKey` class-level Javadoc updated to reflect the `LifterLeafKeyed` / `LifterPathKeyed` split.
 
 ## Roadmap entries (siblings / dependencies)
 
