@@ -98,11 +98,11 @@ When `[author-error]` carries an `UnknownName` variant (a closed-set name lookup
 [#attempt-lifter-method]
 === lifter-method
 
-*Sample line.* `[author-error] @batchKeyLifter method 'liftKeys' not found on com.example.Lifters; did you mean: liftKey`.
+*Sample line.* `[author-error] @sourceRow method 'liftKeys' not found on com.example.Lifters; did you mean: liftKey`.
 
-*Cause.* The `@batchKeyLifter` directive's `methodName:` argument did not match any static method on the resolved class. Candidates are the lifter-shape static methods (`(Set<Key>) -> Map<Key, Value>`) on that class.
+*Cause.* The `@sourceRow` directive's `methodName:` argument did not match any static method on the resolved class. Candidates are the lifter-shape static methods (`(Set<Key>) -> Map<Key, Value>`) on that class.
 
-*Next step.* Correct the method name. xref:directives/batchKeyLifter.adoc[`@batchKeyLifter` directive reference] covers the lifter signature.
+*Next step.* Correct the method name. xref:directives/sourceRow.adoc[`@sourceRow` directive reference] covers the lifter signature.
 
 [#attempt-enum-constant]
 === enum-constant
