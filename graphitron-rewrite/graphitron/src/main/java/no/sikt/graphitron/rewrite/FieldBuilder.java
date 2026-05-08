@@ -100,7 +100,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_CONNECTION;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_BATCH_KEY_LIFTER;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_EXTERNAL_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
@@ -154,7 +154,7 @@ class FieldBuilder {
     private final InputFieldResolver inputFieldResolver;
     private final MutationInputResolver mutationInputResolver;
     private final EnumMappingResolver enumMappingResolver;
-    private final BatchKeyLifterDirectiveResolver batchKeyLifterResolver;
+    private final SourceRowDirectiveResolver sourceRowResolver;
     FieldBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
         this.svc = svc;
@@ -169,7 +169,7 @@ class FieldBuilder {
         this.conditionResolver = new ConditionResolver(ctx, svc);
         this.inputFieldResolver = new InputFieldResolver(ctx);
         this.mutationInputResolver = new MutationInputResolver(ctx, conditionResolver, enumMappingResolver);
-        this.batchKeyLifterResolver = new BatchKeyLifterDirectiveResolver(ctx, this);
+        this.sourceRowResolver = new SourceRowDirectiveResolver(ctx, this);
     }
 
     // ===== Shared resolution helpers =====
@@ -2695,27 +2695,28 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
-        // @batchKeyLifter is owned by its dedicated resolver from this point onward: the resolver
-        // validates the parent shape, the directive payload, and the lifter's signature; non-table
-        // returns surface a directive-specific rejection here rather than being silently dropped
-        // by the PropertyField / RecordField branches below.
-        if (fieldDef.hasAppliedDirective(DIR_BATCH_KEY_LIFTER)) {
+        // @sourceRow is owned by its dedicated resolver from this point onward: the resolver
+        // validates the parent shape, the directive payload, the lifter's signature, and the
+        // @reference composition; non-table returns surface a directive-specific rejection here
+        // rather than being silently dropped by the PropertyField / RecordField branches below.
+        if (fieldDef.hasAppliedDirective(DIR_SOURCE_ROW)) {
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
-            var lifterResult = batchKeyLifterResolver.resolve(parentTypeName, fieldDef, parentResultType, elementTypeName);
-            if (lifterResult instanceof BatchKeyLifterDirectiveResolver.Resolved.Rejected rj) {
+            var sourceRowResult = sourceRowResolver.resolve(parentTypeName, fieldDef, parentResultType, elementTypeName);
+            if (sourceRowResult instanceof SourceRowDirectiveResolver.Resolved.Rejected rj) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             }
-            var ok = (BatchKeyLifterDirectiveResolver.Resolved.Ok) lifterResult;
-            var components = resolveTableFieldComponents(fieldDef, ok.targetTable(), elementTypeName,
-                buildNodeIdArgPlan(fieldDef, ok.targetTable()));
+            var ok = (SourceRowDirectiveResolver.Resolved.Ok) sourceRowResult;
+            var components = resolveTableFieldComponents(fieldDef, ok.tbReturnType().table(), elementTypeName,
+                buildNodeIdArgPlan(fieldDef, ok.tbReturnType().table()));
             if (components instanceof TableFieldComponents.Rejected rj) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
             }
             var tfc = (TableFieldComponents.Ok) components;
-            // joinPath publishes the same hop instance held by the BatchKey; the List wrap is the
-            // rows-method emitter's existing API surface.
-            List<JoinStep> joinPath = List.of(ok.liftedHop());
+            // joinPath: [hop] for LifterLeafKeyed (no @reference), the resolved FK chain for
+            // LifterPathKeyed (@reference present). The resolver already constructs the right
+            // shape and surfaces it as ok.joinPath().
+            List<JoinStep> joinPath = ok.joinPath();
             if (hasLookupKeyAnywhere(fieldDef)) {
                 return new RecordLookupTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
                     tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.batchKey(), tfc.lookupMapping());
@@ -3026,9 +3027,9 @@ class FieldBuilder {
     private sealed interface RecordBatchKeyResolution {
         /**
          * {@code joinPath} is the FK-derived original path on the FK arm; on the auto-derived
-         * accessor arm it is replaced with {@code [liftedHop]} (mirroring the {@code @batchKeyLifter}
-         * call-site convention) so {@link SplitRowsMethodEmitter}'s prelude reads the target-side
-         * columns through {@link JoinStep.WithTarget} uniformly.
+         * accessor arm it is replaced with {@code [liftedHop]} (mirroring the {@code @sourceRow}
+         * leaf-PK call-site convention) so {@link SplitRowsMethodEmitter}'s prelude reads the
+         * target-side columns through {@link JoinStep.WithTarget} uniformly.
          */
         record Resolved(BatchKey.RecordParentBatchKey batchKey, List<JoinStep> joinPath) implements RecordBatchKeyResolution {}
         record Rejected(Rejection rejection) implements RecordBatchKeyResolution {}
@@ -3054,7 +3055,7 @@ class FieldBuilder {
                 JoinStep.LiftedHop hop = switch (ok.batchKey()) {
                     case BatchKey.AccessorKeyedSingle ars -> ars.hop();
                     case BatchKey.AccessorKeyedMany arm -> arm.hop();
-                    case BatchKey.RowKeyed _, BatchKey.LifterRowKeyed _ -> throw new IllegalStateException(
+                    case BatchKey.RowKeyed _, BatchKey.LifterLeafKeyed _, BatchKey.LifterPathKeyed _ -> throw new IllegalStateException(
                         "deriveBatchKeyFromTypedAccessor must produce only AccessorKeyedSingle or "
                         + "AccessorKeyedMany; got " + ok.batchKey().getClass().getSimpleName());
                 };
@@ -3065,7 +3066,7 @@ class FieldBuilder {
             case AccessorDerivation.CardinalityMismatch m -> new RecordBatchKeyResolution.Rejected(
                 Rejection.structural(m.message()));
             case AccessorDerivation.None _ -> new RecordBatchKeyResolution.Rejected(
-                Rejection.structural(fieldKindLabel + " on a free-form DTO parent requires a typed accessor or @batchKeyLifter to lift the batch key; the catalog has no FK metadata for the parent class. Either expose a typed accessor on the parent returning List<...Record>, Set<...Record>, or ...Record (where ...Record is the element type's jOOQ TableRecord); or add @batchKeyLifter(lifter: ..., targetColumns: [...]); or back the parent with a typed jOOQ TableRecord so the FK can be derived"));
+                Rejection.structural(fieldKindLabel + " on a free-form DTO parent requires a typed accessor or @sourceRow to lift the batch key; the catalog has no FK metadata for the parent class. Either expose a typed accessor on the parent returning List<...Record>, Set<...Record>, or ...Record (where ...Record is the element type's jOOQ TableRecord); or add @sourceRow(className: ..., method: ...) optionally composed with @reference; or back the parent with a typed jOOQ TableRecord so the FK can be derived"));
         };
     }
 
@@ -3160,7 +3161,7 @@ class FieldBuilder {
             return new AccessorDerivation.Ambiguous(
                 "@record parent '" + parentFqClassName + "' exposes more than one typed accessor "
                 + "returning '" + expectedTable.tableName() + "' records: [" + candidates + "]. Disambiguate "
-                + "by adding @batchKeyLifter(...) on this field.");
+                + "by adding @sourceRow(...) on this field.");
         }
         if (resolvable.isEmpty()) {
             List<AccessorMatch.CardinalityMismatch> cmms = matches.stream()
@@ -3274,7 +3275,7 @@ class FieldBuilder {
             + "ChildField.UnionField. Both parentKey: BatchKey.RecordParentBatchKey (any of the "
             + "four RecordParentBatchKey permits — RowKeyed when the parent is JooqTableRecord, "
             + "AccessorKeyedSingle / AccessorKeyedMany when the parent is Pojo or JavaRecord with "
-            + "a typed hub accessor; LifterRowKeyed is deferred per spec Out of scope) and "
+            + "a typed hub accessor; LifterLeafKeyed / LifterPathKeyed are deferred per spec Out of scope) and "
             + "parentResultType: GraphitronType.ResultType are resolved at classification time. "
             + "Lets the multi-table polymorphic emitter delegate to "
             + "GeneratorUtils.buildRecordParentKeyExtraction with no parallel inline cast-to-Record "
@@ -3346,7 +3347,7 @@ class FieldBuilder {
         + "'List<...HubRecord>' / 'Set<...HubRecord>' (list cardinality), where '...HubRecord' "
         + "is the concrete jOOQ TableRecord all participants reference; or back the parent with "
         + "a typed jOOQ TableRecord (@record(class: ...)) annotated with the hub table so "
-        + "RowKeyed can be derived from the parent's PK. Note: @batchKeyLifter is not yet "
+        + "RowKeyed can be derived from the parent's PK. Note: @sourceRow is not yet "
         + "supported for polymorphic returns.";
 
     /**
@@ -3560,8 +3561,8 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
-        if (fieldDef.hasAppliedDirective(DIR_BATCH_KEY_LIFTER)) {
-            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@batchKeyLifter is for @record (non-table) parents; use @reference on a @table parent"));
+        if (fieldDef.hasAppliedDirective(DIR_SOURCE_ROW)) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@sourceRow is for @record (non-table) parents; use @reference on a @table parent"));
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {

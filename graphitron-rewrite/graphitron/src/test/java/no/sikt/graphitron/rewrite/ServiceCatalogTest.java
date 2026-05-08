@@ -146,7 +146,7 @@ class ServiceCatalogTest {
         assertThat(result.failed()).isTrue();
         assertThat(result.rejection().message())
             .contains("not backed by a jOOQ TableRecord")
-            .contains("@batchKeyLifter");
+            .contains("@sourceRow");
     }
 
     @Test
@@ -163,7 +163,7 @@ class ServiceCatalogTest {
             .contains("parameter 'keys'")
             .contains("does not match any GraphQL argument or context key")
             .contains("available GraphQL arguments: [inputs]")
-            .doesNotContain("@batchKeyLifter")
+            .doesNotContain("@sourceRow")
             .doesNotContain("not backed by a jOOQ TableRecord");
     }
 

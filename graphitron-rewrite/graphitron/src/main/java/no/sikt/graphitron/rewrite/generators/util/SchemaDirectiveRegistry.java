@@ -56,7 +56,7 @@ public final class SchemaDirectiveRegistry {
         "condition",
         "mutation",
         "asConnection",
-        "batchKeyLifter",
+        "sourceRow",
         "enum",
         "index",
         "order",
