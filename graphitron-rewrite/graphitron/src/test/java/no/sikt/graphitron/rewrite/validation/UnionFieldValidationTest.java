@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.RejectionKind;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -30,11 +31,16 @@ class UnionFieldValidationTest {
         List.of(new ColumnRef("customer_id", "CUSTOMER_ID", "java.lang.Integer")));
     private static final TableRef STAFF = TestFixtures.tableRef("staff", "STAFF", "Staff",
         List.of(new ColumnRef("staff_id", "STAFF_ID", "java.lang.Integer")));
-    private static final TableRef NO_PK = TestFixtures.tableRef("kpis", "KPIS", "Kpis", List.of());
+    private static final TableRef ADDRESS = TestFixtures.tableRef("address", "ADDRESS", "Address",
+        List.of(new ColumnRef("address_id", "ADDRESS_ID", "java.lang.Integer")));
     private static final TableRef BAR = TestFixtures.tableRef("bar", "BAR", "Bar",
         List.of(
             new ColumnRef("id_1", "ID_1", "java.lang.Integer"),
             new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
+
+    private static BatchKey.RecordParentBatchKey rowKeyedFor(TableRef table) {
+        return new BatchKey.RowKeyed(table.primaryKeyColumns());
+    }
 
     @Test
     void wellFormed_twoSameArityParticipants_noErrors() {
@@ -43,18 +49,19 @@ class UnionFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new UnionField("Address", "activities", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(ADDRESS), null);
         assertThat(validate(field)).isEmpty();
     }
 
     @Test
     void rejects_unionMemberWithoutPrimaryKey() {
+        var noPk = TestFixtures.tableRef("kpis", "KPIS", "Kpis", List.of());
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Customer", CUSTOMER, null),
-            new ParticipantRef.TableBound("Kpis", NO_PK, null));
+            new ParticipantRef.TableBound("Kpis", noPk, null));
         var field = new UnionField("Address", "activities", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Kpis", List.of()), null, null);
+            participants, Map.of("Customer", List.of(), "Kpis", List.of()), rowKeyedFor(ADDRESS), null);
         assertHasKind(validate(field), RejectionKind.AUTHOR_ERROR,
             "Field 'Address.activities': participant 'Kpis' has no primary key");
     }
@@ -68,42 +75,10 @@ class UnionFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new UnionField("Bar", "activitiesConnection", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.Connection(false, 5)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(BAR), null);
         var parentType = new GraphitronType.TableType("Bar", null, BAR);
         var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
         assertThat(errors).isEmpty();
-    }
-
-    @Test
-    void rejects_connection_onPkLessParent() {
-        // Union mirror of InterfaceFieldValidationTest.rejects_connection_onPkLessParent.
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
-            new ParticipantRef.TableBound("Staff", STAFF, null));
-        var field = new UnionField("Kpis", "activitiesConnection", null,
-            new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.Connection(false, 5)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
-        var parentType = new GraphitronType.TableType("Kpis", null, NO_PK);
-        var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
-        assertHasKind(errors, RejectionKind.AUTHOR_ERROR,
-            "Field 'Kpis.activitiesConnection': multi-table interface/union child field "
-                + "requires a non-empty primary key on the parent type 'Kpis'");
-    }
-
-    @Test
-    void rejects_listArm_onPkLessParent() {
-        // Union mirror of InterfaceFieldValidationTest.rejects_listArm_onPkLessParent.
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
-            new ParticipantRef.TableBound("Staff", STAFF, null));
-        var field = new UnionField("Kpis", "activities", null,
-            new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
-        var parentType = new GraphitronType.TableType("Kpis", null, NO_PK);
-        var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
-        assertHasKind(errors, RejectionKind.AUTHOR_ERROR,
-            "Field 'Kpis.activities': multi-table interface/union child field "
-                + "requires a non-empty primary key on the parent type 'Kpis'");
     }
 
     @Test
@@ -114,10 +89,8 @@ class UnionFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new UnionField("Address", "activities", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressActivity", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
-        var addressTable = TestFixtures.tableRef("address", "ADDRESS", "Address",
-            List.of(new ColumnRef("address_id", "ADDRESS_ID", "java.lang.Integer")));
-        var parentType = new GraphitronType.TableType("Address", null, addressTable);
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(ADDRESS), null);
+        var parentType = new GraphitronType.TableType("Address", null, ADDRESS);
         var errors = validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
         assertThat(errors).isEmpty();
     }
@@ -127,8 +100,8 @@ class UnionFieldValidationTest {
         assertHasKind(validateAgainstWidePkParent(new FieldWrapper.Connection(false, 5), 22),
             RejectionKind.AUTHOR_ERROR,
             "Field 'Wide.activities': multi-table interface/union child field whose parent type "
-                + "'Wide' has a primary key with 22 columns exceeds jOOQ's typed Row22 cap "
-                + "(parent PK + idx must fit in Row<N+1>)");
+                + "'Wide' has a parent key with 22 columns exceeds jOOQ's typed Row22 cap "
+                + "(parent key + idx must fit in Row<N+1>)");
     }
 
     @Test
@@ -136,8 +109,8 @@ class UnionFieldValidationTest {
         assertHasKind(validateAgainstWidePkParent(new FieldWrapper.List(false, false), 22),
             RejectionKind.AUTHOR_ERROR,
             "Field 'Wide.activities': multi-table interface/union child field whose parent type "
-                + "'Wide' has a primary key with 22 columns exceeds jOOQ's typed Row22 cap "
-                + "(parent PK + idx must fit in Row<N+1>)");
+                + "'Wide' has a parent key with 22 columns exceeds jOOQ's typed Row22 cap "
+                + "(parent key + idx must fit in Row<N+1>)");
     }
 
     @Test
@@ -162,7 +135,7 @@ class UnionFieldValidationTest {
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new UnionField("Wide", "activities", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressActivity", wrapper),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), null, null);
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(wide), null);
         var parentType = new GraphitronType.TableType("Wide", null, wide);
         return validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
     }

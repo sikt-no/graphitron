@@ -761,13 +761,20 @@ public final class MultiTablePolymorphicEmitter {
      * {@code Row<N+1>} including {@code idx}, which tops out at Row22.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven",
+        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-table-backed",
         reliesOn = "Reads field.parentKey() and field.parentResultType() straight off the field "
             + "record and hands them to GeneratorUtils.buildRecordParentKeyExtraction. The hard "
             + "fail (no jOOQ-Record fallback at this site) is the form the load-bearing guarantee "
             + "takes here: navigation and drift annunciation, not guard elision. Empty key "
             + "columns are unreachable per the type-system invariant on BatchKey.RowKeyed and its "
             + "siblings.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-record-parent",
+        reliesOn = "Same field.parentKey() / field.parentResultType() reads applied to fields "
+            + "produced by the @record-parent producer. Per-producer key split (R105) ensures the "
+            + "audit names exactly one producer per key, but the consumer behaviour is identical "
+            + "across both producers — both publish a fully-resolved RecordParentBatchKey on the "
+            + "field record.")
     private static MethodSpec buildBatchedConnectionFetcher(
             TypeFetcherEmissionContext ctx,
             String fieldName,
@@ -826,10 +833,15 @@ public final class MultiTablePolymorphicEmitter {
      * value type differs ({@code List<Record>} per parent vs. {@code ConnectionResult}).
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven",
+        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-table-backed",
         reliesOn = "Reads field.parentKey() and field.parentResultType() straight off the field "
             + "record and hands them to GeneratorUtils.buildRecordParentKeyExtraction. Same "
             + "load-bearing classifier check as the connection-arm fetcher.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-record-parent",
+        reliesOn = "Same field.parentKey() / field.parentResultType() reads on fields produced by "
+            + "the @record-parent producer. Sibling key to '…-table-backed' under the per-producer "
+            + "split (R105).")
     private static MethodSpec buildBatchedListFetcher(
             TypeFetcherEmissionContext ctx,
             String fieldName,

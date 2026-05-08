@@ -422,14 +422,18 @@ class FieldBuilder {
      * {@code ComputedField}) are added in P3.
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven",
-        description = "ChildField.InterfaceField and ChildField.UnionField are constructed only "
-            + "here, with both parentKey: BatchKey.RecordParentBatchKey and parentResultType: "
-            + "GraphitronType.ResultType resolved at classification time. Lets the multi-table "
+        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-table-backed",
+        description = "Table-backed-parent producer of ChildField.InterfaceField and "
+            + "ChildField.UnionField. Both parentKey: BatchKey.RecordParentBatchKey "
+            + "(specifically a BatchKey.RowKeyed off the parent table's PK) and parentResultType: "
+            + "GraphitronType.ResultType are resolved at classification time. Lets the multi-table "
             + "polymorphic emitter delegate to GeneratorUtils.buildRecordParentKeyExtraction with "
             + "no parallel inline cast-to-Record path. Empty-PK parents are routed through "
             + "UnclassifiedField above, so the BatchKey.RowKeyed canonical-constructor non-empty "
-            + "invariant is unreachable on this construction path.")
+            + "invariant is unreachable on this construction path. Sibling key "
+            + "'…-record-parent' covers the @record-parent producer in "
+            + "classifyChildFieldOnResultType, which can produce any of the four "
+            + "RecordParentBatchKey permits; emitter consumers depend on both keys.")
     private GraphitronField classifyObjectReturnChildField(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType parentTableType, Set<String> expandingTypes) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
@@ -2745,9 +2749,9 @@ class FieldBuilder {
                 fieldDef, parentTypeName, name, location, s, columnName, parentResultType, parentBackingClass);
             case ReturnTypeRef.PolymorphicReturnType p -> {
                 var lift = liftToErrorsField(fieldDef, parentTypeName, p);
-                yield lift != null ? lift
-                    : new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                        Rejection.deferred("@record type returning a polymorphic type is not yet supported", ""));
+                if (lift != null) yield lift;
+                yield classifyRecordParentPolymorphicChild(fieldDef, parentTypeName, name, location,
+                    elementTypeName, p, parentResultType);
             }
         };
     }
@@ -3060,54 +3064,9 @@ class FieldBuilder {
 
         boolean fieldIsList = tb.wrapper().isList();
         TableRef expectedTable = tb.table();
-        String expectedSqlName = expectedTable.tableName();
 
-        List<AccessorMatch> matches = new ArrayList<>();
-        String ucName = ucFirst(fieldName);
-        for (java.lang.reflect.Method m : parentClass.getMethods()) {
-            if (m.isBridge() || m.isSynthetic()) continue;
-            if (m.getParameterCount() != 0) continue;
-            if (java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
-            if (Object.class.equals(m.getDeclaringClass())) continue;
-
-            String mName = m.getName();
-            boolean nameMatches = mName.equals(fieldName)
-                || mName.equals("get" + ucName)
-                || mName.equals("is" + ucName);
-            if (!nameMatches) continue;
-
-            // Classify the return type's container axis and element class. A failure to fit
-            // (e.g. List<String>, Map<...>, raw return) is NoMatch — falls through silently.
-            ReturnAxis axis = classifyAccessorReturn(m.getGenericReturnType());
-            if (axis == null) continue;
-
-            // Element table must equal the field's @table return.
-            var elementTableRef = svc.resolveTableByRecordClass(axis.elementClass());
-            if (elementTableRef.isEmpty()) continue;
-            if (!elementTableRef.get().tableName().equals(expectedSqlName)) continue;
-
-            // Cardinality alignment.
-            if (fieldIsList) {
-                if (axis.container() == ServiceCatalog.ContainerKind.LIST
-                        || axis.container() == ServiceCatalog.ContainerKind.SET) {
-                    matches.add(new AccessorMatch.Many(m, axis.elementClass()));
-                } else {
-                    matches.add(new AccessorMatch.CardinalityMismatch(
-                        "list field '" + fieldName + "' has accessor '" + mName
-                        + "' returning a single record; expected List<" + axis.elementClass().getSimpleName()
-                        + "> or Set<" + axis.elementClass().getSimpleName() + ">"));
-                }
-            } else {
-                if (axis.container() == ServiceCatalog.ContainerKind.SINGLE) {
-                    matches.add(new AccessorMatch.Single(m, axis.elementClass()));
-                } else {
-                    String containerLabel = axis.container() == ServiceCatalog.ContainerKind.LIST ? "a list" : "a set";
-                    matches.add(new AccessorMatch.CardinalityMismatch(
-                        "single field '" + fieldName + "' has accessor '" + mName
-                        + "' returning " + containerLabel + "; expected a single record"));
-                }
-            }
-        }
+        List<AccessorMatch> matches = collectAccessorMatches(parentClass, fieldName, fieldIsList,
+            expectedTable.tableName());
 
         // Reduction over the collected matches.
         List<AccessorMatch> resolvable = matches.stream()
@@ -3123,7 +3082,7 @@ class FieldBuilder {
                 .collect(Collectors.joining(", "));
             return new AccessorDerivation.Ambiguous(
                 "@record parent '" + parentFqClassName + "' exposes more than one typed accessor "
-                + "returning '" + expectedSqlName + "' records: [" + candidates + "]. Disambiguate "
+                + "returning '" + expectedTable.tableName() + "' records: [" + candidates + "]. Disambiguate "
                 + "by adding @batchKeyLifter(...) on this field.");
         }
         if (resolvable.isEmpty()) {
@@ -3158,6 +3117,311 @@ class FieldBuilder {
             mm.method().getName(),
             ClassName.bestGuess(mm.elementClass().getName()));
         return new AccessorDerivation.Ok(new BatchKey.AccessorKeyedMany(hop, ref));
+    }
+
+    /**
+     * Iterates {@code parentClass}'s public zero-arg non-bridge non-synthetic instance accessors
+     * named after {@code fieldName} (or {@code getX} / {@code isX}), classifies each return type
+     * to a {@link ReturnAxis} of {@code X}, {@code List<X>}, or {@code Set<X>} for some concrete
+     * {@code X extends TableRecord}, and reports the cardinality alignment against {@code fieldIsList}.
+     * When {@code expectedSqlName} is non-null, only matches whose element table's SQL name equals
+     * it are kept (table-bound case); when null, every {@code TableRecord} element matches and the
+     * caller (polymorphic-hub case) discovers the hub from the unique surviving match.
+     *
+     * <p>Shared between {@link #deriveBatchKeyFromTypedAccessor} (table-bound, expected-table check)
+     * and {@code deriveBatchKeyFromHubAccessor} (polymorphic, hub discovery). The reduction step
+     * differs across callers; only the per-method match logic is shared.
+     */
+    private List<AccessorMatch> collectAccessorMatches(Class<?> parentClass, String fieldName,
+            boolean fieldIsList, String expectedSqlName) {
+        List<AccessorMatch> matches = new ArrayList<>();
+        String ucName = ucFirst(fieldName);
+        for (java.lang.reflect.Method m : parentClass.getMethods()) {
+            if (m.isBridge() || m.isSynthetic()) continue;
+            if (m.getParameterCount() != 0) continue;
+            if (java.lang.reflect.Modifier.isStatic(m.getModifiers())) continue;
+            if (Object.class.equals(m.getDeclaringClass())) continue;
+
+            String mName = m.getName();
+            boolean nameMatches = mName.equals(fieldName)
+                || mName.equals("get" + ucName)
+                || mName.equals("is" + ucName);
+            if (!nameMatches) continue;
+
+            ReturnAxis axis = classifyAccessorReturn(m.getGenericReturnType());
+            if (axis == null) continue;
+
+            var elementTableRef = svc.resolveTableByRecordClass(axis.elementClass());
+            if (elementTableRef.isEmpty()) continue;
+            if (expectedSqlName != null && !elementTableRef.get().tableName().equals(expectedSqlName)) continue;
+
+            if (fieldIsList) {
+                if (axis.container() == ServiceCatalog.ContainerKind.LIST
+                        || axis.container() == ServiceCatalog.ContainerKind.SET) {
+                    matches.add(new AccessorMatch.Many(m, axis.elementClass()));
+                } else {
+                    matches.add(new AccessorMatch.CardinalityMismatch(
+                        "list field '" + fieldName + "' has accessor '" + mName
+                        + "' returning a single record; expected List<" + axis.elementClass().getSimpleName()
+                        + "> or Set<" + axis.elementClass().getSimpleName() + ">"));
+                }
+            } else {
+                if (axis.container() == ServiceCatalog.ContainerKind.SINGLE) {
+                    matches.add(new AccessorMatch.Single(m, axis.elementClass()));
+                } else {
+                    String containerLabel = axis.container() == ServiceCatalog.ContainerKind.LIST ? "a list" : "a set";
+                    matches.add(new AccessorMatch.CardinalityMismatch(
+                        "single field '" + fieldName + "' has accessor '" + mName
+                        + "' returning " + containerLabel + "; expected a single record"));
+                }
+            }
+        }
+        return matches;
+    }
+
+    /**
+     * Classifies an interface- or union-typed child field on a {@code @record}-backed parent. The
+     * sole producer of {@link InterfaceField} / {@link UnionField} on the {@code @record}-parent
+     * branch (the table-backed branch produces them in {@link #classifyObjectReturnChildField};
+     * those two construction sites are the entirety of the multi-table polymorphic surface).
+     *
+     * <p>Resolves the parent's {@link BatchKey.RecordParentBatchKey} and hub
+     * {@link TableRef} via {@link #resolvePolymorphicRecordParent}; routes the resolved hub through
+     * {@link #resolveChildPolymorphicJoinPaths} for per-participant FK auto-discovery; constructs
+     * the appropriate {@code ChildField} variant. Any rejection at either step lands as
+     * {@link UnclassifiedField}.
+     */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-record-parent",
+        description = "@record-parent producer of ChildField.InterfaceField and "
+            + "ChildField.UnionField. Both parentKey: BatchKey.RecordParentBatchKey (any of the "
+            + "four RecordParentBatchKey permits — RowKeyed when the parent is JooqTableRecord, "
+            + "AccessorKeyedSingle / AccessorKeyedMany when the parent is Pojo or JavaRecord with "
+            + "a typed hub accessor; LifterRowKeyed is deferred per spec Out of scope) and "
+            + "parentResultType: GraphitronType.ResultType are resolved at classification time. "
+            + "Lets the multi-table polymorphic emitter delegate to "
+            + "GeneratorUtils.buildRecordParentKeyExtraction with no parallel inline cast-to-Record "
+            + "path. Empty-PK / unresolved-hub parents are routed through UnclassifiedField, so the "
+            + "JoinStep.LiftedHop and BatchKey.RowKeyed canonical-constructor non-empty invariants "
+            + "are unreachable on this construction path. Sibling key '…-table-backed' covers the "
+            + "table-backed producer in classifyObjectReturnChildField; emitter consumers depend "
+            + "on both keys.")
+    private GraphitronField classifyRecordParentPolymorphicChild(
+            GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
+            SourceLocation location, String elementTypeName,
+            ReturnTypeRef.PolymorphicReturnType returnType,
+            GraphitronType.ResultType parentResultType) {
+        GraphitronType elementType = ctx.types.get(elementTypeName);
+        List<ParticipantRef> participants;
+        boolean isInterface;
+        if (elementType instanceof InterfaceType interfaceType) {
+            participants = interfaceType.participants();
+            isInterface = true;
+        } else if (elementType instanceof UnionType unionType) {
+            participants = unionType.participants();
+            isInterface = false;
+        } else {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                Rejection.structural("polymorphic return type '" + elementTypeName
+                    + "' is neither a multi-table interface nor a union; cannot classify "
+                    + "polymorphic child field on @record parent"));
+        }
+
+        var resolution = resolvePolymorphicRecordParent(name, returnType.wrapper().isList(), parentResultType);
+        if (resolution instanceof PolymorphicRecordParentResolution.Rejected rj) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
+        }
+        var resolved = (PolymorphicRecordParentResolution.Resolved) resolution;
+
+        var paths = resolveChildPolymorphicJoinPaths(fieldDef, name, parentTypeName,
+            location, resolved.hubTable(), participants);
+        if (paths.error() != null) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                Rejection.structural(paths.error()));
+        }
+
+        if (isInterface) {
+            return new InterfaceField(parentTypeName, name, location, returnType,
+                participants, paths.paths(), resolved.parentKey(), parentResultType);
+        }
+        return new UnionField(parentTypeName, name, location, returnType,
+            participants, paths.paths(), resolved.parentKey(), parentResultType);
+    }
+
+    /**
+     * Builder-internal sealed result of {@link #resolvePolymorphicRecordParent}. The classifier
+     * arm reads {@code Resolved.parentKey()} / {@code Resolved.hubTable()} when constructing the
+     * {@link InterfaceField} / {@link UnionField}; the hub is consumed at this site only (handed
+     * to {@link #resolveChildPolymorphicJoinPaths}) and never lives on the field record. See the
+     * spec section "Hub table is a classifier-internal local" for the rationale on not lifting
+     * the hub onto a slot.
+     */
+    private sealed interface PolymorphicRecordParentResolution {
+        record Resolved(BatchKey.RecordParentBatchKey parentKey, TableRef hubTable)
+            implements PolymorphicRecordParentResolution {}
+        record Rejected(Rejection rejection) implements PolymorphicRecordParentResolution {}
+    }
+
+    private static final String POLYMORPHIC_HUB_AUTHOR_ERROR_TAIL =
+        "on a free-form @record parent (Pojo / JavaRecord) requires a typed accessor to "
+        + "discover the hub table the polymorphic participants share an FK to. Either expose a "
+        + "typed accessor on the parent returning '...HubRecord' (single cardinality) or "
+        + "'List<...HubRecord>' / 'Set<...HubRecord>' (list cardinality), where '...HubRecord' "
+        + "is the concrete jOOQ TableRecord all participants reference; or back the parent with "
+        + "a typed jOOQ TableRecord (@record(class: ...)) annotated with the hub table so "
+        + "RowKeyed can be derived from the parent's PK. Note: @batchKeyLifter is not yet "
+        + "supported for polymorphic returns.";
+
+    /**
+     * Resolves the {@link BatchKey.RecordParentBatchKey} and hub table for a polymorphic child
+     * field on a {@code @record}-backed parent. Three reachable shapes; all four
+     * {@link GraphitronType.ResultType} permits handled:
+     *
+     * <ul>
+     *   <li>{@link GraphitronType.JooqTableRecordType} with a non-null table → {@code Resolved(
+     *       RowKeyed(parent.table().primaryKeyColumns()), parent.table())}. Empty PK or null
+     *       table is routed through {@code Rejected(structural)} — same shape as the existing
+     *       table-backed arm's {@code UnclassifiedField} path.</li>
+     *   <li>{@link GraphitronType.PojoResultType} / {@link GraphitronType.JavaRecordType} →
+     *       delegates to {@link #deriveBatchKeyFromHubAccessor}, which discovers the hub from
+     *       the unique matching typed accessor.</li>
+     *   <li>{@link GraphitronType.JooqRecordType} → {@code Rejected(structural)} (no table
+     *       reference, no hub derivation).</li>
+     * </ul>
+     */
+    private PolymorphicRecordParentResolution resolvePolymorphicRecordParent(
+            String fieldName, boolean fieldIsList, GraphitronType.ResultType parentResultType) {
+        return switch (parentResultType) {
+            case GraphitronType.JooqTableRecordType jtr -> {
+                if (jtr.table() == null) {
+                    yield new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
+                        "@record parent backed by jOOQ TableRecord '" + jtr.fqClassName()
+                        + "' has no resolvable table at build time; cannot derive hub for "
+                        + "polymorphic child field '" + fieldName + "'"));
+                }
+                var pkCols = jtr.table().primaryKeyColumns();
+                if (pkCols.isEmpty()) {
+                    yield new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
+                        "multi-table interface/union child field '" + fieldName
+                        + "' requires a non-empty primary key on the @record-backed parent table '"
+                        + jtr.table().tableName() + "'"));
+                }
+                yield new PolymorphicRecordParentResolution.Resolved(
+                    new BatchKey.RowKeyed(pkCols), jtr.table());
+            }
+            case GraphitronType.PojoResultType _, GraphitronType.JavaRecordType _ ->
+                deriveBatchKeyFromHubAccessor(fieldName, fieldIsList, parentResultType);
+            case GraphitronType.JooqRecordType jrt ->
+                new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
+                    "@record parent backed by jOOQ Record '" + jrt.fqClassName()
+                    + "' has no table reference; polymorphic child field '" + fieldName
+                    + "' cannot derive a hub. Back the parent with a typed jOOQ TableRecord "
+                    + "(@record(class: ...)) annotated with the hub table."));
+        };
+    }
+
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "accessor-rowkey-shape-resolved-against-hub",
+        description = "Returns Resolved only when reflection has confirmed (a) a single matching "
+            + "public zero-arg non-bridge non-synthetic instance accessor on the @record-backed "
+            + "parent's backing class, (b) returning X, List<X>, or Set<X> for a concrete X "
+            + "extending org.jooq.TableRecord, and (c) X's mapped jOOQ table is taken to be the "
+            + "polymorphic hub the participants share an FK to. Identity contract: the accessor's "
+            + "element table is the discovered hub (not pinned against an external @table — there "
+            + "is none on a polymorphic return). Downstream, resolveChildPolymorphicJoinPaths "
+            + "verifies each participant has a unique FK to the discovered hub and rejects "
+            + "structurally otherwise; "
+            + "GeneratorUtils.buildAccessorKeySingle / buildAccessorKeyMany cast env.getSource() to "
+            + "the parent backing class and invoke the accessor by name without instanceof guards.")
+    private PolymorphicRecordParentResolution deriveBatchKeyFromHubAccessor(
+            String fieldName, boolean fieldIsList, GraphitronType.ResultType parentResultType) {
+        String parentFqClassName = switch (parentResultType) {
+            case GraphitronType.JavaRecordType jrt -> jrt.fqClassName();
+            case GraphitronType.PojoResultType prt -> prt.fqClassName();
+            case GraphitronType.JooqRecordType _, GraphitronType.JooqTableRecordType _ -> null;
+        };
+        if (parentFqClassName == null) {
+            return new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
+                "polymorphic child field '" + fieldName + "' " + POLYMORPHIC_HUB_AUTHOR_ERROR_TAIL));
+        }
+
+        Class<?> parentClass;
+        try {
+            parentClass = Class.forName(parentFqClassName);
+        } catch (ClassNotFoundException e) {
+            return new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
+                "polymorphic child field '" + fieldName + "': @record parent backing class '"
+                + parentFqClassName + "' could not be loaded; " + POLYMORPHIC_HUB_AUTHOR_ERROR_TAIL));
+        }
+
+        List<AccessorMatch> matches = collectAccessorMatches(parentClass, fieldName, fieldIsList, null);
+
+        List<AccessorMatch> resolvable = matches.stream()
+            .filter(am -> am instanceof AccessorMatch.Single || am instanceof AccessorMatch.Many)
+            .toList();
+        if (resolvable.size() > 1) {
+            String candidates = resolvable.stream()
+                .map(am -> switch (am) {
+                    case AccessorMatch.Single s -> s.method().getName() + " → "
+                        + s.elementClass().getSimpleName();
+                    case AccessorMatch.Many mm -> mm.method().getName() + " → "
+                        + mm.elementClass().getSimpleName();
+                    case AccessorMatch.CardinalityMismatch _ -> "";
+                })
+                .collect(Collectors.joining(", "));
+            return new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
+                "polymorphic child field '" + fieldName + "': @record parent '" + parentFqClassName
+                + "' exposes more than one typed TableRecord-returning accessor whose element "
+                + "would be eligible as the polymorphic hub: [" + candidates + "]. Cannot pick a "
+                + "unique hub. Disambiguate by removing the unintended accessor or backing the "
+                + "parent with a typed jOOQ TableRecord whose table is the hub."));
+        }
+        if (resolvable.isEmpty()) {
+            List<AccessorMatch.CardinalityMismatch> cmms = matches.stream()
+                .filter(am -> am instanceof AccessorMatch.CardinalityMismatch)
+                .map(am -> (AccessorMatch.CardinalityMismatch) am)
+                .toList();
+            if (cmms.isEmpty()) {
+                return new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
+                    "polymorphic child field '" + fieldName + "' " + POLYMORPHIC_HUB_AUTHOR_ERROR_TAIL));
+            }
+            String joined = cmms.stream().map(AccessorMatch.CardinalityMismatch::message)
+                .collect(Collectors.joining("; "));
+            return new PolymorphicRecordParentResolution.Rejected(Rejection.structural(joined));
+        }
+
+        AccessorMatch only = resolvable.get(0);
+        Class<?> elementClass = switch (only) {
+            case AccessorMatch.Single s -> s.elementClass();
+            case AccessorMatch.Many mm -> mm.elementClass();
+            case AccessorMatch.CardinalityMismatch _ ->
+                throw new IllegalStateException("filtered above");
+        };
+        TableRef hubTable = svc.resolveTableByRecordClass(elementClass).orElseThrow(() ->
+            new IllegalStateException("collectAccessorMatches verified element table presence "
+                + "but resolveTableByRecordClass returned empty for " + elementClass.getName()));
+
+        List<JoinSlot.LifterSlot> hopSlots = hubTable.primaryKeyColumns().stream()
+            .map(JoinSlot.LifterSlot::new)
+            .toList();
+        var hop = new JoinStep.LiftedHop(hubTable, hopSlots, fieldName + "_0");
+
+        BatchKey.RecordParentBatchKey batchKey;
+        if (only instanceof AccessorMatch.Single s) {
+            var ref = new AccessorRef(
+                ClassName.bestGuess(parentFqClassName),
+                s.method().getName(),
+                ClassName.bestGuess(s.elementClass().getName()));
+            batchKey = new BatchKey.AccessorKeyedSingle(hop, ref);
+        } else {
+            var mm = (AccessorMatch.Many) only;
+            var ref = new AccessorRef(
+                ClassName.bestGuess(parentFqClassName),
+                mm.method().getName(),
+                ClassName.bestGuess(mm.elementClass().getName()));
+            batchKey = new BatchKey.AccessorKeyedMany(hop, ref);
+        }
+        return new PolymorphicRecordParentResolution.Resolved(batchKey, hubTable);
     }
 
     private record ReturnAxis(ServiceCatalog.ContainerKind container, Class<?> elementClass) {}
