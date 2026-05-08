@@ -4,7 +4,7 @@ title: "LSP directive registry sourced from directives.graphqls"
 status: Backlog
 bucket: architecture
 priority: 5
-theme: structural-refactor
+theme: lsp
 depends-on: []
 ---
 
