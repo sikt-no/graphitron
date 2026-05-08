@@ -15,6 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Plan |
 |---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
+| `R56` | Extract `ConnectionPromoter` from `GraphitronSchemaBuilder` | Spec | [plan](extract-connection-promoter.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R70` | Support TableRecord-keyed Map returns on @service rows methods <sub>blocked by: [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)</sub> | In Review | [plan](service-rows-tablerecord-key-shape.md) |
@@ -40,7 +41,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Architecture
 
-- `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md): `GraphitronSchemaBuilder.java` (622 lines) is mostly orchestration glue, but it bundles ~150 lines of one cohesive sub-concern: turning `@asConnection` carrier fields into proper Connection-typed fields and synthesising the supporting Connection / Edge / PageInfo types. The pieces are spread across `promoteConnectionTypes`, `rewriteCarrierField`, `buildSynthesisedPageInfo`, `resolveDefaultFirstValue`, `resolveConnectionName`, plus the small `baseTypeName` / `capitalize` helpers. Lifting this into a `ConnectionPromoter` class gives the concern its own file and its own focused test surface (today's coverage is shaped around the schema-build pipeline, not the promotion logic). This is a smaller-scale instance of R6's "state 2" pattern (a cohesive concern factored as private methods rather than its own type), filed separately because the motivation here is testability and scope clarity, not the cross-arm duplication that drives R6. Not blocking anything; pick up if and when someone is in `GraphitronSchemaBuilder` for an unrelated reason.
 - `R5` [**Composite-key `@lookupKey` on list-of-input-object arguments**](composite-key-lookupkey.md): Add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs resolved from `@field(name:)` directives; `buildInputRowsMethod` already handles arbitrary-arity VALUES + JOIN.
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md): When a GraphQL input field is wired (via `@field(name:)` or implicit name match) to a jOOQ-generated column whose `DataType` carries a `defaulted()` expression, surface that default in the schema so clients can see it and so omitted values get a typed, server-known default rather than silently relying on the database. The current generator path already emits `DSL.defaultValue(dataType)` when an input key is absent at insert/update time (`TypeFetcherGenerator.java:1456`, `:1496`, `:1508`, `:1769`), so the runtime story is correct — the gap is purely on the *contract* side: the SDL says nothing about which input fields have a database-supplied default, and clients that introspect the schema have to read the migrations to find out.
 - `R105` [**@record-parent multi-table polymorphic ChildField classifier arm**](record-parent-multitable-polymorphic-classifier-arm.md): Multi-table polymorphic interface/union child fields on `@record`-backed parents are deferred today: `FieldBuilder.classifyChildFieldOnResultType` rejects polymorphic returns at `FieldBuilder.java:2703` with `Rejection.deferred("@record type returning a polymorphic type is not yet supported")`. Schema authors using `@record` parents (POJO or Java record sources) cannot model unions or interfaces of multiple participant tables as child fields; the only workaround is to flatten the union into a single concrete type or move the parent to a table-backed source.
@@ -157,7 +157,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md) — Backlog, architecture
+- `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md) — Spec, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
 - `R105` [**@record-parent multi-table polymorphic ChildField classifier arm**](record-parent-multitable-polymorphic-classifier-arm.md) — Backlog, architecture
