@@ -62,6 +62,7 @@ Splitting it from R112 separates two cognitively distinct kinds of work. *Catalo
 - The `capability_coordinate` table or any DuckDB schema (R112).
 - AsciiDoctor render of capability pages (R112).
 - Long-form preamble prose for each capability — *one sentence per slug* is the bar; preamble is filled in over time as capabilities surface in worked examples.
+- *Worked examples* per capability — examples live in the `.adoc` frontmatter as structured references to operations in the corpus (see R112), but no operations exist before R112 ships, so example authoring is a follow-up pass, not part of this item. R115 produces a stable slug namespace that future example authors can reference; nothing more.
 - Cross-referencing existing roadmap items to capabilities (a follow-up item once the slug list is stable).
 
 ## Acceptance
