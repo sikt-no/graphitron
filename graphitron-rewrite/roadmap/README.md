@@ -33,7 +33,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [retire-rust-lsp-and-introspect-mojo](retire-rust-lsp-and-introspect-mojo.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R68` | Diataxis user manual: absorb legacy README into the docs site | In Review | [plan](diataxis-user-manual.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
-| `R106` | Lift same-table `@nodeId` arg/field to a `WHERE pk IN (...)` filter, not a lookup | Spec | [plan](nodeid-lookup-ignores-filter-siblings.md) |
+| `R106` | Lift same-table `@nodeId` arg/field to a `WHERE pk IN (...)` filter, not a lookup | Ready | [plan](nodeid-lookup-ignores-filter-siblings.md) |
 | `R104` | RC parity audit: classify GraphitronField/Type leaves and ship coverage gaps | In Review | [plan](rc-parity-audit-leaf-coverage.md) |
 
 ---
