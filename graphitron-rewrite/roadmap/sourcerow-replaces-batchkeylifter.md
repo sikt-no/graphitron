@@ -1,7 +1,7 @@
 ---
 id: R110
 title: "Replace @batchKeyLifter with @sourceRow composing with @reference"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 7
 theme: service
