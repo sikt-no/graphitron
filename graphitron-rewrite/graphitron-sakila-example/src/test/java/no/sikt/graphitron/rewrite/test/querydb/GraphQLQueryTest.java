@@ -559,6 +559,38 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void filmsConnectionByRequiredIds_idsSupplied_paginatesBoundedSet() {
+        // R113 production shape: required outer wrapper on a same-table @nodeId list arg
+        // composed with @asConnection. Classifier emits a LOG.warn (pinned in
+        // AsConnectionSameTableWarnFormatTest); runtime ships the WHERE pk IN (decoded_ids)
+        // connection consumers expect. Three ids supplied with first: 2 → page 1 returns 2 of
+        // the 3 films with hasNextPage=true; page 2 (after the cursor) returns the remaining 1
+        // with hasNextPage=false. Pins that the warn does not block runtime correctness.
+        String id1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        String id3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
+        String id5 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 5);
+        Map<String, Object> page1 = execute(
+            "{ filmsConnectionByRequiredIds(ids: [\"" + id1 + "\", \"" + id3 + "\", \"" + id5 + "\"], first: 2) "
+            + "{ nodes { filmId } pageInfo { hasNextPage endCursor } } }");
+        var conn1 = assertThat(page1).extractingByKey("filmsConnectionByRequiredIds", as(MAP));
+        conn1.extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(2)
+            .extracting(n -> n.get("filmId")).containsExactly(1, 3);
+        String endCursor = (String) conn1.extractingByKey("pageInfo", as(MAP))
+            .containsEntry("hasNextPage", true)
+            .actual().get("endCursor");
+
+        Map<String, Object> page2 = execute(
+            "{ filmsConnectionByRequiredIds(ids: [\"" + id1 + "\", \"" + id3 + "\", \"" + id5 + "\"], "
+            + "first: 2, after: \"" + endCursor + "\") { nodes { filmId } pageInfo { hasNextPage } } }");
+        var conn2 = assertThat(page2).extractingByKey("filmsConnectionByRequiredIds", as(MAP));
+        conn2.extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(1)
+            .extracting(n -> n.get("filmId")).containsExactly(5);
+        conn2.extractingByKey("pageInfo", as(MAP)).containsEntry("hasNextPage", false);
+    }
+
+    @Test
     void filmsByNodeIdArg_emptyList_returnsNoRows() {
         // R40 phase 2: empty input list — the input-rows helper's row-count computation
         // (`int n = ids == null ? 0 : ids.size()`) yields 0, the rows array is length 0, and

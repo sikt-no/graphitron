@@ -113,14 +113,23 @@ type Query {
     # arg as ordinary BodyParam predicates rather than being silently ignored under the
     # legacy lookup-promotion gate.
     filmsByNodeIdArgWithTitleFilter(ids: [ID!]! @nodeId(typeName: "Film"), title: String): [Film!]!
-    # R113: optional same-table @nodeId on @asConnection — guard now narrows to required leaves
-    # only. Caller-omitted leaf drops the PK-IN filter and paginates the full table; caller-
-    # supplied leaf narrows to a bounded set and paginates within it. Sibling scalar filter
-    # composes (R106 lift's promise on the connection rail).
+    # R113: optional same-table @nodeId on @asConnection. Caller-omitted leaf drops the PK-IN
+    # filter and paginates the full table; caller-supplied leaf narrows to a bounded set and
+    # paginates within it. Sibling scalar filter composes (R106 lift's promise on the
+    # connection rail). Predicate is silent — no warn fires (∃-required is False here).
     filmsConnectionByOptionalIds(
         ids: [ID!] @nodeId(typeName: "Film"),
         title: String,
         first: Int, last: Int, after: String, before: String
+    ): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+    # R113: required same-table @nodeId on @asConnection — production shape (mirrors
+    # opptak-subgraph's Query.kompetanseregelverkGittIdV2 with required `ider` list).
+    # Classifier emits a LOG.warn at build time advising that every page would equal the
+    # input set, but the connection still ships (WHERE pk IN (decoded_ids) + seek pagination).
+    # Production callers expect this wire format; a build break would be incompatible.
+    filmsConnectionByRequiredIds(
+        ids: [ID!]! @nodeId(typeName: "Film"),
+        first: Int, after: String
     ): [Film!]! @asConnection @defaultOrder(primaryKey: true)
     filmsWithImplicitInput(filter: FilmImplicitInput): [Film!]!
     # implicit-input-conditions plan: outer @condition(override: true) on a field whose
