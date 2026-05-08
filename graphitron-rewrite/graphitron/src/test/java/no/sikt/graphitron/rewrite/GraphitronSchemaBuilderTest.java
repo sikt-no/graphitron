@@ -4244,8 +4244,12 @@ class GraphitronSchemaBuilderTest {
                 assertThat(u.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
             }),
 
-        NON_ERROR_POLYMORPHIC_FALLS_THROUGH_TO_EXISTING_REJECTION(
-            "polymorphic with no @error members — falls through to original 'polymorphic not supported' rejection",
+        NON_ERROR_POLYMORPHIC_FALLS_THROUGH_TO_STRUCTURAL_REJECTION(
+            "polymorphic with no @error members — falls through to a structural rejection",
+            // R105 wires the @record-parent polymorphic classifier arm; a union of @record (not
+            // @table) members is not a multi-table polymorphic case, so the union classifies
+            // as UnclassifiedType and the field's classifier rejects structurally with the
+            // "neither a multi-table interface nor a union" message.
             """
             type Cat @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
                 whiskers: Int
@@ -4264,7 +4268,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(field).isInstanceOf(UnclassifiedField.class);
                 var u = (UnclassifiedField) field;
                 assertThat(u.reason()).contains("polymorphic");
-                assertThat(u.kind()).isEqualTo(RejectionKind.DEFERRED);
+                assertThat(u.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
             });
 
         final String sdl;
