@@ -134,8 +134,20 @@ The split puts the directive-shape fork in the type system and lets four distinc
   - Rejection: `@reference` parse failure surfaces directly (no double-validation against the lifter).
   - All existing parent-shape rejections from `BatchKeyLifterCase` (asConnection, jOOQ-backed parent, missing backing class, scalar return) preserved with the new directive name.
 - **L4 (pipeline).** Pipeline test for at least one `@sourceRow + @reference` field: parent VALUES emission and JOIN ON predicate render as expected. Pipeline test for one `@sourceRow` no-`@reference` leaf-PK field, mirroring the existing lifter pipeline coverage.
-- **L5 (compile spec).** `graphitron-sakila-example` carries Story 1 / Story 2-shape fixtures; `mvn compile -pl :graphitron-sakila-example -Plocal-db` passes.
+- **L5 (compile spec).** `graphitron-sakila-example` carries Story 1 / Story 2-shape fixtures plus a no-`@reference` leaf-PK fixture; `mvn compile -pl :graphitron-sakila-example -Plocal-db` passes. The howto article (see Documentation below) draws its three SDL examples from these fixtures so the published examples cannot drift from working code.
 - **L6 (execution).** Sakila execution test exercises one `@sourceRow + @reference` end-to-end and confirms DataLoader alignment.
+
+## Documentation
+
+A new howto article ships with the implementation: `docs/manual/how-to/source-row.adoc`, sibling to the existing `external-code.adoc`, `add-custom-conditions.adoc`, and `result-types.adoc` under the same directory. The article walks three end-to-end examples in user voice:
+
+1. **Story 1 — third-party generated DTO with `@reference`.** TMDB-style scenario: DTO carries the internal table's PK, `@reference` navigates a single FK to the leaf target. SDL fragment, lifter Java method, what the generator emits.
+2. **Story 2 — shared cross-team DTO with `@reference`.** `SubscriptionDTO`-style scenario: same shape as Story 1 but framed around the cross-team-coupling motivation. Reinforces "the lifter lives in the graphitron-using project, not in the DTO module."
+3. **No-`@reference` leaf-PK case.** Smaller fixture where the DTO carries the leaf table's PK directly, no FK chain. Establishes the simplest shape so readers can walk the rule "matches first-hop source-side OR leaf PK" against two anchors.
+
+Each example's SDL block is sourced from the matching `graphitron-sakila-example` fixture (L5 above) so the article's examples and the compile-spec coverage share a single source. The article also documents the rejection messages users will see — invalid lifter signature, arity mismatch, `@reference` parse failure — anchored to the diagnostics emitted by `SourceRowDirectiveResolver`.
+
+The article cross-links to the `@reference` reference page (where users land when they reach the composed examples) and to `external-code.adoc` (where the conventions for static lifter classes match the conventions for `@condition` / `@service` lifter methods).
 
 ## Acceptance criteria
 
@@ -147,7 +159,8 @@ The split puts the directive-shape fork in the type system and lets four distinc
 - `@LoadBearingClassifierCheck` keys are audited and renamed: `lifter-classifies-as-record-table-field` → `sourcerow-classifies-as-record-table-field`; `lifter-batchkey-is-lifterrowkeyed` is replaced by per-permit keys (`sourcerow-leafkey-batchkey-is-lifterleafkeyed`, `sourcerow-pathkey-batchkey-is-lifterpathkeyed`).
 - All existing `BatchKeyLifterCase` test scenarios pass under the new directive name with the new resolver. New cases above are added.
 - `@sourceRow` works composed with `@reference` for ≥ 1-hop paths; rows-method emitter and parent VALUES projection work end-to-end on Sakila.
-- Documentation: rewrite-design-principles.adoc updated; `BatchKey` class-level Javadoc updated to reflect the `LifterLeafKeyed` / `LifterPathKeyed` split.
+- `docs/manual/how-to/source-row.adoc` ships with the three examples from the Documentation section above; SDL blocks are extracted from `graphitron-sakila-example` fixtures so the article cannot publish a non-compiling example. The article is wired into the docs site's index (`docs/manual/index.adoc`) so the build surfaces it.
+- Internal-docs sweep: `rewrite-design-principles.adoc` updated; `BatchKey` class-level Javadoc updated to reflect the `LifterLeafKeyed` / `LifterPathKeyed` split.
 
 ## Roadmap entries (siblings / dependencies)
 
