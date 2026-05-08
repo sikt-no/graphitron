@@ -754,20 +754,16 @@ class FieldBuilder {
         }
 
         // @nodeId-decorated ID arg routes through NodeIdLeafResolver to pick same-table
-        // (lookup) vs FK-target (filter) shape. Sits before the legacy implicit scalar-ID arm
-        // below, which keeps owning synthesised paths (no @nodeId declared, parent table has
-        // nodeId metadata) per scope.
+        // (filter; explicit @lookupKey opts back into lookup shape) vs FK-target (filter)
+        // shape. Sits before the legacy implicit scalar-ID arm below, which keeps owning
+        // synthesised paths (no @nodeId declared, parent table has nodeId metadata) per scope.
         if ("ID".equals(typeName) && arg.hasAppliedDirective(DIR_NODE_ID)) {
-            // Composition rejections: @nodeId is incompatible with @lookupKey (redundant for
-            // same-table since @nodeId implies it; meaningless for FK-target since FK is a
-            // filter, not a lookup) and with @field(name:) (the two target different binding
-            // axes — key columns come from the resolved NodeType, not the directive).
-            if (arg.hasAppliedDirective(DIR_LOOKUP_KEY)) {
-                return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                    "@nodeId already implies @lookupKey for same-table; the explicit directive is"
-                    + " redundant (and FK-target @nodeId is a filter, not a lookup, where"
-                    + " @lookupKey is meaningless)");
-            }
+            // Composition rejections: @nodeId is incompatible with @field(name:) (the two
+            // target different binding axes — key columns come from the resolved NodeType,
+            // not the directive). @lookupKey is rejected only on the FK-target arm (where
+            // FK is a filter, not a lookup, so @lookupKey is meaningless); on the same-table
+            // arm @lookupKey is a deliberate opt-in that re-enables the N×M lookup shape
+            // (handled inside the SameTable arm below).
             if (arg.hasAppliedDirective(DIR_FIELD)) {
                 return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                     "@nodeId arg cannot also carry @field(name:); the directives target different"
@@ -782,23 +778,26 @@ class FieldBuilder {
                 case NodeIdLeafResolver.Resolved.Rejected r ->
                     { return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, r.message()); }
                 case NodeIdLeafResolver.Resolved.SameTable st -> {
-                    // Same-table @nodeId arg = lookup-by-id semantics with filter failure mode:
-                    // a malformed encoded id drops silently to "no row matches", restoring the
-                    // originally-specified Skip semantics. The emitter's per-row decode site
-                    // branches on the NodeIdDecodeKeys arm; ThrowOnMismatch is reserved for
-                    // synthesised lookup-key paths (the implicit scalar-ID arm below) where a
-                    // wrong-type id is an authored-input contract violation rather than a
-                    // filter miss.
+                    // Same-table @nodeId arg = filter semantics (WHERE pk IN (decoded_ids) /
+                    // RowIn for composite PKs). A malformed encoded id drops silently to "no
+                    // row matches" via SkipMismatchedElement. Explicit @lookupKey re-enables
+                    // the N×M derived-table lookup shape — the only remaining same-table-arg
+                    // path into QueryLookupTableField after R106. The emitter's per-row decode
+                    // site branches on the NodeIdDecodeKeys arm; ThrowOnMismatch is reserved
+                    // for synthesised lookup-key paths (the implicit scalar-ID arm below)
+                    // where a wrong-type id is an authored-input contract violation rather
+                    // than a filter miss.
+                    boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
                     var extraction = new CallSiteExtraction.SkipMismatchedElement(st.decodeMethod());
                     var keys = st.keyColumns();
                     if (keys.size() == 1) {
                         return new ArgumentRef.ScalarArg.ColumnArg(
                             name, typeName, nonNull, list, keys.get(0), extraction,
-                            argCondition, fieldOverride, /* isLookupKey= */ true);
+                            argCondition, fieldOverride, isLookupKey);
                     }
                     return new ArgumentRef.ScalarArg.CompositeColumnArg(
                         name, typeName, nonNull, list, keys, extraction,
-                        argCondition, fieldOverride, /* isLookupKey= */ true);
+                        argCondition, fieldOverride, isLookupKey);
                 }
                 case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> {
                     // FK-target @nodeId arg = filter semantics. Skip extraction (malformed ids
@@ -806,6 +805,11 @@ class FieldBuilder {
                     // /RowEq using DirectFk's fkSourceColumns directly — no JOIN, the resolver
                     // has already verified the FK's targetColumns positionally match the
                     // NodeType key columns.
+                    if (arg.hasAppliedDirective(DIR_LOOKUP_KEY)) {
+                        return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                            "@lookupKey is meaningless on an FK-target @nodeId arg; FK-target"
+                            + " @nodeId is a filter, not a lookup");
+                    }
                     var extraction = new CallSiteExtraction.SkipMismatchedElement(direct.decodeMethod());
                     var keys = direct.keyColumns();
                     if (keys.size() == 1) {
@@ -2332,15 +2336,17 @@ class FieldBuilder {
             return new QueryField.QueryNodeField(parentTypeName, name, location, returnType);
         }
 
-        // Resolve the field's backing table name early so the @nodeId-as-lookup gate can ask
-        // the resolver whether any @nodeId-decorated arg resolves to same-table (which implies
-        // @lookupKey). The bare hasLookupKeyAnywhere check covers explicit @lookupKey only.
+        // Resolve the field's backing table name early so resolveTableFieldComponents has a
+        // pre-built NodeIdArgPlan to share with the lookup classification arm. After R106,
+        // the gate is purely "explicit @lookupKey opt-in"; same-table @nodeId no longer
+        // promotes to a lookup unless paired with @lookupKey (whose presence shows up in
+        // hasLookupKeyAnywhere).
         String lookupTypeName = baseTypeName(fieldDef);
         var lookupReturnType = ctx.resolveReturnType(lookupTypeName, buildWrapper(fieldDef));
         NodeIdArgPlan lookupPlan = lookupReturnType instanceof ReturnTypeRef.TableBoundReturnType tableBound
             ? buildNodeIdArgPlan(fieldDef, tableBound.table())
             : NodeIdArgPlan.EMPTY;
-        if (hasLookupKeyAnywhere(fieldDef) || lookupPlan.anyArgSameTable()) {
+        if (hasLookupKeyAnywhere(fieldDef)) {
             return switch (lookupKeyResolver.resolveAtRoot(lookupReturnType)) {
                 case LookupKeyDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());

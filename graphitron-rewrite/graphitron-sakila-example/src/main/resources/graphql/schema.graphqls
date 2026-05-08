@@ -99,12 +99,20 @@ type Query {
     # own table → primary-key IN predicate via NodeIdInFilterField. Each opaque ID decodes
     # once at the carrier and feeds a (film_id) IN (...) jOOQ predicate.
     filmsBySameTableNodeId(filter: FilmSameTableNodeIdInput): [Film!]!
-    # R40: argument-level same-table @nodeId — same lookup-by-id semantics as the input-field
-    # variant above, but with the encoded ids supplied as a top-level GraphQL arg rather than
-    # nested under a @table input filter. Each opaque ID decodes once and feeds a primary-key
-    # IN lookup via the @lookupKey dispatch path; same-table @nodeId implies @lookupKey at
-    # classify time so no explicit directive is needed (and one would be redundant).
+    # R106: argument-level same-table @nodeId — encoded ids supplied as a top-level GraphQL
+    # arg lift to a `WHERE film_id IN (...)` filter on QueryTableField. Each opaque ID
+    # decodes once via SkipMismatchedElement (malformed ids drop silently) and feeds the
+    # PK-IN predicate alongside any sibling filters. Pre-R106 this path implicitly promoted
+    # to QueryLookupTableField (N×M derived-table); the lift puts same-table @nodeId on the
+    # same rail as ordinary scalar filter args. Add `@lookupKey` to opt back into the lookup
+    # shape (see filmsByNodeIdArgWithLookupKey below if exercised).
     filmsByNodeIdArg(ids: [ID!]! @nodeId(typeName: "Film")): [Film!]!
+    # R106: same-table @nodeId composed with a sibling scalar filter. The query emits
+    # `WHERE film_id IN (?) AND title = ?` — one statement, no N×M derived-table shape. The
+    # filter sibling exercises the lift's promise: sibling args compose with the @nodeId
+    # arg as ordinary BodyParam predicates rather than being silently ignored under the
+    # legacy lookup-promotion gate.
+    filmsByNodeIdArgWithTitleFilter(ids: [ID!]! @nodeId(typeName: "Film"), title: String): [Film!]!
     filmsWithImplicitInput(filter: FilmImplicitInput): [Film!]!
     # implicit-input-conditions plan: outer @condition(override: true) on a field whose
     # @table input has no explicit @condition on its fields. The enclosingOverride flag

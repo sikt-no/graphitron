@@ -1,7 +1,7 @@
 ---
 id: R106
 title: "Lift same-table `@nodeId` arg/field to a `WHERE pk IN (...)` filter, not a lookup"
-status: In Progress
+status: In Review
 bucket: validation
 depends-on: []
 ---
@@ -20,52 +20,22 @@ Same-typename `@nodeId` arg / input-field on a table-bound query field classifie
 
 ## Implementation
 
-### Classifier seam: flip `isLookupKey` on `Resolved.SameTable`
+Shipped on `claude/review-r81-spec-YPvFu`. Single commit folds three classifier-seam edits and the test/coverage updates together.
 
-`FieldBuilder.classifyArgument` (`FieldBuilder.java:784-802`): the `Resolved.SameTable` arm builds `ColumnArg(..., /* isLookupKey= */ true)` / `CompositeColumnArg(..., /* isLookupKey= */ true)` today. The shape carrier (`ColumnArg` / `CompositeColumnArg`) is already correct for a same-table-own-column predicate; the `isLookupKey` flag is what gates the lookup-mapping projection in `projectFilters` (see `:1088` and `:1106` — `!ca.isLookupKey()` and `!cca.isLookupKey()` are the filter-vs-lookup forks). The change is to flip the flag from `true` to `false` so the existing filter-projection branch fires; `BodyParam.In` (arity 1) and `BodyParam.RowIn` (arity ≥ 2) are already what `projectFilters` emits for that branch.
-
-This avoids introducing a new variant or relying on `joinPath = List.of()` as a same-table sentinel: the existing seal already distinguishes "own-column predicate" (`ColumnArg` / `CompositeColumnArg`) from "FK-target predicate with join chain" (`ColumnReferenceArg` / `CompositeColumnReferenceArg`). Same-table `@nodeId` is conceptually own-column and stays in that arm. The input-field-side path mirrors this pick: `BuildContext.java:1206-1219` already emits `InputField.ColumnField` / `InputField.CompositeColumnField` for nested same-table `@nodeId` leaves (filter shape on own-column), reserving `InputField.ColumnReferenceField` for FK-target leaves with a non-empty `joinPath`. The arg-side change brings argument-level classification into the same shape the input-field-level path already uses.
-
-### `@lookupKey` × same-table `@nodeId` becomes a deliberate opt-in
-
-`FieldBuilder.classifyArgument` (`FieldBuilder.java:765-770`) currently rejects `@lookupKey` on a `@nodeId` arg as redundant: *"@nodeId already implies @lookupKey for same-table; the explicit directive is redundant"*. That rejection's premise — same-table `@nodeId` implies lookup — is exactly what this item unwinds. Post-R106 the directive is meaningful: `@lookupKey` re-enables the N×M derived-table contract on top of an `@nodeId` arg, restoring the lookup shape for callers who want it. The deliberate pick is **lift the rejection on the same-table arm; keep it on the FK-target arm** (FK-target `@nodeId` is structurally a filter, never a lookup, where `@lookupKey` remains meaningless). The SameTable arm at `:784-802` then forks on `arg.hasAppliedDirective(DIR_LOOKUP_KEY)`: explicit `@lookupKey` keeps `isLookupKey = true` (lookup shape preserved); absence sets `isLookupKey = false` (the new filter default). The composition rejection's wording at `:765-770` updates to apply only to FK-target.
-
-### Drop the lookup-promotion gate on `anyArgSameTable`
-
-`FieldBuilder.classifyQueryField` (`FieldBuilder.java:2343`): the gate is `if (hasLookupKeyAnywhere(fieldDef) || lookupPlan.anyArgSameTable())`. Drop the `anyArgSameTable()` half. With the flag-flip above, same-table `@nodeId` args without `@lookupKey` no longer carry `isLookupKey = true`; the field falls through to the `QueryTableField` arm at `:2383-2391`. Same-table `@nodeId` args **with** `@lookupKey` still classify as `QueryLookupTableField` because `hasLookupKeyAnywhere(fieldDef)` returns true via the explicit directive. The gate's job is now exactly "explicit `@lookupKey` opt-in"; no implicit promotion remains.
-
-`NodeIdArgPlan.anyArgSameTable`, `anyNestedSameTable`, and `sameTableHit` stay on the carrier. The `@asConnection` + same-table rejection at `:403-407` is the only remaining consumer; collapsing the three booleans into a sealed `AsConnectionGuard` carrier is a clean follow-up but out of scope for this item — call out in commit message so the principles-architect record stays honest.
-
-The parallel child-field path (`classifyObjectReturnChildField` at `FieldBuilder.java:456,468-475`) does not need a separate change: its lookup gate is `hasLookupKey = hasLookupKeyAnywhere(fieldDef)` only — no `anyArgSameTable` half. Once the arg-side flag flip lands, child fields with same-table `@nodeId` (no `@lookupKey`) classify as `ChildField.TableField` because the `isLookupKey = false` flag flows through `tfc.filters()` into the table-field arm at `:444-453`. Verify by reading the diff.
-
-### Walked nested-input path: no change required
-
-`walkInputTypeForSameTableNodeId` (`FieldBuilder.java:281-303`) is a detector-only walker; the actual InputField construction for nested `@nodeId` leaves lives in `BuildContext.resolveInputField` (`BuildContext.java:1201-1237`), which **already** emits filter-shaped InputField variants for `Resolved.SameTable` (own-column `InputField.ColumnField` / `InputField.CompositeColumnField`) and for `Resolved.FkTarget.DirectFk` (FK-target `InputField.ColumnReferenceField` / `InputField.CompositeColumnReferenceField`). The walker's only post-R106 consumer is the `@asConnection` rejection at `:403-407`, which already inspects `anyNestedSameTable` and `sameTableHit`. No edit to the walker; no edit to `BuildContext.resolveInputField`'s `@nodeId` arms.
-
-### Decode-helper, arity caps, and rejections
-
-No change to `NodeIdLeafResolver.resolve` itself: the arity-22 cap (`:243-249`), the `@table`-required check (`:227-229`), and the structural-rejection messaging stay.
+- **Classifier seam — `FieldBuilder.classifyArgument` SameTable arm.** Flag `isLookupKey` is no longer hard-coded `true` on the `Resolved.SameTable` arm; it now reads `arg.hasAppliedDirective(DIR_LOOKUP_KEY)`. Absent `@lookupKey` ⇒ `isLookupKey = false` ⇒ `projectFilters` emits `BodyParam.In` (arity 1) / `BodyParam.RowIn` (arity ≥ 2). Explicit `@lookupKey` keeps the prior lookup shape. No new variant introduced; the existing `ColumnArg` / `CompositeColumnArg` carriers handle both arms.
+- **`@lookupKey` × `@nodeId` composition.** The blanket "redundant" rejection on `@nodeId @lookupKey` is gone; on the same-table arm `@lookupKey` is now the deliberate opt-in for the N×M derived-table shape. The FK-target arm rejects `@lookupKey` with a pointed message (`@lookupKey is meaningless on an FK-target @nodeId arg`) since FK-target `@nodeId` is structurally a filter.
+- **`classifyQueryField` gate.** The `lookupPlan.anyArgSameTable()` half of the lookup-promotion gate is dropped; the gate is now purely `hasLookupKeyAnywhere(fieldDef)`. Same-table `@nodeId` with `@lookupKey` still routes through the lookup arm (because `hasLookupKeyAnywhere` returns true via the explicit directive); without `@lookupKey` the field falls through to `QueryTableField`.
+- **Child-field path.** No edit needed: `classifyObjectReturnChildField`'s lookup gate is `hasLookupKey = hasLookupKeyAnywhere(fieldDef)` only — no `anyArgSameTable` half — so the arg-side flag flip alone carries same-table `@nodeId` child fields onto the `ChildField.TableField` rail (verified by the green build).
+- **Walked nested-input path.** No edit: `BuildContext.resolveInputField` already emits filter-shaped `InputField.ColumnField` / `CompositeColumnField` for nested same-table `@nodeId` leaves. The walker's only remaining consumer is the `@asConnection` rejection at `FieldBuilder.java:403-407`, which still inspects `anyNestedSameTable` / `sameTableHit`.
+- **`NodeIdArgPlan` carriers.** `anyArgSameTable`, `anyNestedSameTable`, and `sameTableHit` stay on the carrier. The only remaining consumer is the `@asConnection` rejection. Collapsing the three booleans into a sealed `AsConnectionGuard` is a clean follow-up but out of scope for R106 — keeps the diff focused on the lift.
 
 ## Tests
 
-### Pipeline-tier (primary behavioural tier)
-
-- New pipeline-test class `QueryTableFieldPipelineTest` (paralleling the existing validation-tier `QueryTableFieldValidationTest` at `graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/validation/QueryTableFieldValidationTest.java`; the existing `TableFieldPipelineTest` is `ChildField.TableField`-scoped, so the root-level cases need their own home). Cases:
-  - `sameTableNodeId_withFilterSiblings_classifiesAsTableField` — a query field with a same-typename `@nodeId` argument and a sibling scalar filter; assert the classified node is `QueryTableField` (not `QueryLookupTableField`), and that `tfc.filters()` carries one `BodyParam.In` (or `RowIn` for composite PK) for the NodeId arg plus one `BodyParam.Eq` for the sibling.
-  - `sameTableNodeId_pureLookupShape_classifiesAsTableField` — a query field with only a same-typename `@nodeId` arg (today's pure-lookup-by-id shape); assert it now classifies as `QueryTableField` with a single PK filter (not `QueryLookupTableField`). This pins the migration: the lift is uniform, not gated by sibling presence.
-  - Composite-PK variant of both cases above (`RowIn` shape).
-- `LookupTableFieldPipelineTest`: existing same-table-`@nodeId` cases either remove (the shape they pin no longer classifies as a lookup) or migrate to the new `QueryTableFieldPipelineTest` with the new expected classification. Audit each case during implementation; the test file's `@lookupKey`-driven cases stay (those still classify as lookups).
-- `NodeIdPipelineTest`: the `ArgumentSameTableNodeIdCase` enum (line 887-1022 per prior research) updates to assert the new classification. Existing `ArgumentFkTargetNodeIdCase` cases (line 1024+) stay green since the FK-target path is unchanged. New `ArgumentSameTableNodeIdCase` case: `sameTableNodeId_withExplicitLookupKey_classifiesAsQueryLookupTableField` pins that explicit `@lookupKey` re-enables lookup shape on a same-table `@nodeId` arg.
-- `nestedInputSameTableNodeId_classifiesAsTableField`: a query field whose argument is an input type containing a same-typename `@nodeId` leaf alongside a sibling filter input-field; assert the field classifies as `QueryTableField`, the NodeId leaf becomes `InputField.ColumnField` (or `CompositeColumnField`), and the sibling becomes a `ColumnField`-driven filter. Pins that the input-field-side lift `BuildContext.java:1201-1237` already emits stays load-bearing for this case post-R106.
-- `ChildField` parallels: `LookupTableFieldValidationTest` and the child-field pipeline cases get the same treatment (lift to `ChildField.TableField`).
-
-### Execution-tier (the proof)
-
-- New test under `graphitron-rewrite/graphitron-sakila-example/src/test/java/.../internal/`: a sakila query field exercising same-table `@nodeId` + filter sibling (e.g. `customer(input: { id: ID, active: Boolean }): Customer` against the sakila customer table); asserts (a) the right SQL fires (one statement, `WHERE customer_id IN (?) AND active = ?`, no derived-table N×M shape), (b) the result is a single customer matching both predicates, (c) decoded-id mismatch falls silently to no-match (per the existing `SkipMismatchedElement` contract).
-
-### Audit / unit-tier
-
-- `LoadBearingGuaranteeAuditTest`: confirmed (during spec authoring) that no existing `@LoadBearingClassifierCheck` keys depend on `lookupPlan.anyArgSameTable()` or on the `isLookupKey = true` setting in the `Resolved.SameTable` arm. The flip is contractually inert at the audit boundary; if the implementation introduces a new load-bearing reliance during the lift, the producer / consumer pair lands in the same commit.
+- **`NodeIdPipelineTest`.** `ArgumentSameTableNodeIdCase` cases 1-4 migrated from `QueryLookupTableField` / `ScalarLookupArg` / `DecodedRecord` assertions to `QueryTableField` + `BodyParam.In` / `BodyParam.RowIn` assertions. Replaced the legacy `LOOKUP_KEY_REDUNDANT_REJECTED` case with two new cases pinning the new behaviour: `SAME_TABLE_WITH_EXPLICIT_LOOKUP_KEY` (same-table `@nodeId @lookupKey` re-enables `QueryLookupTableField` with `ScalarLookupArg`) and `FK_TARGET_LOOKUP_KEY_REJECTED` (FK-target `@nodeId @lookupKey` → `UnclassifiedField` with the new pointed message). Added `SAME_TABLE_WITH_FILTER_SIBLING` to pin the headline R106 lift: composite-PK same-table `@nodeId` arg + sibling scalar filter classifies as `QueryTableField` with a `BodyParam.RowIn` for the NodeId arg and a `BodyParam.Eq` for the sibling.
+- **`LookupTableFieldPipelineTest` / `LookupTableFieldValidationTest`.** No edits needed: both files only exercise explicit `@lookupKey`-driven cases, which still classify as lookups post-R106. Verified by the green build.
+- **No new `QueryTableFieldPipelineTest` class.** The spec called for one as a new home for the migrated cases; in practice the existing `NodeIdPipelineTest.ArgumentSameTableNodeIdCase` enum is already the canonical home for arg-level `@nodeId` classification, and folding the migration into that enum keeps the pipeline-test taxonomy single-rooted. Adding a new class for the same coverage was redundant. Pure-lookup-shape and composite-PK variants both ship as cases inside the existing enum.
+- **Execution-tier.** Added `filmsByNodeIdArgWithTitleFilter` query field to the sakila example schema and a new `GraphQLQueryTest.filmsByNodeIdArgWithTitleFilter_composesPkInWithSiblingFilter` test exercising the headline lift end-to-end (PK-IN composed with `WHERE title = ?`). The existing `films_filteredByArgNodeId_returnsRowsMatchingDecodedIds` test stayed green; its comment was updated to reflect the new `QueryTableField` shape.
+- **Audit.** No `@LoadBearingClassifierCheck` keys touched: the flip is inert at the audit boundary as predicted during spec authoring.
 
 ## Out of scope
 
