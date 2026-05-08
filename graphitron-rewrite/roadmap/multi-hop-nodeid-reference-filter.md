@@ -1,7 +1,7 @@
 ---
 id: R114
 title: "Multi-hop @reference path on @nodeId filter input fields"
-status: Spec
+status: In Progress
 bucket: architecture
 priority: 6
 theme: nodeid
