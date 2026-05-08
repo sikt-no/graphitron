@@ -1,12 +1,16 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RejectionKind;
+import no.sikt.graphitron.rewrite.model.AccessorRef;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.JoinSlot;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -180,5 +184,34 @@ class InterfaceFieldValidationTest {
             participants, Map.of("Customer", List.of(), "Staff", List.of()), rowKeyedFor(wide), null);
         var parentType = new GraphitronType.TableType("Wide", null, wide);
         return validate(FieldValidationTestHelper.schema(parentType, field.name(), field));
+    }
+
+    @Test
+    void rejects_listArm_onAccessorKeyedManyHubArityOver21() {
+        // R105: validator reads parentKey.preludeKeyColumns().size() uniformly across the four
+        // RecordParentBatchKey permits. The accessor-keyed permit publishes the hub PK through
+        // the LiftedHop; a 22-column hub PK trips the same Row22 cap as the table-backed
+        // RowKeyed case. The error message names the parent type and the column count.
+        var hopSlots = new java.util.ArrayList<JoinSlot.LifterSlot>();
+        for (int i = 0; i < 22; i++) {
+            hopSlots.add(new JoinSlot.LifterSlot(new ColumnRef("k" + i, "K" + i, "java.lang.Integer")));
+        }
+        var wideHub = TestFixtures.tableRef("wide", "WIDE", "Wide",
+            hopSlots.stream().map(JoinSlot.LifterSlot::column).toList());
+        var hop = new JoinStep.LiftedHop(wideHub, hopSlots, "occupants_0");
+        var accessor = new AccessorRef(
+            ClassName.bestGuess("com.example.Parent"), "occupants",
+            ClassName.bestGuess("com.example.WideRecord"));
+        BatchKey.RecordParentBatchKey parentKey = new BatchKey.AccessorKeyedMany(hop, accessor);
+        var participants = List.<ParticipantRef>of(
+            new ParticipantRef.TableBound("Customer", CUSTOMER, null),
+            new ParticipantRef.TableBound("Staff", STAFF, null));
+        var field = new InterfaceField("PojoParent", "occupants", null,
+            new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), parentKey, null);
+        assertHasKind(validate(field), RejectionKind.AUTHOR_ERROR,
+            "Field 'PojoParent.occupants': multi-table interface/union child field whose parent "
+                + "type 'PojoParent' has a parent key with 22 columns exceeds jOOQ's typed Row22 "
+                + "cap (parent key + idx must fit in Row<N+1>)");
     }
 }
