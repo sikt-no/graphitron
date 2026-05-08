@@ -20,6 +20,15 @@ For other statuses (Backlog, Ready, In Progress), no formal review handoff appli
 
 ## Procedure
 
+0. **Sync first.** Always fetch and rebase before resolving anything else; the spec body the reviewer will read may live in a commit that hasn't reached the local branch yet, and a stale `git log -- <slug>.md` produces a stale recent-commits block and a stale "last committer" attribution. Run:
+
+   ```bash
+   git fetch origin claude/graphitron-rewrite
+   git rebase origin/claude/graphitron-rewrite
+   ```
+
+   If the rebase reports conflicts, surface and stop — the user resolves before the handoff is meaningful. Working-copy dirt is the user's call (don't auto-stash).
+
 1. **Resolve the item.** Resolve `R<n>` to a file via:
 
    ```bash
@@ -77,6 +86,17 @@ last committer]". Recent spec-touching commits (most recent first):
 Disqualified as reviewer: {{disqualified-author}} (last committer of the spec
 file). You should be a different party — a fresh Claude Code session, the human
 user, or an unrelated agent.
+
+# Sync first
+
+Before reading the spec, sync with trunk — the spec body may live in a commit
+that hasn't reached your local branch:
+
+    git fetch origin claude/graphitron-rewrite
+    git rebase origin/claude/graphitron-rewrite
+
+If the rebase conflicts, surface and stop until resolved. Don't review a
+13-line stub that should be a 100-line plan.
 
 # Read first (in this order)
 
@@ -147,6 +167,17 @@ Disqualified as reviewer: {{disqualified-authors}} (authors of the implementatio
 commits between the most recent Ready → In Progress and In Progress → In Review
 flips). You should be a different party.
 
+# Sync first
+
+Before reading anything, sync with trunk — implementation commits may live on
+trunk and not yet on your local branch:
+
+    git fetch origin claude/graphitron-rewrite
+    git rebase origin/claude/graphitron-rewrite
+
+If the rebase conflicts, surface and stop until resolved. Reviewing a partial
+diff is worse than waiting for a clean checkout.
+
 # Read first (in this order)
 
 1. {{spec-path}}  (the contract; what the implementer was building)
@@ -202,6 +233,7 @@ Then a final line: "Approve: yes/no (and what to do next)". Don't pad.
 
 ## Hard rules
 
+- Always sync (step 0) before resolving the item. A stale checkout produces a stale recent-commits block, a stale "last committer" attribution, and — worst — hands the reviewer a spec body that's missing commits already on trunk. The emitted templates also instruct the reviewer to sync; the skill itself must sync too so the resolved values reflect truth.
 - Do not perform the review yourself. The skill exists to hand off; doing the work in-session defeats the point of getting a second pair of eyes.
 - Do not improvise the templates per call. Adjust pre-filled values; leave the body literal. Drift means each reviewer gets a different rubric.
 - The prompt references files in the repo; it does not paste their contents. The reviewing agent reads them in its own session.
