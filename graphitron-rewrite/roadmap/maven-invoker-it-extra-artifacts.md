@@ -1,7 +1,7 @@
 ---
 id: R111
 title: "Make graphitron-maven-plugin IT self-contained via extraArtifacts"
-status: Spec
+status: Ready
 bucket: cleanup
 depends-on: []
 ---
