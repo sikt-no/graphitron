@@ -43,12 +43,9 @@ Module placement is pinned: `OperationRunner` lives in `graphitron-fixtures-code
 | `fetcher_call` | one row per non-trivial datafetcher invocation at runtime | new runtime JSONL from the `Instrumentation` impl |
 | `operation` | one row per `(document_path, operation_name)` in the corpus | parsed at report time from `src/test/graphql/**/*.graphql` |
 
-The two intersection points the spec orbits around:
+Schema coordinate is the cross-time natural key. Codegen records facts about coordinates (each visit to `(parent_type, field_or_type_name)` invokes the classifier, producing one or more `classifier_call` rows depending on phase, and when the classification produces a fetcher, emits a `generated_fetcher` row co-keyed on the same coordinate). Runtime records facts about coordinates (each non-trivial datafetcher invocation produces a `fetcher_call` row carrying `parent_type`, `field_name`, and the operation that fired it). The four-quadrant view joins both sides on coordinate. `fetcher_class` is emitted on `fetcher_call` and `generated_fetcher` as a diagnostic column (useful for detecting class-overrides where the runtime class differs from the codegen-generated one at the same coordinate), but the join key is the coordinate, which is stable across codegen-side renames.
 
-- *Codegen-side, by coordinate.* Each codegen visit to `(parent_type, field_or_type_name)` invokes the classifier (one or more `classifier_call` rows depending on phase) and, when the classification produces a fetcher, emits a `generated_fetcher` row. Same coordinate, same pass, two co-emitted facts about the same act of classification.
-- *Runtime-side, by `fetcher_class`.* The runtime fires fetcher classes that codegen produced. The bridge to the codegen-side facts is the fetcher class name; via `generated_fetcher`, that resolves to the classification.
-
-Operations join through the runtime side: `fetcher_call.operation` (set by `OperationRunner.execute`) tags each invocation with the operation_key that fired it. The roadmap join is classification-mediated: `roadmap_mention` rows reference classifications, and a classification reaches an operation through `fetcher_call ⋈ generated_fetcher` filtered by the operation column.
+Operations join through the runtime side: `fetcher_call.operation` (set by `OperationRunner.execute`) tags each invocation with the operation_key that fired it. The roadmap join is classification-mediated: `roadmap_mention` rows reference classifications, and a classification reaches an operation through `fetcher_call ⋈ generated_fetcher` (on coordinate) filtered by the operation column.
 
 Three JSONL streams on disk, two emitted at codegen time and one at runtime:
 
@@ -72,7 +69,9 @@ WITH non_trivial AS (
 exercised AS (
   SELECT DISTINCT g.classification
   FROM fetcher_call f
-  JOIN generated_fetcher g ON g.fetcher_class = f.fetcher_class
+  JOIN generated_fetcher g
+    ON g.parent_type = f.parent_type
+   AND g.field_name  = f.field_name
 )
 SELECT 'healthy'    AS quadrant, c.name FROM classification c
   JOIN exercised x ON x.classification = c.name
@@ -81,10 +80,13 @@ SELECT 'dead'       AS quadrant, c.name FROM classification c
   WHERE c.name IN (SELECT classification FROM non_trivial)
     AND c.name NOT IN (SELECT classification FROM exercised)
 UNION ALL
-SELECT DISTINCT 'blind-spot' AS quadrant, f.fetcher_class AS name
+SELECT DISTINCT 'blind-spot' AS quadrant,
+       f.parent_type || '.' || f.field_name AS name
   FROM fetcher_call f
-  LEFT JOIN generated_fetcher g ON g.fetcher_class = f.fetcher_class
-  WHERE g.fetcher_class IS NULL;
+  LEFT JOIN generated_fetcher g
+    ON g.parent_type = f.parent_type
+   AND g.field_name  = f.field_name
+  WHERE g.parent_type IS NULL;
 ```
 
 The trivial-classification case (classifications that don't generate non-trivial fetchers) is intentionally absent from the view: such classifications never appear in `generated_fetcher` by construction, so the report doesn't expect them in `fetcher_call` and they don't end up flagged as dead.
