@@ -18,27 +18,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
- * Pins the warn surface for {@code @asConnection} + required same-table {@code @nodeId} leaf.
+ * Pins the user-facing warn-message format for {@code @asConnection} + required same-table
+ * {@code @nodeId} leaf.
  *
  * <p>R113 demoted the classifier rejection on this shape to a {@code LOG.warn}; production
  * schemas (e.g. opptak-subgraph's {@code Query.kompetanseregelverkGittIdV2}) deliberately
  * compose required same-table {@code @nodeId} args with {@code @asConnection} to ship a
  * paginated WHERE-IN connection to consumers, and a build break on that shape would be a
- * wire-format-incompatible change. The warn still fires (the always-bounded shape is
- * worth flagging for authors who didn't mean to compose them), but classification continues.
+ * wire-format-incompatible change. The warn still fires (the always-bounded shape is worth
+ * flagging for authors who didn't mean to compose them), but classification continues.
  *
- * <p>The four cases here pin both directions of the predicate at the warn surface:
- * <ul>
- *   <li>required leaf → warn fires, message format stable for migration tooling</li>
- *   <li>optional leaf → warn does not fire (∃-required predicate is False)</li>
- *   <li>FK-target leaf → warn does not fire (out of the predicate's scope)</li>
- *   <li>nullable-outer + required-inner → warn does not fire (conjunctive rule)</li>
- * </ul>
+ * <p>This test only pins the message format on the firing case — predicate coverage (when
+ * the warn fires vs. stays silent) lives at pipeline tier in
+ * {@code NodeIdPipelineTest.NodeIdConnectionAdvisoryCase}, where the same SDL shapes assert
+ * the structural classification outcome. Duplicating the silence pins here would be
+ * defence-in-depth on a single flag with no unique signal.
  */
 @UnitTier
 class AsConnectionSameTableWarnFormatTest {
 
-    private static final String LOGGER_NAME = FieldBuilder.class.getName();
+    private static final String LOGGER_NAME =
+        FieldBuilder.class.getName() + ".asConnectionSameTableHygiene";
 
     private static final RewriteContext NODEID_CTX = new RewriteContext(
         List.of(),
@@ -56,36 +56,30 @@ class AsConnectionSameTableWarnFormatTest {
         """;
 
     private ListAppender<ILoggingEvent> appender;
-    private Logger fieldBuilderLogger;
+    private Logger hygieneLogger;
 
     @BeforeEach
     void attachAppender() {
-        fieldBuilderLogger = (Logger) LoggerFactory.getLogger(LOGGER_NAME);
+        hygieneLogger = (Logger) LoggerFactory.getLogger(LOGGER_NAME);
         appender = new ListAppender<>();
         appender.start();
-        fieldBuilderLogger.addAppender(appender);
-        fieldBuilderLogger.setLevel(Level.WARN);
+        hygieneLogger.addAppender(appender);
+        hygieneLogger.setLevel(Level.WARN);
     }
 
     @AfterEach
     void detachAppender() {
-        fieldBuilderLogger.detachAppender(appender);
+        hygieneLogger.detachAppender(appender);
         appender.stop();
-    }
-
-    private List<String> warnMessagesContaining(String needle) {
-        return appender.list.stream()
-            .filter(e -> e.getLevel() == Level.WARN)
-            .map(ILoggingEvent::getFormattedMessage)
-            .filter(m -> m.contains(needle))
-            .toList();
     }
 
     @Test
     void requiredLeaf_emitsWarn_namingFieldLeafAndType() {
         // Mirrors the production shape (required outer wrapper on a same-table @nodeId list arg
         // composed with @asConnection). The classifier emits the warn but classification still
-        // produces a working QueryTableField + Connection wrapper at runtime.
+        // produces a working QueryTableField + Connection wrapper at runtime. Pins the stable
+        // bits migration tooling can grep for: field name, leaf name, typeName, headline
+        // diagnostic, advisory hint.
         buildSchema("""
             type Baz implements Node @table(name: "baz") @node { id: ID! }
             """ + CONNECTION_DECLS + """
@@ -94,65 +88,12 @@ class AsConnectionSameTableWarnFormatTest {
             }
             """, NODEID_CTX);
 
-        var msgs = warnMessagesContaining("@asConnection");
-        assertThat(msgs).hasSize(1);
-        var msg = msgs.get(0);
+        assertThat(appender.list).hasSize(1);
+        var msg = appender.list.get(0).getFormattedMessage();
         assertThat(msg).contains("field 'bazByIds'");
         assertThat(msg).contains("@nodeId(typeName: 'Baz')");
         assertThat(msg).contains("'ids'");
         assertThat(msg).contains("every page of @asConnection would equal the input set");
         assertThat(msg).contains("make 'ids' nullable");
-    }
-
-    @Test
-    void optionalLeaf_doesNotEmitWarn() {
-        // Optional outer wrapper → ∃-required predicate is False → no warn. Pins the silence:
-        // the advisory is *not* "any same-table leaf"; it is "required same-table leaf."
-        buildSchema("""
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
-            """ + CONNECTION_DECLS + """
-            type Query {
-                bazes(ids: [ID!] @nodeId(typeName: "Baz")): BazConnection @asConnection
-            }
-            """, NODEID_CTX);
-
-        assertThat(warnMessagesContaining("@asConnection")).isEmpty();
-    }
-
-    @Test
-    void fkTargetLeaf_doesNotEmitWarn() {
-        // FK-target leaf (resolves to a *different* table via FK) is out of the predicate's
-        // scope by construction; the warn is same-table-specific. Defends against accidental
-        // broadening into FK-target territory.
-        buildSchema("""
-            type Bar implements Node @table(name: "bar") @node { id: ID! }
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
-            type BarConnection { edges: [BarEdge!]! pageInfo: PageInfo! }
-            type BarEdge { node: Bar! cursor: String! }
-            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
-            type Query {
-                barsByBaz(bazIds: [ID!]! @nodeId(typeName: "Baz")): BarConnection @asConnection
-            }
-            """, NODEID_CTX);
-
-        assertThat(warnMessagesContaining("@asConnection")).isEmpty();
-    }
-
-    @Test
-    void nullableOuterRequiredInner_doesNotEmitWarn() {
-        // Conjunctive path-required: nullable outer arg short-circuits the path even though
-        // the inner leaf is non-null. Pins that the predicate is conjunctive, not per-step.
-        buildSchema("""
-            type Baz implements Node @table(name: "baz") @node { id: ID! }
-            """ + CONNECTION_DECLS + """
-            input BazFilter @table(name: "baz") {
-                ids: [ID!]! @nodeId(typeName: "Baz")
-            }
-            type Query {
-                bazes(filter: BazFilter): BazConnection @asConnection
-            }
-            """, NODEID_CTX);
-
-        assertThat(warnMessagesContaining("@asConnection")).isEmpty();
     }
 }

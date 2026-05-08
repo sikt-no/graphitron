@@ -28,78 +28,17 @@ This is no longer "narrow the predicate." The R113 first pass did that; the carr
 
 ## Implementation
 
-> **Shipped (rework).** Guard arm now emits `LOG.warn` instead of `Rejection.structural`;
-> classification continues to `QueryTableField` + `FieldWrapper.Connection` as the author
-> requested. `formatAsConnectionSameTableRejection` renamed to
-> `formatAsConnectionSameTableWarning` with reframed advisory prose (still names the leaf,
-> typeName, and field). Carrier shape, walker, and conjunctive ∃-required predicate all
-> unchanged from the first pass. Pipeline tier renamed to
-> `NodeIdConnectionAdvisoryCase` (8 cases, all `_ALLOWED`). New `AsConnectionSameTableWarnFormatTest`
-> (4 cases) pins the warn surface via logback `ListAppender` (required→fires, optional→silent,
-> FK-target→silent, nullable-outer-required-inner→silent). Execution tier added
-> `Query.filmsConnectionByRequiredIds` mirroring opptak-subgraph's production shape.
+> **Shipped (rework).** `FieldBuilder.resolveTableFieldComponents` emits `ASCONNECTION_HYGIENE_LOG.warn` (category-named logger `FieldBuilder.asConnectionSameTableHygiene`, mirroring the `BuildContext.idRefShim` precedent) when `plan.firstRequiredSameTableHit() != null`; classification falls through to `QueryTableField` + `FieldWrapper.Connection`. The first-pass sealed `AsConnectionGuard.{None | Required(SameTableHit)}` collapsed to a single nullable `SameTableHit firstRequiredSameTableHit` field on `NodeIdArgPlan` — a sealed two-arm hierarchy is heavier than a single warn site needs. `formatAsConnectionSameTableRejection` renamed to `formatAsConnectionSameTableWarning` with advisory rather than directive prose; still names field/leaf/typeName for migration tooling. Carrier walker and conjunctive ∃-required predicate unchanged from the first pass. Pipeline tier renamed to `NodeIdConnectionAdvisoryCase` (8 cases, all `_ALLOWED`); the wording-pin case `ASCONNECTION_REJECTION_MESSAGE_NAMES_NULLABLE_HINT` was deleted (the wording moved out of `Rejection.message()` into the warn). New `AsConnectionSameTableWarnFormatTest` (one `requiredLeaf_emitsWarn_namingFieldLeafAndType` case) pins the warn-message format via logback `ListAppender` on the category logger; predicate coverage (when the warn fires vs. silent) lives at pipeline tier where the same SDL shapes assert structural classification — duplicating silence pins at unit tier would be defence-in-depth on a single flag with no unique signal. Execution tier added one `Query.filmsConnectionByRequiredIds` scenario mirroring opptak-subgraph's production shape.
 
-R113's first pass (commits `5ed50a30`, `846f055d`) shipped the carrier collapse to `NodeIdArgPlan.AsConnectionGuard.{None | Required(SameTableHit)}`, the conjunctive ∃-required walk, and the rejection wording. The second pass (this rework) keeps all of that and replaces the rejection arm with a `LOG.warn` arm. Strictly less invasive than the first pass: no carrier shape change, no walker change, no test fixture rewrites for the optional/conjunctive/FK-target/sibling cases.
-
-### Guard site: warn instead of reject
-
-`FieldBuilder.resolveTableFieldComponents` today returns a `TableFieldComponents.Rejected` when `plan.asConnectionGuard() instanceof Required required`. Replace with a `LOG.warn` and continue:
-
-```java
-if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
-        && plan.asConnectionGuard() instanceof NodeIdArgPlan.AsConnectionGuard.Required required) {
-    LOG.warn(formatAsConnectionSameTableWarning(required.hit(), fieldDef.getName()));
-}
-// Fall through; classification proceeds to QueryTableField + Connection wrapper.
-```
-
-The conjunctive ∃-required predicate stays exactly as-is — optional same-table leaves remain silent (no warn fires), only the required-leaf shape advises. Comment refresh at the guard site reframes "flags confused author intent" as "advises confused author intent": the connection still ships the way the author asked for it.
-
-### Message rename + reframe
-
-`formatAsConnectionSameTableRejection` renames to `formatAsConnectionSameTableWarning`. The prose reframes from directive ("Make 'X' nullable to compose ...") to advisory ("you can make 'X' nullable to silence this warning, or drop @asConnection, or use a filter argument that resolves to a different table via FK"). The "always-bounded; @asConnection adds no value here — every page would equal the input set" framing stays; that's the actual hygiene observation.
-
-The warn message must still name (a) the leaf (`hit.leafName()`), (b) the typeName (`hit.refTypeName()`), and (c) the field (`fieldName`). Future migration tooling can grep on this stable shape.
-
-### Carrier Javadoc: "guard" now means "advisory"
-
-`AsConnectionGuard` keeps its name and shape. Update its Javadoc: "Hygiene-only: this carrier exists for an advisory `LOG.warn` at `resolveTableFieldComponents` … the connection emitter consumes `BodyParam.In` filters identically whether they came from a required leaf or an optional leaf, so this signal never reaches a generator." Replace the previous "author-error rejection" wording with "advisory-warning emit"; otherwise unchanged.
+The first pass shipped the conjunctive ∃-required walk and a sealed `AsConnectionGuard` carrier whose two arms gated a build-breaking rejection. The rework demoted the rejection to a warn; with no build break to gate, the sealed two-arm shape lost its weight and collapsed to a nullable field. Strictly less machinery than the first pass for strictly more permissive runtime behaviour.
 
 ## Tests
 
-### Pipeline tier
+Pipeline tier (`NodeIdPipelineTest.NodeIdConnectionAdvisoryCase`) — 8 cases, all `_ALLOWED`. Required arg/input field/conjunctive cases assert `QueryTableField` + `FieldWrapper.Connection`, structurally identical to the optional cases that already shipped; the carrier flip from rejected→allowed is visible in the test source as a rename + an assertion-shape change.
 
-`NodeIdPipelineTest.NodeIdConnectionRejectionCase` becomes `NodeIdConnectionAdvisoryCase` (rename the enum and the test method). The required cases flip from "asserts `UnclassifiedField` + `Rejection.AuthorError.Structural`" to "asserts `QueryTableField` with `FieldWrapper.Connection`, BodyParam.In on the PK, pagination components present"; structurally identical to the `OPTIONAL_*_ALLOWED` cases. The optional/conjunctive/FK-target/sibling cases stay as-is; no fixture rewrite needed.
+Unit tier (`AsConnectionSameTableWarnFormatTest`) — one case: required-leaf shape emits a warn whose message names `field 'bazByIds'`, `@nodeId(typeName: 'Baz')`, `'ids'`, the headline diagnostic `every page of @asConnection would equal the input set`, and the advisory hint `make 'ids' nullable`. Logger is the category-named `FieldBuilder.asConnectionSameTableHygiene` (stable address for migration tooling, independent of `FieldBuilder` class organisation).
 
-- `ASCONNECTION_PLUS_REQUIRED_ARGUMENT_SAME_TABLE_NODEID_ALLOWED` (renamed from `_REJECTED`): SDL `ids: [ID!]! @nodeId`. Structurally identical assertion to the optional-arg case.
-- `ASCONNECTION_PLUS_REQUIRED_INPUT_FIELD_SAME_TABLE_NODEID_ALLOWED` (renamed): `filter: BazFilter!` + `ids: [ID!]! @nodeId`. Structurally identical assertion.
-- `ASCONNECTION_PLUS_MIXED_NULLABILITY_REQUIRED_FIRST_ALLOWED` (renamed) and `..._OPTIONAL_FIRST_ALLOWED` (renamed): both flip to allowed; the ∃-required predicate still fires the warn for both orderings (still order-independent), but the warn no longer rejects.
-- All `*_ALLOWED` cases that already shipped: unchanged. They never tripped the guard.
-- `ASCONNECTION_REJECTION_MESSAGE_NAMES_NULLABLE_HINT`: delete. The wording-pin moves to a dedicated logback-capture test (next section). The classifier no longer surfaces the message through `Rejection.message()`, so a `f.reason().contains(...)` pin is no longer reachable.
-
-### Warn-format test (logback capture)
-
-New test class `AsConnectionSameTableWarnFormatTest` modeled on `IdReferenceShimWarnFormatTest`:
-
-- Attach a `ListAppender<ILoggingEvent>` to the `FieldBuilder` logger (`LoggerFactory.getLogger(FieldBuilder.class.getName())`) at WARN level, in `@BeforeEach`.
-- Build a schema with the headline required-arg shape (`bazByIds(ids: [ID!]! @nodeId(typeName: "Baz")): BazConnection @asConnection`).
-- Assert `appender.list` has at least one event whose formatted message contains `"@nodeId(typeName: 'Baz')"`, `"'ids'"`, and `"every page would equal the input set"` (the headline diagnostic). Optionally assert it also contains `"make 'ids' nullable"` (the advisory hint).
-- Add a "warn does not fire on optional leaf" case with `ids: [ID!] @nodeId(typeName: "Baz")` — assert no events on the appender for that schema build. Pins the ∃-required predicate at the warn surface.
-- Add a "warn does not fire on FK-target leaf" case (the existing FK-target SDL) — same: zero events. Defends against accidental warn-broadening.
-
-### Execution tier
-
-`GraphQLQueryTest` already has `filmsConnectionByOptionalIds_*` (4 scenarios). Add a sibling for the production-shape required-arg case, modeled on the production schema (`Query.kompetanseregelverkGittIdV2(ider: [ID!]! @nodeId(...)): [...] @asConnection`):
-
-- New SDL field on `Query` in `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`:
-  ```graphql
-  filmsConnectionByRequiredIds(
-      ids: [ID!]! @nodeId(typeName: "Film"),
-      first: Int, after: String
-  ): [Film!]! @asConnection @defaultOrder(primaryKey: true)
-  ```
-- `filmsConnectionByRequiredIds_idsSupplied_paginatesBoundedSet`: same shape as the optional-arg `_idsSupplied` test (3 ids, `first: 2`, page 1 has 2, page 2 has 1); pins that the required-arg shape still produces a working WHERE-IN connection. The schema build emits the warn at classifier time but the runtime is unaffected.
-- The optional-arg execution-tier tests stay as-is: still pin the optional leaf's runtime-shape behaviour.
+Execution tier (`GraphQLQueryTest`) — one new scenario, `filmsConnectionByRequiredIds_idsSupplied_paginatesBoundedSet`, mirroring opptak-subgraph's production shape. The required-arg case collapses three of the optional-arg's four scenarios: `_idsOmitted` and `_idsNullExplicit` are syntactically excluded by the `!`, and `_siblingComposes` reduces to the same `WHERE pk IN (...)` runtime as `_idsSupplied`. One scenario is enough.
 
 ## Out of scope
 

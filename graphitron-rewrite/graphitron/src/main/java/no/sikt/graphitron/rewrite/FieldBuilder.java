@@ -132,6 +132,14 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
 class FieldBuilder {
 
     private static final Logger LOG = LoggerFactory.getLogger(FieldBuilder.class);
+    /**
+     * Category-named logger for the {@code @asConnection} + required same-table {@code @nodeId}
+     * hygiene warn (see {@link #resolveTableFieldComponents}). Stable address for log
+     * consumers (filters, migration tooling) independent of the {@link FieldBuilder} class
+     * organisation; mirrors the {@code BuildContext.idRefShim} precedent.
+     */
+    private static final Logger ASCONNECTION_HYGIENE_LOG =
+        LoggerFactory.getLogger(FieldBuilder.class.getName() + ".asConnectionSameTableHygiene");
 
     private final BuildContext ctx;
     private final ServiceCatalog svc;
@@ -210,48 +218,36 @@ class FieldBuilder {
      * {@link #resolveTableFieldComponents} and never reaches a generator). If a third concern
      * lands here later, the right move is to split rather than grow.
      *
-     * @param byArgName        resolved outcome keyed by top-level argument name; covers every
-     *                         top-level argument carrying {@code @nodeId} (any arity, any arm).
-     *                         Non-{@code @nodeId} args are absent.
-     * @param asConnectionGuard sealed signal carrying the {@code @asConnection} advisory state;
-     *                         {@link AsConnectionGuard.Required} iff at least one same-table
-     *                         {@code @nodeId} leaf is reached through an entirely non-null path
-     *                         (outer arg + every nested input-field wrapper) — fires a
-     *                         {@code LOG.warn}, classification continues. {@link AsConnectionGuard.None}
-     *                         otherwise (silent — including the "all hits are optional" case).
+     * @param byArgName                  resolved outcome keyed by top-level argument name; covers
+     *                                   every top-level argument carrying {@code @nodeId} (any
+     *                                   arity, any arm). Non-{@code @nodeId} args are absent.
+     * @param firstRequiredSameTableHit  non-{@code null} iff at least one same-table
+     *                                   {@code @nodeId} leaf is reached through an entirely
+     *                                   non-null path (outer arg + every nested input-field
+     *                                   wrapper). Hygiene-only: read solely by the
+     *                                   {@code @asConnection} advisory at
+     *                                   {@link #resolveTableFieldComponents}, where its presence
+     *                                   triggers a {@code LOG.warn} on the always-bounded shape
+     *                                   and classification continues normally. {@code null}
+     *                                   otherwise — including the "all hits are optional" case.
      */
     record NodeIdArgPlan(
             Map<String, NodeIdLeafResolver.Resolved> byArgName,
-            AsConnectionGuard asConnectionGuard) {
+            SameTableHit firstRequiredSameTableHit) {
 
         /** Empty plan for non-table-bound fields and fields with no {@code @nodeId} leaves. */
-        static final NodeIdArgPlan EMPTY = new NodeIdArgPlan(Map.of(), new AsConnectionGuard.None());
-
-        record SameTableHit(String leafName, String refTypeName, String containingTableName) {}
+        static final NodeIdArgPlan EMPTY = new NodeIdArgPlan(Map.of(), null);
 
         /**
-         * State of the {@code @asConnection} + same-table {@code @nodeId} advisory.
-         *
-         * <p>Hygiene-only: this carrier exists for an advisory {@code LOG.warn} at
-         * {@code resolveTableFieldComponents}; it has no downstream emitter consumers and is
-         * not load-bearing in the classifier-guarantee sense. The connection emitter consumes
-         * {@code BodyParam.In} filters identically whether they came from a required leaf or
-         * an optional leaf, so the optional-vs-required distinction never reaches code
-         * generation. The warn flags an author-intent redundancy (mandatory id list always
-         * bounds the result; pagination adds no value over a plain list), but the connection
-         * still ships — production schemas legitimately compose this shape, so a build break
-         * would be wrong.
-         *
-         * <p>{@link Required} carries the first required hit in walk order (top-level args
-         * before nested input types) for the warn-message context. The semantic claim is
-         * {@code ∃ required same-table @nodeId leaf} across the whole arg set, not "first hit
-         * in walk order is required" — order-independence ensures the warn fires whether the
-         * required leaf is declared first or last in the SDL.
+         * Carries enough context to build the {@code @asConnection} + required-same-table
+         * advisory warn message: the leaf identifier the author wrote, the typeName that
+         * resolved to the field's own backing table, and the containing table itself. The
+         * "first" in {@link NodeIdArgPlan#firstRequiredSameTableHit} is walk-order context
+         * for the message — the semantic claim is {@code ∃ required same-table @nodeId leaf}
+         * across the whole arg set, so the warn fires whether the required leaf is declared
+         * first or last in the SDL.
          */
-        sealed interface AsConnectionGuard {
-            record None() implements AsConnectionGuard {}
-            record Required(SameTableHit hit) implements AsConnectionGuard {}
-        }
+        record SameTableHit(String leafName, String refTypeName, String containingTableName) {}
     }
 
     /**
@@ -305,13 +301,10 @@ class FieldBuilder {
                 if (sawNested[0]) anyHit = true;
             }
         }
-        var guard = firstRequiredHit[0] != null
-            ? (NodeIdArgPlan.AsConnectionGuard) new NodeIdArgPlan.AsConnectionGuard.Required(firstRequiredHit[0])
-            : new NodeIdArgPlan.AsConnectionGuard.None();
         if (byArgName.isEmpty() && !anyHit) {
             return NodeIdArgPlan.EMPTY;
         }
-        return new NodeIdArgPlan(Map.copyOf(byArgName), guard);
+        return new NodeIdArgPlan(Map.copyOf(byArgName), firstRequiredHit[0]);
     }
 
     private record SameTableHitWithRequired(NodeIdArgPlan.SameTableHit hit, boolean required) {}
@@ -455,8 +448,9 @@ class FieldBuilder {
         // warn fires iff the outer arg and every nested input wrapper down to the leaf
         // are all non-null. ∃-required across all hits, not first-hit-wins.
         if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
-                && plan.asConnectionGuard() instanceof NodeIdArgPlan.AsConnectionGuard.Required required) {
-            LOG.warn(formatAsConnectionSameTableWarning(required.hit(), fieldDef.getName()));
+                && plan.firstRequiredSameTableHit() != null) {
+            ASCONNECTION_HYGIENE_LOG.warn(
+                formatAsConnectionSameTableWarning(plan.firstRequiredSameTableHit(), fieldDef.getName()));
         }
         var errors = new ArrayList<String>();
         var refs = classifyArguments(fieldDef, table, plan, errors);
