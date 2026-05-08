@@ -403,18 +403,44 @@ class GraphQLQueryTest {
 
     @Test
     void films_filteredByArgNodeId_returnsRowsMatchingDecodedIds() {
-        // R40: argument-level same-table @nodeId — `filmsByNodeIdArg(ids: [ID!]! @nodeId(typeName: "Film"))`
-        // routes through the @lookupKey dispatch path (same-table @nodeId implies isLookupKey
-        // at classify time; the field promotes to a QueryLookupTableField). Each opaque ID
-        // decodes once at the per-row decode loop in addRowBuildingCore and feeds the VALUES+
-        // JOIN against film.film_id, so the result rows correspond exactly to the supplied ids
-        // (ordering is restored by ConnectionHelper-style index column).
+        // R106: argument-level same-table @nodeId now classifies as QueryTableField with a
+        // BodyParam.In filter against film.film_id (no lookup-promotion). Each opaque ID
+        // decodes once via SkipMismatchedElement; the predicate emits as
+        // `WHERE film_id IN (?, ?)`. Result rows correspond to the supplied ids (order is
+        // not guaranteed by SQL, hence containsExactlyInAnyOrder).
         String id2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
         String id4 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 4);
         Map<String, Object> data = execute(
             "{ filmsByNodeIdArg(ids: [\"" + id2 + "\", \"" + id4 + "\"]) { filmId title } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByNodeIdArg");
         assertThat(films).extracting(f -> f.get("filmId")).containsExactlyInAnyOrder(2, 4);
+    }
+
+    @Test
+    void filmsByNodeIdArgWithTitleFilter_composesPkInWithSiblingFilter() {
+        // R106 acceptance: same-table @nodeId composed with a sibling scalar filter classifies
+        // as QueryTableField (not QueryLookupTableField) with a BodyParam.In on film.film_id
+        // alongside a BodyParam.Eq on film.title. The pre-R106 lookup-promotion gate dropped
+        // sibling filter args silently; the lift puts them on the same rail. Encode three
+        // film ids; only the one whose title matches survives the AND.
+        String id1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        String id2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
+        String id3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
+        Map<String, Object> first = execute(
+            "{ filmsByNodeIdArgWithTitleFilter(ids: [\"" + id1 + "\", \"" + id2 + "\", \"" + id3 + "\"]) "
+            + "{ filmId title } }");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> firstFilms = (List<Map<String, Object>>) first.get("filmsByNodeIdArgWithTitleFilter");
+        assertThat(firstFilms).extracting(f -> f.get("filmId")).containsExactlyInAnyOrder(1, 2, 3);
+
+        String onlyTitle = (String) firstFilms.get(0).get("title");
+        Map<String, Object> filtered = execute(
+            "{ filmsByNodeIdArgWithTitleFilter(ids: [\"" + id1 + "\", \"" + id2 + "\", \"" + id3 + "\"], "
+            + "title: \"" + onlyTitle + "\") { filmId title } }");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> filteredFilms = (List<Map<String, Object>>) filtered.get("filmsByNodeIdArgWithTitleFilter");
+        assertThat(filteredFilms).hasSize(1);
+        assertThat(filteredFilms.get(0).get("title")).isEqualTo(onlyTitle);
     }
 
     @Test

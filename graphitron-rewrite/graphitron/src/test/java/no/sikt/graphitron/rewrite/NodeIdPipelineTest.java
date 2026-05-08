@@ -887,73 +887,91 @@ class NodeIdPipelineTest {
     enum ArgumentSameTableNodeIdCase {
         SAME_TABLE_SCALAR_SINGLE_PK(
             "scalar `id: ID! @nodeId(typeName: \"Baz\")` arg on a Baz-returning field → "
-                + "QueryLookupTableField with ScalarLookupArg over baz.id",
+                + "QueryTableField with BodyParam.Eq over baz.id (R106: same-table @nodeId lifts "
+                + "to filter, not lookup)",
             """
             type Baz implements Node @table(name: "baz") @node { id: ID! }
             type Query { bazById(id: ID! @nodeId(typeName: "Baz")): Baz }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
                     schema.field("Query", "bazById");
-                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
-                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg)
-                    cm.args().get(0);
-                assertThat(arg.list()).isFalse();
-                assertThat(arg.targetColumn().sqlName()).isEqualTo("id");
-                assertThat(arg.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                var gcf = (no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
+                    f.filters().stream()
+                        .filter(no.sikt.graphitron.rewrite.model.GeneratedConditionFilter.class::isInstance)
+                        .findFirst().orElseThrow();
+                var bp = (no.sikt.graphitron.rewrite.model.BodyParam.Eq) gcf.bodyParams().stream()
+                    .filter(no.sikt.graphitron.rewrite.model.BodyParam.Eq.class::isInstance)
+                    .findFirst().orElseThrow();
+                assertThat(bp.column().sqlName()).isEqualTo("id");
+                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                var skip = (CallSiteExtraction.SkipMismatchedElement) bp.extraction();
+                assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
 
         SAME_TABLE_LIST_SINGLE_PK(
             "list `ids: [ID!]! @nodeId(typeName: \"Baz\")` arg → "
-                + "QueryLookupTableField with ScalarLookupArg list:true",
+                + "QueryTableField with BodyParam.In over baz.id (R106: filter lift)",
             """
             type Baz implements Node @table(name: "baz") @node { id: ID! }
             type Query { bazByIds(ids: [ID!]! @nodeId(typeName: "Baz")): [Baz!]! }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
                     schema.field("Query", "bazByIds");
-                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
-                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg)
-                    cm.args().get(0);
-                assertThat(arg.list()).isTrue();
-                assertThat(arg.targetColumn().sqlName()).isEqualTo("id");
+                var gcf = (no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
+                    f.filters().stream()
+                        .filter(no.sikt.graphitron.rewrite.model.GeneratedConditionFilter.class::isInstance)
+                        .findFirst().orElseThrow();
+                var bp = (no.sikt.graphitron.rewrite.model.BodyParam.In) gcf.bodyParams().stream()
+                    .filter(no.sikt.graphitron.rewrite.model.BodyParam.In.class::isInstance)
+                    .findFirst().orElseThrow();
+                assertThat(bp.column().sqlName()).isEqualTo("id");
             }),
 
         SAME_TABLE_LIST_COMPOSITE_PK(
             "list `ids: [ID!]! @nodeId(typeName: \"Bar\")` over composite-PK NodeType → "
-                + "QueryLookupTableField with DecodedRecord (per-row decode + positional bindings)",
+                + "QueryTableField with BodyParam.RowIn (R106: filter lift; per-row decode preserved)",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
             type Query { barByIds(ids: [ID!]! @nodeId(typeName: "Bar")): [Bar!]! }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
                     schema.field("Query", "barByIds");
-                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
-                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord)
-                    cm.args().get(0);
-                assertThat(arg.list()).isTrue();
-                assertThat(arg.bindings()).hasSize(2);
-                assertThat(arg.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
-                assertThat(arg.extraction().decodeMethod().methodName()).isEqualTo("decodeBar");
+                var gcf = (no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
+                    f.filters().stream()
+                        .filter(no.sikt.graphitron.rewrite.model.GeneratedConditionFilter.class::isInstance)
+                        .findFirst().orElseThrow();
+                var bp = (no.sikt.graphitron.rewrite.model.BodyParam.RowIn) gcf.bodyParams().stream()
+                    .filter(no.sikt.graphitron.rewrite.model.BodyParam.RowIn.class::isInstance)
+                    .findFirst().orElseThrow();
+                assertThat(bp.columns()).hasSize(2);
+                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                var skip = (CallSiteExtraction.SkipMismatchedElement) bp.extraction();
+                assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
         BARE_NODEID_DEFAULTS_TO_BACKING_TABLE(
             "bare `ids: [ID!]! @nodeId` infers typeName from the unique @table-matching object "
-                + "type backing the field's resolved table → DecodedRecord identical to the "
-                + "explicit-typeName case",
+                + "type backing the field's resolved table → BodyParam.RowIn identical to the "
+                + "explicit-typeName case (R106: filter lift)",
             """
             type Bar implements Node @table(name: "bar") @node { id: ID! }
             type Query { barByIds(ids: [ID!]! @nodeId): [Bar!]! }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
                     schema.field("Query", "barByIds");
-                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
-                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord)
-                    cm.args().get(0);
-                assertThat(arg.extraction().decodeMethod().methodName()).isEqualTo("decodeBar");
+                var gcf = (no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
+                    f.filters().stream()
+                        .filter(no.sikt.graphitron.rewrite.model.GeneratedConditionFilter.class::isInstance)
+                        .findFirst().orElseThrow();
+                var bp = (no.sikt.graphitron.rewrite.model.BodyParam.RowIn) gcf.bodyParams().stream()
+                    .filter(no.sikt.graphitron.rewrite.model.BodyParam.RowIn.class::isInstance)
+                    .findFirst().orElseThrow();
+                var skip = (CallSiteExtraction.SkipMismatchedElement) bp.extraction();
+                assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
         T_NOT_IN_SCHEMA(
@@ -979,18 +997,66 @@ class NodeIdPipelineTest {
                 assertThat(f.reason()).contains("not @table-annotated");
             }),
 
-        LOOKUP_KEY_REDUNDANT_REJECTED(
-            "@nodeId @lookupKey on the same arg → UnclassifiedField (the directives are redundant "
-                + "for same-table; @lookupKey is meaningless for FK-target — both are rejected)",
+        SAME_TABLE_WITH_FILTER_SIBLING(
+            "composite-PK same-typename `@nodeId` arg + sibling scalar filter arg → QueryTableField "
+                + "composes BodyParam.RowIn (PK filter) with BodyParam.Eq (sibling) (R106: filter "
+                + "lift puts @nodeId on the same rail as ordinary scalar filter args)",
+            """
+            type Bar implements Node @table(name: "bar") @node { id: ID! }
+            type Query { barsById(ids: [ID!]! @nodeId(typeName: "Bar"), name: String): [Bar!]! }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
+                    schema.field("Query", "barsById");
+                var gcf = (no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
+                    f.filters().stream()
+                        .filter(no.sikt.graphitron.rewrite.model.GeneratedConditionFilter.class::isInstance)
+                        .findFirst().orElseThrow();
+                var idIn = (no.sikt.graphitron.rewrite.model.BodyParam.RowIn) gcf.bodyParams().stream()
+                    .filter(no.sikt.graphitron.rewrite.model.BodyParam.RowIn.class::isInstance)
+                    .findFirst().orElseThrow();
+                assertThat(idIn.name()).isEqualTo("ids");
+                assertThat(idIn.columns()).hasSize(2);
+                assertThat(idIn.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                var nameEq = (no.sikt.graphitron.rewrite.model.BodyParam.Eq) gcf.bodyParams().stream()
+                    .filter(no.sikt.graphitron.rewrite.model.BodyParam.Eq.class::isInstance)
+                    .filter(bp -> "name".equals(((no.sikt.graphitron.rewrite.model.BodyParam.Eq) bp).name()))
+                    .findFirst().orElseThrow();
+                assertThat(nameEq.column().sqlName()).isEqualTo("name");
+            }),
+
+        SAME_TABLE_WITH_EXPLICIT_LOOKUP_KEY(
+            "explicit `@lookupKey` on a same-table `@nodeId` arg re-enables the N×M derived-table "
+                + "lookup shape: classifies as QueryLookupTableField with ScalarLookupArg over baz.id "
+                + "(R106: same-table @nodeId now defaults to filter; @lookupKey is the deliberate "
+                + "opt-in for the lookup shape)",
             """
             type Baz implements Node @table(name: "baz") @node { id: ID! }
             type Query { bazByIds(ids: [ID!]! @nodeId(typeName: "Baz") @lookupKey): [Baz!]! }
             """,
             schema -> {
-                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bazByIds");
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                    schema.field("Query", "bazByIds");
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.ScalarLookupArg)
+                    cm.args().get(0);
+                assertThat(arg.list()).isTrue();
+                assertThat(arg.targetColumn().sqlName()).isEqualTo("id");
+                assertThat(arg.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+            }),
+
+        FK_TARGET_LOOKUP_KEY_REJECTED(
+            "@nodeId @lookupKey on an FK-target arg → UnclassifiedField (FK-target @nodeId is a "
+                + "filter, not a lookup, so @lookupKey is meaningless)",
+            """
+            type Bar implements Node @table(name: "bar") @node { id: ID! }
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            type Query { barsByBaz(bazIds: [ID!]! @nodeId(typeName: "Baz") @lookupKey): [Bar!]! }
+            """,
+            schema -> {
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "barsByBaz");
                 assertThat(f.reason())
-                    .contains("@nodeId already implies @lookupKey")
-                    .contains("redundant");
+                    .contains("@lookupKey is meaningless on an FK-target @nodeId arg");
             }),
 
         FIELD_DIRECTIVE_REJECTED(
