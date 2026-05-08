@@ -9,6 +9,8 @@ depends-on: []
 
 # Enumerate the capabilities graphitron delivers
 
+This item contributes to the knowledge-base programme framed in R117: the slug namespace it ships becomes the `capability` table that R112 loads into DuckDB and that R118 (graphitron MCP server) exposes via the `graphitron.capability` lookup. The catalog is the prerequisite that anchors the directive value space for `@capability` (R112) and the human-readable axis for capability-coverage views.
+
 Graphitron delivers a set of durable, named *capabilities* — pagination, typed errors, polymorphic dispatch, JSON scalars, federation entities, and others — but no list of those capabilities exists. The roadmap tracks transient implementation work; the SDL describes shape; the docs site narrates use. None of these is a stable namespace of "what graphitron does." That gap blocks several pieces of work that want to reference capabilities by stable slug — most concretely R112's `@capability(name:)` directive, whose value space is speculative until the catalog exists, but also less formally any roadmap item, doc page, or commit message that wants to say "this touches pagination."
 
 This item is *thinking*, not engineering: enumerate what graphitron currently delivers as user-facing capabilities, give each a stable kebab-case slug, and write a one-sentence definition. The output is a directory of authored stub files, nothing more. No directive, no tooling, no DB tables, no docs render, no transitive-closure traversal. Those are R112's job; R112 takes this catalog as a precondition.
