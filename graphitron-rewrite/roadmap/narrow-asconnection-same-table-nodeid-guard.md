@@ -28,6 +28,17 @@ This is no longer "narrow the predicate." The R113 first pass did that; the carr
 
 ## Implementation
 
+> **Shipped (rework).** Guard arm now emits `LOG.warn` instead of `Rejection.structural`;
+> classification continues to `QueryTableField` + `FieldWrapper.Connection` as the author
+> requested. `formatAsConnectionSameTableRejection` renamed to
+> `formatAsConnectionSameTableWarning` with reframed advisory prose (still names the leaf,
+> typeName, and field). Carrier shape, walker, and conjunctive ∃-required predicate all
+> unchanged from the first pass. Pipeline tier renamed to
+> `NodeIdConnectionAdvisoryCase` (8 cases, all `_ALLOWED`). New `AsConnectionSameTableWarnFormatTest`
+> (4 cases) pins the warn surface via logback `ListAppender` (required→fires, optional→silent,
+> FK-target→silent, nullable-outer-required-inner→silent). Execution tier added
+> `Query.filmsConnectionByRequiredIds` mirroring opptak-subgraph's production shape.
+
 R113's first pass (commits `5ed50a30`, `846f055d`) shipped the carrier collapse to `NodeIdArgPlan.AsConnectionGuard.{None | Required(SameTableHit)}`, the conjunctive ∃-required walk, and the rejection wording. The second pass (this rework) keeps all of that and replaces the rejection arm with a `LOG.warn` arm. Strictly less invasive than the first pass: no carrier shape change, no walker change, no test fixture rewrites for the optional/conjunctive/FK-target/sibling cases.
 
 ### Guard site: warn instead of reject

@@ -213,12 +213,12 @@ class FieldBuilder {
      * @param byArgName        resolved outcome keyed by top-level argument name; covers every
      *                         top-level argument carrying {@code @nodeId} (any arity, any arm).
      *                         Non-{@code @nodeId} args are absent.
-     * @param asConnectionGuard sealed signal carrying the {@code @asConnection} rejection state;
+     * @param asConnectionGuard sealed signal carrying the {@code @asConnection} advisory state;
      *                         {@link AsConnectionGuard.Required} iff at least one same-table
      *                         {@code @nodeId} leaf is reached through an entirely non-null path
-     *                         (outer arg + every nested input-field wrapper). {@link AsConnectionGuard.None}
-     *                         otherwise — including the "all hits are optional" case, which
-     *                         post-R113 composes with {@code @asConnection}.
+     *                         (outer arg + every nested input-field wrapper) — fires a
+     *                         {@code LOG.warn}, classification continues. {@link AsConnectionGuard.None}
+     *                         otherwise (silent — including the "all hits are optional" case).
      */
     record NodeIdArgPlan(
             Map<String, NodeIdLeafResolver.Resolved> byArgName,
@@ -230,21 +230,22 @@ class FieldBuilder {
         record SameTableHit(String leafName, String refTypeName, String containingTableName) {}
 
         /**
-         * State of the {@code @asConnection} + same-table {@code @nodeId} guard.
+         * State of the {@code @asConnection} + same-table {@code @nodeId} advisory.
          *
-         * <p>Hygiene-only: this carrier exists for an author-error rejection at
+         * <p>Hygiene-only: this carrier exists for an advisory {@code LOG.warn} at
          * {@code resolveTableFieldComponents}; it has no downstream emitter consumers and is
          * not load-bearing in the classifier-guarantee sense. The connection emitter consumes
          * {@code BodyParam.In} filters identically whether they came from a required leaf or
          * an optional leaf, so the optional-vs-required distinction never reaches code
-         * generation. The guard flags confused author intent (mandatory id list always bounds
-         * the result; pagination adds no value), not a structural assumption emitter code
-         * relies on.
+         * generation. The warn flags an author-intent redundancy (mandatory id list always
+         * bounds the result; pagination adds no value over a plain list), but the connection
+         * still ships — production schemas legitimately compose this shape, so a build break
+         * would be wrong.
          *
          * <p>{@link Required} carries the first required hit in walk order (top-level args
-         * before nested input types) for the rejection message context. The semantic claim is
+         * before nested input types) for the warn-message context. The semantic claim is
          * {@code ∃ required same-table @nodeId leaf} across the whole arg set, not "first hit
-         * in walk order is required" — order-independence ensures the guard fires whether the
+         * in walk order is required" — order-independence ensures the warn fires whether the
          * required leaf is declared first or last in the SDL.
          */
         sealed interface AsConnectionGuard {
@@ -421,15 +422,16 @@ class FieldBuilder {
             : -1;
     }
 
-    private static String formatAsConnectionSameTableRejection(
+    private static String formatAsConnectionSameTableWarning(
             NodeIdArgPlan.SameTableHit hit, String fieldName) {
-        return "@nodeId(typeName: '" + hit.refTypeName() + "') on '" + hit.leafName()
-            + "' (required) resolves to '" + hit.containingTableName()
+        return "field '" + fieldName + "': @nodeId(typeName: '" + hit.refTypeName()
+            + "') on '" + hit.leafName() + "' (required) resolves to '" + hit.containingTableName()
             + "', the field's own backing table. A required same-table @nodeId leaf"
-            + " bounds the result to the input id list, so @asConnection adds no value"
-            + " here — every page would equal the input set. Make '" + hit.leafName()
-            + "' nullable to compose with @asConnection (the filter is applied when ids"
-            + " are supplied, omitted otherwise), drop @asConnection from '" + fieldName
+            + " bounds the result to the input id list, so every page of @asConnection"
+            + " would equal the input set. The connection still ships (WHERE pk IN ...)"
+            + " but adds no value over a plain list. To silence this warning, make '"
+            + hit.leafName() + "' nullable (the filter is applied when ids are supplied,"
+            + " omitted otherwise), drop @asConnection from '" + fieldName
             + "', or use a filter argument that resolves to a different table via FK.";
     }
 
@@ -442,18 +444,19 @@ class FieldBuilder {
      */
     private TableFieldComponents resolveTableFieldComponents(
             GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan) {
-        // @asConnection + a required same-table @nodeId leaf flags confused author intent:
+        // @asConnection + a required same-table @nodeId leaf is hygiene-flagged but allowed:
         // the result is always bounded by the mandatory input id list, so the connection's
-        // page is the input set (not broken at runtime — just useless). Optional same-table
-        // @nodeId leaves are fine: caller-omitted leaves drop the PK-IN filter and the
-        // connection paginates the full table; caller-supplied leaves narrow to a bounded
-        // set and paginate within it. Required-ness is conjunctive across the path: the
-        // guard fires iff the outer arg and every nested input wrapper down to the leaf
+        // page equals the input set. Production schemas legitimately compose this shape (the
+        // wire format is `WHERE pk IN (decoded_ids)` with seek pagination on top, which is
+        // what consumers expect); the warn surfaces the redundancy without blocking the
+        // build. Optional same-table @nodeId leaves are silent — caller-omitted drops the
+        // PK-IN filter and paginates the full table; caller-supplied narrows to a bounded
+        // set and paginates within it. Required-ness is conjunctive across the path: the
+        // warn fires iff the outer arg and every nested input wrapper down to the leaf
         // are all non-null. ∃-required across all hits, not first-hit-wins.
         if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION)
                 && plan.asConnectionGuard() instanceof NodeIdArgPlan.AsConnectionGuard.Required required) {
-            return new TableFieldComponents.Rejected(Rejection.structural(
-                formatAsConnectionSameTableRejection(required.hit(), fieldDef.getName())));
+            LOG.warn(formatAsConnectionSameTableWarning(required.hit(), fieldDef.getName()));
         }
         var errors = new ArrayList<String>();
         var refs = classifyArguments(fieldDef, table, plan, errors);
