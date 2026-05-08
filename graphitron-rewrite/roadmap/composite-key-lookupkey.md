@@ -12,7 +12,7 @@ depends-on: []
 
 The Backlog one-liner ("add `ArgumentRef.CompositeLookupArg` carrying `(input-field-name, target-column)` pairs") is stale. The composite-key path on list-of-input-object lookup arguments is in fact already running end-to-end:
 
-- `LookupMapping.ColumnMapping.LookupArg.MapInput` (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/LookupMapping.java:111-121`) carries `List<InputColumnBinding.MapBinding>` with the `(fieldName, targetColumn)` pairs the one-liner asked for; the comment on line 111 already marks it as "R5's `@lookupKey` on input-object fields".
+- `LookupMapping.ColumnMapping.LookupArg.MapInput` (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/LookupMapping.java:112-121`) carries `List<InputColumnBinding.MapBinding>` with the `(fieldName, targetColumn)` pairs the one-liner asked for. (The earlier "R5's `@lookupKey` on input-object fields" javadoc marker was stripped at `98c64182` as part of the unrelated plan-bookkeeping sweep; the comment is already a stable description.)
 - `LookupMappingResolver.resolve` (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/LookupMappingResolver.java:77-82`) projects `ArgumentRef.InputTypeArg.TableInputArg` to `MapInput` whenever `tia.fieldBindings()` is non-empty.
 - `LookupValuesJoinEmitter.flattenSlots` / `buildInputRowsMethod` (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/LookupValuesJoinEmitter.java:127-130`, `:183-207`) emit a typed `Row<N+1>[]` with one cell per binding and a USING/JOIN over the slot columns; `ValuesJoinRowBuilder.MAX_ARITY = 22` caps composite arity at 21.
 - `EnumMappingResolver.buildLookupBindings` (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/EnumMappingResolver.java:242`) walks input fields, resolves each `@field(name:)` to a `ColumnRef`, and returns the `MapBinding` list the resolver consumes.
@@ -21,14 +21,14 @@ The Backlog one-liner ("add `ArgumentRef.CompositeLookupArg` carrying `(input-fi
 
 Pipeline-tier coverage exists at `LookupTableFieldPipelineTest.compositeKeyInputType_producesSwitchArmAndInputRowsHelper` (`graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/LookupTableFieldPipelineTest.java:90`); schema-classifier coverage at `GraphitronSchemaBuilderTest.LOOKUP_FIELD_COMPOSITE_KEY_INPUT_TYPE_ARG` (`:4440-4465`). Both pin the two-binding case (`FilmActorKey { filmId @field(name: "film_id") @lookupKey, actorId @field(name: "actor_id") @lookupKey }`) on `[FilmActorKey!]!`.
 
-Treat R5 as a cleanup-and-hardening pass over the already-shipped shape rather than a fresh feature build. The work in this spec is to (1) lock in the type-level invariants that the resolver and emitter already silently rely on, (2) annotate the classifier→emitter contract with `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` pairs so the `LoadBearingGuaranteeAuditTest` mirror enforces it, (3) add the missing execution-tier test, and (4) update the in-code R5 comment and changelog entry to reflect the actual delivered shape.
+Treat R5 as a cleanup-and-hardening pass over the already-shipped shape rather than a fresh feature build. The work in this spec is to (1) lock in the type-level invariants that the resolver and emitter already silently rely on, (2) annotate the classifier→emitter contract with `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` pairs so the `LoadBearingGuaranteeAuditTest` mirror enforces it, (3) add the missing execution-tier test, and (4) record the closing changelog entry naming the actual delivered shape.
 
 ## Decisions
 
 - The shipped `TableInputArg` + `MapInput` shape stays. Do not reintroduce a dedicated `ArgumentRef.CompositeLookupArg` permit. Folding lookup and mutation input under a single `TableInputArg` is the unified design (one input-type → one ArgumentRef permit, partitioned by field-level `@lookupKey`); a parallel `CompositeLookupArg` permit would re-fork that path and double the directive-resolution surface.
 - Single-binding `MapInput` is not normalised down to `ScalarLookupArg`. Both shapes share a slot pipeline through `flattenSlots`; rewriting one to the other would only churn the resolver and break the "input-shape determines arm" symmetry the sealed switch is built on.
 - Hardening is structural (canonical-constructor `IllegalArgumentException`), not validator-asserted. The validator continues to handle schema-author-facing rejections (cardinality mismatch, lookup-fields-must-not-return-connection); structural impossibilities (empty `MapInput.bindings`) are type-level invariants because the classifier and resolver are the only producers and a violation indicates a classifier bug, not an authoring bug.
-- No new validator arm is needed. The "lookup field has no `@lookupKey` arg" case is already a classifier rejection at `FieldBuilder.java:984` (the field never becomes a `LookupTableField`); the validator-mirrors-classifier principle does not apply because the validator only sees classified output, and the rejection happens upstream of validation. The validator's existing checks (cardinality match at `GraphitronSchemaValidator.java:373-389`, connection-return rejection at `:363-368`, `@orderBy` rejection at `:391-397`) are correct and unchanged.
+- No new validator arm is needed. The "lookup field has no `@lookupKey` arg" case is already a classifier rejection at `FieldBuilder.java:984` (the field never becomes a `LookupTableField`); the validator-mirrors-classifier principle does not apply because the validator only sees classified output, and the rejection happens upstream of validation. The validator's existing checks (connection-return rejection at `GraphitronSchemaValidator.java:380-385`, cardinality match at `:387-406`, `@orderBy` rejection at `:408-414`) are correct and unchanged.
 
 ## Type-level invariants
 
@@ -75,9 +75,9 @@ The execution-tier sibling is the test that doesn't exist today and is the load-
 
 ## Documentation cleanup
 
-- `LookupMapping.java:111`: rewrite the comment from "R5's `@lookupKey` on input-object fields" to a stable description, e.g. "Composite-key Map-shaped input: `@lookupKey` on input-object fields, projecting one binding per input field to its target column". The workflow rule "Documentation names only live tests/code" disallows naming a roadmap item from production code; once R5 ships and its file is deleted, the reference would dangle.
 - Append a one-line entry to `graphitron-rewrite/roadmap/changelog.md` capturing the actual delivered shape (`TableInputArg` + `MapInput`, not `CompositeLookupArg`) and the landing commit SHAs, so the archaeological record reflects what shipped rather than the stale Backlog one-liner.
 - `composite-key-lookupkey.md` itself is deleted on `In Review → Done` per the workflow rule; this file does not need an in-place edit beyond the spec body.
+- The in-code "R5's `@lookupKey` on input-object fields" comment was already stripped at `98c64182` (unrelated plan-bookkeeping sweep), so no production-code edit is required here.
 
 ## Acceptance criteria
 
@@ -85,13 +85,13 @@ The execution-tier sibling is the test that doesn't exist today and is the load-
 - Three `@LoadBearingClassifierCheck` keys on the lookup classifier path (`lookup-mapping-bindings-table-coherent`, `lookup-key-input-field-non-list`, `lookup-field-non-empty-args`); matching `@DependsOnClassifierCheck` annotations on the two `LookupValuesJoinEmitter` consumer sites; `LoadBearingGuaranteeAuditTest` green.
 - Pipeline-tier `LookupTableFieldPipelineTest.compositeKeyInputType_producesSwitchArmAndInputRowsHelper` extension asserts `MapInput.bindings` shape (size, list cardinality, target columns).
 - Execution-tier `CompositeKeyLookupQueryTest` runs the composite-key list-of-input-object lookup against PostgreSQL: two-key golden path returns two rows in input order with a two-column USING/JOIN in the captured SQL; mixed-key subset path returns the matching row only.
-- `LookupMapping.java:111` no longer names "R5"; `roadmap/changelog.md` gains a closing entry naming the actual delivered shape and landing SHAs.
+- `roadmap/changelog.md` gains a closing entry naming the actual delivered shape and landing SHAs.
 - `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` green.
 
 ## Out of scope
 
 - Replacing `TableInputArg` with a dedicated `CompositeLookupArg` permit (would re-fork the lookup/mutation input paths; current unification is preferable, see Decisions).
 - Single-binding `MapInput` → `ScalarLookupArg` normalisation (no behavioural difference; see Decisions).
-- Cardinality-mismatch validator rework (`hasListArg() != returnIsList`, `:383`); the existing diagnostic is correct and out-of-scope here.
+- Cardinality-mismatch validator rework (`hasListArg() != returnIsList` at `GraphitronSchemaValidator.java:400`); the existing diagnostic is correct and out-of-scope here.
 - Inner-list `@lookupKey` rejection at `EnumMappingResolver.java:259-264` already exists with a green test; only the `@LoadBearingClassifierCheck` annotation is in scope, the rejection logic itself is unchanged.
 - Arity > 22 handling on composite `MapInput`: deferred until a real schema hits the cap; `ValuesJoinRowBuilder.MAX_ARITY` already throws an `IllegalStateException` with a clear message at construction.
