@@ -1151,6 +1151,45 @@ class NodeIdPipelineTest {
                 assertThat(f.reason())
                     .contains("FK's target columns do not positionally match")
                     .contains("deferred");
+            }),
+
+        MULTI_HOP_IDENTITY_CARRYING(
+            "R114: 2-hop @reference path from level_c to level_a via level_b. Both adjacent hops "
+                + "satisfy the lift predicate, so the carrier ships a CompositeColumnReferenceArg "
+                + "whose joinPath has size 2 and whose liftedSourceColumns lives on level_c (the "
+                + "parent's own table) and aligns positionally with LevelA's NodeType keys. The "
+                + "emitted BodyParam.RowIn binds against level_c.(K1, K2), not joinPath[0].",
+            """
+            type LevelA implements Node @table(name: "level_a") @node { id: ID! }
+            type LevelC @table(name: "level_c") {
+                cId: String! @field(name: "c")
+            }
+            type Query {
+                levelCsByLevelA(
+                    levelAIds: [ID!]! @nodeId(typeName: "LevelA") @reference(path: [
+                        {key: "level_c_level_b_fk"},
+                        {key: "level_b_level_a_fk"}
+                    ])
+                ): [LevelC!]!
+            }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
+                    schema.field("Query", "levelCsByLevelA");
+                var gcf = (no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
+                    f.filters().stream()
+                        .filter(no.sikt.graphitron.rewrite.model.GeneratedConditionFilter.class::isInstance)
+                        .findFirst().orElseThrow();
+                var bp = (no.sikt.graphitron.rewrite.model.BodyParam.RowIn) gcf.bodyParams().stream()
+                    .filter(no.sikt.graphitron.rewrite.model.BodyParam.RowIn.class::isInstance)
+                    .findFirst().orElseThrow();
+                assertThat(bp.columns())
+                    .extracting(c -> c.sqlName())
+                    .containsExactly("k1", "k2");
+                assertThat(bp.extraction())
+                    .isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                var skip = (CallSiteExtraction.SkipMismatchedElement) bp.extraction();
+                assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeLevelA");
             });
 
         final String sdl;
@@ -1203,6 +1242,41 @@ class NodeIdPipelineTest {
                 assertThat(u.reason())
                     .contains("FK's target columns do not positionally match")
                     .contains("deferred");
+            }),
+
+        MULTI_HOP_IDENTITY_CARRYING_INPUT(
+            "R114: input-field `[ID!] @nodeId(typeName: LevelA) @reference(path: [..., ...])` on a "
+                + "level_c-bound input — 2-hop chain that satisfies the lift predicate. The carrier "
+                + "is InputField.CompositeColumnReferenceField with joinPath.size() == 2, the column "
+                + "tuple = LevelA's NodeType keys (k1, k2), and liftedSourceColumns lives on the "
+                + "parent's own table (level_c.(k1, k2)). Mirror of the arg-side multi-hop case.",
+            """
+            type LevelA implements Node @table(name: "level_a") @node { id: ID! }
+            input LevelCFilterInput @table(name: "level_c") {
+                levelAIds: [ID!] @nodeId(typeName: "LevelA") @reference(path: [
+                    {key: "level_c_level_b_fk"},
+                    {key: "level_b_level_a_fk"}
+                ])
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var input = (GraphitronType.TableInputType)
+                    schema.type("LevelCFilterInput");
+                var leaf = input.inputFields().stream()
+                    .filter(f -> f.name().equals("levelAIds"))
+                    .findFirst().orElseThrow();
+                assertThat(leaf).isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField.class);
+                var ccrf = (no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField) leaf;
+                assertThat(ccrf.joinPath()).hasSize(2);
+                assertThat(ccrf.columns())
+                    .extracting(c -> c.sqlName())
+                    .containsExactly("k1", "k2");
+                // liftedSourceColumns are SQL-name-equal to the NodeType keys (identity-carrying);
+                // the table affinity is positional (parent's own table), not encoded on ColumnRef.
+                assertThat(ccrf.liftedSourceColumns())
+                    .extracting(c -> c.sqlName())
+                    .containsExactly("k1", "k2");
             });
 
         final String sdl;

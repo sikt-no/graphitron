@@ -451,6 +451,108 @@ CREATE TABLE nodeidfixture.reordered_fk_child (
         REFERENCES nodeidfixture.reordered_pk_parent (pk_b, pk_c, pk_a)
 );
 
+-- R114 multi-hop @reference on @nodeId, identity-carrying lift fixture.
+-- Three-table chain modeled on the user's sak / soknad / opptak example: each FK
+-- preserves the next step's source-side columns positionally by SQL name, so the
+-- terminal hop's source-side tuple lifts back through the chain to a sub-tuple of
+-- the first hop's source-side columns on the parent table.
+--
+--   level_a  (PK (k1, k2))                        — the NodeType target.
+--   level_b  (PK (s, k1, k2),  FK to level_a on (k1, k2))
+--   level_c  (PK (c, s, k1, k2), FK to level_b on (s, k1, k2))
+--
+-- Filtering level_c by levelAId (a NodeId encoding (k1, k2)) traverses the chain
+-- level_c -> level_b -> level_a and lifts back to level_c.(k1, k2). Both adjacent
+-- pairs satisfy the lift predicate (hop[1].sourceSide ⊂ hop[0].targetSide by SQL
+-- name), so the emitted SQL is a single-table predicate on level_c.(k1, k2) —
+-- no JOIN, no subquery — identical to single-hop direct-FK shape.
+CREATE TABLE nodeidfixture.level_a (
+    k1   varchar(20) NOT NULL,
+    k2   varchar(20) NOT NULL,
+    name varchar(50),
+    PRIMARY KEY (k1, k2)
+);
+
+CREATE TABLE nodeidfixture.level_b (
+    s    varchar(20) NOT NULL,
+    k1   varchar(20) NOT NULL,
+    k2   varchar(20) NOT NULL,
+    name varchar(50),
+    PRIMARY KEY (s, k1, k2),
+    CONSTRAINT level_b_level_a_fk
+        FOREIGN KEY (k1, k2) REFERENCES nodeidfixture.level_a (k1, k2)
+);
+
+CREATE TABLE nodeidfixture.level_c (
+    c    varchar(20) NOT NULL,
+    s    varchar(20) NOT NULL,
+    k1   varchar(20) NOT NULL,
+    k2   varchar(20) NOT NULL,
+    name varchar(50),
+    PRIMARY KEY (c, s, k1, k2),
+    CONSTRAINT level_c_level_b_fk
+        FOREIGN KEY (s, k1, k2) REFERENCES nodeidfixture.level_b (s, k1, k2)
+);
+
+-- Seed data for the R114 execution test: one level_a row, one level_b under it,
+-- two level_c rows under that level_b plus a sibling under a different level_b.
+INSERT INTO nodeidfixture.level_a (k1, k2, name) VALUES
+    ('A1', 'A2', 'levelA-target'),
+    ('Z1', 'Z2', 'levelA-other');
+
+INSERT INTO nodeidfixture.level_b (s, k1, k2, name) VALUES
+    ('S1', 'A1', 'A2', 'levelB-under-target'),
+    ('S2', 'A1', 'A2', 'levelB-under-target-2'),
+    ('S3', 'Z1', 'Z2', 'levelB-under-other');
+
+INSERT INTO nodeidfixture.level_c (c, s, k1, k2, name) VALUES
+    ('C1', 'S1', 'A1', 'A2', 'levelC-1'),
+    ('C2', 'S1', 'A1', 'A2', 'levelC-2'),
+    ('C3', 'S2', 'A1', 'A2', 'levelC-3'),
+    ('C4', 'S3', 'Z1', 'Z2', 'levelC-other');
+
+-- R114 lift-failure (translation) fixture. Same structure as the level_a/b/c chain
+-- but with intermediate hops that drop key columns the next hop needs, so the lift
+-- predicate fails. Used by NodeIdLeafResolverTest.MULTI_HOP_LIFT_TRANSLATION_REJECTED
+-- and the parallel pipeline-tier case.
+--
+--   trans_a  (PK (a))                       — NodeType target with single key 'a'.
+--   trans_b  (PK b, alt_a; FK to trans_a on alt_a -> a)        — hop1 target list = (b, alt_a).
+--   trans_c  (PK c; FK to trans_b on b)     — hop2.sourceSide = (b); hop1.target = (b, alt_a)
+--                                              by SQL name: 'b' is in hop1.target ✓ — but
+--                                              the terminal hop's targetSide is (b), which
+--                                              does NOT positionally match trans_a's keys (a),
+--                                              so this routes to TranslatedFk, NOT a lift
+--                                              failure. To force lift failure we use a
+--                                              different shape: see lift_fail_a/b/c below.
+--
+-- For genuine lift failure: hop1.target list does NOT contain hop2.source by name.
+CREATE TABLE nodeidfixture.lift_fail_a (
+    k1   varchar(20) NOT NULL,
+    k2   varchar(20) NOT NULL,
+    PRIMARY KEY (k1, k2)
+);
+
+CREATE TABLE nodeidfixture.lift_fail_b (
+    b_id varchar(20) PRIMARY KEY,
+    a_k1 varchar(20) NOT NULL,
+    a_k2 varchar(20) NOT NULL,
+    CONSTRAINT lift_fail_b_a_fk
+        FOREIGN KEY (a_k1, a_k2) REFERENCES nodeidfixture.lift_fail_a (k1, k2)
+);
+
+-- lift_fail_c FKs to lift_fail_b on (b_id), but lift_fail_b -> lift_fail_a uses
+-- (a_k1, a_k2) as the FK source — neither 'a_k1' nor 'a_k2' appears in lift_fail_b's
+-- targetSide list when reached from c (which is just 'b_id'). The lift predicate at
+-- hop[1] requires hop[1].sourceSide ('a_k1', 'a_k2') ⊂ hop[0].targetSide ('b_id') by
+-- SQL name — fails on both columns. Test asserts the rejection.
+CREATE TABLE nodeidfixture.lift_fail_c (
+    c_id   varchar(20) PRIMARY KEY,
+    fk_b   varchar(20) NOT NULL,
+    CONSTRAINT lift_fail_c_b_fk
+        FOREIGN KEY (fk_b) REFERENCES nodeidfixture.lift_fail_b (b_id)
+);
+
 -- ===========================
 -- idreffixture schema
 -- ===========================

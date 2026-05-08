@@ -52,7 +52,19 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         "too_wide", new Metadata("TooWide", List.of(
             "K1",  "K2",  "K3",  "K4",  "K5",  "K6",  "K7",  "K8",
             "K9",  "K10", "K11", "K12", "K13", "K14", "K15", "K16",
-            "K17", "K18", "K19", "K20", "K21", "K22", "K23"))
+            "K17", "K18", "K19", "K20", "K21", "K22", "K23")),
+        // R114 multi-hop @reference on @nodeId, identity-carrying lift fixture.
+        // level_a is the NodeType target reached via the chain
+        // level_c -> level_b -> level_a (FK on (s, k1, k2) then FK on (k1, k2)),
+        // both adjacent pairs satisfying the lift predicate so the terminal hop's
+        // source-side tuple lifts back to level_c.(k1, k2) on the parent table.
+        "level_a", new Metadata("LevelA", List.of("K1", "K2")),
+        // R114 lift-failure fixture: lift_fail_a has the same arity-2 NodeType key
+        // shape, but the lift_fail_b -> lift_fail_a FK uses (a_k1, a_k2) which do not
+        // appear in lift_fail_b's column list when traversed from lift_fail_c (which
+        // only carries fk_b). The lift predicate fails at hop[1] and the resolver
+        // rejects via LIFT_FAILURE_MARKER.
+        "lift_fail_a", new Metadata("LiftFailA", List.of("K1", "K2"))
     );
 
     @Override

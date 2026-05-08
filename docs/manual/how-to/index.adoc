@@ -24,6 +24,7 @@ a|
 * xref:join-with-references.adoc[Join with references]: pin foreign-key paths between table-bound types so the generator emits a JOIN.
 * xref:map-types-to-tables.adoc[Map types to tables]: bind types and fields with `@table` + `@field` across the four directive sites.
 * xref:migrating-from-legacy.adoc[Migrating from the legacy generator]: walk a schema authored against `graphitron-codegen-parent` to the rewrite.
+* xref:multi-hop-nodeid-filter.adoc[Multi-hop `@nodeId` filters]: reach a related node type through one or more intermediate tables when the FKs carry the target's keys positionally by SQL name.
 * xref:polymorphic-types.adoc[Polymorphic types]: choose between single-table and multi-table layouts for GraphQL interfaces and unions.
 * xref:result-types.adoc[Result-type variants]: pick a backing class for a `@record` parent (jOOQ `TableRecord`, jOOQ `Record`, Java record, plain POJO).
 * xref:sort-results.adoc[Sort results]: pick a column source, build stable keyset cursors with explicit tie-breakers, and avoid the collation pitfalls.

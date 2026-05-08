@@ -1,0 +1,118 @@
+= How-to: Multi-hop `@nodeId` filters
+:description: Reach a related node type through one or more intermediate tables when the foreign keys carry the target node's keys positionally by SQL name.
+:!toc:
+
+A filter input that decodes an opaque `@nodeId` of one type and applies it as a predicate against rows of a different type is the bread-and-butter shape for cross-table filtering. xref:join-with-references.adoc[`@reference`] declares the FK path; the rewrite emits a single-table predicate over the parent table's own columns whenever each FK in the chain preserves the next FK's source-side columns positionally by SQL name. This is the *identity-carrying lift* shape, and it is what this recipe covers. Multi-hop chains where some intermediate FK *translates* (drops or renames a key column the next hop needs) are deferred to a sibling Backlog item; the diagnostic at the bottom of this page tells you which case you hit.
+
+== Why identity-carrying
+
+A filter that decodes a `@nodeId(typeName: T)` and asks "which parent rows match this T?" has a natural single-table shape when the parent's own columns already carry T's identity. With a single direct FK, that property is automatic: the FK source columns are on the parent's row, so the predicate is `WHERE parent.fk_columns IN (decoded_keys)`. No JOIN, no subquery; one column tuple, one IN clause.
+
+The same property generalises across multiple hops, but only when each hop preserves the next hop's source-side columns by name. Concretely: walk the chain from the second hop forward; at each step, every column in `hop[i].sourceSideColumns` must appear in `hop[i-1].targetSideColumns` (case-insensitive SQL name). When that holds at every step, the terminal hop's source-side tuple lifts back through the chain, position by position, to a sub-tuple of the first hop's source-side columns: a tuple on the parent's own row, positionally aligned with T's NodeType keys.
+
+The emitted SQL is the same direct row predicate the single-hop case emits. Chain length is purely a classifier-time concept; the runtime touches one table.
+
+When the lift fails at some step, the schema is asking the runtime to walk a JOIN with translation. That shape is real but is not what R114 ships; the diagnostic names the failing step and points back to this article.
+
+== Worked example: a 2-hop chain
+
+Three tables on a `(k1, k2)` identity-carrying chain. `level_a` is the NodeType target; `level_c` is the parent shape we filter:
+
+[source,sql]
+----
+CREATE TABLE level_a (
+    k1 varchar(20) NOT NULL,
+    k2 varchar(20) NOT NULL,
+    PRIMARY KEY (k1, k2)
+);
+CREATE TABLE level_b (
+    s    varchar(20) NOT NULL,
+    k1   varchar(20) NOT NULL,
+    k2   varchar(20) NOT NULL,
+    PRIMARY KEY (s, k1, k2),
+    FOREIGN KEY (k1, k2) REFERENCES level_a (k1, k2)
+);
+CREATE TABLE level_c (
+    c    varchar(20) NOT NULL,
+    s    varchar(20) NOT NULL,
+    k1   varchar(20) NOT NULL,
+    k2   varchar(20) NOT NULL,
+    PRIMARY KEY (c, s, k1, k2),
+    FOREIGN KEY (s, k1, k2) REFERENCES level_b (s, k1, k2)
+);
+----
+
+Both FKs preserve the next FK's source-side columns positionally by SQL name:
+
+* `level_c.(s, k1, k2) -> level_b.(s, k1, k2)` carries `(s, k1, k2)` to `level_b`.
+* `level_b.(k1, k2) -> level_a.(k1, k2)` consumes `(k1, k2)` of those, which were carried in.
+
+So `level_a`'s identity `(k1, k2)` is observable on a `level_c` row at columns `(k1, k2)` directly.
+
+The schema declaration:
+
+[source,graphql]
+----
+type LevelA implements Node @table(name: "level_a") @node {
+    id: ID!
+}
+
+input LevelCFilterInput @table(name: "level_c") {
+    levelAIds: [ID!] @nodeId(typeName: "LevelA") @reference(path: [
+        {key: "level_c_level_b_fk"},
+        {key: "level_b_level_a_fk"}
+    ])
+}
+
+extend type Query {
+    levelCs(filter: LevelCFilterInput): [LevelC!]!
+}
+----
+
+The classifier walks the chain, verifies the lift predicate at each adjacent pair, computes the lifted tuple, and stores it on the carrier. The emitter reads the lifted tuple directly. The generated SQL is `... WHERE row(level_c.k1, level_c.k2) IN ((decoded_k1, decoded_k2), ...)` over a single-table FROM clause.
+
+== Multi-hop is always explicit
+
+The auto-discovery fallback that lets you omit `@reference` when there is exactly one FK between two tables stays single-hop. Multi-hop chains must be declared explicitly with one `{ key: ... }` element per hop. Disambiguation among `A -> ? -> C` paths is the author's responsibility; the classifier never searches past one hop.
+
+This keeps the auto-discovery path the same shape as today and pins the multi-hop opt-in to the SDL surface where the chain is visible at review time.
+
+== Rejection messages
+
+[#lift-failure]
+=== `identity-carrying FKs`
+
+The lift predicate failed at some step of the chain. The message names the failing hop, the FK constraint, the source-side columns that were not carried, and the previous hop's target-side columns for comparison:
+
+[source]
+----
+@reference path on @nodeId leaf '<leafName>': hop <i> ('<fkName>') introduces a column translation
+— its source-side columns [<sql-names>] are not a positional subset of the previous hop's
+target-side columns [<sql-names>] by SQL name. Multi-hop @reference on @nodeId currently requires
+identity-carrying FKs at every step (the predicate compiles to a single-table SELECT). See
+docs/manual/how-to/multi-hop-nodeid-filter.adoc for the mental model and rejection-messages section.
+----
+
+What to change:
+
+* Confirm that each step's source-side columns appear by name in the previous hop's target-side columns. The "Worked example" section walks an identity-carrying chain you can compare against.
+* If the schema genuinely needs translation in the middle of the chain (a renamed FK column, or an alternate-key target), the multi-hop EXISTS-subquery emission is the right fit, but it is not yet shipping. Keep the directive in the form you want and watch for the sibling Backlog item that adds the deferred path.
+
+[#condition-step]
+=== `must be a foreign key`
+
+A `{ condition: ... }` step appeared inside a multi-hop `@nodeId` `@reference` path. Every step in a multi-hop chain must be a `JoinStep.FkJoin`; condition-only steps are rejected with:
+
+[source]
+----
+@reference path on @nodeId leaf '<leafName>': step <i> is a condition step; every step in a
+multi-hop @nodeId path must be a foreign key (use { key: ... } at every position).
+----
+
+What to change: replace the `{ condition: ... }` with a `{ key: <fk-name> }` step. If the predicate that the `condition:` was expressing genuinely belongs in the chain, lift it to the surrounding query's `@condition` arm rather than embedding it in the `@nodeId` filter path.
+
+== Related
+
+* xref:join-with-references.adoc[How-to: Join with references] covers the directive surface for non-`@nodeId` `@reference` paths.
+* xref:global-id.adoc[How-to: Global object IDs] covers the wire format for `@nodeId` end-to-end.
+* xref:add-custom-conditions.adoc[How-to: Add custom conditions] is the right home for predicates that translate or join with non-FK semantics.
