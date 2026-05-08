@@ -4244,12 +4244,13 @@ class GraphitronSchemaBuilderTest {
                 assertThat(u.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
             }),
 
-        NON_ERROR_POLYMORPHIC_FALLS_THROUGH_TO_STRUCTURAL_REJECTION(
-            "polymorphic with no @error members — falls through to a structural rejection",
-            // R105 wires the @record-parent polymorphic classifier arm; a union of @record (not
-            // @table) members is not a multi-table polymorphic case, so the union classifies
-            // as UnclassifiedType and the field's classifier rejects structurally with the
-            // "neither a multi-table interface nor a union" message.
+        NON_ERROR_POLYMORPHIC_FALLS_THROUGH_TO_DEFERRED_REJECTION(
+            "polymorphic with no @error members on a Pojo parent + single cardinality — DEFERRED via R105's single-cardinality arm",
+            // R105 wires the @record-parent polymorphic classifier arm but defers the Pojo /
+            // JavaRecord + single-cardinality shape (the single-cardinality emitter cannot
+            // safely consume a non-jOOQ-Record source). The field falls into that deferred arm
+            // before reaching the @batchKeyLifter follow-up; the message reflects the
+            // single-cardinality deferral, not the original "polymorphic not supported" wording.
             """
             type Cat @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
                 whiskers: Int
@@ -4268,7 +4269,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(field).isInstanceOf(UnclassifiedField.class);
                 var u = (UnclassifiedField) field;
                 assertThat(u.reason()).contains("polymorphic");
-                assertThat(u.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(u.kind()).isEqualTo(RejectionKind.DEFERRED);
             });
 
         final String sdl;
