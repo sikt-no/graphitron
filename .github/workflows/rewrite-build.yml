@@ -16,6 +16,27 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    # Native Postgres service so `-Plocal-db` resolves jdbc:postgresql://localhost:5432
+    # to a real instance during graphitron-sakila-db's jooq-codegen and the
+    # graphitron-sakila-example execution-tier tests. Mirrors the .claude/web-environment
+    # setup (which the web sandbox runs with native pg because Docker is unavailable
+    # there); CI here uses the same -Plocal-db code path so no second profile drifts.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rewrite_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v6
       - name: Set up JDK 25
@@ -24,6 +45,16 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
+      - name: Apply graphitron-sakila-db init.sql
+        # The local-db profile expects database `rewrite_test` to exist with the rewrite-test
+        # schema applied. The Postgres service container creates the database; this step
+        # loads the public + nodeidfixture + idreffixture + multischema_a + multischema_b
+        # tables that the jOOQ codegen reads.
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -p 5432 -U postgres -d rewrite_test \
+            -f graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql
       - name: Build rewrite reactor
         # -Pleaf-coverage emits the per-module classifier-trace JSONL files that
         # `roadmap-tool leaf-coverage --verify` (bound to the verify phase) reads;
