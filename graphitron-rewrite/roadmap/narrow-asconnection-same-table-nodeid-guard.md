@@ -1,7 +1,7 @@
 ---
 id: R113
 title: "Demote @asConnection + same-table @nodeId guard to a warning"
-status: Ready
+status: In Progress
 bucket: validation
 priority: 6
 theme: nodeid
