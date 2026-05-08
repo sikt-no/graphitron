@@ -31,6 +31,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` <sub>blocked by: [retire-rust-lsp-and-introspect-mojo](retire-rust-lsp-and-introspect-mojo.md)</sub> | In Progress | [plan](retire-maven-plugin.md) |
 | `R68` | Diataxis user manual: absorb legacy README into the docs site | In Review | [plan](diataxis-user-manual.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
+| `R106` | Lookup classification short-circuits past filter-semantic siblings on NodeId-typename match | Spec | [plan](nodeid-lookup-ignores-filter-siblings.md) |
 | `R104` | RC parity audit: classify GraphitronField/Type leaves and ship coverage gaps | In Review | [plan](rc-parity-audit-leaf-coverage.md) |
 
 ---
@@ -86,7 +87,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 ### Validation
 
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md): `FieldBuilder.resolveDefaultOrderSpec()` falls back to `OrderBySpec.Fixed([pk ASC])` when a list field has no `@defaultOrder` or `@orderBy` and the table has a PK. For tables without a PK, it returns `OrderBySpec.None` instead, which the generators faithfully emit as an empty `List.of()` — no `ORDER BY` clause. The result is a non-deterministic list every time the query runs.
-- `R106` [**Lookup classification short-circuits past filter-semantic siblings on NodeId-typename match**](nodeid-lookup-ignores-filter-siblings.md): A query field that takes an input type containing a same-typename `@nodeId` field (e.g. `field(input: { id: ID @nodeId(typename: "Customer"), name: String, active: Boolean }): Customer`) is classified as a `QueryLookupTableField` even when the input also carries fields with filter semantics. The intended shape there is a search/filter, not a single-record lookup; the misclassification routes the field through the lookup pipeline (N×M derived-table contract) and silently drops the filter siblings from the generated SQL.
 
 ### Other
 
