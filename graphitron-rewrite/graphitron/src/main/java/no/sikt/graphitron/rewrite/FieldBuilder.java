@@ -3309,8 +3309,30 @@ class FieldBuilder {
                 yield new PolymorphicRecordParentResolution.Resolved(
                     new BatchKey.RowKeyed(pkCols), jtr.table());
             }
-            case GraphitronType.PojoResultType _, GraphitronType.JavaRecordType _ ->
-                deriveBatchKeyFromHubAccessor(fieldName, fieldIsList, parentResultType);
+            case GraphitronType.PojoResultType _, GraphitronType.JavaRecordType _ -> {
+                // Single-cardinality polymorphic on a Pojo / JavaRecord parent is currently
+                // unreachable: MultiTablePolymorphicEmitter.buildScalarPerParentFetcher emits
+                // `Record parentRecord = (Record) env.getSource()` (MultiTablePolymorphicEmitter
+                // .java:331) and does not consume parentKey / parentResultType. A Pojo source
+                // would ClassCastException at runtime. Defer here so the classifier never
+                // produces a shape the emitter can't safely consume; the list-cardinality arm
+                // routes through the DataLoader-batched buildBatchedListFetcher which does read
+                // parentKey + parentResultType and is safe today.
+                if (!fieldIsList) {
+                    yield new PolymorphicRecordParentResolution.Rejected(Rejection.deferred(
+                        "single-cardinality polymorphic child field '" + fieldName + "' on a "
+                        + "@record (Pojo / JavaRecord) parent is not yet supported; the "
+                        + "single-cardinality multi-table polymorphic fetcher reads parent "
+                        + "context as a jOOQ Record and has no @record-Pojo arm. Workarounds: "
+                        + "back the parent with a typed jOOQ TableRecord (@record(record: {"
+                        + "className: ...})) so the parent record is the source itself, or "
+                        + "switch the field to list cardinality. Follow-up: widen "
+                        + "MultiTablePolymorphicEmitter.buildScalarPerParentFetcher to consume "
+                        + "parentKey + parentResultType analogously to the list arm.",
+                        "polymorphic-child-record-parent-single-cardinality"));
+                }
+                yield deriveBatchKeyFromHubAccessor(fieldName, fieldIsList, parentResultType);
+            }
             case GraphitronType.JooqRecordType jrt ->
                 new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
                     "@record parent backed by jOOQ Record '" + jrt.fqClassName()

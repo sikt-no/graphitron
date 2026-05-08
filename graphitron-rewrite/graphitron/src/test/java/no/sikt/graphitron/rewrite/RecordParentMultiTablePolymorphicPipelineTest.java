@@ -123,24 +123,30 @@ class RecordParentMultiTablePolymorphicPipelineTest {
     }
 
     @Test
-    void childInterfaceField_recordParent_accessorKeyedSingle() {
-        // Pojo parent (AccessorPayloads.SinglePayload) exposes `FilmRecord film()`. The
-        // single-cardinality polymorphic child named `film` resolves to AccessorKeyedSingle;
-        // the hub (film table) is discovered from the unique matching accessor's element table.
+    void childInterfaceField_recordParent_accessorKeyedSingle_deferred() {
+        // Pojo parent (AccessorPayloads.SinglePayload) with a single-cardinality polymorphic
+        // child is currently deferred at the classifier: MultiTablePolymorphicEmitter's
+        // single-cardinality arm (buildScalarPerParentFetcher) reads parent context as a jOOQ
+        // Record (env.getSource() cast) and has no @record-Pojo arm; producing
+        // AccessorKeyedSingle here would generate code that ClassCastExceptions on a Pojo
+        // source. The follow-up to lift this restriction is to widen
+        // buildScalarPerParentFetcher analogously to the list-cardinality arm. List cardinality
+        // (AccessorKeyedMany) is reachable because the list arm is DataLoader-batched and
+        // already routes through the parentKey-aware buildBatchedListFetcher.
         var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
             type SinglePayloadType @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SinglePayload"}) {
               film: FilmReferrer
             }
             type Query { sp: SinglePayloadType }
             """);
-        var field = (ChildField.InterfaceField) schema.field("SinglePayloadType", "film");
-        assertThat(field.parentKey()).isInstanceOf(BatchKey.AccessorKeyedSingle.class);
-        assertThat(field.parentKey().dispatch()).isEqualTo(BatchKey.LoaderDispatch.LOAD_ONE);
-        var aks = (BatchKey.AccessorKeyedSingle) field.parentKey();
-        assertThat(aks.hop().targetTable().tableName()).isEqualTo("film");
-        assertThat(aks.hop().targetSideColumns()).hasSize(1);
-        assertThat(aks.hop().targetSideColumns().get(0).sqlName()).isEqualTo("film_id");
-        assertThat(aks.accessor().methodName()).isEqualTo("film");
+        var field = schema.field("SinglePayloadType", "film");
+        assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+        var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
+        assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.DEFERRED);
+        assertThat(unc.reason())
+            .contains("single-cardinality polymorphic child field 'film'")
+            .contains("@record (Pojo / JavaRecord) parent")
+            .contains("not yet supported");
     }
 
     @Test
@@ -182,17 +188,18 @@ class RecordParentMultiTablePolymorphicPipelineTest {
     }
 
     @Test
-    void childUnionField_recordParent_accessorKeyedSingle() {
+    void childUnionField_recordParent_accessorKeyedSingle_deferred() {
+        // Same single-cardinality deferral as the InterfaceField sibling.
         var schema = TestSchemaHelper.buildSchema(UNION_PARTICIPANTS + """
             type SinglePayloadType @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SinglePayload"}) {
               film: FilmReferrer
             }
             type Query { sp: SinglePayloadType }
             """);
-        var field = (ChildField.UnionField) schema.field("SinglePayloadType", "film");
-        assertThat(field.parentKey()).isInstanceOf(BatchKey.AccessorKeyedSingle.class);
-        assertThat(((BatchKey.AccessorKeyedSingle) field.parentKey()).hop().targetTable().tableName())
-            .isEqualTo("film");
+        var field = schema.field("SinglePayloadType", "film");
+        assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+        var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
+        assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.rewrite.RejectionKind.DEFERRED);
     }
 
     @Test

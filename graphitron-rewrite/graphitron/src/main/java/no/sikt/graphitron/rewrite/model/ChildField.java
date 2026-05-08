@@ -301,6 +301,11 @@ public sealed interface ChildField extends GraphitronField
         public InterfaceField {
             participants = List.copyOf(participants);
             participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
+            // R105 follow-up: validator and emitter both read parentKey / parentResultType
+            // unconditionally; carry the non-null contract in the type system rather than
+            // by reviewer-tracked correspondence.
+            java.util.Objects.requireNonNull(parentKey, "parentKey");
+            java.util.Objects.requireNonNull(parentResultType, "parentResultType");
         }
     }
 
@@ -322,6 +327,8 @@ public sealed interface ChildField extends GraphitronField
         public UnionField {
             participants = List.copyOf(participants);
             participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
+            java.util.Objects.requireNonNull(parentKey, "parentKey");
+            java.util.Objects.requireNonNull(parentResultType, "parentResultType");
         }
     }
 
