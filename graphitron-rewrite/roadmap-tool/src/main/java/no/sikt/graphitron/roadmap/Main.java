@@ -311,6 +311,16 @@ public final class Main {
             Files.writeString(plansDir.resolve(i.slug() + ".adoc"), renderAdocPlan(i));
         }
 
+        // Stage the leaf-coverage report alongside index/by-theme/changelog so the rendered
+        // roadmap site links to a real page rather than a GitHub source URL. The report is
+        // already a fully-formed AsciiDoc page (= title + :description: + tables); copying it
+        // verbatim is enough.
+        Path inferenceReport = roadmapDir.resolve("inference-axis-coverage.adoc");
+        if (Files.exists(inferenceReport)) {
+            Files.copy(inferenceReport, outDir.resolve("inference-axis-coverage.adoc"),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+
         System.out.println("rendered " + items.size() + " plans + roadmap/by-theme/changelog into " + outDir);
     }
 
@@ -326,6 +336,8 @@ public final class Main {
           .append("For design principles, see ")
           .append("xref:../architecture/rewrite-design-principles.adoc[Rewrite Design Principles]. ")
           .append("For workflow conventions, see xref:../architecture/workflow.adoc[Workflow]. ")
+          .append("For per-leaf classifier coverage, see ")
+          .append("xref:inference-axis-coverage.adoc[Inference-axis coverage report]. ")
           .append("Or jump to the xref:by-theme.adoc[by-theme view] or the xref:changelog.adoc[changelog]. ")
           .append("Back to xref:../index.adoc[home].\n\n");
 
