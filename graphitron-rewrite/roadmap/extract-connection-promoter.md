@@ -1,7 +1,7 @@
 ---
 id: R56
 title: "Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 3
 theme: structural-refactor
@@ -9,6 +9,8 @@ depends-on: []
 ---
 
 # Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`
+
+Shipped at 9939052d1 (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/ConnectionPromoter.java`). `GraphitronSchemaBuilder.java` shrunk from 670 to 289 lines (well past the ≥230-line / ~440-line target); `ConnectionPromoterTest` covers the eight spec-named cases plus the `noSynthesisedTypes` short-circuit regression. Awaiting In Review → Done sign-off.
 
 ## Premise
 

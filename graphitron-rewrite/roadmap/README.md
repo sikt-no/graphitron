@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Plan |
 |---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `R56` | Extract `ConnectionPromoter` from `GraphitronSchemaBuilder` | In Progress | [plan](extract-connection-promoter.md) |
+| `R56` | Extract `ConnectionPromoter` from `GraphitronSchemaBuilder` | In Review | [plan](extract-connection-promoter.md) |
 | `R5` | Composite-key `@lookupKey` on list-of-input-object arguments | Spec | [plan](composite-key-lookupkey.md) |
 | `R105` | @record-parent multi-table polymorphic ChildField classifier arm | Spec | [plan](record-parent-multitable-polymorphic-classifier-arm.md) |
 | `R3` | Classification vocabulary follow-ups | Spec | [plan](classification-vocabulary-followups.md) |
@@ -157,7 +157,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md) — In Progress, architecture
+- `R56` [**Extract `ConnectionPromoter` from `GraphitronSchemaBuilder`**](extract-connection-promoter.md) — In Review, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
 - `R105` [**@record-parent multi-table polymorphic ChildField classifier arm**](record-parent-multitable-polymorphic-classifier-arm.md) — Spec, architecture
