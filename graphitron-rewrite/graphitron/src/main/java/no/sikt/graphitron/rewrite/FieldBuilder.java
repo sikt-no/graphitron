@@ -203,6 +203,13 @@ class FieldBuilder {
      * {@code findSameTableNodeIdUnderAsConnection}, {@code walkInputTypeForSameTableNodeId},
      * and {@code hasSameTableNodeIdAnywhere}.
      *
+     * <p>Two-slot carrier with asymmetric reach: {@code byArgName} is generation-bound (read by
+     * {@link #classifyArgument} to produce {@link no.sikt.graphitron.rewrite.model.ArgumentRef}
+     * variants whose decode strategy and key columns flow into emitter code); {@code asConnectionGuard}
+     * is hygiene-only (consumed exactly once by the {@code @asConnection} guard at
+     * {@link #resolveTableFieldComponents} and never reaches a generator). If a third concern
+     * lands here later, the right move is to split rather than grow.
+     *
      * @param byArgName        resolved outcome keyed by top-level argument name; covers every
      *                         top-level argument carrying {@code @nodeId} (any arity, any arm).
      *                         Non-{@code @nodeId} args are absent.
@@ -257,8 +264,10 @@ class FieldBuilder {
      *
      * <p>Required-ness is conjunctive across the path: a leaf is required iff every wrapper
      * from the field's argument-root down to the {@code ID}/{@code [ID]} carrier is non-null.
-     * Cycle protection on nested input types follows the same {@code LinkedHashSet<String>}
-     * shape the previous walks carried.
+     * Cycle protection on nested input types uses a scoped {@code LinkedHashSet<String>}
+     * (add on entry, remove on return); the previous walk could mark add-only because it
+     * short-circuited on the first hit, but the accumulator-driven walk needs sibling
+     * subtrees that share an input-type subgraph to each get visited independently.
      */
     private NodeIdArgPlan buildNodeIdArgPlan(GraphQLFieldDefinition fieldDef, TableRef containingTable) {
         var resolver = ctx.nodeIdLeafResolver();
