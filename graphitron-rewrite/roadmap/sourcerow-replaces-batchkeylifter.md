@@ -91,7 +91,7 @@ The two cases route through different resolver paths and `BuildContext.parsePath
    - **`@reference` present.** Delegate to `BuildContext.parsePath` with the field's element type as the leaf target; expected tuple is `firstHop.sourceSideColumns()`. `parsePath`'s existing contract is untouched.
    - **`@reference` absent.** Bypass `parsePath`; read the leaf target's PK columns directly via `JooqCatalog.primaryKeyColumns(...)`.
    - `@reference` parse failure: surface the parse error directly; do not double-validate against the lifter.
-4. Validate `RowN` arity and per-position erasure against the derived tuple. Two diagnostic messages distinguish the cases ("first-hop source-side columns of FK '..." vs. "primary key of '<leaf>'").
+4. Validate `RowN` arity and per-position erasure against the derived tuple. Two diagnostic messages distinguish the cases — exact wording is anchored to the howto's "Rejection messages" section (see Documentation below) so user-facing text and SDL author guidance share one source. Templates: `"@sourceRow on '<parent>.<field>': lifter '<method>' RowN type at position <i> ('<actual>') does not match first-hop source-side column '<col>' of FK '<fk>' (Java type '<expected>')"` for the `@reference` case; `"@sourceRow on '<parent>.<field>': lifter '<method>' RowN type at position <i> ('<actual>') does not match primary key column '<col>' of '<leaf>' (Java type '<expected>')"` for the leaf-PK case.
 5. Construct the appropriate `BatchKey` permit (see "Model" below): `LifterPathKeyed` for the `@reference` path, `LifterLeafKeyed` for the leaf-PK case. Each permit carries its own `joinPath` shape; classifier and emitters dispatch on permit identity, no per-instance branching.
 
 The `targetColumns` arg is removed entirely. Existing fixtures using `targetColumns` must migrate; since the directive has not been adopted outside the test suite, the migration is internal-only.
@@ -103,9 +103,11 @@ The `targetColumns` arg is removed entirely. Existing fixtures using `targetColu
 `LifterRowKeyed` splits into two permits, mirroring the variant-identity-tracks-shape rule applied four times already (R61 / R70 / R71 / R74):
 
 - **`LifterLeafKeyed(JoinStep.LiftedHop hop, LifterRef lifter)`** — no `@reference`. Holds the existing single-`LiftedHop` shape. The hop's slots fold source-side and target-side onto the same column (leaf-PK column-equality).
-- **`LifterPathKeyed(List<JoinStep> path, LifterRef lifter, List<ColumnRef> parentSideColumns)`** — `@reference` resolved to a non-empty path. `path` is the resolved `FkJoin` chain; `parentSideColumns` is `path.first().sourceSideColumns()`, materialised on the permit so the prelude reads it without re-walking the path.
+- **`LifterPathKeyed(List<JoinStep> path, LifterRef lifter, List<ColumnRef> parentSideColumns)`** — `@reference` resolved to a non-empty path. `path` is the resolved `FkJoin` chain; `parentSideColumns` is `path.first().sourceSideColumns()`, materialised on the permit so the prelude reads it without re-walking the path. The compact constructor enforces the equality (`if (!parentSideColumns.equals(path.getFirst().sourceSideColumns())) throw ...`) so a future caller cannot construct an inconsistent permit.
 
 The split puts the directive-shape fork in the type system and lets four distinct consumers (resolver step 5, prelude projection, validator diagnostics, emitter) dispatch on permit identity rather than re-deriving "is this the leaf-PK case?" from `path.first() instanceof LiftedHop`. Single-permit polymorphism was considered and rejected: the two shapes' downstream branches are independent, so collapsing them onto one record with conditional fields recreates the per-instance branching the encoding rule exists to eliminate.
+
+The split is for the *resolver / validator* dispatch axis. On the *emitter* axis, both permits share the same column-keyed DataLoader path: `SplitRowsMethodEmitter` continues to read both via the existing `BatchKeyField` capability, with the per-permit fork confined to resolver step 5 (constructing the right permit) and the prelude's parent-VALUES projection (reading `parentSideColumns` from the permit). No emitter arm should fork on permit identity; capability uniformity holds at the emission layer even where the seal forks at the resolution layer.
 
 ## Scope kept unchanged
 
@@ -123,7 +125,7 @@ The split puts the directive-shape fork in the type system and lets four distinc
 
 ## Tests
 
-- **L1 (model).** `BatchKey` test pins `keyElementType()` / `javaTypeName()` / `dispatch()` / `preludeKeyColumns()` for `LifterLeafKeyed` and `LifterPathKeyed` separately. Variant-identity assertions cover the seal: existing exhaustive-`switch(batchKey)` sites must compile after the split.
+- **L1 (model).** `BatchKey` test pins `keyElementType()` / `javaTypeName()` / `dispatch()` / `preludeKeyColumns()` for `LifterLeafKeyed` and `LifterPathKeyed` separately. Both permits return `LoaderDispatch.LOAD_ONE` and the same `keyElementType` shape (`Row<N>` over the lifter's tuple), inherited from today's `LifterRowKeyed`; the two permits diverge on `preludeKeyColumns()` (leaf-PK vs. first-hop source-side) and on identity for resolver / validator dispatch. Variant-identity assertions cover the seal: existing exhaustive-`switch(batchKey)` sites must compile after the split. Compact-constructor invariant on `LifterPathKeyed` (parentSideColumns equality with `path.first().sourceSideColumns()`) covered by a unit test that constructs an inconsistent permit and asserts the throw.
 - **L3 (validator).** `SourceRowClassificationTest` (renamed from existing `BatchKeyLifterCase` in `GraphitronSchemaBuilderTest.java:1753-2272`) covers:
   - Story 1 SDL (`@sourceRow` + `@reference` single-hop) classifies as `RecordTableField` with the expected `LifterRowKeyed`.
   - Story 2 SDL (`@sourceRow` + `@reference` single-hop, different FK) same shape.
@@ -145,7 +147,9 @@ A new howto article ships with the implementation: `docs/manual/how-to/source-ro
 2. **Story 2 — shared cross-team DTO with `@reference`.** `SubscriptionDTO`-style scenario: same shape as Story 1 but framed around the cross-team-coupling motivation. Reinforces "the lifter lives in the graphitron-using project, not in the DTO module."
 3. **No-`@reference` leaf-PK case.** Smaller fixture where the DTO carries the leaf table's PK directly, no FK chain. Establishes the simplest shape so readers can walk the rule "matches first-hop source-side OR leaf PK" against two anchors.
 
-Each example's SDL block is sourced from the matching `graphitron-sakila-example` fixture (L5 above) so the article's examples and the compile-spec coverage share a single source. The article also documents the rejection messages users will see — invalid lifter signature, arity mismatch, `@reference` parse failure — anchored to the diagnostics emitted by `SourceRowDirectiveResolver`.
+**No-drift mechanism.** SDL blocks in `source-row.adoc` are pulled via AsciiDoc `include::` directives with `tag::sourcerow-story-1[]` / `tag::sourcerow-story-2[]` / `tag::sourcerow-leafpk[]` markers in the `graphitron-sakila-example` fixture `.graphqls` files. A stale snippet, a renamed tag, or a deleted fixture fails the docs render rather than landing as a quiet drift; the docs build is part of the same `mvn install` pipeline as the L5 compile-spec, so a fixture change that breaks the snippets fails CI in one of two ways without needing both.
+
+The article also documents the rejection messages users will see — invalid lifter signature, arity mismatch, `@reference` parse failure — anchored to the diagnostics emitted by `SourceRowDirectiveResolver` (the resolver section above pins the exact wording, so the howto's "Rejection messages" subsection and the resolver's diagnostic strings cite one source).
 
 The article cross-links to the `@reference` reference page (where users land when they reach the composed examples) and to `external-code.adoc` (where the conventions for static lifter classes match the conventions for `@condition` / `@service` lifter methods).
 
@@ -156,10 +160,10 @@ The article cross-links to the `@reference` reference page (where users land whe
 - `BuildContext.parsePath`'s gate is **unchanged**. The leaf-PK case bypasses `parsePath` and reads `JooqCatalog.primaryKeyColumns(...)` directly.
 - `BatchKey.LifterRowKeyed` is split into `LifterLeafKeyed` and `LifterPathKeyed` permits. Every existing exhaustive `switch(batchKey)` site is walked (the seal makes this `javac`-checked).
 - `FieldBuilder` updates: directive lookup string, classifier integration, error message strings (the user-facing messages naming `@batchKeyLifter` switch to `@sourceRow`).
-- `@LoadBearingClassifierCheck` keys are audited and renamed: `lifter-classifies-as-record-table-field` → `sourcerow-classifies-as-record-table-field`; `lifter-batchkey-is-lifterrowkeyed` is replaced by per-permit keys (`sourcerow-leafkey-batchkey-is-lifterleafkeyed`, `sourcerow-pathkey-batchkey-is-lifterpathkeyed`).
+- `@LoadBearingClassifierCheck` keys are audited and renamed: `lifter-classifies-as-record-table-field` → `sourcerow-classifies-as-record-table-field`; `lifter-batchkey-is-lifterrowkeyed` is replaced by per-permit keys (`sourcerow-leafkey-batchkey-is-lifterleafkeyed`, `sourcerow-pathkey-batchkey-is-lifterpathkeyed`). Every `@DependsOnClassifierCheck(reliesOn=...)` consumer of the renamed keys is updated in the same commit; `LoadBearingGuaranteeAuditTest` is green at the end of the work.
 - All existing `BatchKeyLifterCase` test scenarios pass under the new directive name with the new resolver. New cases above are added.
 - `@sourceRow` works composed with `@reference` for ≥ 1-hop paths; rows-method emitter and parent VALUES projection work end-to-end on Sakila.
-- `docs/manual/how-to/source-row.adoc` ships with the three examples from the Documentation section above; SDL blocks are extracted from `graphitron-sakila-example` fixtures so the article cannot publish a non-compiling example. The article is wired into the docs site's index (`docs/manual/index.adoc`) so the build surfaces it.
+- `docs/manual/how-to/source-row.adoc` ships with the three examples from the Documentation section above. SDL blocks are pulled via AsciiDoc `include::` with `tag::sourcerow-story-1[]` / `tag::sourcerow-story-2[]` / `tag::sourcerow-leafpk[]` markers on the matching `graphitron-sakila-example` fixture `.graphqls` files; a stale snippet or renamed tag fails the docs render. The article is wired into the docs site's index (`docs/manual/index.adoc`).
 - Internal-docs sweep: `rewrite-design-principles.adoc` updated; `BatchKey` class-level Javadoc updated to reflect the `LifterLeafKeyed` / `LifterPathKeyed` split.
 
 ## Roadmap entries (siblings / dependencies)
