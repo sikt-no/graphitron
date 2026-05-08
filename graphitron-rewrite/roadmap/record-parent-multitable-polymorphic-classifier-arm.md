@@ -1,7 +1,7 @@
 ---
 id: R105
 title: "@record-parent multi-table polymorphic ChildField classifier arm"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 5
 theme: structural-refactor
