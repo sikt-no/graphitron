@@ -200,7 +200,6 @@ public class GraphitronSchemaBuilder {
         return new BuildResult(model, rebuiltAssembled);
     }
 
-
     /**
      * Rewrites a {@link SchemaProblem} that includes at least one undeclared federation
      * directive into a {@link ValidationError} list whose federation entries point at the
