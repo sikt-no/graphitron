@@ -36,6 +36,17 @@ The slug `id` is the join key the rest of the project will use; the title is hum
 
 Lowercase kebab-case, descriptive of the capability and not the implementation (`pagination`, not `connection-types`; `typed-errors`, not `error-channel`). Slugs must be stable from authorship onward — once an `R<n>` references a slug, renaming requires a coordinated update across every referer. Pick names that read well in three contexts: as a directive value (`@capability(name: "pagination")`), as a roadmap front-matter cross-reference (`relates-to: [pagination, typed-errors]`), and as a docs-site URL (`/capabilities/pagination`).
 
+## Maintaining the catalog
+
+Two Claude skills support this work and are the canonical entry point — hand-editing the directory risks drifting from the integrity rules R112's validator will enforce once it ships:
+
+- `capability-catalog` covers writes (`add`, `edit`, `remove`) and read-only diagnostics (`list`, `suggest` for heuristic walks across the directives reference / sealed-variant families / sakila schema, `audit` for orphans, dangling references, potential duplicates, and missing surfaces).
+- `capability-interview` is a sibling, conversational skill — investigative-journalist-style discovery that picks one model surface at a time, asks what it exists to deliver, and converges on an existing slug, a new proposal, or "plumbing, no capability." Catalog writes route through `capability-catalog add`; SDL `@capability(name:)` candidates surface for the user (or a follow-up agent) to apply.
+
+Recommended seeding pass for R115's Spec phase: run `capability-catalog suggest` first to scrape the directives reference into mechanical candidates, then run `capability-interview` over the sealed-variant families and internal records that didn't fall out of the directives walk (selection-aware-fetching, node-id, anything implicit). For each survivor, `capability-catalog add` writes the stub. This turns the "blank page" into an artefact-driven walk and bypasses the manual-labour failure mode where someone tries to enumerate from memory.
+
+Capabilities are tagged on SDL coordinates only (via R112's `@capability(name:)` directive); the model→capability link is derived at build time via the KB join (`coordinate → classifier_call → variant_family`), not authored on the Java side. The interview skill produces SDL tag candidates, never Java annotations.
+
 ## Initial candidate list
 
 A starting list to pressure-test the slug namespace. The author of this item refines the list during Spec, but these are the candidates to argue with rather than start from a blank page:
