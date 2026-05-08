@@ -33,7 +33,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R68` | Diataxis user manual: absorb legacy README into the docs site | In Review | [plan](diataxis-user-manual.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | [plan](list-valued-external-field-multiset.md) |
-| `R112` | Operation-driven test corpus, capability catalog, and runtime trace | Spec | [plan](operation-driven-test-corpus.md) |
+| `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | [plan](operation-driven-test-corpus.md) |
 
 ---
 
@@ -54,6 +54,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md): R94 emits an internal Java record per SDL input type. R92 phase 3 attaches programmatic Jakarta `ConstraintMapping` entries to those records derived from PostgreSQL `CHECK` constraints. R12 §5's pre-execution validator step runs against each input at the fetcher boundary. Three pipes today; three different sources of truth for "what does this input need to look like to be valid"; only one of them (DB CHECK) is currently surfaced to consumers anywhere outside of the runtime violation report. _(blocked by [emit-input-records](emit-input-records.md), [catalog-check-constraint-validation](catalog-check-constraint-validation.md))_
 - `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md): Shift new test investment from per-variant structural tests toward SDL-to-classification-to-emission pipeline tests keyed off `graphitron-fixtures`.
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md): `TypeFetcherGenerator.java` is 1 646 lines, one public entry point (`generate(GraphitronSchema)`), and ~30 private methods that implement per-field-variant emitters plus shared helpers. It is the counterpart to the now-shipped `FieldBuilder` decomposition (R6, see [`changelog.md`](changelog.md)): a central generator that has accumulated coverage faster than its file shape can absorb.
+- `R115` [**Enumerate the capabilities graphitron delivers**](capability-catalog.md): Graphitron delivers a set of durable, named *capabilities* — pagination, typed errors, polymorphic dispatch, JSON scalars, federation entities, and others — but no list of those capabilities exists. The roadmap tracks transient implementation work; the SDL describes shape; the docs site narrates use. None of these is a stable namespace of "what graphitron does." That gap blocks several pieces of work that want to reference capabilities by stable slug — most concretely R112's `@capability(name:)` directive, whose value space is speculative until the catalog exists, but also less formally any roadmap item, doc page, or commit message that wants to say "this touches pagination."
 
 ### Stubs
 
@@ -164,7 +165,8 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R76` [**Emit per-participant fieldsJoin and orderBy; replace SelectJoinStep mutation in interface fetchers**](participant-fieldsjoin-helpers.md) — Backlog, cleanup
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture
 - `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md) — Backlog, validation
-- `R112` [**Operation-driven test corpus, capability catalog, and runtime trace**](operation-driven-test-corpus.md) — Spec, architecture
+- `R115` [**Enumerate the capabilities graphitron delivers**](capability-catalog.md) — Backlog, architecture
+- `R112` [**Operation-driven test corpus, capability catalog, and runtime trace**](operation-driven-test-corpus.md) — Spec, architecture, blocked by [capability-catalog](capability-catalog.md)
 
 ### docs
 
