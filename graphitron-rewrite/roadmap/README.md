@@ -33,6 +33,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R68` | Diataxis user manual: absorb legacy README into the docs site | In Review | [plan](diataxis-user-manual.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | [plan](list-valued-external-field-multiset.md) |
+| `R112` | Operation-driven test corpus driving tests, runtime trace, and docs | Spec | [plan](operation-driven-test-corpus.md) |
 | `R111` | Make graphitron-maven-plugin IT self-contained via extraArtifacts | Ready | [plan](maven-invoker-it-extra-artifacts.md) |
 
 ---
@@ -56,7 +57,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 - `R75` [**Synthesize payload carrier for canonical data+errors shapes**](synthesize-payload-carrier.md): R12 establishes a positional canonical-constructor contract on `@record` payload classes: SDL field index *i* binds to ctor parameter *i*, with the errors-shaped field producing the slot graphitron writes into from the catch arm (`FieldBuilder.findCanonicalCtor`, `FieldBuilder.resolveErrorChannel`). The contract is load-bearing for the error channel, but its current shape leaks framework concerns into the consumer's source tree: the consumer has to author a Java class whose fields include `errors`, even though `errors` is never theirs to populate. The transport shape and the domain shape are entangled in their code. _(blocked by [error-handling-parity](error-handling-parity.md))_
 - `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md): Shift new test investment from per-variant structural tests toward SDL-to-classification-to-emission pipeline tests keyed off `graphitron-fixtures`.
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md): `TypeFetcherGenerator.java` is 1 646 lines, one public entry point (`generate(GraphitronSchema)`), and ~30 private methods that implement per-field-variant emitters plus shared helpers. It is the counterpart to the now-shipped `FieldBuilder` decomposition (R6, see [`changelog.md`](changelog.md)): a central generator that has accumulated coverage faster than its file shape can absorb.
-- `R112` [**Operation-driven test corpus driving tests, runtime trace, and docs**](operation-driven-test-corpus.md): GraphQL documents already carry every piece of metadata a test-and-doc pipeline needs: named operations group variants of a query, descriptions narrate intent, typed variables with defaults define an input grid, and directives attach arbitrary structured metadata to operations and fields. Today we use almost none of this. Execution-tier tests are imperative Java that reconstruct queries inline, the leaf-coverage report (R104) joins by test class rather than by operation, and worked examples in the docs site are hand-typed prose disconnected from any running test. One artefact, one shape: a `.graphql` document under `src/test/graphql/<feature>/<scenario>.graphql` becomes the source of truth for (a) the test battery, (b) the coverage matrix, and (c) the doc render. Same file, three outputs.
 
 ### Stubs
 
@@ -169,7 +169,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R76` [**Emit per-participant fieldsJoin and orderBy; replace SelectJoinStep mutation in interface fetchers**](participant-fieldsjoin-helpers.md) — Backlog, cleanup
 - `R7` [**Decompose `TypeFetcherGenerator`**](decompose-typefetchergenerator.md) — Backlog, architecture
 - `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md) — Backlog, validation
-- `R112` [**Operation-driven test corpus driving tests, runtime trace, and docs**](operation-driven-test-corpus.md) — Backlog, architecture
+- `R112` [**Operation-driven test corpus driving tests, runtime trace, and docs**](operation-driven-test-corpus.md) — Spec, architecture
 
 ### docs
 
