@@ -1,7 +1,7 @@
 ---
 id: R113
 title: "Narrow @asConnection + same-table @nodeId guard to required-leaf case"
-status: In Progress
+status: In Review
 bucket: validation
 priority: 6
 theme: nodeid

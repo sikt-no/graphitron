@@ -20,7 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R70` | Support TableRecord-keyed Map returns on @service rows methods <sub>blocked by: [emit-record1-keys-instead-of-row1](emit-record1-keys-instead-of-row1.md)</sub> | In Review | [plan](service-rows-tablerecord-key-shape.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec | [plan](custom-scalar-java-types.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
-| `R113` | Narrow @asConnection + same-table @nodeId guard to required-leaf case | In Progress | [plan](narrow-asconnection-same-table-nodeid-guard.md) |
+| `R113` | Narrow @asConnection + same-table @nodeId guard to required-leaf case | In Review | [plan](narrow-asconnection-same-table-nodeid-guard.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R110` | Replace @batchKeyLifter with @sourceRow composing with @reference | Spec | [plan](sourcerow-replaces-batchkeylifter.md) |
@@ -116,7 +116,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### nodeid
 
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
-- `R113` [**Narrow @asConnection + same-table @nodeId guard to required-leaf case**](narrow-asconnection-same-table-nodeid-guard.md) — In Progress, validation
+- `R113` [**Narrow @asConnection + same-table @nodeId guard to required-leaf case**](narrow-asconnection-same-table-nodeid-guard.md) — In Review, validation
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
 ### service
