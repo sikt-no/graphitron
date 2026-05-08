@@ -52,6 +52,8 @@ Resolve the slug to the file (filename = `id`). Surface current content; help th
 
 Walk discovery sources and propose candidate slugs not yet authored. This is the load-bearing subcommand for R115's seeding pass and for ongoing capability-gap detection.
 
+The walk is idempotent against canonical state: before listing candidates, subtract the set of already-authored slugs (from `graphitron-rewrite/capabilities/*.adoc`) and the set of coordinates already carrying `@capability(name:)` in the SDL. Re-running `suggest` after authoring stubs yields a shrinking list, never a repeat. State lives in the catalog and the SDL; this subcommand reads, never writes.
+
 1. **Directives reference.** For each `docs/manual/reference/directives/<directive>.adoc`, identify the user-facing capability it exposes. Most map 1:1 (`@discriminator` → `polymorphic-dispatch`; `@table` → `table-types`); some cluster (`@key`/`@field`/entity dispatch → `federation-entities`); some are infrastructure that don't surface as a capability (`@condition`, `@notGenerated`, `@experimental_constructType`). Flag any directive whose capability is not authored.
 2. **Classifier sealed-variant families.** Grep `graphitron-rewrite/graphitron/src/main/java` for `sealed ` declarations producing fetchers; cross-check that every non-trivial family maps to at least one capability. Implicit capabilities like `selection-aware-fetching` and `node-id` surface here when no single directive corresponds.
 3. **Sakila schema.** Read `graphitron-rewrite/graphitron-sakila-example/src/main/resources/graphql/schema.graphqls` and `federated-schema.graphqls`; flag directive uses on coordinates whose capability slug isn't authored.
