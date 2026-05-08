@@ -3,6 +3,7 @@ id: R99
 title: "LSP classpath scan misses sibling modules when dev goal runs from a sub-module"
 status: Backlog
 bucket: feature
+theme: lsp
 depends-on: []
 ---
 

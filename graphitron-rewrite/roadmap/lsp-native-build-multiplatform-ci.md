@@ -4,7 +4,7 @@ title: "macOS / Windows CI verification for graphitron-lsp native build"
 status: Backlog
 bucket: Backlog
 priority: 16
-theme: legacy-migration
+theme: lsp
 depends-on: []
 ---
 
