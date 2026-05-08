@@ -5,7 +5,6 @@ status: Spec
 bucket: architecture
 priority: 7
 theme: mutations-errors
-depends-on: [error-handling-parity]
 ---
 
 # Plain payload types via identity passthrough
@@ -50,20 +49,25 @@ fall-through), and `GraphitronSchemaBuilder.buildSchema` skips field classificat
 `PlainObjectType` parents entirely. There is no machinery downstream that would route
 the DML round-trip's `Result<Record>` to graphql-java for traversal.
 
-## What R12 already provides
+## Independence from R12
 
-R12 has shipped the authored-carrier path: canonical-ctor reflection, `ErrorChannel`,
-`PayloadAssembly`, `ResultAssembly`, error-routing dispatch, default-literal capture.
-That path stays intact and continues to govern any payload whose SDL declares
-`@record(record: {className: ...})`. R75 is purely additive: it admits the
-*no-authored-class* case alongside R12's existing path, with no shared machinery.
+R12 has shipped the authored-carrier path on trunk: canonical-ctor reflection,
+`ErrorChannel`, `PayloadAssembly`, `ResultAssembly`, error-routing dispatch,
+default-literal capture, `ErrorMappings`, `ErrorRouter`, `MappingsConstantNameDedup`.
+That path continues to govern any payload declared with `@record(record: {className: ...})`.
 
-The two paths split cleanly. Authored carriers traffic in canonical-ctor slot indices
-(`PayloadAssembly.rowSlotIndex`, `ErrorChannel.errorsSlotIndex`); the synthesized path
-has no Java class to reflect on, so none of those slot indices apply. R12's
-`MappingsConstantNameDedup` and `ErrorMappings` constants are about *which throwables
-map to which `@error` types*, not about Java-class layout, and Phase 2 reuses them
-unchanged.
+R75 has no remaining dependency on R12. Phase 1 never reaches an error channel by
+construction, so it doesn't touch `ErrorRouter.dispatch`, `payloadFactoryLambda`, or
+canonical-ctor reflection. Phase 2 reuses R12's `ErrorMappings` mapping-table half
+(*which throwables map to which `@error` types*), but every piece of that machinery
+already lives on trunk. R12's remaining `Ready` work (rule-6 relaxation, accessor
+reflection check, `extensions.constraint`, validator-integration fixture) is all
+`@error`-side and gates none of R75's phases.
+
+The two paths split cleanly: authored carriers traffic in canonical-ctor slot indices
+(`PayloadAssembly.rowSlotIndex`, `ErrorChannel.errorsSlotIndex`); the no-authored-class
+path has no Java class to reflect on, so none of those slot indices apply. R75 is
+purely additive across all three phases.
 
 ## Phasing
 
@@ -90,18 +94,39 @@ on Phase 1 only; Phases 2 and 3 each return to Spec for sharpening before Ready.
 ### Trigger
 
 A new `GraphitronType` arm `PassthroughPayloadType(name, location, dataField)` lifts
-out of `PlainObjectType` when *all* hold:
+out of `PlainObjectType` (or out of `PojoResultType(_, _, null)` for the
+`@record`-without-`className` case, which `TypeBuilder.buildResultType` produces today
+at lines 530, 533, 542) when *all* hold:
 
-1. The SDL Object type has no `@record` directive and no `@table` directive.
+1. The SDL Object type has no `@table` directive and either no `@record` directive
+   or `@record` with no `record.className` argument.
 2. It is the return type of at least one `@mutation(typeName: …)` field.
 3. It declares exactly one SDL field.
 4. That field's element type satisfies the **passthrough rule** below.
 
-Failing the trigger (multiple fields, off-shape return) leaves the type as
-`PlainObjectType` with today's behaviour: the mutation field's return type still lands
-as `ScalarReturnType` and `validateReturnType` still rejects. Phase 2 admits the
-two-field "data + errors" shape; Phase 1 deliberately stays on the one-field case to
-isolate the identity-passthrough mechanism from `localContext` plumbing.
+The lift target is the same `PassthroughPayloadType` arm in both source cases (no
+`@record`, or `@record` without `className`); the residual difference between the two
+is purely SDL-level vocabulary, not a type-classification distinction worth carrying.
+
+What `PassthroughPayloadType` carries that no `ResultType` arm can: a
+pre-resolved single-data-field anchor for the field-classifier to dispatch on, with
+no Java backing class and no `fqClassName`. The `ResultType` arms all carry an
+`fqClassName` (possibly null but always nominally present) and route through R12's
+authored-carrier reflection path; `PassthroughPayloadType` skips that path entirely.
+
+Failing the trigger (multiple fields, off-shape return) leaves the type at its
+pre-lift classification with today's behaviour: the mutation field's return type
+falls through `validateReturnType` and rejects. Phase 2 admits the two-field "data
++ errors" shape; Phase 1 deliberately stays on the one-field case to isolate the
+identity-passthrough mechanism from `localContext` plumbing.
+
+Non-mutation reads of a lifted payload type (a query field or `@externalField`
+declaring it as a return) are not addressed in Phase 1: the field-classifier sees
+a `PassthroughPayloadType` parent on the data field and dispatches normally, but
+the parent-side fetcher emission (the field returning `PassthroughPayloadType`)
+has no admit at the query / external-field classifier. Such cases continue to
+classify as `UnclassifiedField`. The lift's mutation-reachability gate is positive
+("admitted at @mutation slots"), not exclusive.
 
 ### Passthrough rule
 
@@ -118,21 +143,35 @@ arms by anchoring the projection on the data field's table, not the payload type
 ### Type classification
 
 `TypeBuilder.buildTypes` adds a pre-classification pass that walks SDL Object types,
-applies the trigger, and produces `PassthroughPayloadType` for matches. The existing
-`PlainObjectType` branch (`TypeBuilder.buildTypes`, the post-`@record` fall-through)
-runs unchanged on non-matches. The pass needs SDL-level visibility into mutation
-return types, which `ctx.schema` already provides; nothing crosses the reflection
-boundary.
+applies the trigger, and produces `PassthroughPayloadType` for matches. Non-matches
+keep their pre-lift classification (`PlainObjectType` for the no-`@record` case,
+`PojoResultType(_, _, null)` for `@record`-without-`className`). The pass needs
+SDL-level visibility into mutation return types, which `ctx.schema` already
+provides; nothing crosses the reflection boundary.
+
+The lift produces `PassthroughPayloadType(name, location, dataField)` where
+`dataField` is an SDL-level descriptor (field name, element-type SDL name, wrapper)
+rather than a fully-classified field. The full classification of the data field
+(table resolution, etc.) happens at the existing field-classification stage,
+producing the narrow-typed `IdentityPassthroughField` described next.
 
 ### Field classification
 
-`PassthroughPayloadType` becomes a third dispatch arm in
+`PassthroughPayloadType` becomes a fifth dispatch arm in
 `FieldBuilder.classifyField` (alongside `RootType`, `TableBackedType`, `ResultType`,
-`ErrorType`). The single field on the type classifies as a new
+`ErrorType`). The single field on the type classifies as a new permit
 `ChildField.IdentityPassthroughField(parentTypeName, name, location, returnType)`
-arm. The arm's only job is to declare itself; `FetcherEmitter.dataFetcherValue`
-emits `($T env) -> env.getSource()` for it, identical to the existing
-`ConstructorField` and `NestingField` cases at FetcherEmitter.java:56-60.
+where `returnType : ReturnTypeRef.TableBoundReturnType` directly (not the broad
+`ReturnTypeRef`). The trigger's passthrough rule guarantees the table-bound shape;
+narrowing the component type pushes that guarantee into the type system, so the
+emitter reads the data field's table off `returnType.table()` without an
+`instanceof` guard. Phase 3's `@record`-element extension introduces a sibling
+permit (`IdentityPassthroughRecordField`) with a `ResultReturnType`-typed slot,
+not a widening of this one.
+
+The arm's only job is to declare itself; `FetcherEmitter.dataFetcherValue` emits
+`($T env) -> env.getSource()` for it, identical to the existing `ConstructorField`
+and `NestingField` cases at FetcherEmitter.java:56-60.
 
 A new `ChildField` permit is preferred over reusing `ConstructorField` or
 `NestingField`: `ConstructorField` is `@table` parent → `@record` child;
@@ -142,36 +181,74 @@ overloading either would muddy `classifyChildFieldOnTableType`'s existing arms.
 
 ### Mutation return-type admission
 
+A new `ReturnTypeRef.PassthroughPayloadReturnType(String payloadTypeName,
+ReturnTypeRef.TableBoundReturnType dataReturn)` arm wraps the data field's
+already-classified table-bound return. `BuildContext.resolveReturnType` produces it
+when `ctx.types.get(name) instanceof PassthroughPayloadType`. The DML emitter (and
+`validateReturnType`) reaches the data field's table via `dataReturn.table()` and
+its element type name via `dataReturn.returnTypeName()`; no separate `dataFieldTable`
+slot is needed, and there's only one source of truth for "the table this payload
+projects from."
+
 `MutationInputResolver.validateReturnType` adds a `PassthroughPayloadReturnType` arm
 to the existing four-way switch. The arm admits the case (returns null) when the
 data field's wrapper agrees with `validateReturnType`'s existing list/single rules
-for the underlying `@table` type (Invariant #14, #15). Bulk-input + single-payload
+for the underlying `@table` type (Invariants #14, #15). Bulk-input + single-payload
 combinations defer to the same rejection path as today's `TableBoundReturnType`.
 
-A new `ReturnTypeRef.PassthroughPayloadReturnType(payloadTypeName, dataFieldTable,
-wrapper)` carrier delivers the resolved data-field table to the DML emitter without
-a second lookup at emit time. `BuildContext.resolveReturnType` produces it when
-`ctx.types.get(name) instanceof PassthroughPayloadType`.
+The validator's *negative* messages also tighten: today's "return type 'X' is not
+yet supported; use ID or a @table type" becomes a per-trigger-failure message when
+the type lands as `PlainObjectType` or `PojoResultType(null)` from a `@mutation`
+slot, naming the trigger's positive criteria ("must declare exactly one field
+whose element is `@table`-mapped, or author a Java carrier via `@record(record:
+{className: ...})`"). Failures of conditions #3 / #4 surface to the author with
+diagnostics that mirror the trigger's admission rules, keeping
+"validator-mirrors-classifier" honest.
 
 ### DML emitter
 
-Each of the four DML kinds (`MutationInsertTableField`, `MutationUpdateTableField`,
-`MutationUpsertTableField`, `MutationDeleteTableField`) gains one new
-`DmlReturnExpression` arm: `PassthroughProjectedList(payloadTypeName, dataFieldName,
-dataFieldElementTableTypeName)`. The emitter behaviour is identical to
-`ProjectedList`: project `$fields(sel, table, env)` for the data field's `@table`
-type, run `INSERT/UPDATE/UPSERT/DELETE...RETURNING(<projection>).fetch()`, return
-`DataFetcherResult.<List<Record>>newResult().data(rows).build()`. The data field's
-identity passthrough makes graphql-java traverse `Result<Record>` through the
-existing `@table` per-field fetchers without further intervention.
+The existing `DmlReturnExpression.ProjectedSingle` and `ProjectedList` arms gain a
+`TableRef table` slot. Today both arms carry only `String returnTypeName` (the SDL
+type whose `<TypeName>Type.$fields` projection runs); the emitter recovers the
+underlying table from a separate `tableRef` parameter the caller threads through.
+That parameter today is always the DML target table, which equals the SDL field's
+own `@table` type by Invariant #14; carrying `table` on the arm makes that fact
+explicit and lets the same arm serve passthrough payloads, where the projection
+target table happens to also equal the DML target (the data field's `@table` is
+the same table the DML mutates; the classifier rejects misalignment).
 
-If the data field is single-cardinality (Phase 1 may restrict to list cardinality;
-see open question below), a `PassthroughProjectedSingle` mirror arm follows the same
-pattern with `.fetchOne()`.
+The classifier picks the slot once:
 
-The mutation field carrier (`MutationInsertTableField`, etc.) already carries
-`DmlReturnExpression rex` via the classifier; the arm flips at classify time, not
-emit time.
+- Direct `TableBoundReturnType` (today): `projectionTypeName` = SDL field's type
+  name, `table` = SDL field's `@table`.
+- `PassthroughPayloadReturnType` (new): `projectionTypeName` =
+  `dataReturn.returnTypeName()`, `table` = `dataReturn.table()`.
+
+Both feed the existing `INSERT/UPDATE/UPSERT/DELETE...RETURNING $fields(sel, table,
+env).fetch()` (or `.fetchOne()`) emitter unchanged. The mutation field carrier
+(`MutationInsertTableField`, etc.) already carries `DmlReturnExpression rex` via
+the classifier; the new return-type arm flips at classify time, not emit time.
+
+The single-vs-list carrier dispatch stays in the existing variant choice
+(`ProjectedSingle` vs `ProjectedList`), per the existing principle in the
+`DmlReturnExpression` Javadoc.
+
+The data field's identity passthrough makes graphql-java traverse the resulting
+`Result<Record>` through the existing `@table` per-field fetchers without further
+intervention.
+
+### Load-bearing classifier check
+
+The collapsed `Projected*` arms now carry an emitter-side invariant: when the arm
+is reached on a `PassthroughPayloadReturnType`, the `dataReturn.table()` must equal
+the DML target table (the table being INSERT/UPDATE/etc.'d). Misalignment cannot
+arise from a well-formed SDL, but a relaxation of the trigger that admitted a data
+field anchored on a different table would silently break the
+`INSERT...RETURNING $fields(...)` projection (jOOQ rejects RETURNING on columns
+from a different table). This is the kind of guarantee `@LoadBearingClassifierCheck`
+exists to pin: the classifier emits a `passthrough-payload.data-table-equals-dml-target`
+check, the DML emitter's `Projected*` arm wears the matching `@DependsOnClassifierCheck`,
+and `LoadBearingGuaranteeAuditTest` enforces the pairing.
 
 ### What does *not* change
 
@@ -182,9 +259,18 @@ emit time.
   `resolveErrorChannel`, `resolveServiceResultAssembly` are untouched.
 - `ErrorRouter.dispatch` and `redact`, `ErrorMappings`, `MappingsConstantNameDedup`
   are unused on the Phase 1 path (no error channel until Phase 2).
-- The synthesized payload's `kvotesporsmalPreutfylling` field on the runtime side is
-  graphql-java's own list traversal over `Result<Record>`; no graphitron code reads
-  the list itself.
+- The runtime traversal of the DML's `Result<Record>` is graphql-java's own list
+  iteration through the existing `@table` per-field fetchers; no graphitron code
+  reads the list itself.
+
+### Out of scope for Phase 1
+
+- **Service-backed mutations returning passthrough payloads.** A `@service`
+  mutation whose return type is a `PassthroughPayloadType` is admitted by
+  `validateReturnType` (the new arm makes no DML/service distinction) but the
+  service-fetcher emitter has no passthrough arm. Phase 1 keeps such cases
+  `UnclassifiedField` via the existing service-fetcher path. Phase 3 ("domain-record
+  returns from `@service`") covers the service-side admission.
 
 ### Tests
 
@@ -193,15 +279,26 @@ new test class `PassthroughPayloadPipelineTest`:
 
 - `payload_singleListField_classifiesAsPassthroughPayloadType`: trigger fires; type
   registry holds a `PassthroughPayloadType` with the data field resolved.
-- `payload_singleListField_mutationFieldCarriesPassthroughProjectedListArm`: the
-  classified `MutationInsertTableField`'s `rex` is `PassthroughProjectedList`.
+- `payload_singleListField_mutationFieldCarriesProjectedListWithDataTable`: the
+  classified `MutationInsertTableField`'s `rex` is the enriched `ProjectedList`,
+  with `table` equal to the data field's `@table`.
 - `payload_singleListField_dataFieldClassifiesAsIdentityPassthrough`: the payload's
-  one field lands as `IdentityPassthroughField`.
+  one field lands as `IdentityPassthroughField` with a narrow
+  `TableBoundReturnType` slot.
+- `payload_atRecordWithNullClassName_alsoLifts`: the trigger admits both no-`@record`
+  and `@record(record: {})`-without-`className` source shapes onto the same
+  `PassthroughPayloadType` arm.
 - `payload_withErrorsField_doesNotLift`: a two-field payload (data + errors) stays
-  as `PlainObjectType`; the mutation field's return type still rejects (Phase 2).
-- `payload_withInterfaceField_doesNotLift`: off-shape field rejects the lift.
+  at its pre-lift classification; the mutation field's return type still rejects
+  (Phase 2).
+- `payload_withInterfaceField_doesNotLift`: off-shape element type rejects the lift.
 - `payload_notReachableFromMutation_doesNotLift`: lift is conservative.
 - `payload_withMultipleDataFields_doesNotLift`: arity rule.
+- `payload_returnedFromQueryField_unclassifiedField`: non-mutation use of a lifted
+  payload type rejects on the parent side.
+- `validateReturnType_namesTriggerCriteria`: the rejection message for an un-lifted
+  `PlainObjectType` mutation return enumerates the trigger's positive criteria
+  (validator-mirrors-classifier).
 
 **Execution-tier** (`graphitron/src/test/java/no/sikt/graphitron/rewrite/sakila/`),
 new sakila fixture `PassthroughPayloadInsertTest`:
@@ -213,18 +310,21 @@ new sakila fixture `PassthroughPayloadInsertTest`:
   inserted row is visible in the payload's `actor` list and queryable on follow-up
   reads.
 
-**Audit-tier**: no new keys; `@LoadBearingClassifierCheck` /
-`@DependsOnClassifierCheck` plumbing is unchanged. The Phase 1 path has no
-emitter-side invariant that depends on a classifier guarantee beyond what the
-existing `ProjectedList` arm already documents.
+**Audit-tier**: one new load-bearing key,
+`passthrough-payload.data-table-equals-dml-target`. The classifier emits the
+`@LoadBearingClassifierCheck` at the field-construction site that builds a
+`PassthroughPayloadReturnType`-anchored `ProjectedList`/`ProjectedSingle`; the
+emitter sites in `buildDmlFetcher` (and the four kind-specific entry points) wear
+the matching `@DependsOnClassifierCheck`. `LoadBearingGuaranteeAuditTest` enforces
+the pairing automatically; no new audit-test method is needed.
 
 ### Open questions for Phase 1
 
 1. **Single-cardinality data slots.** The headline case is list-cardinality
    (`[KvotesporsmalPreutfylling!]`). Should Phase 1 also admit
    `kvotesporsmalPreutfylling: KvotesporsmalPreutfylling` (single)? Recommendation:
-   yes; the `PassthroughProjectedSingle` arm is a one-line variant of
-   `PassthroughProjectedList` and excluding it forces consumers into list payloads
+   yes; the `ProjectedSingle` arm with its new `TableRef` slot covers it as a
+   one-line classifier variant, and excluding it forces consumers into list payloads
    for INSERT-returning-one-row cases. Confirm.
 2. **DML kind coverage.** INSERT is the user's blocker; UPDATE / DELETE / UPSERT all
    compose with the same emitter shape. Recommendation: include all four in Phase 1
