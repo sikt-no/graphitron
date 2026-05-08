@@ -36,7 +36,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | [plan](list-valued-external-field-multiset.md) |
 | `R112` | Operation-driven test corpus driving tests, runtime trace, and docs | Spec | [plan](operation-driven-test-corpus.md) |
-| `R111` | Make graphitron-maven-plugin IT self-contained via extraArtifacts | In Progress | [plan](maven-invoker-it-extra-artifacts.md) |
+| `R111` | Make graphitron-maven-plugin IT self-contained via extraArtifacts | In Review | [plan](maven-invoker-it-extra-artifacts.md) |
 
 ---
 
