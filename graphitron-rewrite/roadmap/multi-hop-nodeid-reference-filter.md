@@ -67,19 +67,22 @@ The emitted SQL is `DSL.row(sak.OPPTAKSTYPE_KODE, sak.OPPTAK_KODE).in(decodedKey
 
 - Drop the `path.elements().size() != 1` rejection.
 - After parsing, every step must still be `JoinStep.FkJoin`. The loop replaces the existing single-element `instanceof FkJoin` check.
-- For length ≥ 2, run the lift predicate against each adjacent step pair. On failure, return a rejection: `"@reference path on @nodeId leaf '<name>': hop <i> ('<fk-name>') introduces a column translation — its source-side columns are not a positional subset of the previous hop's target-side columns by SQL name. Multi-hop @reference on @nodeId currently requires identity-carrying FKs at every step. <hop[i].sourceSideColumns> not all present in <hop[i-1].targetSideColumns>."`
-- The rejection message is anchored to a load-bearing test substring (see "Diagnostics" below).
+- For length ≥ 2, run the lift predicate against each adjacent step pair. On failure, return a rejection (see "Diagnostics" for the exact text and constant name).
 
 `NodeIdLeafResolver.resolve`:
 
 - The `DirectFk` vs `TranslatedFk` decision (line 272: `sameColumnsBySqlName(fkJoin.targetSideColumns(), keys.keyColumns())`) switches from `joinPath.get(0)` to `joinPath.getLast()`. The terminal hop is the one whose target-side columns must positionally match the NodeType key columns; intermediate hops are constrained by the lift predicate above.
-- The lifted tuple is computed once at the resolver and exposed on `Resolved.FkTarget.DirectFk`. Add a slot `liftedSourceColumns: List<ColumnRef>` (or rename the existing `fkSourceColumns` slot to make the multi-hop semantics explicit). For length-1 paths, `liftedSourceColumns == joinPath.get(0).sourceSideColumns()` — backward-compatible.
+- The lifted tuple is computed once at the resolver and rides through to the carriers. Add a slot `liftedSourceColumns: List<ColumnRef>` on `Resolved.FkTarget.DirectFk`. For length-1 paths, `liftedSourceColumns == joinPath.get(0).sourceSideColumns()` — backward-compatible.
 
-`BuildContext.classifyInputField` and `FieldBuilder.classifyArgument`: no carrier-shape change. Both consumers already accept `joinPath: List<JoinStep>` of any length on the existing carriers; the resolver returns a lifted tuple via the new slot.
+**Carriers grow the same slot.** `InputField.ColumnReferenceField`, `InputField.CompositeColumnReferenceField`, `ArgumentRef.ScalarArg.ColumnReferenceArg`, and `ArgumentRef.ScalarArg.CompositeColumnReferenceArg` each gain a `liftedSourceColumns: List<ColumnRef>` slot, set at carrier construction (`FieldBuilder.classifyArgument`, `BuildContext.classifyInputField`) from `direct.liftedSourceColumns()`. The emitter reads this slot directly and never re-walks `joinPath` to compute the lift. This keeps the resolver's decision the single source of truth: classifier guarantees in, validator and emitters out, no duplicated computation.
+
+The existing `column` / `columns` slot continues to hold the NodeType key column tuple (unchanged semantics). A pre-existing naming asymmetry — `column` reads as "the column the predicate fires against" but actually holds NodeType keys, while the predicate LHS comes from `joinPath` — is widened by the new slot. This is acknowledged as a pre-existing condition; renaming `column` / `columns` to a role-explicit name (`decodedKeyColumns`, etc.) is filed as a sibling Backlog hygiene item rather than absorbed into R114, because the rename touches every existing single-hop consumer and conflates with the multi-hop scope.
+
+The spec's previous draft proposed "no carrier-shape change", which is mutually exclusive with "computed once at the resolver"; the carrier-shape change is the load-bearing decision that enables the no-recomputation property.
 
 ## Emitter change
 
-`FieldBuilder.projectFilters` (`ColumnReferenceArg` and `CompositeColumnReferenceArg` arms) and `FieldBuilder.walkInputFieldConditions` (`InputField.ColumnReferenceField` and `CompositeColumnReferenceField` arms): swap `((JoinStep.FkJoin) joinPath().get(0)).sourceSideColumns()` for the resolver-supplied lifted tuple. The `BodyParam.{Eq,In,RowEq,RowIn}` projection is otherwise unchanged.
+`FieldBuilder.projectFilters` (`ColumnReferenceArg` and `CompositeColumnReferenceArg` arms) and `FieldBuilder.walkInputFieldConditions` (`InputField.ColumnReferenceField` and `CompositeColumnReferenceField` arms): swap `((JoinStep.FkJoin) joinPath().get(0)).sourceSideColumns()` for `liftedSourceColumns()` read from the carrier. The `BodyParam.{Eq,In,RowEq,RowIn}` projection is otherwise unchanged.
 
 `TypeConditionsGenerator.buildConditionMethod`: no change. The emitted SQL is the same `field.eq/in(...)` / `DSL.row(...).eq/in(...)` shape as single-hop today — only the column tuple differs.
 
@@ -87,18 +90,24 @@ The carrier hierarchy (`InputField.*`, `ArgumentRef.*`, `BodyParam.*`) gets no n
 
 ## Diagnostics
 
-Two diagnostic templates are anchored to test substrings, mirroring R57's `"FK's target columns do not positionally match"` precedent:
+Both rejection templates are exposed as `static final String` constants in `NodeIdLeafResolver` (e.g. `LIFT_FAILURE_MARKER`, `CONDITION_STEP_MARKER`); the marker names are imported by the L1/L3 tests rather than asserted as quoted prose. This is the diagnostic-anchoring step beyond R57's substring precedent: copyediting the user-facing message text leaves the marker — and therefore the test — intact. (The wider migration of R57's substring-based assertions is filed as a sibling hygiene item.)
 
-- **Lift failure**: `"@reference path on @nodeId leaf '<leafName>': hop <i> ('<fkName>') introduces a column translation — its source-side columns <[sql-names]> are not a positional subset of the previous hop's target-side columns <[sql-names]> by SQL name. Multi-hop @reference on @nodeId currently requires identity-carrying FKs at every step."` Test substring: `"introduces a column translation"` and `"identity-carrying FKs"`.
-- **Non-FK step inside multi-hop**: `"@reference path on @nodeId leaf '<leafName>': step <i> is a condition step; multi-hop @nodeId paths require every step to be a foreign key (use { key: ... } at every position)."` Test substring: `"every step to be a foreign key"`.
+The full message templates land at the constant sites (paraphrased here):
 
-Both messages route through `Resolved.Rejected` from the resolver and surface via `InputFieldResolution.Unresolved` (input-field side) or `ArgumentRef.UnclassifiedArg` (argument side), the same paths existing single-hop rejections take.
+- **Lift failure** (`LIFT_FAILURE_MARKER = "identity-carrying FKs"` is the load-bearing token):
+  `"@reference path on @nodeId leaf '<leafName>': hop <i> ('<fkName>') introduces a column translation — its source-side columns <[sql-names]> are not a positional subset of the previous hop's target-side columns <[sql-names]> by SQL name. Multi-hop @reference on @nodeId currently requires identity-carrying FKs at every step (the predicate compiles to a single-table SELECT). See <howto-link>."`
+- **Non-FK step inside multi-hop** (`CONDITION_STEP_MARKER = "must be a foreign key"`):
+  `"@reference path on @nodeId leaf '<leafName>': step <i> is a condition step; every step in a multi-hop @nodeId path must be a foreign key (use { key: ... } at every position)."`
+
+Both messages route through `Resolved.Rejected` from the resolver and surface via `InputFieldResolution.Unresolved` (input-field side) or `ArgumentRef.UnclassifiedArg` (argument side), the same paths existing single-hop rejections take. The "see howto" pointer lands the author on the mental-model section of the howto article (see "Howto" below) so the rejection has prepared ground.
 
 ## @LoadBearingClassifierCheck / @DependsOnClassifierCheck
 
-The existing key `nodeid-fk.direct-fk-keys-match` widens its description from "FK target-side columns positionally match NodeType key columns" to "the **terminal hop's** target-side columns positionally match NodeType key columns AND every intermediate hop satisfies the lift predicate". The producer (`NodeIdLeafResolver.resolve`) and the four consumers already annotated (`FieldBuilder.projectFilters`, `FieldBuilder.walkInputFieldConditions`, `BuildContext.classifyInputField`) need their `reliesOn:` text updated to read the resolver-supplied lifted tuple rather than `joinPath[0].sourceSideColumns()`.
+Two distinct keys, not one widened key. Each guarantees an independent invariant; future relaxations (e.g. translation-tolerant emitters) want to relax them one at a time, and the audit's job is to pinpoint which invariant a change breaks.
 
-A new key `nodeid-fk.identity-carrying-lift` covers the lift computation itself: producer at `NodeIdLeafResolver`, consumed by every site reading the lifted tuple. Pair via `@DependsOnClassifierCheck` so `LoadBearingGuaranteeAuditTest` flags drift if a future change starts emitting against `joinPath[0].sourceSideColumns()` directly when length > 1. The two keys may compose as a single key with a richer description; pick the cleanest at implementation time.
+- **`nodeid-fk.direct-fk-keys-match`** widens from "FK target-side columns positionally match NodeType key columns" to "**the terminal hop's** target-side columns positionally match NodeType key columns". Producer: `NodeIdLeafResolver.resolve` (the `joinPath.getLast()` switch). Consumers stay the same (`FieldBuilder.projectFilters`, `FieldBuilder.walkInputFieldConditions`, `BuildContext.classifyInputField`); their `reliesOn:` text refreshes to mention "terminal hop".
+
+- **`nodeid-fk.identity-carrying-lift`** is new. Invariant: every intermediate hop satisfies the lift predicate (each step's source-side columns are a positional subset of the previous step's target-side columns by SQL name), so the lifted tuple computed by the resolver is well-defined and lives on the parent's own table. Producer: `NodeIdLeafResolver.resolveFkJoinPath`. Consumers: `FieldBuilder.projectFilters` and `FieldBuilder.walkInputFieldConditions` (both `ReferenceArg` arms / both `ReferenceField` arms — they read `liftedSourceColumns` and pass it to `BodyParam.{Eq,In,RowEq,RowIn}`). `LoadBearingGuaranteeAuditTest` picks up the pairing automatically via the annotation.
 
 ## Test coverage
 
@@ -126,16 +135,32 @@ The user's `sak/soknad/opptak` schema is the natural fixture, but it is not part
 
 R114 picks option 1. The fixture lives alongside the existing `parent_node` + `child_ref` (R50 phase g-B) and uses the same `KjerneJooqGenerator` machinery; no new infrastructure.
 
+## Howto
+
+The howto article is part of the deliverable, not a follow-on. Concrete pin:
+
+- **File**: `docs/manual/how-to/multi-hop-nodeid-filter.adoc` (sibling to R110's `source-row.adoc`).
+- **Parent registration**: appended to the how-to index in `docs/manual/index.adoc` alongside R110's entry.
+- **No-drift mechanism**: the worked example pulls from the new fixture (`nodeidfixture` chain — see "Fixture" below) via AsciiDoc `include::` with `tag::multi-hop-identity-carrying[]` / `tag::multi-hop-rejected-translation[]` markers in the SDL `.graphqls` file, mirroring R110's `tag::sourcerow-story-1[]` precedent.
+- **Section order, mental-model first**: the article opens with "Why identity-carrying" — multi-hop `@nodeId` filters compile to a single-table predicate (no subquery, no JOIN), which is only well-defined when each step preserves the next step's source-side columns positionally by SQL name. The worked example follows. The "Rejection messages" section then names the two diagnostic markers (`LIFT_FAILURE_MARKER` / `CONDITION_STEP_MARKER`) and links each to a section that explains what the author should change. The diagnostic message's "see howto" pointer (see "Diagnostics") targets the rejection-messages section directly.
+
+This ordering closes the author-ergonomics gap noted by the architect review: single-hop `@reference` works on any FK, but multi-hop quietly carries a precondition the SDL syntax does not advertise. Leading the howto with the mental model means the rejection message lands on prepared ground rather than on an author who reads "introduces a column translation" cold.
+
 ## Acceptance criteria
 
 - `@reference(path: [...])` of length ≥ 2 on `@nodeId(typeName: T)` filter input fields and arguments is accepted by the classifier when (a) every step is a `FkJoin`, (b) the lift predicate holds at every adjacent pair, and (c) the terminal hop's target-side columns positionally match `T.keyColumns`.
 - The generated `<TypeName>Conditions` method emits a direct row predicate (`field.eq`/`field.in` for arity 1; `DSL.row(...).eq/.in` for arity ≥ 2) against the lifted tuple on the parent's own table — no subquery, no JOIN.
 - All existing single-hop tests pass unchanged; the L5/L6 pinning ensures no semantic drift.
-- The two new diagnostic templates surface for translation-required and condition-step paths, with their test substrings asserted at L3.
-- `@LoadBearingClassifierCheck` keys updated; `@DependsOnClassifierCheck` consumer annotations re-pointed in the same commit; `LoadBearingGuaranteeAuditTest` green.
-- Howto article (or the existing nodeId/`@reference` docs page) gains a "Multi-hop identity-carrying filter" section with a worked example pulled from the new fixture via AsciiDoc `include::`/`tag::` markers, mirroring R110's no-drift mechanism. The example mirrors the Sak/Soknad/Opptak case from the problem statement.
+- Diagnostic message text is exposed via `static final String LIFT_FAILURE_MARKER` / `CONDITION_STEP_MARKER` on `NodeIdLeafResolver`; L1/L3 tests assert against the constants by name (no quoted prose).
+- `@LoadBearingClassifierCheck` covers the two distinct keys (`nodeid-fk.direct-fk-keys-match` widened to "terminal hop", new `nodeid-fk.identity-carrying-lift`); `@DependsOnClassifierCheck` consumer annotations updated in the same commit; `LoadBearingGuaranteeAuditTest` green.
+- Carriers (`InputField.{Column,CompositeColumn}ReferenceField`, `ArgumentRef.ScalarArg.{Column,CompositeColumn}ReferenceArg`) gain a `liftedSourceColumns: List<ColumnRef>` slot. Single-hop carrier construction populates it as `joinPath.get(0).sourceSideColumns()`; this is the backward-compatible path.
+- Howto article at `docs/manual/how-to/multi-hop-nodeid-filter.adoc` ships in the same change set, with mental-model section, two `tag::` markers in the fixture SDL, and rejection-messages section linked from the diagnostic text.
 
 ## Roadmap entries
 
 - **R114**: this item — multi-hop `@reference` path on `@nodeId` filter input fields, identity-carrying lift only.
-- **Sibling Backlog (file at end of R114)**: non-identity-carrying multi-hop `@reference` on `@nodeId` — EXISTS-subquery or JOIN-with-translation emission. Symmetric to R57 (single-hop translated). Pin the load-bearing structure (which hop fails, which carrier shape) here when a real schema needs it.
+- **Sibling Backlog (file at end of R114)**:
+  - **Non-identity-carrying multi-hop `@reference` on `@nodeId`** — EXISTS-subquery or JOIN-with-translation emission. Symmetric to R57 (single-hop translated). Pin the load-bearing structure (which hop fails, which carrier shape) here when a real schema needs it.
+  - **`column` / `columns` slot rename** on `InputField.ColumnReferenceField` / `CompositeColumnReferenceField` and `ArgumentRef.ScalarArg.ColumnReferenceArg` / `CompositeColumnReferenceArg`. The slot holds NodeType key columns on the *target* table, but the name reads as "the predicate column" (which actually comes from `joinPath` / `liftedSourceColumns`). Rename to a role-explicit name (e.g. `decodedKeyColumns`) once R114 lands; the rename touches every existing single-hop consumer and is a hygiene step, not a behaviour change.
+  - **Diagnostic-anchoring policy migration**. R114 introduces `static final String` markers on `NodeIdLeafResolver` for its two new diagnostics; R57 and earlier rejection sites still anchor on quoted prose substrings. File a tiny item to migrate the existing handful of substring-based assertions to constant markers, so the convention is uniform across the resolver / classifier surface.
+  - **`Resolved.FkTarget.DirectFk.fkSourceColumns()` vestige.** This slot is set at `NodeIdLeafResolver.java:152, 275` but never read by either carrier-construction site (`FieldBuilder.classifyArgument`, `BuildContext.classifyInputField` both consume `joinPath` and `keyColumns`). After R114 lands, the slot's role is fully covered by `liftedSourceColumns` on the carrier; the producer-with-no-consumer slot can either be deleted or kept as a structural mirror of the new slot. Hygiene item, not blocking.
