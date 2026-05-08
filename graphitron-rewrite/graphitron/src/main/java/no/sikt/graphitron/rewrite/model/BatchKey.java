@@ -240,11 +240,24 @@ public sealed interface BatchKey
      *       walk the catalog FK chain. Holds the resolved {@link JoinStep.FkJoin} list.</li>
      * </ul>
      *
-     * <p>The shared accessors {@link #path()}, {@link #parentSideColumns()}, and
-     * {@link #lifter()} let consumers (rows-method prelude, key-extraction emitter, validator
-     * diagnostics) walk both shapes uniformly without forking on permit identity. The split
-     * lives in the type system so resolver dispatch (different diagnostic templates) stays
-     * exhaustive across the two shapes.
+     * <p><b>What the seal carries today.</b> {@code LifterKeyed} narrows the resolver's
+     * typed return ({@code SourceRowDirectiveResolver.Resolved.Ok.batchKey}) to lifter-derived
+     * batch keys; downstream callers know they have a lifter without an
+     * {@code instanceof}-chain. {@link #lifter()} is read by
+     * {@code GeneratorUtils.buildLifterRowKey} on each permit through the
+     * {@code RecordParentBatchKey}-typed sealed switch in
+     * {@code buildRecordParentKeyExtraction}; the emit shape is identical for both arms so the
+     * switch collapses onto a single {@code case BatchKey.LifterKeyed lk} arm.
+     * {@link #parentSideColumns()} feeds {@code keyElementType()}'s shape map (per-permit, not
+     * seal-typed). {@link #path()} is currently read only by the unit-tier exhaustive switch.
+     *
+     * <p><b>What the seal does <em>not</em> carry today.</b> The {@code SplitRowsMethodEmitter}
+     * prelude consumes both lifter shapes via the {@code JoinStep.WithTarget} capability and
+     * {@code RecordParentBatchKey.preludeKeyColumns()}; it does not take a {@code LifterKeyed}-
+     * typed parameter. The capability-uniformity claim is therefore future-facing rather than
+     * load-bearing in production: a future consumer that needs to walk both shapes in lockstep
+     * (e.g. a diagnostics emitter) can take a {@code LifterKeyed}-typed parameter and read
+     * {@link #path()} / {@link #parentSideColumns()} without instanceof.
      */
     sealed interface LifterKeyed extends RecordParentBatchKey
             permits LifterLeafKeyed, LifterPathKeyed {

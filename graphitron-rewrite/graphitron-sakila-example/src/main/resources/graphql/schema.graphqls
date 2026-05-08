@@ -317,13 +317,11 @@ type CreateFilmPayload @record(record: {className: "no.sikt.graphitron.rewrite.t
     # matches Language's PK directly, no @reference needed. Per-parent Row1<Integer> lift of
     # the languageId, fed into the rows-method's `language_id IN (...)` batch. List-cardinality
     # return; each parent yields a 0..1-element Language list.
-    # tag::sourcerow-leafpk[]
     language: [Language!]!
         @sourceRow(
             className: "no.sikt.graphitron.rewrite.test.services.CreateFilmPayloadLifter",
             method: "liftLanguageId"
         )
-    # end::sourcerow-leafpk[]
 }
 
 # R60 fixture: free-form @record with a typed List<FilmRecord> accessor. No batching directive
@@ -343,14 +341,12 @@ type CreateFilmsPayload @record(record: {className: "no.sikt.graphitron.rewrite.
 # end-to-end compile-spec coverage flows through Query.customerAddressSummary below.
 type CustomerAddressSummary @record(record: {className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummary"}) {
     customerId: Int!
-    # tag::sourcerow-story-1[]
     address: [Address!]!
         @sourceRow(
             className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryLifter",
             method: "addressIdOf"
         )
         @reference(path: [{key: "customer_address_id_fkey"}])
-    # end::sourcerow-story-1[]
 }
 
 # R12 fixture (error-handling-parity.md): query-side @error end-to-end. Two @error types
