@@ -117,9 +117,9 @@ to do once, hard to do up-front.
   trace-emitter smoke).
 - Section 1c `-Pleaf-coverage` profile: `5bab9ca7f`.
 - Section 1d JUnit extension for test-class context: `a032c96f3`.
-- Section 2 `roadmap-tool leaf-coverage` post-processor: `8fd019605`.
-- Section 3 `directive-support --mode=migration` render: `7a6a87e69`.
-- Section 4 migration-guide section: `576e7da3a`.
+- Section 2 `roadmap-tool leaf-coverage` post-processor: `e0ff1f923`.
+- Section 3 `directive-support --mode=migration` render: `c1fcbdcb2`.
+- Section 4 migration-guide section: `ba8149a7f`.
 
 Honest deviation from the spec: the directive-support migration
 fragment intentionally has no verify-mode CI binding in roadmap-tool's
