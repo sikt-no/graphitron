@@ -1,7 +1,7 @@
 ---
 id: R106
 title: "Lift same-table `@nodeId` arg/field to a `WHERE pk IN (...)` filter, not a lookup"
-status: Spec
+status: Ready
 bucket: validation
 depends-on: []
 ---
