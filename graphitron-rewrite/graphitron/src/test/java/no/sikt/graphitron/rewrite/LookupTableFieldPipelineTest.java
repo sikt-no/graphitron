@@ -3,7 +3,9 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.LookupMapping;
 import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
@@ -101,6 +103,23 @@ class LookupTableFieldPipelineTest {
             }
             type Query { film: Film }
             """);
+
+        var filmActors = (ChildField.LookupTableField) schema.field("Film", "filmActors");
+        var mapping = (LookupMapping.ColumnMapping) filmActors.lookupMapping();
+        assertThat(mapping.args()).hasSize(1);
+        var only = mapping.args().get(0);
+        assertThat(only).isInstanceOfSatisfying(
+            LookupMapping.ColumnMapping.LookupArg.MapInput.class,
+            m -> {
+                assertThat(m.list()).isTrue();
+                assertThat(m.bindings()).hasSize(2);
+                assertThat(m.bindings().stream().map(b -> b.fieldName()))
+                    .containsExactly("filmId", "actorId");
+                assertThat(m.bindings().stream().map(b -> b.targetColumn().sqlName()))
+                    .containsExactly("film_id", "actor_id");
+            });
+        assertThat(mapping.slotColumns().stream().map(c -> c.sqlName()))
+            .containsExactly("film_id", "actor_id");
 
         var filmClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("Film"))

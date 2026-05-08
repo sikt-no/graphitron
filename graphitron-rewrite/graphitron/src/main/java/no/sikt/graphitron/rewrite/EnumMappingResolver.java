@@ -239,6 +239,18 @@ final class EnumMappingResolver {
      * despite {@code @lookupKey}" only when the field trips the lookup gate with no other
      * source of lookup columns.
      */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "lookup-mapping-bindings-table-coherent",
+        description = "Each MapBinding's targetColumn resolves against the @table-backed input "
+            + "type's inputTable, so all bindings of one MapInput target columns of a single "
+            + "table — the lookup target. Lets the LookupValuesJoinEmitter read b.targetColumn() "
+            + "across bindings without re-checking table coherence.")
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "lookup-key-input-field-non-list",
+        description = "Rejects @lookupKey on a list-typed input field with the 'move list "
+            + "cardinality to the outer argument' diagnostic. Lets the slot pipeline assume "
+            + "binding-level cardinality is scalar; only the outer LookupArg.list() drives "
+            + "row-count broadcasting in the emitter.")
     List<InputColumnBinding.MapBinding> buildLookupBindings(GraphitronType.TableInputType tit,
             GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String argName, List<String> errors) {
         var sdlType = ctx.schema.getType(tit.name());

@@ -41,6 +41,12 @@ public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
         TableRef targetTable
     ) implements LookupMapping {
 
+        // No non-empty check on `args`. An empty list is a legitimate intermediate
+        // state: LookupMappingResolver.resolve returns ColumnMapping(emptyList(),
+        // table) when no @lookupKey-bearing arg was seen, and
+        // FieldBuilder.classifyTableFieldComponents rejects the field before it
+        // becomes a LookupTableField. The MapInput / DecodedRecord canonical
+        // constructors enforce non-empty bindings — divergence is intentional.
         public ColumnMapping {
             args = List.copyOf(args);
         }
@@ -116,6 +122,10 @@ public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
             ) implements LookupArg {
 
                 public MapInput {
+                    if (bindings.isEmpty()) {
+                        throw new IllegalArgumentException(
+                            "MapInput '" + argName + "' must carry at least one binding");
+                    }
                     bindings = List.copyOf(bindings);
                 }
             }
@@ -143,6 +153,10 @@ public sealed interface LookupMapping permits LookupMapping.ColumnMapping {
             ) implements LookupArg {
 
                 public DecodedRecord {
+                    if (bindings.isEmpty()) {
+                        throw new IllegalArgumentException(
+                            "DecodedRecord '" + argName + "' must carry at least one binding");
+                    }
                     bindings = List.copyOf(bindings);
                 }
             }
