@@ -1222,39 +1222,97 @@ class NodeIdPipelineTest {
 
     // ===== Validator: @asConnection + same-table @nodeId leaf rejection =====
     //
-    // Symmetric across argument-level and input-field leaves: both produce a same-table SameTable
-    // shape that is a lookup, not a paginatable filter. FK-target leaves are legitimate filters;
-    // they compose with @asConnection.
+    // R113 narrowed the guard: required same-table @nodeId leaves still reject (always-bounded
+    // shape, @asConnection adds no value); optional leaves now compose (caller-omitted leaf →
+    // paginate full table; caller-supplied → narrow then paginate). Required-ness is conjunctive
+    // across the path: outer arg + every nested input wrapper down to the leaf must all be
+    // non-null. ∃-required across all hits, not first-hit-wins. FK-target leaves are unaffected.
+
+    private static final String CONNECTION_DECLS = """
+        type BazConnection { edges: [BazEdge!]! pageInfo: PageInfo! }
+        type BazEdge { node: Baz! cursor: String! }
+        type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+        """;
 
     enum NodeIdConnectionRejectionCase {
-        ASCONNECTION_PLUS_ARGUMENT_SAME_TABLE_NODEID_REJECTED(
-            "@asConnection field with a top-level same-table @nodeId arg → UnclassifiedField "
-                + "(the result cardinality is bounded by the input list, not paginatable)",
+        ASCONNECTION_PLUS_REQUIRED_ARGUMENT_SAME_TABLE_NODEID_REJECTED(
+            "@asConnection field with a required (NonNull outer) top-level same-table @nodeId arg "
+                + "→ UnclassifiedField (always-bounded; @asConnection adds no value)",
             """
             type Baz implements Node @table(name: "baz") @node { id: ID! }
-            type BazConnection { edges: [BazEdge!]! pageInfo: PageInfo! }
-            type BazEdge { node: Baz! cursor: String! }
-            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+            """ + CONNECTION_DECLS + """
             type Query {
                 bazByIds(ids: [ID!]! @nodeId(typeName: "Baz")): BazConnection @asConnection
             }
             """,
             schema -> {
-                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bazByIds");
-                assertThat(f.reason())
-                    .contains("Lookups don't compose with @asConnection")
-                    .contains("baz");
+                var f = schema.field("Query", "bazByIds");
+                assertThat(f).isInstanceOf(GraphitronField.UnclassifiedField.class);
+                var u = (GraphitronField.UnclassifiedField) f;
+                assertThat(u.rejection())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.AuthorError.Structural.class);
             }),
 
-        ASCONNECTION_PLUS_INPUT_FIELD_SAME_TABLE_NODEID_REJECTED(
-            "@asConnection field whose @table input arg carries a same-table [ID!] @nodeId leaf "
-                + "→ UnclassifiedField (closes the latent R50 gap where this combination "
-                + "silently built and produced incoherent runtime semantics)",
+        ASCONNECTION_PLUS_OPTIONAL_ARGUMENT_SAME_TABLE_NODEID_ALLOWED(
+            "@asConnection field with an optional (nullable outer) top-level same-table @nodeId arg "
+                + "→ QueryTableField with Connection wrapper, BodyParam.In on the PK, pagination "
+                + "components present (the headline migration case post-R113)",
             """
             type Baz implements Node @table(name: "baz") @node { id: ID! }
-            type BazConnection { edges: [BazEdge!]! pageInfo: PageInfo! }
-            type BazEdge { node: Baz! cursor: String! }
-            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+            """ + CONNECTION_DECLS + """
+            type Query {
+                bazes(ids: [ID!] @nodeId(typeName: "Baz")): BazConnection @asConnection
+            }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
+                    schema.field("Query", "bazes");
+                assertThat(f.returnType().wrapper())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.FieldWrapper.Connection.class);
+                var gcf = (no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
+                    f.filters().stream()
+                        .filter(no.sikt.graphitron.rewrite.model.GeneratedConditionFilter.class::isInstance)
+                        .findFirst().orElseThrow();
+                var inFilters = gcf.bodyParams().stream()
+                    .filter(no.sikt.graphitron.rewrite.model.BodyParam.In.class::isInstance)
+                    .map(no.sikt.graphitron.rewrite.model.BodyParam.In.class::cast)
+                    .toList();
+                assertThat(inFilters).hasSize(1);
+                var bp = inFilters.get(0);
+                assertThat(bp.column().sqlName()).isEqualTo("id");
+                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                assertThat(f.orderBy()).isNotNull();
+                assertThat(f.pagination()).isNotNull();
+            }),
+
+        ASCONNECTION_PLUS_REQUIRED_INPUT_FIELD_SAME_TABLE_NODEID_REJECTED(
+            "@asConnection field whose required input arg carries a required same-table @nodeId "
+                + "leaf (every wrapper non-null) → UnclassifiedField",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            """ + CONNECTION_DECLS + """
+            input BazFilter @table(name: "baz") {
+                ids: [ID!]! @nodeId(typeName: "Baz")
+            }
+            type Query {
+                bazes(filter: BazFilter!): BazConnection @asConnection
+            }
+            """,
+            schema -> {
+                var f = schema.field("Query", "bazes");
+                assertThat(f).isInstanceOf(GraphitronField.UnclassifiedField.class);
+                var u = (GraphitronField.UnclassifiedField) f;
+                assertThat(u.rejection())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.Rejection.AuthorError.Structural.class);
+            }),
+
+        ASCONNECTION_PLUS_OPTIONAL_INPUT_FIELD_SAME_TABLE_NODEID_ALLOWED(
+            "@asConnection field whose nullable input arg carries a nullable same-table @nodeId "
+                + "leaf (legacy R50 input-field shape) → classifies normally; the input field "
+                + "becomes an InputField.ColumnField with PK-IN filter",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            """ + CONNECTION_DECLS + """
             input BazFilter @table(name: "baz") {
                 ids: [ID!] @nodeId(typeName: "Baz")
             }
@@ -1263,9 +1321,85 @@ class NodeIdPipelineTest {
             }
             """,
             schema -> {
-                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bazes");
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
+                    schema.field("Query", "bazes");
+                assertThat(f.returnType().wrapper())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.FieldWrapper.Connection.class);
+            }),
+
+        ASCONNECTION_PLUS_NESTED_INPUT_REQUIRED_NULLABLE_OUTER_ALLOWED(
+            "@asConnection field whose nullable input arg carries a required same-table @nodeId "
+                + "leaf → conjunctive rule: outer nullable ⇒ path nullable ⇒ classifies normally "
+                + "(pins the rule is conjunctive across the path, not per-step)",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            """ + CONNECTION_DECLS + """
+            input BazFilter @table(name: "baz") {
+                ids: [ID!]! @nodeId(typeName: "Baz")
+            }
+            type Query {
+                bazes(filter: BazFilter): BazConnection @asConnection
+            }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
+                    schema.field("Query", "bazes");
+                assertThat(f.returnType().wrapper())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.FieldWrapper.Connection.class);
+            }),
+
+        ASCONNECTION_PLUS_MIXED_NULLABILITY_REQUIRED_FIRST_REJECTED(
+            "two same-table @nodeId args, required declared first then optional → rejects "
+                + "(∃-required folds to Required regardless of position)",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            """ + CONNECTION_DECLS + """
+            type Query {
+                bazes(
+                    requiredIds: [ID!]! @nodeId(typeName: "Baz"),
+                    optionalIds: [ID!] @nodeId(typeName: "Baz")
+                ): BazConnection @asConnection
+            }
+            """,
+            schema -> {
+                var f = schema.field("Query", "bazes");
+                assertThat(f).isInstanceOf(GraphitronField.UnclassifiedField.class);
+            }),
+
+        ASCONNECTION_PLUS_MIXED_NULLABILITY_OPTIONAL_FIRST_REJECTED(
+            "two same-table @nodeId args, optional declared first then required → rejects "
+                + "(∃-required is order-independent: SDL order does not change the verdict)",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            """ + CONNECTION_DECLS + """
+            type Query {
+                bazes(
+                    optionalIds: [ID!] @nodeId(typeName: "Baz"),
+                    requiredIds: [ID!]! @nodeId(typeName: "Baz")
+                ): BazConnection @asConnection
+            }
+            """,
+            schema -> {
+                var f = schema.field("Query", "bazes");
+                assertThat(f).isInstanceOf(GraphitronField.UnclassifiedField.class);
+            }),
+
+        ASCONNECTION_REJECTION_MESSAGE_NAMES_NULLABLE_HINT(
+            "rejection message names the headline migration hint ('make it nullable') and the "
+                + "structural form (@nodeId(typeName:)) — pins the user-facing payoff so future "
+                + "drift away from this guidance is loud",
+            """
+            type Baz implements Node @table(name: "baz") @node { id: ID! }
+            """ + CONNECTION_DECLS + """
+            type Query {
+                bazByIds(ids: [ID!]! @nodeId(typeName: "Baz")): BazConnection @asConnection
+            }
+            """,
+            schema -> {
+                var f = (GraphitronField.UnclassifiedField) schema.field("Query", "bazByIds");
                 assertThat(f.reason())
-                    .contains("Lookups don't compose with @asConnection");
+                    .contains("Make 'ids' nullable")
+                    .contains("@nodeId(typeName: 'Baz')");
             }),
 
         ASCONNECTION_PLUS_FK_TARGET_ARG_NODEID_ALLOWED(
@@ -1282,7 +1416,6 @@ class NodeIdPipelineTest {
             }
             """,
             schema -> {
-                // The field classifies as a connection-wrapped table field, not UnclassifiedField.
                 var f = schema.field("Query", "barsByBaz");
                 assertThat(f).isNotInstanceOf(GraphitronField.UnclassifiedField.class);
             });
