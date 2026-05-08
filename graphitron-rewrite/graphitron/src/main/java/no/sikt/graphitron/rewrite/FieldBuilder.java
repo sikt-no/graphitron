@@ -950,6 +950,13 @@ class FieldBuilder {
      * {@code buildPaginationSpec}) with one classification + one projection step. See
      * {@code docs/argument-resolution.md}.
      */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "lookup-field-non-empty-args",
+        description = "Rejects '@lookupKey is declared but no argument resolved to a lookup column' "
+            + "with Rejection.structural before the field is constructed as a LookupTableField "
+            + "or QueryLookupTableField. Lets LookupValuesJoinEmitter.buildInputRowsMethod assume "
+            + "requireSlots(field) yields a non-empty Slot list, so the typed Row<N+1>[] arity "
+            + "computation always sees ≥ 2 (idx + ≥ 1 key column) and never emits Row<1>.")
     private TableFieldComponents projectForFilter(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
                                                   TableRef rt, String returnTypeName, List<String> errors) {
         var filters = projectFilters(refs, fieldDef, rt, returnTypeName, errors);
