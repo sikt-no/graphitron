@@ -1104,6 +1104,14 @@ class BuildContext {
             + " The TranslatedFk arm routes to InputFieldResolution.Unresolved with a deferred-emission"
             + " hint so emitter consumers (walkInputFieldConditions → implicit body params) never see"
             + " a JOIN-with-translation shape they cannot bind directly.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "nodeid-fk.identity-carrying-lift",
+        reliesOn = "The [ID!] @nodeId @reference path on a @table input field calls"
+            + " NodeIdLeafResolver.validateLift / liftSourceColumns directly to populate the"
+            + " carrier's liftedSourceColumns slot, then surfaces lift failures as"
+            + " InputFieldResolution.Unresolved. The static helpers share the lift predicate with"
+            + " NodeIdLeafResolver.resolve, so the producer's invariant holds for both intake"
+            + " shapes (resolver-driven and direct-helper-driven).")
     private InputFieldResolution classifyInputFieldInternal(
             GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable,
             Set<String> expandingTypes, List<String> errors) {

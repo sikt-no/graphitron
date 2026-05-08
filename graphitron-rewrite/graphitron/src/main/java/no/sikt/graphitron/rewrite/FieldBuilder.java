@@ -1275,6 +1275,14 @@ class FieldBuilder {
             + " DirectFk arm; the TranslatedFk arm routes upstream to InputFieldResolution.Unresolved"
             + " so this walker never sees a JOIN-with-translation shape that would need a separate"
             + " FK-source-column rebinding step.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "nodeid-fk.identity-carrying-lift",
+        reliesOn = "The ColumnReferenceField / CompositeColumnReferenceField arms read the"
+            + " resolver-supplied liftedSourceColumns slot directly (rf.liftedSourceColumns()"
+            + " and ccrf.liftedSourceColumns()), never re-walking joinPath to compute the lift."
+            + " Carriers reaching this walker were built on DirectFk (or the equivalent"
+            + " classifyInputField path that calls NodeIdLeafResolver.liftSourceColumns), which"
+            + " only succeeds when every adjacent hop pair satisfies the lift predicate.")
     private void walkInputFieldConditions(
             List<InputField> fields, String outerArgName, List<String> pathPrefix,
             boolean enclosingOverride, Set<String> lookupBoundNames,
