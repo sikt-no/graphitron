@@ -47,7 +47,7 @@ The classifier then calls `resolveChildPolymorphicJoinPaths(fieldDef, name, pare
 
 ## Validator
 
-Extend `validateChildMultiTableParentPk` (`GraphitronSchemaValidator.java:347`). The current `if (!(parentType instanceof TableBackedType tbt)) return` early-exit drops; the validator runs uniformly across parent shapes by reading off `field.parentKey()` directly. All four `RecordParentBatchKey` permits expose `preludeKeyColumns()` (`BatchKey.java:192`) — the same accessor the rows-method prelude uses — so the arity check is a single uniform read:
+Extend `validateChildMultiTableParentPk` (`GraphitronSchemaValidator.java:347`). The current `if (!(parentType instanceof TableBackedType tbt)) return` early-exit drops; the validator runs uniformly across parent shapes by reading off `field.parentKey()` directly. The signature loses `parentTypeName, Map<String, GraphitronType> types` (no longer needed once `parentKey()` is read directly off the field record) and gains the field reference; both call sites at `GraphitronSchemaValidator.java:571, :577` are adjusted accordingly. All four `RecordParentBatchKey` permits expose `preludeKeyColumns()` (`BatchKey.java:192`) — the same accessor the rows-method prelude uses — so the arity check is a single uniform read:
 
 ```java
 if (field.parentKey().preludeKeyColumns().size() > 21) {
@@ -61,7 +61,7 @@ The non-empty invariant is already enforced upstream — `RowKeyed`'s canonical 
 
 ## Tests
 
-Pipeline-tier coverage in `TypeFetcherGeneratorTest` (`graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGeneratorTest.java`). Today's helpers `childInterfaceField` / `childUnionField` (`:1961-1987`) hardwire `RowKeyed` + `JooqTableRecordType`; R105 adds parameterised siblings constructed by direct `InterfaceField` / `UnionField` builders that go through the full classifier path (entry points need to come from a SDL fragment so the new `classifyChildFieldOnResultType` arm is exercised, not bypassed):
+Pipeline-tier coverage in `TypeFetcherGeneratorTest` (`graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGeneratorTest.java`). Today's helpers `childInterfaceField` / `childUnionField` (`:1961-1987`) hardwire `RowKeyed` + `JooqTableRecordType`; R105 adds parameterised siblings driven through the full SDL → classifier pipeline (so the new `classifyChildFieldOnResultType` arm is exercised, not bypassed — fixture-helper construction of `InterfaceField` / `UnionField` would skip the arm under test):
 
 - `childInterfaceField_recordParent_rowKeyed` — parent type is `@record`-backed by a jOOQ `TableRecord`; classified as `RowKeyed` via the new arm. Pin equivalence with the existing table-backed `childInterfaceField` via `assertThat(spec).isEqualTo(tableBackedSpec)` on the emitted `TypeSpec`. Drift in either path fails the comparison.
 - `childInterfaceField_recordParent_accessorKeyedSingle` — parent is `PojoResultType` exposing a zero-arg `AddressRecord`-returning accessor; single-cardinality polymorphic field.
