@@ -15,9 +15,9 @@ import java.util.List;
  *       with an optional WHERE filter on the enclosing SELECT.</li>
  *   <li>{@link ConditionJoin} — navigate via a user-supplied condition method (no FK constraint);
  *       the condition becomes the ON clause of an explicit JOIN.</li>
- *   <li>{@link LiftedHop} — single-hop terminal pre-keyed by a {@link BatchKey.LifterRowKeyed};
- *       no FK, no source-side columns, the DataLoader key tuple <em>is</em> the target-column
- *       tuple.</li>
+ *   <li>{@link LiftedHop} — single-hop terminal pre-keyed by a {@link BatchKey.LifterLeafKeyed}
+ *       or accessor permit; no FK, no source-side columns, the DataLoader key tuple
+ *       <em>is</em> the target-column tuple.</li>
  * </ul>
  *
  * <p>{@link FkJoin} and {@link LiftedHop} share the {@link WithTarget} capability so the
@@ -206,19 +206,21 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
     record ConditionJoin(MethodRef condition, String alias) implements JoinStep {}
 
     /**
-     * One hop pre-keyed by a {@link BatchKey.LifterRowKeyed} — no foreign key, no traversal
-     * direction, no source-side-distinct-from-target columns. The DataLoader key tuple carried
-     * by the BatchKey <em>is</em> the target-column tuple, encoded as a type fact: each slot is
-     * a {@link JoinSlot.LifterSlot} whose single {@code column} component answers both
-     * {@link JoinSlot#sourceSide()} and {@link JoinSlot#targetSide()}. The JOIN-on predicate of
-     * the rows-method becomes {@code target.<slot.targetSide()> = parentInput.field(i+1)}
-     * directly, identical in shape to the FK case.
+     * One hop pre-keyed by a {@link BatchKey.LifterLeafKeyed} or accessor permit — no foreign
+     * key, no traversal direction, no source-side-distinct-from-target columns. The
+     * DataLoader key tuple carried by the BatchKey <em>is</em> the target-column tuple,
+     * encoded as a type fact: each slot is a {@link JoinSlot.LifterSlot} whose single
+     * {@code column} component answers both {@link JoinSlot#sourceSide()} and
+     * {@link JoinSlot#targetSide()}. The JOIN-on predicate of the rows-method becomes
+     * {@code target.<slot.targetSide()> = parentInput.field(i+1)} directly, identical in
+     * shape to the FK case.
      *
-     * <p>{@link BatchKey.LifterRowKeyed} holds a single {@code LiftedHop} on its own record;
-     * the classifier publishes the same instance through {@code joinPath = [hop]} for back-compat
-     * with the existing rows-method loop, but the BatchKey is the source of truth. This makes
-     * the single-hop invariant a type fact (one record, one hop) rather than a classifier
-     * convention.
+     * <p>{@link BatchKey.LifterLeafKeyed} holds a single {@code LiftedHop} on its own record
+     * (the no-{@code @reference} leaf-PK shape); the classifier publishes the same instance
+     * through {@code joinPath = [hop]} for back-compat with the existing rows-method loop,
+     * but the BatchKey is the source of truth. The {@code @reference}-composed shape lives on
+     * {@link BatchKey.LifterPathKeyed} as a list of {@link FkJoin} hops; that arm does not
+     * use {@code LiftedHop}.
      */
     record LiftedHop(
         TableRef targetTable,
@@ -230,7 +232,7 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
             if (slots.isEmpty()) {
                 throw new IllegalArgumentException(
                     "JoinStep.LiftedHop requires a non-empty slots list — every BatchKey permit "
-                    + "delegating its key columns through this hop (LifterRowKeyed, "
+                    + "delegating its key columns through this hop (LifterLeafKeyed, "
                     + "AccessorKeyedSingle, AccessorKeyedMany) needs at least one column.");
             }
             slots = List.copyOf(slots);

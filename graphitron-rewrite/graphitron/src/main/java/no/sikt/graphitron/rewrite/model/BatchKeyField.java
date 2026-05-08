@@ -30,8 +30,8 @@ public interface BatchKeyField {
      * record per element-PK key, regardless of the field's GraphQL cardinality). False for
      * list-cardinality {@code SplitTableField} / {@code SplitLookupTableField} /
      * {@code RecordLookupTableField}, single-key {@code RecordTableField}
-     * ({@code RowKeyed} / {@code LifterRowKeyed} / {@code AccessorKeyedSingle}, which return
-     * a {@code List<Record>} per key).
+     * ({@code RowKeyed} / {@code LifterLeafKeyed} / {@code LifterPathKeyed} /
+     * {@code AccessorKeyedSingle}, which return a {@code List<Record>} per key).
      *
      * <p>The two consumer sites are
      * {@code TypeFetcherGenerator}'s {@code scatterSingleByIdx} helper-emission gate and

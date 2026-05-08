@@ -223,7 +223,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         // DummyRecord exposes no typed TableRecord-returning accessor. The polymorphic child
         // field cannot derive a hub, so the classifier produces UnclassifiedField with the
         // three-option AUTHOR_ERROR (typed accessor / typed JooqTableRecord parent; the
-        // @batchKeyLifter route is currently deferred for polymorphic returns per spec Out of
+        // @sourceRow route is currently deferred for polymorphic returns per spec Out of
         // scope).
         var schema = TestSchemaHelper.buildSchema(UNION_PARTICIPANTS + """
             type DummyRecordType @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
@@ -238,7 +238,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             .contains("polymorphic child field 'films'")
             .contains("requires a typed accessor")
             .contains("HubRecord")
-            .contains("@batchKeyLifter is not yet supported for polymorphic returns");
+            .contains("@sourceRow is not yet supported for polymorphic returns");
     }
 
 }

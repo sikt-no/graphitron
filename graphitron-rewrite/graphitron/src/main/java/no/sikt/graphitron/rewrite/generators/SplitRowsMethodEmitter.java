@@ -103,7 +103,8 @@ public final class SplitRowsMethodEmitter {
      * predicate matches against {@code firstAlias}: on the catalog-FK path, that's
      * {@link JoinStep.FkJoin#sourceColumns()} (FK-holder side, terminal for list cardinality); on
      * the lifter path, {@link JoinStep.LiftedHop#targetColumns()} (the DataLoader key tuple IS the
-     * target-column tuple by {@link BatchKey.LifterRowKeyed} construction). The prelude resolves
+     * target-column tuple by {@link BatchKey.LifterLeafKeyed} construction); on the
+     * @sourceRow + @reference path, {@link JoinStep.FkJoin#sourceColumns()} again. The prelude resolves
      * this fork once via a sealed switch and exports the ready list; the consumer iterates without
      * re-switching.
      *
@@ -136,12 +137,14 @@ public final class SplitRowsMethodEmitter {
      * one declaration in that case.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "lifter-classifies-as-record-table-field",
+        key = "sourcerow-classifies-as-record-table-field",
         reliesOn = "The JOIN-on side-aware switch admits exactly FkJoin and LiftedHop. "
-            + "BatchKeyLifterDirectiveResolver and FieldBuilder.deriveBatchKeyFromTypedAccessor "
+            + "SourceRowDirectiveResolver and FieldBuilder.deriveBatchKeyFromTypedAccessor "
             + "both guarantee the field classifies as RecordTableField or RecordLookupTableField "
-            + "with a single-hop joinPath whose first step is LiftedHop, so the prelude can read "
-            + "target accessors uniformly via WithTarget without per-accessor identity checks.")
+            + "with a joinPath whose steps implement WithTarget (LiftedHop on the leaf-PK / "
+            + "accessor arms; FkJoin chain on the @sourceRow + @reference arm), so the prelude "
+            + "can read target accessors uniformly via WithTarget without per-accessor identity "
+            + "checks.")
     private static PreludeBindings emitParentInputAndFkChain(
             TypeFetcherEmissionContext ctx,
             CodeBlock.Builder body,
@@ -152,7 +155,7 @@ public final class SplitRowsMethodEmitter {
         TableRef terminalTable = returnType.table();
 
         // Side-aware column list, polymorphically: RowKeyed's preludeKeyColumns delegates to
-        // parentKeyColumns (catalog-FK side); LifterRowKeyed / AccessorKeyedSingle /
+        // parentKeyColumns (catalog-FK side); LifterLeafKeyed / LifterPathKeyed / AccessorKeyedSingle /
         // AccessorKeyedMany delegate to targetKeyColumns (target side via the LiftedHop). All
         // four produce RowN<...> of the same Java types as the JOIN target columns. The parameter
         // type RecordParentBatchKey makes "only the four prelude-reachable permits reach this
@@ -181,8 +184,9 @@ public final class SplitRowsMethodEmitter {
         // (FkJoin or LiftedHop, both implementing JoinStep.WithTarget). Empty paths are rejected
         // in BuildContext.parsePath; ConditionJoin-first paths are short-circuited by
         // unsupportedReason on each enclosing variant. The lifter path is single-hop by type
-        // construction (BatchKey.LifterRowKeyed holds one LiftedHop, not a list), so the bridging
-        // loop below never executes for it.
+        // construction (BatchKey.LifterLeafKeyed holds one LiftedHop, not a list); the bridging
+        // loop below executes for the @sourceRow + @reference arm (LifterPathKeyed) where the
+        // path is a chain of FkJoin hops.
         JoinStep firstStep = joinPath.get(0);
         // Parent-side and target-side column lists, materialised through the WithTarget capability.
         // Both FkJoin and LiftedHop carry slots; FkSlot pairs source/target distinctly, LifterSlot
@@ -216,7 +220,7 @@ public final class SplitRowsMethodEmitter {
         body.addStatement("$T k = keys.get(i)", keyElement);
         var rowArgs = CodeBlock.builder();
         rowArgs.add("$T.inline(i)", DSL);
-        // RowN-keyed arms (RowKeyed and LifterRowKeyed) construct keys via DSL.row(value, ...)
+        // RowN-keyed arms (RowKeyed, LifterLeafKeyed, LifterPathKeyed) construct keys via DSL.row(value, ...)
         // where field<N>() returns a bind-parameter Field<T> wrapping the value, so passing
         // k.field<N>() into the parent VALUES row renders the value (not a column reference).
         //

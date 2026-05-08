@@ -77,9 +77,11 @@ class BatchKeyTest {
     /**
      * Pins the shape map across the {@link BatchKey} variants:
      * <ul>
-     *   <li>{@link BatchKey.RowKeyed}, {@link BatchKey.MappedRowKeyed}, {@link BatchKey.LifterRowKeyed}
+     *   <li>{@link BatchKey.RowKeyed}, {@link BatchKey.MappedRowKeyed}, {@link BatchKey.LifterLeafKeyed},
+     *       {@link BatchKey.LifterPathKeyed}
      *       → {@code RowN<...>} (developer-facing Row source on the @service classifier path; the
-     *       FK-derived @record-parent face on RowKeyed; the lifter contract on LifterRowKeyed).</li>
+     *       FK-derived @record-parent face on RowKeyed; the lifter contract on
+     *       LifterLeafKeyed / LifterPathKeyed).</li>
      *   <li>{@link BatchKey.RecordKeyed}, {@link BatchKey.MappedRecordKeyed},
      *       {@link BatchKey.AccessorKeyedSingle}, {@link BatchKey.AccessorKeyedMany}
      *       → {@code RecordN<...>} (developer-facing Record source on @service; auto-derived from
@@ -100,7 +102,8 @@ class BatchKeyTest {
         BatchKey mappedRowKeyed = new BatchKey.MappedRowKeyed(List.of(FILM_ID));
         BatchKey recordKeyed = new BatchKey.RecordKeyed(List.of(FILM_ID));
         BatchKey mappedRecordKeyed = new BatchKey.MappedRecordKeyed(List.of(FILM_ID));
-        BatchKey lifterRowKeyed = new BatchKey.LifterRowKeyed(lifterHop, lifterRef);
+        BatchKey lifterLeafKeyed = new BatchKey.LifterLeafKeyed(lifterHop, lifterRef);
+        BatchKey lifterPathKeyed = new BatchKey.LifterPathKeyed(List.of(lifterHop), lifterRef);
         BatchKey accessorSingle = new BatchKey.AccessorKeyedSingle(
             TestFixtures.liftedHop(LANGUAGE_TABLE, List.of(LANGUAGE_ID), "owner_0"),
             SINGLE_ACCESSOR);
@@ -117,7 +120,9 @@ class BatchKeyTest {
             .isEqualTo("org.jooq.Row1<java.lang.Integer>");
         assertThat(mappedRowKeyed.keyElementType().toString())
             .isEqualTo("org.jooq.Row1<java.lang.Integer>");
-        assertThat(lifterRowKeyed.keyElementType().toString())
+        assertThat(lifterLeafKeyed.keyElementType().toString())
+            .isEqualTo("org.jooq.Row1<java.lang.Integer>");
+        assertThat(lifterPathKeyed.keyElementType().toString())
             .isEqualTo("org.jooq.Row1<java.lang.Integer>");
 
         // RecordN-keyed arms.
@@ -141,7 +146,9 @@ class BatchKeyTest {
             .isEqualTo("java.util.List<org.jooq.Row1<java.lang.Integer>>");
         assertThat(mappedRowKeyed.javaTypeName())
             .isEqualTo("java.util.Set<org.jooq.Row1<java.lang.Integer>>");
-        assertThat(lifterRowKeyed.javaTypeName())
+        assertThat(lifterLeafKeyed.javaTypeName())
+            .isEqualTo("java.util.List<org.jooq.Row1<java.lang.Integer>>");
+        assertThat(lifterPathKeyed.javaTypeName())
             .isEqualTo("java.util.List<org.jooq.Row1<java.lang.Integer>>");
         assertThat(recordKeyed.javaTypeName())
             .isEqualTo("java.util.List<org.jooq.Record1<java.lang.Integer>>");
@@ -220,19 +227,25 @@ class BatchKeyTest {
     }
 
     /**
-     * The sealed switch over {@link BatchKey.RecordParentBatchKey} is exhaustive across the
-     * four permits at compile time. This test is a pattern-matching switch with no
-     * {@code default} arm: if a future fifth permit is added without updating the switch, the
-     * test source fails to compile, surfacing the gap at the same site (and on the same build)
-     * the production switch does. A redundant runtime {@code default -> fail()} would only
-     * fire on shapes the compiler already rejects, so it adds no signal.
+     * The sealed switch over {@link BatchKey.RecordParentBatchKey} is exhaustive at compile time:
+     * four direct permits (RowKeyed, LifterKeyed, AccessorKeyedSingle, AccessorKeyedMany), with
+     * LifterKeyed itself a sealed sub-interface that permits LifterLeafKeyed and LifterPathKeyed.
+     * This test is a pattern-matching switch with no {@code default} arm; if a future permit is
+     * added without updating the switch, the test source fails to compile, surfacing the gap at
+     * the same site (and on the same build) the production switch does. A redundant runtime
+     * {@code default -> fail()} would only fire on shapes the compiler already rejects, so it
+     * adds no signal.
      */
     @Test
-    void recordParentBatchKeyExhaustiveSwitchCompilesAcrossAllFourPermits() {
+    void recordParentBatchKeyExhaustiveSwitchCompilesAcrossPermits() {
         BatchKey.RecordParentBatchKey row = new BatchKey.RowKeyed(List.of(FILM_ID));
-        BatchKey.RecordParentBatchKey lifter = new BatchKey.LifterRowKeyed(
+        var lifterRef = new LifterRef(ClassName.bestGuess("com.example.Lifters"), "extract");
+        BatchKey.RecordParentBatchKey lifterLeaf = new BatchKey.LifterLeafKeyed(
             TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "f_0"),
-            new LifterRef(ClassName.bestGuess("com.example.Lifters"), "extract"));
+            lifterRef);
+        BatchKey.RecordParentBatchKey lifterPath = new BatchKey.LifterPathKeyed(
+            List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "f_0")),
+            lifterRef);
         BatchKey.RecordParentBatchKey accSingle = new BatchKey.AccessorKeyedSingle(
             TestFixtures.liftedHop(LANGUAGE_TABLE, List.of(LANGUAGE_ID), "owner_0"),
             SINGLE_ACCESSOR);
@@ -240,14 +253,29 @@ class BatchKeyTest {
             TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "films_0"),
             MANY_ACCESSOR);
 
-        for (var bk : List.of(row, lifter, accSingle, accMany)) {
+        for (var bk : List.of(row, lifterLeaf, lifterPath, accSingle, accMany)) {
             String label = switch (bk) {
                 case BatchKey.RowKeyed _ -> "row";
-                case BatchKey.LifterRowKeyed _ -> "lifter";
+                case BatchKey.LifterKeyed _ -> "lifter";
                 case BatchKey.AccessorKeyedSingle _ -> "accSingle";
                 case BatchKey.AccessorKeyedMany _ -> "accMany";
             };
             assertThat(label).isNotNull();
         }
+    }
+
+    /**
+     * R110: {@link BatchKey.LifterPathKeyed#path()} non-empty invariant. The compact constructor
+     * rejects an empty path, since an empty chain cannot represent the {@code @sourceRow +
+     * @reference} composition shape this permit exists to track. Sibling of the
+     * {@link JoinStep.LiftedHop} non-empty-slots invariant.
+     */
+    @Test
+    void lifterPathKeyed_emptyPath_throwsIllegalArgument() {
+        var lifterRef = new LifterRef(ClassName.bestGuess("com.example.Lifters"), "extract");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                new BatchKey.LifterPathKeyed(List.of(), lifterRef))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("LifterPathKeyed");
     }
 }

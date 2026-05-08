@@ -7,7 +7,7 @@ import org.jooq.Row2;
 
 /**
  * Lifter-method stub used by {@link GraphitronSchemaBuilderTest} to exercise the
- * {@code @batchKeyLifter} classifier paths. The methods are intentionally
+ * {@code @sourceRow} classifier paths. The methods are intentionally
  * non-functional ({@link UnsupportedOperationException}); the resolver only
  * reflects on signatures (parameter type, return type, RowN type arguments) and
  * never invokes them at classification time.
@@ -16,7 +16,7 @@ import org.jooq.Row2;
  */
 class TestLifterStub {
 
-    /** Valid Row1 lifter on the {@link DummyRecord} backing class — Row1&lt;Integer&gt;. */
+    /** Valid Row1 lifter on the {@link DummyRecord} backing class, Row1&lt;Integer&gt;. */
     public static Row1<Integer> dummyRow1Integer(DummyRecord parent) {
         throw new UnsupportedOperationException();
     }

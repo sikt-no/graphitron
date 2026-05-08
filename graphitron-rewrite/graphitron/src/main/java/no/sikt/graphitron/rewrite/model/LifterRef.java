@@ -9,11 +9,13 @@ import no.sikt.graphitron.javapoet.ClassName;
  * <p>Sibling of {@link MethodRef} and {@link HelperRef}. {@code MethodRef} models user-authored
  * methods reached via the {@code ParamSource} indirection ({@code @service}, {@code @condition},
  * {@code @tableMethod}); {@code HelperRef} models methods Graphitron itself emits;
- * {@code LifterRef} models the narrow case of a {@code @batchKeyLifter} static method whose
+ * {@code LifterRef} models the narrow case of a {@code @sourceRow} static method whose
  * call-site signature is exactly {@code (ParentBackingClass) -> RowN<...>}. Reusing
  * {@code MethodRef.StaticOnly} would force {@code params}/{@code returnType} slots that are
- * fully recoverable from the {@link BatchKey.LifterRowKeyed#hop()} columns, and would risk
- * a lifter ref flowing through {@code MethodRef}-walking call sites (e.g. {@code ArgCallEmitter})
+ * fully recoverable from the lifter permit's parent-side columns
+ * ({@link BatchKey.LifterLeafKeyed#hop()} or
+ * {@link BatchKey.LifterPathKeyed#parentSideColumns()}), and would risk a lifter ref flowing
+ * through {@code MethodRef}-walking call sites (e.g. {@code ArgCallEmitter})
  * that have no semantics for it. Following the in-tree {@link HelperRef} precedent: a typed
  * sibling whose only components are the pre-resolved {@link ClassName} plus the simple method
  * name.

@@ -21,7 +21,7 @@ import java.util.List;
  * read on {@code <camel>}.
  *
  * <p>Joins the rewrite's reflection roster ({@code ServiceCatalog}, {@code FieldBuilder}'s
- * payload-errors path, {@code BatchKeyLifterDirectiveResolver}) — see
+ * payload-errors path, {@code SourceRowDirectiveResolver}) — see
  * {@code docs/rewrite-design-principles.adoc} for the boundary rule.
  */
 public final class ClassAccessorResolver {

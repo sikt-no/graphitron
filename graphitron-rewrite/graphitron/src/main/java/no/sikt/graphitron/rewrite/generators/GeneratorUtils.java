@@ -139,18 +139,19 @@ class GeneratorUtils {
     /**
      * Emits the {@code RowN<...> key = ...} or {@code RecordN<...> key = ...} (or list-shaped
      * variants) statement for a {@link ChildField.RecordTableField} DataFetcher, extracting the
-     * batch-key value(s) from the {@code @record} parent. {@link BatchKey.RowKeyed} and
-     * {@link BatchKey.LifterRowKeyed} produce {@code RowN<...>} keys via {@code DSL.row(...)};
+     * batch-key value(s) from the {@code @record} parent. {@link BatchKey.RowKeyed},
+     * {@link BatchKey.LifterLeafKeyed}, and {@link BatchKey.LifterPathKeyed} produce
+     * {@code RowN<...>} keys via {@code DSL.row(...)};
      * {@link BatchKey.AccessorKeyedSingle} / {@link BatchKey.AccessorKeyedMany} produce
      * {@code RecordN<...>} keys via {@code record.into(...)} (auto-derived; no developer-facing
      * source on these arms).
      *
      * <p>The narrowed parameter type is exhaustive over {@link BatchKey.RecordParentBatchKey}
-     * — the four permits ({@link BatchKey.RowKeyed}, {@link BatchKey.LifterRowKeyed},
-     * {@link BatchKey.AccessorKeyedSingle}, {@link BatchKey.AccessorKeyedMany}) are the
-     * only routes here. Mis-routing a {@code @service}-only permit
-     * ({@link BatchKey.RecordKeyed} et al.) is a compile error, not a runtime
-     * {@code IllegalStateException}.
+     * — the five permits ({@link BatchKey.RowKeyed}, {@link BatchKey.LifterLeafKeyed},
+     * {@link BatchKey.LifterPathKeyed}, {@link BatchKey.AccessorKeyedSingle},
+     * {@link BatchKey.AccessorKeyedMany}) are the only routes here. Mis-routing a
+     * {@code @service}-only permit ({@link BatchKey.RecordKeyed} et al.) is a compile error,
+     * not a runtime {@code IllegalStateException}.
      *
      * <p>{@link BatchKey.RowKeyed} arm reads from the parent's backing Java object via the
      * accessor per {@link GraphitronType.ResultType} variant, then constructs a
@@ -162,8 +163,11 @@ class GeneratorUtils {
      *   <li>{@link GraphitronType.PojoResultType} (non-null class): {@code ((BackingClass) env.getSource()).getLowerCamelCase()}</li>
      * </ul>
      *
-     * <p>{@link BatchKey.LifterRowKeyed} arm calls the developer-supplied static lifter on the
-     * parent's backing class: {@code Row1<Long> key = Lifters.method((BackingClass) env.getSource())}.
+     * <p>The two {@link BatchKey.LifterKeyed} arms call the developer-supplied static lifter on
+     * the parent's backing class: {@code Row1<Long> key = Lifters.method((BackingClass)
+     * env.getSource())}. Both share emit logic; the variant identity carries the upstream
+     * decision (leaf-PK vs. {@code @reference}-composed) without a per-instance fork at this
+     * site.
      *
      * <p>{@link BatchKey.AccessorKeyedSingle} arm reads a single concrete {@code TableRecord}
      * from a typed instance accessor on the parent's backing class and projects it to the
@@ -189,7 +193,7 @@ class GeneratorUtils {
         TypeName keyType = batchKey.keyElementType();
         return switch (batchKey) {
             case BatchKey.RowKeyed rk                -> buildFkRowKey(rk, keyType, resultType);
-            case BatchKey.LifterRowKeyed lrk         -> buildLifterRowKey(lrk, keyType, resultType);
+            case BatchKey.LifterKeyed lk             -> buildLifterRowKey(lk, keyType, resultType);
             case BatchKey.AccessorKeyedSingle ars -> buildAccessorKeySingle(ars, keyType);
             case BatchKey.AccessorKeyedMany arm   -> buildAccessorKeyMany(arm, keyType);
         };
@@ -226,17 +230,25 @@ class GeneratorUtils {
     }
 
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "lifter-batchkey-is-lifterrowkeyed",
-        reliesOn = "The four-arm sealed switch in buildRecordParentKeyExtraction routes "
-            + "BatchKey.LifterRowKeyed here. BatchKeyLifterDirectiveResolver guarantees this arm "
-            + "is reached only when the parent is PojoResultType or JavaRecordType with a non-null "
-            + "fqClassName, so backingClassOf and the (BackingClass) env.getSource() coercion below "
-            + "are safe without a null check on the backing class.")
+        key = "sourcerow-leafkey-batchkey-is-lifterleafkeyed",
+        reliesOn = "The exhaustive sealed switch in buildRecordParentKeyExtraction routes "
+            + "BatchKey.LifterKeyed (the LifterLeafKeyed permit on the leaf-PK arm) here. "
+            + "SourceRowDirectiveResolver guarantees the LifterKeyed arms are reached only "
+            + "when the parent is PojoResultType or JavaRecordType with a non-null fqClassName, "
+            + "so backingClassOf and the (BackingClass) env.getSource() coercion below are safe "
+            + "without a null check on the backing class.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "sourcerow-pathkey-batchkey-is-lifterpathkeyed",
+        reliesOn = "The exhaustive sealed switch in buildRecordParentKeyExtraction routes "
+            + "BatchKey.LifterKeyed (the LifterPathKeyed permit on the @reference-composed arm) "
+            + "here. The same backing-class invariant covers both lifter permits: "
+            + "SourceRowDirectiveResolver constructs LifterPathKeyed only on PojoResultType / "
+            + "JavaRecordType with a non-null fqClassName.")
     private static CodeBlock buildLifterRowKey(
-            BatchKey.LifterRowKeyed lrk, TypeName keyType,
+            BatchKey.LifterKeyed lk, TypeName keyType,
             GraphitronType.ResultType resultType) {
         ClassName backingClass = backingClassOf(resultType);
-        var lifter = lrk.lifter();
+        var lifter = lk.lifter();
         return CodeBlock.builder()
             .addStatement("$T key = $T.$L(($T) env.getSource())",
                 keyType, lifter.declaringClass(), lifter.methodName(), backingClass)
@@ -322,7 +334,7 @@ class GeneratorUtils {
             return ClassName.bestGuess(jrt.fqClassName());
         }
         throw new IllegalStateException(
-            "LifterRowKeyed must come from a PojoResultType or JavaRecordType parent; got "
+            "LifterKeyed must come from a PojoResultType or JavaRecordType parent; got "
             + resultType.getClass().getSimpleName());
     }
 
@@ -375,7 +387,7 @@ class GeneratorUtils {
      * Emits the {@code RowN<...> key = ...} or {@code RecordN<...> key = ...} statement for a
      * {@code @table}-parent {@code @splitQuery} fetcher. Parameter narrowed to
      * {@link BatchKey.ParentKeyed}: the four catalog-resolvable permits are the only routes
-     * here, and {@link BatchKey.LifterRowKeyed} is excluded by the type system, not by a
+     * here, and the {@link BatchKey.LifterKeyed} permits are excluded by the type system, not by a
      * defensive {@code IllegalStateException} arm. The row-vs-record axis is the developer's
      * source-shape choice (Row1 source classifies to {@link BatchKey.RowKeyed} /
      * {@link BatchKey.MappedRowKeyed}; Record1 source to {@link BatchKey.RecordKeyed} /
