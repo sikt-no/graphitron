@@ -58,9 +58,11 @@ Two on input types (the surface this item subsumes from R94):
 ## Why `@record` is redundant in each case
 
 - **(1) DML payloads** — covered by R75
-  (`synthesize-payload-carrier.md`, Backlog), which synthesizes the
-  payload carrier inside graphitron. `@record` on DML payloads is
-  already on a deprecation path written into another roadmap item.
+  (`synthesize-payload-carrier.md`, Spec), which admits plain payload
+  types via identity passthrough: graphql-java traverses the DML's
+  `Result<Record>` directly through generated identity fetchers, no
+  Java carrier on disk. `@record` on DML payloads is already on a
+  deprecation path written into another roadmap item.
 - **(2) `@service`-returning payloads** — graphitron introspects the
   `@service` method's return type
   (`ServiceCatalog.reflectServiceMethod` already captures it). The
@@ -117,12 +119,13 @@ See R94 (`emit-input-records.md`) for the migration checklist.
 
 ### Phase 2 (depends on R75): drop `@record` on DML payload types
 
-R75 synthesizes DML payload carriers; once that lands, `@record` on
-DML payloads becomes literal dead weight. Migrate fixtures
+R75 admits no-authored-class DML payloads via identity passthrough;
+once that lands, `@record` on DML payloads with no custom state or
+behaviour becomes literal dead weight. Migrate fixtures
 (`CreateFilmPayload`, `DeleteFilmPayload` and their counterparts in
 sakila + tests), drop the corresponding `@record(record: ...)`
-declarations, drop the developer-supplied payload classes that
-duplicate the synthesized shape.
+declarations, and drop the developer-supplied payload classes whose
+fields are 1:1 with the SDL.
 
 ### Phase 3 (this item's own work): drop `@record` on remaining output types
 
