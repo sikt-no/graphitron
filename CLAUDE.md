@@ -1,6 +1,6 @@
 # Graphitron Project - Claude Code Reference
 
-Rules and constraints for working in this repo. **Scope: `graphitron-rewrite/` and `docs/`.** The legacy modules at the repo root (`graphitron-codegen-parent`, `graphitron-common`, `graphitron-example`, `graphitron-maven-plugin`, `graphitron-schema-transform`, `graphitron-servlet-parent`) are out of scope for AI work; do not modify them. `/docs/` is the source for the public documentation site at `graphitron.sikt.no` (during migration: also `sikt-no.github.io/graphitron`); see [Documentation site](#documentation-site) below.
+Rules and constraints for working in this repo. **Scope: `graphitron-rewrite/` and `docs/`.** The legacy modules at the repo root (`graphitron-codegen-parent`, `graphitron-common`, `graphitron-example`, `graphitron-maven-plugin`, `graphitron-schema-transform`, `graphitron-servlet-parent`) are out of scope for AI work; do not modify them. `/docs/` is the source for the public documentation site at `graphitron.sikt.no`; see [Documentation site](#documentation-site) below.
 
 Links elsewhere in this file point at deep references. **Don't fetch them up front;** open one only when its stated trigger applies to the task at hand. The rules and commands here are meant to be self-contained for routine work.
 

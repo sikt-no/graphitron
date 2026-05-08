@@ -1,7 +1,7 @@
 = Graphitron Documentation
 :toc: macro
 
-This folder is the source for the Graphitron documentation site at https://graphitron.sikt.no/ (during migration: also https://sikt-no.github.io/graphitron/).
+This folder is the source for the Graphitron documentation site at https://graphitron.sikt.no/.
 
 The site is built by Maven via the `graphitron-docs` module (this directory) and deployed to GitHub Pages by `.github/workflows/deploy-docs.yml`.
 
