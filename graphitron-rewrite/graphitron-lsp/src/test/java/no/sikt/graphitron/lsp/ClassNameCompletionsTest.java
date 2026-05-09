@@ -3,6 +3,7 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.junit.jupiter.api.Test;
 import io.github.treesitter.jtreesitter.Parser;
@@ -21,6 +22,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code className} / {@code method} / {@code argMapping} fields.
  */
 class ClassNameCompletionsTest {
+
+    private static final LspVocabulary VOCAB = LspVocabulary.load();
 
     private static final CompletionData DATA = new CompletionData(
         List.of(),
@@ -114,13 +117,18 @@ class ClassNameCompletionsTest {
     }
 
     @Test
-    void batchKeyLifterClassNameCompletesFqns() {
-        String source = "type Query { x: Int @batchKeyLifter(lifter: {className: \"\", method: \"foo\"}, targetColumns: [\"id\"]) }\n";
-        Point cursor = new Point(0, source.indexOf('"') + 1);
+    void sourceRowClassNameCompletesFqns() {
+        // The R110 gap closes here. Today's hand-coded DirectiveDefinitions
+        // doesn't list @sourceRow; the canonical overlay declares both
+        // @sourceRow(className:) and @sourceRow(method:) as ECR-shaped
+        // bindings, so completions now fire on either.
+        String source = "type Foo { x: Int @sourceRow(className: \"\", method: \"foo\") }\n";
+        Point cursor = new Point(0, source.indexOf("className: \"") + "className: \"".length());
 
-        var items = run(source, cursor, "batchKeyLifter");
+        var items = run(source, cursor, "sourceRow");
 
-        assertThat(items).hasSize(2);
+        assertThat(items).extracting(i -> i.getLabel())
+            .containsExactlyInAnyOrder("com.example.FilmService", "com.example.CategoryConditions");
     }
 
     @Test
@@ -153,7 +161,7 @@ class ClassNameCompletionsTest {
         var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
-        return ClassNameCompletions.generate(DATA, directive, cursor, bytes, directiveName);
+        return ClassNameCompletions.generate(VOCAB, DATA, directive, cursor, bytes);
     }
 
     private static CompletionData.ExternalReference ext(String fqn) {

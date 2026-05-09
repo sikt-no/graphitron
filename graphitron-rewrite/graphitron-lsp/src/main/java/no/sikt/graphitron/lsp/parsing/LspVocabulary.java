@@ -4,12 +4,20 @@ import graphql.language.Description;
 import graphql.language.DirectiveDefinition;
 import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
+import graphql.language.ListType;
+import graphql.language.NonNullType;
 import graphql.language.StringValue;
+import graphql.language.Type;
+import graphql.language.TypeName;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import io.github.treesitter.jtreesitter.Node;
+import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.rewrite.schema.RewriteSchemaLoader;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -92,6 +100,137 @@ public record LspVocabulary(
     /** Returns the {@link Behavior} the overlay declares for {@code coord}, if any. */
     public Optional<Behavior> behaviorAt(SchemaCoordinate coord) {
         return Optional.ofNullable(overlay.get(coord));
+    }
+
+    /**
+     * Computes the {@link SchemaCoordinate} at the cursor position
+     * inside {@code directive}. The cursor walk descends through the
+     * directive's argument-list tree; intermediate nesting levels are
+     * resolved against the parsed registry's input-type field tree.
+     *
+     * <p>Replaces the per-consumer {@code innermostObjectField} +
+     * directive-name-switch idiom with a single primitive every consumer
+     * can dispatch on. Today's call sites (R119 phase 2):
+     * {@code ClassNameCompletions}, {@code MethodCompletions},
+     * {@code Diagnostics}, {@code Hovers}, {@code FieldCompletions},
+     * {@code TableCompletions}, {@code ReferenceCompletions}.
+     *
+     * <p>Cases:
+     * <ul>
+     *   <li><b>Cursor on a directive arg's value (no nesting).</b>
+     *       Returns {@link SchemaCoordinate.DirectiveArg}, e.g. cursor on
+     *       {@code @table(name: "x|")} returns {@code @table(name:)}.</li>
+     *   <li><b>Cursor inside a nested {@code object_field}.</b> Walks the
+     *       directive arg's input type, descending one input-type-field
+     *       lookup per nesting level, and returns
+     *       {@link SchemaCoordinate.InputField} keyed on the leaf's
+     *       parent input type. {@code @reference(path: [{table: "x|"}])}
+     *       returns {@code ReferenceElement.table};
+     *       {@code @reference(path: [{condition: {className: "x|"}}])}
+     *       returns {@code ExternalCodeReference.className}.</li>
+     *   <li><b>Cursor outside any arg, or on an unknown directive.</b>
+     *       Empty.</li>
+     * </ul>
+     */
+    public Optional<SchemaCoordinate> coordinateAt(
+        Directives.Directive directive,
+        Point pos,
+        byte[] source
+    ) {
+        String directiveName = Nodes.text(directive.nameNode(), source);
+        var dirDef = registry.getDirectiveDefinition(directiveName);
+        if (dirDef.isEmpty()) {
+            return Optional.empty();
+        }
+        Directives.Argument enclosing = null;
+        for (var arg : directive.arguments()) {
+            if (arg.contains(pos)) {
+                enclosing = arg;
+                break;
+            }
+        }
+        if (enclosing == null) return Optional.empty();
+        String argName = Nodes.text(enclosing.key(), source);
+
+        var fieldChain = collectObjectFieldChain(enclosing.value(), pos, source);
+
+        if (fieldChain.isEmpty()) {
+            return Optional.of(new SchemaCoordinate.DirectiveArg(directiveName, argName));
+        }
+
+        var argDef = findInputValue(dirDef.get().getInputValueDefinitions(), argName);
+        if (argDef.isEmpty()) return Optional.empty();
+        String currentType = unwrapToInputTypeName(argDef.get().getType());
+        if (currentType == null) return Optional.empty();
+
+        // Walk every level except the leaf; the leaf's name plus the
+        // enclosing input type is the coordinate.
+        for (int i = 0; i < fieldChain.size() - 1; i++) {
+            var inputType = registry.getTypeOrNull(currentType, InputObjectTypeDefinition.class);
+            if (inputType == null) return Optional.empty();
+            var stepField = findInputValue(inputType.getInputValueDefinitions(), fieldChain.get(i));
+            if (stepField.isEmpty()) return Optional.empty();
+            String next = unwrapToInputTypeName(stepField.get().getType());
+            if (next == null) return Optional.empty();
+            currentType = next;
+        }
+
+        return Optional.of(new SchemaCoordinate.InputField(
+            currentType, fieldChain.get(fieldChain.size() - 1)));
+    }
+
+    /**
+     * Outermost-first list of {@code object_field} names along the path
+     * from {@code argRoot} to {@code pos}. Empty when the cursor is on
+     * the arg value itself rather than inside any nested object literal.
+     */
+    private static List<String> collectObjectFieldChain(Node argRoot, Point pos, byte[] source) {
+        var out = new ArrayList<String>();
+        descend(argRoot, pos, source, out);
+        return out;
+    }
+
+    private static void descend(Node node, Point pos, byte[] source, List<String> out) {
+        if (node == null || !Nodes.contains(node, pos)) return;
+        if ("object_field".equals(node.getType())) {
+            Node nameNode = childOfKind(node, "name");
+            if (nameNode != null) {
+                out.add(Nodes.text(nameNode, source));
+            }
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            descend(node.getChild(i).orElse(null), pos, source, out);
+        }
+    }
+
+    private static Node childOfKind(Node parent, String kind) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            Node child = parent.getChild(i).orElse(null);
+            if (child != null && kind.equals(child.getType())) return child;
+        }
+        return null;
+    }
+
+    /**
+     * Unwraps {@code !} and {@code []} wrappers to expose the base
+     * {@link TypeName}. Returns null if the type does not bottom out at
+     * a named type (which never happens for valid SDL).
+     */
+    private static String unwrapToInputTypeName(Type<?> type) {
+        Type<?> current = type;
+        while (current != null) {
+            if (current instanceof TypeName tn) return tn.getName();
+            if (current instanceof NonNullType nn) {
+                current = nn.getType();
+                continue;
+            }
+            if (current instanceof ListType lt) {
+                current = lt.getType();
+                continue;
+            }
+            return null;
+        }
+        return null;
     }
 
     /**

@@ -3,6 +3,7 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.lsp.completions.MethodCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.junit.jupiter.api.Test;
 import io.github.treesitter.jtreesitter.Parser;
@@ -20,6 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code className} field on the same nested object to scope candidates.
  */
 class MethodCompletionsTest {
+
+    private static final LspVocabulary VOCAB = LspVocabulary.load();
 
     private static final CompletionData DATA = new CompletionData(
         List.of(),
@@ -81,6 +84,21 @@ class MethodCompletionsTest {
     }
 
     @Test
+    void sourceRowMethodCompletesMethodsOfSiblingClassName() {
+        // The R110 gap closes here on the method-binding side. @sourceRow's
+        // className: and method: are flat directive args, not nested in an
+        // ExternalCodeReference object. The canonical overlay's
+        // MethodNameBinding(@sourceRow(className:)) reads the sibling
+        // value off the directive's argument list directly.
+        String source = "type Foo { x: Int @sourceRow(className: \"com.example.FilmService\", method: \"\") }\n";
+        Point cursor = new Point(0, source.lastIndexOf('"'));
+
+        var items = run(source, cursor, "sourceRow");
+
+        assertThat(items).extracting(i -> i.getLabel()).containsExactlyInAnyOrder("list", "get");
+    }
+
+    @Test
     void cursorOutsideMethodReturnsEmpty() {
         // Cursor inside className:, not method:.
         String source = "type Query { x: Int @service(service: {className: \"com.example.FilmService\", method: \"foo\"}) }\n";
@@ -98,6 +116,6 @@ class MethodCompletionsTest {
         var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
-        return MethodCompletions.generate(DATA, directive, cursor, bytes, directiveName);
+        return MethodCompletions.generate(VOCAB, DATA, directive, cursor, bytes);
     }
 }
