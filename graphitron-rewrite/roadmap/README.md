@@ -16,7 +16,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
-| `R119` | LSP completion / diagnostics keyed by schema coordinates | In Review | [plan](lsp-schema-coordinate-vocabulary.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec | [plan](custom-scalar-java-types.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
@@ -197,7 +196,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### lsp
 
-- `R119` [**LSP completion / diagnostics keyed by schema coordinates**](lsp-schema-coordinate-vocabulary.md) — In Review, architecture
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
 - `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
