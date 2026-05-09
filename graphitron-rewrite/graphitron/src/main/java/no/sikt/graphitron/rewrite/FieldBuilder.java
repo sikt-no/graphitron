@@ -2717,6 +2717,7 @@ class FieldBuilder {
             // LifterPathKeyed (@reference present). The resolver already constructs the right
             // shape and surfaces it as ok.joinPath().
             List<JoinStep> joinPath = ok.joinPath();
+            warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
             if (hasLookupKeyAnywhere(fieldDef)) {
                 return new RecordLookupTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
                     tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.batchKey(), tfc.lookupMapping());
@@ -2815,6 +2816,7 @@ class FieldBuilder {
                 var resolved = (RecordBatchKeyResolution.Resolved) resolution;
                 var batchKey = resolved.batchKey();
                 var resolvedJoinPath = resolved.joinPath();
+                warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
                 if (isLookup) {
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
                         batchKey, tfc.lookupMapping());
@@ -2832,6 +2834,15 @@ class FieldBuilder {
                     elementTypeName, p, parentResultType);
             }
         };
+    }
+
+    private void warnIfSplitQueryOnRecordParent(GraphQLFieldDefinition fieldDef, String parentTypeName,
+            String name, SourceLocation location) {
+        if (!fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY)) return;
+        ctx.addWarning(new BuildWarning(
+            parentTypeName + "." + name + ": @splitQuery is redundant on a @record-parent field; "
+            + "the record handoff already opens a new DataLoader-backed scope. The directive will be ignored.",
+            location));
     }
 
     /**

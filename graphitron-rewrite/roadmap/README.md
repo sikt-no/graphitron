@@ -16,8 +16,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
-| `R3` | Surface silent @splitQuery on @record-parent fields as a build warning | Ready | [plan](classification-vocabulary-followups.md) |
 | `R119` | LSP completion / diagnostics keyed by schema coordinates | In Progress | [plan](lsp-schema-coordinate-vocabulary.md) |
+| `R3` | Surface silent @splitQuery on @record-parent fields as a build warning | In Review | [plan](classification-vocabulary-followups.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec | [plan](custom-scalar-java-types.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
@@ -178,7 +178,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### docs
 
-- `R3` [**Surface silent @splitQuery on @record-parent fields as a build warning**](classification-vocabulary-followups.md) — Ready
+- `R3` [**Surface silent @splitQuery on @record-parent fields as a build warning**](classification-vocabulary-followups.md) — In Review
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
 - `R8` [**Docs as an index into classification tests**](docs-as-index-into-tests.md) — Ready
