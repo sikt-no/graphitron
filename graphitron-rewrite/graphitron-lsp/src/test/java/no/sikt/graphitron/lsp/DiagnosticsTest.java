@@ -378,10 +378,15 @@ class DiagnosticsTest {
     }
 
     @Test
-    void unknownBatchKeyLifterClassProducesError() {
+    void unknownSourceRowClassProducesError() {
+        // @sourceRow has flat className/method directive args; the canonical
+        // overlay binds @sourceRow(className:) → ClassNameBinding so the
+        // same validator that fires inside ExternalCodeReference fires here
+        // too. Closes the R110 gap that the old hand-coded
+        // DirectiveDefinitions.ENTRIES list left silent.
         var file = file("""
             type Foo {
-                bar: Int @batchKeyLifter(lifter: {className: "com.example.Missing", method: "foo"}, targetColumns: ["id"])
+                bar: Int @sourceRow(className: "com.example.Missing", method: "foo")
             }
             """);
 
@@ -542,21 +547,6 @@ class DiagnosticsTest {
 
         var diags = Diagnostics.compute(file, catalogWithNamedReferences(
             Map.of(), "com.example.RealRecord"));
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
-    }
-
-    @Test
-    void legacyName_unresolved_batchKeyLifter() {
-        var file = file("""
-            type Foo {
-                bar: Int @batchKeyLifter(lifter: {name: "Ghost", method: "foo"}, targetColumns: ["id"])
-            }
-            """);
-
-        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
-            Map.of(), "com.example.RealLifter"));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("'Ghost'");
