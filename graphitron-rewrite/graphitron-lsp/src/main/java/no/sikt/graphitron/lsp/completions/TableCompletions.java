@@ -1,8 +1,9 @@
 package no.sikt.graphitron.lsp.completions;
 
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.Directives;
-import no.sikt.graphitron.lsp.parsing.Nodes;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
@@ -13,33 +14,29 @@ import io.github.treesitter.jtreesitter.Point;
 import java.util.List;
 
 /**
- * Completions for the {@code @table(name: "...")} directive.
- *
- * <p>Mirrors {@code completions::generate_table_completions} in the Rust LSP.
- * Pure function shape: takes the directive node and catalog, returns items.
- * No tree-sitter parser state held here.
+ * Catalog table-name completions for any coordinate the
+ * {@link LspVocabulary} overlay declares as a
+ * {@link Behavior.CatalogTableBinding}. Today's canonical overlay
+ * declares this for {@code @table(name:)} and
+ * {@code ReferenceElement.table} (the {@code table} field inside
+ * {@code @reference(path: [{table:}])}). Both fire here without a
+ * directive-name switch.
  */
 public final class TableCompletions {
 
     private TableCompletions() {}
 
     public static List<CompletionItem> generate(
+        LspVocabulary vocabulary,
         CompletionData data,
         Directives.Directive directive,
         Point pos,
         byte[] source
     ) {
-        var argument = directive.arguments().stream()
-            .filter(a -> a.contains(pos))
-            .findFirst();
-        if (argument.isEmpty()) {
-            return List.of();
-        }
-        var arg = argument.get();
-        if (!"name".equals(Nodes.text(arg.key(), source))) {
-            return List.of();
-        }
-        if (!Nodes.contains(arg.value(), pos)) {
+        var coord = vocabulary.coordinateAt(directive, pos, source);
+        if (coord.isEmpty()) return List.of();
+        var behavior = vocabulary.behaviorAt(coord.get());
+        if (behavior.isEmpty() || !(behavior.get() instanceof Behavior.CatalogTableBinding)) {
             return List.of();
         }
         return data.tables().stream()

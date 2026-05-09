@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.completions.ReferenceCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.junit.jupiter.api.Test;
 import io.github.treesitter.jtreesitter.Parser;
@@ -20,6 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * in the wrong nested field stays empty.
  */
 class ReferenceCompletionsTest {
+
+    private static final LspVocabulary VOCAB = LspVocabulary.load();
 
     @Test
     void keyCompletionReturnsForeignKeysOfEnclosingTable() {
@@ -40,7 +43,12 @@ class ReferenceCompletionsTest {
     }
 
     @Test
-    void tableCompletionReturnsAllTables() {
+    void tableCompletionRoutesThroughTableCompletionsNotHere() {
+        // Per R119 phase 2 split, ReferenceCompletions narrows to the FK
+        // (CatalogFkBinding) arm. Table completion at
+        // @reference(path: [{table:}]) is the ReferenceElement.table
+        // coordinate's CatalogTableBinding, served by TableCompletions.
+        // ReferenceCompletions returns empty here.
         String source = """
             type Foo @table(name: "film") {
                 bar: Int @reference(path: [{table: ""}])
@@ -52,8 +60,7 @@ class ReferenceCompletionsTest {
 
         var items = run(filmCatalog(), source, new Point(line, col));
 
-        assertThat(items).extracting(c -> c.getLabel())
-            .containsExactlyInAnyOrder("film", "language", "film_actor");
+        assertThat(items).isEmpty();
     }
 
     @Test
@@ -116,7 +123,7 @@ class ReferenceCompletionsTest {
         var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
-        return ReferenceCompletions.generate(data, directive, cursor, bytes);
+        return ReferenceCompletions.generate(VOCAB, data, directive, cursor, bytes);
     }
 
     private static CompletionData filmCatalog() {

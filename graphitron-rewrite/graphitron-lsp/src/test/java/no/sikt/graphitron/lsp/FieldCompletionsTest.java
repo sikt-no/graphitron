@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.completions.FieldCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.junit.jupiter.api.Test;
 import io.github.treesitter.jtreesitter.Parser;
@@ -20,6 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * pick which table's columns to suggest.
  */
 class FieldCompletionsTest {
+
+    private static final LspVocabulary VOCAB = LspVocabulary.load();
 
     @Test
     void columnNameCompletionReturnsTableColumns() {
@@ -117,7 +120,7 @@ class FieldCompletionsTest {
         var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
-        return FieldCompletions.generate(data, directive, cursor, bytes);
+        return FieldCompletions.generate(VOCAB, data, directive, cursor, bytes);
     }
 
     private static CompletionData filmCatalog() {
