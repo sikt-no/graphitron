@@ -1,7 +1,7 @@
 ---
 id: R75
 title: "Plain payload types via identity passthrough"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 7
 theme: mutations-errors
