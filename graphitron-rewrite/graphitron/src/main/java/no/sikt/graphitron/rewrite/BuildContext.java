@@ -374,6 +374,45 @@ class BuildContext {
     }
 
     /**
+     * Builds a {@link FieldWrapper} from the return type shape of {@code fieldDef} (cardinality
+     * and nullability only). Ordering is separated into the field-builder pipeline.
+     *
+     * <p>Connection is detected two ways:
+     * <ol>
+     *   <li><b>Directive-driven:</b> the field has {@code @asConnection} — the schema type is a
+     *       bare list {@code [Film]} but the wrapper is {@link FieldWrapper.Connection}.</li>
+     *   <li><b>Structural:</b> the return type has an {@code edges.node} pattern (pre-expanded
+     *       connection from the schema transform or hand-written).</li>
+     * </ol>
+     *
+     * <p>Lives on {@link BuildContext} (rather than the field-builder pipeline) so non-builder
+     * sites can compute a wrapper without holding a {@code FieldBuilder} reference. R75's
+     * {@link #unwrapPassthroughPayload} is one such caller — the data field's wrapper has to be
+     * computed at trigger time, before the field-builder pipeline runs.
+     */
+    FieldWrapper buildWrapper(GraphQLFieldDefinition fieldDef) {
+        GraphQLType fieldType = fieldDef.getType();
+        boolean outerNullable = !(fieldType instanceof GraphQLNonNull);
+        GraphQLType unwrappedOnce = GraphQLTypeUtil.unwrapNonNull(fieldType);
+
+        if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION) && unwrappedOnce instanceof GraphQLList) {
+            return new FieldWrapper.Connection(outerNullable, PaginationResolver.resolveDefaultFirstValue(fieldDef));
+        }
+
+        if (unwrappedOnce instanceof GraphQLList listType) {
+            boolean itemNullable = !(listType.getWrappedType() instanceof GraphQLNonNull);
+            return new FieldWrapper.List(outerNullable, itemNullable);
+        }
+
+        // Structural detection: pre-expanded Connection type with edges.node pattern.
+        if (isConnectionType(baseTypeName(fieldDef))) {
+            return new FieldWrapper.Connection(outerNullable, FieldWrapper.DEFAULT_PAGE_SIZE);
+        }
+
+        return new FieldWrapper.Single(outerNullable);
+    }
+
+    /**
      * Trigger function for passthrough payloads (R75 Phase 1). A pure function over
      * {@link #schema} and {@link #types} returning a sealed {@link PassthroughResolution}
      * that callers route on:
@@ -428,39 +467,41 @@ class BuildContext {
                 + "' is not @table-mapped; Phase 1 admits @table elements only");
         }
 
-        // Phase 1 scope: the data field is plain — no field-level directives. A directive
-        // (e.g. @service, @sourceRow, @reference, @nodeId, @field) signals the developer
-        // wants a different fetcher than the IdentityPassthrough capability emits, so
-        // routing through the unwrap would fight the field's intended classification.
-        // Author can opt back in with @record(record: {className: ...}) explicitly.
-        if (!dataField.getAppliedDirectives().isEmpty()) {
-            return new PassthroughResolution.Rejected(
-                "payload field '" + dataFieldName + "' carries field-level directives; "
-                + "Phase 1 admits plain @table-element data fields without directives");
+        // Phase 1 scope: the data field carries no graphitron-domain directive. Directives like
+        // @service, @sourceRow, @reference, @nodeId, @field, @asConnection, @splitQuery, and
+        // @externalField signal a different fetcher contract than the IdentityPassthrough
+        // capability emits; routing through the unwrap would fight the field's intended
+        // classification. Pure-metadata directives (@deprecated, user-defined custom directives
+        // without execution semantics) are not on the list and pass through silently. Authors
+        // who need graphitron-domain behaviour on the data field can opt back in with
+        // @record(record: {className: ...}) explicitly.
+        for (var applied : dataField.getAppliedDirectives()) {
+            if (PASSTHROUGH_FORBIDDEN_DATA_FIELD_DIRECTIVES.contains(applied.getName())) {
+                return new PassthroughResolution.Rejected(
+                    "payload field '" + dataFieldName + "' carries '@" + applied.getName()
+                    + "'; Phase 1 admits @table-element data fields without graphitron-domain "
+                    + "field-level directives");
+            }
         }
 
-        FieldWrapper dataWrapper = passthroughDataFieldWrapper(dataField);
-
         return new PassthroughResolution.Ok(new PassthroughInfo(
-            typeName, dataFieldName, dataElementName, tbt.table(), dataWrapper));
+            typeName, dataFieldName, dataElementName, tbt.table(), buildWrapper(dataField)));
     }
 
     /**
-     * Computes the data field's SDL wrapper for {@link #unwrapPassthroughPayload}. Phase 1
-     * admits single and list cardinalities only; Connection wrapping on the data field is
-     * an unusual authoring shape that flows through condition #3 (the Connection's element
-     * type is the Connection object, not a {@code @table}-mapped type) and rejects there.
+     * Graphitron-domain directives that change a field's fetcher contract or classification arm.
+     * The {@link #unwrapPassthroughPayload} trigger rejects when any of these appears on the
+     * payload's data field; pure-metadata directives ({@code @deprecated}, user-defined custom
+     * directives without execution semantics) are absent from this set and pass through
+     * silently. Adding a future graphitron directive that coexists cleanly with the
+     * IdentityPassthrough fetcher means leaving it off this list; adding one that conflicts
+     * means appending it.
      */
-    private static FieldWrapper passthroughDataFieldWrapper(GraphQLFieldDefinition dataField) {
-        GraphQLType fieldType = dataField.getType();
-        boolean outerNullable = !(fieldType instanceof GraphQLNonNull);
-        GraphQLType unwrappedOnce = GraphQLTypeUtil.unwrapNonNull(fieldType);
-        if (unwrappedOnce instanceof GraphQLList listType) {
-            boolean itemNullable = !(listType.getWrappedType() instanceof GraphQLNonNull);
-            return new FieldWrapper.List(outerNullable, itemNullable);
-        }
-        return new FieldWrapper.Single(outerNullable);
-    }
+    private static final Set<String> PASSTHROUGH_FORBIDDEN_DATA_FIELD_DIRECTIVES = Set.of(
+        DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_NODE_ID, DIR_FIELD,
+        DIR_AS_CONNECTION, DIR_SPLIT_QUERY, DIR_EXTERNAL_FIELD, DIR_CONDITION,
+        DIR_LOOKUP_KEY, DIR_NOT_GENERATED, DIR_TABLE_METHOD, DIR_DEFAULT_ORDER,
+        DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
 
     // ===== Error-message helpers =====
 

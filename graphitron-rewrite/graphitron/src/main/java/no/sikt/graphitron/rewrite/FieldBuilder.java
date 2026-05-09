@@ -682,30 +682,7 @@ class FieldBuilder {
      * </ol>
      */
     FieldWrapper buildWrapper(GraphQLFieldDefinition fieldDef) {
-        GraphQLType fieldType = fieldDef.getType();
-        boolean outerNullable = !(fieldType instanceof GraphQLNonNull);
-        GraphQLType unwrappedOnce = GraphQLTypeUtil.unwrapNonNull(fieldType);
-
-        // @asConnection on a list field → Connection wrapper.
-        // Per-type metadata (name, element, item nullability) lives on ConnectionType in
-        // schema.types(); this wrapper only carries per-carrier-site pagination metadata.
-        if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION) && unwrappedOnce instanceof GraphQLList) {
-            int defaultPageSize = paginationResolver.resolveDefaultFirstValue(fieldDef);
-            return new FieldWrapper.Connection(outerNullable, defaultPageSize);
-        }
-
-        if (unwrappedOnce instanceof GraphQLList listType) {
-            boolean itemNullable = !(listType.getWrappedType() instanceof GraphQLNonNull);
-            return new FieldWrapper.List(outerNullable, itemNullable);
-        }
-
-        // Structural detection: pre-expanded Connection type with edges.node pattern.
-        String typeName = baseTypeName(fieldDef);
-        if (ctx.isConnectionType(typeName)) {
-            return new FieldWrapper.Connection(outerNullable, FieldWrapper.DEFAULT_PAGE_SIZE);
-        }
-
-        return new FieldWrapper.Single(outerNullable);
+        return ctx.buildWrapper(fieldDef);
     }
 
 

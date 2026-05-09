@@ -123,6 +123,25 @@ class PassthroughPayloadPipelineTest {
     }
 
     @Test
+    void payload_withInterfaceField_returnsRejected() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            interface Searchable { id: ID! }
+            type FilmPayload { hits: [Searchable!] }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): FilmPayload @mutation(typeName: INSERT) }
+            """);
+
+        var mutField = schema.field("Mutation", "createFilm");
+        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
+        var reason = ((UnclassifiedField) mutField).rejection().message();
+        assertThat(reason).contains(
+            "element type 'Searchable' is not @table-mapped",
+            "Phase 1 admits @table elements only");
+    }
+
+    @Test
     void payload_atTableType_classifiesAsExistingPath() {
         // A @table return type goes through the existing TableBoundReturnType path; the
         // unwrap returns NotCandidate. No PassthroughDataField is registered (the @table type
@@ -163,7 +182,11 @@ class PassthroughPayloadPipelineTest {
     }
 
     @Test
-    void payload_dataFieldHasFieldDirective_returnsRejected() {
+    void payload_dataFieldCarriesAtField_returnsRejected() {
+        // @field on the data field signals a column rename, which has no meaning when the
+        // wrapper resolves to a @table-element TableBoundReturnType. Rejecting at trigger
+        // time is conservative; if @field on a passthrough payload's data field gains a
+        // sensible interpretation later, remove it from the forbidden set.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
@@ -175,7 +198,26 @@ class PassthroughPayloadPipelineTest {
         var mutField = schema.field("Mutation", "createFilm");
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains("carries field-level directives");
+        assertThat(reason).contains("carries '@field'");
+    }
+
+    @Test
+    void payload_dataFieldCarriesAtDeprecated_admits() {
+        // @deprecated is pure metadata — no fetcher impact, no classification arm, just an
+        // SDL flag for clients. The trigger admits payloads whose data field carries it; the
+        // graphql-java introspection layer surfaces the deprecation downstream untouched.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            type FilmPayload { films: [Film!] @deprecated(reason: "use createFilms instead") }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): FilmPayload @mutation(typeName: INSERT) }
+            """);
+
+        var dataField = schema.field("FilmPayload", "films");
+        assertThat(dataField).isInstanceOf(ChildField.PassthroughDataField.class);
+        var mutField = schema.field("Mutation", "createFilm");
+        assertThat(mutField).isInstanceOf(MutationField.MutationInsertTableField.class);
     }
 
     // ===== Cross-paths =====
