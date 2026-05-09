@@ -50,26 +50,6 @@ type"*. The plain Object lands as `PlainObjectType` in the type classifier
 `PlainObjectType` parents entirely. There is no machinery downstream that would
 route the DML round-trip's `Result<Record>` to graphql-java for traversal.
 
-## Independence from R12
-
-R12 has shipped the authored-carrier path on trunk: canonical-ctor reflection,
-`ErrorChannel`, `PayloadAssembly`, `ResultAssembly`, error-routing dispatch,
-default-literal capture, `ErrorMappings`, `ErrorRouter`, `MappingsConstantNameDedup`.
-That path continues to govern any payload declared with `@record(record: {className: ...})`.
-
-R75 has no remaining dependency on R12. Phase 1 never reaches an error channel by
-construction, so it doesn't touch `ErrorRouter.dispatch`, `payloadFactoryLambda`, or
-canonical-ctor reflection. Phase 2 reuses R12's `ErrorMappings` mapping-table half
-(*which throwables map to which `@error` types*), but every piece of that machinery
-already lives on trunk. R12's remaining `Ready` work (rule-6 relaxation, accessor
-reflection check, `extensions.constraint`, validator-integration fixture) is all
-`@error`-side and gates none of R75's phases.
-
-The two paths split cleanly: authored carriers traffic in canonical-ctor slot indices
-(`PayloadAssembly.rowSlotIndex`, `ErrorChannel.errorsSlotIndex`); the no-authored-class
-path has no Java class to reflect on, so none of those slot indices apply. R75 is
-purely additive across all three phases.
-
 ## Phasing
 
 R75 ships in three phases ordered by user-visible value. Each phase is a discrete
@@ -79,10 +59,11 @@ not schedule-coupled.
 - **Phase 1: single-data-slot payloads, no errors.** Closes the legacy-parity gap on
   `@mutation` returning a plain Object payload with one data field. Specified in
   implementation-ready detail below.
-- **Phase 2: errors-slot integration via `localContext` (sketch).** Lights up when the
-  SDL payload adds an `errors:` field; the DML/service emitter wraps its result in
-  `DataFetcherResult` with `localContext(errors)`, and the errors field's emitted
-  fetcher reads from `env.getLocalContext()`.
+- **Phase 2: richer payload shapes via `localContext` (sketch).** Extends the
+  trigger to multi-field payloads. Non-data fields carry state via
+  graphql-java's `DataFetcherResult.localContext`; identity-passthrough
+  fetchers read each slot from the env. Errors are one foreshadowed
+  application; the mechanism is general.
 - **Phase 3: domain-record returns from `@service` (sketch).** Allows a `@service`
   method to return its domain object directly; graphitron's existing per-field
   fetchers (record accessors) read off the source unchanged.
@@ -409,13 +390,6 @@ relaxed.
   it materialises no state.
 - No new generator class, no synthesized package, no Java payload class on
   disk.
-- `PayloadAssembly`, `ResultAssembly`, `ErrorChannel` keep their current shape
-  and scope. They remain authored-carrier-only.
-- `FieldBuilder.findCanonicalCtor`, `resolveDmlPayloadAssembly`,
-  `resolveErrorChannel`, `resolveServiceResultAssembly` are untouched.
-- `ErrorRouter.dispatch` and `redact`, `ErrorMappings`,
-  `MappingsConstantNameDedup` are unused on the Phase 1 path (no error
-  channel until Phase 2).
 - The runtime traversal of the DML's `Result<Record>` is graphql-java's own
   list iteration through the existing `@table` per-field fetchers; no
   graphitron code reads the list itself.
@@ -472,8 +446,8 @@ paths don't fork on kind, so one INSERT fixture per case is sufficient):
   through the existing `TableBoundReturnType` path; `unwrapPassthroughPayload`
   returns `NotCandidate` and never enters the `Rejected`-message path.
 - `payload_atRecordWithClassName_returnsNotCandidate`: `@record(record:
-  {className: ...})` keeps R12's authored-carrier path; the unwrap returns
-  `NotCandidate` and the mutation routes through the existing
+  {className: ...})` keeps the existing authored-carrier path; the unwrap
+  returns `NotCandidate` and the mutation routes through the existing
   `ResultReturnType` arm.
 
 Cross-paths:
@@ -524,40 +498,32 @@ return; the consumer (`@DependsOnClassifierCheck`) lives on the DML emitter's
 `Projected*` arm in `buildDmlFetcher`. `LoadBearingGuaranteeAuditTest`
 enforces the pairing automatically; no new audit-test method is needed.
 
-## Phase 2: errors-slot integration via localContext (sketch)
+## Phase 2: richer payload shapes via localContext (sketch)
 
-When the SDL payload declares two fields (one data, one errors-shaped), the
-trigger function extends to admit the two-field shape and `PassthroughInfo`
-extends with an `errorsField` descriptor. The same `Ok` / `NotCandidate` /
-`Rejected` discipline applies; one-field and two-field shapes both reach the
-admit path through `unwrapPassthroughPayload`.
-
-The DML/service emitter wraps its result in
-`DataFetcherResult.<List<Record>>newResult().data(rows).localContext(errors).build()`
-on the success arm and the catch-arm equivalent on failure. The errors field's
-emitted fetcher reads `env.getLocalContext()` directly, replacing today's
+Phase 1's trigger admits single-data-field payloads. Phase 2 extends the
+trigger to multi-field payloads where the non-data fields carry state via
+graphql-java's `DataFetcherResult.localContext`. The trigger function admits
+the multi-field shape; `PassthroughInfo` extends with a list of auxiliary
+slot descriptors naming each SDL field and its element type. The DML emitter
+wraps its result in `DataFetcherResult.<List<Record>>newResult().data(rows).
+localContext(slots).build()`; each non-data field's identity-passthrough
+fetcher reads its slot from `env.getLocalContext()`, replacing today's
 `PropertyDataFetcher.fetching(name)` form at FetcherEmitter.java:62-70 with
-the lightweight `($T env) -> env.getLocalContext()` shape. No graphitron-runtime
-envelope class is needed; graphql-java's `DataFetcherResult.localContext`
-propagates to child environments.
+a lightweight `($T env) -> env.getLocalContext().get($S)` shape.
 
-`ErrorMappings` and `ErrorRouter`'s mapping-table half (which throwables map
-to which `@error` types, dedup of mapping-list constants) are reused
-unchanged. The factory-lambda half (`payloadFactoryLambda`, which constructs
-an authored `PayloadClass` with an errors slot at a canonical-ctor index)
-does not apply on the passthrough path; the catch arm produces a
-`DataFetcherResult` with empty data and populated `localContext` directly.
+Errors are one foreshadowed application: an `errors:` slot lets a try/catch
+wrapper around the DML surface typed errors without an authored carrier.
+Other applications (affected-row counts, warnings, echoed-back input)
+compose the same way, with per-slot population sketched per application as
+the roadmap reaches them. Phase 2 is the mechanism, not the application.
 
 Spec questions deferred to Phase 2:
 
-- Errors-slot element type (Object vs typed union) and its surface
-  implications.
-- Catch-arm `data(...)` value shape: typed-empty `Result<Record>` vs null.
-- Whether the `@error` types' dispatch table is rebuilt or the existing
-  authored-carrier dispatch table is reused as-is.
-- Whether the errors field's fetcher reuses the `IdentityPassthrough`
-  capability (against `env.getLocalContext()` rather than `env.getSource()`)
-  or warrants its own capability arm.
+- Slot-population mechanism: which generator owns which slot, and how the
+  emitter declares slot population sites.
+- Element-type admission per slot (the per-slot trigger conditions).
+- Whether the non-data fetchers reuse the `IdentityPassthrough` capability
+  against `env.getLocalContext()` or warrant their own capability arm.
 
 ## Phase 3: domain-record returns from `@service` (sketch)
 
@@ -577,8 +543,6 @@ Spec questions deferred to Phase 3:
 - Component-to-field name matching rules and rejection messages.
 - Wrapper conventions when the domain record itself is shared across multiple
   payload types.
-- Whether `ResultAssembly` collapses entirely (Phase 3 obsoletes its
-  single-slot walk) or stays for authored carriers.
 - Whether `PassthroughInfo` becomes a sealed sub-taxonomy
   (`PassthroughInfo.{Table | Record}`) when both element kinds are admitted,
   or stays as a single record with an element-kind discriminator.
@@ -591,9 +555,9 @@ Spec questions deferred to Phase 3:
 - **Setter-based errors injection.** Same rejection as before: violates immutability
   and would have graphitron mutate consumer-produced objects. Legacy's
   `payload.setErrors(...)` shape is not coming back.
-- **Authored carriers with custom fields.** Anything beyond the trigger's admitted
-  shape stays in the consumer's source tree as `@record(record: {className: ...})`,
-  governed by R12's existing path.
+- **Authored carriers with custom fields.** Anything beyond the trigger's
+  admitted shape stays in the consumer's source tree as `@record(record:
+  {className: ...})` on the existing authored-carrier path.
 - **Removing `@record` entirely from payload types.** The directive still has
   a job (declaring that the SDL type is record-shaped, distinguishing it from
   `@table`). Only the `className` argument becomes optional in the sense that
@@ -627,7 +591,7 @@ Spec questions deferred to Phase 3:
   continue to pass through the capability arm without behaviour change.
 - Authored payloads with `@record(record: {className: ...})` are unaffected:
   same generation, same rejection messages, same fixture coverage as today
-  (regression pin via the existing R12 fixtures).
+  (regression pin via the existing authored-carrier fixtures).
 - A SDL fixture taken verbatim from a legacy graphitron consumer (no
   `@record(className)` on the payload, single data slot, `@mutation(typeName:
   …)`) compiles cleanly on the rewrite.
