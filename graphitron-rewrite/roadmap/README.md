@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
-| `R119` | LSP completion / diagnostics keyed by schema coordinates | In Progress | [plan](lsp-schema-coordinate-vocabulary.md) |
+| `R119` | LSP completion / diagnostics keyed by schema coordinates | In Review | [plan](lsp-schema-coordinate-vocabulary.md) |
 | `R3` | Surface silent @splitQuery on @record-parent fields as a build warning | In Review | [plan](classification-vocabulary-followups.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec | [plan](custom-scalar-java-types.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
@@ -200,7 +200,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### lsp
 
-- `R119` [**LSP completion / diagnostics keyed by schema coordinates**](lsp-schema-coordinate-vocabulary.md) — In Progress, architecture
+- `R119` [**LSP completion / diagnostics keyed by schema coordinates**](lsp-schema-coordinate-vocabulary.md) — In Review, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature, blocked by [classification-vocabulary-followups](classification-vocabulary-followups.md)
 - `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog

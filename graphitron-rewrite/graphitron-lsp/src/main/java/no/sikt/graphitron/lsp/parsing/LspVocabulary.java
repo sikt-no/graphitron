@@ -51,8 +51,7 @@ public record LspVocabulary(
 
     /**
      * Javadoc-style {@code @deprecated} token in a description string,
-     * mirroring {@code DeprecationMarkers.DESCRIPTION_DEPRECATED_TOKEN}
-     * but applied to the parsed description rather than raw SDL bytes.
+     * applied to the parsed description text rather than raw SDL bytes.
      * The negative lookbehind avoids matching mid-word occurrences such
      * as {@code my@deprecated}.
      */
@@ -333,6 +332,44 @@ public record LspVocabulary(
                     .flatMap(x -> findInputValue(x.getInputValueDefinitions(), f.field()))
                     .flatMap(v -> descriptionText(v.getDescription()));
         };
+    }
+
+    /**
+     * Returns every coordinate the parsed registry marks deprecated, in
+     * either the native {@code @deprecated(reason:)} form (member-level)
+     * or the docstring {@code @deprecated} convention (whole-directive).
+     *
+     * <p>Walks the directive surface twice: every directive plus its args
+     * for native deprecations and docstring conventions, every input type
+     * plus its fields for native deprecations. Used by
+     * {@code SdlActionDriftTest} to assert that {@link
+     * no.sikt.graphitron.lsp.code_action.SdlActions} stays in sync with
+     * the SDL — every action targets a real marker, every marker is
+     * covered by an action or the manual-migration allow-list.
+     */
+    public java.util.Set<SchemaCoordinate> deprecatedCoordinates() {
+        var out = new java.util.LinkedHashSet<SchemaCoordinate>();
+        for (var directive : registry.getDirectiveDefinitions().values()) {
+            var dCoord = new SchemaCoordinate.Directive(directive.getName());
+            if (deprecationOf(dCoord).isPresent()) {
+                out.add(dCoord);
+            }
+            for (var arg : directive.getInputValueDefinitions()) {
+                var aCoord = new SchemaCoordinate.DirectiveArg(directive.getName(), arg.getName());
+                if (deprecationOf(aCoord).isPresent()) {
+                    out.add(aCoord);
+                }
+            }
+        }
+        for (var inputType : registry.getTypes(InputObjectTypeDefinition.class)) {
+            for (var field : inputType.getInputValueDefinitions()) {
+                var fCoord = new SchemaCoordinate.InputField(inputType.getName(), field.getName());
+                if (deprecationOf(fCoord).isPresent()) {
+                    out.add(fCoord);
+                }
+            }
+        }
+        return out;
     }
 
     /**

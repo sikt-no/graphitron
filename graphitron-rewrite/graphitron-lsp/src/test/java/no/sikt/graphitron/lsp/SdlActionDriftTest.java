@@ -3,7 +3,8 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.lsp.code_action.SdlAction;
 import no.sikt.graphitron.lsp.code_action.SdlAction.DeprecationTarget;
 import no.sikt.graphitron.lsp.code_action.SdlActions;
-import no.sikt.graphitron.lsp.parsing.DeprecationMarkers;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
+import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.junit.jupiter.api.Test;
 
@@ -37,14 +38,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  * that adds (or loses) a deprecation flips this assertion as well, so
  * the per-arm invariants don't silently keep passing through changes
  * the spec didn't anticipate.
+ *
+ * <p>Markers are derived from {@link LspVocabulary#deprecatedCoordinates()},
+ * which walks the parsed {@code TypeDefinitionRegistry}. The test bridges
+ * {@link SchemaCoordinate} (vocabulary's keying) and {@link DeprecationTarget}
+ * (SdlActions' keying) via {@link #toDeprecationTarget}; the two carriers
+ * collapse into one in a follow-up R119 cleanup.
  */
 class SdlActionDriftTest {
 
+    private static final LspVocabulary VOCAB = LspVocabulary.load();
+
     @Test
     void atLandingTimeCanonicalSetIsExact() {
-        var markers = DeprecationMarkers.parseFromClasspath();
-
-        assertThat(markers).containsExactlyInAnyOrder(
+        assertThat(markers()).containsExactlyInAnyOrder(
             new DeprecationTarget.Member("ExternalCodeReference", "name"),
             new DeprecationTarget.Member("@asConnection", "connectionName"),
             new DeprecationTarget.WholeDirective("index")
@@ -53,14 +60,13 @@ class SdlActionDriftTest {
 
     @Test
     void everyActionTargetPointsAtAnExistingMarker() {
-        var markers = DeprecationMarkers.parseFromClasspath();
         var allActionTargets = new LinkedHashSet<DeprecationTarget>();
         for (SdlAction action : SdlActions.all(CompletionData.empty())) {
             allActionTargets.addAll(action.targets());
         }
 
         var stale = allActionTargets.stream()
-            .filter(t -> !markers.contains(t))
+            .filter(t -> !markers().contains(t))
             .collect(Collectors.toSet());
 
         assertThat(stale)
@@ -71,7 +77,6 @@ class SdlActionDriftTest {
 
     @Test
     void everyMarkerIsCoveredByAnActionOrTheManualMigrationAllowList() {
-        var markers = DeprecationMarkers.parseFromClasspath();
         var actionTargets = new LinkedHashSet<DeprecationTarget>();
         for (SdlAction action : SdlActions.all(CompletionData.empty())) {
             actionTargets.addAll(action.targets());
@@ -79,7 +84,7 @@ class SdlActionDriftTest {
         Set<DeprecationTarget> covered = new LinkedHashSet<>(actionTargets);
         covered.addAll(SdlActions.MANUAL_MIGRATION_DEPRECATIONS);
 
-        var orphans = markers.stream()
+        var orphans = markers().stream()
             .filter(m -> !covered.contains(m))
             .collect(Collectors.toSet());
 
@@ -92,15 +97,30 @@ class SdlActionDriftTest {
 
     @Test
     void manualMigrationAllowListEntriesAllPointAtRealMarkers() {
-        var markers = DeprecationMarkers.parseFromClasspath();
-
         var stale = SdlActions.MANUAL_MIGRATION_DEPRECATIONS.stream()
-            .filter(t -> !markers.contains(t))
+            .filter(t -> !markers().contains(t))
             .collect(Collectors.toSet());
 
         assertThat(stale)
             .as("MANUAL_MIGRATION_DEPRECATIONS entries without a corresponding "
                 + "deprecation marker in directives.graphqls; remove the stale entries")
             .isEmpty();
+    }
+
+    private static Set<DeprecationTarget> markers() {
+        return VOCAB.deprecatedCoordinates().stream()
+            .map(SdlActionDriftTest::toDeprecationTarget)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private static DeprecationTarget toDeprecationTarget(SchemaCoordinate coord) {
+        return switch (coord) {
+            case SchemaCoordinate.Directive d -> new DeprecationTarget.WholeDirective(d.name());
+            case SchemaCoordinate.DirectiveArg da ->
+                new DeprecationTarget.Member("@" + da.directive(), da.arg());
+            case SchemaCoordinate.InputField f -> new DeprecationTarget.Member(f.type(), f.field());
+            case SchemaCoordinate.InputType t -> throw new IllegalStateException(
+                "input-type coordinate cannot be deprecated: " + t);
+        };
     }
 }
