@@ -333,3 +333,59 @@ narrower item originally filed as "LSP directive registry sourced from
 directives.graphqls" was rescoped during a follow-up design discussion to
 this structurally-grounded version; the registry replacement is the first
 phase of the migration above, not the goal.
+
+## Drafting status (pre-Ready handoff)
+
+This Spec body was drafted in one session against a partial read of the
+LSP module. Four follow-ups are pending before Spec → Ready:
+
+1. **`TypeDefinitionRegistry`, not `GraphQLSchema`.** The "Startup
+   population" section says GraphQL-Java parses `directives.graphqls`
+   into a `GraphQLSchema`. Correct shape: `SchemaParser.parse(...)`
+   returns `TypeDefinitionRegistry`, which exposes
+   `getDirectiveDefinitions()` / `getType(name)` and is sufficient for
+   the structural invariant ("does this coordinate resolve?"). No
+   runtime wiring, no `SchemaGenerator` step. The `parsedDirectiveSchema`
+   field on `LspVocabulary` should be typed `TypeDefinitionRegistry`.
+
+2. **Acknowledge the broader directive surface.** The "Coordinate
+   vocabulary in scope" table covers what the LSP behaviorally supports
+   today; `directives.graphqls` actually declares ~25 directives
+   (`@table`, `@field`, `@externalField`, `@enum`, `@service`, `@error`,
+   `@reference`, `@multitableReference`, `@sourceRow`, `@condition`,
+   `@lookupKey`, `@mutation`, `@asConnection`, `@orderBy`, `@index`,
+   `@order`, `@defaultOrder`, `@record`, `@discriminate`,
+   `@discriminator`, `@node`, `@nodeId`, `@tableMethod`,
+   `@experimental_constructType`, `@splitQuery`, `@notGenerated`) and
+   input types beyond `ExternalCodeReference` / `ReferenceElement`
+   (`ErrorHandler`, `ReferencesForType`, `FieldSort`). Spec body should
+   say explicitly: the parsed schema gives the LSP every coordinate; the
+   *overlay* declares semantics only for the coordinates the LSP knows
+   how to act on today. New behaviors are additive overlay entries — not
+   a rewrite of the parse.
+
+3. **Confirm migration coverage on the three consumer files I didn't
+   read.** `ReferenceCompletions`, `FieldCompletions`, `TableCompletions`
+   are 60-130 lines each. Need to confirm they fit the
+   `Behavior` arm shape (`CatalogTableBinding`, `CatalogColumnBinding`,
+   `CatalogFkBinding`) without surfacing a fourth shape the spec body
+   doesn't account for. Honest deviations get noted in "What stays out".
+
+4. **Resource path constant.** Open question 2 names the path
+   `no/sikt/graphitron/rewrite/schema/directives.graphqls` and proposes
+   a `BuildContext.DIRECTIVES_RESOURCE_PATH` constant. Verify
+   `BuildContext` is the right class (or whether `SchemaDirectiveRegistry`
+   in `graphitron/.../generators/util/` is a better home), then state
+   the home concretely. Cross-check that `graphitron-lsp/pom.xml` runtime
+   depends on the right artifact for the resource to be available
+   (already confirmed at lines 23-27, but the constant lives on the
+   exporter side).
+
+The `dev` Mojo wiring also bears one quick read to confirm where the
+catalog is constructed today and whether the `LspVocabulary` is built
+in the same place; that's a fifth follow-up if the answers above
+shift the wiring.
+
+Branch carrying this Spec: `claude/r119-backlog` (trunk after publish).
+The four follow-ups should land in one or two cleanup commits before any
+`srp` handoff.
