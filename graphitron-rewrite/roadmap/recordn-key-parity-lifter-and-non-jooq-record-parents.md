@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 7
 theme: service
-depends-on: [emit-record1-keys-instead-of-row1]
+depends-on: []
 ---
 
 # @batchKeyLifter Record return-type symmetry
