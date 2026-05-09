@@ -168,20 +168,30 @@ final class MutationInputResolver {
      * {@link FieldBuilder#buildDmlField} (a separate "not yet supported" category), and
      * bulk-input + list-payload still falls under #14's existing arm.
      */
-    static String validateReturnType(ReturnTypeRef returnType, DmlKind kind, boolean listInput) {
+    static String validateReturnType(ReturnTypeRef returnType, DmlKind kind, boolean listInput, BuildContext ctx) {
         return switch (returnType) {
             case ReturnTypeRef.ScalarReturnType s -> {
-                if (!"ID".equals(s.returnTypeName())) {
+                if ("ID".equals(s.returnTypeName())) {
+                    if (listInput && !s.wrapper().isList()) {
+                        yield "@mutation(typeName: " + kind + ") with a listed @table input "
+                            + "must return a list (found '" + s.returnTypeName() + "', "
+                            + "single-cardinality); use [ID!]! to avoid silent drop of "
+                            + "all-but-last-row data (Invariant #15)";
+                    }
+                    yield null;
+                }
+                // R75 Phase 1: PlainObjectType candidates that fail a trigger condition land here.
+                // Substitute the per-condition reason from the unwrap so the validator surfaces the
+                // same criterion the classifier checked, rather than the generic "not yet supported"
+                // line that doesn't tell the author what to fix.
+                if (ctx != null && ctx.unwrapPassthroughPayload(s.returnTypeName())
+                        instanceof no.sikt.graphitron.rewrite.model.PassthroughResolution.Rejected rej) {
                     yield "@mutation(typeName: " + kind + ") return type '"
-                        + s.returnTypeName() + "' is not yet supported; use ID or a @table type";
+                        + s.returnTypeName() + "': " + rej.reason()
+                        + "; or author a carrier with @record(record: {className: ...})";
                 }
-                if (listInput && !s.wrapper().isList()) {
-                    yield "@mutation(typeName: " + kind + ") with a listed @table input "
-                        + "must return a list (found '" + s.returnTypeName() + "', "
-                        + "single-cardinality); use [ID!]! to avoid silent drop of "
-                        + "all-but-last-row data (Invariant #15)";
-                }
-                yield null;
+                yield "@mutation(typeName: " + kind + ") return type '"
+                    + s.returnTypeName() + "' is not yet supported; use ID or a @table type";
             }
             case ReturnTypeRef.TableBoundReturnType tb -> {
                 if (tb.wrapper() instanceof FieldWrapper.Connection) {
@@ -207,6 +217,17 @@ final class MutationInputResolver {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + r.returnTypeName() + "' (list of @record) is not yet supported; "
                         + "use a single @record payload, an ID, or a @table type";
+                }
+                // R75 Phase 1: PojoResultType(_, _, null) candidates that fail a trigger condition
+                // land here (not in ScalarReturnType, because the classifier still recognises the
+                // type as a ResultType). Surface the per-condition reason, same shape as the
+                // ScalarReturnType arm above; an authored carrier with className is the redirect.
+                if (r.fqClassName() == null && ctx != null
+                        && ctx.unwrapPassthroughPayload(r.returnTypeName())
+                            instanceof no.sikt.graphitron.rewrite.model.PassthroughResolution.Rejected rej) {
+                    yield "@mutation(typeName: " + kind + ") return type '"
+                        + r.returnTypeName() + "': " + rej.reason()
+                        + "; or author a carrier with @record(record: {className: ...})";
                 }
                 yield null;
             }

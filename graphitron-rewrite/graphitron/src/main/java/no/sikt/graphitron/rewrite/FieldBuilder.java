@@ -2337,6 +2337,42 @@ class FieldBuilder {
      * DML emitter pattern-matches on. Total over Invariant #14's admitted return-type set;
      * unreachable on anything else (Invariant #14 already rejected it).
      */
+    /**
+     * Load-bearing classifier check (R75 Phase 1): when a {@code @mutation} field returns a
+     * passthrough payload, the data field's {@code @table} must equal the DML target table
+     * (the input's {@code @table}). The DML emitter's {@link DmlReturnExpression.ProjectedSingle}
+     * / {@link DmlReturnExpression.ProjectedList} arms emit
+     * {@code RETURNING $fields(<DataElementType>, <DmlTargetTable>)}, which jOOQ rejects when
+     * the columns reference a different table than the one being written to. Holding the
+     * invariant here keeps the projected arms total without a defensive cross-check on the
+     * emitter side.
+     *
+     * <p>Returns {@code null} when the tables match; a non-null rejection reason otherwise. This
+     * is the single producer site for {@code passthrough-payload.data-table-equals-dml-target}.
+     */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "passthrough-payload.data-table-equals-dml-target",
+        description = "Rejects @mutation fields whose passthrough payload's data field projects "
+            + "onto a table other than the input @table. Lets the DML emitter's "
+            + "ProjectedSingle / ProjectedList arms call "
+            + "<DataElementType>Type.$fields(env.getSelectionSet(), <DmlTargetTable>, env) "
+            + "without a defensive cross-table check; jOOQ would otherwise reject the "
+            + "RETURNING projection at runtime.")
+    private static String requireDataTableMatchesInputTable(
+            TableRef inputTable,
+            no.sikt.graphitron.rewrite.model.PassthroughInfo info,
+            MutationInputResolver.DmlKind kind,
+            String name) {
+        if (inputTable.equals(info.dataTable())) {
+            return null;
+        }
+        return "@mutation(typeName: " + kind + ") field '" + name
+            + "' returns passthrough payload '" + info.payloadTypeName()
+            + "' projecting onto table '" + info.dataTable().tableName()
+            + "', but the input @table is '" + inputTable.tableName()
+            + "'; the data field's @table must match the input table";
+    }
+
     private static DmlReturnExpression buildDmlReturnExpression(
             ReturnTypeRef returnType,
             Optional<HelperRef.Encode> encodeReturn,
@@ -2555,9 +2591,21 @@ class FieldBuilder {
                 String rawReturn = baseTypeName(fieldDef);
                 ReturnTypeRef returnType = ctx.resolveReturnType(rawReturn, buildWrapper(fieldDef));
 
-                String returnTypeError = MutationInputResolver.validateReturnType(returnType, kind, tia.list());
+                String returnTypeError = MutationInputResolver.validateReturnType(returnType, kind, tia.list(), ctx);
                 if (returnTypeError != null) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(returnTypeError));
+                }
+
+                // R75 Phase 1: when the SDL return type unwrapped through a passthrough payload,
+                // hold the load-bearing invariant that the data field's @table matches the DML
+                // target table (the input @table). The unwrap is pure; re-running it here lets
+                // the check stay local and read off PassthroughInfo without threading a flag
+                // through the call chain.
+                if (ctx.unwrapPassthroughPayload(rawReturn) instanceof no.sikt.graphitron.rewrite.model.PassthroughResolution.Ok ok) {
+                    String mismatch = requireDataTableMatchesInputTable(tia.inputTable(), ok.info(), kind, name);
+                    if (mismatch != null) {
+                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(mismatch));
+                    }
                 }
 
                 Optional<HelperRef.Encode> encodeReturn = Optional.empty();

@@ -1081,6 +1081,15 @@ input FilmDeleteInput @table(name: "film") {
     filmId: Int! @field(name: "film_id") @lookupKey
 }
 
+# R75 Phase 1: passthrough payload return type. The SDL author authors no Java class —
+# graphql-java traverses the wire-format wrapper through the data field's identity-passthrough
+# fetcher (env -> env.getSource()), and the per-Film-field fetchers walk the inner Result<Record>
+# from there. The data field's @table (film) must equal the input @table (film), enforced by
+# the load-bearing classifier check passthrough-payload.data-table-equals-dml-target.
+type FilmPassthroughPayload {
+    films: [Film!]
+}
+
 type Mutation {
     # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$fields>).fetchOne(r -> r)`.
@@ -1104,6 +1113,17 @@ type Mutation {
     updateFilms(in: [FilmUpdateInput!]!): [Film!]! @mutation(typeName: UPDATE)
     upsertFilms(in: [FilmUpsertInput!]!): [Film!]! @mutation(typeName: UPSERT)
     deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE)
+
+    # R75 Phase 1: passthrough payload mutations (FilmPassthroughPayload, no @record/@table).
+    # Per-DmlKind coverage of the wire-format-unwrap path: the classifier resolves the SDL
+    # return through unwrapPassthroughPayload, lifts FilmPassthroughPayload to the data field's
+    # TableBoundReturnType, and threads the existing ProjectedList path through to the per-kind
+    # emitter. The execution-tier driver verifies that graphql-java traverses the resulting
+    # Result<Record> through Film's per-field fetchers without an authored carrier on disk.
+    createFilmsPassthrough(in: [FilmCreateInput!]!): FilmPassthroughPayload @mutation(typeName: INSERT)
+    updateFilmsPassthrough(in: [FilmUpdateInput!]!): FilmPassthroughPayload @mutation(typeName: UPDATE)
+    deleteFilmsPassthrough(in: [FilmDeleteInput!]!): FilmPassthroughPayload @mutation(typeName: DELETE)
+    upsertFilmsPassthrough(in: [FilmUpsertInput!]!): FilmPassthroughPayload @mutation(typeName: UPSERT)
 
     # R12 fixture (error-handling-parity.md): mutation-side @error end-to-end. The
     # @service-backed mutation classifies as MutationServiceRecordField (same shape that

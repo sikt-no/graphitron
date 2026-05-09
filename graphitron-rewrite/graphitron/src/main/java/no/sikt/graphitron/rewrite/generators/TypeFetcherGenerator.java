@@ -174,6 +174,7 @@ public class TypeFetcherGenerator {
         ChildField.RecordTableField.class,
         ChildField.RecordLookupTableField.class,
         ChildField.ConstructorField.class,
+        ChildField.PassthroughDataField.class,
         QueryField.QueryTableInterfaceField.class,
         ChildField.TableInterfaceField.class,
         ChildField.ParticipantColumnReferenceField.class,
@@ -463,6 +464,7 @@ public class TypeFetcherGenerator {
                 }
                 case ChildField.NestingField ignored            -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
                 case ChildField.ConstructorField ignored        -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
+                case ChildField.PassthroughDataField ignored    -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() (R75 IdentityPassthrough capability arm) */ }
                 // ServiceRecordField is dispatched alongside ServiceTableField above (shared
                 // emitters parameterised by perKeyType). The "no-op" arm here keeps the switch
                 // exhaustive without re-emitting; the variant has IMPLEMENTED_LEAVES membership.
@@ -2093,6 +2095,14 @@ public class TypeFetcherGenerator {
      * {@code .returningResult(...).fetchOne(...)} (or {@code .returning().fetchOne()} +
      * payload-class constructor for the {@code Payload} arm).
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "passthrough-payload.data-table-equals-dml-target",
+        reliesOn = "The ProjectedSingle / ProjectedList arms call <returnTypeName>Type.$fields("
+            + "env.getSelectionSet(), <tableLocal>, env). When the SDL return type was a passthrough "
+            + "payload, returnTypeName is the data field's element type; tableLocal is the DML "
+            + "target table (the input @table). FieldBuilder.requireDataTableMatchesInputTable "
+            + "rejects at classify time when these refer to different tables, so jOOQ never sees "
+            + "a RETURNING projection that references columns from a different table.")
     private static CodeBlock emitDmlReturnExpression(
             no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
             TypeName valueType,
