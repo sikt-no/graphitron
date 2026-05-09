@@ -1,7 +1,7 @@
 ---
 id: R86
 title: "Architecture chapter for the manual"
-status: Ready
+status: In Review
 bucket: Documentation
 depends-on: []
 ---
@@ -103,19 +103,18 @@ This shape is what the chapter has to deliver against. If implementation discove
 
 ## Implementation
 
-The order matters in exactly one place: `typed-rejection.adoc` lands before the `rewrite-design-principles.adoc` forward pointers (otherwise the principles doc ends up pointing at a dead xref). Everything else is independent and the implementer chooses commit shape.
+Shipped. Six diagrams enumerated, six landed: D1 (build pipeline) on the rewritten chapter index; D3 (scope state machine) on `code-generation-triggers.adoc § Scope`; D4 (request lifecycle) on `runtime-extension-points.adoc`; D7 (dev-loop runtime framing) on `getting-started.adoc § Dev loop`'s new contributor subsection; D9 (federation flow) on `getting-started.adoc § Federation`'s new contributor subsection; D10 (typed-rejection sealed hierarchy) on the new `typed-rejection.adoc`. Both `=== How this is wired (for contributors)` voice-marked subsections landed under their existing `==` parents. `runtime-extension-points.adoc § Where the interface comes from` carries the prepended "why per-app emission rather than a shared runtime jar" rationale. The four manual xrefs landed at `docs/manual/explanation/index.adoc`, `docs/manual/explanation/classifier-mental-model.adoc`, `docs/manual/explanation/how-it-works.adoc`, `docs/manual/how-to/test-your-schema.adoc`.
 
-* Rewrite `graphitron-rewrite/docs/README.adoc` to the index draft above. D1 (build pipeline mermaid) replaces the ASCII art. The existing "Modules" and "Publishing" sections stay verbatim.
-* Augment `getting-started.adoc § Federation` with a marked `=== How this is wired (for contributors)` subsection carrying the contributor-level rationale (`@link` semantics, the `<schemaInput tag>` decision logic, the `Graphitron.buildSchema` federation-wrap rule, the `fetchEntities` seam). Add D9 (federation flow) inside the subsection.
-* Augment `getting-started.adoc § Dev loop` with a marked `=== How this is wired (for contributors)` subsection carrying the runtime-framing prose (LSP + schema watcher + classpath watcher in one JVM, generator dispatch, idempotent-write coupling to IDE recompile). Add D7 (dev-loop runtime) inside the subsection.
-* Reframe `runtime-extension-points.adoc`: prepend the "why per-app emission rather than a shared runtime jar" rationale to `## Where the interface comes from`. Add D4 (request lifecycle).
-* Add D3 (scope state machine) to `code-generation-triggers.adoc § Scope`. Convert the existing `## Classification` and `## Derived tables` prose tables to enriched AsciiDoc tables (cell shading, inline directive examples) where readability improves.
-* Create `typed-rejection.adoc`. Consolidate the sealed-`Resolved` narrative, the `Rejection` taxonomy, and `BuildContext.candidateHint`. D10 anchors. Cross-link out to `/manual/reference/diagnostics-glossary.adoc`. **This page becomes the canonical source** — write the prose under that frame.
-* Replace the two affected sections in `rewrite-design-principles.adoc` ("Builder-step results …", "Wire-format encoding …") with one-line forward pointers into `typed-rejection.adoc`. Edit the framing line at `rewrite-design-principles.adoc:5` in the same commit: today it says "until [R86 lands], this contributor-facing reference is the canonical source"; the replacement names `typed-rejection.adoc` as canonical for the consolidated narrative, with the principles doc retaining its principle-list shape for the items not consolidated.
-* Add `SealedHierarchyDocCoverageTest` walking `Rejection.permits()` transitively (covering `AuthorError`, `InvalidSchema`, and their sub-permits). Asserts each permit name appears in `typed-rejection.adoc`. Lives next to `DirectiveDocCoverageTest`. The sealed-`Resolved` pattern is described shape-only in the chapter (per the mechanical rule above) and has no test entry.
-* Restore the four xrefs in `/docs/manual/` (`docs/README.adoc:33` stays as prose).
+`typed-rejection.adoc` is the new canonical source for the sealed-result-and-structured-rejection narrative, with the prior section in `rewrite-design-principles.adoc` collapsed to a one-line forward pointer and the framing line at `rewrite-design-principles.adoc:5` rewritten accordingly. `SealedHierarchyDocCoverageTest` walks `Rejection.permits()` transitively under `graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/internal/`, with bidirectional drift protection: forward (every leaf permit must appear on the page), reverse (every `AuthorError.X` / `InvalidSchema.X` qualified mention on the page must correspond to a real permit).
 
-`docs/pom.xml`'s `stage-architecture` resource block already covers `*.adoc` so new pages stage automatically; no pom edit needed.
+Two deviations from spec, both surfaced for reviewer judgment:
+
+1. **Wire-format-encoding section retained in principles doc.** Spec line 26 listed two principles to collapse to forward pointers ("Builder-step results are sealed", "Wire-format encoding is a boundary concern"). The chapter page is named `typed-rejection.adoc` and consolidates the rejection narrative per the same line ("the sealed-`Resolved` narrative, the `Rejection` kinds taxonomy, and `BuildContext.candidateHint`"); the wire-format-boundary principle is a distinct decode-at-DataFetcher contract whose worked example (`CallSiteExtraction.NodeIdDecodeKeys`, `BodyParam.ColumnPredicate`, federation `_Any` rep flow, connection cursor encode/decode) doesn't fit the page name or the consolidation list. Forwarding it would land readers on a page that doesn't carry the narrative. Per spec line 102's explicit invitation to deviate when implementation reveals a fork, only "Builder-step results are sealed" was collapsed; the wire-format principle stays as-is in `rewrite-design-principles.adoc`. If the reviewer wants the wire-format narrative consolidated too, the page either grows a "boundary contracts" framing or a sibling page (`wire-format-boundary.adoc`) lands as a separate item.
+2. **Existing tables in `code-generation-triggers.adoc` not converted to enriched AsciiDoc form.** Spec line 27 said "where readability improves"; the existing `===` tables read fine and the conversion would have been stylistic sprawl rather than a readability win. D3 landed; the table format stayed.
+
+One unplanned change: `ManualXrefIntegrityTest` was extended to remap the rendered `architecture/` subtree back to its source location at `graphitron-rewrite/docs/`. Without the remap, the test treats every new xref `xref:../../../architecture/foo.adoc[]` as dangling because it resolves the path source-relative, and the architecture pages don't exist at the resolved path until staging. The remap mirrors the staging block's `README.adoc → index.adoc` rename so source-tree resolution stays honest while the rendered xref still resolves at runtime.
+
+`docs/pom.xml`'s `stage-architecture` resource block covers `*.adoc`; no pom edit was needed.
 
 ## Tests / verification
 

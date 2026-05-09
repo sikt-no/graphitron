@@ -169,6 +169,49 @@ plugin treats this as an implicit opt-in to Federation 2:
 * If `<schemaInput tag>` is unset, the plugin makes no federation choice on
   your behalf.
 
+=== How this is wired (for contributors)
+
+This subsection is contributor-level material; consumers can skip it. It explains *why* the consumer-facing surface above is shaped the way it is, what code carries the wrap, and where the seams live for anyone extending federation handling.
+
+`@link` is the opt-in. `Graphitron.buildSchema(...)` checks the parsed SDL for an `@link` to a federation spec; if present, it routes through `federation-graphql-java-support` to wrap the schema with the `_Service.sdl` field, the `_Entity` union, and the `_entities` resolver. If absent, the build skips the wrap entirely and emits a vanilla schema. A consumer who wants federation just adds the `@link`; a consumer who doesn't gets no federation surface, no `_entities`, no `_Service`. The opt-in is the SDL declaration, nothing else.
+
+`<schemaInput tag>` is the second federation entry point. It exists because `@tag(name: "...")` directives are only meaningful to a federation gateway, and a consumer setting tag values has implicitly committed to federation 2. The plugin synthesises an `@link` with `import: ["@tag"]` if none was declared, fails the build if `@link` is declared but `"@tag"` is missing from `import`, and stays out of the way if neither is set. The decision lives in the plugin so it's visible at build configuration; the runtime never sees the synthesis logic.
+
+`Graphitron.buildSchema` does the wrap, not the consumer. A second `Federation.transform(...)` call by the consumer would double-add `_Service` and `_Entity` and break composition; the contract is *the consumer never wraps*. The two-arg form takes a federation customizer (`fed -> fed.fetchEntities(...)`) for cases where a consumer needs to override `fetchEntities` for hand-rolled entity types.
+
+The `fetchEntities` seam lives where it does because the default fetcher only knows about Graphitron-classified types: `@node` types resolve via the NodeId path, types with a `@key` directive resolve via column-value lookup, and both share the same per-type batched `SELECT`. Anything outside that classification surface (hand-rolled objects, types from a non-Graphitron source) needs a custom fetcher; the customizer lets the consumer plug one in without touching `buildSchema`'s wiring.
+
+[#diagram-d9]
+[source,mermaid]
+----
+sequenceDiagram
+    participant SDL as .graphqls SDL
+    participant Build as Graphitron.buildSchema
+    participant Wrap as federation-graphql-java-support
+    participant Engine as graphql-java engine
+    participant Fetch as _entities resolver
+    participant DB as PostgreSQL
+
+    SDL->>Build: parse + classify
+    alt @link present
+        Build->>Wrap: wrap(schema, fetchEntities)
+        Wrap-->>Build: federation-wrapped schema<br/>(adds _Service.sdl, _entities)
+    else no @link
+        Build-->>Engine: vanilla schema (no federation surface)
+    end
+    Build-->>Engine: ready
+    Engine->>Fetch: _entities([{__typename, key…}, …])
+    alt @node type
+        Fetch->>DB: SELECT by NodeId-decoded keys (batched per type)
+    else @key type
+        Fetch->>DB: SELECT by key-column tuples (batched per type)
+    else custom fetcher (fed.fetchEntities)
+        Fetch->>Fetch: consumer-supplied resolver
+    end
+    DB-->>Fetch: rows
+    Fetch-->>Engine: typed results
+----
+
 == Tenant-scoped DSLContext
 
 `getDslContext(env)` is called per resolver invocation, so it can inspect
@@ -337,6 +380,37 @@ new tables and columns automatically; no `dev`-session restart needed.
 
 Stop the loop with Ctrl+C (a JVM shutdown hook closes the LSP socket,
 the watch service, and the debounce executor cleanly).
+
+=== How this is wired (for contributors)
+
+This subsection is contributor-level material; consumers can skip it. It explains the runtime framing of the `dev` Mojo: which components live in one JVM, what each watches, and why the seams sit where they do for anyone extending the dev-loop surface.
+
+The `dev` goal runs four cooperating components in one JVM:
+
+* *LSP server* binds the TCP port (default `8487`) and speaks LSP to whatever editor or agent connects. It serves diagnostics, hover, completion, and go-to-definition off the most recent classified `GraphitronSchema`. State is in-memory only; no LSP cache lives on disk.
+* *Schema watcher* is a `WatchService` over the consumer's `.graphqls` source roots. On a save, it debounces same-file events that arrive in clusters (some editors emit several `MODIFY` events per save) and signals the generator dispatch.
+* *Classpath watcher* is a `WatchService` over the consumer's compiled jOOQ output (`target/classes/<jooqPackage>/`). When `mvn compile` in another terminal lands new `.class` files for jOOQ tables and columns, the watcher signals the generator dispatch the same way a schema save does. This is what lets a jOOQ schema regen pick up automatically without a `dev`-session restart.
+* *Generator dispatch* is the lifecycle thread that consumes wake-up events from either watcher, loads the (possibly-updated) classpath, runs the generator over the (possibly-updated) `.graphqls` sources, and feeds the resulting `GraphitronSchema` and emit results to the LSP server's in-memory state and to disk via the idempotent writer.
+
+One JVM, one socket, one process tree. There's no daemon, no client/server split, no shared cache directory. The Mojo binds, watches, regenerates, and serves; on Ctrl+C the JVM shutdown hook closes the LSP socket, the `WatchService` instances, and the debounce executor cleanly.
+
+The idempotent-write coupling is what makes the loop usable as an editor backend. Because `JavaFile.writeToPath` writes only files whose rendered content actually changed (SHA-256 comparison) and deletes orphans in rewrite-owned sub-packages, a schema edit that touches one type rewrites that type's files and leaves every other generated file byte-identical on disk. The IDE's incremental compiler, Quarkus `quarkus:dev`, and Spring Boot DevTools all detect changes by mtime; unchanged files keep their mtimes, so only the actually-changed files trigger an IDE recompile. Two effects fall out: editor latency is proportional to the edit (not to the schema size), and `git diff` after a `dev` session shows only what a human-readable summary of the schema edit would predict.
+
+[#diagram-d7]
+[source,mermaid]
+----
+flowchart TD
+    subgraph JVM["dev JVM (one process)"]
+        Editor["editor / agent"] -. LSP/TCP :8487 .-> LSP["LSP server"]
+        SW["schema watcher<br/>(.graphqls)"] -- debounced<br/>save events --> Disp["generator dispatch"]
+        CW["classpath watcher<br/>(target/classes/&lt;jooq&gt;)"] -- .class change<br/>events --> Disp
+        Disp -- run --> Gen["generator<br/>(classify + emit)"]
+        Gen -- in-memory<br/>GraphitronSchema --> LSP
+        Gen -- emit results --> Writer["JavaFile.writeToPath<br/>(idempotent + orphan sweep)"]
+        Writer -- only-changed<br/>files written --> Sources["target/generated-sources/graphitron"]
+    end
+    Sources -- mtime change --> IDE["IDE recompile<br/>(IntelliJ / Quarkus / DevTools)"]
+----
 
 == Notes
 

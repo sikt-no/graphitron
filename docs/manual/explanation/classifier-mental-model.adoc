@@ -2,7 +2,7 @@
 :description: What the build's classification step does, in user-visible terms. Useful when reading rejection messages, understanding directive interactions, or diagnosing why a field surfaces as a stub.
 :!toc:
 
-The build doesn't blindly emit a fetcher for every field; it first sorts each field into a category based on its directives, its parent, and its return type. The sorting is the *classification* step, and most of the build's user-visible behaviour (rejection messages, directive interaction rules, batched-vs-correlated query shapes) traces back to it. This page explains the model in user terms; the rewrite-internal docs at `graphitron-rewrite/docs/` cover the contributor-facing detail.
+The build doesn't blindly emit a fetcher for every field; it first sorts each field into a category based on its directives, its parent, and its return type. The sorting is the *classification* step, and most of the build's user-visible behaviour (rejection messages, directive interaction rules, batched-vs-correlated query shapes) traces back to it. This page explains the model in user terms; xref:../../../architecture/code-generation-triggers.adoc[Code Generation Triggers] covers the contributor-facing detail.
 
 == Two axes describe every field
 

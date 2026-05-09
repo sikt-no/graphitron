@@ -2,7 +2,7 @@
 
 Technical and architectural principles that govern the rewrite pipeline. For Graphitron's strategic/philosophical principles, see xref:../graphitron-principles.adoc[graphitron-principles.md].
 
-The typed-rejection narrative ("Builder-step results are sealed, not strings or out-params"), the sealed-hierarchies guidance, and the wire-format-boundary principle are slated to consolidate into the public user-manual architecture chapter once it lands (tracked under R86, `graphitron-rewrite/roadmap/architecture-chapter.md`); until then, this contributor-facing reference is the canonical source.
+The typed-rejection narrative (the sealed `Resolved` shape across the resolver siblings, the `Rejection` taxonomy, the Levenshtein-ranked candidate hint contract) is consolidated at xref:typed-rejection.adoc[Typed rejection]; this doc retains the principle-list shape, with the rejection-related principle below collapsed to a forward pointer.
 
 '''
 
@@ -60,17 +60,7 @@ The key distinction from model-level sealed hierarchies: builder-internal hierar
 
 == Builder-step results are sealed, not strings or out-params
 
-Every builder-step lift returns a sealed `Resolved` result; rejection is a variant, not a return-string-or-null. Thirteen resolver siblings lifted out of `FieldBuilder` (R6 produced eleven; R1 added `BatchKeyLifterDirectiveResolver`; R40 added `NodeIdLeafResolver`) share this shape. Each entry point returns a sealed `Resolved` (typically `{None | Ok | Rejected}`, or domain-specific arms like `ServiceDirectiveResolver.Resolved.{Success.{TableBound | Result | Scalar} | ErrorsLifted | Rejected}`), and the caller's switch is exhaustive across success and failure modes both.
-
-Anti-patterns this rule replaces:
-
-- A signature returning a nullable `MethodRef` plus a side-channel `errors.add(...)` call.
-- A bag record with six nullable components meaning "any combination of these may be set."
-- A tri-state `(null | empty-string | non-empty-string)` return where each value carries different meaning.
-
-When you find yourself reaching for any of those, the rule says lift the result onto a sealed `Resolved`. `EnumMappingResolver`'s reviewer-pass tightening replaced exactly such a tri-state with `EnumValidation.{NotEnum | Valid(fqcn) | Mismatch(message)}`; `MutationInputResolver` replaced eight string-equality comparisons across three sites with `DmlKindResult.{Absent | Kind | Unknown}` over a `DmlKind` enum.
-
-The principle generalises Principle 7 (builder-internal sealed hierarchies for multi-target classification): `ArgumentRef` is the canonical example of the *classification* axis, the `Resolved` siblings are the *result-of-a-step* axis. Both share the rule "rejection is a typed variant, not an out-of-band signal."
+Every builder-step lift returns a sealed `Resolved`; rejection is a typed variant, never a string or out-param. The full narrative (sealed `Resolved` shape across the thirteen resolver siblings, the `Rejection` taxonomy, the `BuildContext.candidateHint` contract) lives at xref:typed-rejection.adoc[Typed rejection].
 
 == Model metadata over parallel type systems
 

@@ -67,6 +67,20 @@ The classification of the field's return type (the element type ; looked through
 
 A Graphitron scope corresponds to one SQL statement. Fields within a scope contribute to the same query. Scope is determined by the *(source context, target type)* pair ; *independently* of `@lookupKey`, which is orthogonal.
 
+[#diagram-d3]
+[source,mermaid]
+----
+stateDiagram-v2
+    direction LR
+    [*] --> NoScope
+    NoScope --> InScope : enter<br/>(unmapped root field<br/>reaches target-table type)
+    InScope --> InScope : split<br/>(@splitQuery on table-mapped source<br/>→ new scope via DataLoader, parent PK key)
+    InScope --> InScope : record handoff<br/>(target-table field on result-mapped source<br/>or @service/@tableMethod returning target-table type<br/>→ new scope via DataLoader, parent PK or custom batch key)
+    InScope --> Private : exit<br/>(@service field creates private scope<br/>independent of any Graphitron-managed scope)
+    Private --> InScope : (private scope ends, caller continues)
+    InScope --> [*]
+----
+
 |===
 | Boundary | Trigger
 
