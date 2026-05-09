@@ -1,7 +1,7 @@
 ---
 id: R86
 title: "Architecture chapter for the manual"
-status: Spec
+status: Ready
 bucket: Documentation
 depends-on: []
 ---

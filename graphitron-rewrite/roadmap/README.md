@@ -30,10 +30,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | [plan](retire-maven-plugin.md) |
 | `R68` | Diataxis user manual: absorb legacy README into the docs site | In Review | [plan](diataxis-user-manual.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
-| `R86` | Architecture chapter for the manual | Spec | [plan](architecture-chapter.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | [plan](list-valued-external-field-multiset.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | [plan](operation-driven-test-corpus.md) |
+| `R86` | Architecture chapter for the manual | Ready | [plan](architecture-chapter.md) |
 
 ---
 
