@@ -361,7 +361,7 @@ public final class Main {
                 sb.append("| `").append(i.id()).append("`\n");
                 sb.append("| ").append(escapeAdocCell(i.title()));
                 if (!i.dependsOn().isEmpty()) {
-                    sb.append(" +\n_blocked by: ").append(linkAdocSlugs(i.dependsOn())).append("_");
+                    sb.append(" +\n_blocked by: ").append(linkAdocSlugs(i.dependsOn(), ChangelogContext.STANDALONE)).append("_");
                 }
                 sb.append("\n| ").append(status).append("\n");
                 sb.append("| xref:plans/").append(i.slug()).append(".adoc[plan]\n");
@@ -415,7 +415,7 @@ public final class Main {
                             sb.append(": _").append(i.notes().strip()).append("_");
                         }
                         if (!i.dependsOn().isEmpty()) {
-                            sb.append(" _(blocked by ").append(linkAdocSlugs(i.dependsOn())).append(")_");
+                            sb.append(" _(blocked by ").append(linkAdocSlugs(i.dependsOn(), ChangelogContext.STANDALONE)).append(")_");
                         }
                         sb.append("\n");
                     });
@@ -437,7 +437,7 @@ public final class Main {
             sb.append(": ").append(escapeAdocInline(description));
         }
         if (!i.dependsOn().isEmpty()) {
-            sb.append(" _(blocked by ").append(linkAdocSlugs(i.dependsOn())).append(")_");
+            sb.append(" _(blocked by ").append(linkAdocSlugs(i.dependsOn(), ChangelogContext.STANDALONE)).append(")_");
         }
         sb.append("\n");
     }
@@ -471,7 +471,7 @@ public final class Main {
                       .append("*]: ").append(i.status());
                     if (i.bucket() != null) sb.append(", ").append(i.bucket());
                     if (!i.dependsOn().isEmpty()) {
-                        sb.append(", blocked by ").append(linkAdocSlugs(i.dependsOn()));
+                        sb.append(", blocked by ").append(linkAdocSlugs(i.dependsOn(), ChangelogContext.STANDALONE));
                     }
                     sb.append("\n");
                 });
@@ -526,7 +526,7 @@ public final class Main {
         if (i.priority() != null) sb.append("| Priority | ").append(i.priority()).append("\n");
         if (i.theme() != null) sb.append("| Theme | ").append(i.theme()).append("\n");
         if (!i.dependsOn().isEmpty()) {
-            sb.append("| Blocked by | ").append(linkAdocSlugs(i.dependsOn())).append("\n");
+            sb.append("| Blocked by | ").append(linkAdocSlugs(i.dependsOn(), ChangelogContext.PLAN)).append("\n");
         }
         sb.append("|===\n\n");
 
@@ -543,12 +543,13 @@ public final class Main {
         PLAN,
     }
 
-    private static String linkAdocSlugs(List<String> slugs) {
+    private static String linkAdocSlugs(List<String> slugs, ChangelogContext ctx) {
+        String prefix = ctx == ChangelogContext.PLAN ? "" : "plans/";
         StringBuilder out = new StringBuilder();
         for (int idx = 0; idx < slugs.size(); idx++) {
             if (idx > 0) out.append(", ");
             String s = slugs.get(idx);
-            out.append("xref:plans/").append(s).append(".adoc[").append(s).append("]");
+            out.append("xref:").append(prefix).append(s).append(".adoc[").append(s).append("]");
         }
         return out.toString();
     }
