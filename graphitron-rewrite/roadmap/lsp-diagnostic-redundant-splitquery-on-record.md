@@ -5,7 +5,7 @@ status: Backlog
 bucket: feature
 priority: 7
 theme: lsp
-depends-on: [classification-vocabulary-followups]
+depends-on: []
 ---
 
 # LSP diagnostic for redundant @splitQuery on @record-parent fields
