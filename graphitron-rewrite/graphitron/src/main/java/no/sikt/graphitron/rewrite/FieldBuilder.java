@@ -2700,6 +2700,13 @@ class FieldBuilder {
         // @reference composition; non-table returns surface a directive-specific rejection here
         // rather than being silently dropped by the PropertyField / RecordField branches below.
         if (fieldDef.hasAppliedDirective(DIR_SOURCE_ROW)) {
+            // @splitQuery on a @sourceRow @record-parent field is structurally redundant: the
+            // lifter-keyed DataLoader already opens a new scope. Fire the advisory before the
+            // resolver's rejection guards so an unrelated invariant failure (bad lifter signature,
+            // wrong arity, missing parent backing class, etc.) doesn't suppress it ; the developer
+            // who wrote both directives needs to see both diagnostics, not just whichever fires
+            // first.
+            warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
             String rawTypeName = baseTypeName(fieldDef);
             String elementTypeName = ctx.isConnectionType(rawTypeName) ? ctx.connectionElementTypeName(rawTypeName) : rawTypeName;
             var sourceRowResult = sourceRowResolver.resolve(parentTypeName, fieldDef, parentResultType, elementTypeName);
@@ -2717,7 +2724,6 @@ class FieldBuilder {
             // LifterPathKeyed (@reference present). The resolver already constructs the right
             // shape and surfaces it as ok.joinPath().
             List<JoinStep> joinPath = ok.joinPath();
-            warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
             if (hasLookupKeyAnywhere(fieldDef)) {
                 return new RecordLookupTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
                     tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.batchKey(), tfc.lookupMapping());
@@ -2795,6 +2801,14 @@ class FieldBuilder {
         String parentSqlTableName = parentResultType instanceof GraphitronType.JooqTableRecordType jtr && jtr.table() != null
             ? jtr.table().tableName() : null;
         var resolvedReturnType = ctx.resolveReturnType(elementTypeName, buildWrapper(fieldDef));
+        // @splitQuery on a @record-parent field with a table-bound return is structurally
+        // redundant: the parent-record-keyed DataLoader already opens a new scope. Fire the
+        // advisory as soon as we know the return type is table-bound, before the path-error /
+        // table-field-components / batch-key rejection guards below; an unrelated rejection
+        // shouldn't suppress the redundancy advisory.
+        if (resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType) {
+            warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
+        }
         String targetSqlTableName = resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tbt
             ? tbt.table().tableName() : null;
         var objectPath = ctx.parsePath(fieldDef, name, parentSqlTableName, targetSqlTableName);
@@ -2816,7 +2830,6 @@ class FieldBuilder {
                 var resolved = (RecordBatchKeyResolution.Resolved) resolution;
                 var batchKey = resolved.batchKey();
                 var resolvedJoinPath = resolved.joinPath();
-                warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
                 if (isLookup) {
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
                         batchKey, tfc.lookupMapping());

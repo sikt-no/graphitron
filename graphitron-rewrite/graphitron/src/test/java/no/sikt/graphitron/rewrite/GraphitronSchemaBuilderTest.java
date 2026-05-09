@@ -1781,6 +1781,30 @@ class GraphitronSchemaBuilderTest {
                         && m.contains("@splitQuery is redundant on a @record-parent field"));
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
+        },
+
+        // R3: holistic-surfacing rule. An unrelated rejection on the same field (here, an
+        // unresolvable @reference) must not suppress the @splitQuery redundancy advisory ; the
+        // developer needs both diagnostics, not just whichever fires first. Locks the warning
+        // emission to the table-bound-return seam, before any rejection guard.
+        SPLIT_QUERY_WARNS_ALONGSIDE_RECORD_PARENT_REJECTION(
+            "@splitQuery on @record-parent with unresolvable @reference → UnclassifiedField + build warning still fires",
+            """
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              language: Language @splitQuery @reference(path: [{key: "no_such_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                assertThat(schema.field("FilmDetails", "language")).isInstanceOf(UnclassifiedField.class);
+                assertThat(schema.warnings())
+                    .extracting(BuildWarning::message)
+                    .anyMatch(m -> m.contains("FilmDetails.language")
+                        && m.contains("@splitQuery is redundant on a @record-parent field"));
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         };
 
         final String sdl;
@@ -2285,6 +2309,33 @@ class GraphitronSchemaBuilderTest {
                         && m.contains("@splitQuery is redundant on a @record-parent field"));
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
+        // R3: holistic-surfacing rule. The @sourceRow seam mirrors the regular @record-parent
+        // path: an unrelated lifter-signature rejection (Inv #3 in SourceRowDirectiveResolver)
+        // must not suppress the @splitQuery redundancy advisory.
+        SPLIT_QUERY_WARNS_ALONGSIDE_SOURCE_ROW_REJECTION(
+            "@splitQuery on @sourceRow with bad lifter signature → UnclassifiedField + build warning still fires",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @splitQuery
+                @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "wrongReturnLong")
+                @reference(path: [{key: "inventory_film_id_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(schema.warnings())
+                    .extracting(BuildWarning::message)
+                    .anyMatch(m -> m.contains("FilmDetails.inventories")
+                        && m.contains("@splitQuery is redundant on a @record-parent field"));
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         };
 
         final String sdl;
