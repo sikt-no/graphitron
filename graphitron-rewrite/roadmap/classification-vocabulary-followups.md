@@ -1,203 +1,67 @@
 ---
 id: R3
-title: Classification vocabulary follow-ups
+title: "Surface silent @splitQuery on @record-parent fields as a build warning"
 status: Spec
 priority: 5
 theme: docs
 depends-on: []
 ---
 
-# Plan: Classification Vocabulary Follow-ups
+# Surface silent @splitQuery on @record-parent fields as a build warning
 
-> Six independent doc/generator-behaviour cleanups surfaced during the `code-generation-triggers.md` rewrite plus G5's Pending Review sweep. Any of them can land independently; none is a release blocker.
+`@splitQuery` on a `@record`-parent field is a no-op: the record handoff already opens a new DataLoader-backed scope, so the directive cannot change anything. The classifier accepts it without complaint, the generator emits the same `RecordTableField` / `RecordLookupTableField` it would emit without the directive, and a developer who added `@splitQuery` to "force batching" never learns it changed nothing. [`code-generation-triggers.adoc:105`](../docs/code-generation-triggers.adoc) has been promising a build *warning* for this case for months; the code is silent.
 
-Each item below corrects a place where the doc or the code still treats `@lookupKey` as scope-defining, mis-states the `@condition` rule, or is missing the new **source context vs. target type** split. Items are prioritised rough-to-low effort.
+Silent acceptance is a communication failure. The doc and the code disagree on what's supposed to happen, and the developer is the one who pays for the disagreement, with a non-obvious "wait, isn't this batched?" several refactors downstream. The user-stated goal of R3 ("make it easier to communicate around what graphitron does and why") cashes out exactly here: tell the author when their directive is structurally redundant.
 
-**Claim verification (2026-04-17)**: all item claims below were re-verified against the branch after the sealed-switch work landed. Source line numbers in the original draft had drifted ~20–30 lines; this rewrite uses identifier-level references instead so the items don't go stale with every refactor.
+## Implementation
 
----
+`FieldBuilder.classifyChildFieldOnResultType` (`FieldBuilder.java:2693`) is the one classifier path that produces the result-mapped `RecordTableField` / `RecordLookupTableField` arms; it does not read `DIR_SPLIT_QUERY` today. Add a check at the seam where the field has been confirmed to classify as one of those two arms (i.e. after the `@sourceRow` / `@service` / scalar branches return their own outcomes; immediately before the property/record path constructs the `RecordTableField` / `RecordLookupTableField`). When the field carries `@splitQuery`, call `ctx.addWarning(new BuildWarning(...))` with a message that names the field's coordinate and explains the redundancy:
 
-## 1. ~~G6 table — `@condition` is not blocked on lookup fields~~ *(Done)*
+> `<ParentType>.<fieldName>: @splitQuery is redundant on a @record-parent field; the record handoff already opens a new DataLoader-backed scope. The directive will be ignored.`
 
-Addressed during the roadmap deep-clean: the G6 table was moved from the roadmap to
-[code-generation-triggers.md](../code-generation-triggers.md#dataloader-backed-field-categories)
-and built with the correct values — `@condition` column now reads
-"Allowed — must preserve N × M contract†" on all three lookup rows, with a footnote pointing
-to the [Derived tables](../code-generation-triggers.md#derived-tables) contract definition.
+The classification outcome is unchanged. The warning is purely informational.
 
----
+`BuildContext.addWarning` (`BuildContext.java:192`) and `GraphitronSchema.warnings()` already exist; the federation entity-resolution pass is the existing producer (`EntityResolutionBuilder.java:208`), and `GraphQLRewriteGenerator.java:222` already drains `schema.warnings()` to logback at build time. This item adds the second producer on the same channel; no new public API.
 
-## 2. Emit a build warning for `@splitQuery` on a result-mapped parent
+## Test surface
 
-`FieldBuilder.classifyChildFieldOnResultType` does not read `@splitQuery` at all. On a `@record`
-parent the directive is silently ignored because the record handoff already opens a new
-DataLoader-backed scope — the split is redundant.
+Pipeline-tier test: a fixture with a `@record`-parent + `@table`-returning child carrying `@splitQuery`. Asserts:
 
-[code-generation-triggers.md](../code-generation-triggers.md) already states this should be a
-**warning** (not an error) — the doc is ahead of the code.
+1. Classification succeeds and produces `RecordTableField` (or `RecordLookupTableField` for the `@lookupKey` variant).
+2. `schema.warnings()` carries one `BuildWarning` whose `message()` contains the field's coordinate and a stable marker substring (e.g. `"@splitQuery is redundant on a @record-parent field"`).
+3. `schema.errors()` is empty.
 
-Silent acceptance is a trap: a developer adding `@splitQuery` to "make batching kick in" has
-no way to discover it was a no-op.
+Unit-tier message-format test: pin the marker substring on a single fixture so future drift in the message wording is caught at the assertion that future migration tooling (or an LSP rule) might want to parse. Mirrors `IdReferenceShimWarnFormatTest` / `AsConnectionSameTableWarnFormatTest`'s shape, except this warning rides the `BuildWarning` channel rather than a logback marker logger; the corresponding pattern already exists in `GraphitronSchemaBuilderTest.TABLE_PLUS_RECORD` (asserting on `BuildWarning::message`).
 
-**Change.**
-- Introduce a warnings channel on the builder. Today there is none — only `LOG.warn` for the
-  one-off `ExternalCodeReference 'name' is deprecated` case. Shape suggestions:
-  - A `List<BuildWarning> warnings()` on `GraphitronSchema` (parallel to `errors()`), or
-  - An additional `warnings` out-parameter on the builder method family.
-  Pick the minimal shape the maven plugin can surface at build time without changing its public
-  contract.
-- In `classifyChildFieldOnResultType`, emit a warning when `@splitQuery` is present. Keep
-  producing `RecordTableField` / `RecordLookupTableField` as today; the directive is purely
-  informational on this source context.
-- Pipeline test: add a case with a `@record` parent and a `@table`-returning child carrying
-  `@splitQuery`. Assert (a) classification still succeeds, (b) a warning is reported through
-  the new channel, (c) the field variant is still `RecordTableField` / `RecordLookupTableField`.
+Anchor the marker as a `static final String` on `FieldBuilder` so test assertions and any future LSP/migration tooling reference the same constant rather than copy-pasting prose.
 
-**Reusability.** The warnings channel landed with the `@table + @record` input-type fix —
-warnings flow through `BuildContext.addWarning(BuildWarning)` and surface via
-`GraphitronSchema.warnings()` to `GraphQLRewriteGenerator` / `ValidateMojo`. This item
-adds a second caller on the same channel. It will also serve P2 #3 ("validator asks
-can-this-generate") if we want `STUBBED_VARIANTS` hits to be warnings rather than
-errors in some configurations.
+## Diagnostics glossary
 
----
+`docs/manual/reference/diagnostics-glossary.adoc` covers errors and deferred reasons but has no "warnings" section. Add one — even a one-paragraph header explaining that warnings are non-fatal author signals, surfaced at build time alongside errors but never failing the build — and an entry for this warning, anchored on the marker constant. This serves the user-stated goal directly: the next developer who hits the warning has a doc page that names it and explains why their directive is redundant. The drift seam comes naturally because the diagnostics-glossary doc-coverage tests already exist for the error / deferred sections; extending coverage to warnings is a clean ride-along.
 
-## 3. Audit other docs for lookup-in-scope and condition-blocked wording
+## Acceptance criteria
 
-Systematic audit — one pass per file:
-
-- **`code-generation-triggers.md`** — item 1 above covers it (G6 table now lives here).
-- **`../argument-resolution.md`** — discusses lookup mapping and `@condition` separately.
-  Spot-check that wording never implies `@condition` is blocked on lookup fields.
-- **`graphitron-codegen-parent/graphitron-java-codegen/README.md`** — primary directive
-  reference, ~1500 lines, 32 mentions of `@condition`/`@lookupKey`. Grep for `lookupKey` +
-  nearby `condition`/`scope` language; reconcile with the rewritten vocabulary.
-
-For each finding, decide per-case: rewrite in place vs. cross-link to
-[code-generation-triggers.md#classification-vocabulary](../code-generation-triggers.md#classification-vocabulary).
-Prefer cross-links — one authoritative source is easier to keep correct.
-
----
-
-## 4. Document the lookup-condition method signature (prerequisite for G5/G6 execution tests)
-
-The rewritten doc says the lookup condition receives the (source × target) pair and must be a
-predicate over the pair. That contract is not yet spelled out as a method-signature rule
-anywhere — grep confirms zero mentions of `srcAlias`/`tgtAlias`/"source row alias"/"target row
-alias" in `graphitron-java-codegen/README.md` or in `graphitron-rewrite` source.
-
-Questions to answer:
-
-- What parameters does the `@condition` method take when the field also has `@lookupKey`?
-  (Source row alias + target row alias + user args? Or just the one table context?)
-- Which `ParamSource` variants are valid on a lookup condition?
-- Is there an execution test that exercises a lookup field with a non-trivial `@condition`
-  applied?
-
-**Action.** Before wiring lookup execution tests (see Generator stubs #6–7 in the roadmap), nail down the signature,
-document it in
-[graphitron-java-codegen README](../../../graphitron-codegen-parent/graphitron-java-codegen/README.md)
-alongside `@condition`, and add an execution test in `graphitron-test` that
-verifies the N × M contract holds end-to-end.
-
-This item is the real blocker — it gates G5 and G6 execution tests. Items 1–3 are doc
-cleanups; item 4 changes what "done" means for those generator stubs.
-
-### Findings from G5 C4 (2026-04-18)
-
-Empirical data from attempting ConditionJoin inline emission during G5 C3/C4:
-
-- **ConditionJoin lacks a resolved target table.** The record is
-  `ConditionJoin(MethodRef condition, String alias)` — no `TableRef` for the "table this hop
-  navigates to". G5's `JoinPathEmitter` cannot generate a `.as(<alias>)` / `.from(targetAlias)`
-  without it. C3's emitter works around this by detecting `JoinPathEmitter.hasConditionJoin(path)`
-  and emitting a `throw new UnsupportedOperationException(…)` stub for the arm. Generated code
-  compiles; runtime throws only if the field is selected.
-- **Schema fixture landed in C4.** `Category.similar` in
-  `graphitron-rewrite/graphitron-test/src/main/resources/graphql/schema.graphqls` uses
-  `@reference(path: [{condition: {className: "…CategoryConditions", method: "sameNamePrefix"}}])`.
-  The classifier builds a `TableField` with `joinPath = [ConditionJoin]` successfully; generated
-  code compiles; runtime throw is in place. Item 5 can use this fixture as the ready-made
-  target for the "add execution test" work.
-- **Proposed ConditionJoin enrichment.** Item 5's design should likely mirror G5's C3a enrichment
-  of `FkJoin`: add `TableRef targetTable` to `ConditionJoin` (resolved by the builder via the
-  `@reference` directive's enclosing type context, since the target is what the field's return
-  type declares). Optionally also resolve `sourceTable` for symmetry with `FkJoin`. Once the
-  target is known, the C3 emitter's conditional `if (hasConditionJoin) throw …` branch collapses
-  into a uniform `.join(targetTable.as(alias)).on(<ClassName>.<method>(srcAlias, targetAlias))`.
-- **Emitter shape for condition-on the JOIN.** For a ConditionJoin as the FIRST step (single-hop
-  inline), the emission pattern is:
-  `.from(targetAlias).where(<ClassName>.<method>(parentAlias, targetAlias))`. For it as a
-  later step, `.join(targetAlias).on(<ClassName>.<method>(prevAlias, targetAlias))`. Two-arg
-  call emission already exists as `JoinPathEmitter.emitTwoArgMethodCall`.
-
-Execution-test design: reuse the `Category.similar` fixture. Seed data-driven condition (e.g.
-`sameNamePrefix` matches categories whose names share the first letter). Assert runtime shape
-for the N × M contract.
-
----
-
-## 5. `FkJoin.alias` is dead storage
-
-`BuildContext` populates `FkJoin.alias` as `fieldName + "_" + stepIndex` (e.g. `"language_0"`)
-while resolving a `@reference` path. No code reads it: the G5 emitter derives its own
-aliases via `JoinPathEmitter.generateAliases` from the target table's `javaClassName()` + hop
-index, and layers a runtime prefix (`parent.getName() + "_" + suffix`) for self-ref recursion
-uniqueness. The stored value is never consulted.
-
-**Change.** Pick one:
-
-- **Drop it.** Remove `alias` from the `FkJoin` record, its `ConditionJoin` sibling, and the
-  construction sites in `BuildContext`. Adjust the 9 direct-construction test sites.
-- **Use it.** Make `JoinPathEmitter.generateAliases` consume `FkJoin.alias()` when present and
-  fall back to the `javaClassName()`-derived form only when empty. This keeps the builder's
-  claim on aliasing honest and aligns with the plan's "Alias generation" section.
-
-"Drop it" is the smaller change. "Use it" aligns with the plan's original intent (builder owns
-alias identity). Pick based on whether argres Phase 2a or G6 want per-hop aliases threaded
-through the model.
-
-**Impact.** Cosmetic. No generated-code difference either way.
-
----
-
-## 6. `InlineTableFieldEmitter.buildInnerSelect` passes wrong alias to `@condition(filter:)` methods
-
-**Scope of this item.** The `ArgCallEmitter.buildCallArgs` signature change (adding an
-explicit source-alias parameter) shipped under the "Generated-fetcher quality pass" entry
-in the roadmap (Done) — it fell out of the `table` → `<entity>Table` rename. This item
-is the downstream consumer: fix the inline-subquery caller now that the signature is
-available.
-
-**Current state.** `buildCallArgs` emits `"table"` as the literal first argument of every
-filter-method call. On the fetcher path this is correct — `TypeFetcherGenerator`'s
-generated methods receive `table` as a parameter naming the row table. On the G5
-inline-subquery path, `"table"` is the **parent** alias (the outer `$fields(sel, table,
-env)` parameter), not the terminal/target alias inside the correlated subquery.
-`InlineTableFieldEmitter.buildInnerSelect`'s user-filter loop over `tf.filters()` calls
-`ArgCallEmitter.buildCallArgs` and so passes the parent alias to each `@condition(filter:)`
-method — almost certainly not what users intend, since filters typically operate on the
-target table.
-
-No G5 fixture exercises `@condition(filter:)` on an inline `TableField`, so this latent
-bug is untested. It will surface the first time an inline reference field carries
-`@condition(filter:)`.
-
-**Change.** Once `ArgCallEmitter.buildCallArgs` takes an explicit source-alias parameter,
-update the inline-subquery caller to pass the terminal alias of the correlated subquery
-instead of the hardcoded `"table"`. Add an `InlineTableFieldEmitter` pipeline test with
-a filter method to lock the wiring down.
-
-**Related.** Whether the "source" for an inline-subquery filter is the terminal alias or
-the step-0 source alias is a design call — item 4's condition-method signature work
-decides this for condition joins; the same answer likely applies here.
-
----
+- `FieldBuilder.classifyChildFieldOnResultType` emits a `BuildWarning` when the field carries `@splitQuery`. Classification still produces `RecordTableField` / `RecordLookupTableField`. `errors()` is unchanged.
+- The warning's message names the field's coordinate (`<ParentType>.<fieldName>`) and contains a stable marker constant declared on `FieldBuilder`.
+- Pipeline-tier test pins the warning's presence + the structural classification outcome on at least one `RecordTableField` fixture and one `RecordLookupTableField` fixture.
+- Unit-tier message-format test pins the marker substring against the constant.
+- `docs/manual/reference/diagnostics-glossary.adoc` gains a warnings section and an entry for this warning, anchored on the marker constant.
+- Build green: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes.
 
 ## Out of scope
 
-- **Renaming `LookupTableField` / `SplitLookupTableField` etc.** No rename is implied by the
-  reviewer's comments; the variant names are accurate as long as the *scope* claim they imply
-  is not — which the rewritten doc fixes at the vocabulary level.
-- **Changes to `@lookupKey` + pagination semantics.** The rewritten doc keeps the existing
-  "blocks pagination" rule.
+- Generalising the warnings channel further (kinds, severity levels, structured rendering). The federation pass is the only existing producer; this item adds a second. If a third producer needs structure, it's a separate concern.
+- Worked example + execution test for `@lookupKey + @condition` (the lookup-condition method signature). The code emits these correctly today; the residual gap is doc-only and warrants its own Backlog item if the user wants it surfaced. The N×M contract is already documented in `batching-model.adoc` (R68) and `design-decisions.adoc`.
+- Lock-down pipeline test for `InlineTableFieldEmitter` filter-method wiring. The implementation fix shipped under "Generated-fetcher quality pass" (`srcAlias` threaded through `ArgCallEmitter.buildCallArgs`); a regression test for already-shipped behavior is below the priority of the active gap.
+- `FkJoin.alias` dead-storage cleanup. Split out as [`R120 fkjoin-alias-dead-storage`](fkjoin-alias-dead-storage.md) — cosmetic and unrelated to the communication goal.
+- Any change that *rejects* `@splitQuery` on `@record`-parent fields. The directive remains classified-but-no-op; the warning makes the no-op visible without breaking schemas that carry the redundant directive today.
+
+## History
+
+This spec was rewritten from a six-item umbrella ("classification vocabulary follow-ups", drafted 2026-04-17 during the `code-generation-triggers.md` rewrite) to a single focused item after a 2026-05-09 reverification against the branch:
+
+- Item 1 (G6 table) was already Done before R3 entered Spec; the table moved into `code-generation-triggers.adoc` correctly.
+- Item 3 (audit other docs) was largely subsumed by R68's Diataxis user manual, which installed `docs/manual/explanation/{batching-model,classifier-mental-model,design-decisions}.adoc` with the corrected vocabulary. The remaining audit target named in the original spec (`graphitron-codegen-parent/graphitron-java-codegen/README.md`) is now out of scope per `CLAUDE.md`.
+- Item 4's framing ("real blocker, gates G5/G6 execution tests") no longer applies: G5 has shipped (changelog line 124); the residual lookup-condition worked example is doc-only and warrants its own item if surfaced.
+- Item 5 (`FkJoin.alias` dead storage) split to [`R120`](fkjoin-alias-dead-storage.md).
+- Item 6's implementation fix shipped under "Generated-fetcher quality pass" (changelog line 137); the lock-down test is regression-protection for already-shipped behavior and not worth a dedicated item.
