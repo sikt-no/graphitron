@@ -194,9 +194,16 @@ public record LspVocabulary(
         if (node == null || !Nodes.contains(node, pos)) return;
         if ("object_field".equals(node.getType())) {
             Node nameNode = childOfKind(node, "name");
-            if (nameNode != null) {
-                out.add(Nodes.text(nameNode, source));
+            Node valueNode = childOfKind(node, "value");
+            // Only treat the cursor as on this field if it sits inside the
+            // value, not the name. Cursor on the name is a separate case
+            // (arg-name completion territory) and must not key as a
+            // value-bearing coordinate.
+            if (nameNode == null || valueNode == null
+                || !Nodes.contains(valueNode, pos)) {
+                return;
             }
+            out.add(Nodes.text(nameNode, source));
         }
         for (int i = 0; i < node.getChildCount(); i++) {
             descend(node.getChild(i).orElse(null), pos, source, out);

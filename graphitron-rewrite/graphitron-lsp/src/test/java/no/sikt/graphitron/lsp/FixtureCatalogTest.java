@@ -8,6 +8,7 @@ import no.sikt.graphitron.lsp.completions.FieldCompletions;
 import no.sikt.graphitron.lsp.completions.TableCompletions;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.parsing.Directives;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.RewriteContext;
@@ -156,12 +157,14 @@ class FixtureCatalogTest {
 
     // ---- Helpers ----
 
+    private static final LspVocabulary VOCAB = LspVocabulary.load();
+
     private static List<CompletionItem> tableCompletions(CompletionData data, String source, Point cursor) {
         var bytes = source.getBytes(StandardCharsets.UTF_8);
         var tree = parser().parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("no directive at cursor"));
-        return TableCompletions.generate(data, directive, cursor, bytes);
+        return TableCompletions.generate(VOCAB, data, directive, cursor, bytes);
     }
 
     private static List<CompletionItem> fieldCompletions(CompletionData data, String source, Point cursor) {
@@ -169,7 +172,7 @@ class FixtureCatalogTest {
         var tree = parser().parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("no directive at cursor"));
-        return FieldCompletions.generate(data, directive, cursor, bytes);
+        return FieldCompletions.generate(VOCAB, data, directive, cursor, bytes);
     }
 
     private static Parser parser() {

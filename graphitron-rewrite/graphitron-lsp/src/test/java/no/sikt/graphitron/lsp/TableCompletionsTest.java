@@ -3,6 +3,7 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.completions.TableCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import org.junit.jupiter.api.Test;
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
@@ -19,6 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the catalog's table set.
  */
 class TableCompletionsTest {
+
+    private static final LspVocabulary VOCAB = LspVocabulary.load();
 
     @Test
     void tableNameCompletionReturnsCatalogTables() {
@@ -46,11 +49,45 @@ class TableCompletionsTest {
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
 
-        var items = TableCompletions.generate(data, directive, cursor, bytes);
+        var items = TableCompletions.generate(VOCAB, data, directive, cursor, bytes);
 
         assertThat(items).hasSize(2);
         assertThat(items.get(0).getLabel()).isEqualTo("FILM");
         assertThat(items.get(1).getLabel()).isEqualTo("ACTOR");
+    }
+
+    @Test
+    void referenceElementTableNestedFieldAlsoCompletesCatalogTables() {
+        // Per R119 phase 2, ReferenceElement.table is a CatalogTableBinding
+        // in the canonical overlay. The same provider that fires on
+        // @table(name:) now also fires on @reference(path: [{table:}]) —
+        // the directive-name switch dropped, dispatch goes through the
+        // coordinate's behavior arm.
+        String source = """
+            type Foo {
+                bar: Int @reference(path: [{table: ""}])
+            }
+            """;
+        var lines = source.split("\n");
+        int line = 1;
+        Point cursor = new Point(line, lines[line].indexOf("\"\"") + 1);
+
+        var parser = new Parser();
+        parser.setLanguage(no.sikt.graphitron.lsp.parsing.GraphqlLanguage.get());
+        var bytes = source.getBytes(StandardCharsets.UTF_8);
+        var tree = parser.parse(source).orElseThrow();
+        var directive = Directives.findContaining(tree.getRootNode(), cursor)
+            .orElseThrow();
+
+        var data = new CompletionData(
+            List.of(table("FILM", ""), table("ACTOR", "")),
+            List.of(),
+            List.of()
+        );
+
+        var items = TableCompletions.generate(VOCAB, data, directive, cursor, bytes);
+
+        assertThat(items).extracting(i -> i.getLabel()).containsExactlyInAnyOrder("FILM", "ACTOR");
     }
 
     @Test
@@ -71,7 +108,7 @@ class TableCompletionsTest {
             .orElseThrow();
 
         var data = new CompletionData(List.of(table("FILM", "")), List.of(), List.of());
-        var items = TableCompletions.generate(data, directive, cursor, bytes);
+        var items = TableCompletions.generate(VOCAB, data, directive, cursor, bytes);
 
         assertThat(items).isEmpty();
     }

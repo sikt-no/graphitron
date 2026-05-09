@@ -10,7 +10,6 @@ import no.sikt.graphitron.lsp.definition.Definitions;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.parsing.Directives;
-import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.CodeAction;
@@ -154,28 +153,30 @@ public class GraphitronTextDocumentService implements TextDocumentService {
      * empty.
      */
     /**
-     * Routes any class-name / method-name coordinate to the correct
-     * provider. The vocabulary's behavior arm decides which one fires;
-     * one returns non-empty, the other empty. Works uniformly for every
-     * directive whose canonical overlay declares
-     * {@link no.sikt.graphitron.lsp.parsing.Behavior.ClassNameBinding} or
-     * {@link no.sikt.graphitron.lsp.parsing.Behavior.MethodNameBinding}
-     * (today: {@code @service}, {@code @condition}, {@code @record},
-     * {@code @externalField}, {@code @enum}, {@code @tableMethod},
-     * {@code @sourceRow}, plus the structured {@code @reference(path:)}
-     * condition slot).
+     * Single-walk dispatch: every coordinate-driven completion provider
+     * pattern-matches on the cursor's behavior arm. The first non-empty
+     * list wins; behaviors are mutually exclusive at any one coordinate
+     * so the order is incidental.
      */
-    private static List<CompletionItem> classOrMethodCompletions(
+    private static List<CompletionItem> coordinateBasedCompletions(
         no.sikt.graphitron.lsp.state.Workspace workspace,
         no.sikt.graphitron.lsp.parsing.Directives.Directive directive,
         io.github.treesitter.jtreesitter.Point pos,
         byte[] source
     ) {
-        var classItems = ClassNameCompletions.generate(
-            workspace.vocabulary(), workspace.catalog(), directive, pos, source);
+        var data = workspace.catalog();
+        var vocab = workspace.vocabulary();
+        var classItems = ClassNameCompletions.generate(vocab, data, directive, pos, source);
         if (!classItems.isEmpty()) return classItems;
-        return MethodCompletions.generate(
-            workspace.vocabulary(), workspace.catalog(), directive, pos, source);
+        var methodItems = MethodCompletions.generate(vocab, data, directive, pos, source);
+        if (!methodItems.isEmpty()) return methodItems;
+        var tableItems = TableCompletions.generate(vocab, data, directive, pos, source);
+        if (!tableItems.isEmpty()) return tableItems;
+        var fieldItems = FieldCompletions.generate(vocab, data, directive, pos, source);
+        if (!fieldItems.isEmpty()) return fieldItems;
+        var refItems = ReferenceCompletions.generate(vocab, data, directive, pos, source);
+        if (!refItems.isEmpty()) return refItems;
+        return List.of();
     }
 
     @Override
@@ -194,20 +195,8 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 return Either.forLeft(List.of());
             }
             var directive = directiveOpt.get();
-            var directiveName = Nodes.text(directive.nameNode(), file.source());
-            List<CompletionItem> items = switch (directiveName) {
-                case "table" -> TableCompletions.generate(workspace.catalog(), directive, pos, file.source());
-                case "field" -> FieldCompletions.generate(workspace.catalog(), directive, pos, file.source());
-                case "reference" -> {
-                    var refItems = ReferenceCompletions.generate(
-                        workspace.catalog(), directive, pos, file.source());
-                    yield !refItems.isEmpty()
-                        ? refItems
-                        : classOrMethodCompletions(workspace, directive, pos, file.source());
-                }
-                default -> classOrMethodCompletions(workspace, directive, pos, file.source());
-            };
-            return Either.forLeft(items);
+            return Either.forLeft(
+                coordinateBasedCompletions(workspace, directive, pos, file.source()));
         });
     }
 }
