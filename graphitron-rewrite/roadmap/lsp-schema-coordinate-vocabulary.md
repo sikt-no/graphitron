@@ -1,7 +1,7 @@
 ---
 id: R119
 title: "LSP completion / diagnostics keyed by schema coordinates"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 5
 theme: lsp

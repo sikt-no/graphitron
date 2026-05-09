@@ -34,6 +34,32 @@ public final class RewriteSchemaLoader {
 
     private RewriteSchemaLoader() {}
 
+    /**
+     * Returns the bundled {@code directives.graphqls} SDL text. Consolidates
+     * what was previously two private constants ({@code DIRECTIVES_RESOURCE}
+     * here and {@code DeprecationMarkers.DIRECTIVES_RESOURCE} in the LSP
+     * module) into a single producer-side accessor. Callers that need to
+     * parse the directive surface (the LSP's vocabulary, drift checks)
+     * read through this method rather than reaching for the resource path.
+     */
+    public static String directivesSdl() {
+        var stream = RewriteSchemaLoader.class.getResourceAsStream(DIRECTIVES_RESOURCE);
+        if (stream == null) {
+            throw new IllegalStateException(DIRECTIVES_RESOURCE + " not found on classpath");
+        }
+        try (var reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
+            var buf = new char[4096];
+            var sb = new StringBuilder();
+            int n;
+            while ((n = reader.read(buf)) >= 0) {
+                sb.append(buf, 0, n);
+            }
+            return sb.toString();
+        } catch (IOException e) {
+            throw new IllegalStateException("failed to read " + DIRECTIVES_RESOURCE, e);
+        }
+    }
+
     public static TypeDefinitionRegistry load(Collection<String> userSchemaPaths) {
         var builder = MultiSourceReader.newMultiSourceReader();
         addDirectivesSource(builder);

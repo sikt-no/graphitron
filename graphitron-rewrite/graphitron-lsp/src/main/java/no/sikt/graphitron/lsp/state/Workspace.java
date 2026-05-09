@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp.state;
 
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 
@@ -35,14 +36,20 @@ public final class Workspace {
     private final Object lock = new Object();
     private final Map<String, WorkspaceFile> files = new LinkedHashMap<>();
     private final List<String> toRecalculate = new ArrayList<>();
+    private final LspVocabulary vocabulary;
     private volatile CompletionData catalog;
 
     public Workspace() {
-        this(CompletionData.empty());
+        this(CompletionData.empty(), LspVocabulary.load());
     }
 
     public Workspace(CompletionData catalog) {
+        this(catalog, LspVocabulary.load());
+    }
+
+    public Workspace(CompletionData catalog, LspVocabulary vocabulary) {
         this.catalog = catalog;
+        this.vocabulary = vocabulary;
     }
 
     public void didOpen(String uri, int version, String text) {
@@ -108,6 +115,15 @@ public final class Workspace {
 
     public CompletionData catalog() {
         return catalog;
+    }
+
+    /**
+     * The LSP's directive vocabulary, parsed once at startup from the
+     * bundled {@code directives.graphqls} and immutable thereafter. The
+     * registry is shape, not state; there is no setter.
+     */
+    public LspVocabulary vocabulary() {
+        return vocabulary;
     }
 
     public void setCatalog(CompletionData catalog) {
