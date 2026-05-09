@@ -17,12 +17,10 @@ import java.util.List;
  * up in the overlay; if the result is a {@code ClassNameBinding}, this
  * provider emits the catalog's external-reference set as completion items.
  *
- * <p>The previous form lived behind a per-directive switch
- * ({@code DirectiveDefinitions.argsByInputType("ExternalCodeReference")});
- * it missed any coordinate that wasn't on that hand-coded list, which is
- * how the R110 rescope left {@code @sourceRow(className:)} silent. The
- * vocabulary-driven form picks that up the moment the canonical overlay
- * declares the binding.
+ * <p>Coordinate-driven dispatch: every coordinate the canonical overlay
+ * binds as a class-name slot fires this provider, including the flat
+ * {@code @sourceRow(className:)} that the R110 rescope left silent
+ * under the previous hand-coded directive registry.
  */
 public final class ClassNameCompletions {
 

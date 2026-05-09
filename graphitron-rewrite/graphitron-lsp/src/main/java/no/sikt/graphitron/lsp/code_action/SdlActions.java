@@ -3,10 +3,11 @@ package no.sikt.graphitron.lsp.code_action;
 import io.github.treesitter.jtreesitter.Node;
 import no.sikt.graphitron.lsp.code_action.SdlAction.DeprecationTarget;
 import no.sikt.graphitron.lsp.code_action.SdlAction.RewriteResult;
-import no.sikt.graphitron.lsp.parsing.DirectiveDefinitions;
 import no.sikt.graphitron.lsp.parsing.Directives;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
+import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.Position;
@@ -87,104 +88,61 @@ public final class SdlActions {
     /**
      * Detects every legacy {@code name:} object_field inside an
      * {@code ExternalCodeReference} literal in the file. The legacy
-     * shape is: a directive with an {@code ExternalCodeReference}
-     * binding whose object value contains a {@code name:} field but
-     * no {@code className:} field. Yields the {@code name:}
-     * object_field node so the rewrite slot has the full range to
-     * replace.
+     * shape is: an ECR object containing a {@code name:} field but no
+     * {@code className:} field. Yields the {@code name:} object_field
+     * node so the rewrite slot has the full range to replace.
+     *
+     * <p>Driven by {@link LspVocabulary#leafCoordinates}: every
+     * {@code InputField("ExternalCodeReference", "name")} leaf is a
+     * candidate; the same-object className-absence check rejects
+     * already-migrated sites.
      */
     static Stream<Node> detectLegacyNameSites(WorkspaceFile file) {
-        var ecrBindings = DirectiveDefinitions.argsByInputType("ExternalCodeReference");
+        var vocab = LspVocabulary.load();
         var matches = new java.util.ArrayList<Node>();
         for (var directive : Directives.findAll(file.tree().getRootNode())) {
-            String name = Nodes.text(directive.nameNode(), file.source());
-            for (var binding : ecrBindings) {
-                if (!binding.directive().equals(name)) continue;
-                collectLegacyNameSitesUnderDirective(directive, binding, file.source(), matches);
+            for (var leaf : vocab.leafCoordinates(directive, file.source())) {
+                if (!(leaf.coord() instanceof SchemaCoordinate.InputField f)) continue;
+                if (!"ExternalCodeReference".equals(f.type()) || !"name".equals(f.field())) continue;
+                Node nameField = enclosingObjectField(leaf.valueNode());
+                if (nameField == null) continue;
+                Node parentObject = enclosingObjectValue(nameField.getParent().orElse(null));
+                if (parentObject == null) continue;
+                if (hasObjectField(parentObject, "className", file.source())) continue;
+                matches.add(nameField);
             }
         }
         return matches.stream();
     }
 
-    private static void collectLegacyNameSitesUnderDirective(
-        Directives.Directive directive,
-        DirectiveDefinitions.InputTypeBinding binding,
-        byte[] source,
-        List<Node> out
-    ) {
-        if (binding.nestedPath()) {
-            for (var arg : directive.arguments()) {
-                collectInsideObjects(arg.value(), binding.argName(), source, out);
-            }
-            return;
-        }
-        for (var arg : directive.arguments()) {
-            if (!binding.argName().equals(Nodes.text(arg.key(), source))) continue;
-            Node legacy = legacyNameField(arg.value(), source);
-            if (legacy != null) out.add(legacy);
-        }
-    }
-
-    /**
-     * Walks {@code root} looking for {@code object_field}s whose name
-     * is {@code containerFieldName}; for each, descends into its
-     * object value and emits the {@code name:} field if present and
-     * unaccompanied by {@code className:}.
-     */
-    private static void collectInsideObjects(
-        Node root, String containerFieldName, byte[] source, List<Node> out
-    ) {
-        if (root == null) return;
-        if ("object_field".equals(root.getType())) {
-            Node nameNode = childOfKind(root, "name");
-            Node valueNode = childOfKind(root, "value");
-            if (nameNode != null && valueNode != null
-                && containerFieldName.equals(Nodes.text(nameNode, source))) {
-                Node legacy = legacyNameField(valueNode, source);
-                if (legacy != null) out.add(legacy);
-            }
-        }
-        for (int i = 0; i < root.getChildCount(); i++) {
-            collectInsideObjects(root.getChild(i).orElse(null), containerFieldName, source, out);
-        }
-    }
-
-    /**
-     * Returns the {@code name:} object_field inside {@code objectValue}
-     * if present and {@code className:} is not also present; otherwise
-     * {@code null}. Tied to ExternalCodeReference's slots: the
-     * legacy migration only fires when the consumer is using the old
-     * form alone.
-     */
-    private static Node legacyNameField(Node objectValue, byte[] source) {
-        Node nameField = null;
-        boolean hasClassName = false;
-        if (objectValue == null) return null;
-        // Walk only the immediate object_value's object_fields.
-        Node objectNode = unwrapToObject(objectValue);
-        if (objectNode == null) return null;
-        for (int i = 0; i < objectNode.getChildCount(); i++) {
-            Node child = objectNode.getChild(i).orElse(null);
-            if (child == null || !"object_field".equals(child.getType())) continue;
-            Node fname = childOfKind(child, "name");
-            if (fname == null) continue;
-            String key = Nodes.text(fname, source);
-            if ("name".equals(key)) nameField = child;
-            else if ("className".equals(key)) hasClassName = true;
-        }
-        return hasClassName ? null : nameField;
-    }
-
-    private static Node unwrapToObject(Node n) {
-        if (n == null) return null;
-        if ("object_value".equals(n.getType())) return n;
-        for (int i = 0; i < n.getChildCount(); i++) {
-            Node child = n.getChild(i).orElse(null);
-            if (child == null) continue;
-            Node found = unwrapToObject(child);
-            if (found != null) return found;
+    private static Node enclosingObjectField(Node node) {
+        Node cur = node;
+        while (cur != null) {
+            if ("object_field".equals(cur.getType())) return cur;
+            cur = cur.getParent().orElse(null);
         }
         return null;
+    }
+
+    private static Node enclosingObjectValue(Node node) {
+        Node cur = node;
+        while (cur != null) {
+            if ("object_value".equals(cur.getType())) return cur;
+            cur = cur.getParent().orElse(null);
+        }
+        return null;
+    }
+
+    private static boolean hasObjectField(Node objectValue, String fieldName, byte[] source) {
+        for (int i = 0; i < objectValue.getChildCount(); i++) {
+            Node child = objectValue.getChild(i).orElse(null);
+            if (child == null || !"object_field".equals(child.getType())) continue;
+            Node fname = childOfKind(child, "name");
+            if (fname != null && fieldName.equals(Nodes.text(fname, source))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
