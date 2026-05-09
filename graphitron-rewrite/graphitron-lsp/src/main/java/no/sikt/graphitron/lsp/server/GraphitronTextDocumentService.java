@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp.server;
 
 import no.sikt.graphitron.lsp.code_action.CodeActions;
+import no.sikt.graphitron.lsp.completions.ArgNameCompletions;
 import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
 import no.sikt.graphitron.lsp.completions.FieldCompletions;
 import no.sikt.graphitron.lsp.completions.MethodCompletions;
@@ -176,6 +177,11 @@ public class GraphitronTextDocumentService implements TextDocumentService {
         if (!fieldItems.isEmpty()) return fieldItems;
         var refItems = ReferenceCompletions.generate(vocab, data, directive, pos, source);
         if (!refItems.isEmpty()) return refItems;
+        // Arg-name fallback last: catalog-aware providers above return
+        // value completions for known coordinates; this provider fires
+        // when the cursor is at an arg-name slot rather than a value slot.
+        var argNameItems = ArgNameCompletions.generate(vocab, directive, pos, source);
+        if (!argNameItems.isEmpty()) return argNameItems;
         return List.of();
     }
 

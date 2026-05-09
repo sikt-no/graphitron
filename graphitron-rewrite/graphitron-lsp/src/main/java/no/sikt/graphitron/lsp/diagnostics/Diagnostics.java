@@ -1,5 +1,9 @@
 package no.sikt.graphitron.lsp.diagnostics;
 
+import graphql.language.DirectiveDefinition;
+import graphql.language.InputObjectTypeDefinition;
+import graphql.language.InputValueDefinition;
+import graphql.language.NonNullType;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -54,6 +58,16 @@ public final class Diagnostics {
         "service", "condition", "externalField", "tableMethod", "reference", "sourceRow"
     );
 
+    /**
+     * GraphQL spec built-in directives: present in user schemas, absent from
+     * graphitron's bundled {@code directives.graphqls}. Skipped by the
+     * unknown-directive validator so {@code @deprecated} on a user-authored
+     * field doesn't surface as a graphitron-LSP false positive.
+     */
+    private static final Set<String> SPEC_BUILTIN_DIRECTIVES = Set.of(
+        "skip", "include", "deprecated", "specifiedBy", "oneOf"
+    );
+
     public static List<Diagnostic> compute(WorkspaceFile file, CompletionData catalog) {
         return compute(LspVocabulary.load(), file, catalog);
     }
@@ -64,6 +78,19 @@ public final class Diagnostics {
         var out = new ArrayList<Diagnostic>();
         var directives = Directives.findAll(file.tree().getRootNode());
         for (var directive : directives) {
+            String directiveName = Nodes.text(directive.nameNode(), file.source());
+            if (SPEC_BUILTIN_DIRECTIVES.contains(directiveName)) {
+                continue;
+            }
+            var dirDef = vocabulary.registry().getDirectiveDefinition(directiveName);
+            if (dirDef.isEmpty()) {
+                out.add(diagnostic(file, directive.nameNode(), DiagnosticSeverity.Warning,
+                    "Unknown directive '@" + directiveName
+                        + "'. Not declared in the bundled directives.graphqls."));
+                continue;
+            }
+            validateUnknownArgs(directive, dirDef.get(), vocabulary, file, out);
+            validateRequiredArgs(directive, dirDef.get(), file, out);
             var leaves = vocabulary.leafCoordinates(directive, file.source());
             for (var leaf : leaves) {
                 dispatch(directive, leaf, vocabulary, file, catalog, out);
@@ -74,6 +101,90 @@ public final class Diagnostics {
             validateLegacyNameLeaves(vocabulary, directive, leaves, file, catalog, out);
         }
         return out;
+    }
+
+    /**
+     * Walks every argument the user wrote on {@code directive} and warns on
+     * any name (top-level or inside a nested object literal) that does not
+     * resolve in the parsed registry. Top-level miss = unknown directive
+     * arg; nested miss = unknown field on the enclosing input type.
+     */
+    private static void validateUnknownArgs(
+        Directives.Directive directive, DirectiveDefinition dirDef,
+        LspVocabulary vocabulary, WorkspaceFile file, List<Diagnostic> out
+    ) {
+        for (var arg : directive.arguments()) {
+            String argName = Nodes.text(arg.key(), file.source());
+            var argDef = LspVocabulary.findInputValue(dirDef.getInputValueDefinitions(), argName);
+            if (argDef.isEmpty()) {
+                out.add(diagnostic(file, arg.key(), DiagnosticSeverity.Warning,
+                    "Unknown argument '" + argName + "' on @" + dirDef.getName() + "."));
+                continue;
+            }
+            String argType = LspVocabulary.unwrapToInputTypeName(argDef.get().getType());
+            if (argType != null) {
+                descendUnknownArgs(arg.value(), argType, vocabulary, file, out);
+            }
+        }
+    }
+
+    private static void descendUnknownArgs(
+        Node node, String currentType,
+        LspVocabulary vocabulary, WorkspaceFile file, List<Diagnostic> out
+    ) {
+        if (node == null) return;
+        if ("object_field".equals(node.getType())) {
+            Node nameNode = childOfKind(node, "name");
+            Node valueNode = childOfKind(node, "value");
+            if (nameNode == null || valueNode == null) return;
+            String fieldName = Nodes.text(nameNode, file.source());
+            var inputType = vocabulary.registry().getTypeOrNull(currentType, InputObjectTypeDefinition.class);
+            if (inputType == null) return;
+            var fieldDef = LspVocabulary.findInputValue(inputType.getInputValueDefinitions(), fieldName);
+            if (fieldDef.isEmpty()) {
+                out.add(diagnostic(file, nameNode, DiagnosticSeverity.Warning,
+                    "Unknown field '" + fieldName + "' on input type '" + currentType + "'."));
+                return;
+            }
+            String nextType = LspVocabulary.unwrapToInputTypeName(fieldDef.get().getType());
+            if (nextType != null) {
+                descendUnknownArgs(valueNode, nextType, vocabulary, file, out);
+            }
+            return;
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            descendUnknownArgs(node.getChild(i).orElse(null), currentType, vocabulary, file, out);
+        }
+    }
+
+    /**
+     * Warns when a {@code NonNullType} arg on {@code directive} is missing
+     * from the user's call. Nested required input-fields are out of scope —
+     * they require a present-vs-absent distinction on the enclosing input
+     * object that the top-level rule does not need.
+     */
+    private static void validateRequiredArgs(
+        Directives.Directive directive, DirectiveDefinition dirDef,
+        WorkspaceFile file, List<Diagnostic> out
+    ) {
+        var presentNames = new LinkedHashSet<String>();
+        for (var arg : directive.arguments()) {
+            presentNames.add(Nodes.text(arg.key(), file.source()));
+        }
+        for (var argDef : dirDef.getInputValueDefinitions()) {
+            if (!(argDef.getType() instanceof NonNullType)) continue;
+            if (presentNames.contains(argDef.getName())) continue;
+            out.add(diagnostic(file, directive.nameNode(), DiagnosticSeverity.Warning,
+                "Missing required argument '" + argDef.getName() + "' on @" + dirDef.getName() + "."));
+        }
+    }
+
+    private static Node childOfKind(Node parent, String kind) {
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            Node child = parent.getChild(i).orElse(null);
+            if (child != null && kind.equals(child.getType())) return child;
+        }
+        return null;
     }
 
     private static void dispatch(
