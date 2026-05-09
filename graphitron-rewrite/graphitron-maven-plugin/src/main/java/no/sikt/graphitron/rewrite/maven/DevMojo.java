@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.rewrite.RewriteContext;
@@ -83,7 +84,7 @@ public class DevMojo extends AbstractRewriteMojo {
             runGeneratorPass(initialCtx, "initial run");
         }
 
-        var workspace = new Workspace(buildCatalogQuietly(initialCtx));
+        var workspace = new Workspace(buildCatalogQuietly(initialCtx), LspVocabulary.load());
         bindServer(workspace);
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
         startClasspathWatcher(initialCtx, workspace);
