@@ -168,7 +168,12 @@ class HoversTest {
     }
 
     @Test
-    void unknownServiceClassReturnsEmpty() {
+    void unknownServiceClassFallsBackToSdlDocstring() {
+        // Per R119 phase 2, hover on a known coordinate without a richer
+        // catalog match falls through to the SDL docstring on the
+        // coordinate's parsed definition. ExternalCodeReference.className's
+        // description in directives.graphqls describes what className means;
+        // this is more useful than the previous silent-empty.
         var file = file("""
             type Query {
                 x: Int @service(service: {className: "com.example.Missing", method: "list"})
@@ -176,7 +181,11 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "Missing");
 
-        assertThat(Hovers.compute(file, classCatalog("com.example.Other"), pos)).isEmpty();
+        var hover = Hovers.compute(file, classCatalog("com.example.Other"), pos).orElseThrow();
+        var md = hover.getContents().getRight().getValue();
+        // The SDL docstring on ExternalCodeReference.className is non-empty
+        // and references either "klassen" (Norwegian) or className itself.
+        assertThat(md).isNotBlank();
     }
 
     @Test
@@ -225,7 +234,10 @@ class HoversTest {
     }
 
     @Test
-    void serviceMethodHoverWithUnknownMethodReturnsEmpty() {
+    void serviceMethodHoverWithUnknownMethodFallsBackToSdlDocstring() {
+        // Same shape as unknownServiceClassFallsBackToSdlDocstring: the
+        // method-on-class lookup misses, so hover falls through to
+        // ExternalCodeReference.method's SDL docstring.
         var file = file("""
             type Query {
                 x: Int @service(service: {className: "com.example.FilmService", method: "missing"})
@@ -233,7 +245,8 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "missing");
 
-        assertThat(Hovers.compute(file, classWithMethodCatalog(), pos)).isEmpty();
+        var hover = Hovers.compute(file, classWithMethodCatalog(), pos).orElseThrow();
+        assertThat(hover.getContents().getRight().getValue()).isNotBlank();
     }
 
     private static CompletionData classWithMethodCatalog() {

@@ -120,6 +120,27 @@ class LspVocabularyTest {
     }
 
     @Test
+    void descriptionOf_returnsSdlDocstringForKnownCoordinates() {
+        var vocab = LspVocabulary.load(Map.of(), FIXTURE_SDL);
+
+        assertThat(vocab.descriptionOf(new SchemaCoordinate.Directive("retired")))
+            .map(String::trim)
+            .hasValueSatisfying(d -> assertThat(d).contains("@deprecated"));
+
+        assertThat(vocab.descriptionOf(new SchemaCoordinate.InputField("DemoRef", "className")))
+            .map(String::trim)
+            .hasValue("stays");
+    }
+
+    @Test
+    void descriptionOf_returnsEmptyForCoordinateWithoutDescription() {
+        var vocab = LspVocabulary.load(Map.of(), FIXTURE_SDL);
+
+        // @demo has no docstring on its declaration in the fixture.
+        assertThat(vocab.descriptionOf(new SchemaCoordinate.Directive("demo"))).isEmpty();
+    }
+
+    @Test
     void deprecationOf_returnsEmptyForUndeprecatedCoordinate() {
         var vocab = LspVocabulary.load(Map.of(), FIXTURE_SDL);
 

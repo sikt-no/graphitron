@@ -241,6 +241,35 @@ public record LspVocabulary(
     }
 
     /**
+     * Returns the SDL docstring (description) on the parsed registry's
+     * definition of {@code coord}. Empty if the coordinate has no
+     * description; whitespace-only descriptions remain present (callers
+     * filter as needed).
+     *
+     * <p>Used by {@code Hovers} as the default hover content for any
+     * coordinate without a richer behavior arm: every directive,
+     * argument, input type, and input field carries description prose
+     * in the parsed registry, so editing the SDL is the authoring path
+     * for hover content.
+     */
+    public Optional<String> descriptionOf(SchemaCoordinate coord) {
+        return switch (coord) {
+            case SchemaCoordinate.Directive d ->
+                findDirective(d.name()).flatMap(x -> descriptionText(x.getDescription()));
+            case SchemaCoordinate.DirectiveArg da ->
+                findDirective(da.directive())
+                    .flatMap(x -> findInputValue(x.getInputValueDefinitions(), da.arg()))
+                    .flatMap(v -> descriptionText(v.getDescription()));
+            case SchemaCoordinate.InputType t ->
+                findInputType(t.name()).flatMap(x -> descriptionText(x.getDescription()));
+            case SchemaCoordinate.InputField f ->
+                findInputType(f.type())
+                    .flatMap(x -> findInputValue(x.getInputValueDefinitions(), f.field()))
+                    .flatMap(v -> descriptionText(v.getDescription()));
+        };
+    }
+
+    /**
      * Returns deprecation info for {@code coord}, in either the native
      * {@code @deprecated(reason:)} form (member-level) or the docstring
      * {@code @deprecated} convention (whole-directive). Empty if the
