@@ -1,7 +1,7 @@
 ---
 id: R3
 title: "Surface silent @splitQuery on @record-parent fields as a build warning"
-status: Spec
+status: Ready
 priority: 5
 theme: docs
 depends-on: []
