@@ -1,7 +1,7 @@
 ---
 id: R119
 title: "LSP completion / diagnostics keyed by schema coordinates"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 5
 theme: lsp
@@ -9,6 +9,78 @@ depends-on: []
 ---
 
 # LSP completion / diagnostics keyed by schema coordinates
+
+## In Review feedback (back to Ready)
+
+The architectural payoff shipped cleanly across `531495a` (Phase 1
+foundation), `6a644f1` / `698a21a` / `22dfb8a` / `54fc7c9` (Phase 2
+consumer migration), `4ae827d` (Phase 3 deletions), and `04daf62`
+(self-review: lift `siblingStringAt`, collapse `DeprecationTarget`,
+file R123). Build green; LSP test surface healthy; the R110
+`@sourceRow` user-facing gap closes via the canonical overlay; the
+structural-invariant + drift-detection seams hold; `DirectiveDefinitions`
+(124 lines) and `DeprecationMarkers` (164 lines) are gone as the
+spec promised.
+
+Two material gaps, surfaced at the In Review → Done gate:
+
+1. **Phase 1's named generic-capability deliverables not shipped.**
+   The "Phasing" section's Phase 1 reads "Wire the generic capabilities
+   listed under 'Generic capabilities the parse unlocks':
+   unknown-directive / unknown-arg diagnostics, required-arg
+   validation, arg-name completion, hover-from-docstring." Of those
+   five, only hover-from-docstring shipped (`Hovers.java:60-61`
+   docstring fallback wired off `LspVocabulary.descriptionOf`). The
+   other four leave no fingerprint in the LSP main sources: a `grep`
+   for `Unknown directive` / `Unknown arg` / `missing.*required` /
+   `arg.*name.*complet` over `graphitron-lsp/src/main` returns only
+   javadoc references in `LspVocabulary.java`. The spec's "Open
+   questions" section acknowledges severity policy as an
+   implementation choice (warnings first, error later) but does
+   **not** mark the diagnostics themselves as out of scope; the
+   "free wins" framing of the section is descriptive, the Phasing
+   imperative is the contract.
+
+   The Phase 1 commit message is candid that "Existing per-directive
+   consumers ... are untouched in phase 1; they migrate to
+   behavior-arm dispatch in phase 2," which is correct for the
+   *consumer migration* axis but does not address the generic
+   capabilities that were supposed to sit alongside the migration.
+
+2. **Plan housekeeping not done.** The spec body still reads as the
+   pre-implementation Spec; phases are not collapsed to one-line
+   `shipped at <sha>` notes; the four undelivered Phase 1 items are
+   not named. Per the In Review → Done review checklist, "the spec
+   body should be marked up to reflect what shipped: phases
+   collapsed to one-line `shipped at <sha>` notes, remaining work
+   clearly named." This feedback section is a placeholder; the
+   next implementation pass should fold the markup in properly.
+
+Suggested next pass — implementer's choice between two routes:
+
+- **Ship the four Phase 1 deliverables.** Add unknown-directive /
+  unknown-arg / missing-required-arg validators in `Diagnostics.java`
+  driven off `vocabulary.registry()`, and arg-name completion at
+  `@<directive>(|)` cursor positions in a new (or existing)
+  completions provider. Default severity = Warning per the spec's
+  "Open question" guidance. Each item is a small additive walk over
+  the parsed registry. Pipeline-tier tests pin the new arms; existing
+  fixture-SDL infra already has the shapes (`DiagnosticsTest`).
+- **Defer the four cleanly.** File a follow-up roadmap item naming
+  the four missing capabilities (see R123 for the parent-context
+  follow-up shape), update this Spec's "Phasing" section to mark
+  Phase 1 as "shipped at `531495a`, with the four generic-capability
+  diagnostics deferred to R<n>", and re-request In Review.
+
+Either route fixes (1) and resolves (2) by collapsing phases into
+their shipped-at notes plus naming what remains. Pick whichever the
+implementer judges right; the decision is design-fork-dependent and
+does not need reviewer pre-approval.
+
+(Reviewer note: only `R123` was filed in the self-review pass; it
+covers parent-context-aware coordinates, not the generic-capability
+diagnostics. Two distinct follow-ups are in play if route (b) is
+picked.)
 
 ## Problem
 
