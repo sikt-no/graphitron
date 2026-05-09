@@ -15,11 +15,11 @@ Silent acceptance is a communication failure. The doc and the code disagree on w
 
 ## Implementation
 
-`FieldBuilder.classifyChildFieldOnResultType` (`FieldBuilder.java:2693`) is the one classifier path that produces the result-mapped `RecordTableField` / `RecordLookupTableField` arms; it does not read `DIR_SPLIT_QUERY` today. Add a check at the seam where the field has been confirmed to classify as one of those two arms (i.e. after the `@sourceRow` / `@service` / scalar branches return their own outcomes; immediately before the property/record path constructs the `RecordTableField` / `RecordLookupTableField`). When the field carries `@splitQuery`, call `ctx.addWarning(new BuildWarning(...))` with a message that names the field's coordinate and explains the redundancy:
+`FieldBuilder.classifyChildFieldOnResultType` (`FieldBuilder.java:2693`) is the one classifier path that produces the result-mapped `RecordTableField` / `RecordLookupTableField` arms; it does not read `DIR_SPLIT_QUERY` today. The two arms are constructed at two seams within that method: the `@sourceRow` branch (`FieldBuilder.java:2721/2724`, after `SourceRowDirectiveResolver.resolve` returns `Ok`) and the regular `@record`-parent branch (`FieldBuilder.java:2819/2822`, after `resolveRecordParentBatchKey` returns `Resolved`). Both branches end up DataLoader-batched ; lifter-keyed for `@sourceRow`, parent-record-keyed for the regular path ; so `@splitQuery` is structurally redundant on either: the directive cannot change the scope. The warning fires on both seams. When the field carries `@splitQuery`, call `ctx.addWarning(new BuildWarning(...))` with a message that names the field's coordinate and explains the redundancy:
 
 > `<ParentType>.<fieldName>: @splitQuery is redundant on a @record-parent field; the record handoff already opens a new DataLoader-backed scope. The directive will be ignored.`
 
-The classification outcome is unchanged. The warning is purely informational.
+The classification outcome is unchanged. The warning is purely informational. Implementer's choice whether to inline the `addWarning` call at each seam or extract a small private helper; the principled requirement is that both seams emit, not the call shape.
 
 This mirrors `TypeBuilder.java:663`'s `@table`-shadowed-by-`@record` warning: same family ("redundant directive on a parent shape that decides the structural outcome"), same channel (`BuildContext.addWarning`), same prose-message form. The marker-logger seam (`IdReferenceShimWarnFormatTest`, `AsConnectionSameTableWarnFormatTest`) is for warnings whose *content* is parsed by downstream migration tooling (canonical replacement directive text, FK-disambiguation hints); a redundancy advisory has no such consumer and belongs on `BuildWarning`.
 
@@ -29,9 +29,15 @@ The directive is read at classify time, not validate time, because the warning i
 
 ## Test surface
 
-Pipeline-tier test: a fixture with a `@record`-parent + `@table`-returning child carrying `@splitQuery`. Asserts:
+Pipeline-tier tests cover both warning-producing seams. Three fixtures, each with a child field carrying `@splitQuery`:
 
-1. Classification succeeds and produces `RecordTableField` (or `RecordLookupTableField` for the `@lookupKey` variant).
+1. A `@record`-parent + `@table`-returning child (regular `@record`-parent path, classifies to `RecordTableField`).
+2. The same shape with `@lookupKey` on the child (regular path, classifies to `RecordLookupTableField`).
+3. A `@sourceRow` field on a `@record`-parent (DTO-parent path through `SourceRowDirectiveResolver`, classifies to `RecordTableField` or `RecordLookupTableField` ; one fixture is enough since both arms share the same emit-warning seam at lines 2721/2724).
+
+Each fixture asserts:
+
+1. Classification succeeds and produces the expected arm.
 2. `schema.warnings()` carries one `BuildWarning` whose `message()` contains the field's coordinate and the substring `"@splitQuery is redundant on a @record-parent field"`.
 3. `schema.errors()` is empty.
 
@@ -39,16 +45,15 @@ Pipeline-tier test: a fixture with a `@record`-parent + `@table`-returning child
 
 ## Acceptance criteria
 
-- `FieldBuilder.classifyChildFieldOnResultType` emits a `BuildWarning` when the field carries `@splitQuery`. Classification still produces `RecordTableField` / `RecordLookupTableField`. `errors()` is unchanged.
+- `FieldBuilder.classifyChildFieldOnResultType` emits a `BuildWarning` when the field carries `@splitQuery` at *both* construction seams: the `@sourceRow` branch (lines 2721/2724) and the regular `@record`-parent branch (lines 2819/2822). Classification still produces `RecordTableField` / `RecordLookupTableField`. `errors()` is unchanged.
 - The warning's message names the field's coordinate (`<ParentType>.<fieldName>`) and contains the substring `"@splitQuery is redundant on a @record-parent field"`.
-- Pipeline-tier test pins the warning's presence + the structural classification outcome on at least one `RecordTableField` fixture and one `RecordLookupTableField` fixture.
+- Pipeline-tier tests pin the warning's presence + the structural classification outcome on three fixtures: one `RecordTableField` (regular `@record`-parent path), one `RecordLookupTableField` (regular path), and one `@sourceRow` field carrying `@splitQuery` (DTO-parent path).
 - Build green: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes.
 
 ## Out of scope
 
 - Generalising the `BuildWarning` channel (introducing a `WarningKind` enum, a `warning` top-level kind in the diagnostics glossary, and extending `DiagnosticsDocCoverageTest` to enforce it). The three current producers (federation entity-resolution, `@table`-shadowed-by-`@record`, and the new `@splitQuery`-on-`@record` advisory) all carry curated prose messages; none has a downstream parser today. Earning the structure first is the principle; if a fourth producer or an LSP code-action consumer surfaces, that's a separate plan with the right grounding.
 - LSP-tier diagnostic for the same warning. Split out as [`R121 lsp-diagnostic-redundant-splitquery-on-record`](lsp-diagnostic-redundant-splitquery-on-record.md). R121 lands the LSP arm + lifts R3's literal substring into a shared `BuildWarnings` constant when it has a real second consumer.
-- `@splitQuery` on `@sourceRow` fields. The `@sourceRow` branch (`FieldBuilder.java:2721/2724`) constructs the same `RecordTableField` / `RecordLookupTableField` arms and is silent about a redundant `@splitQuery` for the same reason as the regular `@record`-parent path: the lifter-keyed DataLoader is the new scope, the directive can't change anything. R3's seam intentionally lands on the regular `@record`-parent path only ; the `@sourceRow` resolver owns directive validation for its arm, and extending the warning to fire there is a one-line addition once a real schema surfaces the case. Worth a follow-up Backlog item rather than a speculative widening here.
 - A directive-composition rule registry (a closed declarative table of redundancy rules evaluated by both the build-tier classifier and the LSP). That's the broader architectural move that scales when the warning count justifies it; left for a deliberate plan grounded in the rule count we have at the time.
 - Worked example + execution test for `@lookupKey + @condition` (the lookup-condition method signature). The code emits these correctly today; the residual gap is doc-only and warrants its own Backlog item if the user wants it surfaced. The N×M contract is already documented in `batching-model.adoc` (R68) and `design-decisions.adoc`.
 - Lock-down pipeline test for `InlineTableFieldEmitter` filter-method wiring. The implementation fix shipped under "Generated-fetcher quality pass" (`srcAlias` threaded through `ArgCallEmitter.buildCallArgs`); the test-tier guide treats pipeline tests as the primary tier *for new behaviour*, and lock-down tests for shipped behaviour absent a specific regression hypothesis are unit-tier bookkeeping below the line for a deliberate plan.
@@ -69,3 +74,5 @@ The narrowed spec went through one revision pass each in two architectural direc
 
 - An architect-review pass tightened the build-tier-only spec by dropping a marker constant + unit-tier message-format pin as premature abstraction (no concrete present consumer).
 - An LSP-fold attempt expanded R3 to ship the LSP-tier diagnostic alongside, which would have justified the marker constant by adding a real second consumer. The fold was reversed and the LSP arm split to [`R121 lsp-diagnostic-redundant-splitquery-on-record`](lsp-diagnostic-redundant-splitquery-on-record.md): R3's scope ("docs theme, focused communication-gap fix") shouldn't grow into a two-module architectural lift, and R121 lands deliberately with the constant earning its keep at that point.
+
+A reviewer pass on 2026-05-09 surfaced an asymmetry in the original seam wording: `classifyChildFieldOnResultType` constructs `RecordTableField` / `RecordLookupTableField` at two places (the `@sourceRow` branch and the regular `@record`-parent branch), and only the regular path was wired for the warning. Neither resolver reads `DIR_SPLIT_QUERY`, so `@splitQuery` is just as silently no-op on `@sourceRow` fields. An initial revision deferred the `@sourceRow` arm to a follow-up backlog item; that was the wrong call ; the redundancy story is identical, the implementation cost of covering both seams is one extra check, and the communication-failure framing of the spec doesn't admit a carve-out. Tightened to fire on both seams with a third pipeline-tier fixture covering the `@sourceRow` shape.
