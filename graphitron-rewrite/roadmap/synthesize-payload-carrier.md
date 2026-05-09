@@ -133,11 +133,12 @@ follow-up action per item if Phase 2/3 reviewers disagree):
   predict this. Without the widening, the schema-builder's
   `PassthroughDataField` registration was silently dropped at fetcher-
   wiring time (the bug surfaced in execution-tier as `{films=null}`).
-  Cost is one extra `instanceof` per type; non-passthrough
-  `PlainObjectType`s have no classified fields (the schema-builder's
-  arm declines per-field classification) and `buildBody`'s
-  empty-classified-fields short-circuit returns an empty CodeBlock,
-  so admitting them costs nothing observable.
+  Cost is one extra `instanceof` per type. The pre-R75 schema-builder
+  arm for `PlainObjectType` returns before invoking
+  `fieldRegistry.classify(...)` — non-passthrough plain types have no
+  entries in `schema.fields()` at all, and `buildBody`'s
+  is-`fieldsOf`-empty short-circuit returns an empty CodeBlock for
+  them, so admitting them to the walk costs nothing observable.
 - *`unwrapPassthroughPayload` is called at four sites, not three.*
   Spec named `resolveReturnType`, the schema-builder, and
   `validateReturnType`. Implementation also calls it from
