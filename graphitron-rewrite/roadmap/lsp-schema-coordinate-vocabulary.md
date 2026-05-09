@@ -101,13 +101,30 @@ coordinate." The actual completion / diagnostic / hover code lives in the
 consumer files (`ClassNameCompletions`, `Diagnostics`, `Hovers`); the
 overlay is the dispatch index.
 
-**Deprecation is not an overlay arm.** GraphQL-Java exposes the
-`@deprecated` directive on every `InputValueDefinition` /
-`FieldDefinition`, and the description string on every `DirectiveDefinition`
-carries the whole-directive token (today's `DeprecationMarkers` regex
-walk). Both fall straight out of the parsed `TypeDefinitionRegistry`.
+**Deprecation is not an overlay arm.** Two shapes feed it, both off the
+parsed `TypeDefinitionRegistry`:
+
+- **Member-level deprecation.** Native GraphQL: `@deprecated(reason: ...)`
+  on an argument or input-type field. GraphQL-Java surfaces this
+  directly via `InputValueDefinition.getDirectives("deprecated")`; the
+  reason string is on the directive's `reason:` arg.
+- **Whole-directive deprecation.** Graphitron's convention: an
+  `@deprecated` token inside the `DirectiveDefinition`'s docstring. The
+  GraphQL spec disallows `@deprecated` on directive definitions, so we
+  carry the marker as Javadoc-style prose in the description string
+  (today: `@index`'s docstring at `directives.graphqls:194` reads
+  `"... @deprecated use @order(index:) instead"`). GraphQL-Java hands
+  back the raw description text but does not interpret the convention;
+  `LspVocabulary` layers a token-scan on top — match `@deprecated`
+  preceded by a word boundary, treat the trailing prose up to a sentence
+  break as the replacement hint. This mirrors what `DeprecationMarkers`
+  does today (see `DESCRIPTION_DEPRECATED_TOKEN` pattern), but the scan
+  runs against the parsed description text rather than over the raw SDL
+  bytes.
+
 `LspVocabulary` exposes `Optional<DeprecationInfo> deprecationOf(coord)`
-backed by the parse; consumers query without an overlay round-trip.
+unifying both shapes; consumers query without caring which form
+declared it.
 
 ### Startup population
 
@@ -208,12 +225,16 @@ its hand-written registry doesn't carry the data.
    signature on `ExternalCodeReference.method`, etc.). Authoring effort
    for hover content moves from "edit `Hovers.java`" to "edit the SDL".
 6. **Deprecation diagnostic and quick-fix coverage.** `DeprecationMarkers`
-   regex-walks the SDL today. The parse hands the same data back via
-   `InputValueDefinition.getDirectives()` (member-level) and
-   `DirectiveDefinition.description()` (whole-directive). Drift between
-   the registry and `SdlActions` collapses too: every `SdlAction.targets`
-   coordinate must resolve and must carry a deprecation marker, both
-   checked at startup against the parse.
+   regex-walks the raw SDL today. After: member-level deprecation rides
+   on `InputValueDefinition.getDirectives("deprecated")` (native GraphQL);
+   whole-directive deprecation rides on a token-scan over
+   `DirectiveDefinition.description()` (graphitron's docstring
+   convention). The `@deprecated` recogniser moves into `LspVocabulary`
+   where it works against parsed text instead of over byte ranges. Drift
+   between the registry and `SdlActions` collapses too: every
+   `SdlAction.targets` coordinate must resolve and must carry a
+   deprecation marker (in either shape), both checked at startup against
+   the vocabulary.
 
 These are not in addition to the migration; they fall out of phase 1 the
 moment the parse is wired in.
