@@ -4,7 +4,7 @@ title: "Retire `graphitron-maven-plugin` + `graphitron-schema-transform`"
 status: In Progress
 priority: 11
 theme: legacy-migration
-depends-on: [retire-rust-lsp-and-introspect-mojo]
+depends-on: []
 ---
 
 # Retire `graphitron-maven-plugin` + `graphitron-schema-transform`
@@ -15,7 +15,7 @@ Most of this umbrella has shipped; see [`changelog.md`](changelog.md) for the bu
 
 ## Remaining sub-items
 
-- **Java LSP rewrite + `dev` goal** — shipped under R18 (see [changelog.md](changelog.md)). What remains is the consumer-facing retirement step (archive Rust LSP, delete `IntrospectMojo`, document migration), tracked under [R91](retire-rust-lsp-and-introspect-mojo.md).
+- **Java LSP rewrite + `dev` goal** — shipped under R18 (see [changelog.md](changelog.md)). The legacy Rust LSP has no consumers, so archiving the GitLab repo and deleting the legacy `IntrospectMojo` carry no consumer-migration cost; both fold into the final "Retire legacy + unnest" step below, which deletes `graphitron-maven-plugin` wholesale.
 - **`@notGenerated` directive removed** — own plan: [remove-notgenerated.md](remove-notgenerated.md). Directive dropped from the supported set.
 - **Federation SDL integration** — bundled with the *Apollo Federation via federation-jvm transform* backlog item; tracked there.
 - **Retire legacy + unnest the rewrite aggregator** — closing landing marker once every legacy consumer has migrated to the new plugin. Delete `graphitron-common`, `graphitron-codegen-parent/` (both submodules), `graphitron-maven-plugin`, `graphitron-schema-transform`, `graphitron-example`, `graphitron-servlet-parent` (if legacy-only), and the top-level `pom.xml`. Promote `graphitron-rewrite/` to the repo root: aggregator POM becomes root POM; modules relocate up one level; the duplicated javapoet copy becomes the only copy; the two parent POMs merge. One-time repo-topology change; no consumer-visible surface beyond git-history refs and CI path updates. Trigger: every legacy consumer migrated (cadence dictated by per-consumer feature work).
