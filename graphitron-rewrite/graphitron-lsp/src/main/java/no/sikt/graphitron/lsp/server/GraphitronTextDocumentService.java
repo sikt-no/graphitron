@@ -153,16 +153,29 @@ public class GraphitronTextDocumentService implements TextDocumentService {
      * One of the two providers returns non-empty; the other returns
      * empty.
      */
-    private static List<CompletionItem> serviceOrConditionCompletions(
+    /**
+     * Routes any class-name / method-name coordinate to the correct
+     * provider. The vocabulary's behavior arm decides which one fires;
+     * one returns non-empty, the other empty. Works uniformly for every
+     * directive whose canonical overlay declares
+     * {@link no.sikt.graphitron.lsp.parsing.Behavior.ClassNameBinding} or
+     * {@link no.sikt.graphitron.lsp.parsing.Behavior.MethodNameBinding}
+     * (today: {@code @service}, {@code @condition}, {@code @record},
+     * {@code @externalField}, {@code @enum}, {@code @tableMethod},
+     * {@code @sourceRow}, plus the structured {@code @reference(path:)}
+     * condition slot).
+     */
+    private static List<CompletionItem> classOrMethodCompletions(
         no.sikt.graphitron.lsp.state.Workspace workspace,
         no.sikt.graphitron.lsp.parsing.Directives.Directive directive,
         io.github.treesitter.jtreesitter.Point pos,
-        byte[] source,
-        String directiveName
+        byte[] source
     ) {
-        var classItems = ClassNameCompletions.generate(workspace.catalog(), directive, pos, source, directiveName);
+        var classItems = ClassNameCompletions.generate(
+            workspace.vocabulary(), workspace.catalog(), directive, pos, source);
         if (!classItems.isEmpty()) return classItems;
-        return MethodCompletions.generate(workspace.catalog(), directive, pos, source, directiveName);
+        return MethodCompletions.generate(
+            workspace.vocabulary(), workspace.catalog(), directive, pos, source);
     }
 
     @Override
@@ -185,11 +198,14 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             List<CompletionItem> items = switch (directiveName) {
                 case "table" -> TableCompletions.generate(workspace.catalog(), directive, pos, file.source());
                 case "field" -> FieldCompletions.generate(workspace.catalog(), directive, pos, file.source());
-                case "reference" -> ReferenceCompletions.generate(workspace.catalog(), directive, pos, file.source());
-                case "service", "condition" -> serviceOrConditionCompletions(workspace, directive, pos, file.source(), directiveName);
-                case "record" ->
-                    ClassNameCompletions.generate(workspace.catalog(), directive, pos, file.source(), directiveName);
-                default -> List.of();
+                case "reference" -> {
+                    var refItems = ReferenceCompletions.generate(
+                        workspace.catalog(), directive, pos, file.source());
+                    yield !refItems.isEmpty()
+                        ? refItems
+                        : classOrMethodCompletions(workspace, directive, pos, file.source());
+                }
+                default -> classOrMethodCompletions(workspace, directive, pos, file.source());
             };
             return Either.forLeft(items);
         });

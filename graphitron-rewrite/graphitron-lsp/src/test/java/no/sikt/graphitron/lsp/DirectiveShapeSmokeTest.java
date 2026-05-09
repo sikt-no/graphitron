@@ -6,6 +6,7 @@ import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
+import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
@@ -34,6 +35,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class DirectiveShapeSmokeTest {
 
+    private static final LspVocabulary VOCAB = LspVocabulary.load();
+
     @Test
     void serviceDirectiveSakilaShapeProducesCompletionsAndDiagnostics() {
         // Lifted from graphitron-sakila-example/.../schema.graphqls.
@@ -53,8 +56,8 @@ class DirectiveShapeSmokeTest {
         // Class-name completion: cursor inside className: value.
         Point classCursor = pointInside(source, "no.sikt.graphitron");
         var classItems = ClassNameCompletions.generate(
-            data, directiveAt(source, classCursor), classCursor,
-            source.getBytes(StandardCharsets.UTF_8), "service"
+            VOCAB, data, directiveAt(source, classCursor), classCursor,
+            source.getBytes(StandardCharsets.UTF_8)
         );
         assertThat(classItems).extracting(i -> i.getLabel())
             .contains("no.sikt.graphitron.rewrite.test.services.SampleQueryService");
@@ -64,8 +67,8 @@ class DirectiveShapeSmokeTest {
         // Land inside the method:'s value (after the opening quote of "filmsByService").
         methodCursor = adjustToInsideValue(source, methodCursor, "method: \"filmsByService\"");
         var methodItems = MethodCompletions.generate(
-            data, directiveAt(source, methodCursor), methodCursor,
-            source.getBytes(StandardCharsets.UTF_8), "service"
+            VOCAB, data, directiveAt(source, methodCursor), methodCursor,
+            source.getBytes(StandardCharsets.UTF_8)
         );
         assertThat(methodItems).extracting(i -> i.getLabel()).contains("filmsByService");
 
@@ -155,12 +158,12 @@ class DirectiveShapeSmokeTest {
         Point cursor = lspPoint(source, idx);
 
         var classItems = ClassNameCompletions.generate(
-            data, directiveAt(source, cursor), cursor,
-            source.getBytes(StandardCharsets.UTF_8), "service"
+            VOCAB, data, directiveAt(source, cursor), cursor,
+            source.getBytes(StandardCharsets.UTF_8)
         );
         var methodItems = MethodCompletions.generate(
-            data, directiveAt(source, cursor), cursor,
-            source.getBytes(StandardCharsets.UTF_8), "service"
+            VOCAB, data, directiveAt(source, cursor), cursor,
+            source.getBytes(StandardCharsets.UTF_8)
         );
 
         assertThat(classItems).isEmpty();
