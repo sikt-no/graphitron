@@ -82,7 +82,6 @@ each phase ships as its own implementation cycle.
 
 ## Phase 1: single-data-slot payloads, no errors — shipped at `3ac4996`
 
-
 Implemented surface (the SDL author's view): plain Object payload type
 wrapping a single `@table`-element data field admits without an authored
 carrier. The classifier resolves the SDL return through
@@ -95,26 +94,87 @@ also covers `ConstructorField` and `NestingField`); the
 `FetcherEmitter.dataFetcherValue` dispatch arm count drops by one. The
 load-bearing classifier check
 `passthrough-payload.data-table-equals-dml-target` rejects mismatches
-between the data field's `@table` and the DML input's `@table`. Phase 1
-also added a directive-level guard: the data field must be plain (no
-field-level applied directives), since `@service` / `@sourceRow` /
-`@field` etc. signal a different fetcher contract.
+between the data field's `@table` and the DML input's `@table`.
+
+Directive-level guard added during implementation: the data field
+rejects on graphitron-domain directives (`@service` / `@sourceRow` /
+`@reference` / `@nodeId` / `@field` / `@asConnection` / `@splitQuery` /
+`@externalField` / `@condition` / `@lookupKey` / `@notGenerated` /
+`@tableMethod` / `@defaultOrder` / `@orderBy` / `@multitableReference`)
+because each signals a different fetcher contract than the
+IdentityPassthrough capability emits. Pure-metadata directives
+(`@deprecated`, user-defined custom directives without execution
+semantics) are off the list and pass through silently. The forbidden
+set lives in `BuildContext.PASSTHROUGH_FORBIDDEN_DATA_FIELD_DIRECTIVES`;
+adding a future graphitron directive that coexists cleanly with
+IdentityPassthrough means leaving it off this list.
+
+Per-implementation deviations from the as-shipped Spec body (one
+follow-up action per item if Phase 2/3 reviewers disagree):
+
+- *Trigger condition list.* The Spec listed three trigger conditions
+  (registered as `PlainObjectType` / `PojoResultType(_, _, null)`,
+  exactly one field, element registered as `TableBackedType`).
+  Implementation added a fourth: data field carries no graphitron-domain
+  directive. Rationale above.
+- *Spec-listed test names diverged.* The Spec named
+  `payload_withErrorsField_returnsRejected` and
+  `_returnsNotCandidate`-suffixed cases that test the unwrap function
+  in isolation. The unwrap is package-private and not directly testable
+  from outside `BuildContext`; the shipped suite covers the same
+  behaviour indirectly via field-classification assertions
+  (`payload_atTableType_classifiesAsExistingPath`,
+  `payload_atRecordWithClassName_classifiesAsExistingPath`,
+  `payload_withMultipleDataFields_returnsRejected`). The
+  `payload_withInterfaceField_returnsRejected` case is implemented
+  per-Spec.
+- *`FetcherRegistrationsEmitter.emit()` filter widened to
+  `PlainObjectType`.* The Spec's "What does *not* change" list didn't
+  predict this. Without the widening, the schema-builder's
+  `PassthroughDataField` registration was silently dropped at fetcher-
+  wiring time (the bug surfaced in execution-tier as `{films=null}`).
+  Cost is one extra `instanceof` per type; non-passthrough
+  `PlainObjectType`s have no classified fields (the schema-builder's
+  arm declines per-field classification) and `buildBody`'s
+  empty-classified-fields short-circuit returns an empty CodeBlock,
+  so admitting them costs nothing observable.
+- *`unwrapPassthroughPayload` is called at four sites, not three.*
+  Spec named `resolveReturnType`, the schema-builder, and
+  `validateReturnType`. Implementation also calls it from
+  `FieldBuilder.classifyMutationField` to recover the
+  `PassthroughInfo` for the load-bearing data-table check. The
+  function is pure, so each call is cheap; threading
+  `Optional<PassthroughInfo>` through the call chain to consolidate
+  would widen signatures for marginal benefit.
+- *`GraphitronSchemaValidator` switch-arm.* Empty arm added for
+  `ChildField.PassthroughDataField` (no validator-mirrors-classifier
+  work; the trigger holds the structural guarantees). Required by the
+  exhaustive sealed-switch but not called out in the Spec.
+- *Execution-tier path.* The Spec's polish round pointed at
+  `graphitron-sakila-example/src/test/java/no/sikt/graphitron/sakila/`,
+  which doesn't exist as a package root. The fixture lives at
+  `graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/`,
+  alongside the existing `DmlBulkMutationsExecutionTest`. Spec drift
+  in the polish round; not a behavioural concern.
 
 ### Test surface
 
-Pipeline-tier coverage in `PassthroughPayloadPipelineTest` (`graphitron/src/test/`):
-parameterised admission over `DmlKind` (single, list, `@record`-without-
-`className`, data-field registration, `ProjectedList` carry), trigger
-rejections (multi-field, scalar element, field-level directives,
-`@table`-typed payload, `@record`-with-`className`), cross-paths (query-side
-uniformity, data-table mismatch per `DmlKind`), and the
-`fetcherEmitter_identityPassthrough_dispatchArmCount` regression pin.
+Pipeline-tier coverage in `PassthroughPayloadPipelineTest`
+(`graphitron/src/test/`): parameterised admission over `DmlKind`
+(single, list, `@record`-without-`className`, data-field registration,
+`ProjectedList` carry), trigger rejections (multi-field, scalar
+element, interface element, `@field` directive, `@table`-typed
+payload, `@record`-with-`className`), `@deprecated` admission,
+cross-paths (query-side uniformity, data-table mismatch per
+`DmlKind`), and the `fetcherEmitter_identityPassthrough_dispatchArmCount`
+regression pin.
 
 Execution-tier coverage in `PassthroughPayloadDmlTest`
-(`graphitron-sakila-example/src/test/`): `FilmPassthroughPayload` over the
-sakila `film` table, four `*Passthrough` mutations exercise INSERT / UPDATE /
-DELETE / UPSERT end-to-end against PostgreSQL with `@table` projection
-flowing through graphql-java's identity-passthrough fetcher to the existing
+(`graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/`):
+`FilmPassthroughPayload` over the sakila `film` table, four
+`*Passthrough` mutations exercise INSERT / UPDATE / DELETE / UPSERT
+end-to-end against PostgreSQL with `@table` projection flowing through
+graphql-java's identity-passthrough fetcher to the existing
 per-`@table`-field fetchers.
 
 Variant-coverage classification fixture `PASSTHROUGH_PAYLOAD_DATA_FIELD`

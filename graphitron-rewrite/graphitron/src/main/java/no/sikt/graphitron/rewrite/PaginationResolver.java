@@ -95,7 +95,7 @@ final class PaginationResolver {
      * value) shapes — graphql-java surfaces directive arguments in either form depending on the
      * resolution path.
      */
-    int resolveDefaultFirstValue(GraphQLFieldDefinition fieldDef) {
+    static int resolveDefaultFirstValue(GraphQLFieldDefinition fieldDef) {
         var dir = fieldDef.getAppliedDirective(DIR_AS_CONNECTION);
         if (dir == null) return FieldWrapper.DEFAULT_PAGE_SIZE;
         var arg = dir.getArgument(ARG_DEFAULT_FIRST_VALUE);
