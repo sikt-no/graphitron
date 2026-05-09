@@ -56,20 +56,27 @@ R75 ships in three phases ordered by user-visible value. Each phase is a discret
 implementation track; downstream phases bind structurally to upstream ones but are
 not schedule-coupled.
 
-- **Phase 1: single-data-slot payloads, no errors.** Closes the legacy-parity gap on
-  `@mutation` returning a plain Object payload with one data field. Specified in
-  implementation-ready detail below.
-- **Phase 2: richer payload shapes via `localContext` (sketch).** Extends the
-  trigger to multi-field payloads. Non-data fields carry state via
-  graphql-java's `DataFetcherResult.localContext`; identity-passthrough
-  fetchers read each slot from the env. Errors are one foreshadowed
-  application; the mechanism is general.
-- **Phase 3: domain-record returns from `@service` (sketch).** Allows a `@service`
-  method to return its domain object directly; graphitron's existing per-field
-  fetchers (record accessors) read off the source unchanged.
+- **Phase 1: single-data-field payloads on `@mutation` (DML).** Closes the
+  legacy-parity gap on `@mutation` returning a plain Object payload with
+  one `@table`-element data field.
+- **Phase 2: multi-field payloads via `localContext` on `@mutation` (DML).**
+  Extends the trigger to multi-field payloads. Non-data fields carry state
+  via graphql-java's `DataFetcherResult.localContext`; the DML emitter
+  wraps its result in `DataFetcherResult.localContext(slots)` when slots
+  are present, and per-slot populators plug in via `SlotPopulatorCatalog`.
+  Phase 2 ships zero populators; specific slot semantics (errors,
+  affected-row counts, etc.) ship as separate downstream items.
+- **Phase 3: `@service` mutations and `@record`-element data.** Admits
+  passthrough payloads on `@service` mutations (where the consumer
+  constructs `DataFetcherResult` directly) and admits `@record`-element
+  data fields (in addition to `@table`-element). `PassthroughInfo` carries
+  a sealed `DataElement.{Table | Record}` sub-taxonomy; a sibling
+  `PassthroughRecordField` permit joins the `IdentityPassthrough`
+  capability for the new element kind.
 
-This Spec body specifies Phase 1. Promoting R75 from Spec → Ready means signing off
-on Phase 1 only; Phases 2 and 3 each return to Spec for sharpening before Ready.
+All three phases are specified in implementation-ready detail below.
+Promoting R75 from Spec → Ready means signing off on the entire body;
+each phase ships as its own implementation cycle.
 
 ## Phase 1: single-data-slot payloads, no errors
 
@@ -396,13 +403,19 @@ relaxed.
 
 ### Out of scope for Phase 1
 
+- **Multi-field passthrough payloads.** Phase 1 admits exactly one SDL
+  field on the payload type (the data field). Multi-field payloads with
+  non-data slot fields are Phase 2 territory.
 - **Service-backed mutations returning passthrough payloads.** A `@service`
   mutation whose return type is a passthrough-payload `PlainObjectType` is
   admitted at the type-resolution level (the unwrap is consumer-agnostic),
   but the service-fetcher emitter has no path for the data field's identity
   passthrough on a service-method return value. Phase 1 keeps such cases at
-  the existing service-fetcher's reject path. Phase 3 ("domain-record returns
-  from `@service`") covers the service-side admission.
+  the existing service-fetcher's reject path. Phase 3 covers the
+  `@service`-side admission.
+- **`@record`-element data fields.** Phase 1 admits `@table`-element data
+  only. `@record`-element data is Phase 3 territory (admitted on `@service`
+  mutations).
 
 ### Tests
 
@@ -498,54 +511,521 @@ return; the consumer (`@DependsOnClassifierCheck`) lives on the DML emitter's
 `Projected*` arm in `buildDmlFetcher`. `LoadBearingGuaranteeAuditTest`
 enforces the pairing automatically; no new audit-test method is needed.
 
-## Phase 2: richer payload shapes via localContext (sketch)
+## Phase 2: multi-field payloads via localContext
 
-Phase 1's trigger admits single-data-field payloads. Phase 2 extends the
-trigger to multi-field payloads where the non-data fields carry state via
-graphql-java's `DataFetcherResult.localContext`. The trigger function admits
-the multi-field shape; `PassthroughInfo` extends with a list of auxiliary
-slot descriptors naming each SDL field and its element type. The DML emitter
-wraps its result in `DataFetcherResult.<List<Record>>newResult().data(rows).
-localContext(slots).build()`; each non-data field's identity-passthrough
-fetcher reads its slot from `env.getLocalContext()`, replacing today's
-`PropertyDataFetcher.fetching(name)` form at FetcherEmitter.java:62-70 with
-a lightweight `($T env) -> env.getLocalContext().get($S)` shape.
+Phase 1 admits single-data-field passthrough payloads. Phase 2 extends the
+trigger to multi-field payloads, where one field carries the DML row(s)
+(the data field, as in Phase 1) and any number of additional fields carry
+state via graphql-java's `DataFetcherResult.localContext`. The mechanism is
+general; specific slot semantics (errors, affected-row counts, warnings,
+echoed-back input) ship as separate downstream roadmap items per
+application. Phase 2 ships a usable skeleton: multi-field payloads admit
+through the same boundary as Phase 1; their non-data fields render as null
+until a per-slot populator wires up.
 
-Errors are one foreshadowed application: an `errors:` slot lets a try/catch
-wrapper around the DML surface typed errors without an authored carrier.
-Other applications (affected-row counts, warnings, echoed-back input)
-compose the same way, with per-slot population sketched per application as
-the roadmap reaches them. Phase 2 is the mechanism, not the application.
+### Trigger extension
 
-Spec questions deferred to Phase 2:
+`unwrapPassthroughPayload`'s condition #2 changes from "the SDL Object
+declares exactly one field" to "the SDL Object declares at least one field
+whose element type is `@table`-mapped (the data field) and zero or more
+additional non-`@table`-element fields (slot fields)". Conditions #1 (the
+type is registered as `PlainObjectType` or `PojoResultType(_, _, null)`)
+and #3 (the data field's element is `@table`-mapped, now implied by the
+new #2) stay.
 
-- Slot-population mechanism: which generator owns which slot, and how the
-  emitter declares slot population sites.
-- Element-type admission per slot (the per-slot trigger conditions).
-- Whether the non-data fetchers reuse the `IdentityPassthrough` capability
-  against `env.getLocalContext()` or warrant their own capability arm.
+`PassthroughInfo` extends with a slot-descriptor list; Phase 1 callers see
+an empty list and behave identically:
 
-## Phase 3: domain-record returns from `@service` (sketch)
+```java
+record PassthroughInfo(
+    String payloadTypeName,
+    String dataFieldName,
+    String dataElementName,
+    TableRef dataTable,
+    FieldWrapper dataWrapper,
+    List<SlotDescriptor> slots
+) {}
 
-For `@service` mutations, allow the service method to return its domain object
-directly (e.g. `LagreOgBeregnResultat(List<KvoteSporsmalSvar> svar)`) and have
-graphitron emit identity passthrough on the SDL data field. The trigger
-function extends to admit `@record`-element data fields (as a sibling
-condition to today's `@table`-element); a new sibling permit
-`ChildField.PassthroughRecordField` joins the `IdentityPassthrough`
-capability, parameterised on a `ResultReturnType` slot rather than a
-`TableBoundReturnType`. The fetcher emitter's single capability arm covers
-both via the same `($T env) -> env.getSource()` code; graphql-java's per-field
-fetchers on the `@record`-classified element handle accessor reads.
+record SlotDescriptor(
+    String name,
+    String elementName,
+    FieldWrapper wrapper
+) {}
+```
 
-Spec questions deferred to Phase 3:
+The trigger rejects payloads where more than one field has an
+`@table`-mapped element type, with `Rejected("ambiguous data field: both
+'X' and 'Y' have @table-mapped elements; passthrough payloads admit
+exactly one @table-element data field")`. Slot fields with `@record`-mapped
+element types are also rejected (Phase 3 territory); the `Rejected` reason
+names the off-shape slot.
 
-- Component-to-field name matching rules and rejection messages.
-- Wrapper conventions when the domain record itself is shared across multiple
-  payload types.
-- Whether `PassthroughInfo` becomes a sealed sub-taxonomy
-  (`PassthroughInfo.{Table | Record}`) when both element kinds are admitted,
-  or stays as a single record with an element-kind discriminator.
+### Field classification
+
+A new `ChildField` permit handles slot fields:
+
+```java
+record PassthroughSlotField(
+    String parentTypeName,
+    String name,
+    SourceLocation location,
+    String elementName,
+    FieldWrapper wrapper
+) implements ChildField {}
+```
+
+`PassthroughSlotField` does *not* join the `IdentityPassthrough` capability:
+its emit is name-parameterised (`env.getLocalContext().get(name)`), not the
+literal `env.getSource()` shared by `IdentityPassthrough`'s permits.
+Mixing them under one capability would force the capability arm to read a
+field-level `name` slot to decide which env method to call, which is the
+sealed-switch shape the principle steers away from. A separate dispatch
+arm in `FetcherEmitter.dataFetcherValue` is the correct shape:
+
+```java
+if (field instanceof ChildField.PassthroughSlotField slot) {
+    return CodeBlock.of(
+        "($T env) -> env.getLocalContext() == null ? null "
+            + ": (($T<$T,$T>) env.getLocalContext()).get($S)",
+        DATA_FETCHING_ENV, MAP_CLASS, STRING_CLASS, OBJECT_CLASS, slot.name());
+}
+```
+
+The null-guard accounts for the consumer-controlled-population case where
+the localContext map may not have been populated.
+
+`GraphitronSchemaBuilder.buildSchema`'s `PlainObjectType` arm registers the
+data field (per Phase 1) and additionally iterates the slots, registering
+each as a `PassthroughSlotField`:
+
+```java
+case PlainObjectType ignored -> {
+    if (unwrapPassthroughPayload(name, ctx) instanceof PassthroughResolution.Ok ok) {
+        var p = ok.info();
+        registry.put(name, p.dataFieldName(),
+            new ChildField.PassthroughDataField(name, p.dataFieldName(), location,
+                new ReturnTypeRef.TableBoundReturnType(
+                    p.dataElementName(), p.dataTable(), p.dataWrapper())));
+        for (var slot : p.slots()) {
+            registry.put(name, slot.name(),
+                new ChildField.PassthroughSlotField(name, slot.name(), location,
+                    slot.elementName(), slot.wrapper()));
+        }
+    }
+}
+```
+
+### DML emitter
+
+When the resolved `PassthroughInfo` carries a non-empty slot list,
+`TypeFetcherGenerator.buildDmlFetcher` wraps the DML result in
+`DataFetcherResult.<Result<Record>>newResult().data(rows).localContext(slots).build()`
+instead of returning `rows` directly. The `slots` map is constructed by
+per-slot populators (see "Slot population" next); when no populator
+applies the slot key is omitted from the map and the slot fetcher's
+null-guard yields null at request time.
+
+The mutation-field carrier records (`MutationInsertTableField`,
+`MutationUpdateTableField`, `MutationDeleteTableField`,
+`MutationUpsertTableField`) extend with one new component:
+`slots: List<SlotDescriptor>` (default empty). The DML emitter checks
+`!slots.isEmpty()` to decide whether to wrap. This is the only widening
+of the mutation-field carriers in any phase; the slot list is genuinely
+new information the emitter needs at emit time and does not live elsewhere
+in the model.
+
+### Slot population
+
+Slot populators are pluggable. Phase 2 defines the contract; specific
+populators land in their own roadmap items per slot application:
+
+```java
+sealed interface SlotPopulator {
+    /** Slot name this populator targets. */
+    String slotName();
+    /** SDL element type the populator's value matches. */
+    String elementName();
+    /** Emit the populator code into the DML/service emit body. The result
+     *  is a CodeBlock evaluable to the slot's value, intended to land
+     *  inside the localContext map literal. */
+    CodeBlock populate(SlotDescriptor slot, MutationContext ctx);
+}
+```
+
+Phase 2 ships zero `SlotPopulator` implementations. Multi-field payloads
+admit, slot fetchers emit, but every slot renders as null at request time
+until a populator is wired. This is a deliberate scope limit: the
+framework ships in Phase 2; specific populators (errors, affected-row
+counts, etc.) are individual roadmap items that build on it.
+
+Generators register their populators against the central
+`SlotPopulatorCatalog` (loaded once at build time, queried by slot name).
+A populator registered for slot name `errors` would, for example, emit a
+try/catch wrapper around the DML invocation and assemble the caught
+exceptions into the localContext map. The catalog's lookup is
+slot-name-keyed; if multiple populators register the same slot name, the
+catalog rejects at build time with a duplicate-registration message.
+
+### What does *not* change (from Phase 1)
+
+- `BuildContext.resolveReturnType`'s short-circuit and the inner
+  `TableBoundReturnType` shape are unchanged.
+- `MutationInputResolver.validateReturnType` is unchanged at the dispatch
+  level; it sees `TableBoundReturnType` for both single-field and
+  multi-field passthrough payloads.
+- `DmlReturnExpression.{ProjectedSingle, ProjectedList}` are unchanged.
+- The `IdentityPassthrough` capability and its three Phase 1 permits are
+  unchanged. `PassthroughSlotField` does not join the capability.
+- The Phase 1 load-bearing classifier check
+  (`passthrough-payload.data-table-equals-dml-target`) applies unchanged;
+  the data-table check happens on the data field regardless of slot
+  count.
+
+### Out of scope for Phase 2
+
+- **Specific slot populators.** Errors, affected-row counts, warnings,
+  echoed-back input, and any other slot semantics are individual roadmap
+  items. Phase 2 ships only the framework that lets them plug in.
+- **`@service` multi-field payloads.** Phase 2 covers `@mutation` (DML)
+  multi-field payloads only, where graphitron owns the emit and can wrap
+  in `DataFetcherResult`. `@service` multi-field payloads route through
+  Phase 3 instead, where the consumer constructs `DataFetcherResult`
+  directly.
+- **Slot fields with `@table` element type.** The trigger forbids more
+  than one `@table`-mapped field; payloads needing multiple `@table`
+  fields fall back to authored carriers (`@record(record: {className:
+  ...})`).
+- **Slot fields with `@record` element type.** Phase 3 territory; the
+  trigger rejects them at admission.
+
+### Tests
+
+Pipeline-tier additions to `PassthroughPayloadPipelineTest` (parameterised
+over `DmlKind` where applicable):
+
+- `payload_dataPlusSingleScalarSlot_resolvesWithSlotDescriptor_<DmlKind>`:
+  a payload with one `@table`-element data field and one scalar slot
+  resolves; the slot descriptor's name and element type appear on
+  `PassthroughInfo.slots`.
+- `payload_dataPlusMultipleSlots_preservesSlotOrder_<DmlKind>`: multi-slot
+  admission preserves slot order from SDL.
+- `payload_twoTableElementFields_returnsRejected`: two `@table`-element
+  fields yield `Rejected("ambiguous data field: both 'X' and 'Y' have
+  @table-mapped elements; passthrough payloads admit exactly one
+  @table-element data field")`.
+- `payload_slotWithRecordElement_returnsRejected`: slot field with
+  `@record`-element type yields `Rejected("slot field 'X' has
+  @record-mapped element 'Y'; Phase 3 covers @record-element data,
+  Phase 2 admits scalar/enum/list-of-scalar slots only")`.
+- `payload_dataPlusSlot_dataFieldRegistersAsPassthroughDataField_slotRegistersAsPassthroughSlotField_<DmlKind>`:
+  the schema-builder registers the data permit (Phase 1 path) and
+  iterates the slot list, registering each as `PassthroughSlotField`.
+- `payload_dataPlusSlot_mutationFieldCarriesSlots_<DmlKind>`: the
+  classified `MutationInsertTableField` (and siblings) carry a non-empty
+  `slots` list.
+- `payload_dataPlusSlot_dmlEmitterWrapsInDataFetcherResult_<DmlKind>`:
+  the generated DML body wraps the result in
+  `DataFetcherResult.localContext(...)` when slots are non-empty;
+  Phase 1 single-field payloads (empty slot list) keep returning `rows`
+  directly.
+- `fetcherEmitter_passthroughSlotField_emitsLocalContextLookup`: the new
+  dispatch arm emits the null-guarded
+  `env.getLocalContext().get($S)` shape for `PassthroughSlotField`.
+- `slotPopulatorCatalog_duplicateRegistration_rejectsAtBuild`: two
+  populators registering the same slot name fail at catalog construction
+  with a duplicate-registration message.
+
+Execution-tier (sakila): one new fixture verifying multi-field admission
+compiles and runs end-to-end with all slots rendering null:
+
+- `PassthroughPayloadMultiFieldDmlTest`: SDL
+  `type ActorPayload { actor: [Actor!]; warningCount: Int; warnings: [String!] }`.
+  Per-DmlKind drivers assert the data field renders the
+  inserted/updated/deleted/upserted row, and the slot fields render null
+  (no populator wired in Phase 2).
+
+Audit-tier: no new load-bearing keys in Phase 2.
+
+## Phase 3: @service mutations and @record-element data
+
+Phases 1 and 2 cover `@mutation` (DML) passthrough payloads with
+`@table`-mapped data elements. Phase 3 extends along two orthogonal axes
+that ship together as the `@service`-side admission story:
+
+- **Consumer**: the trigger admits `@service` mutations whose return type
+  is a passthrough payload. The `@service` consumer constructs the
+  `DataFetcherResult` directly (no graphitron-side DML wrap or slot
+  populators needed); graphitron registers the identity-passthrough
+  fetchers on the SDL data field and any slot fields, and the existing
+  `@service` unwrap logic in `ServiceCatalog` handles wrapper composition
+  (`Optional<T>`, `CompletableFuture<T>`, etc.).
+- **Element kind**: the trigger admits data fields whose element type is
+  `@record`-mapped, in addition to `@table`-mapped. Service methods may
+  return a domain record (a Java record or POJO bound via
+  `@record(record: {className: ...})`) and have graphitron emit identity
+  passthrough on the data field; graphql-java's per-field fetchers on the
+  `@record`-classified element handle the accessor reads.
+
+### Trigger extension
+
+Condition #3 changes from "the data field's element type is registered as
+`TableBackedType`" to "the data field's element type is registered as
+`TableBackedType` OR `ResultType`". The other conditions stay; the
+multi-field admission and slot rejection from Phase 2 carry over unchanged
+(the data field is still the unique element-bound field, where "element-
+bound" now spans `@table` and `@record`).
+
+`PassthroughInfo`'s data-element descriptor becomes a sealed sub-taxonomy.
+Phase 1 and 2 callers see `DataElement.Table`; Phase 3 introduces the
+sibling:
+
+```java
+sealed interface DataElement {
+    String name();
+    FieldWrapper wrapper();
+
+    record Table(String name, TableRef table, FieldWrapper wrapper)
+        implements DataElement {}
+
+    record Record(String name, String fqClassName, FieldWrapper wrapper)
+        implements DataElement {}
+}
+
+record PassthroughInfo(
+    String payloadTypeName,
+    String dataFieldName,
+    DataElement dataElement,
+    List<SlotDescriptor> slots
+) {}
+```
+
+The sealed sub-taxonomy carries the genuinely-distinct information per
+element kind (`TableRef` for `@table`, `String fqClassName` for `@record`)
+without forcing one into the other's shape; this is the resolution to
+the deferred question carried from Phase 1's draft.
+
+### Wire-format unwrap
+
+`BuildContext.resolveReturnType`'s short-circuit dispatches on the
+`DataElement` sub-arm:
+
+```java
+if (unwrapPassthroughPayload(targetTypeName, this) instanceof
+        PassthroughResolution.Ok ok) {
+    return switch (ok.info().dataElement()) {
+        case DataElement.Table t -> new ReturnTypeRef.TableBoundReturnType(
+            t.name(), t.table(), t.wrapper());
+        case DataElement.Record r -> new ReturnTypeRef.ResultReturnType(
+            r.name(), r.wrapper(), r.fqClassName());
+    };
+}
+```
+
+`@table`-element payloads continue to unwrap to `TableBoundReturnType`
+(the DML emitter path from Phase 1 and 2). `@record`-element payloads
+unwrap to `ResultReturnType` (the existing authored-carrier path's
+`ReturnTypeRef` arm), which `ServiceCatalog`'s `@service` classifier
+admits.
+
+### Field classification
+
+A new `ChildField` permit handles `@record`-element data fields, joining
+the `IdentityPassthrough` capability (the emit is the same
+`($T env) -> env.getSource()` graphql-java traverses through to the
+per-field fetchers on the `@record` element):
+
+```java
+record PassthroughRecordField(
+    String parentTypeName,
+    String name,
+    SourceLocation location,
+    ReturnTypeRef.ResultReturnType returnType
+) implements ChildField, ChildField.IdentityPassthrough {}
+```
+
+The narrow `ResultReturnType` component (per the "narrow component types"
+principle) is guaranteed by trigger condition #3's `@record` arm. The
+capability membership means `FetcherEmitter`'s existing
+`IdentityPassthrough` arm covers it without a new dispatch case. Net
+dispatch change at `FetcherEmitter` from Phases 1 through 3: −2 (Phase 1
+collapsed two existing arms to one; Phase 2 added a separate slot arm;
+Phase 3 reuses the capability for the new permit).
+
+`GraphitronSchemaBuilder.buildSchema`'s `PlainObjectType` arm extends to
+dispatch on the `DataElement` arm:
+
+```java
+case PlainObjectType ignored -> {
+    if (unwrapPassthroughPayload(name, ctx) instanceof PassthroughResolution.Ok ok) {
+        var p = ok.info();
+        switch (p.dataElement()) {
+            case DataElement.Table t ->
+                registry.put(name, p.dataFieldName(),
+                    new ChildField.PassthroughDataField(name, p.dataFieldName(), location,
+                        new ReturnTypeRef.TableBoundReturnType(
+                            t.name(), t.table(), t.wrapper())));
+            case DataElement.Record r ->
+                registry.put(name, p.dataFieldName(),
+                    new ChildField.PassthroughRecordField(name, p.dataFieldName(), location,
+                        new ReturnTypeRef.ResultReturnType(
+                            r.name(), r.wrapper(), r.fqClassName())));
+        }
+        // slot registration per Phase 2
+        for (var slot : p.slots()) {
+            registry.put(name, slot.name(),
+                new ChildField.PassthroughSlotField(name, slot.name(), location,
+                    slot.elementName(), slot.wrapper()));
+        }
+    }
+}
+```
+
+### `@service` classifier admission
+
+`ServiceCatalog`'s `@service` mutation classifier admits passthrough-payload
+returns. Today it rejects them (per Phase 1's "Out of scope"); Phase 3
+lights up the path.
+
+For each `@service` mutation field, the classifier:
+
+1. Resolves the SDL return type via `unwrapPassthroughPayload`. On `Ok`
+   the `DataElement` arm tells the classifier which method-return shape
+   to expect.
+2. Reflects on the service method's declared return type, applying the
+   existing `@service` wrapper unwrap (`Optional<T>`, `CompletableFuture<T>`,
+   etc.) to recover the inner type.
+3. Verifies the inner type matches the data element:
+   - `DataElement.Table(name, table, wrapper)`: the inner type must be
+     `Result<<TableRecord>>` (or `<TableRecord>` for single-cardinality,
+     or a `DataFetcherResult` wrapping either; see "Wrapper composition"
+     below).
+   - `DataElement.Record(name, fqClassName, wrapper)`: the inner type
+     must be the class named `fqClassName` (or a list / optional thereof
+     matching `wrapper`, or a `DataFetcherResult` wrapping it).
+4. If verification fails, the classifier rejects with a per-mismatch
+   message naming the SDL data element, the method's return type, and
+   the gap.
+
+The matched service method is the source value for graphql-java
+traversal. graphql-java calls the data field's identity-passthrough
+fetcher (`($T env) -> env.getSource()`), which yields the service
+method's return value; the per-field fetchers on the `@table` or
+`@record` element type read off that source as today.
+
+Slot fields on a `@service` mutation payload are admitted automatically:
+the service method returns a `DataFetcherResult` whose `.data(value)`
+carries the domain object (or `Result<Record>`) and whose
+`.localContext(slots)` carries the slot map. Graphitron registers the
+slot fetchers per Phase 2; the service method populates the slot map
+directly. No graphitron-side `SlotPopulator` is required for `@service`
+mutations.
+
+### Wrapper composition
+
+Service methods may return `T`, `Optional<T>`, `CompletableFuture<T>`,
+`Mono<T>`, etc. The existing `@service` unwrap logic in `ServiceCatalog`
+strips these wrappers before classifying the inner `T`; Phase 3's
+admission composes with the existing unwrap unchanged.
+
+`DataFetcherResult<T>` is treated as another wrapper layer: a service
+method returning `DataFetcherResult<T>` is admitted with the same
+trigger as one returning `T`, with the consequence that the consumer
+opts into slot population by returning `DataFetcherResult` explicitly.
+A service method returning bare `T` and matching a payload that has
+slot fields is admitted (the slots render as null), parallel to the
+DML case in Phase 2 with no populator wired.
+
+The matrix of wrapper × element kind (4 wrappers × 2 element kinds = 8
+combinations) is verified at the execution tier (see "Tests" below).
+
+### What does *not* change (from Phases 1 and 2)
+
+- `BuildContext.resolveReturnType`'s short-circuit shape is unchanged;
+  only the switch in the `Ok` arm extends to dispatch on `DataElement`.
+- The `IdentityPassthrough` capability gains one permit
+  (`PassthroughRecordField`) but its emit is unchanged
+  (`($T env) -> env.getSource()`).
+- DML mutation paths (Phase 1 single-field, Phase 2 multi-field) are
+  unchanged.
+- `MutationInputResolver.validateReturnType` is still unchanged at the
+  dispatch level; it sees `TableBoundReturnType` (Phase 1+2) or
+  `ResultReturnType` (Phase 3) and applies its existing arm rules.
+- The Phase 1 load-bearing classifier check applies unchanged for
+  `@table`-element data; no equivalent check is needed for
+  `@record`-element (no DML projection to misalign).
+- `PassthroughSlotField` and the `SlotPopulatorCatalog` from Phase 2
+  are unchanged. `@service` mutations bypass the catalog by returning
+  `DataFetcherResult` directly.
+
+### Out of scope for Phase 3
+
+- **`@record`-element data on `@mutation` (DML).** Phase 3 admits
+  `@record`-element data on `@service` mutations only. DML mutations
+  returning `@record`-element payloads would require a "DML row →
+  domain record" conversion step at the emitter; that's a separate
+  roadmap item.
+- **Service-side slot populators.** Slot populators remain per-slot
+  roadmap items (Phase 2's "Out of scope" carries forward). The
+  `@service` consumer can populate slots manually via
+  `DataFetcherResult.localContext` without graphitron-side populator
+  wiring.
+- **`@service` queries returning passthrough payloads.** Phase 3 covers
+  `@service` mutations specifically; query-side `@service` admission
+  flows through the same trigger (the unwrap is consumer-agnostic) but
+  the per-query fetcher emit has not been audited end-to-end. Treat
+  query-side `@service` passthrough as a follow-up item.
+
+### Tests
+
+Pipeline-tier additions to `PassthroughPayloadPipelineTest`:
+
+- `payload_atRecordElementData_resolvesAsResultReturnType`: a payload
+  with a `@record`-element data field unwraps to `ResultReturnType`
+  (not `TableBoundReturnType`).
+- `payload_atRecordElementData_dataFieldRegistersAsPassthroughRecordField`:
+  the schema-builder dispatches on `DataElement.Record` and registers
+  `PassthroughRecordField`.
+- `payload_atServiceMutation_admittedByServiceCatalog_<elementKind>`:
+  a `@service` mutation returning a passthrough-payload type admits at
+  the `@service` classifier (no `UnclassifiedField`). Parameterised
+  over `{Table, Record}`.
+- `payload_atServiceMutation_methodReturnTypeMismatch_rejects_<elementKind>`:
+  service method's declared return type doesn't match the data
+  element; classifier rejects with the per-mismatch message.
+  Parameterised over `{Table, Record}`.
+- `payload_atServiceMutation_wrapperUnwraps_<wrapperKind>_<elementKind>`:
+  service method's `Optional<T>` / `CompletableFuture<T>` / `Mono<T>` /
+  `DataFetcherResult<T>` wrapper unwraps to the inner `T` for trigger
+  matching. Parameterised over `{T, Optional, CompletableFuture, Mono,
+  DataFetcherResult} × {Table, Record}` (10 cases; the bare `T` case
+  exercises the no-wrapper baseline alongside the four wrapper kinds).
+- `fetcherEmitter_identityPassthrough_extendsToFourPermits`: the
+  capability arm now covers `ConstructorField`, `NestingField`,
+  `PassthroughDataField`, `PassthroughRecordField` via a single check
+  (regression pin extended from Phase 1's three-permit pin).
+- `payload_atServiceMutation_withSlots_methodReturnsDataFetcherResult`:
+  a `@service` payload with both data and slot fields admits when the
+  method returns `DataFetcherResult<T>`; the slot fetchers read from
+  `localContext` populated by the consumer.
+
+Execution-tier (sakila): a new `PassthroughPayloadServiceTest`
+parameterising over `(elementKind, wrapper)`:
+
+- SDL: two payload variants in parallel:
+  - `type ActorTablePayload { actor: [Actor!] }` (`@table`-element).
+  - `type ActorRecordPayload { actor: ActorRecord! }`
+    (`@record`-element, where `ActorRecord` is a Java record bound via
+    `@record(record: {className: "...sakila.ActorRecord"})`).
+- Per-wrapper drivers (`T`, `Optional<T>`, `CompletableFuture<T>`,
+  `Mono<T>`) for each element kind: invoke the service mutation
+  against the testcontainer, assert response shape and follow-up
+  reads. 8 driver cases (2 element kinds × 4 wrappers).
+- One additional driver per element kind exercises a multi-field
+  payload over `DataFetcherResult<T>` to verify slot population from
+  the consumer side. 2 more driver cases.
+- Total: 10 execution-tier driver cases.
+
+Audit-tier: no new load-bearing keys in Phase 3.
 
 ## Non-goals
 
@@ -596,5 +1076,36 @@ Spec questions deferred to Phase 3:
   `@record(className)` on the payload, single data slot, `@mutation(typeName:
   …)`) compiles cleanly on the rewrite.
 
-**Phases 2 and 3:** success criteria sharpened in their respective Spec
-revision passes.
+**Phase 2:**
+
+- `PassthroughPayloadPipelineTest`'s Phase 2 admission cases pass for all
+  four `DmlKind` values; the `slotPopulatorCatalog_duplicateRegistration_
+  rejectsAtBuild` and `fetcherEmitter_passthroughSlotField_emitsLocalContextLookup`
+  regression pins hold.
+- `PassthroughPayloadMultiFieldDmlTest`'s execution-tier driver passes
+  for all four DML kinds with slot fields rendering null (no populator
+  wired in Phase 2).
+- The `SlotPopulator` contract compiles and `SlotPopulatorCatalog` is
+  loaded at build time with zero registered populators.
+- Phase 1 single-data-field payloads continue to compile and serve
+  unchanged; the `slots: List<SlotDescriptor>` widening on the
+  mutation-field carriers defaults to empty for existing fixtures.
+
+**Phase 3:**
+
+- `PassthroughPayloadPipelineTest`'s Phase 3 admission cases pass for both
+  element kinds and all four wrapper kinds (10 parameterised cases).
+- `PassthroughPayloadServiceTest`'s execution-tier matrix passes (10
+  driver cases over 2 element kinds × 4 wrappers + 2 multi-field
+  variants over `DataFetcherResult`).
+- The `fetcherEmitter_identityPassthrough_extendsToFourPermits` regression
+  pin holds; the capability arm covers `ConstructorField`, `NestingField`,
+  `PassthroughDataField`, and `PassthroughRecordField` via a single
+  `instanceof` check.
+- `PassthroughInfo`'s `DataElement` sealed sub-taxonomy compiles; Phase 1
+  and Phase 2 callers see `DataElement.Table` and behave unchanged.
+- `ServiceCatalog`'s `@service` mutation classifier admits passthrough
+  payloads (Phase 1's "Out of scope" item lights up).
+- Authored payloads with `@record(record: {className: ...})` are still
+  unaffected across all three phases (regression pin via the existing
+  authored-carrier fixtures).
