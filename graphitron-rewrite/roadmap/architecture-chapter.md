@@ -46,7 +46,7 @@ Two toolchains. Mermaid for diagrams the runtime-rendering pipeline already supp
 | D5 | N×M batch shape: N parent rows × M lookup-argument values forming the derived target cross-product. | `code-generation-triggers.adoc` (Derived tables section) | pikchr
 | D7 | Dev-loop runtime framing: LSP server, schema watcher, classpath watcher, generator dispatch, idempotent writer all in one JVM, with arrows showing wake-up events. | `dev-loop.adoc` | mermaid flowchart
 | D9 | Federation entity-resolution flow: SDL `@link` → `buildSchema` → federation-wrap → `_entities` resolver → per-type batched `SELECT`; the alternate "custom fetcher" arm. | `federation.adoc` | mermaid sequenceDiagram
-| D10 | Typed-rejection sealed hierarchy: `Resolved.{None | Ok | Rejected}` plus the `Rejection` kinds, with one concrete resolver's variants overlaid as an example. | `typed-rejection.adoc` | mermaid classDiagram
+| D10 | Typed-rejection sealed hierarchy: `Resolved` with `None` / `Ok` / `Rejected` permits plus the `Rejection` kinds, with one concrete resolver's variants overlaid as an example. | `typed-rejection.adoc` | mermaid classDiagram
 |===
 
 D6 (module/package architecture) is deliberately *not* drawn; the modules table in `index.adoc` already covers it, and a graph adds noise without adding insight.
