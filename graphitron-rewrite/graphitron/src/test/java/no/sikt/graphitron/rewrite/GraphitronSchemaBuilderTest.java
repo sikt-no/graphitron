@@ -1732,6 +1732,55 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Film", "details")).isInstanceOf(ChildField.ConstructorField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(ChildField.ConstructorField.class); }
+        },
+
+        // R3: @splitQuery on a @record-parent field is a structural no-op (the record handoff
+        // already opens a new DataLoader-backed scope) and should surface as a build warning so
+        // the developer who added it learns the directive changes nothing. Two fixtures cover
+        // the regular @record-parent classification arms; the @sourceRow seam is covered in
+        // SourceRowClassificationCase (one fixture, since both arms share the same emit-warning
+        // seam).
+
+        SPLIT_QUERY_ON_RECORD_PARENT_WARNS_TABLE_FIELD(
+            "@splitQuery on @record-parent + @table return → RecordTableField + build warning naming the field coordinate",
+            """
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordTableField.class);
+                assertThat(schema.warnings())
+                    .extracting(BuildWarning::message)
+                    .anyMatch(m -> m.contains("FilmDetails.language")
+                        && m.contains("@splitQuery is redundant on a @record-parent field"));
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
+        SPLIT_QUERY_ON_RECORD_PARENT_WARNS_LOOKUP_FIELD(
+            "@splitQuery on @record-parent + @lookupKey + @table return → RecordLookupTableField + build warning",
+            """
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              language(language_id: ID! @lookupKey): Language
+                @splitQuery
+                @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                assertThat(schema.field("FilmDetails", "language")).isInstanceOf(RecordLookupTableField.class);
+                assertThat(schema.warnings())
+                    .extracting(BuildWarning::message)
+                    .anyMatch(m -> m.contains("FilmDetails.language")
+                        && m.contains("@splitQuery is redundant on a @record-parent field"));
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
         };
 
         final String sdl;
@@ -2209,6 +2258,33 @@ class GraphitronSchemaBuilderTest {
                 assertThat(unc.reason()).contains("arity 2").contains("leaf-PK");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        // R3: @splitQuery on a @sourceRow @record-parent field is just as silently no-op as on
+        // the regular @record-parent path — the lifter-keyed DataLoader already opens a new
+        // scope. One fixture is enough since both arms (RecordTableField, RecordLookupTableField)
+        // share the same emit-warning seam.
+        SPLIT_QUERY_WARNS_ON_SOURCE_ROW(
+            "@splitQuery on @sourceRow @record-parent field → RecordTableField + build warning naming the field coordinate",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]!
+                @splitQuery
+                @sourceRow(className: "no.sikt.graphitron.rewrite.TestLifterStub", method: "dummyRow1Integer")
+                @reference(path: [{key: "inventory_film_id_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                assertThat(schema.field("FilmDetails", "inventories")).isInstanceOf(RecordTableField.class);
+                assertThat(schema.warnings())
+                    .extracting(BuildWarning::message)
+                    .anyMatch(m -> m.contains("FilmDetails.inventories")
+                        && m.contains("@splitQuery is redundant on a @record-parent field"));
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         };
 
         final String sdl;

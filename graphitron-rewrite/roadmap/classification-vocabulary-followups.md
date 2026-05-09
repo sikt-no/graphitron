@@ -1,7 +1,7 @@
 ---
 id: R3
 title: "Surface silent @splitQuery on @record-parent fields as a build warning"
-status: Ready
+status: In Review
 priority: 5
 theme: docs
 depends-on: []
@@ -37,15 +37,14 @@ Pipeline-tier tests cover both warning-producing seams. Three fixtures, each wit
 
 Each fixture asserts:
 
-1. Classification succeeds and produces the expected arm.
+1. Classification succeeds and produces the expected arm (i.e. is the right `RecordTableField` / `RecordLookupTableField` shape, not an `UnclassifiedField` ; this also covers the "errors are unchanged" intent without reaching for a non-existent `schema.errors()` API).
 2. `schema.warnings()` carries one `BuildWarning` whose `message()` contains the field's coordinate and the substring `"@splitQuery is redundant on a @record-parent field"`.
-3. `schema.errors()` is empty.
 
 `GraphitronSchemaBuilderTest.TABLE_PLUS_RECORD` is the shape comparator: same channel, same `BuildWarning::message` substring assertion. The test inlines the substring literal directly. No marker constant; no unit-tier message-format companion (the pipeline-tier assertion is the primary signal per the test-tier guide; a duplicate unit-tier pin is the bookkeeping `AsConnectionSameTableWarnFormatTest:30-35`'s own javadoc warns against absent a downstream parser). When [`R121`](lsp-diagnostic-redundant-splitquery-on-record.md) lands and adds a second consumer, the marker constant earns its keep at that point and both R3's pipeline test and R121's LSP test will reference it.
 
 ## Acceptance criteria
 
-- `FieldBuilder.classifyChildFieldOnResultType` emits a `BuildWarning` when the field carries `@splitQuery` at *both* construction seams: the `@sourceRow` branch (lines 2721/2724) and the regular `@record`-parent branch (lines 2819/2822). Classification still produces `RecordTableField` / `RecordLookupTableField`. `errors()` is unchanged.
+- `FieldBuilder.classifyChildFieldOnResultType` emits a `BuildWarning` when the field carries `@splitQuery` at *both* construction seams: the `@sourceRow` branch (lines 2721/2724) and the regular `@record`-parent branch (lines 2819/2822). Classification still produces `RecordTableField` / `RecordLookupTableField` (no fallthrough to `UnclassifiedField`).
 - The warning's message names the field's coordinate (`<ParentType>.<fieldName>`) and contains the substring `"@splitQuery is redundant on a @record-parent field"`.
 - Pipeline-tier tests pin the warning's presence + the structural classification outcome on three fixtures: one `RecordTableField` (regular `@record`-parent path), one `RecordLookupTableField` (regular path), and one `@sourceRow` field carrying `@splitQuery` (DTO-parent path).
 - Build green: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes.
