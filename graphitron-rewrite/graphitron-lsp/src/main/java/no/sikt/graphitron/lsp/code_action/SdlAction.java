@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp.code_action;
 
 import io.github.treesitter.jtreesitter.Node;
+import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import org.eclipse.lsp4j.TextEdit;
 
@@ -25,13 +26,13 @@ import java.util.stream.Stream;
  *
  * @param displayName the code-action title shown in the editor (e.g.
  *                    "Migrate `name:` to `className:`").
- * @param targets     the deprecation sites this action migrates.
- *                    Drift-test invariants assert every target points
- *                    at a real deprecation marker in
- *                    {@code directives.graphqls} and (going the other
- *                    direction) every marker is covered by an action
- *                    or the {@code MANUAL_MIGRATION_DEPRECATIONS}
- *                    allow-list.
+ * @param targets     the deprecation sites this action migrates,
+ *                    keyed by {@link SchemaCoordinate}. Drift-test
+ *                    invariants assert every target points at a real
+ *                    deprecation marker in {@code directives.graphqls}
+ *                    and (going the other direction) every marker is
+ *                    covered by an action or the
+ *                    {@code MANUAL_MIGRATION_DEPRECATIONS} allow-list.
  * @param detector    finds matched literals in a file, in source
  *                    order. Eager / finite stream; the consumer
  *                    materialises before iterating multiple times.
@@ -44,39 +45,10 @@ import java.util.stream.Stream;
  */
 public record SdlAction(
     String displayName,
-    Set<DeprecationTarget> targets,
+    Set<SchemaCoordinate> targets,
     Detector detector,
     Rewrite rewrite
 ) {
-
-    /**
-     * The deprecation site an {@link SdlAction} migrates. Sealed so the
-     * drift test can match-pattern on it; permits two shapes because
-     * graphitron has both member-level deprecations (SDL
-     * {@code @deprecated()} on an arg or input field) and
-     * whole-directive deprecations (a directive whose definition
-     * itself is deprecated; the GraphQL spec disallows
-     * {@code @deprecated} on directive definitions, so these surface
-     * via a description-string marker).
-     */
-    public sealed interface DeprecationTarget permits DeprecationTarget.Member, DeprecationTarget.WholeDirective {
-
-        /**
-         * A member of a directive or input type carries an SDL
-         * {@code @deprecated()} marker. {@code parent} is either the
-         * directive name prefixed with {@code @} (e.g.
-         * {@code "@asConnection"}) or an input-type name (e.g.
-         * {@code "ExternalCodeReference"}); {@code memberName} is the
-         * argument or input-field name.
-         */
-        record Member(String parent, String memberName) implements DeprecationTarget {}
-
-        /**
-         * The entire directive definition is deprecated. {@code directive}
-         * is the directive name without the leading {@code @}.
-         */
-        record WholeDirective(String directive) implements DeprecationTarget {}
-    }
 
     /**
      * Detects matched literals in a workspace file. Implementations

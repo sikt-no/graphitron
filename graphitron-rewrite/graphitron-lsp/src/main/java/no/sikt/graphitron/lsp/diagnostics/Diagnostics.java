@@ -71,7 +71,7 @@ public final class Diagnostics {
             // The legacy `name:` arm fires once per ExternalCodeReference
             // object whose `className:` is empty/missing. Driven by leaves,
             // since every ECR-name slot is an InputField coordinate.
-            validateLegacyNameLeaves(directive, leaves, file, catalog, out);
+            validateLegacyNameLeaves(vocabulary, directive, leaves, file, catalog, out);
         }
         return out;
     }
@@ -92,7 +92,7 @@ public final class Diagnostics {
             case Behavior.ClassNameBinding ignored ->
                 validateClassName(leaf.valueNode(), file, catalog, out);
             case Behavior.MethodNameBinding mnb ->
-                validateMethod(directive, leaf, mnb, file, catalog, out);
+                validateMethod(vocabulary, directive, leaf, mnb, file, catalog, out);
             case Behavior.ArgMappingBinding ignored -> { /* sibling roadmap item */ }
         }
     }
@@ -167,6 +167,7 @@ public final class Diagnostics {
     }
 
     private static void validateMethod(
+        LspVocabulary vocabulary,
         Directives.Directive directive, LspVocabulary.Leaf leaf,
         Behavior.MethodNameBinding mnb,
         WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
@@ -180,7 +181,8 @@ public final class Diagnostics {
         String methodName = Nodes.unquote(Nodes.text(leaf.valueNode(), file.source()));
         if (methodName.isEmpty()) return;
 
-        Optional<String> classFqn = readSiblingValue(directive, leaf.valueNode(), mnb.classNameCoord(), file.source());
+        Optional<String> classFqn = vocabulary.siblingStringAt(
+            directive, leaf.valueNode(), mnb.classNameCoord(), file.source());
         if (classFqn.isEmpty()) return;
 
         var refOpt = catalog.externalReferences().stream()
@@ -225,17 +227,20 @@ public final class Diagnostics {
      * here so the user sees the error before the build runs.
      */
     private static void validateLegacyNameLeaves(
+        LspVocabulary vocabulary,
         Directives.Directive directive, List<LspVocabulary.Leaf> leaves,
         WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
     ) {
+        var classNameCoord = new SchemaCoordinate.InputField("ExternalCodeReference", "className");
         for (var leaf : leaves) {
             if (!(leaf.coord() instanceof SchemaCoordinate.InputField f)) continue;
             if (!"ExternalCodeReference".equals(f.type()) || !"name".equals(f.field())) continue;
             // If the sibling className is set, the build-tier ignores name;
             // skip to avoid double-flagging.
-            var siblingClassName = readSiblingObjectField(
-                directive, leaf.valueNode(), "className", file.source());
-            if (siblingClassName.isPresent()) continue;
+            if (vocabulary.siblingStringAt(directive, leaf.valueNode(), classNameCoord, file.source())
+                    .isPresent()) {
+                continue;
+            }
             String legacyName = Nodes.unquote(Nodes.text(leaf.valueNode(), file.source()));
             if (legacyName.isEmpty()) continue;
             if (catalog.namedReferences().get(legacyName) != null) continue;
@@ -246,78 +251,6 @@ public final class Diagnostics {
         }
     }
 
-    /**
-     * Reads the string value at {@code siblingCoord}, scoped to the same
-     * directive the leaf lives in. Same shape as
-     * {@code MethodCompletions.readSiblingValue} — a separate copy until
-     * the consumers stabilise enough to lift into a shared helper.
-     */
-    private static Optional<String> readSiblingValue(
-        Directives.Directive directive, Node leafValue,
-        SchemaCoordinate siblingCoord, byte[] source
-    ) {
-        return switch (siblingCoord) {
-            case SchemaCoordinate.DirectiveArg da -> readDirectiveArgString(directive, da.arg(), source);
-            case SchemaCoordinate.InputField f -> readSiblingObjectField(directive, leafValue, f.field(), source);
-            case SchemaCoordinate.Directive ignored -> Optional.empty();
-            case SchemaCoordinate.InputType ignored -> Optional.empty();
-        };
-    }
-
-    private static Optional<String> readDirectiveArgString(
-        Directives.Directive directive, String argName, byte[] source
-    ) {
-        for (var arg : directive.arguments()) {
-            if (argName.equals(Nodes.text(arg.key(), source))) {
-                String raw = Nodes.unquote(Nodes.text(arg.value(), source));
-                return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
-            }
-        }
-        return Optional.empty();
-    }
-
-    private static Optional<String> readSiblingObjectField(
-        Directives.Directive directive, Node leafValue, String fieldName, byte[] source
-    ) {
-        for (var arg : directive.arguments()) {
-            Node objectValue = enclosingObjectValueOf(arg.value(), leafValue);
-            if (objectValue == null) continue;
-            for (int i = 0; i < objectValue.getChildCount(); i++) {
-                Node child = objectValue.getChild(i).orElse(null);
-                if (child == null || !"object_field".equals(child.getType())) continue;
-                Node nameNode = childOfKind(child, "name");
-                Node valueNode = childOfKind(child, "value");
-                if (nameNode == null || valueNode == null) continue;
-                if (fieldName.equals(Nodes.text(nameNode, source))) {
-                    String raw = Nodes.unquote(Nodes.text(valueNode, source));
-                    return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
-                }
-            }
-        }
-        return Optional.empty();
-    }
-
-    /**
-     * Returns the deepest {@code object_value} under {@code root} that
-     * contains the leaf's value node. Used by the sibling-value reader
-     * to scope sibling lookup to the same nested object the leaf sits in.
-     */
-    private static Node enclosingObjectValueOf(Node root, Node leafValue) {
-        if (root == null) return null;
-        if (!nodeContains(root, leafValue)) return null;
-        Node best = "object_value".equals(root.getType()) ? root : null;
-        for (int i = 0; i < root.getChildCount(); i++) {
-            Node descendant = enclosingObjectValueOf(root.getChild(i).orElse(null), leafValue);
-            if (descendant != null) best = descendant;
-        }
-        return best;
-    }
-
-    private static boolean nodeContains(Node parent, Node child) {
-        return parent.getStartByte() <= child.getStartByte()
-            && parent.getEndByte() >= child.getEndByte();
-    }
-
     private static Set<String> collectAllFkNames(CompletionData catalog) {
         var names = new LinkedHashSet<String>();
         for (var table : catalog.tables()) {
@@ -326,14 +259,6 @@ public final class Diagnostics {
             }
         }
         return names;
-    }
-
-    private static Node childOfKind(Node parent, String kind) {
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            Node child = parent.getChild(i).orElse(null);
-            if (child != null && kind.equals(child.getType())) return child;
-        }
-        return null;
     }
 
     private static Diagnostic diagnostic(WorkspaceFile file, Node node, DiagnosticSeverity severity, String message) {

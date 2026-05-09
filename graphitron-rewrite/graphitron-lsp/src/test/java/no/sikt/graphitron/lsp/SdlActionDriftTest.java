@@ -1,7 +1,6 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.code_action.SdlAction;
-import no.sikt.graphitron.lsp.code_action.SdlAction.DeprecationTarget;
 import no.sikt.graphitron.lsp.code_action.SdlActions;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
@@ -17,8 +16,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Bidirectional drift-protection seam between {@code directives.graphqls}
  * deprecation markers and the {@link SdlActions} registry. Mirrors the
- * pattern of {@code DeprecationsDocCoverageTest} (SDL ↔ docs index)
- * one layer down: SDL ↔ tooling.
+ * pattern of {@code DeprecationsDocCoverageTest} (SDL ↔ docs index) one
+ * layer down: SDL ↔ tooling.
  *
  * <p>Two invariants:
  *
@@ -39,11 +38,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the per-arm invariants don't silently keep passing through changes
  * the spec didn't anticipate.
  *
- * <p>Markers are derived from {@link LspVocabulary#deprecatedCoordinates()},
- * which walks the parsed {@code TypeDefinitionRegistry}. The test bridges
- * {@link SchemaCoordinate} (vocabulary's keying) and {@link DeprecationTarget}
- * (SdlActions' keying) via {@link #toDeprecationTarget}; the two carriers
- * collapse into one in a follow-up R119 cleanup.
+ * <p>Both sides of the seam now key on {@link SchemaCoordinate}: the
+ * vocabulary's {@link LspVocabulary#deprecatedCoordinates()} and the
+ * registry's {@link SdlAction#targets()}, plus
+ * {@link SdlActions#MANUAL_MIGRATION_DEPRECATIONS}, all hold
+ * {@code Set<SchemaCoordinate>}. The previous parallel
+ * {@code SdlAction.DeprecationTarget} hierarchy collapsed into the
+ * vocabulary type as part of R119 phase 3 cleanup.
  */
 class SdlActionDriftTest {
 
@@ -51,22 +52,22 @@ class SdlActionDriftTest {
 
     @Test
     void atLandingTimeCanonicalSetIsExact() {
-        assertThat(markers()).containsExactlyInAnyOrder(
-            new DeprecationTarget.Member("ExternalCodeReference", "name"),
-            new DeprecationTarget.Member("@asConnection", "connectionName"),
-            new DeprecationTarget.WholeDirective("index")
+        assertThat(VOCAB.deprecatedCoordinates()).containsExactlyInAnyOrder(
+            new SchemaCoordinate.InputField("ExternalCodeReference", "name"),
+            new SchemaCoordinate.DirectiveArg("asConnection", "connectionName"),
+            new SchemaCoordinate.Directive("index")
         );
     }
 
     @Test
     void everyActionTargetPointsAtAnExistingMarker() {
-        var allActionTargets = new LinkedHashSet<DeprecationTarget>();
+        var allActionTargets = new LinkedHashSet<SchemaCoordinate>();
         for (SdlAction action : SdlActions.all(CompletionData.empty())) {
             allActionTargets.addAll(action.targets());
         }
 
         var stale = allActionTargets.stream()
-            .filter(t -> !markers().contains(t))
+            .filter(t -> !VOCAB.deprecatedCoordinates().contains(t))
             .collect(Collectors.toSet());
 
         assertThat(stale)
@@ -77,14 +78,14 @@ class SdlActionDriftTest {
 
     @Test
     void everyMarkerIsCoveredByAnActionOrTheManualMigrationAllowList() {
-        var actionTargets = new LinkedHashSet<DeprecationTarget>();
+        var actionTargets = new LinkedHashSet<SchemaCoordinate>();
         for (SdlAction action : SdlActions.all(CompletionData.empty())) {
             actionTargets.addAll(action.targets());
         }
-        Set<DeprecationTarget> covered = new LinkedHashSet<>(actionTargets);
+        Set<SchemaCoordinate> covered = new LinkedHashSet<>(actionTargets);
         covered.addAll(SdlActions.MANUAL_MIGRATION_DEPRECATIONS);
 
-        var orphans = markers().stream()
+        var orphans = VOCAB.deprecatedCoordinates().stream()
             .filter(m -> !covered.contains(m))
             .collect(Collectors.toSet());
 
@@ -98,29 +99,12 @@ class SdlActionDriftTest {
     @Test
     void manualMigrationAllowListEntriesAllPointAtRealMarkers() {
         var stale = SdlActions.MANUAL_MIGRATION_DEPRECATIONS.stream()
-            .filter(t -> !markers().contains(t))
+            .filter(t -> !VOCAB.deprecatedCoordinates().contains(t))
             .collect(Collectors.toSet());
 
         assertThat(stale)
             .as("MANUAL_MIGRATION_DEPRECATIONS entries without a corresponding "
                 + "deprecation marker in directives.graphqls; remove the stale entries")
             .isEmpty();
-    }
-
-    private static Set<DeprecationTarget> markers() {
-        return VOCAB.deprecatedCoordinates().stream()
-            .map(SdlActionDriftTest::toDeprecationTarget)
-            .collect(Collectors.toCollection(LinkedHashSet::new));
-    }
-
-    private static DeprecationTarget toDeprecationTarget(SchemaCoordinate coord) {
-        return switch (coord) {
-            case SchemaCoordinate.Directive d -> new DeprecationTarget.WholeDirective(d.name());
-            case SchemaCoordinate.DirectiveArg da ->
-                new DeprecationTarget.Member("@" + da.directive(), da.arg());
-            case SchemaCoordinate.InputField f -> new DeprecationTarget.Member(f.type(), f.field());
-            case SchemaCoordinate.InputType t -> throw new IllegalStateException(
-                "input-type coordinate cannot be deprecated: " + t);
-        };
     }
 }

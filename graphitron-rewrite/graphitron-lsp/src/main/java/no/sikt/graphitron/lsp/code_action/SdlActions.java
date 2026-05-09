@@ -1,7 +1,6 @@
 package no.sikt.graphitron.lsp.code_action;
 
 import io.github.treesitter.jtreesitter.Node;
-import no.sikt.graphitron.lsp.code_action.SdlAction.DeprecationTarget;
 import no.sikt.graphitron.lsp.code_action.SdlAction.RewriteResult;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -43,17 +42,17 @@ public final class SdlActions {
      * deprecation marker in {@code directives.graphqls}; orphan
      * entries fail the build the same way orphan deprecations do.
      */
-    public static final Set<DeprecationTarget> MANUAL_MIGRATION_DEPRECATIONS = Set.of(
+    public static final Set<SchemaCoordinate> MANUAL_MIGRATION_DEPRECATIONS = Set.of(
         // Per-field semantics differ across instances (the override
         // exists as a transition mechanism for legacy schemas); no
         // mechanical rewrite is correct.
-        new DeprecationTarget.Member("@asConnection", "connectionName"),
+        new SchemaCoordinate.DirectiveArg("asConnection", "connectionName"),
         // The directive itself is deprecated, superseded by
         // @order(index:), but the migration shape is a per-call-site
         // rewrite from @index(name: "X") on an enum value to
         // @order(index: "X"); tractable as a future SdlAction but
         // not in R93's scope.
-        new DeprecationTarget.WholeDirective("index")
+        new SchemaCoordinate.Directive("index")
     );
 
     /**
@@ -79,7 +78,7 @@ public final class SdlActions {
     public static SdlAction externalCodeReferenceNameToClassName(CompletionData catalog) {
         return new SdlAction(
             "Migrate `name:` to `className:`",
-            Set.of(new DeprecationTarget.Member("ExternalCodeReference", "name")),
+            Set.of(new SchemaCoordinate.InputField("ExternalCodeReference", "name")),
             SdlActions::detectLegacyNameSites,
             (file, match) -> rewriteNameToClassName(file, match, catalog.namedReferences())
         );

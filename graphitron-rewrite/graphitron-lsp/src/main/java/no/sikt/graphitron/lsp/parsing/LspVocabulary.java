@@ -97,6 +97,126 @@ public record LspVocabulary(
     }
 
     /**
+     * Reads the string value at {@code siblingCoord}, scoped to the same
+     * directive (and, for an {@link SchemaCoordinate.InputField} sibling,
+     * the same enclosing object_value as {@code anchor}).
+     *
+     * <p>Two anchor shapes overload this method: {@link Point} (cursor
+     * position, used by completion / hover paths) and {@link Node}
+     * (a leaf's value node, used by the diagnostics document walk).
+     * Both delegate to the same containment-based walk; the byte-range
+     * vs. point-range distinction is the only thing that varies.
+     *
+     * <p>Replaces the per-consumer {@code readSiblingValue} +
+     * {@code readSiblingObjectField} helpers that lived in
+     * {@code MethodCompletions}, {@code Hovers}, and {@code Diagnostics}.
+     */
+    public Optional<String> siblingStringAt(
+        Directives.Directive directive, Point pos,
+        SchemaCoordinate siblingCoord, byte[] source
+    ) {
+        return switch (siblingCoord) {
+            case SchemaCoordinate.DirectiveArg da -> readDirectiveArgString(directive, da.arg(), source);
+            case SchemaCoordinate.InputField f ->
+                readSiblingObjectField(directive, pos, f.field(), source);
+            case SchemaCoordinate.Directive ignored -> Optional.empty();
+            case SchemaCoordinate.InputType ignored -> Optional.empty();
+        };
+    }
+
+    /** Node-anchored overload; see {@link #siblingStringAt(Directives.Directive, Point, SchemaCoordinate, byte[])}. */
+    public Optional<String> siblingStringAt(
+        Directives.Directive directive, Node anchor,
+        SchemaCoordinate siblingCoord, byte[] source
+    ) {
+        return switch (siblingCoord) {
+            case SchemaCoordinate.DirectiveArg da -> readDirectiveArgString(directive, da.arg(), source);
+            case SchemaCoordinate.InputField f ->
+                readSiblingObjectField(directive, anchor, f.field(), source);
+            case SchemaCoordinate.Directive ignored -> Optional.empty();
+            case SchemaCoordinate.InputType ignored -> Optional.empty();
+        };
+    }
+
+    private static Optional<String> readDirectiveArgString(
+        Directives.Directive directive, String argName, byte[] source
+    ) {
+        for (var arg : directive.arguments()) {
+            if (argName.equals(Nodes.text(arg.key(), source))) {
+                String raw = Nodes.unquote(Nodes.text(arg.value(), source));
+                return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> readSiblingObjectField(
+        Directives.Directive directive, Point pos, String fieldName, byte[] source
+    ) {
+        for (var arg : directive.arguments()) {
+            if (!arg.contains(pos)) continue;
+            Node objectValue = enclosingObjectValue(arg.value(), pos);
+            return readSiblingFromObject(objectValue, fieldName, source);
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> readSiblingObjectField(
+        Directives.Directive directive, Node anchor, String fieldName, byte[] source
+    ) {
+        for (var arg : directive.arguments()) {
+            Node objectValue = enclosingObjectValueOf(arg.value(), anchor);
+            if (objectValue == null) continue;
+            return readSiblingFromObject(objectValue, fieldName, source);
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> readSiblingFromObject(
+        Node objectValue, String fieldName, byte[] source
+    ) {
+        if (objectValue == null) return Optional.empty();
+        for (int i = 0; i < objectValue.getChildCount(); i++) {
+            Node child = objectValue.getChild(i).orElse(null);
+            if (child == null || !"object_field".equals(child.getType())) continue;
+            Node nameNode = childOfKind(child, "name");
+            Node valueNode = childOfKind(child, "value");
+            if (nameNode == null || valueNode == null) continue;
+            if (fieldName.equals(Nodes.text(nameNode, source))) {
+                String raw = Nodes.unquote(Nodes.text(valueNode, source));
+                return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Node enclosingObjectValue(Node node, Point pos) {
+        if (node == null || !Nodes.contains(node, pos)) return null;
+        Node best = "object_value".equals(node.getType()) ? node : null;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            Node descendant = enclosingObjectValue(node.getChild(i).orElse(null), pos);
+            if (descendant != null) best = descendant;
+        }
+        return best;
+    }
+
+    private static Node enclosingObjectValueOf(Node root, Node leafValue) {
+        if (root == null) return null;
+        if (!nodeContains(root, leafValue)) return null;
+        Node best = "object_value".equals(root.getType()) ? root : null;
+        for (int i = 0; i < root.getChildCount(); i++) {
+            Node descendant = enclosingObjectValueOf(root.getChild(i).orElse(null), leafValue);
+            if (descendant != null) best = descendant;
+        }
+        return best;
+    }
+
+    private static boolean nodeContains(Node parent, Node child) {
+        return parent.getStartByte() <= child.getStartByte()
+            && parent.getEndByte() >= child.getEndByte();
+    }
+
+    /**
      * Walks every coordinate-bearing leaf inside {@code directive} and
      * returns each as a {@link Leaf} pair (coordinate plus its tree-sitter
      * value node). Used by document-wide consumers (today: {@code Diagnostics})
