@@ -13,14 +13,14 @@ The skill's job is the *hand-off*. Do not perform the review yourself.
 
 The user names a roadmap item `R<n>` and asks for a hand-off prompt for the next reviewer. Two gates need this:
 
-- **Spec → Ready** (item is `status: Spec`). Reviewer reads the spec body and either signs off or requests revisions. Reviewer rule: ≠ last committer of the spec file.
-- **In Review → Done** (item is `status: In Review`). Reviewer reads the shipped implementation against the spec and either approves (delete the spec file, optionally entry the changelog) or requests rework. Reviewer rule: ≠ implementer.
+- **Spec → Ready** (item is `status: Spec`). Reviewer reads the spec body and either signs off or requests revisions. Reviewer rule: ≠ Claude Code session that authored the most recent commit touching the spec file.
+- **In Review → Done** (item is `status: In Review`). Reviewer reads the shipped implementation against the spec and either approves (delete the spec file, optionally entry the changelog) or requests rework. Reviewer rule: ≠ Claude Code session(s) that authored the implementation commits.
 
 For other statuses (Backlog, Ready, In Progress), no formal review handoff applies; tell the user and stop. For paired sibling skills, see `roadmap` (state machine + ID lookup) and `reviewer-prompt` (architecture-focused code-diff review handoff). The `principles-architect` subagent is the *forward* counterpart to this skill; suggest it as a self-check when the user is preparing a Spec → Ready handoff and hasn't already consulted it (it's read-only and produces no verdict, so it doesn't compete with the reviewer-rule guard).
 
 ## Procedure
 
-0. **Sync first.** Always fetch and rebase before resolving anything else; the spec body the reviewer will read may live in a commit that hasn't reached the local branch yet, and a stale `git log -- <slug>.md` produces a stale recent-commits block and a stale "last committer" attribution. Run:
+0. **Sync first.** Always fetch and rebase before resolving anything else; the spec body the reviewer will read may live in a commit that hasn't reached the local branch yet, and a stale `git log -- <slug>.md` produces a stale recent-commits block and a stale disqualified-session-ID attribution. Run:
 
    ```bash
    git fetch origin claude/graphitron-rewrite
@@ -44,17 +44,28 @@ For other statuses (Backlog, Ready, In Progress), no formal review handoff appli
    - `In Review` → Implementation-stage template (gate: In Review → Done)
    - Anything else → stop, tell the user no review handoff applies at status `<X>`.
 
-4. **Resolve the disqualified party.** This is the load-bearing piece — the next reviewer applies the rule by name, not by re-deriving it.
+4. **Resolve the disqualified party.** This is the load-bearing piece — the next reviewer applies the rule by ID, not by re-deriving it. Per `graphitron-rewrite/docs/workflow.adoc` § "States and transitions" (Reviewer rule paragraph), the comparison identifier is the Claude Code session ID recorded as the `https://claude.ai/code/session_<id>` trailer on each commit. Resolve both the session ID (primary) and the git author name (fallback for trailer-less commits) so the emitted template carries both.
 
    Spec stage:
    ```bash
-   git log -1 --pretty='%an' -- graphitron-rewrite/roadmap/<slug>.md
+   sha=$(git log -1 --format=%H -- graphitron-rewrite/roadmap/<slug>.md)
+   git log -1 --format=%B "$sha" | grep -oE 'session_[A-Za-z0-9]+' | head -1
+   git log -1 --format='%an' "$sha"
    ```
 
-   Implementation stage: the implementer is whoever authored the implementation commits between the most recent `Ready → In Progress` and `In Progress → In Review` status flips. Approximate by listing unique authors of the recent commits referencing `R<n>`:
+   The first command yields the disqualified session ID (e.g. `session_01Kc8d1cyEHM1rxZXpbm8QyE`); the second yields the git author. If the trailer grep is empty, the commit predates the trailer-tracking convention; surface that as `<no-trailer>` in the emitted template so the reviewing agent knows to defer to the user's judgment that they are an independent session.
+
+   Implementation stage: the implementer is whoever authored the implementation commits between the most recent `Ready → In Progress` and `In Progress → In Review` status flips. Approximate by listing unique session IDs from the recent commits referencing `R<n>`, with git author as fallback:
    ```bash
-   git log --pretty='%h %an %s' -20 | grep -E '\b<R<n>>\b'
+   git log --pretty='%H %s' -50 | grep -E '\bR<n>\b' | awk '{print $1}' \
+     | while read sha; do
+         sid=$(git log -1 --format=%B "$sha" | grep -oE 'session_[A-Za-z0-9]+' | head -1)
+         author=$(git log -1 --format='%an' "$sha")
+         printf '%s\t%s\t%s\n' "$sha" "${sid:-<no-trailer>}" "$author"
+       done
    ```
+
+   Dedupe by the second column for the disqualified-session-IDs list; keep authors alongside as fallback.
 
 5. **Get the recent-commits block.** Indent four spaces under `Recent commits ...:`:
    ```bash
@@ -78,14 +89,25 @@ Spec:    {{spec-path}}  (id: {{Rn}}, title: {{title}}, status: Spec)
 
 # Workflow rule
 
-Per graphitron-rewrite/docs/workflow.adoc, "Spec → Ready: sign off [reviewer ≠
-last committer]". Recent spec-touching commits (most recent first):
+Per graphitron-rewrite/docs/workflow.adoc § "States and transitions", the
+Spec → Ready guard is "reviewer ≠ last committer". The "Reviewer rule"
+paragraph below the state diagram pins the identifier: the comparison is by
+Claude Code session ID, recorded as the `https://claude.ai/code/session_<id>`
+trailer on each commit, not by git author or human identity.
+
+Recent spec-touching commits (most recent first):
 
 {{recent-commits}}
 
-Disqualified as reviewer: {{disqualified-author}} (last committer of the spec
-file). You should be a different party — a fresh Claude Code session, the human
-user, or an unrelated agent.
+Disqualified session ID: {{disqualified-session-id}}
+(Fallback identifier — git author of the same commit: {{disqualified-author}}.
+Used only when the disqualified session ID resolves to `<no-trailer>`, meaning
+the spec-file commit predates the trailer-tracking convention; in that case
+defer to the user's judgment that you are an independent session.)
+
+Your own session ID is in your system prompt, embedded in the trailer URL
+Claude Code stamps on every commit. If it matches the disqualified ID, hand
+off to a different session.
 
 # Sync first
 
@@ -131,7 +153,8 @@ Spec-stage framing: "is this plan sound enough to hand to an implementer", not
 1. **Sign off.** Use the `roadmap` skill to flip status from Spec → Ready, then
    `publish` to push and fast-forward trunk.
 2. **Request revisions.** Either commit revisions yourself on a fresh feature
-   branch (status stays Spec; reviewer ≠ last committer for the next pass), or
+   branch (status stays Spec; the next pass's reviewer-session must be
+   different from yours, since you've now become the last committer), or
    leave a note for the original author. Use the `roadmap` skill if you need a
    `Spec → Spec` revise transition recorded.
 
@@ -158,14 +181,26 @@ Spec:    {{spec-path}}  (id: {{Rn}}, title: {{title}}, status: In Review)
 
 # Workflow rule
 
-Per graphitron-rewrite/docs/workflow.adoc, "In Review → Done: approve [reviewer
-≠ implementer]". Recent commits referencing {{Rn}} (most recent first):
+Per graphitron-rewrite/docs/workflow.adoc § "States and transitions", the
+In Review → Done guard is "reviewer ≠ implementer". The "Reviewer rule"
+paragraph below the state diagram pins the identifier: the comparison is by
+Claude Code session ID, recorded as the `https://claude.ai/code/session_<id>`
+trailer on each commit, not by git author or human identity.
+
+Recent commits referencing {{Rn}} (most recent first):
 
 {{recent-commits}}
 
-Disqualified as reviewer: {{disqualified-authors}} (authors of the implementation
-commits between the most recent Ready → In Progress and In Progress → In Review
-flips). You should be a different party.
+Disqualified session IDs (any session that authored a commit in the
+implementation range): {{disqualified-session-ids}}
+(Fallback identifiers — git authors of the same commits: {{disqualified-authors}}.
+Used only for entries that resolve to `<no-trailer>`, meaning the commit
+predates the trailer-tracking convention; in those cases defer to the user's
+judgment that you are an independent session.)
+
+Your own session ID is in your system prompt, embedded in the trailer URL
+Claude Code stamps on every commit. If it matches any disqualified ID, hand
+off to a different session.
 
 # Sync first
 
@@ -214,8 +249,8 @@ Implementation-stage framing: spec is the contract, diff is the delivery.
    README via the `roadmap` skill, commit on a fresh feature branch, then
    `publish` to push and fast-forward trunk.
 2. **Request rework.** Use the `roadmap` skill to flip status from In Review →
-   Ready and capture review feedback in the spec body for the next pass.
-   Reviewer ≠ implementer rule applies again next cycle.
+   Ready and capture review feedback in the spec body for the next pass. The
+   reviewer-session ≠ implementer-session rule applies again next cycle.
 
 # Output
 
@@ -227,15 +262,15 @@ Then a final line: "Approve: yes/no (and what to do next)". Don't pad.
 ## Output rules
 
 - Exactly one fenced block. No "Here's the prompt:" preamble, no trailing notes — those break one-click copy.
-- Pre-fill `{{Rn}}`, `{{repo-root}}`, `{{spec-path}}`, `{{title}}`, `{{recent-commits}}`, and `{{disqualified-author}}` (Spec stage, singular) or `{{disqualified-authors}}` (Implementation stage, plural). The user should not have to edit the block.
+- Pre-fill `{{Rn}}`, `{{repo-root}}`, `{{spec-path}}`, `{{title}}`, `{{recent-commits}}`, plus the disqualified-identifier pair: `{{disqualified-session-id}}` + `{{disqualified-author}}` (Spec stage, singular) or `{{disqualified-session-ids}}` + `{{disqualified-authors}}` (Implementation stage, plural). The user should not have to edit the block. When the trailer is absent, fill the session-ID slot with `<no-trailer>` literally; do not omit it.
 - `{{recent-commits}}` is the literal output of `git log --oneline -10 -- <spec-path>`, indented four spaces.
-- If the resolved disqualified party is the same session that's about to invoke this skill, surface that fact in a short line *outside* the fenced block, but still emit the prompt — the user may want to forward it to a fresh agent.
+- If any resolved disqualified session ID matches the invoking session's own ID (visible to the agent in its system prompt's commit-trailer URL), surface that fact in a short line *outside* the fenced block, but still emit the prompt — the user may want to forward it to a fresh agent. If every disqualified entry resolves to `<no-trailer>`, surface that the gate has no signal and the user must vouch for reviewer independence.
 
 ## Hard rules
 
-- Always sync (step 0) before resolving the item. A stale checkout produces a stale recent-commits block, a stale "last committer" attribution, and — worst — hands the reviewer a spec body that's missing commits already on trunk. The emitted templates also instruct the reviewer to sync; the skill itself must sync too so the resolved values reflect truth.
+- Always sync (step 0) before resolving the item. A stale checkout produces a stale recent-commits block, a stale disqualified-session-ID attribution, and — worst — hands the reviewer a spec body that's missing commits already on trunk. The emitted templates also instruct the reviewer to sync; the skill itself must sync too so the resolved values reflect truth.
 - Do not perform the review yourself. The skill exists to hand off; doing the work in-session defeats the point of getting a second pair of eyes.
 - Do not improvise the templates per call. Adjust pre-filled values; leave the body literal. Drift means each reviewer gets a different rubric.
 - The prompt references files in the repo; it does not paste their contents. The reviewing agent reads them in its own session.
-- The reviewer-rule guard cannot be bypassed because "the user said so". If the resolved disqualified party would be the only available reviewer, surface it and stop — a different party (typically the human user, or an independent agent session) must perform the review.
+- The reviewer-rule guard cannot be bypassed because "the user said so". If the only available reviewer is a session that matches a disqualified session ID, surface it and stop — a different session must perform the review.
 - For statuses other than `Spec` or `In Review`, no review handoff applies; tell the user and stop instead of forcing a template.
