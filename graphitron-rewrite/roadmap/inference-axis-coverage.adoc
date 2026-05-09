@@ -10,12 +10,12 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
 | `UnclassifiedField`
 | A field that could not be classified. A schema containing unclassified fields is invalid —
-| 107
+| 569
 | pipeline
 | no
-| 2
-| ErrorChannelClassificationTest, MutationDmlNodeIdClassificationTest, NodeIdPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SplitTableFieldPipelineTest, TaggedInputsPipelineTest, catalog.CatalogBuilderTest
-| R113, R12, R13, R2, R44, R66, R68, R92, R94, R96, R97
+| 1
+| CheckedExceptionClassificationTest, GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, PassthroughPayloadPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, catalog.CatalogBuilderTest, generators.FetcherPipelineTest, generators.TablePipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.DefaultValueEmissionTest, generators.schema.DirectiveDefinitionEmitterTest, generators.schema.EnumTypeGeneratorTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputTypeGeneratorTest, generators.schema.ObjectTypeGeneratorTest, generators.schema.ObjectTypeRegisterFetchersTest, schema.federation.EntityResolutionBuilderTest
+| R12, R13, R2, R3, R44, R66, R68, R75, R92, R94, R96, R97
 |===
 
 == RootField
@@ -25,131 +25,131 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
 | `MutationDeleteTableField`
 | _(no javadoc)_
-| 4
-| -
-| yes
-| 1
-| test.internal.GeneratorDeterminismTest
-| R12
-| `MutationInsertTableField`
-| _(no javadoc)_
-| 11
+| 22
 | pipeline
 | yes
 | 1
-| ErrorChannelClassificationTest, MutationDmlNodeIdClassificationTest, test.internal.GeneratorDeterminismTest
-| R12
-| `MutationServiceRecordField`
-| A mutation field backed by a developer-provided service method, returning a non-table type
-| 5
-| unit
+| GraphitronSchemaBuilderTest, PassthroughPayloadPipelineTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
+| R12, R75
+| `MutationInsertTableField`
+| _(no javadoc)_
+| 25
+| pipeline
 | yes
 | 1
-| ErrorChannelClassificationTest, test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, PassthroughPayloadPipelineTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
+| R12, R75
+| `MutationServiceRecordField`
+| A mutation field backed by a developer-provided service method, returning a non-table type
+| 7
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
 | R12, R46
 | `MutationServiceTableField`
 | A mutation field backed by a developer-provided service method, returning a table-mapped type
-| 0
-| -
+| 1
+| pipeline
 | no
-| -
-| -
+| 0
+| GraphitronSchemaBuilderTest
 | R12
 | `MutationUpdateTableField`
 | _(no javadoc)_
-| 8
-| -
+| 24
+| pipeline
 | yes
 | 1
-| test.internal.GeneratorDeterminismTest
-| R12
+| GraphitronSchemaBuilderTest, PassthroughPayloadPipelineTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
+| R12, R75
 | `MutationUpsertTableField`
 | _(no javadoc)_
-| 8
-| -
+| 23
+| pipeline
 | yes
 | 1
-| test.internal.GeneratorDeterminismTest
-| R12, R63
+| GraphitronSchemaBuilderTest, PassthroughPayloadPipelineTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
+| R12, R63, R75
 | `QueryInterfaceField`
 | A root query field returning a multi-table `GraphitronType.InterfaceType`
-| 12
-| -
+| 17
+| pipeline
 | yes
 | 1
-| test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest
 | -
 | `QueryLookupTableField`
 | _(no javadoc)_
+| 38
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
+| -
+| `QueryNodeField`
+| _(no javadoc)_
+| 8
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
+| -
+| `QueryNodesField`
+| _(no javadoc)_
+| 5
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
+| -
+| `QueryServiceRecordField`
+| A root query field backed by a developer-provided service method, returning a non-table type
 | 35
 | pipeline
 | yes
 | 1
-| NodeIdPipelineTest, test.internal.GeneratorDeterminismTest
-| R113
-| `QueryNodeField`
-| _(no javadoc)_
-| 4
-| -
-| yes
-| 1
-| test.internal.GeneratorDeterminismTest
-| -
-| `QueryNodesField`
-| _(no javadoc)_
-| 4
-| -
-| yes
-| 1
-| test.internal.GeneratorDeterminismTest
-| -
-| `QueryServiceRecordField`
-| A root query field backed by a developer-provided service method, returning a non-table type
-| 30
-| unit
-| yes
-| 1
-| ErrorChannelClassificationTest, test.internal.GeneratorDeterminismTest
+| CheckedExceptionClassificationTest, GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest
 | R12, R46
 | `QueryServiceTableField`
 | A root query field backed by a developer-provided service method, returning a table-mapped type
-| 20
-| -
+| 22
+| pipeline
 | yes
 | 1
-| test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
 | R12, R46
 | `QueryTableField`
 | _(no javadoc)_
-| 141
+| 324
 | pipeline
 | yes
 | 4
-| NodeIdPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SplitTableFieldPipelineTest, StubbedVariantPipelineTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest
-| R113, R39
+| GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, NestingFieldPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, generators.FetcherPipelineTest, generators.QueryConditionsPipelineTest, generators.schema.ConnectionRegistrationsTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest
+| R39
 | `QueryTableInterfaceField`
 | _(no javadoc)_
-| 4
-| -
+| 13
+| pipeline
 | yes
 | 1
-| test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest
 | R39
 | `QueryTableMethodTableField`
 | A root query field using `@tableMethod`. The developer provides a pre-filtered
-| 4
-| -
+| 5
+| pipeline
 | yes
 | 1
-| test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
 | R12, R43
 | `QueryUnionField`
 | A root query field returning a multi-table `GraphitronType.UnionType`
-| 8
-| -
+| 10
+| pipeline
 | yes
 | 1
-| test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest
 | -
 |===
 
@@ -160,27 +160,27 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
 | `ColumnField`
 | A single-column output carrier on a table-backed parent. The column's value reaches the
-| 330
+| 563
 | pipeline
 | yes
 | 4
-| ErrorChannelClassificationTest, MutationDmlNodeIdClassificationTest, NodeIdPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SplitTableFieldPipelineTest, StubbedVariantPipelineTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest
-| R113, R13, R23, R42, R51, R92
+| GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, PassthroughPayloadPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, generators.FetcherPipelineTest, generators.QueryConditionsPipelineTest, generators.TablePipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest
+| R13, R23, R42, R51, R92
 | `ColumnReferenceField`
 | A single-column output carrier on a table-backed parent reached through a `@reference`
-| 1
+| 5
 | pipeline
 | no
 | 0
-| NodeIdPipelineTest
+| GraphitronSchemaBuilderTest
 | R13, R23, R24, R27, R42, R51
 | `CompositeColumnField`
 | Composite-key output carrier on a table-backed parent. Carries `columns` of arity
-| 26
+| 9
 | pipeline
 | yes
 | 1
-| MutationDmlNodeIdClassificationTest, NodeIdPipelineTest, test.internal.GeneratorDeterminismTest
+| MutationDmlNodeIdClassificationTest, generators.QueryConditionsPipelineTest, test.internal.GeneratorDeterminismTest
 | R13, R23
 | `CompositeColumnReferenceField`
 | Composite-key output carrier on a table-backed parent reached through a `@reference`
@@ -192,163 +192,171 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R13, R23, R24, R27
 | `ComputedField`
 | A child field using `@externalField` — the developer provides a static method
-| 12
-| -
+| 14
+| pipeline
 | yes
 | 1
-| test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
 | R109, R23, R54
 | `ConstructorField`
+| _(no javadoc)_
+| 50
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, RecordParentMultiTablePolymorphicPipelineTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
+| R23, R75
+| `ErrorsField`
+| The `errors` field on a payload type. Lift target for the payload-side of a
+| 22
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest
+| R12
+| `InterfaceField`
+| A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
+| 9
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, RecordParentMultiTablePolymorphicPipelineTest, test.internal.GeneratorDeterminismTest
+| -
+| `LookupTableField`
+| _(no javadoc)_
+| 8
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, test.internal.GeneratorDeterminismTest
+| R23, R97
+| `MultitableReferenceField`
+| _(no javadoc)_
+| 1
+| pipeline
+| no
+| 0
+| GraphitronSchemaBuilderTest
+| R44
+| `NestingField`
+| _(no javadoc)_
+| 30
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, NestingFieldPipelineTest, test.internal.GeneratorDeterminismTest
+| R13, R23, R75
+| `ParticipantColumnReferenceField`
+| A scalar field on a `GraphitronType.TableInterfaceType` participant that
+| 5
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
+| R109
+| `PassthroughDataField`
+| R75: a passthrough payload's data field — the unique `@table`-element field on
+| 30
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, PassthroughPayloadPipelineTest, test.internal.GeneratorDeterminismTest
+| R75
+| `PropertyField`
+| _(no javadoc)_
+| 176
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, generators.TablePipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest
+| R12, R51
+| `RecordField`
+| _(no javadoc)_
+| 8
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
+| R12, R51
+| `RecordLookupTableField`
+| _(no javadoc)_
+| 12
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
+| R23, R3, R4, R64
+| `RecordTableField`
+| _(no javadoc)_
+| 43
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
+| R109, R116, R23, R3, R4, R64
+| `ServiceRecordField`
+| A child field backed by a developer-provided service method (`@service`), where the
+| 15
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
+| R12, R46
+| `ServiceTableField`
+| A child field backed by a developer-provided service method (`@service`), where the
+| 5
+| pipeline
+| no
+| 0
+| GraphitronSchemaBuilderTest, generators.FetcherPipelineTest
+| R12, R4, R46
+| `SplitLookupTableField`
 | _(no javadoc)_
 | 6
 | pipeline
 | yes
 | 1
-| RecordParentMultiTablePolymorphicPipelineTest, test.internal.GeneratorDeterminismTest
-| R23
-| `ErrorsField`
-| The `errors` field on a payload type. Lift target for the payload-side of a
-| 22
-| unit
-| yes
-| 1
-| ErrorChannelClassificationTest, test.internal.GeneratorDeterminismTest
-| R12
-| `InterfaceField`
-| A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
-| 8
+| GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
+| R23, R4, R64
+| `SplitTableField`
+| _(no javadoc)_
+| 29
 | pipeline
 | yes
 | 1
-| RecordParentMultiTablePolymorphicPipelineTest, test.internal.GeneratorDeterminismTest
-| -
-| `LookupTableField`
+| GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
+| R23, R39, R4, R64
+| `TableField`
 | _(no javadoc)_
-| 4
-| -
-| yes
-| 1
-| test.internal.GeneratorDeterminismTest
-| R23, R3, R97
-| `MultitableReferenceField`
-| _(no javadoc)_
-| 0
-| -
-| no
-| -
-| -
-| R44
-| `NestingField`
-| _(no javadoc)_
-| 14
+| 43
 | pipeline
 | yes
 | 1
-| SplitTableFieldPipelineTest, test.internal.GeneratorDeterminismTest
-| R13, R23
-| `ParticipantColumnReferenceField`
-| A scalar field on a `GraphitronType.TableInterfaceType` participant that
-| 4
-| -
-| yes
-| 1
-| test.internal.GeneratorDeterminismTest
-| R109
-| `PropertyField`
-| _(no javadoc)_
-| 137
-| unit
-| yes
-| 1
-| ErrorChannelClassificationTest, test.internal.GeneratorDeterminismTest
-| R12, R51
-| `RecordField`
-| _(no javadoc)_
-| 4
-| -
-| yes
-| 1
-| test.internal.GeneratorDeterminismTest
-| R12, R51
-| `RecordLookupTableField`
-| _(no javadoc)_
-| 4
-| -
-| yes
-| 1
-| test.internal.GeneratorDeterminismTest
-| R23, R3, R4, R61, R64
-| `RecordTableField`
-| _(no javadoc)_
-| 16
-| -
-| yes
-| 1
-| test.internal.GeneratorDeterminismTest
-| R109, R110, R23, R3, R4, R61, R64
-| `ServiceRecordField`
-| A child field backed by a developer-provided service method (`@service`), where the
-| 12
-| -
-| yes
-| 1
-| test.internal.GeneratorDeterminismTest
-| R12, R46
-| `ServiceTableField`
-| A child field backed by a developer-provided service method (`@service`), where the
-| 0
-| -
-| no
-| -
-| -
-| R12, R4, R46, R61
-| `SplitLookupTableField`
+| GraphitronSchemaBuilderTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest
+| R23, R39, R75
+| `TableInterfaceField`
 | _(no javadoc)_
 | 5
 | pipeline
 | yes
 | 1
-| SplitTableFieldPipelineTest, test.internal.GeneratorDeterminismTest
-| R23, R3, R4, R64
-| `SplitTableField`
-| _(no javadoc)_
-| 33
-| pipeline
-| yes
-| 1
-| SplitTableFieldPipelineTest, test.internal.GeneratorDeterminismTest
-| R23, R39, R4, R64
-| `TableField`
-| _(no javadoc)_
-| 25
-| pipeline
-| yes
-| 1
-| SplitTableFieldPipelineTest, test.internal.GeneratorDeterminismTest
-| R23, R3, R39
-| `TableInterfaceField`
-| _(no javadoc)_
-| 4
-| -
-| yes
-| 1
-| test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
 | R39
 | `TableMethodField`
 | A child field using `@tableMethod` — the developer provides a pre-filtered
-| 0
-| -
+| 5
+| pipeline
 | no
-| -
-| -
+| 0
+| GraphitronSchemaBuilderTest
 | R12, R43
 | `UnionField`
 | A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
-| 10
+| 11
 | pipeline
 | yes
 | 1
-| RecordParentMultiTablePolymorphicPipelineTest, test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, RecordParentMultiTablePolymorphicPipelineTest, test.internal.GeneratorDeterminismTest
 | -
 |===
 
@@ -359,27 +367,27 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
 | `ColumnField`
 | A field in a `@table`-annotated input type, successfully resolved to a SQL column
-| 107
+| 234
 | pipeline
 | yes
 | 1
-| ErrorChannelClassificationTest, FieldRegistryTest, MutationDmlNodeIdClassificationTest, NodeIdPipelineTest, test.internal.GeneratorDeterminismTest
-| R113, R13, R23, R42, R51, R92
+| GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, MutationDmlNodeIdClassificationTest, PassthroughPayloadPipelineTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
+| R13, R23, R42, R51, R92
 | `ColumnReferenceField`
 | A field in a `@table`-annotated input type that uses `@reference` to reach a
-| 5
+| 8
 | pipeline
 | no
 | 0
-| NodeIdPipelineTest
+| GraphitronSchemaBuilderTest, NodeIdLeafResolverTest
 | R13, R23, R24, R27, R42, R51
 | `CompositeColumnField`
 | Composite-key input carrier on a `@table`-annotated input type. Carries
-| 9
+| 6
 | pipeline
 | yes
 | 1
-| NodeIdPipelineTest, test.internal.GeneratorDeterminismTest
+| generators.QueryConditionsPipelineTest, test.internal.GeneratorDeterminismTest
 | R13, R23
 | `CompositeColumnReferenceField`
 | Composite-key input reference carrier on a `@table`-annotated input type whose
@@ -387,16 +395,16 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | pipeline
 | no
 | 0
-| MutationDmlNodeIdClassificationTest, NodeIdPipelineTest
+| MutationDmlNodeIdClassificationTest, generators.QueryConditionsPipelineTest
 | R13, R23, R24, R27
 | `NestingField`
 | A field in a `@table`-annotated input type whose GraphQL type is itself an input
-| 8
-| -
+| 12
+| pipeline
 | yes
 | 1
-| test.internal.GeneratorDeterminismTest
-| R13, R23
+| GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
+| R13, R23, R75
 |===
 
 == GraphitronType
@@ -422,43 +430,43 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R13
 | `EnumType`
 | A GraphQL enum type. Classifier records it so `schema.types()` is complete for
-| 448
+| 1838
 | pipeline
 | yes
 | 0
-| ConnectionPromoterTest, ErrorChannelClassificationTest, MutationDmlNodeIdClassificationTest, NodeIdPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SplitTableFieldPipelineTest, StubbedVariantPipelineTest, TaggedInputsPipelineTest, catalog.CatalogBuilderTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest
+| CheckedExceptionClassificationTest, ConnectionPromoterTest, GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, NodeIdLeafResolverTest, PassthroughPayloadPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, catalog.CatalogBuilderTest, generators.FetcherPipelineTest, generators.QueryConditionsPipelineTest, generators.TablePipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.DefaultValueEmissionTest, generators.schema.DirectiveDefinitionEmitterTest, generators.schema.EnumTypeGeneratorTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputTypeGeneratorTest, generators.schema.ObjectTypeGeneratorTest, generators.schema.ObjectTypeRegisterFetchersTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest
 | -
 | `ErrorType`
 | An object type annotated with `@error`. Maps Java exceptions to GraphQL error responses
-| 45
-| unit
+| 55
+| pipeline
 | yes
 | 1
-| ErrorChannelClassificationTest, test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest
 | R12
 | `InterfaceType`
 | An interface with no directives. Participating types may be table-bound (`ParticipantRef.TableBound`)
-| 143
+| 608
 | pipeline
 | yes
 | 1
-| ErrorChannelClassificationTest, MutationDmlNodeIdClassificationTest, NodeIdPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SplitTableFieldPipelineTest, StubbedVariantPipelineTest, catalog.CatalogBuilderTest, test.internal.GeneratorDeterminismTest
+| CheckedExceptionClassificationTest, GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, NodeIdLeafResolverTest, PassthroughPayloadPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, catalog.CatalogBuilderTest, generators.FetcherPipelineTest, generators.QueryConditionsPipelineTest, generators.TablePipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.DefaultValueEmissionTest, generators.schema.DirectiveDefinitionEmitterTest, generators.schema.EnumTypeGeneratorTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputTypeGeneratorTest, generators.schema.ObjectTypeGeneratorTest, generators.schema.ObjectTypeRegisterFetchersTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest
 | -
 | `JavaRecordInputType`
 | A non-table input type backed by a Java `record` class
-| 0
-| -
+| 1
+| pipeline
 | no
-| -
-| -
+| 0
+| GraphitronSchemaBuilderTest
 | R94, R96
 | `JavaRecordType`
 | A `@record` type backed by a Java `record` class
-| 41
+| 53
 | pipeline
 | yes
 | 1
-| ErrorChannelClassificationTest, RecordParentMultiTablePolymorphicPipelineTest, test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, RecordParentMultiTablePolymorphicPipelineTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest
 | R51
 | `JooqRecordInputType`
 | A non-table input type backed by a jOOQ `Record<?>` (not table-bound)
@@ -478,28 +486,28 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R51
 | `JooqTableRecordInputType`
 | A non-table input type backed by a jOOQ `TableRecord<?>`
-| 0
-| -
+| 2
+| pipeline
 | no
-| -
-| -
+| 0
+| GraphitronSchemaBuilderTest
 | -
 | `JooqTableRecordType`
 | A `@record` type backed by a jOOQ `TableRecord<?>`
-| 11
+| 20
 | pipeline
 | yes
 | 1
-| RecordParentMultiTablePolymorphicPipelineTest, test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, RecordParentMultiTablePolymorphicPipelineTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
 | R51
 | `NodeType`
 | A GraphQL object type annotated with both `@table` and `@node`
-| 65
+| 45
 | pipeline
 | yes
 | 1
-| MutationDmlNodeIdClassificationTest, NodeIdPipelineTest, test.internal.GeneratorDeterminismTest
-| R113, R24, R27, R34, R57
+| GraphitronSchemaBuilderTest, MutationDmlNodeIdClassificationTest, NodeIdLeafResolverTest, generators.QueryConditionsPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest
+| R24, R27, R34, R57
 | `PageInfoType`
 | The Relay `PageInfo` object type. Exactly one instance per schema; the classifier
 | 0
@@ -510,75 +518,75 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | -
 | `PlainObjectType`
 | A plain SDL object type — no `@table`, `@record`, `@error`, or other
-| 97
-| pipeline
-| yes
-| 3
-| ConnectionPromoterTest, NodeIdPipelineTest, SplitTableFieldPipelineTest, TaggedInputsPipelineTest, TypeRegistryTest, test.internal.GeneratorDeterminismTest
-| -
-| `PojoInputType`
-| A non-table input type backed by a plain Java class (POJO), or one whose backing class
-| 41
+| 202
 | pipeline
 | yes
 | 1
-| SplitTableFieldPipelineTest, test.internal.GeneratorDeterminismTest
+| ConnectionPromoterTest, GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, NestingFieldPipelineTest, PassthroughPayloadPipelineTest, TypeRegistryTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.ObjectTypeGeneratorTest, generators.schema.ObjectTypeRegisterFetchersTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest
+| R75
+| `PojoInputType`
+| A non-table input type backed by a plain Java class (POJO), or one whose backing class
+| 86
+| pipeline
+| yes
+| 1
+| GraphitronSchemaBuilderTest, generators.schema.DefaultValueEmissionTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputTypeGeneratorTest, test.internal.GeneratorDeterminismTest
 | R96
 | `PojoResultType`
 | A `@record` type backed by a plain Java class (POJO), or one whose backing class
-| 3
+| 73
 | pipeline
 | no
 | 0
-| ErrorChannelClassificationTest, RecordParentMultiTablePolymorphicPipelineTest
-| R51
+| GraphitronSchemaBuilderTest, PassthroughPayloadPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, generators.FetcherPipelineTest, generators.TablePipelineTest
+| R51, R75
 | `RootType`
 | A root operation type (Query or Mutation). Unmapped — no source context, no SQL until
-| 154
+| 695
 | pipeline
 | yes
-| 6
-| ConnectionPromoterTest, ErrorChannelClassificationTest, MutationDmlNodeIdClassificationTest, NodeIdPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SplitTableFieldPipelineTest, StubbedVariantPipelineTest, TaggedInputsPipelineTest, catalog.CatalogBuilderTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest
+| 5
+| CheckedExceptionClassificationTest, ConnectionPromoterTest, GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, NodeIdLeafResolverTest, PassthroughPayloadPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, catalog.CatalogBuilderTest, generators.FetcherPipelineTest, generators.QueryConditionsPipelineTest, generators.TablePipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.DefaultValueEmissionTest, generators.schema.DirectiveDefinitionEmitterTest, generators.schema.EnumTypeGeneratorTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputTypeGeneratorTest, generators.schema.ObjectTypeGeneratorTest, generators.schema.ObjectTypeRegisterFetchersTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest
 | R85
 | `TableInputType`
 | A GraphQL input object type annotated with `@table`
-| 73
+| 156
 | pipeline
 | yes
 | 1
-| ErrorChannelClassificationTest, MutationDmlNodeIdClassificationTest, NodeIdPipelineTest, test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, MutationDmlNodeIdClassificationTest, NodeIdLeafResolverTest, PassthroughPayloadPipelineTest, generators.FetcherPipelineTest, generators.QueryConditionsPipelineTest, test.internal.GeneratorDeterminismTest
 | R97
 | `TableInterfaceType`
 | An interface annotated with `@table` and `@discriminate`, where implementing
-| 4
-| -
+| 15
+| pipeline
 | yes
 | 1
-| test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest
 | R97
 | `TableType`
 | A GraphQL object type annotated with `@table`, without `@node`
-| 132
+| 575
 | pipeline
 | yes
 | 4
-| ErrorChannelClassificationTest, MutationDmlNodeIdClassificationTest, NodeIdPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, SplitTableFieldPipelineTest, StubbedVariantPipelineTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest
+| GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, NodeIdLeafResolverTest, PassthroughPayloadPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, generators.FetcherPipelineTest, generators.QueryConditionsPipelineTest, generators.TablePipelineTest, generators.schema.ConnectionRegistrationsTest, generators.schema.GraphitronSchemaClassGeneratorTest, schema.federation.EntityResolutionBuilderTest, test.internal.GeneratorDeterminismTest, test.internal.IdempotentWriterTest
 | R27, R34, R92, R97
 | `UnclassifiedType`
 | A type that could not be classified — examples include an unresolvable `@table`
-| 19
+| 36
 | pipeline
 | no
 | 0
-| ErrorChannelClassificationTest, NodeIdPipelineTest
+| GraphitronSchemaBuilderTest
 | R101, R12, R13, R27, R34, R66, R92, R94
 | `UnionType`
 | A union type whose member types all have `@table`
-| 35
+| 57
 | pipeline
 | yes
 | 1
-| ErrorChannelClassificationTest, RecordParentMultiTablePolymorphicPipelineTest, test.internal.GeneratorDeterminismTest
+| GraphitronSchemaBuilderTest, RecordParentMultiTablePolymorphicPipelineTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.ObjectTypeGeneratorTest, generators.schema.ObjectTypeRegisterFetchersTest, test.internal.GeneratorDeterminismTest
 | -
 |===
 
