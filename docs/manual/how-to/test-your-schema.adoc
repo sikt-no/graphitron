@@ -6,7 +6,7 @@ The most useful tests for a graphitron-rewrite-generated schema are *consumer ex
 
 This recipe walks the canonical setup: starting Postgres, building the schema, executing requests, and the two assertion families that capture what schema authors most need to verify. It's anchored on `GraphQLQueryTest` (`graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/GraphQLQueryTest.java`) which uses every shape the recipe describes; copy it as the starting template for your application.
 
-For the rewrite-internal tier model (unit/pipeline/compilation/execution), see `graphitron-rewrite/docs/testing.adoc`. This recipe is about the consumer's execution-tier setup, not the rewrite's tier choices.
+For the rewrite-internal tier model (unit/pipeline/compilation/execution), see xref:../../../architecture/testing.adoc[the test-tier guide]. This recipe is about the consumer's execution-tier setup, not the rewrite's tier choices.
 
 == The setup: Postgres + GraphitronContext + GraphQL
 

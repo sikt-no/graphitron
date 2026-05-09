@@ -1,0 +1,139 @@
+= Typed rejection
+
+Why a classifier failed to produce a model variant is a typed value, not a string. Every builder-step lift returns a sealed `Resolved` result; the rejection arm carries a `Rejection` instance whose variant tells the validator and downstream consumers (LSP fix-its, watch-mode formatters) what kind of failure happened and what data accompanies it. Switches across success and failure modes are exhaustive at compile time; relaxing a producer surfaces as a missing-arm error in every consumer, not a runtime surprise.
+
+This page is the chapter narrative for that contract. Reference detail (the per-leaf record components, the per-resolver `Resolved` arms) lives on the source: javadoc on `Rejection` and on each `*DirectiveResolver.Resolved` carries the per-permit data shape.
+
+== Sealed `Resolved` across the resolver siblings
+
+Thirteen directive resolvers share the same shape. Each entry point returns a sealed `Resolved` whose arms split success from failure; the caller's switch is exhaustive across both. The arm names vary by domain (the `@lookupKey` resolver has only `Ok` / `Rejected`; the `@service` resolver fans `Ok` into typed sub-arms because the downstream emitters need different model types per success kind), but the contract is uniform: rejection is a typed sibling of success, not a return-string-or-null.
+
+Where a rejection comes from is at the boundary of one builder step; how it surfaces to the user is at the boundary of the validator. In between, the typed value rides on the result without losing structure: a `Rejection.AuthorError.UnknownName` arm carries its `attempt`, its `candidates`, and a typed `AttemptKind` tag identifying the lookup space, all the way from the resolver that built it to the LSP fix-it that reads them off the wire.
+
+The validator does not parse prose. It switches on the `Rejection` variant, formats the human-readable line with `message()`, classifies it as `AUTHOR_ERROR` or `INVALID_SCHEMA` or `DEFERRED` for the diagnostic surface, and emits. The same typed value drives every consumer: the validator's log, the LSP fix-it, an editor's hover-card, a CI annotation. None of them re-parse text.
+
+== `Rejection` taxonomy
+
+The `Rejection` sealed hierarchy splits along *who can fix this*: the schema author, the runtime author who hasn't shipped support yet, or the schema as a whole.
+
+[source]
+----
+Rejection
+├─ AuthorError                  ← the schema author can correct this
+│   ├─ UnknownName              ← name that didn't resolve against a closed set
+│   ├─ Structural               ← rule violation carrying prose only
+│   └─ AccessorMismatch         ← @record-Java-backed parent's class doesn't expose the accessor
+├─ InvalidSchema                ← the schema can't accept this combination at all
+│   ├─ DirectiveConflict        ← two directives co-occur in a rejected combination
+│   └─ Structural               ← rule violation carrying prose only
+└─ Deferred                     ← classifies cleanly but the generator hasn't emitted support yet
+----
+
+`AuthorError.UnknownName` is the data-rich arm: it carries the `attempt` the author wrote, the `candidates` the catalog had at this site (column names, table names, FK names, service-method names, ...), and an `AttemptKind` tag for downstream tooling. The kind is a typed tag rather than an arm split because every space carries the same `(attempt, candidates)` shape; an LSP fix-it that wants to offer "rename to one of these" reads `attempt` and `candidates` directly off the rejection without parsing the validator's prose.
+
+`AuthorError.Structural` and `InvalidSchema.Structural` are the prose-majority arms. They carry one `String reason` and exist because most rule violations are not name-against-closed-set lookups; they're "this combination cannot work, period" or "this rule was broken." Two arms instead of one because the diagnostic surface treats `AUTHOR_ERROR` and `INVALID_SCHEMA` differently: the first prompts the author to edit; the second prompts the author to drop or replace a directive entirely.
+
+`AuthorError.AccessorMismatch` is the third `AuthorError` arm because the `@record`-Java-backed accessor-resolution surface produces uniform diagnostics with a uniform fix shape (`@field(name: "...")`); a single arm with the hint baked into `message()` lets the resolver hand the validator the same typed value every site produces.
+
+`InvalidSchema.DirectiveConflict` carries the bare directive names (no leading `@`) plus the prose. The names ride as typed data so an LSP fix-it can offer "remove this directive" without scraping the prose for which one to remove.
+
+`Deferred` classifies cleanly but the generator hasn't shipped emit support for the variant yet. The arm carries a `summary` plus a `planSlug` (the roadmap file basename, no extension) plus a `StubKey`. The stub key is itself a sealed sub-type: a `VariantClass` arm names the stubbed variant class (or carries `null` for inline-defer sites whose rejection names a feature shape); an `EmitBlock` arm names a typed enum value for "this shape can't emit yet" sites inside the emitters. The validator projects every `Deferred` through the same renderer; the typed key lets the LSP offer "open the roadmap item" instead of parsing the path back out.
+
+The xref:rewrite-design-principles.adoc#_classifier_guarantees_shape_emitter_assumptions[load-bearing classifier guarantee] catalog and the xref:rewrite-design-principles.adoc#_validator_mirrors_classifier_invariants[validator-mirrors-classifier] rule both ride this contract: the validator switches on the same dispatch sets the generator does, so an unsupported classification surfaces as a typed `Deferred` at validate time, not as an `UnsupportedOperationException` at runtime. Validate is a typed-rejection projection of classify.
+
+== `BuildContext.candidateHint`: Levenshtein-ranked suggestions
+
+When a name doesn't resolve, the rejection carries the closed set of candidates the catalog had at that site; the user-visible hint sorts them by edit distance from the attempt, top five.
+
+[source,java]
+----
+String hint = candidateHint(attempt, candidates);
+// "; did you mean: candidate1, candidate2, candidate3"
+----
+
+The contract has consolidated onto two construction sites: `BuildContext.candidateHint(attempt, candidates)` for callers building rejection messages directly, and `Rejection.unknownName(...)` (and its kind-specific factories `unknownColumn`, `unknownTable`, `unknownForeignKey`, ...) for callers producing the rejection through the typed sealed-result path. Both compute the same hint; the typed-result path additionally rides the `attempt` and `candidates` as structured data on the rejection so downstream tooling can offer a fix-it without parsing prose.
+
+When adding a new existence check to the validator or builder, follow the same pattern: pass the relevant candidate list from `JooqCatalog` (or whatever closed set the lookup ranges over) to `candidateHint`, or produce the rejection through `Rejection.unknownName(...)` so the candidate list rides on the typed result.
+
+The diagnostic surface that consumers see, what each rejection class renders as, what severity it gets, what the build's log line looks like, is documented at xref:../manual/reference/diagnostics-glossary.adoc[the diagnostics glossary]; that page is the user-facing entry point for "I saw this message, what does it mean."
+
+== Drift protection
+
+The chapter prose above enumerates `Rejection`'s permits: `AuthorError.{UnknownName | Structural | AccessorMismatch}`, `InvalidSchema.{DirectiveConflict | Structural}`, and `Deferred`. A new permit on the sealed hierarchy must land with a corresponding mention in this page; otherwise the prose silently goes stale. `SealedHierarchyDocCoverageTest` walks `Rejection.permits()` transitively and asserts each permit name appears in `typed-rejection.adoc`: bidirectional, tied to a closed set the compiler already exhaustivity-checks. A new permit added without a paragraph here fails the test; a permit removed without removing its mention fails too.
+
+The sealed-`Resolved` pattern across the thirteen sibling resolvers is described above shape-only; per-resolver arm enumerations (e.g. `LookupKeyDirectiveResolver.Resolved.{Ok, Rejected}`, `ServiceDirectiveResolver.Resolved.{Success.{TableBound | Result | Scalar} | ErrorsLifted | Rejected}`) live as javadoc on each `*DirectiveResolver.Resolved` declaration. There is no single `Resolved` parent class to walk, and the chapter does not pin per-resolver permits.
+
+[#diagram-d10]
+== Sealed hierarchy diagram
+
+[source,mermaid]
+----
+classDiagram
+    class Rejection {
+        <<sealed interface>>
+        +String message()
+        +Rejection prefixedWith(String)
+    }
+    class AuthorError {
+        <<sealed interface>>
+    }
+    class InvalidSchema {
+        <<sealed interface>>
+    }
+    class UnknownName {
+        +String summary
+        +AttemptKind attemptKind
+        +String attempt
+        +List~String~ candidates
+    }
+    class Structural_AE["AuthorError.Structural"] {
+        +String reason
+    }
+    class AccessorMismatch {
+        +String reason
+    }
+    class DirectiveConflict {
+        +List~String~ directives
+        +String reason
+    }
+    class Structural_IS["InvalidSchema.Structural"] {
+        +String reason
+    }
+    class Deferred {
+        +String summary
+        +String planSlug
+        +StubKey stubKey
+    }
+
+    Rejection <|-- AuthorError
+    Rejection <|-- InvalidSchema
+    Rejection <|-- Deferred
+    AuthorError <|-- UnknownName
+    AuthorError <|-- Structural_AE
+    AuthorError <|-- AccessorMismatch
+    InvalidSchema <|-- DirectiveConflict
+    InvalidSchema <|-- Structural_IS
+
+    class LookupKeyResolved["LookupKeyDirectiveResolver.Resolved"] {
+        <<sealed interface>>
+    }
+    class LookupKeyOk["Resolved.Ok"] {
+        +ReturnTypeRef.TableBoundReturnType returnType
+    }
+    class LookupKeyRejected["Resolved.Rejected"] {
+        +Rejection rejection
+    }
+    LookupKeyResolved <|-- LookupKeyOk
+    LookupKeyResolved <|-- LookupKeyRejected
+    LookupKeyRejected --> Rejection : carries
+----
+
+The overlay shows `LookupKeyDirectiveResolver.Resolved` as one worked example of how a resolver's typed-result wraps a `Rejection`. The other twelve resolvers follow the same shape; check each `*DirectiveResolver.Resolved` for its specific arm set.
+
+'''
+
+*See also:*
+
+* {empty}xref:rewrite-design-principles.adoc#_builder_step_results_are_sealed_not_strings_or_out_params[Builder-step results are sealed]: the principle this page is the canonical source for.
+* {empty}xref:rewrite-design-principles.adoc#_validator_mirrors_classifier_invariants[Validator mirrors classifier invariants]: the validator-side rule that consumes typed rejections at the build's diagnostic surface.
+* {empty}xref:../manual/reference/diagnostics-glossary.adoc[Diagnostics glossary]: the user-facing reference for what each rejection-derived diagnostic message means.

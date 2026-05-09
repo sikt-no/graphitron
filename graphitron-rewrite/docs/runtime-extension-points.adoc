@@ -27,6 +27,8 @@ by anything Graphitron emits.
 
 === Where the interface comes from
 
+*Why per-app emission rather than a shared runtime jar.* Graphitron emits `GraphitronContext` into the consumer's source tree on every generator run, instead of shipping it as an interface in a `graphitron-runtime` library that the consumer would depend on. The choice is deliberate. A shared runtime jar would force every consumer onto the same `DataFetchingEnvironment` import (graphql-java's), the same `DSLContext` import (jOOQ's), and the same method signatures across versions; the emitted form lets each app's interface live in its own package, share its own type aliases, and evolve in lockstep with the schema the generator was run against. The runtime "extension point" is not an inheritance contract that ships independently; it is a typed shape the generator emits, and the consumer implements. No Graphitron runtime classes leak into the consumer's classpath, and the generator stays independent of any jar publication cadence.
+
 The interface is *emitted per app*, not imported from a shared module. Every
 code-generation run produces one `GraphitronContext.java` file under
 `<outputPackage>.schema`, written by
@@ -72,6 +74,33 @@ The full minimum viable wiring (instantiating an implementation, building
 the schema, wiring `GraphQL`) lives in
 xref:getting-started.adoc#hello-world[Getting Started > Hello world]. The rest of
 this section documents what each method is for.
+
+[#diagram-d4]
+[source,mermaid]
+----
+sequenceDiagram
+    participant Client
+    participant Engine as graphql-java engine
+    participant Fetcher as generated DataFetcher
+    participant Ctx as GraphitronContext<br/>(consumer impl)
+    participant DSL as DSLContext
+    participant DB as PostgreSQL
+
+    Client->>Engine: ExecutionInput<br/>(query, GraphitronContext, DataLoaderRegistry)
+    Engine->>Fetcher: invoke (DataFetchingEnvironment env)
+    Fetcher->>Ctx: graphitronContext(env).getDslContext(env)
+    Ctx-->>Fetcher: per-request DSLContext<br/>(tenant routing, RLS session vars)
+    Fetcher->>DSL: select(...).from(...).where(...)
+    DSL->>DB: SQL (driven by selection set)
+    DB-->>DSL: Result&lt;Record&gt;
+    DSL-->>Fetcher: rows
+    Fetcher->>Ctx: getContextArgument(env, "userId")<br/>(if @condition uses contextArguments)
+    Ctx-->>Fetcher: claim value
+    Fetcher-->>Engine: Result&lt;Record&gt; / ConnectionResult
+    Engine-->>Client: response (graphql-java traverses records via field DataFetchers)
+----
+
+The diagram shows one fetcher invocation; per-request behaviour (tenant routing in `getDslContext`, session variables for RLS, JWT claims through `getContextArgument`) all happen on the request thread, scoped to the `DataFetchingEnvironment`. The generator emits the call sites; the consumer's `GraphitronContext` implementation decides what each call returns.
 
 === `getDslContext`: database access
 
