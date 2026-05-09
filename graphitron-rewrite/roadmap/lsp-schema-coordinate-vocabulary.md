@@ -66,12 +66,18 @@ directive surface (e.g. `Query.user(id:)`) are not in scope here — graphitron'
 LSP does not validate against user-authored types — but the same sealed
 hierarchy admits them later.
 
+`SdlAction.DeprecationTarget` (sealed `Member(parent, name) | WholeDirective(name)`)
+collapses into `SchemaCoordinate`: a `Member` is an `InputField` when
+`parent` is a type name, a `DirectiveArg` when `parent` is `@<name>`; a
+`WholeDirective` is a `Directive`. Today's parallel hierarchy in
+`code_action/SdlAction.java` is replaced by the single sealed type.
+
 ### Behavior table
 
 ```java
 public record LspVocabulary(
-    Map<SchemaCoordinate, Behavior> behaviors,
-    GraphQLSchema parsedDirectiveSchema
+    Map<SchemaCoordinate, Behavior> overlay,
+    TypeDefinitionRegistry registry
 ) {}
 
 public sealed interface Behavior {
@@ -87,40 +93,74 @@ public sealed interface Behavior {
     record CatalogFkBinding() implements Behavior {}
     /** argMapping syntax string (validator filed separately). */
     record ArgMappingBinding() implements Behavior {}
-    /** Deprecated; emit a deprecation diagnostic on use. */
-    record Deprecated(String replacementHint) implements Behavior {}
 }
 ```
 
 Each `Behavior` is a marker for "what completes / validates / hovers at this
 coordinate." The actual completion / diagnostic / hover code lives in the
 consumer files (`ClassNameCompletions`, `Diagnostics`, `Hovers`); the
-behavior table is the dispatch index.
+overlay is the dispatch index.
+
+**Deprecation is not an overlay arm.** GraphQL-Java exposes the
+`@deprecated` directive on every `InputValueDefinition` /
+`FieldDefinition`, and the description string on every `DirectiveDefinition`
+carries the whole-directive token (today's `DeprecationMarkers` regex
+walk). Both fall straight out of the parsed `TypeDefinitionRegistry`.
+`LspVocabulary` exposes `Optional<DeprecationInfo> deprecationOf(coord)`
+backed by the parse; consumers query without an overlay round-trip.
 
 ### Startup population
 
 `graphitron-lsp/pom.xml:23-27` already declares a runtime dependency on
-`graphitron`, so `directives.graphqls` is on the classpath at
-`no/sikt/graphitron/rewrite/schema/directives.graphqls` and GraphQL-Java is
-on the classpath transitively.
+`graphitron`, so `directives.graphqls` is on the classpath and GraphQL-Java
+is reachable transitively. Both modules already have private constants
+naming the resource (`RewriteSchemaLoader.DIRECTIVES_RESOURCE` on the
+producer side, `DeprecationMarkers.DIRECTIVES_RESOURCE` on the LSP side);
+this Spec consolidates them by adding one accessor on
+`RewriteSchemaLoader`:
+
+```java
+// graphitron module — public, the single producer-side surface
+public static String directivesSdl() { /* read classpath resource */ }
+```
+
+Both LSP-side consumers (`LspVocabulary`, the soon-to-go `DeprecationMarkers`)
+call into it. The LSP no longer hard-codes a classpath path.
 
 Startup sequence:
 
-1. Read `directives.graphqls` as a classpath resource.
-2. Parse with GraphQL-Java into a `GraphQLSchema`. (Use `SchemaParser`.)
-3. Walk the parsed schema's directives, their arguments, and the input
-   types those arguments reference. Emit `SchemaCoordinate` keys for each.
+1. Call `RewriteSchemaLoader.directivesSdl()` to get the SDL text.
+2. Parse with `SchemaParser.parse(String)` into a `TypeDefinitionRegistry`.
+   This is the same parser graphitron itself uses; no schema-build /
+   resolver-wiring step. The registry exposes `getDirectiveDefinitions()`
+   and `getType(name)`, which is the full surface the structural
+   invariant needs.
+3. Walk the registry's directives, their arguments, and the input types
+   those arguments reference. Emit `SchemaCoordinate` keys for each.
 4. Apply a hand-written `Map<SchemaCoordinate, Behavior>` overlay declaring
-   what each coordinate does. Failures here are **structural**: a coordinate
-   in the overlay that doesn't resolve against the parsed schema fails the
-   LSP startup with a message naming the unknown coordinate.
+   what each coordinate does. Failures here are **structural**: a
+   coordinate in the overlay that doesn't resolve against the registry
+   fails the LSP startup with a message naming the unknown coordinate.
 5. Hand the resulting `LspVocabulary` to `Workspace`.
 
 The overlay is the only hand-maintained surface left; today's
 `DirectiveDefinitions.ENTRIES` shrinks from ~50 lines of `(name, args, types)`
-declarations to ~15 lines of coordinate → behavior mappings. Adding a new
-directive arg to `directives.graphqls` only touches the overlay if the arg
-needs LSP-side semantics; arg presence and type are picked up automatically.
+declarations to ~15 lines of coordinate → behavior mappings. The parsed
+registry contributes the rest — every directive, every arg, every input
+type — without duplication.
+
+`directives.graphqls` declares ~25 directives (`@table`, `@field`,
+`@externalField`, `@enum`, `@service`, `@error`, `@reference`,
+`@multitableReference`, `@sourceRow`, `@condition`, `@lookupKey`,
+`@mutation`, `@asConnection`, `@orderBy`, `@index`, `@order`,
+`@defaultOrder`, `@record`, `@discriminate`, `@discriminator`, `@node`,
+`@nodeId`, `@tableMethod`, `@experimental_constructType`, `@splitQuery`,
+`@notGenerated`) and several input types (`ExternalCodeReference`,
+`ReferenceElement`, `ErrorHandler`, `ReferencesForType`, `FieldSort`).
+Every coordinate the parse exposes is part of the vocabulary; the *overlay*
+declares semantics only for the subset the LSP knows how to act on today.
+Filing semantics for a new directive becomes an additive overlay entry,
+not a parse change.
 
 ### Provability
 
@@ -128,7 +168,7 @@ The structural guarantee:
 
 ```java
 for (var entry : overlay.entrySet()) {
-    if (!resolvesAgainstSchema(entry.getKey(), parsedSchema)) {
+    if (!resolves(entry.getKey(), registry)) {
         throw new LspStartupException(
             "Schema coordinate " + entry.getKey() + " does not resolve against " +
             "directives.graphqls. Either update the overlay or check directive surface.");
@@ -141,23 +181,64 @@ constructs an overlay pointing at a fictional coordinate and asserts the LSP
 fails to start with a coordinate-level error. R110-style drift becomes a
 loud startup failure before any IDE session ever runs the LSP.
 
+## Generic capabilities the parse unlocks
+
+Once the LSP holds a parsed `TypeDefinitionRegistry`, six DX wins fall out
+without any new overlay arms. Today's LSP can't do any of these because
+its hand-written registry doesn't carry the data.
+
+1. **Unknown-directive diagnostic.** `@tabel(name: "actor")` — silent
+   today (the consumer's switch in `Diagnostics` only validates the
+   directives it recognises). After: any directive name that doesn't
+   resolve in `registry.getDirectiveDefinitions()` is flagged.
+2. **Unknown-arg diagnostic.** `@table(neme: "actor")` — same shape. The
+   parse names every legal arg per directive; flag the rest.
+3. **Required-arg validation.** Non-null directive args (e.g.
+   `@table(name: String!)` — `name` is required) get a missing-arg
+   diagnostic when the user writes `@table()`.
+4. **Arg-name completion.** Cursor at `@table(|)` → completes `name:`.
+   Today's `DirectiveDefinitions.ENTRIES` already has the data; nothing
+   surfaces it. With the registry on hand, this is one method.
+5. **Hover from SDL docstrings.** Every `DirectiveDefinition` and
+   `InputValueDefinition` exposes `description`. Today `Hovers.java`
+   carries hand-coded markdown for six directives. After: the default
+   hover at any directive / arg / input-field coordinate is the SDL
+   docstring; the per-coordinate `Behavior` arm only overrides when it
+   wants richer content (catalog data on `@table(name:)`, method
+   signature on `ExternalCodeReference.method`, etc.). Authoring effort
+   for hover content moves from "edit `Hovers.java`" to "edit the SDL".
+6. **Deprecation diagnostic and quick-fix coverage.** `DeprecationMarkers`
+   regex-walks the SDL today. The parse hands the same data back via
+   `InputValueDefinition.getDirectives()` (member-level) and
+   `DirectiveDefinition.description()` (whole-directive). Drift between
+   the registry and `SdlActions` collapses too: every `SdlAction.targets`
+   coordinate must resolve and must carry a deprecation marker, both
+   checked at startup against the parse.
+
+These are not in addition to the migration; they fall out of phase 1 the
+moment the parse is wired in.
+
 ## Coordinate vocabulary in scope
 
 The full overlay after migration:
 
-| Coordinate                                | Behavior                                                       |
-|-------------------------------------------|----------------------------------------------------------------|
-| `ExternalCodeReference.className`         | `ClassNameBinding`                                             |
-| `ExternalCodeReference.name` (deprecated) | `Deprecated("use className:")`                                 |
-| `ExternalCodeReference.method`            | `MethodNameBinding(ExternalCodeReference.className)`           |
-| `ExternalCodeReference.argMapping`        | `ArgMappingBinding`                                            |
-| `@sourceRow(className:)`                  | `ClassNameBinding`                                             |
-| `@sourceRow(method:)`                     | `MethodNameBinding(@sourceRow(className:))`                    |
-| `@table(name:)`                           | `CatalogTableBinding`                                          |
-| `@field(name:)`                           | `CatalogColumnBinding`                                         |
-| `ReferenceElement.key`                    | `CatalogFkBinding`                                             |
-| `ReferenceElement.table`                  | `CatalogTableBinding`                                          |
-| `ReferenceElement.condition`              | (no overlay; ECR field semantics ride on `ExternalCodeReference.*`) |
+| Coordinate                          | Behavior                                                       |
+|-------------------------------------|----------------------------------------------------------------|
+| `ExternalCodeReference.className`   | `ClassNameBinding`                                             |
+| `ExternalCodeReference.method`      | `MethodNameBinding(ExternalCodeReference.className)`           |
+| `ExternalCodeReference.argMapping`  | `ArgMappingBinding`                                            |
+| `@sourceRow(className:)`            | `ClassNameBinding`                                             |
+| `@sourceRow(method:)`               | `MethodNameBinding(@sourceRow(className:))`                    |
+| `@table(name:)`                     | `CatalogTableBinding`                                          |
+| `@field(name:)`                     | `CatalogColumnBinding`                                         |
+| `ReferenceElement.key`              | `CatalogFkBinding`                                             |
+| `ReferenceElement.table`            | `CatalogTableBinding`                                          |
+| `ReferenceElement.condition`        | (no overlay; ECR field semantics ride on `ExternalCodeReference.*`) |
+
+`ExternalCodeReference.name` does not appear in the overlay: the parsed
+registry already marks it `@deprecated`, the LSP's existing `SdlAction`
+provides the auto-migration, and any future deprecation diagnostic
+fires off the parse-derived deprecation set, not an overlay arm.
 
 `@reference(path:)` is not a leaf coordinate; the cursor's *element-level*
 coordinate inside the path resolves to one of the `ReferenceElement.*`
@@ -165,7 +246,9 @@ coordinates above, picked up via input-type traversal of the parsed schema.
 
 ## Consumer surface migration
 
-The four files that read the registry today migrate to coordinate lookup:
+Every consumer that today reads `DirectiveDefinitions` or reimplements a
+tree-sitter walk to get at directive arg context is unified on the same
+"compute coordinate from cursor; look up Behavior; dispatch" shape.
 
 ### `Diagnostics.java`
 
@@ -189,25 +272,60 @@ Today: each calls `argsByInputType("ExternalCodeReference")` and walks the
 nested-arg path looking for `className` / `method` keys.
 
 After: at the cursor position, compute the coordinate (using the parsed
-schema's directive args + input-type field tree to walk from the directive
-node down to the cursor's leaf field). Look up the behavior. If
-`ClassNameBinding`, emit completions from `catalog.externalReferences()`.
+registry's directive args + input-type field tree to walk from the
+directive node down to the cursor's leaf field). Look up the behavior.
+If `ClassNameBinding`, emit completions from `catalog.externalReferences()`.
 
 Same code path now serves both `ExternalCodeReference.className` (inside
 `@service(service: { className: ... })`) and `@sourceRow(className:)`
 without a special-case parallel path — the user-facing gap R110 left in
 place.
 
+### `FieldCompletions.java` / `TableCompletions.java` / `ReferenceCompletions.java`
+
+Today: each switches on directive name internally; each reimplements
+"find the argument the cursor is in" and "walk nested object_fields".
+Three near-identical walks across these three files plus `MethodCompletions`
+plus `ClassNameCompletions` plus `Diagnostics` plus `Hovers` plus
+`SdlActions`.
+
+After: a single `LspVocabulary.coordinateAt(file, pos)` walk replaces all
+of them. `FieldCompletions` becomes "if Behavior is `CatalogColumnBinding`,
+emit columns of the enclosing table"; `TableCompletions` becomes
+`CatalogTableBinding` → emit tables; `ReferenceCompletions` splits its
+two arms (`key` → `CatalogFkBinding`, `table` → `CatalogTableBinding`) so
+its switch on `nested.nestedFieldNameText()` disappears.
+
 ### `Hovers.java`
 
-Today: per-directive hand-coded hover content.
+Today: per-directive switch (`case "table" / "field" / "reference" /
+"service" / "condition" / "record"`), each branch reimplementing the
+nested-arg walk to find the cursor's leaf and dispatching by hard-coded
+field name.
 
-After: hover content for any input-type field falls out of the SDL
-docstrings on the parsed schema (graphql-java exposes `description` on
-every element). Per-coordinate overlay can still override docstrings where
-the LSP wants richer hover (e.g. live catalog data injected into a hover
-on `@table(name:)`), but the default is "use the SDL docstring", and the
-SDL becomes the single place to author this content.
+After: `Hovers` becomes a Behavior-arm dispatcher. Each `Behavior`
+exposes a `hover(coord, registry, catalog) -> Optional<MarkupContent>`
+hook (default: SDL docstring); arms with richer content (catalog tables,
+column types, method signatures) override. Adding a new directive's hover
+becomes either zero work (docstring) or one Behavior arm; no `Hovers.java`
+edits.
+
+### `SdlActions.java` / `DeprecationMarkers.java`
+
+Today: `SdlActions` enumerates code actions keyed by
+`SdlAction.DeprecationTarget`; `MANUAL_MIGRATION_DEPRECATIONS` is the
+allow-list for deprecations the LSP intentionally won't auto-migrate;
+`SdlActionDriftTest` asserts every target points at a deprecation marker
+in the SDL via the regex-driven `DeprecationMarkers.parseFromClasspath`.
+
+After: `DeprecationTarget` collapses into `SchemaCoordinate`. The
+parsed registry supplies the deprecation set directly
+(`InputValueDefinition.getDirectives("deprecated")` and the description
+walk for whole-directive markers). `DeprecationMarkers.java` is deleted;
+its 164 lines and two regex patterns go with it. The drift test becomes
+"every action's coordinate resolves and is marked deprecated; every
+deprecated coordinate is covered by an action or the manual allow-list",
+both checked against `LspVocabulary` rather than a parallel registry.
 
 ### `DirectiveDefinitions.java`
 
@@ -248,6 +366,43 @@ Tests do *not* assert the SDL's literal content; they assert structural
 properties (presence of expected coordinates, behavior at each, drift
 fires on synthetic mismatch).
 
+## What collapses
+
+The unification is the simplification. Today every consumer reimplements
+two walks — "innermost object_field at cursor" and "read sibling field by
+name" — and the second walk has near-identical copies in `MethodCompletions`,
+`ClassNameCompletions`, `Hovers`, `Diagnostics`, and `SdlActions`. The
+`Behavior` arms also encode dispatch state that today lives in three
+shapes: a `Set<String>` (`Diagnostics.VALIDATE_METHOD`), a `boolean`
+flag (`supportsMethod` on `Hovers.externalCodeReferenceHover`), and a
+hand-curated map (`MANUAL_MIGRATION_DEPRECATIONS` allow-list).
+
+Concrete deletions:
+
+- `DirectiveDefinitions.java` (124 lines) — replaced by `LspVocabulary`.
+- `DeprecationMarkers.java` (164 lines, 2 regex patterns) — replaced by
+  GraphQL-Java's `description` / `getDirectives()` access on the parsed
+  registry.
+- `Diagnostics.VALIDATE_METHOD` set — replaced by `MethodNameBinding`
+  arms only being attached to coordinates where a method validation
+  applies.
+- `Hovers` per-directive switch (~80 lines of dispatch + four
+  reimplementations of `innermostObjectField` / `readNestedString`) —
+  replaced by Behavior-arm `hover()` hook, default falling out of the
+  SDL docstring.
+- `Hovers.externalCodeReferenceHover.supportsMethod` flag — same
+  reasoning as `VALIDATE_METHOD`, structural now.
+- The five copies of `innermostObjectField` / nested walkers across
+  `Diagnostics`, `Hovers`, `NestedArgs`, `SdlActions`,
+  `MethodCompletions` — collapse into the single `coordinateAt(pos)`
+  walk on `LspVocabulary`.
+
+Net effect: roughly 300 lines of hand-written dispatch and registry
+duplication retire; the parse contributes ~25 directives × ~3 args ×
+description / type metadata for free; new directives in
+`directives.graphqls` light up arg-name completion, unknown-arg
+diagnostics, and hover-from-docstring with no LSP-side change.
+
 ## File-level migration map
 
 New files:
@@ -255,64 +410,93 @@ New files:
 - `graphitron-lsp/.../parsing/SchemaCoordinate.java` — sealed interface
   + factories.
 - `graphitron-lsp/.../parsing/LspVocabulary.java` — vocabulary record,
-  startup population.
-- `graphitron-lsp/.../parsing/Behavior.java` — sealed Behavior interface.
+  startup population, `coordinateAt(file, pos)`, `deprecationOf(coord)`.
+- `graphitron-lsp/.../parsing/Behavior.java` — sealed Behavior interface,
+  hover hook.
 
-Modified files:
+Modified files (graphitron module):
+
+- `RewriteSchemaLoader.java` — adds `directivesSdl()` accessor exposing
+  the SDL text. The constant stays internal; consumers go through the
+  accessor.
+
+Modified files (graphitron-lsp module):
 
 - `Workspace.java` — holds `LspVocabulary` alongside `CompletionData`.
-- `Diagnostics.java` — switch on Behavior; one validator method per arm.
+- `Diagnostics.java` — Behavior-arm switch; gains generic unknown-directive
+  / unknown-arg / required-arg checks that fall out of the registry.
 - `ClassNameCompletions.java` — coordinate lookup replaces directive-name
   switch.
 - `MethodCompletions.java` — same.
-- `Hovers.java` — default hover content from SDL docstrings.
-- `DirectiveDefinitions.java` — back-compat shim during migration; deleted
-  in the final phase.
+- `FieldCompletions.java`, `TableCompletions.java`,
+  `ReferenceCompletions.java` — Behavior-arm dispatch replaces the
+  per-directive arg-and-field walk.
+- `Hovers.java` — Behavior-arm `hover()` hooks replace the per-directive
+  switch; SDL-docstring fallback covers every coordinate the LSP knows
+  about.
+- `SdlAction.java` — `DeprecationTarget` collapses into
+  `SchemaCoordinate`; downstream callers update to the unified type.
+- `SdlActions.java` — drift checks read deprecation info off
+  `LspVocabulary` rather than `DeprecationMarkers`.
+- `DirectiveDefinitions.java` — back-compat shim during migration;
+  deleted in the final phase.
 
 Deleted (when shim is dropped):
 
 - `Diagnostics.VALIDATE_METHOD` set.
-- `DirectiveDefinitions.ENTRIES` hand-written list.
+- `DirectiveDefinitions.ENTRIES` hand-written list and the
+  `DirectiveDef` / `ArgDef` / `InputTypeBinding` records (subsumed by
+  `SchemaCoordinate` and the parsed registry).
+- `DeprecationMarkers.java` and the two regex patterns.
 
 ## Phasing
 
-Three phases, each green at HEAD:
+Three phases, each green at HEAD; user-visible value lands in phase 1.
 
-1. **Parse the SDL, populate the vocabulary.** Add `LspVocabulary`,
-   `SchemaCoordinate`, `Behavior`; populate from `directives.graphqls` at
-   LSP startup; assert the structural invariant. Existing consumers
-   unchanged. Build green.
+1. **Parse the SDL, populate the vocabulary, surface the free wins.**
+   Add `LspVocabulary`, `SchemaCoordinate`, `Behavior`; populate from
+   `directives.graphqls` at LSP startup; assert the structural invariant.
+   Wire the generic capabilities listed under "Generic capabilities the
+   parse unlocks": unknown-directive / unknown-arg diagnostics,
+   required-arg validation, arg-name completion, hover-from-docstring.
+   Existing per-directive consumers stay on `DirectiveDefinitions`; the
+   new capabilities sit alongside them without conflict. Build green.
 
 2. **Migrate consumers one by one.** `Diagnostics`, `ClassNameCompletions`,
-   `MethodCompletions`, `Hovers`. Each consumer reads the vocabulary
+   `MethodCompletions`, `FieldCompletions`, `TableCompletions`,
+   `ReferenceCompletions`, `Hovers`. Each consumer reads the vocabulary
    instead of `DirectiveDefinitions`. The `@sourceRow` user-facing gap
    closes in this phase as a side effect: when `Diagnostics` and
    `ClassNameCompletions` migrate, both pick up the
    `@sourceRow(className:)` and `@sourceRow(method:)` coordinates the
    overlay declares.
 
-3. **Delete the shim.** `DirectiveDefinitions.ENTRIES` and the residual
-   string-keyed paths come out. The three pinning tests are rewritten as
-   drift-detection tests against the parsed SDL.
+3. **Delete the shims.** `DirectiveDefinitions.ENTRIES`,
+   `DeprecationMarkers.java`, and the residual string-keyed paths come
+   out. `SdlAction.DeprecationTarget` collapses into `SchemaCoordinate`;
+   `SdlActions` drift checks rebase on the parsed registry. The pinning
+   tests get rewritten as drift-detection tests against the parsed SDL.
 
 ## Open questions
 
-- **GraphQL-Java surface.** Confirm `SchemaParser.parse(InputStream)`
-  takes the `directives.graphqls` shape as-is (no enclosing schema; it's
-  pure type / directive declarations). If the parser needs an enclosing
-  `schema { ... }` block, either wrap at read time or use
-  `Parser` (raw AST) instead of `SchemaParser`.
-- **Resource-path stability.** `directives.graphqls` lives at
-  `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`;
-  its classpath path is `no/sikt/graphitron/rewrite/schema/directives.graphqls`.
-  This path is not pinned anywhere today; it should become a constant on
-  graphitron's side (`BuildContext.DIRECTIVES_RESOURCE_PATH = "..."`) so
-  the LSP can reference it without copy-pasting.
 - **GraalVM native-image.** R89 covers native-image build CI. Classpath
   resources work in native image when registered for inclusion;
   `directives.graphqls` will need the same registration the LSP's
   tree-sitter `.so` already has. Add it to the native-image config in
-  the same phase that adds the SDL parse.
+  the same phase that adds the SDL parse. (`RewriteSchemaLoader` already
+  reads the resource at build time inside the producer module, so any
+  reflection-config registration there is reused.)
+- **Where does the registry live?** `LspVocabulary` holds it as a
+  field; `Workspace` holds the vocabulary. The registry is read once
+  at startup and never invalidated (the SDL ships with the LSP jar);
+  `setCatalog` does not touch it. Confirm during implementation that no
+  request path needs to mutate the registry (it shouldn't — it's
+  shape, not state).
+- **Validation diagnostic severities.** Generic-capability diagnostics
+  (unknown directive, unknown arg, missing required arg) ship as
+  warnings at first to avoid pre-existing schemas erupting. A follow-up
+  bumps to error once the user-facing schemas catch up. Severity
+  policy is implementation choice, not a Spec decision.
 
 ## Out of scope
 
@@ -325,6 +509,16 @@ Three phases, each green at HEAD:
 - LSP definition / go-to-symbol / formatting capabilities. R90 covers
   some of those; this item only touches completion / diagnostics / hover.
 
+## Wiring in the `dev` Mojo
+
+`DevMojo` already constructs the `Workspace` with an initial catalog at
+goal startup and refreshes the catalog from a classpath watcher
+(`graphitron-maven-plugin/.../DevMojo.java:86`, `:188`). The
+`LspVocabulary` is built in the same place, once, alongside the initial
+catalog construction; `Workspace` accepts both via constructor and stores
+the vocabulary as a final field (no setter — the registry is shape, not
+state). `setCatalog` continues to only touch the catalog reference.
+
 ## Surfaced from
 
 R110 In Review → Done approval (commit `5176f2f8` on the rewrite trunk;
@@ -333,59 +527,3 @@ narrower item originally filed as "LSP directive registry sourced from
 directives.graphqls" was rescoped during a follow-up design discussion to
 this structurally-grounded version; the registry replacement is the first
 phase of the migration above, not the goal.
-
-## Drafting status (pre-Ready handoff)
-
-This Spec body was drafted in one session against a partial read of the
-LSP module. Four follow-ups are pending before Spec → Ready:
-
-1. **`TypeDefinitionRegistry`, not `GraphQLSchema`.** The "Startup
-   population" section says GraphQL-Java parses `directives.graphqls`
-   into a `GraphQLSchema`. Correct shape: `SchemaParser.parse(...)`
-   returns `TypeDefinitionRegistry`, which exposes
-   `getDirectiveDefinitions()` / `getType(name)` and is sufficient for
-   the structural invariant ("does this coordinate resolve?"). No
-   runtime wiring, no `SchemaGenerator` step. The `parsedDirectiveSchema`
-   field on `LspVocabulary` should be typed `TypeDefinitionRegistry`.
-
-2. **Acknowledge the broader directive surface.** The "Coordinate
-   vocabulary in scope" table covers what the LSP behaviorally supports
-   today; `directives.graphqls` actually declares ~25 directives
-   (`@table`, `@field`, `@externalField`, `@enum`, `@service`, `@error`,
-   `@reference`, `@multitableReference`, `@sourceRow`, `@condition`,
-   `@lookupKey`, `@mutation`, `@asConnection`, `@orderBy`, `@index`,
-   `@order`, `@defaultOrder`, `@record`, `@discriminate`,
-   `@discriminator`, `@node`, `@nodeId`, `@tableMethod`,
-   `@experimental_constructType`, `@splitQuery`, `@notGenerated`) and
-   input types beyond `ExternalCodeReference` / `ReferenceElement`
-   (`ErrorHandler`, `ReferencesForType`, `FieldSort`). Spec body should
-   say explicitly: the parsed schema gives the LSP every coordinate; the
-   *overlay* declares semantics only for the coordinates the LSP knows
-   how to act on today. New behaviors are additive overlay entries — not
-   a rewrite of the parse.
-
-3. **Confirm migration coverage on the three consumer files I didn't
-   read.** `ReferenceCompletions`, `FieldCompletions`, `TableCompletions`
-   are 60-130 lines each. Need to confirm they fit the
-   `Behavior` arm shape (`CatalogTableBinding`, `CatalogColumnBinding`,
-   `CatalogFkBinding`) without surfacing a fourth shape the spec body
-   doesn't account for. Honest deviations get noted in "What stays out".
-
-4. **Resource path constant.** Open question 2 names the path
-   `no/sikt/graphitron/rewrite/schema/directives.graphqls` and proposes
-   a `BuildContext.DIRECTIVES_RESOURCE_PATH` constant. Verify
-   `BuildContext` is the right class (or whether `SchemaDirectiveRegistry`
-   in `graphitron/.../generators/util/` is a better home), then state
-   the home concretely. Cross-check that `graphitron-lsp/pom.xml` runtime
-   depends on the right artifact for the resource to be available
-   (already confirmed at lines 23-27, but the constant lives on the
-   exporter side).
-
-The `dev` Mojo wiring also bears one quick read to confirm where the
-catalog is constructed today and whether the `LspVocabulary` is built
-in the same place; that's a fifth follow-up if the answers above
-shift the wiring.
-
-Branch carrying this Spec: `claude/r119-backlog` (trunk after publish).
-The four follow-ups should land in one or two cleanup commits before any
-`srp` handoff.
