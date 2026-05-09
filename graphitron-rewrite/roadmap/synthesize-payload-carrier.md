@@ -251,6 +251,14 @@ behaviour without conflating their identity. Phase 3's `@record`-element
 extension would add a sibling permit (`PassthroughRecordField`) under the same
 capability, with a `ResultReturnType`-typed component slot.
 
+Each new `ChildField` permit (`PassthroughDataField` here, `PassthroughSlotField`
+in Phase 2, `PassthroughRecordField` in Phase 3) is added to
+`TypeFetcherGenerator.IMPLEMENTED_LEAVES` so
+`GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`
+classifies the new leaf into the four-way disjoint partition. Omitting the
+update fails the audit at build time; the rule lifts the dispatch-status
+bookkeeping into the same commit that introduces the permit.
+
 **Schema-builder registration.** `GraphitronSchemaBuilder.buildSchema`'s
 existing `PlainObjectType` skip-arm (and the `PojoResultType(_, _, null)`
 equivalent) calls `unwrapPassthroughPayload` once and registers the data field
@@ -364,14 +372,15 @@ if (!inputTable.equals(returnInfo.dataTable())) {
 
 The check lifts into a single helper method
 `FieldBuilder.requireDataTableMatchesInputTable(inputTable, returnInfo,
-kind, name)` called by all four DML-kind classifier paths
-(`buildMutationInsertField`, `buildMutationUpdateField`,
-`buildMutationDeleteField`, `buildMutationUpsertField`) before they
-construct their respective `Mutation<Kind>TableField` records. The
-helper wears `@LoadBearingClassifierCheck(key =
+kind, name)` called from each of the four DML-kind switch arms in
+`FieldBuilder.classifyMutationField` (the `case INSERT` / `UPDATE` /
+`DELETE` / `UPSERT` arms that invoke `buildDmlField` with kind-specific
+constructor lambdas, see FieldBuilder.java:2579-2592) before the
+resulting `Mutation<Kind>TableField` is constructed. The helper wears
+`@LoadBearingClassifierCheck(key =
 "passthrough-payload.data-table-equals-dml-target", description = "...")`
-as the single producer site; the four kind-classifier methods do not
-wear the annotation themselves. The consumer site (the DML emitter's
+as the single producer site; the calling switch arms do not wear the
+annotation themselves. The consumer site (the DML emitter's
 `Projected*` arm, which assumes the projection target equals the DML
 target) wears the matching `@DependsOnClassifierCheck(key =
 "passthrough-payload.data-table-equals-dml-target", reliesOn = "...")`.
@@ -499,7 +508,7 @@ Cross-paths:
   execution-tier sakila fixtures are the primary signal that all three
   permits behave identically through graphql-java.
 
-**Execution-tier** (`graphitron/src/test/java/no/sikt/graphitron/rewrite/sakila/`),
+**Execution-tier** (`graphitron-sakila-example/src/test/java/no/sikt/graphitron/sakila/`),
 new sakila fixture `PassthroughPayloadDmlTest`, parameterised over `DmlKind`:
 
 - SDL fixture (per kind): `type ActorPayload { actor: [Actor!] }` over the
