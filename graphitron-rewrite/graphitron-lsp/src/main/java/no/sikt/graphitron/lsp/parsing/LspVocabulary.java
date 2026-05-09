@@ -408,7 +408,7 @@ public record LspVocabulary(
      * {@link TypeName}. Returns null if the type does not bottom out at
      * a named type (which never happens for valid SDL).
      */
-    private static String unwrapToInputTypeName(Type<?> type) {
+    public static String unwrapToInputTypeName(Type<?> type) {
         Type<?> current = type;
         while (current != null) {
             if (current instanceof TypeName tn) return tn.getName();
@@ -539,7 +539,15 @@ public record LspVocabulary(
         return Optional.ofNullable(registry.getTypeOrNull(name, InputObjectTypeDefinition.class));
     }
 
-    private static Optional<InputValueDefinition> findInputValue(
+    /**
+     * Linear lookup for {@link InputValueDefinition} by name in a list. Used
+     * in three call sites internal to {@link LspVocabulary} plus
+     * {@code Diagnostics} (unknown-arg + required-arg validation) and
+     * {@code ArgNameCompletions} (arg-name completion). The graphql-java API
+     * exposes the lists but no name-keyed accessor; this helper avoids
+     * duplicating the loop in every consumer.
+     */
+    public static Optional<InputValueDefinition> findInputValue(
         java.util.List<InputValueDefinition> values, String name) {
         for (var v : values) {
             if (v.getName().equals(name)) return Optional.of(v);

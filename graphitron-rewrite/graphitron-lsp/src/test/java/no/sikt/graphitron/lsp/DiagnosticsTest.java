@@ -582,6 +582,100 @@ class DiagnosticsTest {
         assertThat(diags.get(0).getMessage()).contains("'Ghost'");
     }
 
+    @Test
+    void unknownDirectiveProducesWarning() {
+        var file = file("""
+            type Foo @tabel(name: "film") {
+                bar: Int
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog());
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("@tabel").contains("Unknown directive");
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+    }
+
+    @Test
+    void specBuiltinDirectivesAreNotFlagged() {
+        // @deprecated is a GraphQL spec built-in; it appears in user
+        // schemas but not in graphitron's bundled directives.graphqls.
+        // The unknown-directive validator skips spec built-ins.
+        var file = file("""
+            type Foo @table(name: "film") {
+                old: Int @deprecated(reason: "use new")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog());
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void unknownTopLevelArgProducesWarning() {
+        var file = file("""
+            type Foo @table(neme: "film") {
+                bar: Int
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog());
+
+        // No required-arg miss because @table(name:) is optional.
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage())
+            .contains("'neme'").contains("Unknown argument").contains("@table");
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+    }
+
+    @Test
+    void unknownNestedInputFieldProducesWarning() {
+        var file = file("""
+            type Foo @table(name: "film") {
+                bar: Int @reference(path: [{tabel: "x"}])
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog());
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage())
+            .contains("'tabel'").contains("ReferenceElement");
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+    }
+
+    @Test
+    void missingRequiredArgProducesWarning() {
+        // @field(name: String!) — the name arg is required.
+        var file = file("""
+            type Foo @table(name: "film") {
+                bar: Int @field
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog());
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage())
+            .contains("Missing required argument").contains("'name'").contains("@field");
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+    }
+
+    @Test
+    void presentRequiredArgProducesNoWarning() {
+        var file = file("""
+            type Foo @table(name: "film") {
+                bar: Int @field(name: "TITLE")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog());
+
+        assertThat(diags).isEmpty();
+    }
+
     private static CompletionData catalogWithKnownClass(String fqn) {
         // The class diagnostic now also validates the sibling `method:` slot
         // when the class resolves; include the method names referenced by
