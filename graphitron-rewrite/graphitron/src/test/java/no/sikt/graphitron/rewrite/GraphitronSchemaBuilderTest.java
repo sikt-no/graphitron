@@ -1805,6 +1805,19 @@ class GraphitronSchemaBuilderTest {
                         && m.contains("@splitQuery is redundant on a @record-parent field"));
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        PASSTHROUGH_PAYLOAD_DATA_FIELD(
+            "Plain Object payload (no @record/@table) wrapping a single @table-element data field "
+                + "→ PassthroughDataField on the payload (R75 Phase 1)",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { films: [Film!] }
+            type Query { wrappedFilms: FilmPayload }
+            """,
+            schema -> assertThat(schema.field("FilmPayload", "films"))
+                .isInstanceOf(ChildField.PassthroughDataField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(ChildField.PassthroughDataField.class); }
         };
 
         final String sdl;

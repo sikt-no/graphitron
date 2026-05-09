@@ -16,12 +16,29 @@ public sealed interface ChildField extends GraphitronField
             ChildField.TableTargetField,
             ChildField.TableMethodField,
             ChildField.InterfaceField, ChildField.UnionField,
-            ChildField.NestingField, ChildField.ConstructorField,
+            ChildField.IdentityPassthrough,
             ChildField.ServiceRecordField,
             ChildField.RecordField,
             ChildField.ComputedField, ChildField.PropertyField,
             ChildField.MultitableReferenceField,
             ChildField.ErrorsField {
+
+    /**
+     * Capability sealed sub-interface (R75): the emitted fetcher value is the literal
+     * {@code ($T env) -> env.getSource()} for every permit. {@link ConstructorField} and
+     * {@link NestingField} pass the parent record through to a {@code @record}-typed or
+     * nested-table-typed child; {@link PassthroughDataField} passes the
+     * {@code DataFetcherResult}'s payload through to a {@code @table}-typed data field on
+     * a passthrough payload.
+     *
+     * <p>The capability check at {@code FetcherEmitter.dataFetcherValue} collapses what
+     * was previously two {@code instanceof} arms into one, and a Phase 3
+     * {@code @record}-element extension would add a sibling permit
+     * ({@code PassthroughRecordField}) without further dispatch arms.
+     */
+    sealed interface IdentityPassthrough extends ChildField
+        permits ChildField.ConstructorField, ChildField.NestingField,
+                ChildField.PassthroughDataField {}
 
     /**
      * A single-column output carrier on a table-backed parent. The column's value reaches the
@@ -338,14 +355,37 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<ChildField> nestedFields
-    ) implements ChildField {}
+    ) implements IdentityPassthrough {}
 
     record ConstructorField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef returnType
-    ) implements ChildField {}
+    ) implements IdentityPassthrough {}
+
+    /**
+     * R75: a passthrough payload's data field — the unique {@code @table}-element field on
+     * an SDL Object whose {@link no.sikt.graphitron.rewrite.BuildContext#unwrapPassthroughPayload}
+     * resolves to {@link no.sikt.graphitron.rewrite.model.PassthroughResolution.Ok}. Carries
+     * no Java backing class; the parent type is left as
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType} (or
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType} with
+     * {@code fqClassName == null}) by the unwrap.
+     *
+     * <p>The narrow {@link ReturnTypeRef.TableBoundReturnType} component is guaranteed by
+     * the trigger function's condition #3; this pushes classification certainty into the
+     * type system per the "narrow component types" principle. The fetcher emit is the
+     * {@code ($T env) -> env.getSource()} dispatch under the {@link IdentityPassthrough}
+     * capability — graphql-java's per-{@code @table}-field fetchers traverse the
+     * forwarded {@code Result<Record>} from there.
+     */
+    record PassthroughDataField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType
+    ) implements IdentityPassthrough {}
 
     /**
      * A child field backed by a developer-provided service method ({@code @service}), where the

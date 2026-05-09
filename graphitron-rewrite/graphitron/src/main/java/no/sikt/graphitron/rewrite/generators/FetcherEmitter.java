@@ -53,10 +53,7 @@ public final class FetcherEmitter {
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage) {
-        if (field instanceof ChildField.ConstructorField) {
-            return CodeBlock.of("($T env) -> env.getSource()", DATA_FETCHING_ENV);
-        }
-        if (field instanceof ChildField.NestingField) {
+        if (field instanceof ChildField.IdentityPassthrough) {
             return CodeBlock.of("($T env) -> env.getSource()", DATA_FETCHING_ENV);
         }
         if (field instanceof ChildField.ErrorsField) {

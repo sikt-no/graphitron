@@ -35,6 +35,8 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.JoinStep.ConditionJoin;
 import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.model.PassthroughInfo;
+import no.sikt.graphitron.rewrite.model.PassthroughResolution;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import org.jooq.ForeignKey;
 import org.slf4j.Logger;
@@ -346,8 +348,21 @@ class BuildContext {
     /**
      * Converts a type name and wrapper into the correct {@link ReturnTypeRef} variant by
      * consulting the populated {@link #types} map.
+     *
+     * <p>Short-circuits via {@link #unwrapPassthroughPayload}: when the target is a
+     * passthrough-shaped Object, the returned reference is the data field's
+     * {@link ReturnTypeRef.TableBoundReturnType} (the typed inner shape) rather than the
+     * payload's wire-shape wrapper. Downstream consumers see only the existing four arms;
+     * the wire-format wrap is resolved at this boundary, never carried in the model. The
+     * outer {@code wrapper} parameter (the SDL field's wrapper around the payload type) is
+     * discarded; the inner shape carries the data field's own wrapper.
      */
     ReturnTypeRef resolveReturnType(String targetTypeName, FieldWrapper wrapper) {
+        if (unwrapPassthroughPayload(targetTypeName) instanceof PassthroughResolution.Ok ok) {
+            var p = ok.info();
+            return new ReturnTypeRef.TableBoundReturnType(
+                p.dataElementName(), p.dataTable(), p.dataWrapper());
+        }
         GraphitronType target = types.get(targetTypeName);
         if (target instanceof TableBackedType tbt)
             return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tbt.table(), wrapper);
@@ -356,6 +371,95 @@ class BuildContext {
         if (target instanceof ResultType rt)
             return new ReturnTypeRef.ResultReturnType(targetTypeName, wrapper, rt.fqClassName());
         return new ReturnTypeRef.ScalarReturnType(targetTypeName, wrapper);
+    }
+
+    /**
+     * Trigger function for passthrough payloads (R75 Phase 1). A pure function over
+     * {@link #schema} and {@link #types} returning a sealed {@link PassthroughResolution}
+     * that callers route on:
+     *
+     * <ul>
+     *   <li>{@link PassthroughResolution.Ok} — admit the type as a passthrough payload;
+     *       carries the resolved {@link PassthroughInfo}.</li>
+     *   <li>{@link PassthroughResolution.NotCandidate} — type is not a passthrough-shaped
+     *       Object (carries {@code @table}, {@code @record} with {@code className}, is an
+     *       interface / union / enum / scalar, etc.); consumers fall through silently.</li>
+     *   <li>{@link PassthroughResolution.Rejected} — type is a candidate (no domain
+     *       directive, or {@code @record} without {@code className}) but failed a per-condition
+     *       check; the reason names the failed positive criterion and is plumbed into the
+     *       validator's rejection-message paths.</li>
+     * </ul>
+     *
+     * <p>The function is referentially transparent given a frozen {@link #schema} and
+     * {@link #types}; it materialises no state and is called on demand at the production
+     * sites and one validator site.
+     */
+    PassthroughResolution unwrapPassthroughPayload(String typeName) {
+        GraphitronType target = types.get(typeName);
+        // Condition #1: registered as PlainObjectType, or PojoResultType without className
+        // (the @record-without-className case TypeBuilder.buildResultType produces).
+        boolean isCandidate = (target instanceof GraphitronType.PlainObjectType)
+            || (target instanceof GraphitronType.PojoResultType prt && prt.fqClassName() == null);
+        if (!isCandidate) {
+            return new PassthroughResolution.NotCandidate();
+        }
+        GraphQLType raw = schema.getType(typeName);
+        if (!(raw instanceof GraphQLObjectType objType)) {
+            return new PassthroughResolution.NotCandidate();
+        }
+
+        var fields = objType.getFieldDefinitions();
+        // Condition #2: exactly one field (Phase 1 scope; Phase 2 admits multi-field).
+        if (fields.size() != 1) {
+            return new PassthroughResolution.Rejected(
+                "payload '" + typeName + "' declares " + fields.size() + " fields; "
+                + "Phase 1 admits exactly one data field");
+        }
+
+        GraphQLFieldDefinition dataField = fields.get(0);
+        String dataFieldName = dataField.getName();
+        String dataElementName = baseTypeName(dataField);
+
+        // Condition #3: the data field's element type is registered as TableBackedType.
+        GraphitronType elementType = types.get(dataElementName);
+        if (!(elementType instanceof TableBackedType tbt)) {
+            return new PassthroughResolution.Rejected(
+                "payload field '" + dataFieldName + "' element type '" + dataElementName
+                + "' is not @table-mapped; Phase 1 admits @table elements only");
+        }
+
+        // Phase 1 scope: the data field is plain — no field-level directives. A directive
+        // (e.g. @service, @sourceRow, @reference, @nodeId, @field) signals the developer
+        // wants a different fetcher than the IdentityPassthrough capability emits, so
+        // routing through the unwrap would fight the field's intended classification.
+        // Author can opt back in with @record(record: {className: ...}) explicitly.
+        if (!dataField.getAppliedDirectives().isEmpty()) {
+            return new PassthroughResolution.Rejected(
+                "payload field '" + dataFieldName + "' carries field-level directives; "
+                + "Phase 1 admits plain @table-element data fields without directives");
+        }
+
+        FieldWrapper dataWrapper = passthroughDataFieldWrapper(dataField);
+
+        return new PassthroughResolution.Ok(new PassthroughInfo(
+            typeName, dataFieldName, dataElementName, tbt.table(), dataWrapper));
+    }
+
+    /**
+     * Computes the data field's SDL wrapper for {@link #unwrapPassthroughPayload}. Phase 1
+     * admits single and list cardinalities only; Connection wrapping on the data field is
+     * an unusual authoring shape that flows through condition #3 (the Connection's element
+     * type is the Connection object, not a {@code @table}-mapped type) and rejects there.
+     */
+    private static FieldWrapper passthroughDataFieldWrapper(GraphQLFieldDefinition dataField) {
+        GraphQLType fieldType = dataField.getType();
+        boolean outerNullable = !(fieldType instanceof GraphQLNonNull);
+        GraphQLType unwrappedOnce = GraphQLTypeUtil.unwrapNonNull(fieldType);
+        if (unwrappedOnce instanceof GraphQLList listType) {
+            boolean itemNullable = !(listType.getWrappedType() instanceof GraphQLNonNull);
+            return new FieldWrapper.List(outerNullable, itemNullable);
+        }
+        return new FieldWrapper.Single(outerNullable);
     }
 
     // ===== Error-message helpers =====

@@ -12,8 +12,11 @@ import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.errors.SchemaProblem;
 
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.PassthroughResolution;
+import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.schema.federation.EntityResolutionBuilder;
 import no.sikt.graphitron.rewrite.schema.federation.FederationSpec;
 import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
@@ -175,6 +178,22 @@ public class GraphitronSchemaBuilder {
             .forEach(objType -> {
                 var parentType = ctx.types.get(objType.getName());
                 if (parentType == null) return;
+                // R75 Phase 1: passthrough payload registration. The unwrap admits both
+                // PlainObjectType and PojoResultType(_, _, null); on Ok, the data field is
+                // registered as PassthroughDataField with no further parent-type classification
+                // (Phase 1 admits exactly one field). NotCandidate / Rejected fall through to
+                // the existing dispatch.
+                if (ctx.unwrapPassthroughPayload(objType.getName()) instanceof PassthroughResolution.Ok ok) {
+                    var p = ok.info();
+                    var dataFieldDef = objType.getFieldDefinition(p.dataFieldName());
+                    ctx.fieldRegistry.classify(
+                        FieldCoordinates.coordinates(objType.getName(), p.dataFieldName()),
+                        new ChildField.PassthroughDataField(
+                            objType.getName(), p.dataFieldName(), locationOf(dataFieldDef),
+                            new ReturnTypeRef.TableBoundReturnType(
+                                p.dataElementName(), p.dataTable(), p.dataWrapper())));
+                    return;
+                }
                 // Fields on plain SDL object types (no domain directive) are the developer's
                 // responsibility to wire — the classifier records the parent in schema.types()
                 // but leaves per-field classification out. Matches pre-Phase-4 behaviour where

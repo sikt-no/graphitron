@@ -70,7 +70,11 @@ public final class FetcherRegistrationsEmitter {
             .filter(e -> e.getValue() instanceof GraphitronType.TableType
                       || e.getValue() instanceof GraphitronType.NodeType
                       || e.getValue() instanceof GraphitronType.RootType
-                      || e.getValue() instanceof GraphitronType.ResultType)
+                      || e.getValue() instanceof GraphitronType.ResultType
+                      // R75 Phase 1: passthrough payload types are PlainObjectType but carry one
+                      // PassthroughDataField registration that needs a wired fetcher entry. Types
+                      // without a registered passthrough field stay no-op (typeBody filters fields).
+                      || e.getValue() instanceof GraphitronType.PlainObjectType)
             .forEach(e -> result.put(e.getKey(), typeBody(schema, e.getKey(), fetchersPackage, outputPackage)));
 
         nestedTypeMap.values().forEach(ntw ->
