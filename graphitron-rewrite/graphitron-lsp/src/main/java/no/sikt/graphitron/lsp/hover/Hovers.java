@@ -70,7 +70,7 @@ public final class Hovers {
         return switch (behavior.get()) {
             case Behavior.ClassNameBinding ignored -> classNameHover(file, catalog, rangeNode);
             case Behavior.MethodNameBinding mnb ->
-                methodHover(directive, file, catalog, pos, rangeNode, mnb.classNameCoord());
+                methodHover(vocabulary, directive, file, catalog, pos, rangeNode, mnb.classNameCoord());
             case Behavior.CatalogTableBinding ignored -> tableHover(file, catalog, rangeNode);
             case Behavior.CatalogColumnBinding ignored -> columnHover(directive, file, catalog, rangeNode);
             case Behavior.CatalogFkBinding ignored -> fkHover(file, catalog, rangeNode);
@@ -87,12 +87,13 @@ public final class Hovers {
     }
 
     private static Optional<Hover> methodHover(
+        LspVocabulary vocabulary,
         Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
         Point pos, Node valueNode, SchemaCoordinate classNameCoord
     ) {
         String methodName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (methodName.isEmpty()) return Optional.empty();
-        var fqn = readSiblingValue(directive, pos, classNameCoord, file.source());
+        var fqn = vocabulary.siblingStringAt(directive, pos, classNameCoord, file.source());
         if (fqn.isEmpty()) return Optional.empty();
         var refOpt = findExternal(catalog, fqn.get());
         if (refOpt.isEmpty()) return Optional.empty();
@@ -150,61 +151,6 @@ public final class Hovers {
     }
 
     /**
-     * Reads the string value at {@code siblingCoord}, scoped to the same
-     * directive the cursor lives in. Mirrors
-     * {@code MethodCompletions.readSiblingValue} — same shape, separate
-     * copy until both consumers are stable enough to lift into a shared
-     * helper.
-     */
-    private static Optional<String> readSiblingValue(
-        Directives.Directive directive,
-        Point pos,
-        SchemaCoordinate siblingCoord,
-        byte[] source
-    ) {
-        return switch (siblingCoord) {
-            case SchemaCoordinate.DirectiveArg da -> readDirectiveArgString(directive, da.arg(), source);
-            case SchemaCoordinate.InputField f -> readSiblingObjectField(directive, pos, f.field(), source);
-            case SchemaCoordinate.Directive ignored -> Optional.empty();
-            case SchemaCoordinate.InputType ignored -> Optional.empty();
-        };
-    }
-
-    private static Optional<String> readDirectiveArgString(
-        Directives.Directive directive, String argName, byte[] source
-    ) {
-        for (var arg : directive.arguments()) {
-            if (argName.equals(Nodes.text(arg.key(), source))) {
-                String raw = Nodes.unquote(Nodes.text(arg.value(), source));
-                return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
-            }
-        }
-        return Optional.empty();
-    }
-
-    private static Optional<String> readSiblingObjectField(
-        Directives.Directive directive, Point pos, String fieldName, byte[] source
-    ) {
-        for (var arg : directive.arguments()) {
-            if (!arg.contains(pos)) continue;
-            Node objectValue = enclosingObjectValue(arg.value(), pos);
-            if (objectValue == null) return Optional.empty();
-            for (int i = 0; i < objectValue.getChildCount(); i++) {
-                Node child = objectValue.getChild(i).orElse(null);
-                if (child == null || !"object_field".equals(child.getType())) continue;
-                Node nameNode = childOfKind(child, "name");
-                Node valueNode = childOfKind(child, "value");
-                if (nameNode == null || valueNode == null) continue;
-                if (fieldName.equals(Nodes.text(nameNode, source))) {
-                    String raw = Nodes.unquote(Nodes.text(valueNode, source));
-                    return raw.isEmpty() ? Optional.empty() : Optional.of(raw);
-                }
-            }
-        }
-        return Optional.empty();
-    }
-
-    /**
      * Returns the value node carrying the cursor — for a flat directive
      * arg the arg's value, for a nested object field the field's value
      * child. Used as the hover range so the editor highlights the right
@@ -223,16 +169,6 @@ public final class Hovers {
             if (Nodes.contains(arg.value(), pos)) return arg.value();
         }
         return null;
-    }
-
-    private static Node enclosingObjectValue(Node node, Point pos) {
-        if (node == null || !Nodes.contains(node, pos)) return null;
-        Node best = "object_value".equals(node.getType()) ? node : null;
-        for (int i = 0; i < node.getChildCount(); i++) {
-            Node descendant = enclosingObjectValue(node.getChild(i).orElse(null), pos);
-            if (descendant != null) best = descendant;
-        }
-        return best;
     }
 
     private static Node innermostObjectFieldContaining(Node node, Point pos) {
