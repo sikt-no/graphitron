@@ -106,7 +106,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
         if (client == null) return;
         for (String uri : workspace.drainRecalculate()) {
             workspace.get(uri).ifPresent(file -> {
-                var diagnostics = Diagnostics.compute(file, workspace.catalog());
+                var diagnostics = Diagnostics.compute(workspace.vocabulary(), file, workspace.catalog());
                 client.publishDiagnostics(new PublishDiagnosticsParams(uri, diagnostics));
             });
         }

@@ -97,6 +97,72 @@ public record LspVocabulary(
         return new LspVocabulary(overlay, new SchemaParser().parse(sdl));
     }
 
+    /**
+     * Walks every coordinate-bearing leaf inside {@code directive} and
+     * returns each as a {@link Leaf} pair (coordinate plus its tree-sitter
+     * value node). Used by document-wide consumers (today: {@code Diagnostics})
+     * that need to dispatch validators at every coordinate the document
+     * carries, not just one cursor position.
+     *
+     * <p>Single walk replaces the per-consumer
+     * {@code DirectiveDefinitions.argsByInputType} + nested-object-field
+     * collection idiom. The traversal mirrors {@link #coordinateAt}
+     * structurally — same registry-driven type chain, same input-type
+     * field tree — but emits every leaf rather than the one under the
+     * cursor.
+     */
+    public List<Leaf> leafCoordinates(Directives.Directive directive, byte[] source) {
+        String directiveName = Nodes.text(directive.nameNode(), source);
+        var dirDef = registry.getDirectiveDefinition(directiveName);
+        if (dirDef.isEmpty()) return List.of();
+        var out = new ArrayList<Leaf>();
+        for (var arg : directive.arguments()) {
+            String argName = Nodes.text(arg.key(), source);
+            var argDef = findInputValue(dirDef.get().getInputValueDefinitions(), argName);
+            if (argDef.isEmpty()) continue;
+            out.add(new Leaf(new SchemaCoordinate.DirectiveArg(directiveName, argName), arg.value()));
+            String argType = unwrapToInputTypeName(argDef.get().getType());
+            if (argType != null) {
+                descendLeaves(arg.value(), argType, source, out);
+            }
+        }
+        return out;
+    }
+
+    private void descendLeaves(Node node, String currentType, byte[] source, List<Leaf> out) {
+        if (node == null) return;
+        if ("object_field".equals(node.getType())) {
+            Node nameNode = childOfKind(node, "name");
+            Node valueNode = childOfKind(node, "value");
+            if (nameNode != null && valueNode != null) {
+                String fieldName = Nodes.text(nameNode, source);
+                out.add(new Leaf(new SchemaCoordinate.InputField(currentType, fieldName), valueNode));
+                var inputType = registry.getTypeOrNull(currentType, InputObjectTypeDefinition.class);
+                if (inputType != null) {
+                    var fieldDef = findInputValue(inputType.getInputValueDefinitions(), fieldName);
+                    if (fieldDef.isPresent()) {
+                        String nextType = unwrapToInputTypeName(fieldDef.get().getType());
+                        if (nextType != null) {
+                            descendLeaves(valueNode, nextType, source, out);
+                            return;
+                        }
+                    }
+                }
+            }
+            return;
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            descendLeaves(node.getChild(i).orElse(null), currentType, source, out);
+        }
+    }
+
+    /**
+     * Coordinate-bearing leaf inside a directive: the coordinate that
+     * keys the leaf's behavior plus the tree-sitter node carrying the
+     * leaf's value (a string literal, a list_value, etc.).
+     */
+    public record Leaf(SchemaCoordinate coord, Node valueNode) {}
+
     /** Returns the {@link Behavior} the overlay declares for {@code coord}, if any. */
     public Optional<Behavior> behaviorAt(SchemaCoordinate coord) {
         return Optional.ofNullable(overlay.get(coord));
