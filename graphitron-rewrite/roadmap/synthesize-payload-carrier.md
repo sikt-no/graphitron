@@ -577,12 +577,12 @@ The trigger rejects payloads where more than one field has an
 `@table`-mapped element type, with `Rejected("ambiguous data field: both
 'X' and 'Y' have @table-mapped elements; passthrough payloads admit
 exactly one @table-element data field; multi-@table-element shapes are
-tracked under R121")`. Multi-`@table`-element payloads form the
+tracked under R122")`. Multi-`@table`-element payloads form the
 compound-mutation pattern (parent entity row + child normalised rows in
-one INSERT) covered by R121; R75's structural choices (single `dataElement`
+one INSERT) covered by R122; R75's structural choices (single `dataElement`
 on `PassthroughInfo`, `inner: DmlTableField` on `MutationFieldWithSlots`,
 single `IdentityPassthrough` capability) do not block that future
-direction. R121's spec lifts `PassthroughInfo` to a sealed sub-taxonomy
+direction. R122's spec lifts `PassthroughInfo` to a sealed sub-taxonomy
 (`Single | Compound`) and adds compound permits to `DmlTableField`; the
 existing `MutationFieldWithSlots` wrapper covers compound carriers
 without modification.
@@ -652,7 +652,7 @@ field that returns a passthrough payload with non-data slots needs the
 same `DataFetcherResult.localContext(slots)` wrap, regardless of whether
 the underlying DML is INSERT / UPDATE / DELETE / UPSERT (and regardless,
 in future, of whether the mutation is single-table or compound per
-R121). Lifting the concern into a single wrapper record keeps the DML
+R122). Lifting the concern into a single wrapper record keeps the DML
 carrier records flat and makes the wrap-or-not fork visible in the type
 system rather than as a `slots.isEmpty()` predicate the emitter forks on.
 
@@ -682,7 +682,7 @@ constant dedup, etc.) gain one new switch arm that recurses into
 `inner`. The wrap concern lives at exactly one site (the DML emitter's
 top-level dispatch); it does not propagate as a per-kind branch.
 
-Forward direction: R121 (compound mutations, parent + child rows in
+Forward direction: R122 (compound mutations, parent + child rows in
 one INSERT) adds new permits to `DmlTableField`. The wrapper covers
 them without modification because `inner: DmlTableField` accepts any
 DML kind; compound carriers wrap exactly the same way as the existing
@@ -772,9 +772,9 @@ intermediate state.
   directly.
 - **Slot fields with `@table` element type.** The trigger forbids more
   than one `@table`-mapped field; multi-`@table`-element payloads form
-  the compound-mutation pattern tracked under R121 (parent entity row +
+  the compound-mutation pattern tracked under R122 (parent entity row +
   child normalised rows in one INSERT) and fall back to authored
-  carriers (`@record(record: {className: ...})`) until R121 ships.
+  carriers (`@record(record: {className: ...})`) until R122 ships.
 - **Slot fields with `@record` element type.** Phase 3 territory; the
   trigger rejects them at admission.
 
@@ -793,7 +793,7 @@ over `DmlKind` where applicable):
   fields yield `Rejected("ambiguous data field: both 'X' and 'Y' have
   @table-mapped elements; passthrough payloads admit exactly one
   @table-element data field; multi-@table-element shapes are tracked
-  under R121")`.
+  under R122")`.
 - `payload_slotWithRecordElement_returnsRejected`: slot field with
   `@record`-element type yields `Rejected("slot field 'X' has
   @record-mapped element 'Y'; Phase 3 covers @record-element data,

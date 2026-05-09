@@ -1,5 +1,5 @@
 ---
-id: R121
+id: R122
 title: "Compound mutations: parent entity row + child normalised rows in one INSERT"
 status: Backlog
 bucket: architecture
@@ -47,7 +47,7 @@ for plain SDL payload types. R75's Phase 2 trigger admits one
 slot fields; multi-`@table`-element payloads are explicitly rejected with
 a per-condition message that names the trigger criterion.
 
-R121 widens that rejection: the trigger admits multiple `@table`-element
+R122 widens that rejection: the trigger admits multiple `@table`-element
 fields when they form a parent-child structure with declared FK
 relationships. The PassthroughInfo record lifts to a sealed sub-taxonomy
 (per the "Sub-taxonomies for resolution outcomes" principle): a `Single`
@@ -85,7 +85,7 @@ new sealed permit on `DmlTableField`) without modification.
   surface a per-child error in the localContext slots (only after R75
   Phase 2's slot-population mechanism lands)?
 
-## Out of scope (R121-internal)
+## Out of scope (R122-internal)
 
 - **Compound UPDATE / DELETE / UPSERT.** The pattern generalises (update
   parent + update children, delete cascade, etc.) but the MVP scope is
