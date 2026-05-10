@@ -1,7 +1,7 @@
 ---
 id: R38
 title: "Reshape `BatchKey` into `SourceKey` + unify the rows-method seam"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -80,6 +80,26 @@ Five permits in R38. R75 adds a sixth (`ResultRowWalk` — walk a
 `Result<RecordN>` from upstream DML); that addition lives in R75's spec, not
 R38's. R38's job is the foundation that makes R75's permit a one-line
 addition rather than a 12th `BatchKey` permit.
+
+The five permits describe a uniform axis: *the rows-method body's input
+contract* — what data the body reads to produce its output. For SQL-side
+bodies (`ColumnRead` / `AccessorCall` / `SourceRowsCall`), the input is
+parent-side data; for service-side bodies (`ServiceTableRecord` /
+`ServiceUntypedRecord`), the input is the service-return shape. Every
+dispatch site (rows-method body, validator invariant, classifier projection)
+treats `Reader` as "body input contract", not as "where the data comes from"
+— the body emitter only ever needs the contract.
+
+The projection is field-shape-driven, not `BatchKey`-permit-driven. R75's
+Fork B mapping table covers the parent-side half (today's eleven `BatchKey`
+permits onto `ColumnRead` / `AccessorCall` / `SourceRowsCall`). The
+service-side half lands by return-type classification, on the same axis
+`ServiceCatalog.reflectServiceMethod` already classifies on: `ServiceTableField`
+whose `ReturnType` is `TableBoundReturnType` projects to
+`ServiceTableRecord(recordType)` carrying the table's generated jOOQ Record
+class; `ServiceRecordField` whose `ReturnType` is `ResultReturnType` or scalar
+projects to `ServiceUntypedRecord`. The same `BatchKey.ParentKeyed` permit can
+land on any of the five Reader permits depending on field type.
 
 ### `SourceRow`
 
@@ -351,11 +371,18 @@ The args/source split is intact today. R38 doesn't touch the args side.
   post-flip.
 
 **Compilation-tier:** existing `graphitron-sakila-example` fixtures compile
-unchanged; emitted source diffs to zero modulo the empty-input gate
-non-change.
+unchanged. With Phase 2's blast radius (model reshape + emitter consolidation
+in one PR), classifier-projection fidelity is the failure mode; compilation
+against real jOOQ catches a faulty projection as a `*Fetchers.java` compile
+error rather than a runtime surprise. The byte-identity claim ("emitted source
+diffs to zero modulo the empty-input gate non-change") is enforced
+structurally by the three-tier passing build — body-string assertions are
+banned by the principles, so structural intent is not a code-shape test.
 
 **Execution-tier:** all existing execution-tier tests pass unchanged. The
 reshape is an internal model refactor; user-visible behaviour is fixed.
+Combined with compilation-tier, this is the safety net for any
+classifier-projection drift the unit and structural-pin tests miss.
 
 **Audit-tier:** new load-bearing classifier checks declared per `Reader`
 invariant. The audit framework verifies each `@LoadBearingClassifierCheck` is
