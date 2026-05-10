@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.List;
@@ -340,25 +341,28 @@ class GeneratorUtils {
 
     /**
      * Companion to {@link #buildKeyExtraction} for single-cardinality
-     * {@code @splitQuery} fetchers where the BatchKey's columns sit on the parent's FK side.
+     * {@code @splitQuery} fetchers where the SourceKey's columns sit on the parent's FK side.
      * Extracts each key column into a typed local and returns {@code CompletableFuture.completedFuture(null)}
      * before building the {@code RowN} key if any component is {@code null} — a {@code NULL} FK
      * on the parent can never match {@code terminal.pk = parentInput.fk_value}, so dispatching
      * to the DataLoader is a wasted round-trip.
      *
-     * <p>Only the {@link BatchKey.RowKeyed} variant is handled; single-cardinality
-     * {@code @splitQuery} on a {@code @table} parent is the only caller today.
+     * <p>Only {@link SourceKey.Wrap.Row} + {@link SourceKey.Reader.ColumnRead} reaches here
+     * (single-cardinality {@code @splitQuery} on a {@code @table} parent is the only caller
+     * today). The wrap check is asserted at the entry point; the reader narrowing rides on the
+     * call-site invariant ({@code @splitQuery} on a table-backed parent projects to
+     * {@code ColumnRead}).
      */
-    static CodeBlock buildKeyExtractionWithNullCheck(BatchKey batchKey, TableRef parentTable) {
-        if (!(batchKey instanceof BatchKey.RowKeyed rk)) {
+    static CodeBlock buildKeyExtractionWithNullCheck(SourceKey sourceKey, TableRef parentTable) {
+        if (!(sourceKey.wrap() instanceof SourceKey.Wrap.Row)) {
             throw new IllegalArgumentException(
-                "buildKeyExtractionWithNullCheck supports BatchKey.RowKeyed only, got "
-                + batchKey.getClass().getSimpleName());
+                "buildKeyExtractionWithNullCheck supports SourceKey.Wrap.Row only, got "
+                + sourceKey.wrap().getClass().getSimpleName());
         }
         var tablesClass = parentTable.constantsClass();
         String tableField = parentTable.javaFieldName();
-        List<ColumnRef> pkCols = rk.parentKeyColumns();
-        TypeName keyType = batchKey.keyElementType();
+        List<ColumnRef> pkCols = sourceKey.columns();
+        TypeName keyType = sourceKey.keyElementType();
         var out = CodeBlock.builder();
         var rowArgs = CodeBlock.builder();
         var nullCheck = CodeBlock.builder();
@@ -385,28 +389,30 @@ class GeneratorUtils {
 
     /**
      * Emits the {@code RowN<...> key = ...} or {@code RecordN<...> key = ...} statement for a
-     * {@code @table}-parent {@code @splitQuery} fetcher. Parameter narrowed to
-     * {@link BatchKey.ParentKeyed}: the four catalog-resolvable permits are the only routes
-     * here, and the {@link BatchKey.LifterKeyed} permits are excluded by the type system, not by a
-     * defensive {@code IllegalStateException} arm. The row-vs-record axis is the developer's
-     * source-shape choice (Row1 source classifies to {@link BatchKey.RowKeyed} /
-     * {@link BatchKey.MappedRowKeyed}; Record1 source to {@link BatchKey.RecordKeyed} /
-     * {@link BatchKey.MappedRecordKeyed}; typed {@code TableRecord} source to
-     * {@link BatchKey.TableRecordKeyed} / {@link BatchKey.MappedTableRecordKeyed}); the emit
-     * forks accordingly: {@code DSL.row((Record) env.getSource().get(table.col), ...)} for Row
-     * arms, {@code ((Record) env.getSource()).into(table.col, ...)} for RecordN arms,
-     * {@code ((Record) env.getSource()).into(Tables.X)} for typed-{@code TableRecord} arms.
-     * The resolver-side parent-table consistency check guarantees the variant's
-     * {@code elementClass} matches the parent's table, so the extraction's projection target
-     * is the parent table itself.
+     * {@code @table}-parent {@code @splitQuery} fetcher. The wrap-axis is the developer's
+     * source-shape choice:
+     * <ul>
+     *   <li>{@link SourceKey.Wrap.Row} →
+     *       {@code DSL.row((Record) env.getSource().get(table.col), ...)}</li>
+     *   <li>{@link SourceKey.Wrap.Record} →
+     *       {@code ((Record) env.getSource()).into(table.col, ...)}</li>
+     *   <li>{@link SourceKey.Wrap.TableRecord} →
+     *       {@code ((Record) env.getSource()).into(Tables.X)}</li>
+     * </ul>
+     *
+     * <p>The container axis (positional list vs mapped set) is orthogonal and not consulted
+     * here: the per-key extraction emits one key value regardless of how the DataLoader frames
+     * the batch as a {@code List<K>} or {@code Set<K>}. The resolver-side parent-table
+     * consistency check guarantees the {@code TableRecord} arm's class matches the parent's
+     * table, so the extraction's projection target is the parent table itself.
      */
-    static CodeBlock buildKeyExtraction(BatchKey.ParentKeyed batchKey, TableRef parentTable) {
-        TypeName keyType = batchKey.keyElementType();
+    static CodeBlock buildKeyExtraction(SourceKey sourceKey, TableRef parentTable) {
+        TypeName keyType = sourceKey.keyElementType();
         var tablesClass = parentTable.constantsClass();
         String tableField = parentTable.javaFieldName();
-        List<ColumnRef> pkCols = batchKey.parentKeyColumns();
-        return switch (batchKey) {
-            case BatchKey.RowKeyed _, BatchKey.MappedRowKeyed _ -> {
+        List<ColumnRef> pkCols = sourceKey.columns();
+        return switch (sourceKey.wrap()) {
+            case SourceKey.Wrap.Row r -> {
                 var rowArgs = CodeBlock.builder();
                 for (int i = 0; i < pkCols.size(); i++) {
                     if (i > 0) rowArgs.add(", ");
@@ -417,7 +423,7 @@ class GeneratorUtils {
                     .addStatement("$T key = $T.row($L)", keyType, DSL, rowArgs.build())
                     .build();
             }
-            case BatchKey.RecordKeyed _, BatchKey.MappedRecordKeyed _ -> {
+            case SourceKey.Wrap.Record r -> {
                 var intoArgs = CodeBlock.builder();
                 for (int i = 0; i < pkCols.size(); i++) {
                     if (i > 0) intoArgs.add(", ");
@@ -427,7 +433,7 @@ class GeneratorUtils {
                     .addStatement("$T key = (($T) env.getSource()).into($L)", keyType, RECORD, intoArgs.build())
                     .build();
             }
-            case BatchKey.TableRecordKeyed _, BatchKey.MappedTableRecordKeyed _ -> CodeBlock.builder()
+            case SourceKey.Wrap.TableRecord tr -> CodeBlock.builder()
                 .addStatement("$T key = (($T) env.getSource()).into($T.$L)",
                     keyType, RECORD, tablesClass, tableField)
                 .build();
