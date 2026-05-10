@@ -1,8 +1,12 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.JavaFile;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -12,8 +16,10 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -35,22 +41,22 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>The cross-schema FK traversal: a {@code Gadget.widget} field whose
  *       {@code @reference(path:[{key:"gadget_widget_id_fkey"}])} routes through the
  *       FK-holder schema's {@code Keys} class ({@code multischema_b.Keys}), not the
- *       FK-target schema's.</li>
+ *       FK-target schema's, and whose target table reference is
+ *       {@code multischema_a.tables.Widget}.</li>
  * </ul>
  *
- * <p>Assertions land at the pipeline-tier shape: {@link no.sikt.graphitron.rewrite.model.TableRef#tableClass()}
- * for the table-class wiring, {@link no.sikt.graphitron.rewrite.model.ForeignKeyRef#keysClass()}
- * for the cross-schema FK, and the rendered {@link JavaFile} text for the structural
- * fingerprint of {@code TypeClass} / {@code QueryConditions} emission. The text-substring
- * search subsumes "imports list" inspection because JavaPoet inlines an FQN as a fully-
- * qualified reference whenever the simple class name collides with the enclosing TypeSpec's
- * own name (e.g. the {@code Widget} TypeSpec inlining {@code multischema_a.tables.Widget}
- * rather than importing it). What matters for the regression signal is that the schema
- * segment survives into emission somewhere; whether the survival path is import or inline
- * is a JavaPoet implementation detail and not load-bearing for R78. Body-content scanning
- * for behaviour is still banned at every tier (per {@code rewrite-design-principles.adoc}
- * "Pipeline tests are the primary behavioural tier"); these assertions are over the
- * structural FQN-shape fingerprint, not over generated-method behaviour.
+ * <p>Assertions land at two typed surfaces. First: model-level ({@link no.sikt.graphitron.rewrite.model.TableRef}
+ * / {@link no.sikt.graphitron.rewrite.model.ForeignKeyRef} / {@link JoinStep.FkJoin}), which
+ * is the value the emitter consumes — every {@code ClassName} the generator emits flows from
+ * one of these slots, so model correctness propagates to emit correctness by construction.
+ * Second: structural emit-side ({@code TypeSpec.methodSpecs[].parameters[].type},
+ * {@code returnType}, {@code fieldSpecs[].type}, plus the parsed import list), walked through
+ * JavaPoet's typed graph. The pipeline tier bans code-string assertions over rendered method
+ * bodies (per {@code rewrite-design-principles.adoc} "Pipeline tests are the primary
+ * behavioural tier"); a substring scan over {@code JavaFile.toString()} would be that ban
+ * dressed up as FQN inspection. The typed-graph walk and the model assertions together cover
+ * what a regression that re-derives a {@code ClassName} from the bare {@code jooqPackage}
+ * could break, without crossing the line.
  */
 @PipelineTier
 class MultiSchemaPipelineTest {
@@ -97,7 +103,7 @@ class MultiSchemaPipelineTest {
         return TestSchemaHelper.buildSchema(SDL, multiSchemaContext());
     }
 
-    // ---- TableRef shape: schema-segmented tableClass per resolution mode ----
+    // ---- Model-level: schema-segmented TableRef.tableClass per resolution mode ----
 
     @Test
     void widgetTable_resolvesUnqualifiedToSchemaSegmentedFqn() {
@@ -135,85 +141,89 @@ class MultiSchemaPipelineTest {
             .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_b", "Tables"));
     }
 
-    // ---- ForeignKeyRef shape: cross-schema FK routes to FK-holder's Keys ----
+    // ---- Model-level: cross-schema FK routes to FK-holder Keys, target lands on FK-target schema ----
 
     @Test
-    void gadgetWidget_fkReferenceRoutesToFkHolderSchemaKeysClass() {
+    void gadgetWidget_fkReferenceRoutesToFkHolderKeysAndFkTargetTableClass() {
         var schema = buildSchema();
         var widgetField = (ChildField.TableField) schema.field("Gadget", "widget");
         var firstHop = (JoinStep.FkJoin) widgetField.joinPath().get(0);
 
-        // The FK constraint is held on multischema_b (gadget's schema), targets multischema_a
-        // (widget's schema). The Keys-class lookup routes to the FK-holder side (B), not the
-        // target side (A) — this is the R78 bug case: a per-emit-site
-        // ClassName.get(jooqPackage, "Keys") would compile to root.Keys (no Keys class in
-        // root under multi-schema codegen).
+        // Keys class: FK constraint is held on multischema_b (gadget's schema); the lookup
+        // routes to the FK-holder side (B), not the target side (A). The R78 bug case is a
+        // per-emit-site `ClassName.get(jooqPackage, "Keys")` that compiles to root.Keys —
+        // a class which does not exist under multi-schema codegen.
         assertThat(firstHop.fk().keysClass())
             .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_b", "Keys"));
         // Stock JavaGenerator names the constant <TABLE>__<FK_NAME> uppercased; pin the
         // upper-cased SQL constraint name as the suffix to avoid coupling to the table prefix.
         assertThat(firstHop.fk().constantName()).endsWith("GADGET_WIDGET_ID_FKEY");
+
+        // Target-table class: every emitter that traverses the FK reads
+        // firstHop.targetTable().tableClass() to bind the joined-table alias. R78's bug
+        // class includes this surface: a regression that re-derives the target table's
+        // ClassName from the bare jooqPackage emits root.tables.Widget here.
+        assertThat(firstHop.targetTable().tableClass())
+            .isEqualTo(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
     }
 
-    // ---- Structural fingerprint: schema-segmented FQNs survive into rendered emission ----
+    // ---- Typed-graph emit walk: every fixture-bound ClassName lives under a schema sub-package ----
 
     @Test
-    void typeClasses_renderedTextCarriesSchemaSegmentedTableClasses() {
+    void everyFixtureBoundClassNameInEmittedTypeSpecsLivesUnderASchemaSubPackage() {
         var schema = buildSchema();
-        // Each TypeClass references its own backing jOOQ table as the second arg of the
-        // generated `$fields` method; schema-segmented FQNs must appear in the rendered text
-        // (whether as imports or as inline FQNs — JavaPoet inlines when the GraphQL TypeSpec
-        // name collides with the jOOQ class simple name, e.g. `Widget` typeclass inlining
-        // `<root>.multischema_a.tables.Widget`).
-        assertThat(rendered(typeClass(schema, "Widget")))
-            .contains(MULTI_JOOQ_PACKAGE + ".multischema_a.tables.Widget");
-        assertThat(rendered(typeClass(schema, "Event")))
-            .contains(MULTI_JOOQ_PACKAGE + ".multischema_a.tables.Event");
-        assertThat(rendered(typeClass(schema, "Gadget")))
-            .contains(MULTI_JOOQ_PACKAGE + ".multischema_b.tables.Gadget");
+
+        for (TypeSpec spec : allEmittedTypeSpecs(schema)) {
+            for (ClassName cn : referencedClassNames(spec)) {
+                if (!cn.canonicalName().startsWith(MULTI_JOOQ_PACKAGE + ".")) continue;
+                // Every multi-schema fixture reference must be under multischema_a.* or
+                // multischema_b.*; the bare-root forms (jooqPackage.tables.X, jooqPackage.Keys,
+                // jooqPackage.Tables) are exactly the R78 bug shape and must never appear.
+                assertThat(cn.packageName())
+                    .as("ClassName %s in TypeSpec %s lives at %s; expected a multischema_a / "
+                        + "multischema_b sub-package",
+                        cn.canonicalName(), spec.name(), cn.packageName())
+                    .startsWith(MULTI_JOOQ_PACKAGE + ".multischema_");
+            }
+        }
+    }
+
+    // ---- Typed-graph emit walk: each shape case lands its expected ClassName somewhere ----
+
+    @Test
+    void typeClasses_emitTheirBackingTableClassAsAReachableClassName() {
+        var schema = buildSchema();
+        // Each TypeClass takes its backing jOOQ table as the second arg of `$fields`; the
+        // ClassName is reachable from the TypeSpec graph regardless of whether JavaPoet
+        // imports it (no name collision, e.g. QueryConditions) or inlines it (collision with
+        // the GraphQL type's own simple name, e.g. the Widget typeclass referencing the jOOQ
+        // Widget). Either way the typed walk finds the FQN.
+        assertThat(referencedClassNames(typeClass(schema, "Widget")))
+            .contains(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
+        assertThat(referencedClassNames(typeClass(schema, "Event")))
+            .contains(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Event"));
+        assertThat(referencedClassNames(typeClass(schema, "Gadget")))
+            .contains(ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_b.tables", "Gadget"));
     }
 
     @Test
-    void gadgetTypeClass_crossSchemaFkInlineProjectionCarriesBothSchemas() {
-        // Gadget.$fields emits the `widget` field as an inline `multiset(select(...))`
-        // referencing the FK target table (multischema_a.widget) plus the schema-A Tables
-        // constants class. The cross-schema FK traversal is the case R78 fixes: a regression
-        // that re-derives the ClassName from the bare jooqPackage emits the wrong segment
-        // (root.tables.Widget / root.Tables) here.
-        var rendered = rendered(typeClass(buildSchema(), "Gadget"));
-        assertThat(rendered)
-            .contains(MULTI_JOOQ_PACKAGE + ".multischema_b.tables.Gadget")
-            .contains(MULTI_JOOQ_PACKAGE + ".multischema_a.tables.Widget")
-            .contains(MULTI_JOOQ_PACKAGE + ".multischema_a.Tables");
-
-        // Negative half of the fingerprint: nothing under the multi-schema fixture should
-        // land at the root package. The R78 bug emitted `<root>.tables.Widget` here; the
-        // assertions above pass when the FQN is correct, but we also pin the wrong shape's
-        // absence so a future regression that adds the schema segment to an existing miss
-        // is caught even if it leaves the right shape in place.
-        assertThat(rendered)
-            .doesNotContain(" " + MULTI_JOOQ_PACKAGE + ".tables.Widget")
-            .doesNotContain(" " + MULTI_JOOQ_PACKAGE + ".tables.Gadget")
-            .doesNotContain(" " + MULTI_JOOQ_PACKAGE + ".Tables ");
-    }
-
-    @Test
-    void queryConditions_renderedImportsCarrySchemaSegmentedTableClassesForAllThreeTables() {
+    void queryConditions_emitsAllThreeBackingTableClassesAsReachableClassNames() {
         var schema = buildSchema();
         var queryConditions = QueryConditionsGenerator.generate(schema, MULTI_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals("QueryConditions"))
             .findFirst()
             .orElseThrow();
 
-        // QueryConditions has no name collision with the jOOQ table classes (its own simple
-        // name is `QueryConditions`), so the three table classes import cleanly. This is the
-        // classic "imports list as structural fingerprint" form: all three schema-segmented
-        // FQNs land as `import` lines, one per Query-root return type.
-        var imports = renderedImports(queryConditions);
-        assertThat(imports)
-            .contains(MULTI_JOOQ_PACKAGE + ".multischema_a.tables.Widget")
-            .contains(MULTI_JOOQ_PACKAGE + ".multischema_a.tables.Event")
-            .contains(MULTI_JOOQ_PACKAGE + ".multischema_b.tables.Gadget");
+        // QueryConditions has one method per Query-root that returns a table-bound type; each
+        // method takes that type's backing jOOQ table as a parameter. The three Query roots
+        // (widgets / events / gadgets) span both schemas, so all three schema-segmented
+        // ClassNames surface as parameter types — picked up by the typed walk over method
+        // parameters (no string scanning, no JavaPoet import-vs-inline coin-flip).
+        assertThat(referencedClassNames(queryConditions))
+            .contains(
+                ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"),
+                ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_a.tables", "Event"),
+                ClassName.get(MULTI_JOOQ_PACKAGE + ".multischema_b.tables", "Gadget"));
     }
 
     // ---- helpers ----
@@ -226,26 +236,99 @@ class MultiSchemaPipelineTest {
     }
 
     /**
-     * Renders the {@link TypeSpec} as a fully-qualified Java source string under the same
-     * {@code outputPackage} the production pipeline writes it to. The text contains both
-     * import declarations and inline FQN references (where JavaPoet preferred inlining over
-     * importing); pipeline assertions search the combined surface for schema-segmented FQNs.
+     * Every {@link TypeSpec} the multischema-fixture SDL produces across the three emit
+     * surfaces R83 covers (TypeClass + QueryConditions). The pipeline test's negative-form
+     * sweep walks every spec; positive-form tests reach in for specific ones.
      */
-    private static String rendered(TypeSpec spec) {
-        return JavaFile.builder(MULTI_OUTPUT_PACKAGE, spec).indent("    ").build().toString();
+    private static List<TypeSpec> allEmittedTypeSpecs(GraphitronSchema schema) {
+        var out = new java.util.ArrayList<TypeSpec>();
+        out.addAll(TypeClassGenerator.generate(schema, MULTI_OUTPUT_PACKAGE));
+        out.addAll(QueryConditionsGenerator.generate(schema, MULTI_OUTPUT_PACKAGE));
+        return out;
     }
 
     /**
-     * Parses {@code import <fqn>;} lines out of a rendered {@link TypeSpec}. Useful when the
-     * TypeSpec's own simple name is known not to collide with anything it references, so all
-     * referenced classes import cleanly (e.g. {@code QueryConditions} as a simple name).
+     * Every {@link ClassName} reachable from the TypeSpec's structurally-typed surfaces
+     * (method return types, parameter types, declared exceptions, field types) plus the
+     * parsed import list of the rendered {@link JavaFile}. The structurally-typed half
+     * covers parameters and field declarations regardless of JavaPoet's import-vs-inline
+     * decision; the imports half captures classes referenced only inside method bodies
+     * (CodeBlock {@code $T} substitutions) when JavaPoet imported them. ClassNames that
+     * appear only inline inside CodeBlocks are not directly reachable here, but every
+     * such reference flows from a typed model slot ({@link no.sikt.graphitron.rewrite.model.TableRef#tableClass()},
+     * {@link no.sikt.graphitron.rewrite.model.ForeignKeyRef#keysClass()},
+     * {@link JoinStep.FkJoin#targetTable()}) whose correctness is pinned by the model-level
+     * assertions above; correctness propagates from the model into the emit by construction.
      */
-    private static List<String> renderedImports(TypeSpec spec) {
-        return rendered(spec).lines()
+    private static Set<ClassName> referencedClassNames(TypeSpec spec) {
+        var out = new LinkedHashSet<ClassName>();
+        for (var method : spec.methodSpecs()) {
+            collectClassNames(method.returnType(), out);
+            for (var param : method.parameters()) {
+                collectClassNames(param.type(), out);
+            }
+            for (var ex : method.exceptions()) {
+                collectClassNames(ex, out);
+            }
+        }
+        for (var field : spec.fieldSpecs()) {
+            collectClassNames(field.type(), out);
+        }
+        out.addAll(parsedImports(spec));
+        return out;
+    }
+
+    /**
+     * Recursively unpacks a {@link TypeName} into the concrete {@link ClassName}s it
+     * mentions: parameterised type's raw + arguments, array's component type, wildcard's
+     * upper and lower bounds. Primitive and void TypeNames are silently skipped (they
+     * carry no FQN of interest to the multi-schema sweep).
+     */
+    private static void collectClassNames(TypeName type, Set<ClassName> out) {
+        if (type == null) return;
+        switch (type) {
+            case ClassName cn -> out.add(cn);
+            case ParameterizedTypeName pt -> {
+                out.add(pt.rawType());
+                for (var arg : pt.typeArguments()) collectClassNames(arg, out);
+            }
+            case ArrayTypeName at -> collectClassNames(at.componentType(), out);
+            case WildcardTypeName wt -> {
+                for (var b : wt.upperBounds()) collectClassNames(b, out);
+                for (var b : wt.lowerBounds()) collectClassNames(b, out);
+            }
+            default -> {
+                // TypeVariableName / primitive / void — no concrete ClassName to surface.
+            }
+        }
+    }
+
+    /**
+     * Parses {@code import <fqn>;} lines out of the rendered {@link JavaFile} into typed
+     * {@link ClassName} values. Imports are a structurally-typed surface (one FQN per
+     * line, no body content), so parsing them is principle-aligned even though the carrier
+     * is a string.
+     */
+    private static List<ClassName> parsedImports(TypeSpec spec) {
+        String rendered = JavaFile.builder(MULTI_OUTPUT_PACKAGE, spec).indent("    ").build().toString();
+        return rendered.lines()
             .map(String::trim)
             .filter(l -> l.startsWith("import ") && l.endsWith(";"))
             .map(l -> l.substring("import ".length(), l.length() - 1))
             .map(l -> l.startsWith("static ") ? l.substring("static ".length()) : l)
+            .map(MultiSchemaPipelineTest::classNameFromCanonical)
             .toList();
+    }
+
+    /**
+     * Splits a canonical FQN into its package and simple-name halves and rebuilds it as a
+     * {@link ClassName}. Static imports of nested members (the {@code static }-prefixed
+     * import form) have already been stripped upstream, so the input is always a top-level
+     * type name.
+     */
+    private static ClassName classNameFromCanonical(String canonical) {
+        int dot = canonical.lastIndexOf('.');
+        if (dot < 0) return ClassName.get("", canonical);
+        return ClassName.get(canonical.substring(0, dot), canonical.substring(dot + 1));
     }
 }
