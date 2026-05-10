@@ -1,5 +1,8 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.rewrite.LoaderRegistrationResolver;
+import no.sikt.graphitron.rewrite.SourceKeyResolver;
+
 /**
  * A field that requires DataLoader setup — it has a batch key and a corresponding rows method.
  *
@@ -16,11 +19,35 @@ package no.sikt.graphitron.rewrite.model;
  * the same name the rows method uses when emitting its declaration. The contract is: the fetcher
  * and the rows method agree on this name. DataLoader-backed variants default to {@code rows<Name>};
  * service-backed variants override to {@code load<Name>} to mark the body as a service delegation.
- * The four SQL leaves keep their (now-redundant) {@code rows<Name>} overrides as documented
- * exceptions until R38 Phase 3 deletes them.
  */
 public interface BatchKeyField {
     BatchKey batchKey();
+
+    /**
+     * Singular per-field metadata projected from the classifier shape. Phase 3 (in progress)
+     * is folding consumer reads off the legacy {@link BatchKey} and onto this method; once the
+     * migration finishes, {@link #batchKey()} deletes and {@code sourceKey} / {@code
+     * loaderRegistration} become abstract record components on each {@link BatchKeyField}
+     * permit, populated at classifier time. The default-method delegation lets consumers
+     * migrate one site at a time without forcing every producer and test fixture to flip
+     * storage shape in a single change.
+     */
+    default SourceKey sourceKey() {
+        SourceKeyResolver.Resolved resolved = SourceKeyResolver.resolve(this);
+        if (resolved instanceof SourceKeyResolver.Resolved.Ok ok) return ok.key();
+        SourceKeyResolver.Resolved.Rejected rejected = (SourceKeyResolver.Resolved.Rejected) resolved;
+        throw new IllegalStateException(
+            "BatchKeyField.sourceKey: resolver rejected the field " + this.getClass().getSimpleName()
+            + " (no projection rule). " + rejected.message());
+    }
+
+    /**
+     * DataLoader container + dispatch projection for this field. Companion to {@link #sourceKey()};
+     * see that method's javadoc for the Phase 3 default-vs-abstract migration plan.
+     */
+    default LoaderRegistration loaderRegistration() {
+        return LoaderRegistrationResolver.resolve(this);
+    }
 
     /**
      * Method name shared by the rows method's declaration and the DataLoader fetcher's call site.
