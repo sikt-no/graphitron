@@ -288,6 +288,8 @@ API misfit surfaces here, not at the flip.
 - **`SourceKey`, `Reader`, `LoaderRegistration`** records in
   `no.sikt.graphitron.rewrite.model`. Compact-constructor invariants per
   `Reader`. Each invariant gets a `@LoadBearingClassifierCheck` declaration.
+  *(Phase 1a, shipped: model types + `BatchKeyField.rowsMethodName()` interface
+  default, `SourceKeyTest` + `LoaderRegistrationTest`.)*
 - **`SourceKeyResolver` + `LoaderRegistrationResolver`** in
   `no.sikt.graphitron.rewrite`, alongside `OrderByResolver` etc. Each ships
   per-`Reader` projection tests from a fixture classification context.
