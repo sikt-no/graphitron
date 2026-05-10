@@ -303,6 +303,16 @@ API misfit surfaces here, not at the flip.
   no predicate accessors on `RowsMethodBody`.
 - **`RowsMethodCall.batchLoaderLambda`**, single factory.
 - **`DataLoaderFetcherEmitter.build`**, single entry.
+  *(Phase 1c, shipped: `RowsMethodBody` (model package) carries opaque
+  `CodeBlock content()` per permit so the skeleton is decoupled from body
+  construction; `RowsMethodSkeleton` (generators package) owns the
+  declaration scaffolding (modifiers, parameters, return type, empty-input
+  gate for SQL permits, `DSLContext dsl` resolution) and dispatches body
+  framing per permit; `RowsMethodCall.batchLoaderLambda` folds the
+  keys-container axis onto `LoaderRegistration.container()`;
+  `DataLoaderFetcherEmitter.build` emits the unified DataFetcher with
+  `Invocation.{LOAD_ONE, LOAD_MANY}` deciding the loader-dispatch shape.
+  15 unit tests pin framing, container choice, and dispatch.)*
 - **Interface default** on `BatchKeyField`: `default String rowsMethodName()
   { return "rows" + capitalize(name()); }`. Javadoc tightened: replace
   "naming convention is determined by each implementing type independently"
