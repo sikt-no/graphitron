@@ -1,7 +1,7 @@
 ---
 id: R38
 title: "Reshape `BatchKey` into `SourceKey` + unify the rows-method seam"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 1
 theme: model-cleanup
@@ -10,7 +10,7 @@ depends-on: []
 
 # Reshape `BatchKey` into `SourceKey` + unify the rows-method seam
 
-`BatchKey` carries 11 permits across two sub-hierarchies. A `Mapped*` family
+`BatchKey` carries ten permits across two sub-hierarchies. A `Mapped*` family
 doubles them on a container axis (`newDataLoader` vs `newMappedDataLoader`); a
 `Lifter*` / `Accessor*` family doubles them again on a reader axis
 (`@sourceRows` lifter vs `@record` accessor vs catalog-FK column read). The
@@ -61,8 +61,8 @@ enum Cardinality { ONE, MANY }
 ```
 
 `target` is derivable from path/columns and exposed as a method, not stored.
-The R75 mapping table in `synthesize-payload-carrier.md` (Fork B resolution)
-shows the projection from today's 11 `BatchKey` permits onto the new shape.
+The full projection from today's ten `BatchKey` permits onto the new shape
+lives inline below under "`BatchKey` → `SourceKey` projection".
 
 ### `Reader` (sealed sub-level)
 
@@ -90,16 +90,67 @@ dispatch site (rows-method body, validator invariant, classifier projection)
 treats `Reader` as "body input contract", not as "where the data comes from"
 — the body emitter only ever needs the contract.
 
-The projection is field-shape-driven, not `BatchKey`-permit-driven. R75's
-Fork B mapping table covers the parent-side half (today's eleven `BatchKey`
-permits onto `ColumnRead` / `AccessorCall` / `SourceRowsCall`). The
-service-side half lands by return-type classification, on the same axis
-`ServiceCatalog.reflectServiceMethod` already classifies on: `ServiceTableField`
-whose `ReturnType` is `TableBoundReturnType` projects to
+The projection is field-shape-driven, not `BatchKey`-permit-driven. The
+implementing `BatchKeyField` permit is the determining axis for `Reader`; the
+same `BatchKey.ParentKeyed` permit can land on any of the five Reader permits
+depending on which field type carries it. Service-side fields classify on
+`ServiceCatalog.reflectServiceMethod`'s existing return-type axis:
+`ServiceTableField` (whose `ReturnType` is `TableBoundReturnType`) projects to
 `ServiceTableRecord(recordType)` carrying the table's generated jOOQ Record
-class; `ServiceRecordField` whose `ReturnType` is `ResultReturnType` or scalar
-projects to `ServiceUntypedRecord`. The same `BatchKey.ParentKeyed` permit can
-land on any of the five Reader permits depending on field type.
+class; `ServiceRecordField` (whose `ReturnType` is `ResultReturnType` or
+scalar) projects to `ServiceUntypedRecord`.
+
+### `BatchKey` → `SourceKey` projection
+
+Complete projection from today's ten `BatchKey` permits onto the new
+`(SourceKey, Reader, LoaderRegistration)` triple. The implementing
+`BatchKeyField` permit determines `Reader`; the `BatchKey` permit refines the
+SQL-side cases and drives `LoaderRegistration.container` and `SourceKey.wrap`.
+
+The Field × `BatchKey` axis is narrowly typed today: `SplitTableField` and
+`SplitLookupTableField` declare `BatchKey.RowKeyed` directly (catalog-FK only);
+`RecordTableField` and `RecordLookupTableField` declare
+`BatchKey.RecordParentBatchKey` (four-permit sub-seal: `RowKeyed`,
+`LifterLeafKeyed`, `LifterPathKeyed`, `AccessorKeyedSingle`,
+`AccessorKeyedMany`); `ServiceTableField` and `ServiceRecordField` declare
+`BatchKey.ParentKeyed` (six-permit sub-seal driven by the developer's
+`@service`-source declaration).
+
+| `BatchKeyField` permit (today) | `BatchKey` permit (today)                  | `Reader` (new)                                    |
+| ------------------------------ | ------------------------------------------ | ------------------------------------------------- |
+| `SplitTableField`              | `RowKeyed`                                 | `ColumnRead`                                      |
+| `SplitLookupTableField`        | `RowKeyed`                                 | `ColumnRead`                                      |
+| `RecordTableField`             | `RowKeyed`                                 | `ColumnRead`                                      |
+| `RecordTableField`             | `LifterLeafKeyed`, `LifterPathKeyed`       | `SourceRowsCall(lifter)`                          |
+| `RecordTableField`             | `AccessorKeyedSingle`, `AccessorKeyedMany` | `AccessorCall(accessor)`                          |
+| `RecordLookupTableField`       | (same three rows as `RecordTableField`)    | (same)                                            |
+| `ServiceTableField`            | (any `ParentKeyed` permit; six)            | `ServiceTableRecord(returnType.recordType())`     |
+| `ServiceRecordField`           | (any `ParentKeyed` permit; six)            | `ServiceUntypedRecord`                            |
+
+`LoaderRegistration.container` projects orthogonally on the `BatchKey` axis:
+`MappedRowKeyed`, `MappedRecordKeyed`, `MappedTableRecordKeyed`, and
+`AccessorKeyedMany` (the `loader.loadMany` contract) → `MAPPED_SET`; all other
+permits → `POSITIONAL_LIST`.
+
+`SourceKey.cardinality` follows the field's wrapper
+(`returnType().wrapper().isList()` → `MANY`, scalar/single → `ONE`), with
+`AccessorKeyedMany` forcing `MANY` (per-element walk against the parent record's
+list).
+
+`SourceKey.wrap` follows today's `BatchKey.keyElementType()` enumeration:
+`RowN<…>` → `ROW` (`RowKeyed`, `MappedRowKeyed`, `LifterLeafKeyed`,
+`LifterPathKeyed`); `RecordN<…>` → `RECORD` (`RecordKeyed`, `MappedRecordKeyed`,
+`AccessorKeyedSingle`, `AccessorKeyedMany`); typed `TableRecord` subtype →
+`TABLE_RECORD` (`TableRecordKeyed`, `MappedTableRecordKeyed`, plus the
+service-side `ServiceTableRecord` Reader path).
+
+`SourceKey.path` and `SourceKey.columns` derive from existing data: the
+catalog-FK arms (`RowKeyed`) contribute `parentKeyColumns` as `columns` with
+empty `path`; the lifter arms contribute the lifter's parent-side columns and
+the lifted `JoinStep`s as `path`; the accessor arms contribute the accessor's
+element-PK `targetKeyColumns` with the `LiftedHop` as a single-element `path`.
+Service-side permits derive `path` and `columns` from the existing `joinPath`
+and the service-source declaration's column shape.
 
 ### `SourceRow`
 
@@ -288,7 +339,7 @@ see below).
 Delete the orphaned hierarchy and the orphaned scaffolding. Mechanical, no
 design.
 
-- **The 11 `BatchKey` permits** in their two sub-hierarchies. Replaced by
+- **The ten `BatchKey` permits** in their two sub-hierarchies. Replaced by
   `SourceKey` + `Reader`.
 - **`BatchKeyField.batchKey()` accessor.** Replaced by `sourceKey()` +
   `loaderRegistration()`.
@@ -311,7 +362,7 @@ End state: `SourceKey` + `Reader` is the source-side dispatch axis;
 `LoaderRegistration` carries DataLoader identity; one place to look for each
 of naming, declaration, call site, fetcher dance. The SQL-vs-service
 distinction lives only in the five `RowsMethodBody` permits. Net type-identity
-count goes from 11 to 1 + 5 = 6.
+count goes from 10 to 1 + 5 = 6.
 
 ## Out of scope
 
@@ -356,10 +407,10 @@ The args/source split is intact today. R38 doesn't touch the args side.
   messages.
 - **`LoaderRegistrationResolverTest`** — projection per field shape produces
   the expected container kind.
-- **Classifier regression pin** — for each of the 11 `BatchKey` permits, a
-  fixture asserts the new classifier produces the expected `SourceKey` per
-  the mapping in R75's Fork B resolution. Pin survives until Phase 3 deletes
-  `BatchKey`.
+- **Classifier regression pin** — for each `(BatchKeyField permit, BatchKey
+  permit)` row in the projection table above, a fixture asserts the new
+  classifier produces the expected `(SourceKey, Reader, LoaderRegistration)`
+  triple. Pin survives until Phase 3 deletes `BatchKey`.
 - **Rows-method emit pin per `Reader` sub-permit.** Each `Reader` permit
   drives a structural assertion on the emitted method body (signature, gate
   presence, body shape).
@@ -417,7 +468,7 @@ consumed by at least one `@DependsOnClassifierCheck` on an emit site.
 
 **Phase 3:**
 
-- 11 `BatchKey` permits deleted. Net type-identity count: 1 `SourceKey` +
+- Ten `BatchKey` permits deleted. Net type-identity count: 1 `SourceKey` +
   5 `Reader` sub-permits = 6.
 - `LoaderDispatch` enum deleted.
 - Four `rowsMethodName()` overrides deleted.
