@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RejectionKind;
+import no.sikt.graphitron.rewrite.SourceKeyResolver;
 import no.sikt.graphitron.rewrite.model.AccessorRef;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
@@ -13,6 +14,7 @@ import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -46,15 +48,15 @@ class InterfaceFieldValidationTest {
             new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
 
     /**
-     * Single-PK BatchKey for a parent table — under R102+ the validator reads parent-key arity
-     * off {@code field.parentKey().preludeKeyColumns()}, so test fixtures must publish a real
-     * BatchKey. Empty-PK parents are unreachable through this validator: {@code RowKeyed}'s
-     * canonical constructor rejects empty key lists, and the classifier routes empty-PK parents
-     * through {@code UnclassifiedField} so {@code InterfaceField} / {@code UnionField} never
-     * carry one.
+     * Single-PK parent {@link SourceKey} for a parent table — under R38 Phase 3 the validator
+     * reads parent-key arity off {@code field.parentSourceKey().columns()}, so test fixtures
+     * must publish a real {@link SourceKey}. Empty-PK parents are unreachable through this
+     * validator: the classifier routes empty-PK parents through {@code UnclassifiedField} so
+     * {@code InterfaceField} / {@code UnionField} never carry one.
      */
-    private static BatchKey.RecordParentBatchKey rowKeyedFor(TableRef table) {
-        return new BatchKey.RowKeyed(table.primaryKeyColumns());
+    private static SourceKey rowKeyedFor(TableRef table) {
+        return SourceKeyResolver.resolveRecordParentForPolymorphic(
+            new BatchKey.RowKeyed(table.primaryKeyColumns()));
     }
 
     /**
@@ -214,12 +216,13 @@ class InterfaceFieldValidationTest {
             ClassName.bestGuess("com.example.Parent"), "occupants",
             ClassName.bestGuess("com.example.WideRecord"));
         BatchKey.RecordParentBatchKey parentKey = new BatchKey.AccessorKeyedMany(hop, accessor);
+        SourceKey parentSourceKey = SourceKeyResolver.resolveRecordParentForPolymorphic(parentKey);
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Customer", CUSTOMER, null),
             new ParticipantRef.TableBound("Staff", STAFF, null));
         var field = new InterfaceField("PojoParent", "occupants", null,
             new ReturnTypeRef.PolymorphicReturnType("AddressOccupant", new FieldWrapper.List(false, false)),
-            participants, Map.of("Customer", List.of(), "Staff", List.of()), parentKey, resultTypeFor(wideHub));
+            participants, Map.of("Customer", List.of(), "Staff", List.of()), parentSourceKey, resultTypeFor(wideHub));
         assertHasKind(validate(field), RejectionKind.AUTHOR_ERROR,
             "Field 'PojoParent.occupants': multi-table interface/union child field whose parent "
                 + "type 'PojoParent' has a parent key with 22 columns exceeds jOOQ's typed Row22 "

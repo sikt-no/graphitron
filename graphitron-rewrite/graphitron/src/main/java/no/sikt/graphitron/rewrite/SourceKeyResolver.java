@@ -99,6 +99,61 @@ public final class SourceKeyResolver {
     }
 
     /**
+     * Polymorphic-parent projection: a parent-side {@link SourceKey} for an
+     * {@link no.sikt.graphitron.rewrite.model.ChildField.InterfaceField} or
+     * {@link no.sikt.graphitron.rewrite.model.ChildField.UnionField}. The polymorphic field's
+     * own return type is {@link ReturnTypeRef.PolymorphicReturnType} (no table target), so this
+     * variant takes only the {@link BatchKey} and produces a {@link SourceKey} suitable for
+     * extracting the parent's identity from {@code env.getSource()}.
+     *
+     * <p>Cardinality is variant-derived rather than field-cardinality-derived: each parent is
+     * one entity (so {@link BatchKey.RowKeyed}, both lifter arms, and
+     * {@link BatchKey.AccessorKeyedSingle} land on {@link SourceKey.Cardinality#ONE}); the
+     * {@link BatchKey.AccessorKeyedMany} arm preserves {@link SourceKey.Cardinality#MANY} for
+     * the per-element walk through the parent record's typed list-accessor.
+     *
+     * <p>{@code target} is {@code null} for the {@code ColumnRead}/{@code SourceRowsCall} arms
+     * (the parent doesn't have a target — it IS the source); the accessor arms set
+     * {@code target} from the {@code LiftedHop}'s target table because that's where the
+     * accessor's typed return lives.
+     */
+    public static SourceKey resolveRecordParentForPolymorphic(BatchKey.RecordParentBatchKey bk) {
+        if (bk instanceof BatchKey.RowKeyed rk) {
+            return new SourceKey(
+                null, rk.parentKeyColumns(), List.of(),
+                new SourceKey.Wrap.Row(), SourceKey.Cardinality.ONE,
+                new SourceKey.Reader.ColumnRead());
+        }
+        if (bk instanceof BatchKey.LifterLeafKeyed llk) {
+            return new SourceKey(
+                null, llk.parentSideColumns(), List.of(llk.hop()),
+                new SourceKey.Wrap.Row(), SourceKey.Cardinality.ONE,
+                new SourceKey.Reader.SourceRowsCall(llk.lifter()));
+        }
+        if (bk instanceof BatchKey.LifterPathKeyed lpk) {
+            return new SourceKey(
+                null, lpk.parentSideColumns(), lpk.path(),
+                new SourceKey.Wrap.Row(), SourceKey.Cardinality.ONE,
+                new SourceKey.Reader.SourceRowsCall(lpk.lifter()));
+        }
+        if (bk instanceof BatchKey.AccessorKeyedSingle aks) {
+            return new SourceKey(
+                aks.hop().targetTable(), aks.targetKeyColumns(), List.of(aks.hop()),
+                new SourceKey.Wrap.Record(), SourceKey.Cardinality.ONE,
+                new SourceKey.Reader.AccessorCall(aks.accessor()));
+        }
+        if (bk instanceof BatchKey.AccessorKeyedMany akm) {
+            return new SourceKey(
+                akm.hop().targetTable(), akm.targetKeyColumns(), List.of(akm.hop()),
+                new SourceKey.Wrap.Record(), SourceKey.Cardinality.MANY,
+                new SourceKey.Reader.AccessorCall(akm.accessor()));
+        }
+        throw new IllegalArgumentException(
+            "SourceKeyResolver.resolveRecordParentForPolymorphic: RecordParentBatchKey permit '"
+                + bk.getClass().getSimpleName() + "' has no projection rule");
+    }
+
+    /**
      * Projects a service-side {@link BatchKey.ParentKeyed} (six permits) plus the
      * {@code ServiceTableField}'s table-bound return type into a {@link SourceKey}.
      * {@code Wrap} comes from the developer's source-shape declaration on the

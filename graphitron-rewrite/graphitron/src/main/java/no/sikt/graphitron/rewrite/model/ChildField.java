@@ -293,11 +293,11 @@ public sealed interface ChildField extends GraphitronField
      * {@link ParticipantRef.TableBound} participant. {@link ParticipantRef.Unbound} participants
      * are absent from the map; they contribute no SQL branch.
      *
-     * <p>{@code parentKey} and {@code parentResultType} are the parent-object key-extraction
+     * <p>{@code parentSourceKey} and {@code parentResultType} are the parent-object key-extraction
      * strategy and shape, threaded into {@code GeneratorUtils.buildRecordParentKeyExtraction}.
-     * The slot type accepts every {@link BatchKey.RecordParentBatchKey} permit; through R102 the
-     * classifier produces only {@link BatchKey.RowKeyed} (table-backed parents). The other three
-     * permits become reachable when R105 wires the {@code @record}-parent classifier arm.
+     * Through R102 the classifier produces only catalog-FK / {@code ColumnRead}-reader parent
+     * source-keys (table-backed parents); R105 wires the {@code @record}-parent classifier arm
+     * to reach the lifter and accessor reader permits.
      */
     record InterfaceField(
         String parentTypeName,
@@ -306,16 +306,16 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
         java.util.Map<String, List<JoinStep>> participantJoinPaths,
-        BatchKey.RecordParentBatchKey parentKey,
+        SourceKey parentSourceKey,
         GraphitronType.ResultType parentResultType
     ) implements ChildField {
         public InterfaceField {
             participants = List.copyOf(participants);
             participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
-            // R105 follow-up: validator and emitter both read parentKey / parentResultType
+            // R105 follow-up: validator and emitter both read parentSourceKey / parentResultType
             // unconditionally; carry the non-null contract in the type system rather than
             // by reviewer-tracked correspondence.
-            java.util.Objects.requireNonNull(parentKey, "parentKey");
+            java.util.Objects.requireNonNull(parentSourceKey, "parentSourceKey");
             java.util.Objects.requireNonNull(parentResultType, "parentResultType");
         }
     }
@@ -332,13 +332,13 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef.PolymorphicReturnType returnType,
         List<ParticipantRef> participants,
         java.util.Map<String, List<JoinStep>> participantJoinPaths,
-        BatchKey.RecordParentBatchKey parentKey,
+        SourceKey parentSourceKey,
         GraphitronType.ResultType parentResultType
     ) implements ChildField {
         public UnionField {
             participants = List.copyOf(participants);
             participantJoinPaths = java.util.Map.copyOf(participantJoinPaths);
-            java.util.Objects.requireNonNull(parentKey, "parentKey");
+            java.util.Objects.requireNonNull(parentSourceKey, "parentSourceKey");
             java.util.Objects.requireNonNull(parentResultType, "parentResultType");
         }
     }
