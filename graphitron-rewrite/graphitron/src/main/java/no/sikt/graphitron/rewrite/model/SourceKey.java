@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 
 import java.util.List;
 import java.util.Objects;
@@ -39,8 +41,9 @@ import java.util.Objects;
  *       {@link JoinStep.FkJoin} and {@link JoinStep.LiftedHop}; the lifter / accessor arms
  *       carry the latter.</li>
  *   <li>{@link #wrap()} — the Java shape of one row of source data:
- *       {@link Wrap#ROW} ({@code RowN<...>}), {@link Wrap#RECORD} ({@code RecordN<...>}),
- *       or {@link Wrap#TABLE_RECORD} (the typed jOOQ {@code TableRecord} subclass).</li>
+ *       {@link Wrap.Row} ({@code RowN<...>}), {@link Wrap.Record} ({@code RecordN<...>}),
+ *       or {@link Wrap.TableRecord} (the typed jOOQ {@code TableRecord} subclass, with the
+ *       {@link ClassName} payload).</li>
  *   <li>{@link #cardinality()} — {@link Cardinality#ONE} (one source row per
  *       DataLoader key) or {@link Cardinality#MANY} (a list / accessor walk).</li>
  *   <li>{@link #reader()} — the rows-method body's input contract (where the body reads
@@ -70,15 +73,15 @@ import java.util.Objects;
 @LoadBearingClassifierCheck(
     key = "source-key.source-rows-call-wraps-row",
     description = "SourceKey's compact constructor rejects Reader.SourceRowsCall paired with "
-        + "anything other than Wrap.ROW. The lifter contract is "
+        + "anything other than Wrap.Row. The lifter contract is "
         + "(ParentBackingClass) -> RowN<...>; emitting against any other wrap would produce "
         + "a row-vs-record-call mismatch the rows-method body cannot reconcile.")
 @LoadBearingClassifierCheck(
     key = "source-key.accessor-call-wraps-record",
     description = "SourceKey's compact constructor rejects Reader.AccessorCall paired with "
-        + "anything other than Wrap.RECORD. AccessorKeyedSingle and AccessorKeyedMany both "
+        + "anything other than Wrap.Record. AccessorKeyedSingle and AccessorKeyedMany both "
         + "emit RecordN<...> keys today; the rows-method body reads value1()..valueN() off "
-        + "the key, which only Wrap.RECORD supplies.")
+        + "the key, which only Wrap.Record supplies.")
 @LoadBearingClassifierCheck(
     key = "source-key.service-table-record-target-aligned-empty-path",
     description = "SourceKey's compact constructor rejects Reader.ServiceTableRecord whose "
@@ -94,14 +97,27 @@ public record SourceKey(
     Reader reader
 ) {
 
-    /** The Java shape of one row of source data. */
-    public enum Wrap {
+    /**
+     * The Java shape of one row of source data. Sealed so the {@link TableRecord} arm can
+     * carry the developer-declared {@code TableRecord} subclass payload that the column-tuple
+     * arms have no use for; {@link #keyElementType()} is total without an extra nullable
+     * field on {@link SourceKey}.
+     */
+    public sealed interface Wrap {
         /** {@code RowN<...>} — values only, no value-N accessors. */
-        ROW,
+        record Row() implements Wrap {}
         /** {@code RecordN<...>} — values + value1()..valueN() accessors. */
-        RECORD,
-        /** A typed jOOQ {@code TableRecord} subclass (e.g. {@code FilmRecord}). */
-        TABLE_RECORD
+        record Record() implements Wrap {}
+        /**
+         * A typed jOOQ {@code TableRecord} subclass (e.g. {@code FilmRecord}); {@code className}
+         * is the developer-declared subtype that propagates to the rows-method's parameter
+         * shape and the loader-key element type.
+         */
+        record TableRecord(ClassName className) implements Wrap {
+            public TableRecord {
+                Objects.requireNonNull(className, "className");
+            }
+        }
     }
 
     /** Source-side cardinality per DataLoader key. */
@@ -119,15 +135,15 @@ public record SourceKey(
         columns = List.copyOf(columns);
         path = List.copyOf(path);
 
-        if (reader instanceof Reader.SourceRowsCall && wrap != Wrap.ROW) {
+        if (reader instanceof Reader.SourceRowsCall && !(wrap instanceof Wrap.Row)) {
             throw new IllegalArgumentException(
-                "SourceKey: Reader.SourceRowsCall requires Wrap.ROW (lifter contract pins "
-                + "output to RowN<...>); got Wrap." + wrap);
+                "SourceKey: Reader.SourceRowsCall requires Wrap.Row (lifter contract pins "
+                + "output to RowN<...>); got " + wrap);
         }
-        if (reader instanceof Reader.AccessorCall && wrap != Wrap.RECORD) {
+        if (reader instanceof Reader.AccessorCall && !(wrap instanceof Wrap.Record)) {
             throw new IllegalArgumentException(
-                "SourceKey: Reader.AccessorCall requires Wrap.RECORD (accessor returns "
-                + "TableRecord; rows-method body reads valueN() off the key); got Wrap." + wrap);
+                "SourceKey: Reader.AccessorCall requires Wrap.Record (accessor returns "
+                + "TableRecord; rows-method body reads valueN() off the key); got " + wrap);
         }
         if (reader instanceof Reader.ServiceTableRecord stra
                 && target != null
@@ -138,6 +154,33 @@ public record SourceKey(
                 + "recordClass cannot carry a non-empty path (the service already produced a "
                 + "target-aligned record; walking past target is structurally redundant).");
         }
+    }
+
+    /**
+     * The DataLoader key element type — {@code RowN<...>}, {@code RecordN<...>}, or the
+     * developer-declared {@code TableRecord} subclass — derived from {@link #wrap()} and
+     * {@link #columns()}. Replaces {@code BatchKey.keyElementType()}.
+     *
+     * <p>For {@link Wrap.Row}: {@code Row<n>} parameterised by each column's
+     * {@link ColumnRef#columnClass()}.
+     * For {@link Wrap.Record}: {@code Record<n>} parameterised by each column's
+     * {@code columnClass}. For {@link Wrap.TableRecord}: the captured
+     * {@link Wrap.TableRecord#className()}.
+     */
+    public TypeName keyElementType() {
+        return switch (wrap) {
+            case Wrap.Row r            -> jooqShape("Row", columns);
+            case Wrap.Record r         -> jooqShape("Record", columns);
+            case Wrap.TableRecord tr   -> tr.className();
+        };
+    }
+
+    private static TypeName jooqShape(String shape, List<ColumnRef> cols) {
+        ClassName container = ClassName.get("org.jooq", shape + cols.size());
+        TypeName[] args = cols.stream()
+            .map(c -> (TypeName) ClassName.bestGuess(c.columnClass()))
+            .toArray(TypeName[]::new);
+        return ParameterizedTypeName.get(container, args);
     }
 
     /**

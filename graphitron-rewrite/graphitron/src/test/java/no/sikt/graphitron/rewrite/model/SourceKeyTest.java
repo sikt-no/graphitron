@@ -15,8 +15,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * cross-axis rejections classifiers must respect:
  *
  * <ul>
- *   <li>{@link SourceKey.Reader.SourceRowsCall} ⇒ {@link SourceKey.Wrap#ROW}.</li>
- *   <li>{@link SourceKey.Reader.AccessorCall} ⇒ {@link SourceKey.Wrap#RECORD}.</li>
+ *   <li>{@link SourceKey.Reader.SourceRowsCall} ⇒ {@link SourceKey.Wrap.Row}.</li>
+ *   <li>{@link SourceKey.Reader.AccessorCall} ⇒ {@link SourceKey.Wrap.Record}.</li>
  *   <li>{@link SourceKey.Reader.ServiceTableRecord} with {@code recordType} matching target's
  *       {@code recordClass} ⇒ empty {@link SourceKey#path()}.</li>
  * </ul>
@@ -48,7 +48,7 @@ class SourceKeyTest {
             FILM_TABLE,
             List.of(FILM_ID),
             List.of(),
-            SourceKey.Wrap.ROW,
+            new SourceKey.Wrap.Row(),
             SourceKey.Cardinality.MANY,
             new SourceKey.Reader.ColumnRead());
 
@@ -64,12 +64,12 @@ class SourceKeyTest {
                 FILM_TABLE,
                 List.of(FILM_ID),
                 List.of(),
-                SourceKey.Wrap.RECORD,
+                new SourceKey.Wrap.Record(),
                 SourceKey.Cardinality.ONE,
                 new SourceKey.Reader.SourceRowsCall(LIFTER)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("SourceRowsCall")
-            .hasMessageContaining("Wrap.ROW");
+            .hasMessageContaining("Wrap.Row");
     }
 
     @Test
@@ -78,7 +78,7 @@ class SourceKeyTest {
             FILM_TABLE,
             List.of(FILM_ID),
             List.of(),
-            SourceKey.Wrap.ROW,
+            new SourceKey.Wrap.Row(),
             SourceKey.Cardinality.ONE,
             new SourceKey.Reader.SourceRowsCall(LIFTER));
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
@@ -90,12 +90,12 @@ class SourceKeyTest {
                 FILM_TABLE,
                 List.of(FILM_ID),
                 List.of(),
-                SourceKey.Wrap.ROW,
+                new SourceKey.Wrap.Row(),
                 SourceKey.Cardinality.ONE,
                 new SourceKey.Reader.AccessorCall(ACCESSOR)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("AccessorCall")
-            .hasMessageContaining("Wrap.RECORD");
+            .hasMessageContaining("Wrap.Record");
     }
 
     @Test
@@ -104,7 +104,7 @@ class SourceKeyTest {
             FILM_TABLE,
             List.of(FILM_ID),
             List.of(),
-            SourceKey.Wrap.RECORD,
+            new SourceKey.Wrap.Record(),
             SourceKey.Cardinality.MANY,
             new SourceKey.Reader.AccessorCall(ACCESSOR));
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
@@ -120,7 +120,7 @@ class SourceKeyTest {
                 FILM_TABLE,
                 List.of(FILM_ID),
                 List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "step_0")),
-                SourceKey.Wrap.TABLE_RECORD,
+                new SourceKey.Wrap.TableRecord(filmRecordClass),
                 SourceKey.Cardinality.ONE,
                 new SourceKey.Reader.ServiceTableRecord(filmRecordClass)))
             .isInstanceOf(IllegalArgumentException.class)
@@ -137,7 +137,7 @@ class SourceKeyTest {
             FILM_TABLE,
             List.of(FILM_ID),
             List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "step_0")),
-            SourceKey.Wrap.TABLE_RECORD,
+            new SourceKey.Wrap.TableRecord(otherRecord),
             SourceKey.Cardinality.ONE,
             new SourceKey.Reader.ServiceTableRecord(otherRecord));
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ServiceTableRecord.class);
@@ -151,7 +151,7 @@ class SourceKeyTest {
             FILM_TABLE,
             mutableColumns,
             List.of(),
-            SourceKey.Wrap.ROW,
+            new SourceKey.Wrap.Row(),
             SourceKey.Cardinality.MANY,
             new SourceKey.Reader.ColumnRead());
         // Mutating the original list must not affect the SourceKey's columns().

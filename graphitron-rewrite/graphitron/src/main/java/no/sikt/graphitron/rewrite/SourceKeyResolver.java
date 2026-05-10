@@ -1,9 +1,9 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -62,7 +62,7 @@ public final class SourceKeyResolver {
             stf.returnType().table(),
             stf.batchKey().parentKeyColumns(),
             List.of(),
-            SourceKey.Wrap.ROW,
+            new SourceKey.Wrap.Row(),
             cardinalityFor(stf.returnType()),
             new SourceKey.Reader.ColumnRead()));
     }
@@ -74,7 +74,7 @@ public final class SourceKeyResolver {
             slf.returnType().table(),
             slf.batchKey().parentKeyColumns(),
             List.of(),
-            SourceKey.Wrap.ROW,
+            new SourceKey.Wrap.Row(),
             cardinalityFor(slf.returnType()),
             new SourceKey.Reader.ColumnRead()));
     }
@@ -103,14 +103,14 @@ public final class SourceKeyResolver {
             // Catalog FK on @record-parent's TableRecord backing class.
             return ok(new SourceKey(
                 target, rk.parentKeyColumns(), List.of(),
-                SourceKey.Wrap.ROW, cardinality,
+                new SourceKey.Wrap.Row(), cardinality,
                 new SourceKey.Reader.ColumnRead()));
         }
         if (bk instanceof BatchKey.LifterLeafKeyed llk) {
             // @sourceRows static lifter, leaf-PK shape (single LiftedHop).
             return ok(new SourceKey(
                 target, llk.parentSideColumns(), List.of(llk.hop()),
-                SourceKey.Wrap.ROW, cardinality,
+                new SourceKey.Wrap.Row(), cardinality,
                 new SourceKey.Reader.SourceRowsCall(llk.lifter())));
         }
         if (bk instanceof BatchKey.LifterPathKeyed lpk) {
@@ -118,7 +118,7 @@ public final class SourceKeyResolver {
             // first-hop source-side tuple.
             return ok(new SourceKey(
                 target, lpk.parentSideColumns(), lpk.path(),
-                SourceKey.Wrap.ROW, cardinality,
+                new SourceKey.Wrap.Row(), cardinality,
                 new SourceKey.Reader.SourceRowsCall(lpk.lifter())));
         }
         if (bk instanceof BatchKey.AccessorKeyedSingle aks) {
@@ -127,7 +127,7 @@ public final class SourceKeyResolver {
             // single (consumed by RowsMethodShape) but the source-side per-key is one record.
             return ok(new SourceKey(
                 target, aks.targetKeyColumns(), List.of(aks.hop()),
-                SourceKey.Wrap.RECORD, SourceKey.Cardinality.ONE,
+                new SourceKey.Wrap.Record(), SourceKey.Cardinality.ONE,
                 new SourceKey.Reader.AccessorCall(aks.accessor())));
         }
         if (bk instanceof BatchKey.AccessorKeyedMany akm) {
@@ -135,7 +135,7 @@ public final class SourceKeyResolver {
             // one record per element-PK key; cardinality forced to MANY (per-element walk).
             return ok(new SourceKey(
                 target, akm.targetKeyColumns(), List.of(akm.hop()),
-                SourceKey.Wrap.RECORD, SourceKey.Cardinality.MANY,
+                new SourceKey.Wrap.Record(), SourceKey.Cardinality.MANY,
                 new SourceKey.Reader.AccessorCall(akm.accessor())));
         }
         return rejected("SourceKeyResolver: RecordParentBatchKey permit '"
@@ -179,25 +179,28 @@ public final class SourceKeyResolver {
      * {@code @service} method:
      * <ul>
      *   <li>{@code RowN<...>} sources ({@link BatchKey.RowKeyed},
-     *       {@link BatchKey.MappedRowKeyed}) → {@link SourceKey.Wrap#ROW}</li>
+     *       {@link BatchKey.MappedRowKeyed}) → {@link SourceKey.Wrap.Row}</li>
      *   <li>{@code RecordN<...>} sources ({@link BatchKey.RecordKeyed},
-     *       {@link BatchKey.MappedRecordKeyed}) → {@link SourceKey.Wrap#RECORD}</li>
+     *       {@link BatchKey.MappedRecordKeyed}) → {@link SourceKey.Wrap.Record}</li>
      *   <li>Typed {@code TableRecord} sources ({@link BatchKey.TableRecordKeyed},
      *       {@link BatchKey.MappedTableRecordKeyed}) →
-     *       {@link SourceKey.Wrap#TABLE_RECORD}</li>
+     *       {@link SourceKey.Wrap.TableRecord} carrying the developer's typed
+     *       {@code TableRecord} subtype.</li>
      * </ul>
      */
     private static SourceKey.Wrap wrapForServiceParentKeyed(BatchKey.ParentKeyed bk) {
-        if (bk instanceof BatchKey.TableRecordKeyed
-                || bk instanceof BatchKey.MappedTableRecordKeyed) {
-            return SourceKey.Wrap.TABLE_RECORD;
+        if (bk instanceof BatchKey.TableRecordKeyed trk) {
+            return new SourceKey.Wrap.TableRecord(ClassName.get(trk.elementClass()));
+        }
+        if (bk instanceof BatchKey.MappedTableRecordKeyed mtrk) {
+            return new SourceKey.Wrap.TableRecord(ClassName.get(mtrk.elementClass()));
         }
         if (bk instanceof BatchKey.RecordKeyed
                 || bk instanceof BatchKey.MappedRecordKeyed) {
-            return SourceKey.Wrap.RECORD;
+            return new SourceKey.Wrap.Record();
         }
         // RowKeyed + MappedRowKeyed
-        return SourceKey.Wrap.ROW;
+        return new SourceKey.Wrap.Row();
     }
 
     /**
