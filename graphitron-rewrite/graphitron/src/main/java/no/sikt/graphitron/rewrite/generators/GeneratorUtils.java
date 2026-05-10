@@ -4,9 +4,10 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.model.BatchKey;
+import no.sikt.graphitron.rewrite.model.AccessorRef;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.LifterRef;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
@@ -134,76 +135,76 @@ class GeneratorUtils {
     }
 
     // -----------------------------------------------------------------------
-    // BatchKey utilities
+    // SourceKey key-extraction utilities (record-parent fetchers)
     // -----------------------------------------------------------------------
 
     /**
      * Emits the {@code RowN<...> key = ...} or {@code RecordN<...> key = ...} (or list-shaped
-     * variants) statement for a {@link ChildField.RecordTableField} DataFetcher, extracting the
-     * batch-key value(s) from the {@code @record} parent. {@link BatchKey.RowKeyed},
-     * {@link BatchKey.LifterLeafKeyed}, and {@link BatchKey.LifterPathKeyed} produce
-     * {@code RowN<...>} keys via {@code DSL.row(...)};
-     * {@link BatchKey.AccessorKeyedSingle} / {@link BatchKey.AccessorKeyedMany} produce
-     * {@code RecordN<...>} keys via {@code record.into(...)} (auto-derived; no developer-facing
-     * source on these arms).
+     * variants) statement for a {@code @record}-parent batched DataFetcher, extracting the
+     * batch-key value(s) from the parent. Switches on {@link SourceKey#reader()} (with the
+     * {@code AccessorCall} arm forking on {@link SourceKey#cardinality()}); the
+     * {@code @service}-only readers are unreachable here and rejected eagerly.
      *
-     * <p>The narrowed parameter type is exhaustive over {@link BatchKey.RecordParentBatchKey}
-     * — the five permits ({@link BatchKey.RowKeyed}, {@link BatchKey.LifterLeafKeyed},
-     * {@link BatchKey.LifterPathKeyed}, {@link BatchKey.AccessorKeyedSingle},
-     * {@link BatchKey.AccessorKeyedMany}) are the only routes here. Mis-routing a
-     * {@code @service}-only permit ({@link BatchKey.RecordKeyed} et al.) is a compile error,
-     * not a runtime {@code IllegalStateException}.
-     *
-     * <p>{@link BatchKey.RowKeyed} arm reads from the parent's backing Java object via the
-     * accessor per {@link GraphitronType.ResultType} variant, then constructs a
-     * {@code RowN<...>} via {@code DSL.row(...)} from the extracted scalars:
      * <ul>
-     *   <li>{@link GraphitronType.JooqTableRecordType}: {@code ((Record) env.getSource()).get(Tables.T.FK_COL)}</li>
-     *   <li>{@link GraphitronType.JooqRecordType}: {@code ((Record) env.getSource()).get("sql_name")}</li>
-     *   <li>{@link GraphitronType.JavaRecordType}: {@code ((BackingClass) env.getSource()).lowerCamelCase()}</li>
-     *   <li>{@link GraphitronType.PojoResultType} (non-null class): {@code ((BackingClass) env.getSource()).getLowerCamelCase()}</li>
-     * </ul>
-     *
-     * <p>The two {@link BatchKey.LifterKeyed} arms call the developer-supplied static lifter on
-     * the parent's backing class: {@code Row1<Long> key = Lifters.method((BackingClass)
-     * env.getSource())}. Both share emit logic; the variant identity carries the upstream
-     * decision (leaf-PK vs. {@code @reference}-composed) without a per-instance fork at this
-     * site.
-     *
-     * <p>{@link BatchKey.AccessorKeyedSingle} arm reads a single concrete {@code TableRecord}
-     * from a typed instance accessor on the parent's backing class and projects it to the
-     * element table's PK columns via {@code record.into(...)}: <pre>{@code
+     *   <li>{@link SourceKey.Reader.ColumnRead} (catalog FK on a {@code @record} parent's
+     *       backing class) — emits {@code RowN<...>} via {@code DSL.row(...)} over per-column
+     *       accessors derived from the {@link GraphitronType.ResultType} variant:
+     *       <ul>
+     *         <li>{@link GraphitronType.JooqTableRecordType}: {@code ((Record) env.getSource()).get(Tables.T.FK_COL)}</li>
+     *         <li>{@link GraphitronType.JooqRecordType}: {@code ((Record) env.getSource()).get("sql_name")}</li>
+     *         <li>{@link GraphitronType.JavaRecordType}: {@code ((BackingClass) env.getSource()).lowerCamelCase()}</li>
+     *         <li>{@link GraphitronType.PojoResultType}: {@code ((BackingClass) env.getSource()).getLowerCamelCase()}</li>
+     *       </ul>
+     *   </li>
+     *   <li>{@link SourceKey.Reader.SourceRowsCall} ({@code @sourceRows} lifter) — calls the
+     *       developer-supplied static lifter on the parent's backing class:
+     *       {@code Row1<Long> key = Lifters.method((BackingClass) env.getSource())}. Leaf-PK and
+     *       {@code @reference}-composed shapes share emit logic; the path identity is carried by
+     *       {@link SourceKey#path()} but not consumed here.</li>
+     *   <li>{@link SourceKey.Reader.AccessorCall} + {@link SourceKey.Cardinality#ONE} — single
+     *       typed {@code TableRecord} via instance accessor, projected to the element table's PK
+     *       columns: <pre>{@code
      *   ElementRecord __elt = ((BackingClass) env.getSource()).<accessor>();
      *   RecordN<...> key = __elt.into(Tables.T.PK1, Tables.T.PK2);
-     * }</pre>
-     *
-     * <p>{@link BatchKey.AccessorKeyedMany} arm reads a {@code List<X>} or {@code Set<X>}
-     * from the typed accessor and projects each element to a {@code RecordN<...>} key via a
-     * typed for-loop over {@code Iterable} (uniform across the {@code List} and {@code Set}
-     * declarations the parent class may carry): <pre>{@code
+     * }</pre></li>
+     *   <li>{@link SourceKey.Reader.AccessorCall} + {@link SourceKey.Cardinality#MANY} —
+     *       {@code List<X>} / {@code Set<X>} accessor; each element projects to a
+     *       {@code RecordN<...>} key via a typed for-loop over {@code Iterable}: <pre>{@code
      *   List<RecordN<...>> keys = new ArrayList<>();
      *   for (ElementRecord __elt : ((BackingClass) env.getSource()).<accessor>()) {
      *       RecordN<...> __k = __elt.into(Tables.T.PK1, Tables.T.PK2);
      *       keys.add(__k);
      *   }
-     * }</pre>
+     * }</pre></li>
+     * </ul>
      */
     static CodeBlock buildRecordParentKeyExtraction(
-            BatchKey.RecordParentBatchKey batchKey,
+            SourceKey sourceKey,
             GraphitronType.ResultType resultType) {
-        TypeName keyType = batchKey.keyElementType();
-        return switch (batchKey) {
-            case BatchKey.RowKeyed rk                -> buildFkRowKey(rk, keyType, resultType);
-            case BatchKey.LifterKeyed lk             -> buildLifterRowKey(lk, keyType, resultType);
-            case BatchKey.AccessorKeyedSingle ars -> buildAccessorKeySingle(ars, keyType);
-            case BatchKey.AccessorKeyedMany arm   -> buildAccessorKeyMany(arm, keyType);
+        TypeName keyType = sourceKey.keyElementType();
+        return switch (sourceKey.reader()) {
+            case SourceKey.Reader.ColumnRead ignored ->
+                buildFkRowKey(sourceKey.columns(), keyType, resultType);
+            case SourceKey.Reader.SourceRowsCall src ->
+                buildLifterRowKey(src.lifter(), keyType, resultType);
+            case SourceKey.Reader.AccessorCall ac ->
+                sourceKey.cardinality() == SourceKey.Cardinality.MANY
+                    ? buildAccessorKeyMany(sourceKey, ac.accessor(), keyType)
+                    : buildAccessorKeySingle(sourceKey, ac.accessor(), keyType);
+            case SourceKey.Reader.ServiceTableRecord ignored ->
+                throw new IllegalArgumentException(
+                    "buildRecordParentKeyExtraction does not handle Reader.ServiceTableRecord "
+                    + "(record-parent dispatch path only).");
+            case SourceKey.Reader.ServiceUntypedRecord ignored ->
+                throw new IllegalArgumentException(
+                    "buildRecordParentKeyExtraction does not handle Reader.ServiceUntypedRecord "
+                    + "(record-parent dispatch path only).");
         };
     }
 
     private static CodeBlock buildFkRowKey(
-            BatchKey.RowKeyed batchKey, TypeName keyType,
+            List<ColumnRef> fkCols, TypeName keyType,
             GraphitronType.ResultType resultType) {
-        List<ColumnRef> fkCols = batchKey.parentKeyColumns();
         var rowArgs = CodeBlock.builder();
         for (int i = 0; i < fkCols.size(); i++) {
             if (i > 0) rowArgs.add(", ");
@@ -233,23 +234,20 @@ class GeneratorUtils {
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "sourcerow-leafkey-batchkey-is-lifterleafkeyed",
         reliesOn = "The exhaustive sealed switch in buildRecordParentKeyExtraction routes "
-            + "BatchKey.LifterKeyed (the LifterLeafKeyed permit on the leaf-PK arm) here. "
-            + "SourceRowDirectiveResolver guarantees the LifterKeyed arms are reached only "
-            + "when the parent is PojoResultType or JavaRecordType with a non-null fqClassName, "
-            + "so backingClassOf and the (BackingClass) env.getSource() coercion below are safe "
+            + "Reader.SourceRowsCall (covering both leaf-PK and @reference-composed shapes) here. "
+            + "SourceRowDirectiveResolver guarantees the lifter arms are reached only when the "
+            + "parent is PojoResultType or JavaRecordType with a non-null fqClassName, so "
+            + "backingClassOf and the (BackingClass) env.getSource() coercion below are safe "
             + "without a null check on the backing class.")
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "sourcerow-pathkey-batchkey-is-lifterpathkeyed",
-        reliesOn = "The exhaustive sealed switch in buildRecordParentKeyExtraction routes "
-            + "BatchKey.LifterKeyed (the LifterPathKeyed permit on the @reference-composed arm) "
-            + "here. The same backing-class invariant covers both lifter permits: "
-            + "SourceRowDirectiveResolver constructs LifterPathKeyed only on PojoResultType / "
-            + "JavaRecordType with a non-null fqClassName.")
+        reliesOn = "Same Reader.SourceRowsCall arm covers the @reference-composed lifter shape; "
+            + "SourceRowDirectiveResolver constructs the path-keyed lifter projection only on "
+            + "PojoResultType / JavaRecordType with a non-null fqClassName.")
     private static CodeBlock buildLifterRowKey(
-            BatchKey.LifterKeyed lk, TypeName keyType,
+            LifterRef lifter, TypeName keyType,
             GraphitronType.ResultType resultType) {
         ClassName backingClass = backingClassOf(resultType);
-        var lifter = lk.lifter();
         return CodeBlock.builder()
             .addStatement("$T key = $T.$L(($T) env.getSource())",
                 keyType, lifter.declaringClass(), lifter.methodName(), backingClass)
@@ -258,24 +256,23 @@ class GeneratorUtils {
 
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "accessor-rowkey-shape-resolved",
-        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorKeyedSingle "
-            + "only after reflection has confirmed the parent backing class, the accessor "
-            + "(name, zero-arg, non-bridge, non-synthetic, non-static), and the element class "
-            + "(extends TableRecord, mapped table identical to the field's @table return). The "
-            + "emitted body casts env.getSource() to the resolved backing class and invokes the "
-            + "accessor by name without instanceof guards or null checks; the RecordN<...> key is "
-            + "built via __elt.into(Tables.X.PK1, ...) over typed Field references on the element "
-            + "table.")
+        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces the AccessorCall + "
+            + "Cardinality.ONE projection only after reflection has confirmed the parent backing "
+            + "class, the accessor (name, zero-arg, non-bridge, non-synthetic, non-static), and "
+            + "the element class (extends TableRecord, mapped table identical to the field's "
+            + "@table return). The emitted body casts env.getSource() to the resolved backing "
+            + "class and invokes the accessor by name without instanceof guards or null checks; "
+            + "the RecordN<...> key is built via __elt.into(Tables.X.PK1, ...) over typed Field "
+            + "references on the element table.")
     private static CodeBlock buildAccessorKeySingle(
-            BatchKey.AccessorKeyedSingle ars, TypeName keyType) {
-        var accessor = ars.accessor();
+            SourceKey sourceKey, AccessorRef accessor, TypeName keyType) {
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
-        TableRef elementTable = ars.hop().targetTable();
+        TableRef elementTable = sourceKey.target();
         var tablesClass = elementTable.constantsClass();
         String tableField = elementTable.javaFieldName();
         var intoArgs = CodeBlock.builder();
-        var pkCols = ars.targetKeyColumns();
+        var pkCols = sourceKey.columns();
         for (int i = 0; i < pkCols.size(); i++) {
             if (i > 0) intoArgs.add(", ");
             intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
@@ -289,26 +286,25 @@ class GeneratorUtils {
 
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "accessor-rowkey-shape-resolved",
-        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorKeyedMany "
-            + "only after reflection has confirmed the parent backing class, the accessor "
-            + "(name, zero-arg, non-bridge, non-synthetic, non-static), and the element class "
-            + "(extends TableRecord, mapped table identical to the field's @table return). The "
-            + "emitted for-loop casts env.getSource() to the resolved backing class, invokes the "
-            + "accessor by name without instanceof guards or null checks, and projects each "
-            + "element to a RecordN<...> via __elt.into(Tables.X.PK1, ...) over typed Field "
-            + "references on the element table.")
+        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces the AccessorCall + "
+            + "Cardinality.MANY projection only after reflection has confirmed the parent "
+            + "backing class, the accessor (name, zero-arg, non-bridge, non-synthetic, "
+            + "non-static), and the element class (extends TableRecord, mapped table identical "
+            + "to the field's @table return). The emitted for-loop casts env.getSource() to the "
+            + "resolved backing class, invokes the accessor by name without instanceof guards or "
+            + "null checks, and projects each element to a RecordN<...> via "
+            + "__elt.into(Tables.X.PK1, ...) over typed Field references on the element table.")
     private static CodeBlock buildAccessorKeyMany(
-            BatchKey.AccessorKeyedMany arm, TypeName keyType) {
-        var accessor = arm.accessor();
+            SourceKey sourceKey, AccessorRef accessor, TypeName keyType) {
         ClassName backingClass = accessor.parentBackingClass();
         ClassName elementClass = accessor.elementClass();
-        TableRef elementTable = arm.hop().targetTable();
+        TableRef elementTable = sourceKey.target();
         var tablesClass = elementTable.constantsClass();
         String tableField = elementTable.javaFieldName();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
         ClassName arrayList = ClassName.get("java.util", "ArrayList");
         var intoArgs = CodeBlock.builder();
-        var pkCols = arm.targetKeyColumns();
+        var pkCols = sourceKey.columns();
         for (int i = 0; i < pkCols.size(); i++) {
             if (i > 0) intoArgs.add(", ");
             intoArgs.add("$T.$L.$L", tablesClass, tableField, pkCols.get(i).javaName());
@@ -335,7 +331,7 @@ class GeneratorUtils {
             return ClassName.bestGuess(jrt.fqClassName());
         }
         throw new IllegalStateException(
-            "LifterKeyed must come from a PojoResultType or JavaRecordType parent; got "
+            "Reader.SourceRowsCall must come from a PojoResultType or JavaRecordType parent; got "
             + resultType.getClass().getSimpleName());
     }
 
