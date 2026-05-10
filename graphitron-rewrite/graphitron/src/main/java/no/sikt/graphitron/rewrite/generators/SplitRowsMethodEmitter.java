@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.RowsMethodBody;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -201,13 +202,8 @@ public final class SplitRowsMethodEmitter {
         List<ColumnRef> joinOnCols = firstWithTarget.targetSideColumns();
         List<ColumnRef> joinOnParentCols = firstWithTarget.sourceSideColumns();
 
-        // Empty-input short-circuit — before touching the DSL context.
-        body.beginControlFlow("if (keys.isEmpty())");
-        body.addStatement("return $T.of()", LIST);
-        body.endControlFlow();
-
-        body.addStatement("$T dsl = $L.getDslContext(env)",
-            ClassName.get("org.jooq", "DSLContext"), ctx.graphitronContextCall());
+        // Empty-input short-circuit and DSLContext local are emitted by RowsMethodSkeleton's SQL
+        // framing; this prelude picks up after both.
 
         // Parent-input VALUES rows — fully typed. One Row<N+1><Integer, pkType1, …> per key[i].
         // Generic array creation is the one unavoidable unchecked cast: Java forbids
@@ -281,20 +277,21 @@ public final class SplitRowsMethodEmitter {
         if (stubReason.isPresent()) {
             return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(), stubReason.get().message(), outputPackage);
         }
+        java.util.function.Function<CodeBlock, RowsMethodBody> permit = RowsMethodBody.SqlSplitTable::new;
         if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Single) {
             return buildSingleMethod(
                 ctx, stf.name(), stf.rowsMethodName(), stf.returnType(),
-                stf.joinPath(), stf.filters(), stf.batchKey(), outputPackage);
+                stf.joinPath(), stf.filters(), stf.batchKey(), outputPackage, permit);
         }
         if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
             return buildConnectionMethod(
                 ctx, stf.name(), stf.rowsMethodName(), stf.returnType(),
-                stf.joinPath(), stf.filters(), stf.batchKey(), stf.orderBy(), conn, outputPackage);
+                stf.joinPath(), stf.filters(), stf.batchKey(), stf.orderBy(), conn, outputPackage, permit);
         }
         return buildListMethod(
             ctx, stf.name(), stf.rowsMethodName(), stf.returnType(),
             stf.joinPath(), stf.filters(), stf.batchKey(),
-            /* lookupMapping */ null, outputPackage);
+            /* lookupMapping */ null, outputPackage, permit);
     }
 
     /**
@@ -345,7 +342,8 @@ public final class SplitRowsMethodEmitter {
         return buildListMethod(
             ctx, slf.name(), slf.rowsMethodName(), slf.returnType(),
             slf.joinPath(), slf.filters(), slf.batchKey(),
-            slf.lookupMapping(), outputPackage);
+            slf.lookupMapping(), outputPackage,
+            RowsMethodBody.SqlSplitLookupTable::new);
     }
 
     // -----------------------------------------------------------------------
@@ -365,16 +363,17 @@ public final class SplitRowsMethodEmitter {
         // type Record, returning List<Record> 1:1 with keys, not List<List<Record>>). The
         // capability fold here matches TypeFetcherGenerator's scatterSingleByIdx helper-emission
         // gate; both ask the same uniform question of multiple variants.
+        java.util.function.Function<CodeBlock, RowsMethodBody> permit = RowsMethodBody.SqlRecordTable::new;
         if (rtf.emitsSingleRecordPerKey()) {
             return buildSingleMethod(
                 ctx, rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
                 rtf.joinPath(), rtf.filters(), rtf.batchKey(),
-                outputPackage);
+                outputPackage, permit);
         }
         return buildListMethod(
             ctx, rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
             rtf.joinPath(), rtf.filters(), rtf.batchKey(),
-            /* lookupMapping */ null, outputPackage);
+            /* lookupMapping */ null, outputPackage, permit);
     }
 
     // -----------------------------------------------------------------------
@@ -394,7 +393,8 @@ public final class SplitRowsMethodEmitter {
         return buildListMethod(
             ctx, rltf.name(), rltf.rowsMethodName(), rltf.returnType(),
             rltf.joinPath(), rltf.filters(), rltf.batchKey(),
-            rltf.lookupMapping(), outputPackage);
+            rltf.lookupMapping(), outputPackage,
+            RowsMethodBody.SqlRecordLookupTable::new);
     }
 
 
@@ -413,7 +413,8 @@ public final class SplitRowsMethodEmitter {
             List<WhereFilter> filters,
             BatchKey.RecordParentBatchKey batchKey,
             LookupMapping lookupMapping,
-            String outputPackage) {
+            String outputPackage,
+            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory) {
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
             returnType.returnTypeName());
@@ -567,13 +568,12 @@ public final class SplitRowsMethodEmitter {
 
         body.addStatement("return scatterByIdx(flat, keys.size())");
 
-        return MethodSpec.methodBuilder(rowsMethodName)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(listOfListOfRecord)
-            .addParameter(keysListType, "keys")
-            .addParameter(ENV, "env")
-            .addCode(body.build())
-            .build();
+        return RowsMethodSkeleton.build(
+            rowsMethodName,
+            listOfListOfRecord,
+            keysListType,
+            ctx.graphitronContextCall(),
+            permitFactory.apply(body.build()));
     }
 
     /**
@@ -602,7 +602,8 @@ public final class SplitRowsMethodEmitter {
             List<JoinStep> joinPath,
             List<WhereFilter> filters,
             BatchKey.RecordParentBatchKey batchKey,
-            String outputPackage) {
+            String outputPackage,
+            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory) {
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
             returnType.returnTypeName());
@@ -680,13 +681,12 @@ public final class SplitRowsMethodEmitter {
 
         body.addStatement("return scatterSingleByIdx(flat, keys.size())");
 
-        return MethodSpec.methodBuilder(rowsMethodName)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(listOfRecord)
-            .addParameter(keysListType, "keys")
-            .addParameter(ENV, "env")
-            .addCode(body.build())
-            .build();
+        return RowsMethodSkeleton.build(
+            rowsMethodName,
+            listOfRecord,
+            keysListType,
+            ctx.graphitronContextCall(),
+            permitFactory.apply(body.build()));
     }
 
     // -----------------------------------------------------------------------
@@ -726,7 +726,8 @@ public final class SplitRowsMethodEmitter {
             BatchKey.RecordParentBatchKey batchKey,
             no.sikt.graphitron.rewrite.model.OrderBySpec orderBy,
             no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn,
-            String outputPackage) {
+            String outputPackage,
+            java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory) {
 
         ClassName typeClass = ClassName.get(
             outputPackage + ".types",
@@ -884,13 +885,12 @@ public final class SplitRowsMethodEmitter {
 
         body.addStatement("return scatterConnectionByIdx(flat, keys.size(), page)");
 
-        return MethodSpec.methodBuilder(rowsMethodName)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(listOfConnectionResult)
-            .addParameter(keysListType, "keys")
-            .addParameter(ENV, "env")
-            .addCode(body.build())
-            .build();
+        return RowsMethodSkeleton.build(
+            rowsMethodName,
+            listOfConnectionResult,
+            keysListType,
+            ctx.graphitronContextCall(),
+            permitFactory.apply(body.build()));
     }
 
     // -----------------------------------------------------------------------

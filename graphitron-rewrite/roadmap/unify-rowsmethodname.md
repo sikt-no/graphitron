@@ -369,6 +369,31 @@ not by text-level comparison.
 - **Per-fetch dispatch reads `SourceKey.cardinality()`** at the call site.
   `LoaderDispatch` enum is no longer consulted (deletion in Phase 3).
 
+*(Phase 2, shipped: the field-classifier surface stayed unchanged; consumers
+project to `LoaderRegistration` via `LoaderRegistrationResolver.resolve(bkf)`
+at the call site (Phase 3 will store both projections on the field directly,
+once `BatchKey` is gone). The three DataFetcher emitters in
+`TypeFetcherGenerator` (`buildServiceDataFetcher`, `buildSplitQueryDataFetcher`,
+`buildRecordBasedDataFetcher`) now route through `DataLoaderFetcherEmitter.build`
+and `RowsMethodCall.batchLoaderLambda`. The five rows-method emitter sites
+(`SplitRowsMethodEmitter`'s four entry points + `buildServiceRowsMethod`) now
+route through `RowsMethodSkeleton.build` with the matching `RowsMethodBody`
+permit (`SqlSplitTable` / `SqlSplitLookupTable` / `SqlRecordTable` /
+`SqlRecordLookupTable` / `Service`); the prelude's empty-input gate and
+`DSLContext` resolution moved out of `emitParentInputAndFkChain` and onto
+the skeleton's SQL framing. Per-fetch dispatch reads
+`LoaderRegistration.dispatch()` (LOAD_ONE vs LOAD_MANY) inside the unified
+emitter.)*
+
+*(Phase 2 spec correction, shipped alongside the flip: the spec's
+`BatchKey → LoaderRegistration` projection table claimed
+`AccessorKeyedMany → MAPPED_SET`, but the original
+`buildRecordBasedDataFetcher` code emits `newDataLoader` (POSITIONAL_LIST) for
+that arm and dispatches via `loader.loadMany`. Container (newDataLoader vs
+newMappedDataLoader) and dispatch (load vs loadMany) are independent axes;
+`AccessorKeyedMany` is POSITIONAL_LIST + LOAD_MANY, not MAPPED_SET. The
+resolver and Phase 1b test now agree with the existing code's behaviour.)*
+
 ### Phase 3: clean
 
 Delete the orphaned hierarchy and the orphaned scaffolding. Mechanical, no
