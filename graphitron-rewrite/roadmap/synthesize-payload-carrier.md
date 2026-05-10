@@ -113,10 +113,134 @@ each phase ships as its own implementation cycle.
 
 A `principles-architect` review on the pivoted spec body returned 11 findings;
 verdict was *needs revision before Spec → Ready handoff*. A self-review found 6 items,
-overlapping on the framing items. Two forks have been touched in discussion and have a
-captured frame; the rest carry forward. The next session must work through these
-before the Spec → Ready transition. The Phase 1 / 2 / 3 bodies below have **not** yet
-been updated to reflect the resolutions; they describe the pre-architect-review pivot.
+overlapping on the framing items. Of the two forks with a captured discussion frame,
+**Fork B is now settled** (the `SourceKey` / `SourceRow` split below — the linchpin
+of the design); Fork A remains open. The remaining must-address items carry forward.
+The next session must work through Fork A and the must-address list before the Spec
+→ Ready transition. The Phase 1 / 2 / 3 bodies below have **not** yet been updated
+to reflect the resolutions; they describe the pre-architect-review pivot.
+
+### Settled this session
+
+**Fork B — `SourceKey` / `SourceRow` split (resolves architect #2). Linchpin.**
+
+Today's `BatchKey` resolves into two cleaner concepts plus a small companion
+record, with the 11-permit hierarchy orthogonalized into independent axes.
+
+**`SourceKey`** is the singular per-field metadata — the shape descriptor the
+classifier produces and consumers (fetcher emitter, rows-method emitter,
+validator) read. Carries: target table identity (derivable from path/columns;
+path empty → table the columns belong to, path non-empty →
+`path.getLast().targetTable()`); column tuple (`List<ColumnRef>`, entry-point
+columns — match target's columns when path empty, first-hop source-side when
+path non-empty); path (`List<JoinStep.FkJoin>`, empty = target-aligned, non-empty
+= FK chain to target — `LiftedHop` no longer mixes here, the `@sourceRows`
+contract pins lifter output to entry-point columns and the chain is FK-only);
+wrap shape (`Row` | `Record` | `TableRecord<X>`); reader strategy (sealed
+sub-level, see below); per-source cardinality (`ONE` | `MANY`).
+
+**`SourceRow`** is the plural runtime instance — a row of data flowing at
+execution time. Java type dictated by SourceKey's `wrap × columns`
+(e.g. `Row1<Integer>`, `Record2<Integer, String>`, `FilmRecord`). Not a
+generated type; the runtime form of what SourceKey describes. **One SourceKey
+per field; potentially many SourceRows per source per fetch.** Multiple
+SourceRows share the same SourceKey: same target, same column tuple, same wrap.
+
+**`LoaderRegistration`** is a small field-level record (not sealed): loader
+name, value-type per key (`Record` vs `List<Record>`), container
+(`POSITIONAL_LIST` vs `MAPPED_SET` — drives `newDataLoader` vs
+`newMappedDataLoader`). The same SourceKey shape can be loaded into either
+container kind, so container doesn't belong on SourceKey. The R75 rooted case
+has no `LoaderRegistration` — the DataFetcher reads `env.getSource()` and uses
+SourceKey directly to extract SourceRow instances.
+
+**Per-fetch dispatch** (`load(sourceRow)` vs `loadMany(sourceRows)`) reads
+`sourceKey.cardinality()` at the call site. Today's `LoaderDispatch` enum on
+`RecordParentBatchKey` becomes redundant.
+
+**Reader strategies** (sealed sub-level on SourceKey):
+- `ColumnRead` — catalog FK on parent record.
+- `AccessorCall` — typed instance accessor on `@record` parent backing class.
+- `SourceRowsCall` — `@sourceRows` static lifter (directive renamed from
+  "lifter"; plural reflects the per-source cardinality vocabulary).
+- `ResultRowWalk` — walk a `Result<RecordN>` from upstream DML (the R75 rooted
+  case).
+- `ServiceTableRecord` — service returns `TableRecord<X>`; reflection over X
+  extracts entry-point columns. FK-on-X optimization (target-align without
+  walking the chain when X carries an FK to target) deferred to a sibling
+  Backlog item.
+- `ServiceUntypedRecord` — service returns `Record<>`; reflection verifies field
+  names + types match target's key columns. Target-aligned only.
+
+**Cross-axis invariants** enforced in compact constructors per Reader:
+`SourceRowsCall` → `wrap == Row`; `AccessorCall` returning `List<X>` →
+`cardinality == MANY` and `wrap == Record`; `ResultRowWalk` → cardinality
+matches the upstream Result's row count (singular `Record1<...>` → ONE,
+`Result<Record1<...>>` → MANY); `ServiceTableRecord` with X = target table →
+`path` empty.
+
+**Args stay separate.** Verified `LookupMapping.ColumnMapping.LookupArg` already
+exists as the args-side sealed type (three arms: `ScalarLookupArg`,
+`DecodedRecord`, `MapInput`), driven by `@lookupKey` and projected by
+`LookupMappingResolver`. SourceKey is the source-side sibling; no unification.
+
+**Mapping today's 11 BatchKey permits to the new shape:**
+
+| BatchKey permit | Reader | wrap | cardinality | path |
+|---|---|---|---|---|
+| `RowKeyed` (`ParentKeyed`) | `ColumnRead` | Row | ONE | empty |
+| `RecordKeyed` | `ColumnRead` | Record | ONE | empty |
+| `MappedRowKeyed` | `ColumnRead` | Row | ONE | empty |
+| `MappedRecordKeyed` | `ColumnRead` | Record | ONE | empty |
+| `TableRecordKeyed` | `ColumnRead` | TableRecord | ONE | empty |
+| `MappedTableRecordKeyed` | `ColumnRead` | TableRecord | ONE | empty |
+| `RowKeyed` (`RecordParentBatchKey`) | `ColumnRead` | Row | ONE | catalog FK chain |
+| `LifterLeafKeyed` | `SourceRowsCall` | Row | ONE | empty |
+| `LifterPathKeyed` | `SourceRowsCall` | Row | ONE | FK chain |
+| `AccessorKeyedSingle` | `AccessorCall` | Record | ONE | empty |
+| `AccessorKeyedMany` | `AccessorCall` | Record | MANY | empty |
+
+The container axis (positional vs `Mapped*` variants) moves to
+`LoaderRegistration`. Net type-identity count: 11 → 1 SourceKey + 6 Reader
+sub-permits = 7. Adding R75's `ResultRowWalk` is a one-Reader-permit addition,
+not a 12th BatchKey permit.
+
+**Resolver pattern.** A new `SourceKeyResolver` projects classification context
+(catalog FK / `@record` parent's accessor / `@sourceRows` lifter / service-return
+reflection / upstream DML Result) into a SourceKey. Sibling to `OrderByResolver`,
+`PaginationResolver`, `LookupMappingResolver` — the existing single-concern
+projection pattern.
+
+**Knock-on impacts on the must-address list (re-grounded under the new
+vocabulary):**
+- **Architect #4** gets a cleaner home: SourceKey with `reader == ResultRowWalk`
+  structurally pins target to the upstream DML's RETURNING table. The
+  load-bearing classifier check declares the constraint by SourceKey shape; the
+  validator threads rejection messages.
+- **Architect #5** reframes cleanly: mutation fetcher produces SourceRow
+  instances of typed shape; data-field fetcher consumes via SourceKey with
+  `reader == ResultRowWalk`. Both halves carry typed shapes; the prior
+  `(Result<Record1<Integer>>) env.getSource()` cast becomes a SourceKey-driven
+  typed read with the wrap pinned by SourceKey.
+- **Architect #11** (load-bearing key inventory) — candidates surfaced by the
+  new shape:
+  - `source-key.target-table-derives-from-structure` (path-empty vs
+    path-non-empty cases).
+  - `source-key.column-tuple-aligns-with-entry-point` (columns match target
+    when path empty, first-hop source-side when path non-empty).
+  - `source-key.cardinality-matches-reader` (per-reader compact-constructor
+    invariants).
+  - `source-key.result-row-walk-target-equals-dml-input-table` (R75-specific;
+    architect #4 overlap).
+  - `loader-registration.dispatch-derives-from-cardinality` (load vs loadMany
+    at call site reads cardinality, not a stored discriminator).
+- **Fork A / Architect #1** intersects: the bulk-vs-single axis Fork A is
+  exploring is largely a SourceKey `cardinality` property rather than a
+  carrier-permit property. May simplify Fork A's resolution.
+
+This is the linchpin: Phase 1 / 2 / 3 bodies need to be re-grounded against the
+SourceKey / SourceRow vocabulary before Spec → Ready. The session that picks up
+this spec next should start here.
 
 ### Forks with discussion frame (still open)
 
@@ -139,21 +263,8 @@ so the rooted/nested split isn't the cleanest axis — bulk vs single is. Whethe
 `RootedRecordTableField` is the right cleanup, or whether a different sealed sub-split
 captures the variation, is unresolved. Discuss further next session.
 
-**Fork B — the common concept under `BatchKey` (architect #2).**
-
-Architect's claim: every existing `BatchKey.RecordParentBatchKey` arm describes how
-to construct a DataLoader key from the parent. The rooted case has no DataLoader.
-Adding a `BatchKey.RootKeyed` arm makes `BatchKey` mean "DataLoader-key OR PK-
-extraction-strategy" — the shared-accessor smell. The sub-taxonomy belongs at the
-*fetcher dispatch* layer, not the batch-key layer.
-
-Counter-frame (user): correct that `BatchKey` is the wrong abstraction for the rooted
-case, but there's a common concept worth teasing out. `BatchKey` is reserved for
-DataLoader; we need a `SourceKey` abstraction — "how do we extract a key from a
-source" — that `BatchKey` itself leans on for the DataLoader-specific case. The
-rooted variant uses `SourceKey` directly without the `BatchKey` layer; existing
-`BatchKey` arms decompose into "wraps a `SourceKey` plus DataLoader-specific dispatch
-info". The shape of `SourceKey` (sealed type, capability, etc.) is the design call.
+(Note from settled Fork B: bulk-vs-single is largely a SourceKey `cardinality`
+property; that may simplify the carrier-permit decision here.)
 
 ### Must address (no discussion frame yet)
 
