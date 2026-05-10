@@ -7,7 +7,6 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -288,9 +287,9 @@ public class TypeClassGenerator {
     private static java.util.stream.Stream<ColumnRef> collectBatchKeyColumns(List<? extends GraphitronField> fields) {
         return fields.stream().flatMap(f -> {
             if (f instanceof ChildField.SplitTableField stf)
-                return stf.batchKey().parentKeyColumns().stream();
+                return stf.sourceKey().columns().stream();
             if (f instanceof ChildField.SplitLookupTableField slf)
-                return slf.batchKey().parentKeyColumns().stream();
+                return slf.sourceKey().columns().stream();
             if (f instanceof ChildField.NestingField nf)
                 return collectBatchKeyColumns(nf.nestedFields());
             return java.util.stream.Stream.empty();
