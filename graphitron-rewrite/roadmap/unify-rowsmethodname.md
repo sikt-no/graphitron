@@ -280,9 +280,10 @@ are mechanically simple.
 ### Phase 1: additive
 
 Land the new model alongside the existing one. Nothing routes through it
-yet. Build stays green; emitted source byte-identical. Each new emitter and
-resolver ships with unit tests against fixture call shapes that mirror what
-Phase 2 will feed it, so API misfit surfaces here, not at the flip.
+yet. Build stays green; nothing currently consumes the new types, so emit is
+unchanged by construction. Each new emitter and resolver ships with unit
+tests against fixture call shapes that mirror what Phase 2 will feed it, so
+API misfit surfaces here, not at the flip.
 
 - **`SourceKey`, `Reader`, `LoaderRegistration`** records in
   `no.sikt.graphitron.rewrite.model`. Compact-constructor invariants per
@@ -306,9 +307,14 @@ Phase 2 will feed it, so API misfit surfaces here, not at the flip.
 
 ### Phase 2: flip
 
-Migrate every consumer in one PR. The diff is delete-and-replace; emitted
-source diffs to zero modulo the empty-input gate non-change (out of scope,
-see below).
+Migrate every consumer in one PR. The diff is delete-and-replace. The
+contract is functional equivalence, not byte-identical emission: existing
+compilation-tier and execution-tier tests pass unchanged, plus the new
+structural pins (see Tests below). The new emitters are clean implementations
+of the unified shape, free to drop per-site comment scaffolding and factor
+duplication that exists today only because each site was written separately;
+their structural correctness is enforced by the three-tier passing build,
+not by text-level comparison.
 
 - **Field classifiers populate `SourceKey` + `LoaderRegistration`** alongside
   today's `BatchKey`. Both values populate; `BatchKey` is computed for
@@ -425,10 +431,13 @@ The args/source split is intact today. R38 doesn't touch the args side.
 unchanged. With Phase 2's blast radius (model reshape + emitter consolidation
 in one PR), classifier-projection fidelity is the failure mode; compilation
 against real jOOQ catches a faulty projection as a `*Fetchers.java` compile
-error rather than a runtime surprise. The byte-identity claim ("emitted source
-diffs to zero modulo the empty-input gate non-change") is enforced
-structurally by the three-tier passing build — body-string assertions are
-banned by the principles, so structural intent is not a code-shape test.
+error rather than a runtime surprise. Functional equivalence (rather than
+byte-identical emission) is the contract — body-string assertions are banned
+by the principles, and the three-tier passing build is the structural safety
+net for the new emitters' shape. The new emitters are free to drop per-site
+comment scaffolding and emit the unified shape directly; what the build
+enforces is that the resulting code compiles against real jOOQ and behaves
+the same against the execution-tier fixtures.
 
 **Execution-tier:** all existing execution-tier tests pass unchanged. The
 reshape is an internal model refactor; user-visible behaviour is fixed.
@@ -452,8 +461,8 @@ consumed by at least one `@DependsOnClassifierCheck` on an emit site.
   consuming the new shape; their unit tests pass.
 - `BatchKeyField.rowsMethodName()` interface default exists; the four SQL
   leaves' overrides survive (deleted in Phase 3).
-- Build green; emitted source byte-identical (no consumer dispatches on the
-  new types yet).
+- Build green; nothing currently consumes the new types, so emit is unchanged
+  by construction.
 
 **Phase 2:**
 
@@ -464,7 +473,7 @@ consumed by at least one `@DependsOnClassifierCheck` on an emit site.
 - All three DataFetcher emit sites use `DataLoaderFetcherEmitter.build`.
 - `BatchKey` hierarchy still compiles but is no longer dispatched on
   downstream of the classifier.
-- Build green; emitted source byte-identical.
+- Build green; existing compilation-tier and execution-tier tests pass.
 
 **Phase 3:**
 
@@ -474,6 +483,6 @@ consumed by at least one `@DependsOnClassifierCheck` on an emit site.
 - Four `rowsMethodName()` overrides deleted.
 - Per-emitter handcrafted scaffolding orphans deleted.
 - Verify by grep: no caller of any deleted symbol.
-- Build green; emitted source byte-identical to before R38.
+- Build green; existing compilation-tier and execution-tier tests pass.
 - R75's `ResultRowWalk` Reader permit lands as a one-permit addition
   (validated by R75's spec, not R38's).
