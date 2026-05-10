@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R83` | Multi-schema fixture: pipeline + compilation + execution tier coverage | Ready | [plan](multischema-fixture-pipeline-coverage.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
-| `R101` | Custom-scalar Java type configuration (extended-scalars built-in) | Spec | [plan](custom-scalar-java-types.md) |
+| `R101` | Custom-scalar Java type configuration (extended-scalars built-in) <sub>blocked by: [reactor-classloader-for-codegen](reactor-classloader-for-codegen.md)</sub> | Spec | [plan](custom-scalar-java-types.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
@@ -151,7 +151,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Backlog, stubs
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
-- `R101` [**Custom-scalar Java type configuration (extended-scalars built-in)**](custom-scalar-java-types.md) — Spec, architecture
+- `R101` [**Custom-scalar Java type configuration (extended-scalars built-in)**](custom-scalar-java-types.md) — Spec, architecture, blocked by [reactor-classloader-for-codegen](reactor-classloader-for-codegen.md)
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [deprecate-record-directive](deprecate-record-directive.md)
 - `R96` [**Deprecate and remove the @record directive**](deprecate-record-directive.md) — Backlog, cleanup, blocked by [emit-input-records](emit-input-records.md), [synthesize-payload-carrier](synthesize-payload-carrier.md)
 - `R23` [**Multi-parent `NestingField` sharing: `TableField` arm**](nestingfield-multiparent-tablefield.md) — Spec
