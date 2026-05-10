@@ -14,7 +14,6 @@ import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.LoaderRegistrationResolver;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
@@ -2750,7 +2749,7 @@ public class TypeFetcherGenerator {
 
         var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
         TypeName keyType = batchKey.keyElementType();
-        LoaderRegistration registration = LoaderRegistrationResolver.resolve(bkf);
+        LoaderRegistration registration = bkf.loaderRegistration();
 
         return DataLoaderFetcherEmitter.build(
             fieldName,
@@ -2809,7 +2808,7 @@ public class TypeFetcherGenerator {
             String outputPackage) {
 
         var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
-        LoaderRegistration registration = LoaderRegistrationResolver.resolve(bkf);
+        LoaderRegistration registration = bkf.loaderRegistration();
         ClassName containerClass = registration.container() == LoaderRegistration.Container.MAPPED_SET
             ? SET : LIST;
         TypeName keysContainerType = ParameterizedTypeName.get(containerClass, batchKey.keyElementType());
@@ -2882,7 +2881,7 @@ public class TypeFetcherGenerator {
         var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
         TypeName keyType = batchKey.keyElementType();
         String fieldName = bkfFieldName(bkf);
-        LoaderRegistration registration = LoaderRegistrationResolver.resolve(bkf);
+        LoaderRegistration registration = bkf.loaderRegistration();
 
         // Single cardinality: NULL-FK short-circuit (the parent row's FK column may be nullable
         // and no `terminal.pk = parentInput.fk_value` match can exist under ANSI NULL semantics —
@@ -2962,7 +2961,7 @@ public class TypeFetcherGenerator {
         TypeName resultValueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
 
         TypeName keyType = batchKey.keyElementType();
-        LoaderRegistration registration = LoaderRegistrationResolver.resolve(field);
+        LoaderRegistration registration = field.loaderRegistration();
 
         return DataLoaderFetcherEmitter.build(
             field.name(),
