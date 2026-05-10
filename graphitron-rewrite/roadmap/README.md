@@ -14,6 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
+| `R38` | Unify `rowsMethodName()` and the rows-method seam | Spec | [plan](unify-rowsmethodname.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec | [plan](custom-scalar-java-types.md) |
@@ -63,7 +64,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Cleanup
 
-- `R38` [**Unify `rowsMethodName()`**](unify-rowsmethodname.md): Lift the `"rows" + capitalize(name())` copy-paste from four `BatchKeyField` leaves to a default method on the interface.
 - `R83` [**Multi-schema fixture: pipeline + compilation tier coverage**](multischema-fixture-pipeline-coverage.md): R78 shipped a generated multi-schema jOOQ fixture (`multischema_a` + `multischema_b` with a cross-schema FK `gadget → widget` and a shared `event` table) and proved the catalog-side typed accessors against it via `JooqCatalogMultiSchemaTest`. That test runs at the unit tier. The whole motivation for R78 was a *generated-code* bug ("imports emitted as `<jooqPackage>.tables.X`, dropping the schema segment"), but no test in this repo drives an SDL through `GraphitronSchemaBuilder` against the multi-schema fixture, no emitter is exercised over a cross-schema `TableRef` / `ForeignKeyRef`, and `graphitron-sakila-example` (the compilation tier) has no `multischema_*` consumer. The R78 changelog acknowledges this as deferred ("execution-tier coverage for cross-schema FK joins at runtime (Backlog stub)") but no item was filed.
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md): Root variants drop `joinPath` but share `filters · orderBy · pagination`.
 - `R44` [**Deprecate `@multitableReference`**](deprecate-multitable-reference.md): No consumer of graphitron-rewrite uses `@multitableReference`. Rather than carry the stub through the RC and ship coverage we don't need, the directive joins `@notGenerated` on the deprecation list: it stays declared in `directives.graphqls` so the GraphQL parser does not fail with an "unknown directive" error, but the rewrite classifier rejects every application with a "no longer supported" message and points the schema author at the migration note.
@@ -144,7 +144,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### model-cleanup
 
-- `R38` [**Unify `rowsMethodName()`**](unify-rowsmethodname.md) — Backlog, cleanup
+- `R38` [**Unify `rowsMethodName()` and the rows-method seam**](unify-rowsmethodname.md) — Spec, cleanup
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md) — Backlog, validation
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Backlog, stubs
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
