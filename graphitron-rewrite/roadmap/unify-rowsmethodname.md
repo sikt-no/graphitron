@@ -12,7 +12,7 @@ depends-on: []
 
 The DataLoader-backed leaf taxonomy has six members, all implementing `BatchKeyField` and emitting a "rows-method" the registered DataLoader's batch lambda calls into. Four (`SplitTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`) override `rowsMethodName()` with `"rows" + capitalize(name())`; two (`ServiceTableField`, `ServiceRecordField`) override with `"load" + capitalize(name())`. The prefix is a body-shape marker: `rows` for "this method emits SQL to shape rows", `load` for "this method delegates to a developer-supplied service". Underneath, every site that emits or invokes a rows-method handcrafts the same scaffolding: signature `(keys, env)`, optional empty-input gate, optional `DSLContext dsl = ...` line, and the BatchLoader lambda the DataLoader registers.
 
-The end goal is hardening: when conceptually doing the same thing, share the emitter. After R38 every BatchKeyField rows-method declaration goes through one emitter, every BatchLoader lambda through one emitter, every DataLoader-registering DataFetcher through one emitter. The SQL-vs-service split survives only as a body-emitter strategy plugged into the shared skeleton, and tests gain a programmatic way to invoke a generated rows-method directly without reconstructing the call shape.
+The end goal is hardening: when conceptually doing the same thing, share the emitter. After R38 every BatchKeyField rows-method declaration goes through one emitter, every BatchLoader lambda through one emitter, every DataLoader-registering DataFetcher through one emitter. The SQL-vs-service split survives only as a sealed `RowsMethodBody` permit plugged into the shared skeleton.
 
 ## Patterns
 
@@ -33,23 +33,19 @@ Three phases, each one job. Phase 1 is purely additive (new code, no consumers);
 Land four new emitters and one interface default. Nothing routes through them yet. Build stays green; emitted source byte-identical. Each new emitter ships with unit tests against fixture call shapes that mirror what Phase 2 will feed it, so the new APIs have coverage independently of consumers and an API misfit surfaces here, not at the flip.
 
 - **Interface default.** Add `default String rowsMethodName()` on `BatchKeyField` returning `"rows" + capitalize(name())`. Tighten the Javadoc: replace "naming convention is determined by each implementing type independently" (`BatchKeyField.java:17-18`) with "DataLoader-backed variants default to `rows<Name>`; service-backed variants override to `load<Name>` to mark the body as a service delegation." The four SQL leaves keep their (now redundant) overrides; the two service leaves keep their `load<X>` overrides as the documented exception.
-- **`RowsMethodSkeleton`** + **`BodyEmitter` strategy.** New utility class. `RowsMethodSkeleton.build(BatchKeyField, returnTypeName, BodyEmitter)` emits the skeleton (modifiers, parameters, return type, empty-input short-circuit, optional `DSLContext dsl = ctx.getDslContext(env);` gated on `BodyEmitter.needsDsl()`) and delegates the body to a strategy. `BodyEmitter` exposes `CodeBlock emit(...)` and `boolean needsDsl()`.
-- **`RowsMethodCall`.** New utility class. Two factories:
-  - `batchLoaderLambda(BatchKeyField) -> CodeBlock` emits the `(keys, batchEnv) -> { dfe = ...; return CompletableFuture.completedFuture(rowsXxx(keys, dfe)); }` lambda.
-  - `directCall(BatchKeyField, CodeBlock keysExpr, CodeBlock envExpr) -> CodeBlock` emits `ResultType rows = ContainingFetcher.rowsXxx(<keysExpr>, <envExpr>);` for tests. Single source of truth for the four pieces: containing-class name, method name (Phase 1's interface default), keys-container type (`Set` or `List` per `isMapped`), result type (via `RowsMethodShape.outerRowsReturnType`).
+- **`RowsMethodSkeleton` + sealed `RowsMethodBody`.** `RowsMethodBody` is a sealed type with one variant per body shape: `SqlSplitTable`, `SqlSplitLookupTable`, `SqlRecordTable`, `SqlRecordLookupTable`, `Service`. Each permit carries only the data its body needs (the SQL permits carry the inputs `emitParentInputAndFkChain` consumes; `Service` carries the `MethodRef` and `callShape`). `RowsMethodSkeleton.build(BatchKeyField, returnTypeName, RowsMethodBody)` emits modifiers, parameters, and return type, then dispatches via exhaustive switch on the permit: the four SQL permits emit the empty-input gate and the `DSLContext dsl = ...` line; the `Service` permit emits the dsl line per `callShape` and omits the gate (matching today's service-path behaviour; see "Out of scope" below). No predicate accessors on `RowsMethodBody`: the type identity encodes which scaffolding the body needs.
+- **`RowsMethodCall`.** New utility class with one factory: `batchLoaderLambda(BatchKeyField) -> CodeBlock` emits the `(keys, batchEnv) -> { dfe = ...; return CompletableFuture.completedFuture(rowsXxx(keys, dfe)); }` lambda. Single source of truth for the four pieces: containing-class name, method name (Phase 1's interface default), keys-container type (`Set` or `List` per `isMapped`), result type (via `RowsMethodShape.outerRowsReturnType`).
 - **`DataLoaderFetcherEmitter`.** New utility class. `build(BatchKeyField, ReturnTypeRef, AsyncWrapTail) -> MethodSpec` emits the full DataFetcher: name resolution (`buildDataLoaderName`), `computeIfAbsent` registry call wrapping `RowsMethodCall.batchLoaderLambda(...)` (factory chosen by `isMapped`), `GeneratorUtils.buildKeyExtraction(...)`, `loader.load(key, env)` (or `loader.loadMany` per dispatch), async-wrap tail.
 
 ### Phase 2: flip
 
-Migrate every consumer in one PR. The diff is delete-and-replace; emitted source diffs to zero modulo one documented behaviour change.
+Migrate every consumer in one PR. The diff is delete-and-replace; emitted source diffs to zero.
 
-- **Five rows-method emitters → `RowsMethodSkeleton`.** Each becomes a `BodyEmitter`:
-  - `SplitRowsMethodEmitter.buildForSplitTable` / `buildForSplitLookupTable` / `buildForRecordTable` / `buildForRecordLookupTable`: body strategy calls `emitParentInputAndFkChain` (Pattern 3, unchanged) then emits the SELECT body.
-  - `TypeFetcherGenerator.buildServiceRowsMethod` (line 2823): body strategy emits `return <callTarget>.<methodName>(<args>);`.
+- **Five rows-method emitters → `RowsMethodSkeleton`.** Each construct site builds the matching `RowsMethodBody` permit and hands it to the skeleton:
+  - `SplitRowsMethodEmitter.buildForSplitTable` / `buildForSplitLookupTable` / `buildForRecordTable` / `buildForRecordLookupTable`: build the matching `Sql*` permit carrying the prelude inputs; the skeleton's switch invokes `emitParentInputAndFkChain` (Pattern 3, unchanged) and emits the SELECT body for that permit.
+  - `TypeFetcherGenerator.buildServiceRowsMethod` (line 2823): build the `Service` permit carrying `MethodRef` + `callShape`; the skeleton emits `return <callTarget>.<methodName>(<args>);`.
 - **Three BatchLoader-lambda call sites → `RowsMethodCall.batchLoaderLambda`.** Replace the inline lambda blocks at `TypeFetcherGenerator.java:2762`, `:2922`, `:3022`, each with one `RowsMethodCall.batchLoaderLambda(bkf)` call.
 - **Three DataFetcher emitters → `DataLoaderFetcherEmitter`.** Migrate `buildServiceDataFetcher` (line 2733), `buildSplitQueryDataFetcher` (line 2888), `buildRecordBasedDataFetcher` (line 2995). Each shrinks from a multi-block builder to one `DataLoaderFetcherEmitter.build(...)` call.
-
-**Documented behaviour change.** Service-path rows-methods gain the empty-input short-circuit they don't have today (the skeleton always emits the gate). Today `Service.method(emptySet, dsl)` is a wasted call when batch keys are empty; post-flip the rows-method short-circuits to `List.of()` before reaching the service. Inspect the diff for any test that pins the service-path output, update if necessary, and capture in the changelog entry.
 
 ### Phase 3: clean
 
@@ -61,4 +57,10 @@ Delete code Phase 2 orphans. Mechanical, no design.
 
 Verify by grep: no caller of any deleted symbol; no inline emit of patterns now owned by the new emitters.
 
-End state: one place to look for each of naming, declaration, call site, and fetcher dance. The SQL-vs-service distinction lives only in the five `BodyEmitter` strategies. Tests reach generated rows-methods through `RowsMethodCall.directCall`, so per-permutation execution-tier coverage scales without re-deriving the call shape per test.
+End state: one place to look for each of naming, declaration, call site, and fetcher dance. The SQL-vs-service distinction lives only in the five `RowsMethodBody` permits.
+
+## Out of scope
+
+**Service-path empty-input gate.** Today the four SQL rows-methods short-circuit on `keys.isEmpty()`; the two service rows-methods don't, and `Service.method(emptySet, dsl)` runs as a wasted call when batch keys are empty. Adding the gate is a behaviour change visible to schema authors with side-effecting service methods, not a refactor; it lands as a separate Backlog item with its own pipeline test pinning the new shape. R38 preserves current per-variant gate behaviour (the `RowsMethodSkeleton` switch on the `Service` permit omits the gate) so Phase 2's flip is purely structural.
+
+**`RowsMethodCall.directCall` for tests.** "Tests reach generated rows-methods through one emitter" was a secondary motivation in the Spec discussion but has no real consumer in R38. Today's analogous pattern is reflective: `ScatterSingleByIdxTest` reaches its target via `getDeclaredMethod`. Designing a `directCall` factory now without an actual test consumer is the kind of "anticipated future use" the principles tell us not to build for. A future Backlog item adding rows-method execution-tier tests adds the factory shaped to that test's actual call shape.
