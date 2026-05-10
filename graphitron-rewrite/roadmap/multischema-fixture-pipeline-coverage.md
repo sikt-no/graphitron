@@ -1,7 +1,7 @@
 ---
 id: R83
 title: "Multi-schema fixture: pipeline + compilation + execution tier coverage"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 4
 theme: testing

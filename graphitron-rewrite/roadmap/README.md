@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R38` | Reshape `BatchKey` into `SourceKey` + unify the rows-method seam | In Progress | [plan](unify-rowsmethodname.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `R83` | Multi-schema fixture: pipeline + compilation + execution tier coverage | Spec | [plan](multischema-fixture-pipeline-coverage.md) |
+| `R83` | Multi-schema fixture: pipeline + compilation + execution tier coverage | Ready | [plan](multischema-fixture-pipeline-coverage.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) | Spec | [plan](custom-scalar-java-types.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
@@ -181,7 +181,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### testing
 
-- `R83` [**Multi-schema fixture: pipeline + compilation + execution tier coverage**](multischema-fixture-pipeline-coverage.md) — Spec, cleanup
+- `R83` [**Multi-schema fixture: pipeline + compilation + execution tier coverage**](multischema-fixture-pipeline-coverage.md) — Ready, cleanup
 - `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md) — Backlog, architecture
 
 ### legacy-migration
