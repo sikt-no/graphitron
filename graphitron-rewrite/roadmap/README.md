@@ -17,6 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R38` | Reshape `BatchKey` into `SourceKey` + unify the rows-method seam | In Progress | [plan](unify-rowsmethodname.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R83` | Multi-schema fixture: pipeline + compilation + execution tier coverage | In Review | [plan](multischema-fixture-pipeline-coverage.md) |
+| `R44` | Deprecate `@multitableReference` | Spec | [plan](deprecate-multitable-reference.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) <sub>blocked by: [reactor-classloader-for-codegen](reactor-classloader-for-codegen.md)</sub> | Spec | [plan](custom-scalar-java-types.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
@@ -66,7 +67,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Cleanup
 
-- `R44` [**Deprecate `@multitableReference`**](deprecate-multitable-reference.md): No consumer of graphitron-rewrite uses `@multitableReference`. Rather than carry the stub through the RC and ship coverage we don't need, the directive joins `@notGenerated` on the deprecation list: it stays declared in `directives.graphqls` so the GraphQL parser does not fail with an "unknown directive" error, but the rewrite classifier rejects every application with a "no longer supported" message and points the schema author at the migration note.
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md): `@externalField` lifted to `IMPLEMENTED_LEAVES` end-to-end in `computed-field-with-reference` (R48, shipped; see [`changelog.md`](changelog.md)). The directive's name is the surviving historical artefact: it predates the `ChildField.ComputedField` model variant and reads as "field resolved by external code" rather than the narrower behaviour the lift settled on (a `Field<X>` returned by a static method, inlined into the SELECT projection at the alias). A clearer name ships in this plan; the old name stays accepted for one consumer-migration window.
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md): Two parallel shims survive in the classifier so legacy SDL keeps building. Both should retire on the same gate (sis migration to canonical SDL); their wire shape is independent but the user-visible migration is one piece of work, so the two retirements ship together. _(blocked by [sis-rewrite-migration](sis-rewrite-migration.md))_
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md): `ChildField.PropertyField` and `ChildField.RecordField` each carry both `columnName: String` and `column: ColumnRef`, with `column` nullable depending on the parent type: non-null when the parent is a `JooqTableRecordType` with a resolvable column, null for `JooqRecordType` / `JavaRecordType` / `PojoResultType` parents. The single record straddles two parent kinds via an Optional component, leaving `columnName` as the only carrier of the SDL string when `column` is absent. Per *Narrow component types over broad interfaces* and *Sub-taxonomies for resolution outcomes*, the right shape is two sealed-arm variants (one for table-backed parents carrying a non-null `ColumnRef`, one for non-table-backed parents carrying just the SDL string), not one record with a nullable component. Split surfaced during R50's `columnName` cleanup on `ChildField.ColumnField` / `ColumnReferenceField`, where the table-backed-only invariant let those carriers retire `columnName` outright; this item carries the same rigour to `PropertyField` and `RecordField`.
@@ -111,7 +111,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### interface-union
 
 - `R108` [**Per-variant projection on polymorphic fields**](polymorphic-per-variant-projection.md) — Backlog, architecture
-- `R44` [**Deprecate `@multitableReference`**](deprecate-multitable-reference.md) — Backlog, cleanup
+- `R44` [**Deprecate `@multitableReference`**](deprecate-multitable-reference.md) — Spec, cleanup
 
 ### nodeid
 
