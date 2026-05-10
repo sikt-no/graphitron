@@ -1647,7 +1647,7 @@ class FieldBuilder {
 
         Class<?> payloadCls;
         try {
-            payloadCls = Class.forName(result.fqClassName());
+            payloadCls = Class.forName(result.fqClassName(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return new ErrorChannelResult.Reject(
                 "payload class '" + result.fqClassName() + "' could not be loaded");
@@ -1756,7 +1756,7 @@ class FieldBuilder {
 
         Class<?> payloadCls;
         try {
-            payloadCls = Class.forName(result.fqClassName());
+            payloadCls = Class.forName(result.fqClassName(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return new DmlPayloadAssemblyResult.Reject(
                 "payload class '" + result.fqClassName() + "' could not be loaded");
@@ -1876,7 +1876,7 @@ class FieldBuilder {
 
         Class<?> payloadCls;
         try {
-            payloadCls = Class.forName(result.fqClassName());
+            payloadCls = Class.forName(result.fqClassName(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return new ResultAssemblyResult.Reject(
                 "payload class '" + result.fqClassName() + "' could not be loaded");
@@ -2242,9 +2242,10 @@ class FieldBuilder {
      * the {@code throws} clause). When the field has no channel, every non-exempt declared
      * checked exception is unmatched.
      */
-    private static String checkDeclaredCheckedExceptions(
+    private String checkDeclaredCheckedExceptions(
             no.sikt.graphitron.rewrite.model.MethodRef method, Optional<ErrorChannel> channel) {
-        var unmatched = CheckedExceptionMatcher.unmatched(method.declaredExceptions(), channel);
+        var unmatched = CheckedExceptionMatcher.unmatched(
+            method.declaredExceptions(), channel, ctx.codegenLoader());
         if (unmatched.isEmpty()) return null;
         return "method '" + method.className() + "." + method.methodName()
             + "' declares checked exception(s) " + unmatched
@@ -3015,7 +3016,7 @@ class FieldBuilder {
                 case null, default -> null;
             };
             if (fqcn != null) {
-                try { return Class.forName(fqcn); }
+                try { return Class.forName(fqcn, false, ctx.codegenLoader()); }
                 catch (ClassNotFoundException e) { return Object.class; }
             }
         }
@@ -3199,7 +3200,7 @@ class FieldBuilder {
 
         Class<?> parentClass;
         try {
-            parentClass = Class.forName(parentFqClassName);
+            parentClass = Class.forName(parentFqClassName, false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return new AccessorDerivation.None();
         }
@@ -3512,7 +3513,7 @@ class FieldBuilder {
 
         Class<?> parentClass;
         try {
-            parentClass = Class.forName(parentFqClassName);
+            parentClass = Class.forName(parentFqClassName, false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
                 "polymorphic child field '" + fieldName + "': @record parent backing class '"

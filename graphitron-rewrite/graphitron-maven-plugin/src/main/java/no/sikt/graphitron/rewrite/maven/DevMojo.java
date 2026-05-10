@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Single user-facing entry point for editing graphitron schemas. Runs the
@@ -77,14 +78,23 @@ public class DevMojo extends AbstractRewriteMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
-        var initialCtx = buildContext();
+        // Initial codegen and LSP catalog build both reflect on consumer classes, so they share
+        // one URLClassLoader scope. Watchers that follow only resolve paths (no reflection); they
+        // capture the ctx returned here, whose loader is closed by the time setup proceeds. Each
+        // file-change callback (regenerate / rebuildCatalog) opens its own scope.
+        var initialCtxHolder = new AtomicReference<RewriteContext>();
+        var initialCatalogHolder = new AtomicReference<CompletionData>();
+        withCodegenScope(ctx -> {
+            initialCtxHolder.set(ctx);
+            if (!skipInitial) {
+                getLog().info(banner("initial run"));
+                runGeneratorPass(ctx, "initial run");
+            }
+            initialCatalogHolder.set(buildCatalogQuietly(ctx));
+        });
+        var initialCtx = initialCtxHolder.get();
 
-        if (!skipInitial) {
-            getLog().info(banner("initial run"));
-            runGeneratorPass(initialCtx, "initial run");
-        }
-
-        var workspace = new Workspace(buildCatalogQuietly(initialCtx), LspVocabulary.load());
+        var workspace = new Workspace(initialCatalogHolder.get(), LspVocabulary.load());
         bindServer(workspace);
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
         startClasspathWatcher(initialCtx, workspace);
@@ -160,26 +170,27 @@ public class DevMojo extends AbstractRewriteMojo {
 
     private void regenerate(Workspace workspace) {
         try {
-            var ctx = buildContext();
-            getLog().info(banner("regenerate"));
-            runGeneratorPass(ctx, "regenerate");
-            for (Path root : resolveSchemaRoots(ctx)) {
-                try {
-                    schemaWatcher.addRoot(root);
-                } catch (IOException e) {
-                    getLog().warn("graphitron:dev: failed to register new watch root "
-                        + root + ": " + e.getMessage());
+            withCodegenScope(ctx -> {
+                getLog().info(banner("regenerate"));
+                runGeneratorPass(ctx, "regenerate");
+                for (Path root : resolveSchemaRoots(ctx)) {
+                    try {
+                        schemaWatcher.addRoot(root);
+                    } catch (IOException e) {
+                        getLog().warn("graphitron:dev: failed to register new watch root "
+                            + root + ": " + e.getMessage());
+                    }
                 }
-            }
-            // The schema may have changed which scalars are declared,
-            // so refresh the catalog from the freshly-parsed bundle.
-            try {
-                workspace.setCatalog(new GraphQLRewriteGenerator(ctx).buildCatalog());
-            } catch (RuntimeException e) {
-                getLog().warn("graphitron:dev: catalog refresh after save failed; "
-                    + "keeping previous: " + e.getMessage());
-                workspace.markAllForRecalculation();
-            }
+                // The schema may have changed which scalars are declared,
+                // so refresh the catalog from the freshly-parsed bundle.
+                try {
+                    workspace.setCatalog(new GraphQLRewriteGenerator(ctx).buildCatalog());
+                } catch (RuntimeException e) {
+                    getLog().warn("graphitron:dev: catalog refresh after save failed; "
+                        + "keeping previous: " + e.getMessage());
+                    workspace.markAllForRecalculation();
+                }
+            });
         } catch (MojoExecutionException e) {
             getLog().error("graphitron:dev: failed to rebuild context", e);
             workspace.markAllForRecalculation();
@@ -189,18 +200,21 @@ public class DevMojo extends AbstractRewriteMojo {
     private void rebuildCatalog(Workspace workspace) {
         getLog().info("graphitron:dev: classpath change detected; rebuilding catalog");
         try {
-            var ctx = buildContext();
-            var catalog = new GraphQLRewriteGenerator(ctx).buildCatalog();
-            workspace.setCatalog(catalog);
-            getLog().info("graphitron:dev: catalog refreshed (" + catalog.tables().size()
-                + " tables, " + catalog.types().size() + " scalars)");
+            withCodegenScope(ctx -> {
+                try {
+                    var catalog = new GraphQLRewriteGenerator(ctx).buildCatalog();
+                    workspace.setCatalog(catalog);
+                    getLog().info("graphitron:dev: catalog refreshed (" + catalog.tables().size()
+                        + " tables, " + catalog.types().size() + " scalars)");
+                } catch (RuntimeException e) {
+                    // Bad schema mid-edit: keep the previous catalog so completions
+                    // do not silently disappear. The next save will re-trigger.
+                    getLog().warn("graphitron:dev: catalog rebuild failed; keeping previous: "
+                        + e.getMessage());
+                }
+            });
         } catch (MojoExecutionException e) {
             getLog().error("graphitron:dev: catalog rebuild failed (context)", e);
-        } catch (RuntimeException e) {
-            // Bad schema mid-edit: keep the previous catalog so completions
-            // do not silently disappear. The next save will re-trigger.
-            getLog().warn("graphitron:dev: catalog rebuild failed; keeping previous: "
-                + e.getMessage());
         }
     }
 

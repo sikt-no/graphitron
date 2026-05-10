@@ -21,6 +21,13 @@ import java.util.Objects;
  *                       inside Maven; empty for unit-tier callers that don't ship classes.
  *                       External jars (from {@code ~/.m2}) are not scanned: services live in
  *                       reactor source, not third-party libraries.
+ * @param codegenLoader  classloader the reflection path uses to resolve consumer-declared
+ *                       service / record / condition / jOOQ-catalog classes. The Mojo builds a
+ *                       {@link java.net.URLClassLoader} over the project's compile classpath
+ *                       and every reactor sibling's {@code target/classes}, parented on the
+ *                       plugin loader. Unit-tier callers default to the current thread's
+ *                       context classloader through the six-arg overload, which equals the
+ *                       system classloader in a JUnit-launched JVM.
  */
 public record RewriteContext(
     List<SchemaInput> schemaInputs,
@@ -29,7 +36,8 @@ public record RewriteContext(
     String outputPackage,
     String jooqPackage,
     Map<String, String> namedReferences,
-    List<Path> classpathRoots
+    List<Path> classpathRoots,
+    ClassLoader codegenLoader
 ) {
     public RewriteContext {
         Objects.requireNonNull(schemaInputs, "schemaInputs");
@@ -39,14 +47,34 @@ public record RewriteContext(
         Objects.requireNonNull(jooqPackage, "jooqPackage");
         Objects.requireNonNull(namedReferences, "namedReferences");
         Objects.requireNonNull(classpathRoots, "classpathRoots");
+        Objects.requireNonNull(codegenLoader, "codegenLoader");
         schemaInputs = List.copyOf(schemaInputs);
         namedReferences = Map.copyOf(namedReferences);
         classpathRoots = List.copyOf(classpathRoots);
     }
 
     /**
+     * Seven-arg overload for callers that supply {@code classpathRoots} but no explicit
+     * {@code codegenLoader}; the loader defaults to the current thread's context classloader,
+     * which equals the system classloader in a JUnit-launched JVM.
+     */
+    public RewriteContext(
+        List<SchemaInput> schemaInputs,
+        Path basedir,
+        Path outputDirectory,
+        String outputPackage,
+        String jooqPackage,
+        Map<String, String> namedReferences,
+        List<Path> classpathRoots
+    ) {
+        this(schemaInputs, basedir, outputDirectory, outputPackage, jooqPackage,
+            namedReferences, classpathRoots, Thread.currentThread().getContextClassLoader());
+    }
+
+    /**
      * Six-arg overload for unit-tier callers that don't care about classpath
-     * scanning. Defaults {@code classpathRoots} to the empty list.
+     * scanning. Defaults {@code classpathRoots} to the empty list and
+     * {@code codegenLoader} to the current thread's context classloader.
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
@@ -57,7 +85,6 @@ public record RewriteContext(
         Map<String, String> namedReferences
     ) {
         this(schemaInputs, basedir, outputDirectory, outputPackage, jooqPackage,
-            namedReferences, List.of());
+            namedReferences, List.of(), Thread.currentThread().getContextClassLoader());
     }
 }
-

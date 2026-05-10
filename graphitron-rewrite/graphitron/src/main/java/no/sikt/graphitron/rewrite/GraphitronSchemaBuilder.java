@@ -133,7 +133,7 @@ public class GraphitronSchemaBuilder {
             }
             throw e;
         }
-        var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage()), ctx);
+        var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), ctx);
         var svc = new ServiceCatalog(bctx);
         bctx.svc = svc;
         var typeBuilder = new TypeBuilder(bctx, svc);
@@ -159,7 +159,7 @@ public class GraphitronSchemaBuilder {
             })
         );
         GraphQLSchema assembled = new SchemaGenerator().makeExecutableSchema(registry, runtimeWiring);
-        var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage()), ctx);
+        var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), ctx);
         var svc = new ServiceCatalog(bctx);
         bctx.svc = svc;
         var typeBuilder = new TypeBuilder(bctx, svc);

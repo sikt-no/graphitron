@@ -89,7 +89,7 @@ public class GraphQLRewriteGenerator {
      */
     public CompletionData buildCatalog() {
         var bundle = GraphitronSchemaBuilder.buildBundle(loadAttributedRegistry(), ctx);
-        var jooq = new JooqCatalog(ctx.jooqPackage());
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         return CatalogBuilder.build(jooq, bundle.assembled(), ctx);
     }
 

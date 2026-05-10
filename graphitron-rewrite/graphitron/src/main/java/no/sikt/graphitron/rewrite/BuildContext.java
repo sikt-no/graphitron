@@ -191,6 +191,18 @@ class BuildContext {
         return ctx;
     }
 
+    /**
+     * Loader for consumer-declared classes (service, record, condition, jOOQ catalog). Mirrors
+     * {@link RewriteContext#codegenLoader()} so reflection sites holding a {@code BuildContext}
+     * do not have to chain through {@code ctx().codegenLoader()}. Falls back to the current
+     * thread's context classloader for the unit-tier tests that construct {@code BuildContext}
+     * with a null {@code RewriteContext} (the same default the {@link RewriteContext}'s
+     * six-arg overload applies); production callers always supply a real {@code ctx}.
+     */
+    ClassLoader codegenLoader() {
+        return ctx != null ? ctx.codegenLoader() : Thread.currentThread().getContextClassLoader();
+    }
+
     void addWarning(BuildWarning warning) {
         warnings.add(warning);
     }

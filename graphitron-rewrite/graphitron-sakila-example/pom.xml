@@ -45,7 +45,8 @@
         <!-- Sakila services (FilmService, SampleQueryService, ...) referenced by the schema's
              @service / @externalField directives. Compile scope so the generated fetchers can
              call them at runtime; -service's compile dep on -db transitively brings the jOOQ
-             catalog onto the plugin classpath via the single <plugin><dependency> below. -->
+             catalog onto the project compile classpath, which the rewrite plugin loads from
+             directly (no <plugin><dependencies>> block needed). -->
         <dependency>
             <groupId>no.sikt</groupId>
             <artifactId>graphitron-sakila-service</artifactId>
@@ -326,17 +327,6 @@
                         </configuration>
                     </execution>
                 </executions>
-                <dependencies>
-                    <!-- Single entry: -service brings the catalog (-db) transitively via its
-                         compile-scope dep, so ServiceCatalog.reflectServiceMethod can
-                         Class.forName(...) the service classes and the jOOQ catalog is also
-                         visible to the generator at codegen time. -->
-                    <dependency>
-                        <groupId>no.sikt</groupId>
-                        <artifactId>graphitron-sakila-service</artifactId>
-                        <version>${project.version}</version>
-                    </dependency>
-                </dependencies>
             </plugin>
         </plugins>
     </build>

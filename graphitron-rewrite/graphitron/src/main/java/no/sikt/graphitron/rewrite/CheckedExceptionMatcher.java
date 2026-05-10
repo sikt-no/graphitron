@@ -63,7 +63,8 @@ final class CheckedExceptionMatcher {
      * code paths reflect on developer classes already, so an unloadable declared exception is
      * a real configuration problem the schema author should see.
      */
-    static List<String> unmatched(List<String> declaredExceptions, Optional<ErrorChannel> channel) {
+    static List<String> unmatched(List<String> declaredExceptions, Optional<ErrorChannel> channel,
+            ClassLoader codegenLoader) {
         if (declaredExceptions.isEmpty()) return List.of();
         var handlers = channel.map(ErrorChannel::mappedErrorTypes)
             .orElse(List.of())
@@ -74,14 +75,14 @@ final class CheckedExceptionMatcher {
         for (var fqn : declaredExceptions) {
             Class<?> ex;
             try {
-                ex = Class.forName(fqn);
+                ex = Class.forName(fqn, false, codegenLoader);
             } catch (ClassNotFoundException e) {
                 unmatched.add(fqn + " (not on classifier classpath)");
                 continue;
             }
             if (!isChecked(ex)) continue;
             if (isExempt(ex)) continue;
-            if (!coveredByAnyHandler(ex, handlers)) unmatched.add(fqn);
+            if (!coveredByAnyHandler(ex, handlers, codegenLoader)) unmatched.add(fqn);
         }
         return List.copyOf(unmatched);
     }
@@ -109,19 +110,20 @@ final class CheckedExceptionMatcher {
             || IOException.class.isAssignableFrom(ex);
     }
 
-    private static boolean coveredByAnyHandler(Class<?> ex, List<ErrorType.Handler> handlers) {
+    private static boolean coveredByAnyHandler(Class<?> ex, List<ErrorType.Handler> handlers,
+            ClassLoader codegenLoader) {
         for (var h : handlers) {
-            if (covers(h, ex)) return true;
+            if (covers(h, ex, codegenLoader)) return true;
         }
         return false;
     }
 
-    private static boolean covers(ErrorType.Handler h, Class<?> ex) {
+    private static boolean covers(ErrorType.Handler h, Class<?> ex, ClassLoader codegenLoader) {
         return switch (h) {
             case ExceptionHandler eh -> {
                 Class<?> handlerClass;
                 try {
-                    handlerClass = Class.forName(eh.exceptionClassName());
+                    handlerClass = Class.forName(eh.exceptionClassName(), false, codegenLoader);
                 } catch (ClassNotFoundException ignored) {
                     yield false;
                 }

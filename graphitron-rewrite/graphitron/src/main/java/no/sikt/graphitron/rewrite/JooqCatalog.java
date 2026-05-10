@@ -35,14 +35,26 @@ public class JooqCatalog {
     private static final Logger LOGGER = LoggerFactory.getLogger(JooqCatalog.class);
 
     private final Catalog catalog;
+    private final ClassLoader codegenLoader;
     private final Map<String, NodeIdMetadataLookup> metadataCache = new ConcurrentHashMap<>();
     private final Map<String, Map<String, String>> qualifierMapCache = new ConcurrentHashMap<>();
 
-    public JooqCatalog(String generatedJooqPackage) {
-        this.catalog = loadDefaultCatalog(generatedJooqPackage);
+    public JooqCatalog(String generatedJooqPackage, ClassLoader codegenLoader) {
+        this.codegenLoader = codegenLoader;
+        this.catalog = loadDefaultCatalog(generatedJooqPackage, codegenLoader);
         if (this.catalog != null) {
-            this.catalog.schemaStream().forEach(JooqCatalog::verifyTablesClassPresent);
+            this.catalog.schemaStream().forEach(s -> verifyTablesClassPresent(s, codegenLoader));
         }
+    }
+
+    /**
+     * Single-arg back-compat constructor: defaults {@code codegenLoader} to the current thread's
+     * context classloader. Used by unit-tier test sites that reflect against classes on their
+     * own module's classpath (where TCCL = system classloader and bare two-arg
+     * {@code Class.forName} resolves identically).
+     */
+    public JooqCatalog(String generatedJooqPackage) {
+        this(generatedJooqPackage, Thread.currentThread().getContextClassLoader());
     }
 
     /**
@@ -53,13 +65,13 @@ public class JooqCatalog {
      * by one. The Mojo wraps the thrown {@link IllegalStateException} into a build-boundary
      * diagnostic.
      */
-    static void verifyTablesClassPresent(Schema schema) {
-        verifyTablesClassPresent(schema.getName(), schema.getClass().getPackageName());
+    static void verifyTablesClassPresent(Schema schema, ClassLoader codegenLoader) {
+        verifyTablesClassPresent(schema.getName(), schema.getClass().getPackageName(), codegenLoader);
     }
 
-    static void verifyTablesClassPresent(String schemaName, String packageName) {
+    static void verifyTablesClassPresent(String schemaName, String packageName, ClassLoader codegenLoader) {
         try {
-            Class.forName(packageName + ".Tables");
+            Class.forName(packageName + ".Tables", false, codegenLoader);
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException(
                 "jOOQ codegen produced no `Tables` class for schema '" + schemaName
@@ -400,7 +412,7 @@ public class JooqCatalog {
 
     private Optional<Class<?>> keysClass(Schema schema) {
         try {
-            return Optional.of(Class.forName(schema.getClass().getPackageName() + ".Keys"));
+            return Optional.of(Class.forName(schema.getClass().getPackageName() + ".Keys", false, codegenLoader));
         } catch (ClassNotFoundException e) {
             return Optional.empty();
         }
@@ -638,7 +650,7 @@ public class JooqCatalog {
 
     private Optional<Class<?>> tablesClass(Schema schema) {
         try {
-            return Optional.of(Class.forName(schema.getClass().getPackageName() + ".Tables"));
+            return Optional.of(Class.forName(schema.getClass().getPackageName() + ".Tables", false, codegenLoader));
         } catch (ClassNotFoundException e) {
             return Optional.empty();
         }
@@ -660,9 +672,13 @@ public class JooqCatalog {
         }
     }
 
-    private static Catalog loadDefaultCatalog(String generatedJooqPackage) {
+    private static Catalog loadDefaultCatalog(String generatedJooqPackage, ClassLoader codegenLoader) {
         try {
-            var cls = Class.forName(generatedJooqPackage + ".DefaultCatalog");
+            // `initialize = true` here: the immediately-following getField("DEFAULT_CATALOG").get(null)
+            // triggers static initialization regardless of the flag (JLS §12.4.1), and the catalog
+            // value itself depends on those initializers having run. The other three call sites in
+            // this class only read class metadata and use `initialize = false`.
+            var cls = Class.forName(generatedJooqPackage + ".DefaultCatalog", true, codegenLoader);
             var field = cls.getField("DEFAULT_CATALOG");
             return (Catalog) field.get(null);
         } catch (ClassNotFoundException e) {

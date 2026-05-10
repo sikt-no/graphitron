@@ -9,6 +9,19 @@
   <version>1.0-SNAPSHOT</version>
   <packaging>jar</packaging>
 
+  <dependencies>
+    <!-- The jOOQ catalog the schema's @table directives reflect against. Declared as a
+         normal project dep, not under <plugin><dependencies>: this IT locks the R124
+         contract that the rewrite plugin sources its codegen classpath from the project's
+         compile classpath. Pre-R124 the same artifact lived under the plugin block; the
+         dep move is the entire point of the migration. -->
+    <dependency>
+      <groupId>no.sikt</groupId>
+      <artifactId>graphitron-sakila-db</artifactId>
+      <version>@project.version@</version>
+    </dependency>
+  </dependencies>
+
   <build>
     <plugins>
       <plugin>
@@ -32,13 +45,6 @@
             </configuration>
           </execution>
         </executions>
-        <dependencies>
-          <dependency>
-            <groupId>no.sikt</groupId>
-            <artifactId>graphitron-sakila-db</artifactId>
-            <version>@project.version@</version>
-          </dependency>
-        </dependencies>
       </plugin>
     </plugins>
   </build>

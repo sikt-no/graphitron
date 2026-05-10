@@ -187,6 +187,10 @@ The canonical generate-and-deploy `<execution>` against the example schema:
 
 For the dev loop add a second execution bound to no phase, or invoke `mvn graphitron:dev` directly. `graphitron-sakila-example`'s pre-wired POM (`graphitron-rewrite/graphitron-sakila-example/pom.xml`) is the canonical worked example.
 
+== Codegen classpath
+
+The reflection sites that resolve consumer-declared classes (`@service` / `@externalField` / `@tableMethod` target classes, `@record`-backing classes, `@condition` resolvers, the generated jOOQ `DefaultCatalog`) load from the *project's* compile classpath plus every reactor sibling's `target/classes`, not from the plugin realm. Any artifact already declared as a normal `<dependency>` of the consumer module is visible to the generator at codegen time; consumers do not need to mirror service / catalog jars under `<plugin><dependencies>`. The rare legitimate case where `<plugin><dependencies>` still makes sense is pinning a service or catalog jar to a different version from the project's compile dep ; the plugin realm parents the codegen loader, so an override under `<plugin><dependencies>` still wins through the parent chain.
+
 == Drift protection
 
 A bidirectional coverage test (`MojoDocCoverageTest` in `graphitron-maven-plugin`) asserts every `@Parameter`-annotated field on `AbstractRewriteMojo`, `GenerateMojo`, `ValidateMojo`, and `DevMojo` has a row in this page's parameter tables, and every parameter row corresponds to an annotated field on one of those Mojos. A new `@Parameter` field cannot land green without a doc row; a removed field forces the row's removal.

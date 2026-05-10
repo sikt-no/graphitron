@@ -194,7 +194,7 @@ final class SourceRowDirectiveResolver {
         //    derived parent-side tuple lives in step 6, not here.
         Class<?> lifterClass;
         try {
-            lifterClass = Class.forName(lifterClassName);
+            lifterClass = Class.forName(lifterClassName, false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return new Resolved.Rejected(Rejection.structural("@sourceRow on '" + parentTypeName + "." + fieldName
                 + "': lifter class '" + lifterClassName + "' could not be loaded"));
@@ -202,7 +202,7 @@ final class SourceRowDirectiveResolver {
 
         Class<?> parentClass;
         try {
-            parentClass = Class.forName(parentFqClassName);
+            parentClass = Class.forName(parentFqClassName, false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return new Resolved.Rejected(Rejection.structural("@sourceRow on '" + parentTypeName + "." + fieldName
                 + "': parent backing class '" + parentFqClassName + "' could not be loaded"));
