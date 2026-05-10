@@ -591,11 +591,12 @@ class FieldBuilder {
                         + "primary key on parent type '" + parentTypeName + "'"));
             }
             BatchKey.RecordParentBatchKey parentKey = new BatchKey.RowKeyed(pkCols);
+            no.sikt.graphitron.rewrite.model.SourceKey parentSourceKey = SourceKeyResolver.resolveRecordParentForPolymorphic(parentKey);
             GraphitronType.ResultType parentResultType =
                 new GraphitronType.JooqTableRecordType(parentTypeName, location, null, parentTableType.table());
             return new InterfaceField(parentTypeName, name, location,
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
-                interfaceType.participants(), resolved.paths(), parentKey, parentResultType);
+                interfaceType.participants(), resolved.paths(), parentSourceKey, parentResultType);
         }
 
         if (elementType instanceof UnionType unionType) {
@@ -611,11 +612,12 @@ class FieldBuilder {
                         + "primary key on parent type '" + parentTypeName + "'"));
             }
             BatchKey.RecordParentBatchKey parentKey = new BatchKey.RowKeyed(pkCols);
+            no.sikt.graphitron.rewrite.model.SourceKey parentSourceKey = SourceKeyResolver.resolveRecordParentForPolymorphic(parentKey);
             GraphitronType.ResultType parentResultType =
                 new GraphitronType.JooqTableRecordType(parentTypeName, location, null, parentTableType.table());
             return new UnionField(parentTypeName, name, location,
                 new ReturnTypeRef.PolymorphicReturnType(elementTypeName, buildWrapper(fieldDef)),
-                unionType.participants(), resolved.paths(), parentKey, parentResultType);
+                unionType.participants(), resolved.paths(), parentSourceKey, parentResultType);
         }
 
         // NestingField: a plain object type in the schema with no Graphitron domain classification.
@@ -3380,12 +3382,13 @@ class FieldBuilder {
                 Rejection.structural(paths.error()));
         }
 
+        no.sikt.graphitron.rewrite.model.SourceKey parentSourceKey = SourceKeyResolver.resolveRecordParentForPolymorphic(resolved.parentKey());
         if (isInterface) {
             return new InterfaceField(parentTypeName, name, location, returnType,
-                participants, paths.paths(), resolved.parentKey(), parentResultType);
+                participants, paths.paths(), parentSourceKey, parentResultType);
         }
         return new UnionField(parentTypeName, name, location, returnType,
-            participants, paths.paths(), resolved.parentKey(), parentResultType);
+            participants, paths.paths(), parentSourceKey, parentResultType);
     }
 
     /**

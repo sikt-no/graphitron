@@ -129,10 +129,11 @@ public final class MultiTablePolymorphicEmitter {
      * @param participantJoinPaths typename-keyed FK chain from the parent table to each
      *                              {@link ParticipantRef.TableBound} participant. Non-empty.
      *                              v1 supports only single-hop FK chains.
-     * @param parentKey             parent-object key extraction strategy. Through R102 only
-     *                              {@link BatchKey.RowKeyed} is reachable from classification
+     * @param parentSourceKey       parent-object source-side key, projected from the field's
+     *                              parent classification. Through R102 the classifier produces
+     *                              only catalog-FK / {@code ColumnRead}-reader parent keys
      *                              (table-backed parents); R105 wires the {@code @record}-parent
-     *                              permits.
+     *                              classifier arm to reach the lifter and accessor reader permits.
      * @param parentResultType      the parent's classified {@link GraphitronType.ResultType};
      *                              threaded into {@link GeneratorUtils#buildRecordParentKeyExtraction}
      *                              so {@code env.getSource()} is cast and read against the right
@@ -143,7 +144,7 @@ public final class MultiTablePolymorphicEmitter {
             String fieldName,
             List<ParticipantRef> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
-            BatchKey.RecordParentBatchKey parentKey,
+            SourceKey parentSourceKey,
             GraphitronType.ResultType parentResultType,
             boolean isList,
             String outputPackage) {
@@ -153,7 +154,6 @@ public final class MultiTablePolymorphicEmitter {
             .toList();
         var methods = new ArrayList<MethodSpec>();
         if (isList && !tableBoundParticipants.isEmpty()) {
-            SourceKey parentSourceKey = parentSourceKey(parentKey);
             methods.add(buildBatchedListFetcher(ctx, fieldName, parentSourceKey, parentResultType, outputPackage));
             methods.add(buildBatchedListRowsMethod(ctx, fieldName, tableBoundParticipants,
                 participantJoinPaths, parentSourceKey, outputPackage));
@@ -207,11 +207,11 @@ public final class MultiTablePolymorphicEmitter {
      *                              {@link ParticipantRef.TableBound} participant. Must be
      *                              {@code Map.of()} when {@code parentKey} is null;
      *                              non-empty otherwise.
-     * @param parentKey             parent-object key extraction strategy; non-null for child
+     * @param parentSourceKey       parent-object source-side key; non-null for child
      *                              connections, null for root queries.
      * @param parentResultType      the parent's classified {@link GraphitronType.ResultType};
-     *                              non-null when {@code parentKey} is non-null. Threaded into
-     *                              {@link GeneratorUtils#buildRecordParentKeyExtraction} so
+     *                              non-null when {@code parentSourceKey} is non-null. Threaded
+     *                              into {@link GeneratorUtils#buildRecordParentKeyExtraction} so
      *                              {@code env.getSource()} is cast and read against the right
      *                              Java type.
      */
@@ -221,7 +221,7 @@ public final class MultiTablePolymorphicEmitter {
             List<ParticipantRef> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
             int defaultPageSize,
-            BatchKey.RecordParentBatchKey parentKey,
+            SourceKey parentSourceKey,
             GraphitronType.ResultType parentResultType,
             String outputPackage) {
         var tableBoundParticipants = participants.stream()
@@ -231,8 +231,7 @@ public final class MultiTablePolymorphicEmitter {
         var methods = new ArrayList<MethodSpec>();
         // The empty-tableBound defensive path falls into the root branch; both fetcher builders
         // emit a non-throwing empty payload when participants is empty.
-        if (parentKey != null && !tableBoundParticipants.isEmpty()) {
-            SourceKey parentSourceKey = parentSourceKey(parentKey);
+        if (parentSourceKey != null && !tableBoundParticipants.isEmpty()) {
             methods.add(buildBatchedConnectionFetcher(ctx, fieldName, parentSourceKey, parentResultType,
                 outputPackage));
             methods.add(buildBatchedConnectionRowsMethod(ctx, fieldName, tableBoundParticipants,
@@ -1527,52 +1526,4 @@ public final class MultiTablePolymorphicEmitter {
             .build();
     }
 
-    /**
-     * Transitional projection of {@link BatchKey.RecordParentBatchKey} into the {@link SourceKey}
-     * shape consumed by {@link GeneratorUtils#buildRecordParentKeyExtraction}. Mirrors the
-     * record-parent arms of {@code SourceKeyResolver.resolveRecordParent} without taking a field
-     * dependency. Removable once {@link no.sikt.graphitron.rewrite.model.ChildField.InterfaceField}
-     * and {@link no.sikt.graphitron.rewrite.model.ChildField.UnionField} flip {@code parentKey}
-     * storage to {@link SourceKey}.
-     *
-     * <p>Cardinality is variant-derived: only the {@code AccessorKeyedMany} arm projects to
-     * {@link SourceKey.Cardinality#MANY}; the rest project to {@link SourceKey.Cardinality#ONE}.
-     * The downstream helper only forks on cardinality inside the {@code AccessorCall} arm, so the
-     * non-accessor arms' cardinality is irrelevant past the projection.
-     */
-    private static SourceKey parentSourceKey(BatchKey.RecordParentBatchKey parentKey) {
-        if (parentKey instanceof BatchKey.RowKeyed rk) {
-            return new SourceKey(
-                null, rk.parentKeyColumns(), List.of(),
-                new SourceKey.Wrap.Row(), SourceKey.Cardinality.ONE,
-                new SourceKey.Reader.ColumnRead());
-        }
-        if (parentKey instanceof BatchKey.LifterLeafKeyed llk) {
-            return new SourceKey(
-                null, llk.parentSideColumns(), List.of(llk.hop()),
-                new SourceKey.Wrap.Row(), SourceKey.Cardinality.ONE,
-                new SourceKey.Reader.SourceRowsCall(llk.lifter()));
-        }
-        if (parentKey instanceof BatchKey.LifterPathKeyed lpk) {
-            return new SourceKey(
-                null, lpk.parentSideColumns(), lpk.path(),
-                new SourceKey.Wrap.Row(), SourceKey.Cardinality.ONE,
-                new SourceKey.Reader.SourceRowsCall(lpk.lifter()));
-        }
-        if (parentKey instanceof BatchKey.AccessorKeyedSingle aks) {
-            return new SourceKey(
-                aks.hop().targetTable(), aks.targetKeyColumns(), List.of(aks.hop()),
-                new SourceKey.Wrap.Record(), SourceKey.Cardinality.ONE,
-                new SourceKey.Reader.AccessorCall(aks.accessor()));
-        }
-        if (parentKey instanceof BatchKey.AccessorKeyedMany akm) {
-            return new SourceKey(
-                akm.hop().targetTable(), akm.targetKeyColumns(), List.of(akm.hop()),
-                new SourceKey.Wrap.Record(), SourceKey.Cardinality.MANY,
-                new SourceKey.Reader.AccessorCall(akm.accessor()));
-        }
-        throw new IllegalArgumentException(
-            "parentSourceKey: unknown RecordParentBatchKey permit "
-            + parentKey.getClass().getSimpleName());
-    }
 }

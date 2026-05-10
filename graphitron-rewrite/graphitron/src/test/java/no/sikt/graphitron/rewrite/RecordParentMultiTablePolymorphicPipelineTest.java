@@ -3,6 +3,8 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -79,10 +81,10 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             type Query { film: Film }
             """);
         var field = (ChildField.InterfaceField) schema.field("FilmInfo", "referrers");
-        assertThat(field.parentKey()).isInstanceOf(BatchKey.RowKeyed.class);
-        assertThat(field.parentKey().dispatch()).isEqualTo(BatchKey.LoaderDispatch.LOAD_ONE);
-        assertThat(field.parentKey().preludeKeyColumns()).hasSize(1);
-        assertThat(field.parentKey().preludeKeyColumns().get(0).sqlName()).isEqualTo("film_id");
+        assertThat(field.parentSourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+        assertThat(field.parentSourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+        assertThat(field.parentSourceKey().columns()).hasSize(1);
+        assertThat(field.parentSourceKey().columns().get(0).sqlName()).isEqualTo("film_id");
         assertThat(field.participantJoinPaths().keySet()).containsExactlyInAnyOrder("Inventory", "Content");
     }
 
@@ -161,13 +163,13 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             type Query { lp: ListPayloadType }
             """);
         var field = (ChildField.InterfaceField) schema.field("ListPayloadType", "films");
-        assertThat(field.parentKey()).isInstanceOf(BatchKey.AccessorKeyedMany.class);
-        assertThat(field.parentKey().dispatch()).isEqualTo(BatchKey.LoaderDispatch.LOAD_MANY);
-        var akm = (BatchKey.AccessorKeyedMany) field.parentKey();
-        assertThat(akm.hop().targetTable().tableName()).isEqualTo("film");
-        assertThat(akm.hop().targetSideColumns()).hasSize(1);
-        assertThat(akm.hop().targetSideColumns().get(0).sqlName()).isEqualTo("film_id");
-        assertThat(akm.accessor().methodName()).isEqualTo("films");
+        var psk = field.parentSourceKey();
+        assertThat(psk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
+        assertThat(psk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+        assertThat(psk.target().tableName()).isEqualTo("film");
+        assertThat(psk.columns()).hasSize(1);
+        assertThat(psk.columns().get(0).sqlName()).isEqualTo("film_id");
+        assertThat(((SourceKey.Reader.AccessorCall) psk.reader()).accessor().methodName()).isEqualTo("films");
     }
 
     // ===== UnionField siblings (mirror Interface; pin shape parity rather than re-verifying body) =====
@@ -182,8 +184,8 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             type Query { film: Film }
             """);
         var field = (ChildField.UnionField) schema.field("FilmInfo", "referrers");
-        assertThat(field.parentKey()).isInstanceOf(BatchKey.RowKeyed.class);
-        assertThat(field.parentKey().preludeKeyColumns()).hasSize(1);
+        assertThat(field.parentSourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+        assertThat(field.parentSourceKey().columns()).hasSize(1);
         assertThat(field.participantJoinPaths().keySet()).containsExactlyInAnyOrder("Inventory", "Content");
     }
 
@@ -211,9 +213,10 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             type Query { lp: ListPayloadType }
             """);
         var field = (ChildField.UnionField) schema.field("ListPayloadType", "films");
-        assertThat(field.parentKey()).isInstanceOf(BatchKey.AccessorKeyedMany.class);
-        assertThat(((BatchKey.AccessorKeyedMany) field.parentKey()).hop().targetTable().tableName())
-            .isEqualTo("film");
+        var psk = field.parentSourceKey();
+        assertThat(psk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
+        assertThat(psk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+        assertThat(psk.target().tableName()).isEqualTo("film");
     }
 
     // ===== Rejection arms =====

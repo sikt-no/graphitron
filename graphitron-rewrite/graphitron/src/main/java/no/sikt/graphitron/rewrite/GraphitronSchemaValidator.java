@@ -336,23 +336,21 @@ public class GraphitronSchemaValidator {
      * file:line) instead of a codegen-time {@code IllegalStateException} or a
      * {@code Row23}-doesn't-exist compile failure.
      *
-     * <p>Reads {@code field.parentKey().preludeKeyColumns()} uniformly across all four
-     * {@link no.sikt.graphitron.rewrite.model.BatchKey.RecordParentBatchKey} permits — the same
-     * accessor the rows-method prelude uses, so the validator's arity surface tracks the actual
-     * key tuple regardless of producer (table-backed parent → {@link no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed},
-     * @record parent → any of the four permits).
+     * <p>Reads {@code field.parentSourceKey().columns()} uniformly across all five
+     * {@link no.sikt.graphitron.rewrite.model.SourceKey.Reader} permits the polymorphic parent
+     * can land on — the same column tuple the rows-method prelude uses, so the validator's
+     * arity surface tracks the actual key tuple regardless of producer.
      *
-     * <p>The non-empty invariant is enforced upstream at construction time: {@link no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed}'s
-     * canonical constructor and {@link no.sikt.graphitron.rewrite.model.JoinStep.LiftedHop}'s constructor
-     * both reject empty key columns; the classifier routes empty-PK / unresolved-hub parents
-     * through {@code UnclassifiedField} so those constructors are unreachable from the
-     * polymorphic-construction sites. The validator's job here is purely the upper-bound check.
+     * <p>The non-empty invariant is enforced upstream at construction time: the producer
+     * routes empty-PK / unresolved-hub parents through {@code UnclassifiedField} before
+     * constructing a {@link no.sikt.graphitron.rewrite.model.SourceKey}, so an empty
+     * {@code columns()} is unreachable here. The validator's job is purely the upper-bound check.
      */
     private void validateChildMultiTableParentPk(String qualifiedName, SourceLocation location,
             String parentTypeName,
-            no.sikt.graphitron.rewrite.model.BatchKey.RecordParentBatchKey parentKey,
+            no.sikt.graphitron.rewrite.model.SourceKey parentSourceKey,
             List<ValidationError> errors) {
-        var keyCols = parentKey.preludeKeyColumns();
+        var keyCols = parentSourceKey.columns();
         if (keyCols.size() > 21) {
             errors.add(new ValidationError(
                 qualifiedName,
@@ -561,13 +559,13 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
         validateChildMultiTableParentPk(field.qualifiedName(), field.location(),
-            field.parentTypeName(), field.parentKey(), errors);
+            field.parentTypeName(), field.parentSourceKey(), errors);
     }
     private void validateUnionField(no.sikt.graphitron.rewrite.model.ChildField.UnionField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
         validateMultiTableParticipants(field.qualifiedName(), field.location(), field.participants(), errors);
         validateChildMultiTableParentPk(field.qualifiedName(), field.location(),
-            field.parentTypeName(), field.parentKey(), errors);
+            field.parentTypeName(), field.parentSourceKey(), errors);
     }
     private void validateNestingField(no.sikt.graphitron.rewrite.model.ChildField.NestingField field, List<ValidationError> errors) {
         // List cardinality has no source-passthrough semantic: one parent Record in, one list value out.

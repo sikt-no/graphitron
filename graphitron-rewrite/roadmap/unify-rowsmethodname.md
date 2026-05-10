@@ -526,14 +526,31 @@ the validator's classifier-side pin all run off `sourceKey()` /
 `InterfaceField.parentKey` / `UnionField.parentKey`, both still
 `BatchKey.RecordParentBatchKey`-typed). These ride on subsequent flips.
 
-Still to land for Phase 3 completion:
+12. `InterfaceField.parentKey` and `UnionField.parentKey` flip from
+    `BatchKey.RecordParentBatchKey` to `SourceKey`. The transitional
+    `MultiTablePolymorphicEmitter.parentSourceKey()` helper deletes; its
+    contents move to `SourceKeyResolver.resolveRecordParentForPolymorphic`
+    (the polymorphic case is its own entry point because the field's
+    return type is `PolymorphicReturnType` rather than table-bound, so it
+    doesn't fit the `resolveRecordParent(BatchKey, TableBoundReturnType)`
+    shape). Producers (FieldBuilder at four construction sites) project
+    at field-construction time. `MultiTablePolymorphicEmitter.emitMethods`
+    and `.emitConnectionMethods` signatures take `SourceKey` directly;
+    the `null` parentSourceKey path (root queries) is preserved unchanged.
+    `GraphitronSchemaValidator.validateChildMultiTableParentPk` reads
+    `parentSourceKey().columns()` rather than `parentKey().preludeKeyColumns()`.
+    Tests on the polymorphic surface (RecordParentMultiTablePolymorphicPipelineTest,
+    InterfaceFieldValidationTest, UnionFieldValidationTest, plus
+    TypeFetcherGeneratorTest's polymorphic helpers) thread `SourceKey`
+    through their fixture builders.
 
-- **`InterfaceField.parentKey`** and **`UnionField.parentKey`**: flip from
-  `BatchKey.RecordParentBatchKey` to `SourceKey`. Drop the transitional
-  `parentSourceKey()` helper in `MultiTablePolymorphicEmitter`. The
-  classifier-side projection ((R102) RowKeyed + (R105) the other three
-  RecordParent permits) folds into the `InterfaceField`/`UnionField`
-  producer sites directly.
+After step 12 the generator package and the multi-table polymorphic
+classifier surface are fully migrated. Remaining `.batchKey()` reads live
+exclusively in `MethodRef.Param.Sourced` consumers
+(`ServiceDirectiveResolver` lines 192, 323; `FieldBuilder` lines 187,
+2754, 2757, 3104-3111). These ride on the `Sourced` storage flip.
+
+Still to land for Phase 3 completion:
 - **`ParamSource.Sources`** and **`MethodRef.Param.Sourced`**: flip to carry
   `SourceKey` + container kind (today `BatchKey`'s mapped/positional axis
   is the variant identity; on `SourceKey` it pairs with `LoaderRegistration`).

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.RejectionKind;
+import no.sikt.graphitron.rewrite.SourceKeyResolver;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -8,6 +9,7 @@ import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -38,8 +40,9 @@ class UnionFieldValidationTest {
             new ColumnRef("id_1", "ID_1", "java.lang.Integer"),
             new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
 
-    private static BatchKey.RecordParentBatchKey rowKeyedFor(TableRef table) {
-        return new BatchKey.RowKeyed(table.primaryKeyColumns());
+    private static SourceKey rowKeyedFor(TableRef table) {
+        return SourceKeyResolver.resolveRecordParentForPolymorphic(
+            new BatchKey.RowKeyed(table.primaryKeyColumns()));
     }
 
     private static GraphitronType.ResultType resultTypeFor(TableRef table) {
