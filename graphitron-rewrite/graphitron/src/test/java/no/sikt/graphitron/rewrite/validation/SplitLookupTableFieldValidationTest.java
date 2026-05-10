@@ -1,14 +1,18 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.rewrite.LoaderRegistrationResolver;
+import no.sikt.graphitron.rewrite.SourceKeyResolver;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -31,6 +35,9 @@ class SplitLookupTableFieldValidationTest {
     }
 
     private static final BatchKey.RowKeyed PARENT_BATCH_KEY = new BatchKey.RowKeyed(java.util.List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer")));
+    private static final ReturnTypeRef.TableBoundReturnType RT_CONN = filmReturn(new FieldWrapper.Connection(true, 100));
+    private static final SourceKey SOURCE_KEY_CONN = SourceKeyResolver.resolveSplit(PARENT_BATCH_KEY, RT_CONN);
+    private static final LoaderRegistration LR_CONN = LoaderRegistrationResolver.resolve(PARENT_BATCH_KEY, RT_CONN);
 
     // Single-cardinality @splitQuery @lookupKey is rejected at classifier time in
     // FieldBuilder; the emitter-level validator no longer carries a fallback check
@@ -39,7 +46,7 @@ class SplitLookupTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field",
-            new SplitLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, 100)), List.of(), List.of(), new OrderBySpec.None(), null, PARENT_BATCH_KEY, EMPTY_LOOKUP),
+            new SplitLookupTableField("Language", "films", null, RT_CONN, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_CONN, LR_CONN, EMPTY_LOOKUP),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 
         private final String description;

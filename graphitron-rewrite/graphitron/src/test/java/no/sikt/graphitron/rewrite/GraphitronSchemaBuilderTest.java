@@ -28,6 +28,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.BatchKey;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
@@ -719,8 +720,8 @@ class GraphitronSchemaBuilderTest {
                 var f = (SplitTableField) schema.field("Customer", "address");
                 assertThat(f.returnType().wrapper()).isInstanceOf(FieldWrapper.Single.class);
                 assertThat(f.joinPath()).hasSize(1);
-                var rk = f.batchKey();
-                assertThat(rk.parentKeyColumns()).extracting(ColumnRef::sqlName)
+                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+                assertThat(f.sourceKey().columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("address_id");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
@@ -736,8 +737,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (SplitTableField) schema.field("Customer", "address");
                 assertThat(f.joinPath()).hasSize(1);
-                var rk = f.batchKey();
-                assertThat(rk.parentKeyColumns()).extracting(ColumnRef::sqlName)
+                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+                assertThat(f.sourceKey().columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("address_id");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(SplitTableField.class); }
@@ -1223,8 +1224,8 @@ class GraphitronSchemaBuilderTest {
         assertThat(castField).isInstanceOf(SplitTableField.class);
         var stf = (SplitTableField) castField;
         assertThat(stf.parentTypeName()).isEqualTo("FilmInfo");
-        var rk = stf.batchKey();
-        assertThat(rk.parentKeyColumns()).extracting(ColumnRef::javaName).containsExactly("FILM_ID");
+        assertThat(stf.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+        assertThat(stf.sourceKey().columns()).extracting(ColumnRef::javaName).containsExactly("FILM_ID");
     }
 
     // ===== ServiceTableField / ServiceRecordField =====
@@ -1637,8 +1638,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordLookupTableField) schema.field("FilmDetails", "language");
-                assertThat(f.batchKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed.class);
-                assertThat(((no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed) f.batchKey()).parentKeyColumns()).isNotEmpty();
+                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+                assertThat(f.sourceKey().columns()).isNotEmpty();
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
         },
@@ -1675,7 +1676,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (RecordLookupTableField) schema.field("FilmDetails", "inventories");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
-                assertThat(f.batchKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed.class);
+                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
         },
@@ -1705,7 +1706,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "language");
                 assertThat(f.returnType().wrapper()).isInstanceOf(no.sikt.graphitron.rewrite.model.FieldWrapper.Single.class);
-                assertThat(f.batchKey()).isInstanceOf(no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed.class);
+                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
                 assertThat(f.emitsSingleRecordPerKey()).isTrue();
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
@@ -1867,14 +1868,15 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
-                assertThat(f.batchKey()).isInstanceOf(BatchKey.LifterPathKeyed.class);
-                var lpk = (BatchKey.LifterPathKeyed) f.batchKey();
+                var sk = f.sourceKey();
+                assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
+                var lifter = ((SourceKey.Reader.SourceRowsCall) sk.reader()).lifter();
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath()).isEqualTo(lpk.path());
-                assertThat(lpk.parentSideColumns()).hasSize(1);
-                assertThat(lpk.parentSideColumns().get(0).sqlName()).isEqualTo("film_id");
-                assertThat(lpk.lifter().declaringClass().reflectionName()).isEqualTo("no.sikt.graphitron.rewrite.TestLifterStub");
-                assertThat(lpk.lifter().methodName()).isEqualTo("dummyRow1Integer");
+                assertThat(f.joinPath()).isEqualTo(sk.path());
+                assertThat(sk.columns()).hasSize(1);
+                assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
+                assertThat(lifter.declaringClass().reflectionName()).isEqualTo("no.sikt.graphitron.rewrite.TestLifterStub");
+                assertThat(lifter.methodName()).isEqualTo("dummyRow1Integer");
                 // First hop's target table is film (the FK's referenced side); the leaf is
                 // inventory and lives on the field's returnType, not on the path.
                 assertThat(f.returnType().table().tableName()).isEqualTo("inventory");
@@ -1896,7 +1898,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordLookupTableField) schema.field("FilmDetails", "inventories");
-                assertThat(f.batchKey()).isInstanceOf(BatchKey.LifterPathKeyed.class);
+                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
                 assertThat(f.lookupMapping()).isNotNull();
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordLookupTableField.class); }
@@ -1975,7 +1977,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
-                assertThat(f.batchKey()).isInstanceOf(BatchKey.LifterPathKeyed.class);
+                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },
@@ -2176,8 +2178,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
-                var lpk = (BatchKey.LifterPathKeyed) f.batchKey();
-                assertThat(lpk.parentSideColumns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
+                assertThat(f.sourceKey().columns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
                     .containsExactly("film_id");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
@@ -2198,7 +2200,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
-                assertThat(f.batchKey()).isInstanceOf(BatchKey.LifterPathKeyed.class);
+                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
                 assertThat(f.filters())
                     .filteredOn(filter -> filter instanceof ConditionFilter)
                     .extracting(filter -> ((ConditionFilter) filter).methodName())
@@ -2224,7 +2226,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
-                assertThat(f.batchKey()).isInstanceOf(BatchKey.LifterPathKeyed.class);
+                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
                 assertThat(f.orderBy()).isInstanceOf(OrderBySpec.Argument.class);
                 var orderBy = (OrderBySpec.Argument) f.orderBy();
                 assertThat(orderBy.typeName()).isEqualTo("InventoryOrder");
@@ -2266,14 +2268,18 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("FilmDetails", "inventories");
-                assertThat(f.batchKey()).isInstanceOf(BatchKey.LifterLeafKeyed.class);
-                var llk = (BatchKey.LifterLeafKeyed) f.batchKey();
-                assertThat(llk.parentSideColumns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
+                var sk = f.sourceKey();
+                assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
+                assertThat(sk.columns()).extracting(no.sikt.graphitron.rewrite.model.ColumnRef::sqlName)
                     .containsExactly("inventory_id");
-                assertThat(llk.hop().targetTable().tableName()).isEqualTo("inventory");
+                // Leaf-PK variant: path contains a single LiftedHop pointing at the leaf target.
+                assertThat(sk.path()).hasSize(1);
+                assertThat(sk.path().get(0)).isInstanceOf(JoinStep.LiftedHop.class);
+                assertThat(((JoinStep.LiftedHop) sk.path().get(0)).targetTable().tableName()).isEqualTo("inventory");
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).isSameAs(llk.hop());
-                assertThat(llk.lifter().methodName()).isEqualTo("dummyRow1Integer");
+                assertThat(f.joinPath().get(0)).isSameAs(sk.path().get(0));
+                assertThat(((SourceKey.Reader.SourceRowsCall) sk.reader()).lifter().methodName())
+                    .isEqualTo("dummyRow1Integer");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },
@@ -2393,13 +2399,14 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("Payload", "films");
-                assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorKeyedMany.class);
-                var arm = (BatchKey.AccessorKeyedMany) f.batchKey();
-                assertThat(arm.accessor().methodName()).isEqualTo("films");
-                assertThat(arm.targetKeyColumns()).hasSize(1);
-                assertThat(arm.targetKeyColumns().get(0).sqlName()).isEqualTo("film_id");
+                var sk = f.sourceKey();
+                assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
+                assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+                assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName()).isEqualTo("films");
+                assertThat(sk.columns()).hasSize(1);
+                assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).isSameAs(arm.hop());
+                assertThat(f.joinPath().get(0)).isSameAs(sk.path().get(0));
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },
@@ -2415,8 +2422,10 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("Payload", "films");
-                assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorKeyedMany.class);
-                // The Set<X> vs List<X> split inside Many is not preserved on the variant; emit
+                var sk = f.sourceKey();
+                assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
+                assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+                // The Set<X> vs List<X> split inside Many is not preserved on the SourceKey; emit
                 // is uniform via Iterable. The fixture still exercises the Set classifier path.
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
@@ -2433,13 +2442,14 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (RecordTableField) schema.field("Payload", "film");
-                assertThat(f.batchKey()).isInstanceOf(BatchKey.AccessorKeyedSingle.class);
-                var ars = (BatchKey.AccessorKeyedSingle) f.batchKey();
-                assertThat(ars.accessor().methodName()).isEqualTo("film");
-                assertThat(ars.targetKeyColumns()).hasSize(1);
-                assertThat(ars.targetKeyColumns().get(0).sqlName()).isEqualTo("film_id");
+                var sk = f.sourceKey();
+                assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
+                assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+                assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName()).isEqualTo("film");
+                assertThat(sk.columns()).hasSize(1);
+                assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
                 assertThat(f.joinPath()).hasSize(1);
-                assertThat(f.joinPath().get(0)).isSameAs(ars.hop());
+                assertThat(f.joinPath().get(0)).isSameAs(sk.path().get(0));
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
         },

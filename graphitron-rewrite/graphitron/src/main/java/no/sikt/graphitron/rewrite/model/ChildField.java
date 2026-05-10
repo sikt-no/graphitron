@@ -203,7 +203,8 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        BatchKey.RowKeyed batchKey
+        SourceKey sourceKey,
+        LoaderRegistration loaderRegistration
     ) implements TableTargetField, BatchKeyField, ConditionJoinReportable {
         @Override
         public boolean emitsSingleRecordPerKey() {
@@ -236,7 +237,8 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        BatchKey.RowKeyed batchKey,
+        SourceKey sourceKey,
+        LoaderRegistration loaderRegistration,
         LookupMapping lookupMapping
     ) implements TableTargetField, BatchKeyField, LookupField, ConditionJoinReportable {
         @Override public Rejection.EmitBlockReason emitBlockReason() {
@@ -404,7 +406,8 @@ public sealed interface ChildField extends GraphitronField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         MethodRef method,
-        BatchKey.ParentKeyed batchKey,
+        SourceKey sourceKey,
+        LoaderRegistration loaderRegistration,
         Optional<ErrorChannel> errorChannel
     ) implements TableTargetField, MethodBackedField, BatchKeyField, WithErrorChannel {
         @Override
@@ -431,7 +434,8 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef returnType,
         List<JoinStep> joinPath,
         MethodRef method,
-        BatchKey.ParentKeyed batchKey,
+        SourceKey sourceKey,
+        LoaderRegistration loaderRegistration,
         Optional<ErrorChannel> errorChannel
     ) implements ChildField, MethodBackedField, BatchKeyField, WithErrorChannel {
 
@@ -474,7 +478,8 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        BatchKey.RecordParentBatchKey batchKey
+        SourceKey sourceKey,
+        LoaderRegistration loaderRegistration
     ) implements TableTargetField, BatchKeyField, ConditionJoinReportable {
         @Override
         public boolean emitsSingleRecordPerKey() {
@@ -482,11 +487,11 @@ public sealed interface ChildField extends GraphitronField
             // SplitRowsMethodEmitter.buildForRecordTable: (a) single-cardinality fields whose
             // data-fetcher wants `Record` per key (one row per parent), and (b) the
             // loader.loadMany contract whose per-key value is `Record` regardless of field
-            // cardinality. The {@link BatchKey.LoaderDispatch} projection is the single source
-            // of truth for (b) — TypeFetcherGenerator.buildRecordBasedDataFetcher reads the
-            // same predicate to decide its valueType, so the two emit sites cannot drift.
+            // cardinality. The {@link LoaderRegistration.Dispatch} projection is the single
+            // source of truth for (b) — TypeFetcherGenerator.buildRecordBasedDataFetcher reads
+            // the same predicate to decide its valueType, so the two emit sites cannot drift.
             return !returnType().wrapper().isList()
-                || batchKey().dispatch() == BatchKey.LoaderDispatch.LOAD_MANY;
+                || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
         }
         @Override public Rejection.EmitBlockReason emitBlockReason() {
             return Rejection.EmitBlockReason.RECORD_TABLE_FIELD_CONDITION_JOIN_STEP;
@@ -503,7 +508,8 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        BatchKey.RecordParentBatchKey batchKey,
+        SourceKey sourceKey,
+        LoaderRegistration loaderRegistration,
         LookupMapping lookupMapping
     ) implements TableTargetField, BatchKeyField, LookupField, ConditionJoinReportable {
         @Override
@@ -512,7 +518,7 @@ public sealed interface ChildField extends GraphitronField
             // single-record-per-key arm as the LOAD_MANY loadMany-contract dispatch. See
             // RecordTableField.emitsSingleRecordPerKey for the single-source-of-truth notes.
             return !returnType().wrapper().isList()
-                || batchKey().dispatch() == BatchKey.LoaderDispatch.LOAD_MANY;
+                || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
         }
         @Override public Rejection.EmitBlockReason emitBlockReason() {
             return Rejection.EmitBlockReason.RECORD_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;

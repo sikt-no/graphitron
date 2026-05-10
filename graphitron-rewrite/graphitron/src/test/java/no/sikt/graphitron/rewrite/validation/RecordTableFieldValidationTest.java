@@ -2,15 +2,19 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.LoaderRegistrationResolver;
+import no.sikt.graphitron.rewrite.SourceKeyResolver;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -30,6 +34,12 @@ class RecordTableFieldValidationTest {
     }
 
     private static final BatchKey.RecordParentBatchKey BATCH_KEY = new BatchKey.RowKeyed(java.util.List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer")));
+    private static final ReturnTypeRef.TableBoundReturnType RT_SINGLE = filmReturn(new FieldWrapper.Single(true));
+    private static final ReturnTypeRef.TableBoundReturnType RT_LIST = filmReturn(new FieldWrapper.List(true, true));
+    private static final SourceKey SOURCE_KEY_SINGLE = SourceKeyResolver.resolveRecordParent(BATCH_KEY, RT_SINGLE);
+    private static final SourceKey SOURCE_KEY_LIST = SourceKeyResolver.resolveRecordParent(BATCH_KEY, RT_LIST);
+    private static final LoaderRegistration LR_SINGLE = LoaderRegistrationResolver.resolve(BATCH_KEY, RT_SINGLE);
+    private static final LoaderRegistration LR_LIST = LoaderRegistrationResolver.resolve(BATCH_KEY, RT_LIST);
 
     // Validator messages for RecordTableField. Kept inline — a change to the production string
     // breaks this test loudly and must be updated in the same commit.
@@ -45,31 +55,31 @@ class RecordTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         SINGLE_NO_PATH("single cardinality, empty joinPath — emittable post-R61 (single-record-per-key arm)",
-            new RecordTableField("FilmDetails", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null, BATCH_KEY),
+            new RecordTableField("FilmDetails", "film", null, RT_SINGLE, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE),
             List.of()),
 
         SINGLE_WITH_FK_PATH("single cardinality with FK path — emittable post-R61",
-            new RecordTableField("FilmDetails", "film", null, filmReturn(new FieldWrapper.Single(true)),
+            new RecordTableField("FilmDetails", "film", null, RT_SINGLE,
                 List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
-                List.of(), new OrderBySpec.None(), null, BATCH_KEY),
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE),
             List.of()),
 
         SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — condition-join stub surfaces as build error",
-            new RecordTableField("FilmDetails", "film", null, filmReturn(new FieldWrapper.Single(true)),
+            new RecordTableField("FilmDetails", "film", null, RT_SINGLE,
                 List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
-                List.of(), new OrderBySpec.None(), null, BATCH_KEY),
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE),
             List.of(CONDITION_JOIN_STUB)),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
-            new RecordTableField("FilmDetails", "film", null, filmReturn(new FieldWrapper.List(true, true)),
+            new RecordTableField("FilmDetails", "film", null, RT_LIST,
                 List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
-                List.of(), new OrderBySpec.None(), null, BATCH_KEY),
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_LIST, LR_LIST),
             List.of(CONDITION_JOIN_STUB)),
 
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
-            new RecordTableField("FilmDetails", "films", null, filmReturn(new FieldWrapper.List(true, true)),
+            new RecordTableField("FilmDetails", "films", null, RT_LIST,
                 List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
-                List.of(), new OrderBySpec.None(), null, BATCH_KEY),
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_LIST, LR_LIST),
             List.of());
 
         private final String description;

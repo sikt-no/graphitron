@@ -490,25 +490,50 @@ already landed (prefix-tagged `R38 Phase 3 (N/N): ...`):
     `buildRuntimeStub`) take `SourceKey`. Public entry points read
     `field.sourceKey()`. The two-permit accessor check collapses to a
     single `Reader.AccessorCall` `instanceof`.
+11. Storage flip on all six `BatchKeyField` permits (`SplitTableField`,
+    `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`,
+    `ServiceTableField`, `ServiceRecordField`): replace the `batchKey`
+    record component with `sourceKey: SourceKey` + `loaderRegistration:
+    LoaderRegistration`. `BatchKeyField` interface drops the default
+    `sourceKey()` / `loaderRegistration()` methods (record components shadow
+    them as abstract). `RecordTableField.emitsSingleRecordPerKey` /
+    `RecordLookupTableField.emitsSingleRecordPerKey` read
+    `loaderRegistration().dispatch() == LOAD_MANY` rather than the deleted
+    `batchKey().dispatch()`. `SourceKeyResolver` and
+    `LoaderRegistrationResolver` refactor to value-based per-shape entry
+    points (`resolveSplit`, `resolveRecordParent`, `resolveServiceTable`,
+    `resolveServiceRecord`, `LoaderRegistrationResolver.resolve(BatchKey,
+    ReturnTypeRef)`). Producers (`FieldBuilder` at ten constructor sites,
+    `MappingsConstantNameDedup` at two reconstruction sites) compute
+    `SourceKey + LoaderRegistration` at field-construction time via the
+    new entry points; the no-Sources-param service path passes null for
+    both (the validator's missing-Sources-param check remains the
+    surfacing site). Tests on the projection surface (`SourceKeyResolverTest`,
+    `LoaderRegistrationResolverTest`) move to the value-based API;
+    classifier-side coverage in `GraphitronSchemaBuilderTest` switches to
+    `f.sourceKey()` shape assertions; validation tests
+    (`RecordTableFieldValidationTest`, `RecordLookupTableFieldValidationTest`,
+    `SplitTableFieldValidationTest`, `SplitLookupTableFieldValidationTest`,
+    `ServiceFieldValidationTest`) thread `SourceKey + LoaderRegistration`
+    through their fixture builders. 1554 tests green.
 
-After step 10 the entire generator package is off `.batchKey()` reads
-(`grep -rn "\\.batchKey()" .../rewrite/generators/` returns no matches).
-Remaining `.batchKey()` reads live in the resolver layer
-(`ServiceDirectiveResolver`, `FieldBuilder` producers,
-`MappingsConstantNameDedup`) and ride on the storage flip.
+After step 11 the generator package, the field-classifier producers, and
+the validator's classifier-side pin all run off `sourceKey()` /
+`loaderRegistration()`. Remaining `.batchKey()` reads live exclusively in
+`MethodRef.Param.Sourced` consumers (`ServiceDirectiveResolver` lines 192,
+323; `FieldBuilder` lines 187, 2754, 2757, 3104-3111) plus
+`MultiTablePolymorphicEmitter.parentSourceKey()` (still projects from
+`InterfaceField.parentKey` / `UnionField.parentKey`, both still
+`BatchKey.RecordParentBatchKey`-typed). These ride on subsequent flips.
 
 Still to land for Phase 3 completion:
 
-- **Storage migration** on the six `BatchKeyField` permits (`SplitTableField`,
-  `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`,
-  `ServiceTableField`, `ServiceRecordField`) — replace the `batchKey`
-  record component with `sourceKey: SourceKey` (and add
-  `loaderRegistration: LoaderRegistration` where the field needs it on the
-  emit path). `BatchKeyField`'s default `sourceKey()` / `loaderRegistration()`
-  become abstract methods backed by the new record components.
 - **`InterfaceField.parentKey`** and **`UnionField.parentKey`**: flip from
   `BatchKey.RecordParentBatchKey` to `SourceKey`. Drop the transitional
-  `parentSourceKey()` helper in `MultiTablePolymorphicEmitter`.
+  `parentSourceKey()` helper in `MultiTablePolymorphicEmitter`. The
+  classifier-side projection ((R102) RowKeyed + (R105) the other three
+  RecordParent permits) folds into the `InterfaceField`/`UnionField`
+  producer sites directly.
 - **`ParamSource.Sources`** and **`MethodRef.Param.Sourced`**: flip to carry
   `SourceKey` + container kind (today `BatchKey`'s mapped/positional axis
   is the variant identity; on `SourceKey` it pairs with `LoaderRegistration`).

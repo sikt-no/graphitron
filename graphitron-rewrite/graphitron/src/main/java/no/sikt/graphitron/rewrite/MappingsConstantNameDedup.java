@@ -167,10 +167,10 @@ public final class MappingsConstantNameDedup {
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.method(), present);
             case ChildField.ServiceTableField f -> new ChildField.ServiceTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.filters(),
-                f.orderBy(), f.pagination(), f.method(), f.batchKey(), present);
+                f.orderBy(), f.pagination(), f.method(), f.sourceKey(), f.loaderRegistration(), present);
             case ChildField.ServiceRecordField f -> new ChildField.ServiceRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
-                f.batchKey(), present);
+                f.sourceKey(), f.loaderRegistration(), present);
             case ChildField.TableMethodField f -> new ChildField.TableMethodField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
                 present);
