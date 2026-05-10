@@ -293,6 +293,11 @@ API misfit surfaces here, not at the flip.
 - **`SourceKeyResolver` + `LoaderRegistrationResolver`** in
   `no.sikt.graphitron.rewrite`, alongside `OrderByResolver` etc. Each ships
   per-`Reader` projection tests from a fixture classification context.
+  *(Phase 1b, shipped: both resolvers project from today's `BatchKey` onto
+  the new `SourceKey` / `LoaderRegistration` shape; one fixture per
+  `(BatchKeyField permit × BatchKey permit)` row in the projection table.
+  Phase 3 re-grounds the resolvers against upstream classification primitives
+  directly.)*
 - **`RowsMethodSkeleton`** + sealed `RowsMethodBody` (five permits as
   enumerated above). The skeleton's exhaustive switch is the dispatch site;
   no predicate accessors on `RowsMethodBody`.

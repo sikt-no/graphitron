@@ -19,11 +19,13 @@ import java.util.Objects;
  * <h2>Components</h2>
  *
  * <ul>
- *   <li>{@link #target()} — the table the rows-method body reads from. Pre-resolved so
- *       consumers avoid re-deriving from {@link #path()} / {@link #columns()} (the spec's
- *       original derivation requires {@link ColumnRef} to carry table info, which it does
- *       not today; storing the resolved {@link TableRef} keeps the existing model surface
- *       unchanged).</li>
+ *   <li>{@link #target()} — the table the rows-method body reads from, or {@code null} for
+ *       source-bearing fields with no table-bound target (notably scalar-returning
+ *       {@code @service} fields backed by {@link Reader.ServiceUntypedRecord}). Pre-resolved
+ *       so consumers avoid re-deriving from {@link #path()} / {@link #columns()} (the
+ *       spec's original derivation requires {@link ColumnRef} to carry table info, which it
+ *       does not today; storing the resolved {@link TableRef} keeps the existing model
+ *       surface unchanged).</li>
  *   <li>{@link #columns()} — entry-point columns for the rows-method's parent-input VALUES
  *       table. When {@link #path()} is empty: target-side columns (the catalog-FK / accessor
  *       arms). When {@link #path()} is non-empty: first-hop source-side columns (the
@@ -111,7 +113,6 @@ public record SourceKey(
     }
 
     public SourceKey {
-        Objects.requireNonNull(target, "target");
         Objects.requireNonNull(reader, "reader");
         Objects.requireNonNull(wrap, "wrap");
         Objects.requireNonNull(cardinality, "cardinality");
@@ -129,6 +130,7 @@ public record SourceKey(
                 + "TableRecord; rows-method body reads valueN() off the key); got Wrap." + wrap);
         }
         if (reader instanceof Reader.ServiceTableRecord stra
+                && target != null
                 && Objects.equals(stra.recordType(), target.recordClass())
                 && !path.isEmpty()) {
             throw new IllegalArgumentException(
