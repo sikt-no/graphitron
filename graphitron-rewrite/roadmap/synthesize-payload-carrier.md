@@ -109,6 +109,147 @@ All three phases are specified in implementation-ready detail below.
 Promoting R75 from Spec → Ready means signing off on the entire body;
 each phase ships as its own implementation cycle.
 
+## Open design forks (post-architect-review, work-in-progress)
+
+A `principles-architect` review on the pivoted spec body returned 11 findings;
+verdict was *needs revision before Spec → Ready handoff*. A self-review found 6 items,
+overlapping on the framing items. Two forks have been touched in discussion and have a
+captured frame; the rest carry forward. The next session must work through these
+before the Spec → Ready transition. The Phase 1 / 2 / 3 bodies below have **not** yet
+been updated to reflect the resolutions; they describe the pre-architect-review pivot.
+
+### Forks with discussion frame (still open)
+
+**Fork A — `RecordTableField` reuse vs sibling permit (architect #1).**
+
+Architect's claim: today's `RecordTableField` always routes through
+`buildRecordBasedDataFetcher` (DataLoader path with `SplitRowsMethodEmitter
+.buildForRecordTable`). The reshape's rooted case is a plain `DataFetcher` reading
+`env.getSource()` — different topology, no rows-method, no DataLoader registration.
+Forcing both shapes through one permit puts the dispatch fork at every consumer site
+(validator, fetcher emitter, rows-method emitter, leaf-coverage check). The empty
+`joinPath` / `filters` / `pagination` / bespoke `BatchKey` on the rooted case is the
+type system telling us the variants don't share a meaningful component set.
+Suggested: sibling permit (`RootedRecordTableField`) or sealed sub-split.
+
+Counter-frame (user): bulk DML mutations require the rows-method + `VALUES`-table-with-
+strict-ordering machinery — a non-trivial generation-time concern. Only the *single-
+input* mutation is "trivial". The trivial case can be solved using the general case,
+so the rooted/nested split isn't the cleanest axis — bulk vs single is. Whether
+`RootedRecordTableField` is the right cleanup, or whether a different sealed sub-split
+captures the variation, is unresolved. Discuss further next session.
+
+**Fork B — the common concept under `BatchKey` (architect #2).**
+
+Architect's claim: every existing `BatchKey.RecordParentBatchKey` arm describes how
+to construct a DataLoader key from the parent. The rooted case has no DataLoader.
+Adding a `BatchKey.RootKeyed` arm makes `BatchKey` mean "DataLoader-key OR PK-
+extraction-strategy" — the shared-accessor smell. The sub-taxonomy belongs at the
+*fetcher dispatch* layer, not the batch-key layer.
+
+Counter-frame (user): correct that `BatchKey` is the wrong abstraction for the rooted
+case, but there's a common concept worth teasing out. `BatchKey` is reserved for
+DataLoader; we need a `SourceKey` abstraction — "how do we extract a key from a
+source" — that `BatchKey` itself leans on for the DataLoader-specific case. The
+rooted variant uses `SourceKey` directly without the `BatchKey` layer; existing
+`BatchKey` arms decompose into "wraps a `SourceKey` plus DataLoader-specific dispatch
+info". The shape of `SourceKey` (sealed type, capability, etc.) is the design call.
+
+### Must address (no discussion frame yet)
+
+**Architect #3 — "trigger consulted at exactly two sites" undercount.** The pivot
+retires `BuildContext.resolveReturnType`'s call (good) but the validator arms in
+`MutationInputResolver.validateReturnType` (`ScalarReturnType` arm + `ResultReturnType`
+arm) still need to thread `Rejected` reasons. The "two sites" claim erases the
+validator wing of the validator-mirrors-classifier discipline. Either consolidate
+rejection-message responsibility into the classifier (truly fewer sites) or describe
+the call topology honestly. Self-review #2 also flagged this.
+
+**Architect #4 — load-bearing key `passthrough-payload.data-table-equals-dml-target`
+is *not* structurally enforced by the pivot.** Trigger condition #3 admits any
+`TableBackedType` element. SDL author writing
+`Mutation.x(in: FilmInput!): ActorPayload` admits — Actor is `@table` — but the emit
+generates `INSERT INTO film ... RETURNING film.film_id` then
+`SELECT $fields(actor) FROM actor WHERE actor.actor_id IN (source.getValues(film.film_id))`.
+That compiles, runs, and returns nonsense. Either add trigger condition #5
+(`dataElement.table() == tableInputArg.inputTable()` for DML mutations) or restore
+the load-bearing classifier-check pair. Self-review #1 also flagged this.
+
+**Architect #5 — the wire-format boundary still exists, just moved up.** The pivot
+returns `Result<Record1<Integer>>` (PK-only rows) to graphql-java; the data-field
+fetcher casts `(Result<Record1<Integer>>) env.getSource()` and runs the response
+SELECT. That cast IS the boundary, one layer up. The shape "PK rows packed in jOOQ
+Result" is exactly the wire-format-boundary smell. The honest description: adapter /
+composer pair (per the principle). Mutation's fetcher = adapter (PK-only out); data-
+field's fetcher = composer (PK in, full rows out). Both halves carry typed shapes;
+the cast in the spec sketch is the asymmetry the principle warns against. Reframe
+the spec body to acknowledge the boundary and design the typed shape on both sides.
+
+**Architect #6 — Open Q1 (PlainObjectType vs PojoResultType promotion) isn't 50/50.**
+Option B literally re-introduces the `resolveReturnType` short-circuit the pivot
+exists to retire. Option A (promote no-`@record` plain Objects to `PojoResultType`
+with null `fqClassName` at type-classification time) is the principled answer.
+Commit; the wart it widens is real but proper to defer (see #8 below).
+
+**Architect #7 — Open Q3 (carrier wrap convention) should commit to `DataFetcherResult`
+from day 1.** Phase 2 needs the wrap; deferring forces a Phase-2 migration of every
+Phase-1 consumer. Cleaner to ship Phase 1 with
+`DataFetcherResult.<Result<RecordN<...>>>newResult().data(rows).build()` and have
+Phase 2 be purely additive (`localContext` attaches to the existing wrap). Drop bare-
+`Result` return from the spec.
+
+**Architect #9 — three identical `Mutation*RecordField` permits should be one** with
+a `DmlKind` discriminator. The "sealed hierarchies" principle says variants split
+when they carry distinct data; these three carry identical components. Either one
+`MutationDmlRecordField` carrying `DmlKind kind`, or — out of R75's scope, but
+worth a Backlog item — collapse the existing four `DmlTableField` permits the same
+way.
+
+**Architect #10 — direct-`@table`-return two-step emit is a perf trade.** Adds one
+round-trip per mutation versus today's single-statement `INSERT...RETURNING $fields`.
+The transaction-durability concern that motivates two-step is the *payload* case;
+direct-`@table`-return doesn't have the same exposure (graphql-java's traversal of a
+`Record` doesn't issue further DB reads). Pick consciously: (a) two-step only on
+payload returns, single-statement on direct-`@table`; (b) two-step uniformly, accept
+the perf hit. Spec implicitly chose (b) without justification. Self-review #5 also
+flagged this.
+
+**Architect #11 — "no new load-bearing keys" undersells the design's reliance.** The
+rooted `getSource()` cast, the from-clause anchored on the input table, the IN-
+predicate over the input table's PK columns — each is a classifier guarantee the
+emitter relies on. Each needs `@LoadBearingClassifierCheck` /
+`@DependsOnClassifierCheck` declared up front, or the audit will flag orphans when
+implementation lands. Re-audit the emitter sites the pivot adds and tag pre-conditions
+with load-bearing keys.
+
+### Defer to a sibling Backlog item
+
+**Architect #8 — `PojoResultType` model wart.** `fqClassName == null` on
+`PojoResultType` carries two distinct meanings (no `@record(className:)` ever
+authored vs payload-shaped no-`@record` Object promoted by the trigger). Smell of
+"enum forces every variant to have the same shape". Lift to a sealed sub-taxonomy
+(`(Backed | NoBacking)` or similar) so the trigger's condition #1 reads off one
+permit. R75 doesn't fix this; it inherits the wart. Open as Backlog if the next
+reviewer agrees.
+
+### Self-review items not in the architect's list
+
+- **Trigger function name.** `unwrapPassthroughPayload` is residue from the retired
+  wire-format-unwrap design. Rename to something like `tryResolvePayloadShape` as a
+  Phase 1 implementation step; spec should commit rather than say "consider
+  renaming". (Self-review #4.)
+- **Phase 1 carrier should pre-include `slots: List<SlotDescriptor>`.** Phase 2
+  widens the permits with the slot list; pre-including (empty in Phase 1) avoids
+  retroactive permit-widening. Folds into Architect #7's "commit to
+  `DataFetcherResult` wrap from day 1". (Self-review #3.)
+- **Component-type narrowness inconsistency vs `MutationServiceRecordField`.** New
+  R75 permits use narrow `ResultReturnType`; existing `MutationServiceRecordField`
+  uses broad `ReturnTypeRef`. Pick a side: (a) follow the existing broad shape
+  (consistency, less type-safety), (b) flag a follow-up item to narrow the existing
+  carrier. Spec doesn't pick. (Self-review #6.)
+
+---
+
 ## Phase 1: record-returning DML mutations + tight transactions
 
 Phase 1 reshapes R75 onto the structural reading of the SDL: a `@mutation` returning a
