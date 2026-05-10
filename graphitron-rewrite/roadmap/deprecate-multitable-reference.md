@@ -1,7 +1,7 @@
 ---
 id: R44
 title: "Deprecate `@multitableReference`"
-status: Ready
+status: In Review
 bucket: cleanup
 priority: 5
 theme: interface-union

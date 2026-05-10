@@ -40,7 +40,7 @@ a|
 * xref:directives/field.adoc[`@field`]
 * xref:directives/index-directive.adoc[`@index`] _(deprecated, use `@order(index:)`)_
 * xref:directives/lookupKey.adoc[`@lookupKey`]
-* xref:directives/multitableReference.adoc[`@multitableReference`]
+* xref:directives/multitableReference.adoc[`@multitableReference`] _(rejected, remove from the schema)_
 * xref:directives/mutation.adoc[`@mutation`]
 * xref:directives/node.adoc[`@node`]
 * xref:directives/nodeId.adoc[`@nodeId`]
@@ -61,7 +61,7 @@ a|
 xref:directives/table.adoc[`@table`], xref:directives/field.adoc[`@field`], xref:directives/enum.adoc[`@enum`], xref:directives/record.adoc[`@record`]
 
 *Joining* +
-xref:directives/reference.adoc[`@reference`], xref:directives/multitableReference.adoc[`@multitableReference`], xref:directives/sourceRow.adoc[`@sourceRow`]
+xref:directives/reference.adoc[`@reference`], xref:directives/sourceRow.adoc[`@sourceRow`]
 
 *Querying* +
 xref:directives/asConnection.adoc[`@asConnection`], xref:directives/condition.adoc[`@condition`], xref:directives/experimental_constructType.adoc[`@experimental_constructType`], xref:directives/externalField.adoc[`@externalField`], xref:directives/lookupKey.adoc[`@lookupKey`], xref:directives/splitQuery.adoc[`@splitQuery`], xref:directives/tableMethod.adoc[`@tableMethod`]
@@ -82,7 +82,7 @@ xref:directives/discriminate.adoc[`@discriminate`], xref:directives/discriminato
 xref:directives/node.adoc[`@node`], xref:directives/nodeId.adoc[`@nodeId`]
 
 *Rejected by the rewrite* +
-xref:directives/notGenerated.adoc[`@notGenerated`] (remove from the schema)
+xref:directives/notGenerated.adoc[`@notGenerated`], xref:directives/multitableReference.adoc[`@multitableReference`] (remove from the schema)
 
 |===
 

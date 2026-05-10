@@ -37,9 +37,9 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *ErrorsField*: The `errors` field on a payload type. Lift target for the payload-side of a
 * *InterfaceField*: A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
 * *LookupTableField*
-* *MultitableReferenceField*
 * *NestingField*
 * *ParticipantColumnReferenceField*: A scalar field on a `GraphitronType.TableInterfaceType` participant that
+* *PassthroughDataField*: R75: a passthrough payload's data field — the unique `@table`-element field on
 * *PropertyField*
 * *RecordField*
 * *RecordLookupTableField*

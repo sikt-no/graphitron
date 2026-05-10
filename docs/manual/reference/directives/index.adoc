@@ -22,7 +22,7 @@ a|
 * xref:field.adoc[`@field`]
 * xref:index-directive.adoc[`@index`] _(deprecated, use `@order(index:)`)_
 * xref:lookupKey.adoc[`@lookupKey`]
-* xref:multitableReference.adoc[`@multitableReference`]
+* xref:multitableReference.adoc[`@multitableReference`] _(rejected, remove from the schema)_
 * xref:mutation.adoc[`@mutation`]
 * xref:node.adoc[`@node`]
 * xref:nodeId.adoc[`@nodeId`]
@@ -43,7 +43,7 @@ a|
 xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], xref:record.adoc[`@record`]
 
 *Joining* +
-xref:reference.adoc[`@reference`], xref:multitableReference.adoc[`@multitableReference`], xref:sourceRow.adoc[`@sourceRow`]
+xref:reference.adoc[`@reference`], xref:sourceRow.adoc[`@sourceRow`]
 
 *Querying* +
 xref:asConnection.adoc[`@asConnection`], xref:condition.adoc[`@condition`], xref:experimental_constructType.adoc[`@experimental_constructType`], xref:externalField.adoc[`@externalField`], xref:lookupKey.adoc[`@lookupKey`], xref:splitQuery.adoc[`@splitQuery`], xref:tableMethod.adoc[`@tableMethod`]
@@ -64,7 +64,7 @@ xref:discriminate.adoc[`@discriminate`], xref:discriminator.adoc[`@discriminator
 xref:node.adoc[`@node`], xref:nodeId.adoc[`@nodeId`]
 
 *Rejected by the rewrite* +
-xref:notGenerated.adoc[`@notGenerated`] (remove from the schema)
+xref:notGenerated.adoc[`@notGenerated`], xref:multitableReference.adoc[`@multitableReference`] (remove from the schema)
 
 |===
 

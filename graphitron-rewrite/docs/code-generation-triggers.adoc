@@ -227,9 +227,9 @@ The federation `_entities` field is *not* modelled as a `QueryField` permit; it 
 | Return union | `UnionField` | Field method stub
 | Return plain object (no `@table`) | `NestingField` | Field method stub (inherits parent table context)
 | Constructor-mapped field | `ConstructorField` | Field method stub
-| `@reference` to multi-table interface | `MultitableReferenceField` | Field method stub
 | Conflicting directives | `UnclassifiedField`** | Validation error; build fails
 | `@notGenerated` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; fields must be fully described by the schema.
+| `@multitableReference` | `UnclassifiedField`** | Validation error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; the rewrite generates multi-table interface dispatch from `@discriminate` / `@discriminator`.
 |===
 
 === Child Fields (on `@record` parent)

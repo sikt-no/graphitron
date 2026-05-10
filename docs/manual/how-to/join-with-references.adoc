@@ -230,13 +230,12 @@ The choice is operational, not semantic; xref:split-vs-inline.adoc[How-to: When 
 * *`condition:`-only paths classify but throw at request time today.* Use only as a placeholder pending the runtime arm; production schemas should stick to `key:` and `table:` forms.
 * *Junction tables are path-only, never types.* The `film_actor` join table is two FKs in sequence; it does not appear as a GraphQL type. Adding it as a `@table`-bound type would be valid (FilmActor exists in the example schema for `@nodeId` purposes), but client-facing many-to-many fields use the path form.
 * *FK constraint names are catalog-bound.* A migration that renames a constraint without updating the schema's `key:` value breaks the build. The `table:` form is more migration-resilient when the FK pair stays unique; the `key:` form is more explicit when constraint names are the contract.
-* *Cannot combine with xref:../reference/directives/multitableReference.adoc[`@multitableReference`].* The reference page makes this explicit; the union/interface variant has its own surface.
 
 == See also
 
 * xref:../reference/directives/reference.adoc[`@reference`] is the directive surface this recipe expands.
 * xref:../reference/directives/table.adoc[`@table`] establishes the table binding both endpoints rely on.
-* xref:../reference/directives/multitableReference.adoc[`@multitableReference`] for the union/interface variant.
+* xref:polymorphic-types.adoc[How-to: Polymorphic types] for the union/interface variant, modelled through `@discriminate` / `@discriminator`.
 * xref:split-vs-inline.adoc[How-to: When to split queries] covers the inline-JOIN vs per-parent batch trade-off; the `@reference` path is shared across both.
 * xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the input-carrier rules and how input-field references interact with the condition cascade.
 * xref:../tutorial/04-joining-tables.adoc[Tutorial page 4: Joining tables] introduces single-hop and multi-hop references in narrative form.
