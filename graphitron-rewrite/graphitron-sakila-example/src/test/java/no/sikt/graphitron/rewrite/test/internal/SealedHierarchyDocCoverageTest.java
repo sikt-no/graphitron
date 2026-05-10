@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -23,10 +24,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Forward: every concrete leaf reachable from {@link Rejection#getPermittedSubclasses()},
  * qualified by its sealed-parent ancestry under {@code Rejection}, must appear at least once
- * on the page. Reverse: every backticked qualified name matching the sub-permit pattern
- * ({@code AuthorError.X} or {@code InvalidSchema.X}) on the page must correspond to a real
- * leaf. Combined, these catch both drift directions: a new permit that lands without a
- * paragraph and a renamed-or-removed permit whose prose mention rots in place.
+ * on the page. Reverse: every dotted qualified mention on the page whose first segment names
+ * an intermediate sealed parent (e.g. {@code AuthorError.X}) must correspond to a real leaf.
+ * Combined, these catch both drift directions: a new permit that lands without a paragraph
+ * and a renamed-or-removed permit whose prose mention rots in place.
+ *
+ * <p>The reverse-direction matcher is built from the live permit set rather than a
+ * hand-maintained regex literal: when a new top-level sealed branch lands on {@code Rejection},
+ * its sub-permits are picked up automatically as the alternation extends. Top-level permits
+ * (like {@link Rejection.Deferred}) carry no qualifying parent and are checked by the forward
+ * direction only; the asymmetry is deliberate.
  *
  * <p>Companion to {@link DirectiveDocCoverageTest}, {@link DiagnosticsDocCoverageTest},
  * {@link DeprecationsDocCoverageTest}; same shape, scoped to the typed-rejection
@@ -43,18 +50,10 @@ class SealedHierarchyDocCoverageTest {
 
     private static final String DOCS_PATH = "graphitron-rewrite/docs/typed-rejection.adoc";
 
-    /**
-     * Sub-permit reference pattern matching the prose form: a sealed-parent simple name
-     * ({@code AuthorError} or {@code InvalidSchema}), a dot, and a permit class name.
-     * Matches both backticked and bare references; the alternation list expands as the
-     * sealed hierarchy grows.
-     */
-    private static final Pattern SUB_PERMIT_REFERENCE = Pattern.compile(
-        "\\b(AuthorError|InvalidSchema)\\.([A-Z][A-Za-z0-9]+)\\b");
-
     @Test
     void everyRejectionPermitAppearsOnTypedRejectionDocAndViceVersa() throws IOException {
         Set<String> permits = collectLeafPermits();
+        Set<String> intermediateParents = collectIntermediateSealedParents();
         String doc = Files.readString(locateDoc(), StandardCharsets.UTF_8);
 
         Set<String> missing = new TreeSet<>();
@@ -65,11 +64,14 @@ class SealedHierarchyDocCoverageTest {
         }
 
         Set<String> staleMentions = new TreeSet<>();
-        Matcher m = SUB_PERMIT_REFERENCE.matcher(doc);
-        while (m.find()) {
-            String mention = m.group();
-            if (!permits.contains(mention)) {
-                staleMentions.add(mention);
+        Pattern reverse = buildSubPermitReferencePattern(intermediateParents);
+        if (reverse != null) {
+            Matcher m = reverse.matcher(doc);
+            while (m.find()) {
+                String mention = m.group();
+                if (!permits.contains(mention)) {
+                    staleMentions.add(mention);
+                }
             }
         }
 
@@ -85,9 +87,9 @@ class SealedHierarchyDocCoverageTest {
                 + "sealed surface")
             .isEmpty();
         assertThat(staleMentions)
-            .as("typed-rejection.adoc names AuthorError.X / InvalidSchema.X references "
-                + "that no longer exist on Rejection; rename or remove the prose so it "
-                + "tracks the current permit set")
+            .as("typed-rejection.adoc names <SealedParent>.X qualified references that no "
+                + "longer exist on Rejection; rename or remove the prose so it tracks the "
+                + "current permit set")
             .isEmpty();
     }
 
@@ -121,6 +123,42 @@ class SealedHierarchyDocCoverageTest {
     }
 
     /**
+     * Walks {@link Rejection#getPermittedSubclasses()} transitively and yields the simple name
+     * of every intermediate sealed parent (a permit class that itself has further permits)
+     * encountered below {@code Rejection}. The reverse-direction regex alternation uses these
+     * names so a new top-level sealed branch on {@code Rejection} extends coverage automatically.
+     */
+    private static Set<String> collectIntermediateSealedParents() {
+        Set<String> parents = new TreeSet<>();
+        Deque<Class<?>> stack = new ArrayDeque<>();
+        stack.push(Rejection.class);
+        while (!stack.isEmpty()) {
+            Class<?> current = stack.pop();
+            Class<?>[] permittedSubclasses = current.getPermittedSubclasses();
+            if (permittedSubclasses == null || permittedSubclasses.length == 0) continue;
+            if (current != Rejection.class) parents.add(current.getSimpleName());
+            for (Class<?> sub : permittedSubclasses) {
+                stack.push(sub);
+            }
+        }
+        return parents;
+    }
+
+    /**
+     * Builds the regex used for the reverse-direction scan: a sealed-parent simple name
+     * (drawn from the live permit set) followed by a dot and a {@code CapitalisedIdentifier}.
+     * Returns {@code null} when there are no intermediate sealed parents (the hierarchy is
+     * fully flat under {@link Rejection}); the reverse-direction check then has nothing to do.
+     */
+    private static Pattern buildSubPermitReferencePattern(Set<String> intermediateParents) {
+        if (intermediateParents.isEmpty()) return null;
+        String alternation = intermediateParents.stream()
+            .map(Pattern::quote)
+            .collect(Collectors.joining("|"));
+        return Pattern.compile("\\b(" + alternation + ")\\.([A-Z][A-Za-z0-9]+)\\b");
+    }
+
+    /**
      * Builds the dotted name of {@code leaf} qualified by every sealed enclosing class up to
      * (but not including) {@link Rejection}. Walks {@link Class#getEnclosingClass()} since
      * the sealed permits are nested types; this gives the same chain a reader sees in the
@@ -151,3 +189,4 @@ class SealedHierarchyDocCoverageTest {
             "Could not locate " + DOCS_PATH + " by walking up from " + cwd);
     }
 }
+
