@@ -1,7 +1,7 @@
 ---
 id: R38
 title: "Unify `rowsMethodName()` and the rows-method seam"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 1
 theme: model-cleanup
