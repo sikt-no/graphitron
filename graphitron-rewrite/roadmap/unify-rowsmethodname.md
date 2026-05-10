@@ -1,7 +1,7 @@
 ---
 id: R38
 title: "Reshape `BatchKey` into `SourceKey` + unify the rows-method seam"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 1
 theme: model-cleanup
