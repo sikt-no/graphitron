@@ -448,6 +448,97 @@ of naming, declaration, call site, fetcher dance. The SQL-vs-service
 distinction lives only in the five `RowsMethodBody` permits. Net type-identity
 count goes from 10 to 1 + 5 = 6.
 
+#### Phase 3 in-progress status
+
+Phase 3 is shipping incrementally on `claude/graphitron-rewrite`. Items
+already landed (commits between `f6b10b7` and `6ef0648` inclusive,
+prefix-tagged `R38 Phase 3 (N/N): ...`):
+
+1. Drop the four redundant `rowsMethodName()` overrides; add the
+   container-axis-independence `@LoadBearingClassifierCheck`.
+2. `SourceKey.Wrap` enum → sealed (`Row` / `Record` / `TableRecord(ClassName)`);
+   add `SourceKey.keyElementType()` derivation.
+3. Default `sourceKey()` / `loaderRegistration()` on `BatchKeyField` (delegate
+   to the existing resolvers; lets consumers migrate one site at a time
+   without touching every producer simultaneously). The defaults swap out for
+   abstract methods backed by record components once storage migrates.
+4. `TypeFetcherGenerator`: four `LoaderRegistrationResolver.resolve(...)`
+   calls → `bkf.loaderRegistration()`.
+5. `TypeClassGenerator.collectBatchKeyColumns` → `sourceKey().columns()`.
+6. `GeneratorUtils.buildKeyExtraction` and `buildKeyExtractionWithNullCheck`
+   on `SourceKey`: the six-permit BatchKey switch collapses onto the
+   three-permit `Wrap` switch (the container axis already lives on
+   `LoaderRegistration`); the `TableRecord` arm picks up the developer's
+   typed class through `Wrap.TableRecord`'s payload.
+7. `RowsMethodShape.outerRowsReturnType` decoupled from BatchKey: takes the
+   two derived primitives (`keyElementType`, `isMapped`) the function
+   actually consumes, so each caller projects from whatever access path it
+   already has.
+
+Still to land for Phase 3 completion:
+
+- **`GeneratorUtils.buildRecordParentKeyExtraction`** + four helpers
+  (`buildFkRowKey`, `buildLifterRowKey`, `buildAccessorKeySingle`,
+  `buildAccessorKeyMany`): five-permit BatchKey switch needs migration to
+  `(Reader × cardinality)` switch. The mapping is mechanical:
+  `RowKeyed → Reader.ColumnRead`,
+  `LifterLeafKeyed/LifterPathKeyed → Reader.SourceRowsCall`,
+  `AccessorKeyedSingle → Reader.AccessorCall + Cardinality.ONE`,
+  `AccessorKeyedMany → Reader.AccessorCall + Cardinality.MANY`. The two
+  accessor arms split on `SourceKey.cardinality()` rather than identity.
+- **`TypeFetcherGenerator.buildRecordBasedDataFetcher`**: still takes
+  `BatchKey.RecordParentBatchKey batchKey` parameter (line 2948). After
+  `buildRecordParentKeyExtraction` migrates, this parameter becomes
+  `SourceKey` and the two callers at lines 424 / 428 pass
+  `rtf.sourceKey()` / `rltf.sourceKey()`.
+- **`SplitRowsMethodEmitter`**: many sites pass `xxx.batchKey()` to internal
+  helpers (`buildRuntimeStub`, the four `buildForX` entry points). The
+  inner helpers fork on permit identity for the prelude shape; that fork
+  becomes a `SourceKey.Reader` switch (with `path()` empty vs. non-empty
+  carrying what `LiftedHop` / `FkJoin` chain identity carried before).
+- **`MultiTablePolymorphicEmitter`**: four sites read
+  `parentKey.keyElementType()` and pass `parentKey` to
+  `GeneratorUtils.buildRecordParentKeyExtraction`. These migrate when the
+  storage shape on `InterfaceField` / `UnionField` flips.
+- **`ServiceDirectiveResolver`**: line 192 switch on `sourced.batchKey()`
+  reads `elementClass()` off `TableRecordKeyed` / `MappedTableRecordKeyed`.
+  Migrates when `MethodRef.Param.Sourced` storage flips; the
+  `Wrap.TableRecord` payload carries the same class today.
+- **`FieldBuilder`**: line 187 reader on `MethodRef.Param.Sourced`; lines
+  3104-3111 switch on `ok.batchKey()` to pull `JoinStep.LiftedHop`.
+  Migrates with the storage flip.
+- **Storage migration** on the six `BatchKeyField` permits, plus
+  `InterfaceField.parentKey` (becomes `parentSourceKey`), `UnionField`
+  parentKey same, `ParamSource.Sources` (becomes `sourceKey` + container),
+  `MethodRef.Param.Sourced` same. Producer sites (`FieldBuilder`,
+  `ServiceCatalog`, `SourceRowDirectiveResolver`) inline the projection
+  at this point (the resolvers' content moves into the producers; the
+  resolvers themselves delete).
+- **Default-method-to-abstract swap** on `BatchKeyField` once storage is
+  in place; `BatchKeyField` no longer imports the rewrite package.
+- **`BatchKey.java`** + `SourceKeyResolver.java` +
+  `LoaderRegistrationResolver.java` delete; their tests delete or move.
+- **Tests**: every `ChildField` constructor call site that today passes a
+  `BatchKey` instance moves to passing `SourceKey` + `LoaderRegistration`.
+  `LoaderRegistrationResolverTest` / `SourceKeyResolverTest` delete with
+  their resolvers. `BatchKeyTest` deletes with `BatchKey`. The
+  classifier-side projection rules get coverage on the producers'
+  end-to-end pipeline tests (`GraphitronSchemaBuilderTest` etc.) rather
+  than on the now-deleted projection helpers.
+
+Pattern conventions established during the incremental work:
+- Consumer migration always reads off `bkf.sourceKey()` /
+  `bkf.loaderRegistration()`; never re-derives via the resolvers at the
+  consumer site.
+- Switches that previously forked on `BatchKey` permit identity move
+  onto `SourceKey.wrap()` (for parent-source shape) or `sourceKey.reader()`
+  (for body input contract), with `SourceKey.cardinality()` carrying the
+  single-vs-many fork on the accessor arm.
+- Helpers that don't need the full `SourceKey` / `LoaderRegistration`
+  objects take derived primitives (see `RowsMethodShape.outerRowsReturnType`),
+  to stay independent of the storage shape and let callers project from
+  whatever access path they have.
+
 ## Out of scope
 
 **Service-path empty-input gate.** Today the four SQL rows-methods
