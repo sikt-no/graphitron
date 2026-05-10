@@ -41,7 +41,24 @@ class ServiceCatalogTest {
         "no.sikt.graphitron.rewrite.test.jooq.tables", "Language");
 
     private static ServiceCatalog newCatalog() {
-        return new ServiceCatalog(new BuildContext(null, null, null));
+        return new ServiceCatalog(new BuildContext(null, null, stubRewriteContext()));
+    }
+
+    /**
+     * Minimal {@link RewriteContext} for unit-tier classifier tests that don't need real schema
+     * inputs or output paths. The 6-arg overload defaults {@code classpathRoots} to the empty
+     * list and {@code codegenLoader} to the current thread's context classloader; in a JUnit
+     * JVM that's the system classloader, which is exactly what bare two-arg
+     * {@code Class.forName(name)} used to resolve through.
+     */
+    private static RewriteContext stubRewriteContext() {
+        return new RewriteContext(
+            java.util.List.of(),
+            java.nio.file.Path.of("."),
+            java.nio.file.Path.of("."),
+            "unused",
+            "unused",
+            Map.of());
     }
 
     /** Test-side shorthand: wrap a raw Java-target → GraphQL-arg map as an {@link ArgBindingMap}. */

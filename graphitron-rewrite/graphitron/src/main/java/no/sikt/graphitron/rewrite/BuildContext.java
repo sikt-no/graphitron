@@ -170,9 +170,13 @@ class BuildContext {
     private final NodeIdLeafResolver nodeIdLeafResolver;
 
     BuildContext(GraphQLSchema schema, JooqCatalog catalog, RewriteContext ctx) {
+        // schema and catalog stay nullable for tests that focus on plumbing the other half; ctx
+        // is required because every classifier the BuildContext fans into reads at least one of
+        // its fields (codegenLoader, jooqPackage, classpathRoots). Test sites that don't care
+        // about ctx still construct a deterministic stub via RewriteContext's 6-arg overload.
         this.schema = schema;
         this.catalog = catalog;
-        this.ctx = ctx;
+        this.ctx = java.util.Objects.requireNonNull(ctx, "ctx");
         this.typeNamesByTableKey = buildTypeNamesByTableKey(schema);
         this.nodeIdLeafResolver = new NodeIdLeafResolver(this);
     }
@@ -194,13 +198,10 @@ class BuildContext {
     /**
      * Loader for consumer-declared classes (service, record, condition, jOOQ catalog). Mirrors
      * {@link RewriteContext#codegenLoader()} so reflection sites holding a {@code BuildContext}
-     * do not have to chain through {@code ctx().codegenLoader()}. Falls back to the current
-     * thread's context classloader for the unit-tier tests that construct {@code BuildContext}
-     * with a null {@code RewriteContext} (the same default the {@link RewriteContext}'s
-     * six-arg overload applies); production callers always supply a real {@code ctx}.
+     * do not have to chain through {@code ctx().codegenLoader()}.
      */
     ClassLoader codegenLoader() {
-        return ctx != null ? ctx.codegenLoader() : Thread.currentThread().getContextClassLoader();
+        return ctx.codegenLoader();
     }
 
     void addWarning(BuildWarning warning) {

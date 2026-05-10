@@ -940,6 +940,9 @@ class TypeBuilder {
      * {@code Class.isInstance}; a non-{@code Throwable} class would never match anything and
      * is almost certainly a typo.
      */
+    // Instance method (not static) so it can read `ctx.codegenLoader()`; the single caller is
+    // `parseErrorHandler` on the same class, which already holds `ctx`. The explicit-parameter
+    // sibling lives at `CheckedExceptionMatcher.unmatched`, which crosses a class boundary.
     private String validateExceptionClass(String className, String handlerKind) {
         try {
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
