@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 6
 theme: model-cleanup
-depends-on: [emit-input-records]
+depends-on: []
 ---
 
 # Custom-scalar Java type configuration (extended-scalars built-in)
@@ -244,12 +244,14 @@ The resolver's "Coercing's type parameters are not erased to
 `Object`" guarantee carries
 `@LoadBearingClassifierCheck(key = "scalar-resolver.coercing-non-erased")`
 on the producing method. Phase 3's flip lands
-`@DependsOnClassifierCheck` on the three downstream consumers
-(R94's `InputComponent.javaType`, `ServiceCatalog`'s
-`mapToJavaTypeName`, `RowsMethodShape.standardScalarJavaType`) so
+`@DependsOnClassifierCheck` on every downstream consumer that
+exists on trunk at flip time — `ServiceCatalog`'s `mapToJavaTypeName`
+and `RowsMethodShape.standardScalarJavaType` today; R94's
+`InputComponent.javaType` joins the list when R94 ships (whether
+that happens before or after this item). The annotation pair turns
 a future relaxation of the erasure check ("fall back to `Object`
-for unknown") becomes a global review event rather than a silent
-regression in the input-record emitter.
+for unknown") into a global review event rather than a silent
+regression in any of these emitters.
 
 ### Phase 2: `@scalarType(scalar: "...")` directive + runtime registration
 
@@ -297,12 +299,27 @@ this phase the five-site hardcoded mapping is fully replaced.
 
 ## Relation to R94 / R96 / R97 / R98
 
-Strictly an enabler. R94 (`emit-input-records.md`) currently ships
-with the four hardcoded scalar names; sakila uses zero custom
-scalars, so R94 can land on trunk before this item ships. Real
-production usability of the R94 + R96 + R97 + R98 cluster — for
+Strictly an enabler, and order-independent with R94. R101's five
+migration sites (`ServiceCatalog`, `FieldBuilder`, `RowsMethodShape`,
+`AppliedDirectiveEmitter`, `GraphitronSchemaClassGenerator`) all
+exist on trunk today; none of them are R94 work. R94 in turn ships
+with the four hardcoded scalar names and sakila uses zero custom
+scalars, so neither item blocks the other and either can land first.
+
+Real production usability of the R94 + R96 + R97 + R98 cluster — for
 Sikt's subgraphs and for any consumer using extended-scalars —
-requires this item to ship.
+requires this item to ship; that's the value graphitron delivers
+to consumers, not a sequencing constraint between roadmap items.
+
+**Completion housekeeping.** When R101 ships, update R94's
+`emit-input-records.md` so the comment on `InputComponent.javaType`
+(currently around line 219-221: "today, the four-site hardcoded
+spec-built-in mapping … post-R101, the `ScalarTypeResolver`")
+and the classifier-invariants paragraph that names R101 as a
+future event (around line 798) read in present tense. If R94
+ships first, that update is a no-op — its author will already have
+folded R101 into the live picture. If R101 ships first, the R94
+edits are part of closing R101.
 
 ## Tests
 
