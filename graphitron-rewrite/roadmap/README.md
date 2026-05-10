@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R44` | Deprecate `@multitableReference` | In Review | [plan](deprecate-multitable-reference.md) |
-| `R101` | Custom-scalar Java type configuration (extended-scalars built-in) <sub>blocked by: [reactor-classloader-for-codegen](reactor-classloader-for-codegen.md)</sub> | Spec | [plan](custom-scalar-java-types.md) |
+| `R101` | Custom-scalar Java type configuration (extended-scalars built-in) | Spec | [plan](custom-scalar-java-types.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
@@ -27,7 +27,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Ready | [plan](error-handling-parity.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | [plan](catalog-check-constraint-validation.md) |
-| `R124` | Source codegen classpath from project + reactor, not plugin realm | In Review | [plan](reactor-classloader-for-codegen.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | [plan](retire-maven-plugin.md) |
 | `R68` | Diataxis user manual: absorb legacy README into the docs site | In Review | [plan](diataxis-user-manual.md) |
@@ -126,7 +125,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
 - `R74` [**Row/Record return shapes for typed accessor batch keys**](accessor-row-record-shapes.md) — Spec, architecture
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
-- `R124` [**Source codegen classpath from project + reactor, not plugin realm**](reactor-classloader-for-codegen.md) — In Review, cleanup
 
 ### mutations-errors
 
@@ -150,7 +148,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Backlog, stubs
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
-- `R101` [**Custom-scalar Java type configuration (extended-scalars built-in)**](custom-scalar-java-types.md) — Spec, architecture, blocked by [reactor-classloader-for-codegen](reactor-classloader-for-codegen.md)
+- `R101` [**Custom-scalar Java type configuration (extended-scalars built-in)**](custom-scalar-java-types.md) — Spec, architecture
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [deprecate-record-directive](deprecate-record-directive.md)
 - `R96` [**Deprecate and remove the @record directive**](deprecate-record-directive.md) — Backlog, cleanup, blocked by [emit-input-records](emit-input-records.md), [synthesize-payload-carrier](synthesize-payload-carrier.md)
 - `R23` [**Multi-parent `NestingField` sharing: `TableField` arm**](nestingfield-multiparent-tablefield.md) — Spec
