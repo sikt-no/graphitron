@@ -1,27 +1,40 @@
 ---
 id: R75
-title: "Plain payload types via identity passthrough"
-status: Ready
+title: "Plain payload types for DML mutations"
+status: Spec
 bucket: architecture
 priority: 7
 theme: mutations-errors
 ---
 
-# Plain payload types via identity passthrough
+# Plain payload types for DML mutations
 
-A passthrough `@mutation` whose return type is a plain SDL Object (no `@record(className)`,
-no `@table`) should compile and serve correctly without the consumer authoring a Java
-carrier. Today the rewrite forces an authored class on every payload that isn't a bare
-`ID` or `@table`, which inverts legacy graphitron's default and (more importantly) drags
-graphql-java's mapping concerns into the consumer's source tree.
+A `@mutation` whose return type is a plain SDL Object (no `@record(className)`, no
+`@table`) wrapping a single `@table`-element data field should compile and serve
+correctly without the consumer authoring a Java carrier. Today the rewrite forces an
+authored class on every payload that isn't a bare `ID` or `@table`, which inverts legacy
+graphitron's default and drags graphql-java's mapping concerns into the consumer's
+source tree.
 
-The fix is not to synthesize a Java class. Generating transport DTOs is the legacy
+The fix is not to synthesize a Java class — generating transport DTOs is the legacy
 mistake the rewrite already disowns under the "no DTOs, no TypeMappers" emitter
 convention (`graphitron-rewrite/docs/rewrite-design-principles.adoc`, §"Return types").
 Java payload classes earn their place only when the consumer needs to capture state or
-behaviour on the carrier. For everything else, graphql-java's mapping plus graphitron's
-existing identity-passthrough fetcher pattern (`FetcherEmitter.dataFetcherValue` lines
-56-60: `($T env) -> env.getSource()`) does the work.
+behaviour on the carrier. The structural reading of the SDL is: the *mutation* returns a
+record-shaped wire type; the data field *inside* that wire type is the table-bound field
+that carries the rows. The model classifies them accordingly — record-returning mutation
+on top, `RecordTableField` (already in the model) for the data field — and the DML
+emitter ships the rows back through graphql-java's standard traversal without a carrier
+class on disk.
+
+The reshape also lets the DML's transaction be tight. Today's emit pattern bundles
+`INSERT...RETURNING $fields(table)` into a single statement that returns full row data
+inside the DML transaction; if the surrounding code holds the transaction across
+graphql-java's traversal, read-after-write errors during the response can roll back the
+write. R75 shifts to two-statement emit: the DML returns PK columns only and commits in
+its own short transaction; the data field's `RecordTableField` fetcher runs the
+follow-up `SELECT $fields(table)` outside that transaction. Read errors during traversal
+become partial-response errors, never undo writes.
 
 ## Concrete friction
 
@@ -41,14 +54,27 @@ type Mutation {
 }
 ```
 
-Today this fails at `MutationInputResolver.validateReturnType:173-182` (the
-`ScalarReturnType` arm rejecting non-`ID` returns) with *"return type
-'KvotesporsmalPreutfyllingPayload' is not yet supported; use ID or a @table
-type"*. The plain Object lands as `PlainObjectType` in the type classifier
-(`TypeBuilder.buildTypes`, the no-domain-directive fall-through), and
-`GraphitronSchemaBuilder.buildSchema` skips field classification for
-`PlainObjectType` parents entirely. There is no machinery downstream that would
-route the DML round-trip's `Result<Record>` to graphql-java for traversal.
+Pre-R75 this fails at `MutationInputResolver.validateReturnType` (the `ScalarReturnType`
+arm rejecting non-`ID` returns) with *"return type 'KvotesporsmalPreutfyllingPayload' is
+not yet supported; use ID or a @table type"*. The plain Object lands as
+`PlainObjectType` in the type classifier (`TypeBuilder.buildTypes`, the no-domain-
+directive fall-through), and `GraphitronSchemaBuilder.buildSchema` skips field
+classification for `PlainObjectType` parents entirely. There is no machinery downstream
+that would route the DML round-trip back to graphql-java for traversal.
+
+R75 Phase 1's first attempt shipped at `3ac4996` under a wire-format-unwrap-at-boundary
+design: a new `ChildField.PassthroughDataField` permit, a new `IdentityPassthrough`
+capability sealed sub-interface, a `BuildContext.resolveReturnType` short-circuit that
+collapsed the payload type into the data field's `TableBoundReturnType`, and the
+existing `MutationInsertTableField` etc. permits used for both direct-`@table` returns
+and unwrapped payloads. In review, two design tensions surfaced: (a) the unwrap pattern
+re-derives passthrough state at four consumer sites instead of carrying the resolution
+in the type system, and (b) the one-statement `INSERT...RETURNING $fields(table)` keeps
+the DML transaction open across graphql-java's response traversal, so read-after-write
+errors can undo writes. The reshape below supersedes the shipped attempt; the SDL
+acceptance contract is unchanged from the consumer's view, but the model and the emit
+pattern are different. Phase 1's added permits and capability retire as part of the
+implementation.
 
 ## Phasing
 
@@ -56,212 +82,321 @@ R75 ships in three phases ordered by user-visible value. Each phase is a discret
 implementation track; downstream phases bind structurally to upstream ones but are
 not schedule-coupled.
 
-- **Phase 1: single-data-field payloads on `@mutation` (DML).** Closes the
-  legacy-parity gap on `@mutation` returning a plain Object payload with
-  one `@table`-element data field.
-- **Phase 2: multi-field payloads via `localContext` on `@mutation` (DML).**
-  Extends the trigger to multi-field payloads. Non-data fields carry state
-  via graphql-java's `DataFetcherResult.localContext`; a single new
-  `MutationFieldWithSlots` wrapper lifts the wrap-or-not fork into the
-  type system, so the DML emitter dispatches structurally rather than on
-  a `slots.isEmpty()` predicate. Phase 2 ships the wrap with an empty
-  `localContext` map; the populator interface, registration mechanism,
-  and per-slot trigger conditions land alongside the first real
-  populator (errors, in its own roadmap item).
-- **Phase 3: `@service` mutations and `@record`-element data.** Admits
-  passthrough payloads on `@service` mutations (where the consumer
-  constructs `DataFetcherResult` directly) and admits `@record`-element
-  data fields (in addition to `@table`-element). `PassthroughInfo` carries
-  a sealed `DataElement.{Table | Record}` sub-taxonomy; a sibling
-  `PassthroughRecordField` permit joins the `IdentityPassthrough`
-  capability for the new element kind.
+- **Phase 1: the reshape — record-returning DML mutations + tight transactions.**
+  Replaces Phase 1's shipped wire-format-unwrap design with the structural model
+  the SDL implies: mutations with payload return types classify as record-returning
+  carriers; the data field on the payload classifies as the existing
+  `ChildField.RecordTableField`; DML emit becomes two-step (PK-only RETURNING
+  inside `dsl.transactionResult(...)`, then a follow-up SELECT for the response
+  data outside the transaction). Direct-`@table`-return DML mutations get the same
+  two-step emit. `DELETE` admits only `: ID` / `: [ID!]` returns (no payload-shaped
+  data — the row is gone before the SELECT can read it).
+- **Phase 2: multi-field payloads via `localContext` on `@mutation` (DML).** Extends
+  the trigger to multi-field payloads where one field is the table-bound data field
+  (per Phase 1) and the rest are non-data slot fields. Non-data fields carry state
+  via graphql-java's `DataFetcherResult.localContext`. Phase 2 ships the wrap with
+  an empty `localContext` map; the populator interface, registration mechanism, and
+  per-slot trigger conditions land alongside the first real populator (errors, in
+  its own roadmap item).
+- **Phase 3: `@service` mutations and `@record`-element data.** Admits payload-
+  returning shapes on `@service` mutations (where the consumer constructs
+  `DataFetcherResult` directly) and admits `@record`-element data fields (in
+  addition to `@table`-element). `RecordTableField` already covers the
+  `@record`-parent / `@table`-child case at the data-field site; the work is at
+  the mutation-classifier and `@service`-resolver layer.
 
 All three phases are specified in implementation-ready detail below.
 Promoting R75 from Spec → Ready means signing off on the entire body;
 each phase ships as its own implementation cycle.
 
-## Phase 1: single-data-slot payloads, no errors — shipped at `3ac4996`
+## Phase 1: record-returning DML mutations + tight transactions
 
-Implemented surface (the SDL author's view): plain Object payload type
-wrapping a single `@table`-element data field admits without an authored
-carrier. The classifier resolves the SDL return through
-`BuildContext.unwrapPassthroughPayload` into the data field's
-`TableBoundReturnType` at the wire-format boundary; downstream consumers
-see only the existing four `ReturnTypeRef` arms. The new permit
-`ChildField.PassthroughDataField` joins the new
-`ChildField.IdentityPassthrough` capability sealed sub-interface (which
-also covers `ConstructorField` and `NestingField`); the
-`FetcherEmitter.dataFetcherValue` dispatch arm count drops by one. The
-load-bearing classifier check
-`passthrough-payload.data-table-equals-dml-target` rejects mismatches
-between the data field's `@table` and the DML input's `@table`.
+Phase 1 reshapes R75 onto the structural reading of the SDL: a `@mutation` returning a
+payload type classifies as a *record-returning* mutation; the data field on the payload
+classifies as the existing `ChildField.RecordTableField`; DML emit becomes two-step
+(PK-only RETURNING in a tight transaction, then a follow-up SELECT outside it). The
+shipped attempt's `PassthroughDataField` permit, `IdentityPassthrough` capability, and
+`resolveReturnType` short-circuit all retire as part of the implementation.
 
-Directive-level guard added during implementation: the data field
-rejects on graphitron-domain directives (`@service` / `@sourceRow` /
-`@reference` / `@nodeId` / `@field` / `@asConnection` / `@splitQuery` /
-`@externalField` / `@condition` / `@lookupKey` / `@notGenerated` /
-`@tableMethod` / `@defaultOrder` / `@orderBy` / `@multitableReference`)
-because each signals a different fetcher contract than the
-IdentityPassthrough capability emits. Pure-metadata directives
-(`@deprecated`, user-defined custom directives without execution
-semantics) are off the list and pass through silently. The forbidden
-set lives in `BuildContext.PASSTHROUGH_FORBIDDEN_DATA_FIELD_DIRECTIVES`;
-adding a future graphitron directive that coexists cleanly with
-IdentityPassthrough means leaving it off this list.
+### Model changes
 
-Per-implementation deviations from the as-shipped Spec body (one
-follow-up action per item if Phase 2/3 reviewers disagree):
-
-- *Trigger condition list.* The Spec listed three trigger conditions
-  (registered as `PlainObjectType` / `PojoResultType(_, _, null)`,
-  exactly one field, element registered as `TableBackedType`).
-  Implementation added a fourth: data field carries no graphitron-domain
-  directive. Rationale above.
-- *Spec-listed test names diverged.* The Spec named
-  `payload_withErrorsField_returnsRejected` and
-  `_returnsNotCandidate`-suffixed cases that test the unwrap function
-  in isolation. The unwrap is package-private and not directly testable
-  from outside `BuildContext`; the shipped suite covers the same
-  behaviour indirectly via field-classification assertions
-  (`payload_atTableType_classifiesAsExistingPath`,
-  `payload_atRecordWithClassName_classifiesAsExistingPath`,
-  `payload_withMultipleDataFields_returnsRejected`). The
-  `payload_withInterfaceField_returnsRejected` case is implemented
-  per-Spec.
-- *`FetcherRegistrationsEmitter.emit()` filter widened to
-  `PlainObjectType`.* The Spec's "What does *not* change" list didn't
-  predict this. Without the widening, the schema-builder's
-  `PassthroughDataField` registration was silently dropped at fetcher-
-  wiring time (the bug surfaced in execution-tier as `{films=null}`).
-  Cost is one extra `instanceof` per type. The pre-R75 schema-builder
-  arm for `PlainObjectType` returns before invoking
-  `fieldRegistry.classify(...)` — non-passthrough plain types have no
-  entries in `schema.fields()` at all, and `buildBody`'s
-  is-`fieldsOf`-empty short-circuit returns an empty CodeBlock for
-  them, so admitting them to the walk costs nothing observable.
-- *`unwrapPassthroughPayload` is called at four sites, not three.*
-  Spec named `resolveReturnType`, the schema-builder, and
-  `validateReturnType`. Implementation also calls it from
-  `FieldBuilder.classifyMutationField` to recover the
-  `PassthroughInfo` for the load-bearing data-table check. The
-  function is pure, so each call is cheap; threading
-  `Optional<PassthroughInfo>` through the call chain to consolidate
-  would widen signatures for marginal benefit.
-- *`GraphitronSchemaValidator` switch-arm.* Empty arm added for
-  `ChildField.PassthroughDataField` (no validator-mirrors-classifier
-  work; the trigger holds the structural guarantees). Required by the
-  exhaustive sealed-switch but not called out in the Spec.
-- *Execution-tier path.* The Spec's polish round pointed at
-  `graphitron-sakila-example/src/test/java/no/sikt/graphitron/sakila/`,
-  which doesn't exist as a package root. The fixture lives at
-  `graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/`,
-  alongside the existing `DmlBulkMutationsExecutionTest`. Spec drift
-  in the polish round; not a behavioural concern.
-
-### Test surface
-
-Pipeline-tier coverage in `PassthroughPayloadPipelineTest`
-(`graphitron/src/test/`): parameterised admission over `DmlKind`
-(single, list, `@record`-without-`className`, data-field registration,
-`ProjectedList` carry), trigger rejections (multi-field, scalar
-element, interface element, `@field` directive, `@table`-typed
-payload, `@record`-with-`className`), `@deprecated` admission,
-cross-paths (query-side uniformity, data-table mismatch per
-`DmlKind`), and the `fetcherEmitter_identityPassthrough_dispatchArmCount`
-regression pin.
-
-Execution-tier coverage in `PassthroughPayloadDmlTest`
-(`graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/`):
-`FilmPassthroughPayload` over the sakila `film` table, four
-`*Passthrough` mutations exercise INSERT / UPDATE / DELETE / UPSERT
-end-to-end against PostgreSQL with `@table` projection flowing through
-graphql-java's identity-passthrough fetcher to the existing
-per-`@table`-field fetchers.
-
-Variant-coverage classification fixture `PASSTHROUGH_PAYLOAD_DATA_FIELD`
-added to `NonTableParentCase`. Audit-tier pairing verified automatically
-by `LoadBearingGuaranteeAuditTest` (no new audit method).
-
-## Phase 2: multi-field payloads via localContext
-
-Phase 1 admits single-data-field passthrough payloads. Phase 2 extends the
-trigger to multi-field payloads, where one field carries the DML row(s)
-(the data field, as in Phase 1) and any number of additional fields carry
-state via graphql-java's `DataFetcherResult.localContext`. The mechanism is
-general; specific slot semantics (errors, affected-row counts, warnings,
-echoed-back input) ship as separate downstream roadmap items per
-application. Phase 2 ships a usable skeleton: multi-field payloads admit
-through the same boundary as Phase 1; their non-data fields render as null
-until a per-slot populator wires up.
-
-### Trigger extension
-
-`unwrapPassthroughPayload`'s condition #2 changes from "the SDL Object
-declares exactly one field" to "the SDL Object declares at least one field
-whose element type is `@table`-mapped (the data field) and zero or more
-additional non-`@table`-element fields (slot fields)". Conditions #1 (the
-type is registered as `PlainObjectType` or `PojoResultType(_, _, null)`)
-and #3 (the data field's element is `@table`-mapped, now implied by the
-new #2) stay.
-
-`PassthroughInfo` extends with a slot-descriptor list; Phase 1 callers see
-an empty list and behave identically:
+Three new permits parallel today's `MutationServiceRecordField` in shape:
 
 ```java
-record PassthroughInfo(
-    String payloadTypeName,
-    String dataFieldName,
-    String dataElementName,
-    TableRef dataTable,
-    FieldWrapper dataWrapper,
-    List<SlotDescriptor> slots
-) {}
-
-record SlotDescriptor(
-    String name,
-    String elementName,
-    FieldWrapper wrapper
-) {}
-```
-
-The trigger rejects payloads where more than one field has an
-`@table`-mapped element type, with `Rejected("ambiguous data field: both
-'X' and 'Y' have @table-mapped elements; passthrough payloads admit
-exactly one @table-element data field; multi-@table-element shapes are
-tracked under R122")`. Multi-`@table`-element payloads form the
-compound-mutation pattern (parent entity row + child normalised rows in
-one INSERT) covered by R122; R75's structural choices (single `dataElement`
-on `PassthroughInfo`, `inner: DmlTableField` on `MutationFieldWithSlots`,
-single `IdentityPassthrough` capability) do not block that future
-direction. R122's spec lifts `PassthroughInfo` to a sealed sub-taxonomy
-(`Single | Compound`) and adds compound permits to `DmlTableField`; the
-existing `MutationFieldWithSlots` wrapper covers compound carriers
-without modification.
-
-Slot fields with `@record`-mapped element types are also rejected (Phase
-3 territory); the `Rejected` reason names the off-shape slot.
-
-### Field classification
-
-A new `ChildField` permit handles slot fields:
-
-```java
-record PassthroughSlotField(
+record MutationInsertRecordField(
     String parentTypeName,
     String name,
     SourceLocation location,
-    String elementName,
-    FieldWrapper wrapper
-) implements ChildField {}
+    ReturnTypeRef.ResultReturnType returnType,
+    ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
+    Optional<ErrorChannel> errorChannel
+) implements MutationField {}
+
+record MutationUpdateRecordField(...) implements MutationField {}
+record MutationUpsertRecordField(...) implements MutationField {}
 ```
 
-`PassthroughSlotField` does *not* join the `IdentityPassthrough` capability:
-its emit is name-parameterised (`env.getLocalContext().get(name)`), not the
-literal `env.getSource()` shared by `IdentityPassthrough`'s permits.
-Mixing them under one capability would force the capability arm to read a
-field-level `name` slot to decide which env method to call, which is the
-sealed-switch shape the principle steers away from. A separate dispatch
-arm in `FetcherEmitter.dataFetcherValue` is the correct shape:
+`returnType` is the payload's `ResultReturnType` (no unwrap — the SDL's structural
+truth). `tableInputArg` carries the input `@table` exactly like the existing
+`MutationInsertTableField` etc. arms. No `MutationDeleteRecordField` permit: DELETE-
+with-payload-return is rejected at classify time (the row is gone before any follow-up
+SELECT can read it; pre-delete state in the response is "the idea of being able to
+return the film after it has been deleted is wrong").
+
+Retired from R75 Phase 1's shipped attempt:
+
+- `ChildField.PassthroughDataField` permit.
+- `ChildField.IdentityPassthrough` capability sealed sub-interface.
+  `FetcherEmitter.dataFetcherValue` reverts to the two pre-R75 `instanceof` arms
+  (`ConstructorField`, `NestingField`).
+- `BuildContext.resolveReturnType` short-circuit. Payload types resolve to
+  `ResultReturnType` like any other record return.
+- `FetcherRegistrationsEmitter.emit()` filter widening to `PlainObjectType`.
+- `GraphitronSchemaValidator` switch-arm, `IMPLEMENTED_LEAVES` entry, and
+  `TypeFetcherGenerator` no-op arm for `PassthroughDataField`.
+- `NonTableParentCase.PASSTHROUGH_PAYLOAD_DATA_FIELD` fixture.
+- `BuildContext.PASSTHROUGH_FORBIDDEN_DATA_FIELD_DIRECTIVES` set survives but moves
+  inside the trigger function alongside the other classify-time conditions.
+- The load-bearing classifier check `passthrough-payload.data-table-equals-dml-target`.
+  The reshape doesn't carry separate "data table" vs "input table" state; the data
+  field's `RecordTableField` filters by the input table's PK directly via
+  `tableInputArg`, so there's no cross-pair invariant to enforce.
+
+### Trigger function (survives as a classify-time helper)
+
+`BuildContext.unwrapPassthroughPayload` (consider renaming for clarity,
+e.g. `tryResolvePayloadShape`) is the same pure structural test as in the shipped
+attempt, returning a sealed `PassthroughResolution` (`Ok` / `NotCandidate` /
+`Rejected`). The four conditions match the implementation that shipped:
+
+1. The type is registered as `PlainObjectType`, or `PojoResultType` with
+   `fqClassName == null`.
+2. The SDL Object declares exactly one field — the data field.
+3. That single field's element type is registered as `TableBackedType`.
+4. The data field carries no graphitron-domain directive (`@service` / `@sourceRow` /
+   `@reference` / `@nodeId` / `@field` / `@asConnection` / `@splitQuery` /
+   `@externalField` / `@condition` / `@lookupKey` / `@notGenerated` /
+   `@tableMethod` / `@defaultOrder` / `@orderBy` / `@multitableReference`).
+   Pure-metadata directives (`@deprecated`, user-defined non-graphitron directives) are
+   off the list.
+
+The trigger is consulted at exactly two sites: the mutation classifier (to admit the
+payload return as a `Mutation<Kind>RecordField`) and the schema-builder's per-type pass
+(to register the data field as `RecordTableField`). No multi-site re-derivation: the
+resolution is consumed where it's produced, and the carrier types hold the resolved
+structure downstream.
+
+### Mutation-field classification
+
+`FieldBuilder.classifyMutationField` admits payload returns as a sibling branch to the
+existing direct-`@table` admission:
+
+- The mutation has `@mutation(typeName: <KIND>)` and a registered `TableInputArg`.
+- `ctx.resolveReturnType(rawReturn, wrapper)` returns `ResultReturnType` (the payload
+  type, classified as `PojoResultType` with null `fqClassName`, or `PlainObjectType`
+  promoted to one — see Open question 1 below).
+- The classifier consults the trigger. On `Ok`, classify as `Mutation<Kind>RecordField`.
+  For `kind == DELETE`, reject with `"@mutation(typeName: DELETE) returning a payload
+  type is not supported; use ID or [ID!]"`. On `Rejected`, surface the reason.
+  On `NotCandidate`, fall through to the existing `ResultReturnType`-arm rejection
+  (the `@record`-with-`className` non-payload case is unchanged).
+
+`MutationInputResolver.validateReturnType` keeps its existing dispatch shape; the
+`ResultReturnType` arm tightens to substitute the trigger's `Rejected` reason when the
+return type is a payload candidate that failed a per-condition check (mirrors the
+shipped attempt's message threading).
+
+### Data-field classification: `ChildField.RecordTableField`
+
+The schema-builder's per-type pass classifies the data field as
+`ChildField.RecordTableField` when the trigger returns `Ok`:
+
+- `parentTypeName`: the payload type name.
+- `name`: the data field's name.
+- `returnType`: `TableBoundReturnType` carrying the data field's element type,
+  resolved `TableRef`, and SDL `FieldWrapper` (single or list).
+- `joinPath`: empty list — the data field has no FK chain to traverse; rows are
+  filtered by PK directly.
+- `filters` / `orderBy` / `pagination`: empty / null. Phase 1's trigger forbids
+  arguments and directives on the data field.
+- `batchKey`: a new `BatchKey.RecordParentBatchKey` arm marking "rooted, no
+  DataLoader; the parent's source IS the key carrier". Carries the PK columns of the
+  data field's table (from `TableRef.primaryKeyColumns()`). See Open question 2 below
+  for the exact arm name and structure.
+
+Because the mutation is invoked exactly once per request and its result is the singleton
+parent of the payload's traversal, films is fetched once. The fetcher is a plain
+`DataFetcher`, not a DataLoader-batched `BatchLoader`. The `BatchKey` arm signals this
+to the emitter; existing `RecordTableField` emit logic for non-rooted parents stays on
+the DataLoader path.
+
+### Generator emit
+
+The mutation's fetcher does the DML inside `dsl.transactionResult(tx -> ...)`, returning
+`Result<RecordN<...>>` directly to graphql-java (wrapped in `DataFetcherResult` only if
+needed for error-channel routing — see existing `MutationServiceRecordField` shape for
+the wrap/unwrap convention):
+
+```java
+public static Result<Record1<Integer>> createFilmsPassthrough(DataFetchingEnvironment env) {
+    DSLContext dsl = graphitronContext(env).getDslContext(env);
+    List<Map<?, ?>> in = (List<Map<?, ?>>) env.getArgument("in");
+    if (in.isEmpty()) return DSL.using(dsl.configuration()).newResult(Tables.FILM.FILM_ID);
+    return dsl.transactionResult(tx -> DSL.using(tx)
+        .insertInto(Tables.FILM, Tables.FILM.TITLE, Tables.FILM.LANGUAGE_ID)
+        .valuesOfRows(in.stream().map(row -> DSL.row(...)).toList())
+        .returningResult(Tables.FILM.FILM_ID)
+        .fetch());
+}
+```
+
+The transaction commits when `transactionResult` returns; the materialised result
+outlives it. graphql-java treats it as the source for the payload's traversal.
+
+The data field's fetcher is the rooted-parent `RecordTableField` emit:
+
+```java
+($T env) -> {
+    Result<Record1<Integer>> source = (Result<Record1<Integer>>) env.getSource();
+    if (source.isEmpty()) return source;
+    DSLContext dsl = graphitronContext(env).getDslContext(env);
+    return dsl.select(Film.$fields(env.getSelectionSet(), Tables.FILM, env))
+        .from(Tables.FILM)
+        .where(Tables.FILM.FILM_ID.in(source.getValues(Tables.FILM.FILM_ID)))
+        .fetch();
+}
+```
+
+Composite-PK tables use `RecordN` and a row-tuple `IN` predicate; the emit pattern
+mirrors today's bulk-DELETE / lookup-VALUES emitters. Read errors during this SELECT
+(or during nested `@table` fetchers traversing each Film) propagate as graphql-java
+field errors — they cannot undo the DML, which committed when the mutation's fetcher
+returned.
+
+### Direct-`@table` mutation return: same two-step emit
+
+`Mutation.createFilm: Film` (direct `@table` return) keeps its existing
+`MutationInsertTableField` etc. classification but its emit changes to the two-step
+shape: PK-only RETURNING inside `transactionResult`, then a follow-up SELECT inside the
+same fetcher (returning a `Record` for graphql-java's traversal of Film's children).
+DELETE-direct-return (`Mutation.deleteFilm: ID`) and `: ID` returns generally keep
+single-statement emit — RETURNING the PK column directly satisfies the encoder, no
+follow-up needed.
+
+### What about R12's authored payload (`@record(record: {className: ...})`)?
+
+Out of R75's scope. R12's `DmlReturnExpression.Payload` arm continues today's behaviour
+(authored carrier, single-statement emit). The reshape's pattern (PK-only RETURNING +
+SELECT + payload-class constructor walks the SELECT) is implementable on R12's emit too
+and would land any future deprecation cleanly, but R12 is tracked elsewhere.
+
+### Open questions (for the implementer to settle, with reviewer sign-off)
+
+1. **Plain-Object payload classification.** Today, no-`@record` plain Objects classify
+   as `PlainObjectType`. The reshape needs the payload type to flow through
+   `ResultReturnType` so the existing dispatch admits it. Two options:
+   - Promote no-`@record` plain Objects (when they pass the trigger) to
+     `PojoResultType` with null `fqClassName` at type-classification time. Cleaner
+     downstream — every payload candidate uses the same `ResultType` machinery — but
+     widens the meaning of `PojoResultType`.
+   - Keep `PlainObjectType` and admit it through `resolveReturnType` as
+     `ResultReturnType` directly. Localised change but adds a special case at the
+     `resolveReturnType` site (which the reshape was meant to remove).
+
+2. **`BatchKey` arm for the rooted data field.** The data field's `RecordTableField`
+   needs a `BatchKey.RecordParentBatchKey` arm that signals "no DataLoader; PK columns
+   come from `env.getSource()` cast to `Result<Record_N_<...>>`". Likely a new arm —
+   `BatchKey.RootRowKeyed` or similar — carrying the PK column list. The exact shape
+   intersects with the `BatchKey` design conventions; flag for the implementer to
+   propose when the field is wired.
+
+3. **Carrier wrap.** The mutation's fetcher returns `Result<RecordN<...>>` directly (or
+   wrapped in `DataFetcherResult` if the error channel needs it). Existing
+   `MutationServiceRecordField` emit shape is the precedent. Phase 2's slot work may
+   want a wrap; for Phase 1, settle for the simpler return shape and let Phase 2
+   widen if needed.
+
+### Tests
+
+Pipeline-tier (`graphitron/src/test/`): rewrite `PassthroughPayloadPipelineTest`:
+
+- Per-`DmlKind ∈ {INSERT, UPDATE, UPSERT}`:
+  - Mutation field classifies as `Mutation<Kind>RecordField` for payload returns.
+  - Data field classifies as `ChildField.RecordTableField` with the rooted `BatchKey`
+    arm.
+- DELETE-with-payload return rejects with the per-mismatch message.
+- Trigger rejections (multi-field, scalar element, interface element, graphitron-
+  domain directives on the data field, `@table`-typed payload,
+  `@record`-with-`className`).
+- `@deprecated` on the data field admits.
+- Direct-`@table`-return tests (`MutationInsertTableField` etc.): emit shape now
+  two-step. Pin via a structural assertion on the generated method body if pipeline-
+  tier can reach it; otherwise rely on compilation + execution tier.
+- `fetcherEmitter_revertedTwoArms`: structural pin that
+  `FetcherEmitter.dataFetcherValue` has the two pre-R75 `instanceof` arms
+  (`ConstructorField`, `NestingField`) — replaces the shipped attempt's
+  `_dispatchArmCount` pin.
+
+Compilation-tier (`graphitron-sakila-example`): SDL fixture from the shipped attempt
+survives — `FilmPassthroughPayload` + the `*Passthrough` mutations — minus
+`deleteFilmsPassthrough` which retires alongside the DELETE-with-payload rejection.
+`mvn compile -pl :graphitron-sakila-example -Plocal-db` verifies the two-step emit
+produces compile-correct DSL.
+
+Execution-tier (`graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/`):
+rewrite `PassthroughPayloadDmlTest`:
+
+- INSERT / UPDATE / UPSERT round-trip: row written, PK returned by mutation's fetcher,
+  follow-up SELECT projects the requested columns, response shape matches.
+- *Headline correctness pin* — `dml_persists_when_followupSelect_throws`: a mutation
+  whose DML succeeds but whose data-field traversal throws (synthetic error from a
+  `@service`-wired nested `@table` field, or an injected exception in the SELECT
+  path). Asserts the row exists in the DB after the response, *and* the response
+  carries the GraphQL field error. This is the durability invariant the reshape
+  exists to make true.
+- Direct-`@table`-return mutations (`createFilm: Film` etc.): same round-trip check
+  — confirms the existing carrier types still work under the two-step emit.
+
+Audit-tier: no new load-bearing keys.
+
+### Out of scope for Phase 1
+
+- **Multi-field passthrough payloads.** Phase 2 territory.
+- **`@service` mutations returning payload types.** Phase 3 territory.
+- **`@record`-element data fields.** Phase 3 territory.
+- **Restructuring R12's authored-carrier emit.** Tracked separately.
+- **DELETE returning a payload of pre-deletion data.** Rejected at classify time; not
+  coming back.
+
+## Phase 2: multi-field payloads via localContext
+
+Phase 1 admits single-data-field payloads. Phase 2 extends the trigger to multi-field
+payloads where one field is the table-bound data field (per Phase 1) and the rest are
+non-data slot fields. Slot fields render null until a per-slot populator wires up;
+that work is its own roadmap item per slot family (errors, affected-row counts, etc.).
+
+### Trigger extension
+
+The trigger function's condition #2 changes from "exactly one field" to "exactly one
+`@table`-element field (the data field) and zero or more non-`@table`-element fields
+(slot fields)". Conditions #1, #3, and #4 (the directive guard, applied to the data
+field only) carry over. Multi-`@table`-element payloads remain rejected — they form
+the compound-mutation pattern tracked under R122.
+
+The trigger result extends with a slot-descriptor list; Phase 1 callers continue to
+see an empty list and behave identically.
+
+```java
+record SlotDescriptor(String name, String elementName, FieldWrapper wrapper) {}
+```
+
+Slot fields with `@record`-element types reject at trigger time (Phase 3 territory).
+
+### Slot-field classification
+
+Slot fields land on the same payload-type parent as the data field. A new
+`ChildField.PassthroughSlotField` permit handles them; its fetcher reads from
+`env.getLocalContext().get(name)`:
 
 ```java
 if (field instanceof ChildField.PassthroughSlotField slot) {
@@ -272,569 +407,266 @@ if (field instanceof ChildField.PassthroughSlotField slot) {
 }
 ```
 
-The null-guard accounts for the consumer-controlled-population case where
-the localContext map may not have been populated.
+The null-guard accounts for the consumer-driven-population case where the localContext
+map may not have been populated yet.
 
-`GraphitronSchemaBuilder.buildSchema`'s `PlainObjectType` arm registers the
-data field (per Phase 1) and additionally iterates the slots, registering
-each as a `PassthroughSlotField`:
+### Mutation carrier extension
 
-```java
-case PlainObjectType ignored -> {
-    if (unwrapPassthroughPayload(name, ctx) instanceof PassthroughResolution.Ok ok) {
-        var p = ok.info();
-        registry.put(name, p.dataFieldName(),
-            new ChildField.PassthroughDataField(name, p.dataFieldName(), location,
-                new ReturnTypeRef.TableBoundReturnType(
-                    p.dataElementName(), p.dataTable(), p.dataWrapper())));
-        for (var slot : p.slots()) {
-            registry.put(name, slot.name(),
-                new ChildField.PassthroughSlotField(name, slot.name(), location,
-                    slot.elementName(), slot.wrapper()));
-        }
-    }
-}
-```
-
-### Mutation-field wrapping for slot carriage
-
-The slot-carrying concern is orthogonal to the DML kind: any mutation
-field that returns a passthrough payload with non-data slots needs the
-same `DataFetcherResult.localContext(slots)` wrap, regardless of whether
-the underlying DML is INSERT / UPDATE / DELETE / UPSERT (and regardless,
-in future, of whether the mutation is single-table or compound per
-R122). Lifting the concern into a single wrapper record keeps the DML
-carrier records flat and makes the wrap-or-not fork visible in the type
-system rather than as a `slots.isEmpty()` predicate the emitter forks on.
-
-A new `MutationField` permit:
+The Phase 1 `Mutation<Kind>RecordField` permits gain a `slots` component:
 
 ```java
-record MutationFieldWithSlots(
-    DmlTableField inner,
+record MutationInsertRecordField(
+    String parentTypeName,
+    String name,
+    SourceLocation location,
+    ReturnTypeRef.ResultReturnType returnType,
+    ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
+    Optional<ErrorChannel> errorChannel,
     List<SlotDescriptor> slots
 ) implements MutationField {}
 ```
 
-The classifier produces `MutationFieldWithSlots(inner=<bare DML
-carrier>, slots=<non-empty list>)` when the resolved `PassthroughInfo`
-has slots; otherwise the classifier produces the bare DML carrier
-directly. The existing four DML kind carriers
-(`MutationInsertTableField`, `MutationUpdateTableField`,
-`MutationDeleteTableField`, `MutationUpsertTableField`) keep their
-current shape: no per-record widening, no per-kind sealed split. The
-component slot `inner: DmlTableField` is narrow (per the "narrow
-component types" principle), so a `MutationFieldWithSlots` is
-structurally guaranteed to wrap a DML mutation, not an arbitrary
-`MutationField`.
-
-Other consumers of `MutationField` (the schema validator, mappings-
-constant dedup, etc.) gain one new switch arm that recurses into
-`inner`. The wrap concern lives at exactly one site (the DML emitter's
-top-level dispatch); it does not propagate as a per-kind branch.
-
-Forward direction: R122 (compound mutations, parent + child rows in
-one INSERT) adds new permits to `DmlTableField`. The wrapper covers
-them without modification because `inner: DmlTableField` accepts any
-DML kind; compound carriers wrap exactly the same way as the existing
-four. Conversely, if `MutationFieldWithSlots` later needs a sibling
-(for example a service-side variant), the single permit lifts to a
-sealed sub-taxonomy at that point with no churn on existing consumers.
-
-### DML emitter
-
-`TypeFetcherGenerator.buildDmlFetcher` dispatches on `MutationField`,
-unwrapping `MutationFieldWithSlots` to share the per-kind emit core:
-
-```java
-return switch (field) {
-    case MutationFieldWithSlots ws ->
-        wrapInDataFetcherResult(emitDmlCore(ws.inner()), ws.slots());
-    case DmlTableField bare -> emitDmlCore(bare);
-    // ... existing non-DML arms unchanged
-};
-```
-
-`emitDmlCore` runs the existing per-kind emit
-(`INSERT/UPDATE/UPSERT/DELETE...RETURNING $fields(sel, table, env).fetch()`
-or `.fetchOne()`); `wrapInDataFetcherResult` applies the
-`DataFetcherResult.<Result<Record>>newResult().data(rows).localContext(slots).build()`
-shell. Single-vs-list cardinality stays in the existing `ProjectedSingle`
-vs `ProjectedList` choice per the existing `DmlReturnExpression`
-Javadoc; the wrap is uniform across both.
+When `slots` is non-empty, the mutation's fetcher wraps in
+`DataFetcherResult.<...>newResult().data(rows).localContext(slotsMap).build()`. Phase 2
+ships with `slotsMap = emptyMap()`; the populator framework lands per-slot-family in
+its own roadmap item. When `slots` is empty (Phase 1 case), the fetcher returns
+`Result<RecordN<...>>` directly. No `MutationFieldWithSlots` wrapper — the slots ride
+on the carrier itself.
 
 ### Slot population
 
-Phase 2 ships the wrap mechanism and the per-slot fetcher emit; it does
-*not* ship a populator framework. When the classifier produces a
-`MutationFieldWithSlots`, the DML emitter wraps the result in
-`DataFetcherResult.localContext(emptyMap())`. Every slot fetcher reads
-through the null-guarded `env.getLocalContext().get($S)` shape and
-yields null at request time.
+Phase 2 ships the wrap mechanism and the slot fetcher emit; it does *not* ship a
+populator framework. Designing the populator API against zero consumers would be the
+"premature framework" anti-pattern. The first real populator (errors is the canonical
+candidate) lands in its own roadmap item; its emit needs inform the contract surface.
 
-The shape of any populator interface, the registration mechanism, and
-the per-slot trigger conditions are all undefined in Phase 2. They land
-alongside the first real populator (the canonical candidate is errors,
-which is a separate roadmap item with its own design space): the first
-populator's emit needs will inform the contract surface. Designing the
-populator API in advance, against zero consumers, would be a "premature
-framework" against the strategic principle of extracting infrastructure
-from working code.
-
-What this means in practice: a SDL author who writes a passthrough
-payload with `errors: [Error!]` or any other non-data slot will see the
-data field render correctly and the slot fields render as null until
-the per-slot populator's roadmap item ships. That's a usable
-intermediate state.
-
-### What does *not* change (from Phase 1)
-
-- `BuildContext.resolveReturnType`'s short-circuit and the inner
-  `TableBoundReturnType` shape are unchanged.
-- `MutationInputResolver.validateReturnType` is unchanged at the dispatch
-  level; it sees `TableBoundReturnType` for both single-field and
-  multi-field passthrough payloads.
-- `DmlReturnExpression.{ProjectedSingle, ProjectedList}` are unchanged.
-- The `IdentityPassthrough` capability and its three Phase 1 permits are
-  unchanged. `PassthroughSlotField` does not join the capability.
-- The four DML kind carriers (`MutationInsertTableField`,
-  `MutationUpdateTableField`, `MutationDeleteTableField`,
-  `MutationUpsertTableField`) keep their existing shape: no per-record
-  widening, no per-kind sealed split. The slot concern lives on the
-  `MutationFieldWithSlots` wrapper instead.
-- The Phase 1 load-bearing classifier check
-  (`passthrough-payload.data-table-equals-dml-target`) applies unchanged;
-  the data-table check happens on the data field regardless of slot
-  count.
+A SDL author who writes a payload with `errors: [Error!]` or any other non-data slot
+sees the data field render correctly and the slot fields render as null until the
+populator's roadmap item ships. Usable intermediate state.
 
 ### Out of scope for Phase 2
 
-- **Slot populators.** Phase 2 wires the wrap with an empty
-  `localContext` map; every slot renders as null at request time. The
-  populator interface, registration mechanism, and per-slot trigger
-  conditions land alongside the first real populator (errors is the
-  canonical candidate) in its own roadmap item, where the contract
-  surface can be informed by the populator's actual emit needs rather
-  than predicted in advance.
-- **`@service` multi-field payloads.** Phase 2 covers `@mutation` (DML)
-  multi-field payloads only, where graphitron owns the emit and can wrap
-  in `DataFetcherResult`. `@service` multi-field payloads route through
-  Phase 3 instead, where the consumer constructs `DataFetcherResult`
-  directly.
-- **Slot fields with `@table` element type.** The trigger forbids more
-  than one `@table`-mapped field; multi-`@table`-element payloads form
-  the compound-mutation pattern tracked under R122 (parent entity row +
-  child normalised rows in one INSERT) and fall back to authored
-  carriers (`@record(record: {className: ...})`) until R122 ships.
-- **Slot fields with `@record` element type.** Phase 3 territory; the
-  trigger rejects them at admission.
+- Slot populators. Tracked separately per slot family.
+- `@service` multi-field payloads (Phase 3 — the consumer constructs `DataFetcherResult`
+  directly, so the `localContext` carriage is the consumer's responsibility).
+- Slot fields with `@table` element type (R122 / compound mutations).
+- Slot fields with `@record` element type (Phase 3).
 
 ### Tests
 
-Pipeline-tier additions to `PassthroughPayloadPipelineTest` (parameterised
-over `DmlKind` where applicable):
+Pipeline-tier additions to `PassthroughPayloadPipelineTest` (parameterised over
+`DmlKind ∈ {INSERT, UPDATE, UPSERT}`):
 
-- `payload_dataPlusSingleScalarSlot_resolvesWithSlotDescriptor_<DmlKind>`:
-  a payload with one `@table`-element data field and one scalar slot
-  resolves; the slot descriptor's name and element type appear on
-  `PassthroughInfo.slots`.
-- `payload_dataPlusMultipleSlots_preservesSlotOrder_<DmlKind>`: multi-slot
-  admission preserves slot order from SDL.
-- `payload_twoTableElementFields_returnsRejected`: two `@table`-element
-  fields yield `Rejected("ambiguous data field: both 'X' and 'Y' have
-  @table-mapped elements; passthrough payloads admit exactly one
-  @table-element data field; multi-@table-element shapes are tracked
-  under R122")`.
-- `payload_slotWithRecordElement_returnsRejected`: slot field with
-  `@record`-element type yields `Rejected("slot field 'X' has
-  @record-mapped element 'Y'; Phase 3 covers @record-element data,
-  Phase 2 admits scalar/enum/list-of-scalar slots only")`.
-- `payload_dataPlusSlot_schemaBuilderRegistersDataAndSlotPermits_<DmlKind>`:
-  the schema-builder registers the data permit (Phase 1 path) and
-  iterates the slot list, registering each as `PassthroughSlotField`.
-- `payload_dataPlusSlot_classifierProducesMutationFieldWithSlots_<DmlKind>`:
-  the classified mutation is wrapped as `MutationFieldWithSlots`, with
-  `inner` matching the corresponding `Mutation<Kind>TableField` and
-  `slots` matching the SDL slot order. Phase 1 single-field payloads
-  (no slots) classify as the bare DML carrier (regression pin).
-- `fetcherEmitter_passthroughSlotField_dispatchArmCount`: the
-  `FetcherEmitter.dataFetcherValue` dispatch logic has exactly one arm
-  matching `ChildField.PassthroughSlotField`. Structural assertion on
-  the generator's source (count of dispatch cases), not on the body of
-  any emitted method.
+- Multi-field admission with scalar slots: data field classifies as `RecordTableField`
+  (per Phase 1), slot fields classify as `PassthroughSlotField`, mutation carrier
+  carries the slot list with declaration order preserved.
+- Multi-`@table`-element rejection (compound-mutation territory).
+- Slot field with `@record`-element rejection (Phase 3 territory).
+- Mutation field's fetcher emits the `DataFetcherResult.localContext(emptyMap())` wrap
+  when slots are present, returns `Result<RecordN<...>>` directly when not.
 
-Execution-tier (sakila): one new fixture verifying multi-field admission
-compiles and runs end-to-end with slots rendering null:
+Execution-tier (sakila): a new fixture verifying multi-field admission compiles and
+runs with slots rendering null. Per-`DmlKind` drivers assert the data field renders the
+inserted/updated/upserted row and the slot fields render null. The execution tier
+verifies the `DataFetcherResult.localContext(emptyMap())` wrap composes through
+graphql-java's traversal correctly.
 
-- `PassthroughPayloadMultiFieldDmlTest`: SDL
-  `type ActorPayload { actor: [Actor!]; warningCount: Int; warnings: [String!] }`.
-  Per-DmlKind drivers assert the data field renders the
-  inserted/updated/deleted/upserted row, and the slot fields render null
-  (no populator wired in Phase 2). The execution tier is the primary
-  signal that the `DataFetcherResult.localContext(emptyMap())` wrap
-  composes through graphql-java's traversal correctly; pipeline-tier
-  tests do not assert on emitted method body content.
-
-Audit-tier: no new load-bearing keys in Phase 2.
+Audit-tier: no new load-bearing keys.
 
 ## Phase 3: @service mutations and @record-element data
 
-Phases 1 and 2 cover `@mutation` (DML) passthrough payloads with
-`@table`-mapped data elements. Phase 3 extends along two orthogonal axes
-that ship together as the `@service`-side admission story:
+Phases 1 and 2 cover `@mutation` (DML) payload returns with `@table`-element data
+fields. Phase 3 extends along two orthogonal axes:
 
-- **Consumer**: the trigger admits `@service` mutations whose return type
-  is a passthrough payload. The `@service` consumer constructs the
-  `DataFetcherResult` directly (no graphitron-side DML wrap or slot
-  populators needed); graphitron registers the identity-passthrough
-  fetchers on the SDL data field and any slot fields, and the existing
-  `@service` unwrap logic in `ServiceCatalog` handles wrapper composition
-  (`Optional<T>`, `CompletableFuture<T>`, etc.).
-- **Element kind**: the trigger admits data fields whose element type is
-  `@record`-mapped, in addition to `@table`-mapped. Service methods may
-  return a domain record (a Java record or POJO bound via
-  `@record(record: {className: ...})`) and have graphitron emit identity
-  passthrough on the data field; graphql-java's per-field fetchers on the
-  `@record`-classified element handle the accessor reads.
+- **Consumer.** The trigger admits `@service` mutations whose return type is a payload.
+  The `@service` consumer constructs the `DataFetcherResult` (or a record-shaped
+  return) directly; graphitron registers the data-field fetcher and any slot fetchers
+  on the payload, and the existing `@service` wrapper unwrap (`Optional<T>`,
+  `CompletableFuture<T>`, `Mono<T>`) handles wrapper composition.
+- **Element kind.** The data field's element type may be `@record`-mapped in addition
+  to `@table`-mapped. Service methods may return a domain record (Java record or POJO
+  bound via `@record(record: {className: ...})`); the data field's classification
+  carries the `@record` shape and graphql-java's per-field fetchers on the `@record`
+  element handle accessor reads.
 
 ### Trigger extension
 
 Condition #3 changes from "the data field's element type is registered as
-`TableBackedType`" to "the data field's element type is registered as
-`TableBackedType` OR `ResultType`". The other conditions stay; the
-multi-field admission and slot rejection from Phase 2 carry over unchanged
-(the data field is still the unique element-bound field, where "element-
-bound" now spans `@table` and `@record`).
+`TableBackedType`" to "registered as `TableBackedType` or `ResultType`". The other
+conditions stay; multi-field admission and slot rejection from Phase 2 carry over.
 
-`PassthroughInfo`'s data-element descriptor becomes a sealed sub-taxonomy.
-Phase 1 and 2 callers see `DataElement.Table`; Phase 3 introduces the
-sibling:
+The trigger result's data-element descriptor becomes a sealed sub-taxonomy:
 
 ```java
 sealed interface DataElement {
     String name();
     FieldWrapper wrapper();
-
-    record Table(String name, TableRef table, FieldWrapper wrapper)
-        implements DataElement {}
-
-    record Record(String name, String fqClassName, FieldWrapper wrapper)
-        implements DataElement {}
-}
-
-record PassthroughInfo(
-    String payloadTypeName,
-    String dataFieldName,
-    DataElement dataElement,
-    List<SlotDescriptor> slots
-) {}
-```
-
-The sealed sub-taxonomy carries the genuinely-distinct information per
-element kind (`TableRef` for `@table`, `String fqClassName` for `@record`)
-without forcing one into the other's shape; this is the resolution to
-the deferred question carried from Phase 1's draft.
-
-### Wire-format unwrap
-
-`BuildContext.resolveReturnType`'s short-circuit dispatches on the
-`DataElement` sub-arm:
-
-```java
-if (unwrapPassthroughPayload(targetTypeName, this) instanceof
-        PassthroughResolution.Ok ok) {
-    return switch (ok.info().dataElement()) {
-        case DataElement.Table t -> new ReturnTypeRef.TableBoundReturnType(
-            t.name(), t.table(), t.wrapper());
-        case DataElement.Record r -> new ReturnTypeRef.ResultReturnType(
-            r.name(), r.wrapper(), r.fqClassName());
-    };
+    record Table(String name, TableRef table, FieldWrapper wrapper) implements DataElement {}
+    record Record(String name, String fqClassName, FieldWrapper wrapper) implements DataElement {}
 }
 ```
 
-`@table`-element payloads continue to unwrap to `TableBoundReturnType`
-(the DML emitter path from Phase 1 and 2). `@record`-element payloads
-unwrap to `ResultReturnType` (the existing authored-carrier path's
-`ReturnTypeRef` arm), which `ServiceCatalog`'s `@service` classifier
-admits.
+Phase 1 / 2 callers see `DataElement.Table`. Phase 3 introduces the `Record` arm.
 
-### Field classification
+### Mutation classification
 
-A new `ChildField` permit handles `@record`-element data fields, joining
-the `IdentityPassthrough` capability (the emit is the same
-`($T env) -> env.getSource()` graphql-java traverses through to the
-per-field fetchers on the `@record` element):
+`@mutation` (DML) admits only `@table`-element data — Phase 1 / 2 unchanged.
+`@record`-element data on a DML mutation is out of scope (would require a "DML row →
+domain record" conversion step at the emitter; tracked separately).
 
-```java
-record PassthroughRecordField(
-    String parentTypeName,
-    String name,
-    SourceLocation location,
-    ReturnTypeRef.ResultReturnType returnType
-) implements ChildField, ChildField.IdentityPassthrough {}
-```
+`@service` mutations classify through the existing `MutationServiceRecordField` permit
+when the SDL return is a payload type. The service method's declared return type is
+matched against the data field's element kind:
 
-The narrow `ResultReturnType` component (per the "narrow component types"
-principle) is guaranteed by trigger condition #3's `@record` arm. The
-capability membership means `FetcherEmitter`'s existing
-`IdentityPassthrough` arm covers it without a new dispatch case. Net
-dispatch change at `FetcherEmitter` from Phases 1 through 3: −2 (Phase 1
-collapsed two existing arms to one; Phase 2 added a separate slot arm;
-Phase 3 reuses the capability for the new permit).
+- `DataElement.Table(name, table, wrapper)`: the inner type must be `Result<<TableRecord>>`
+  (or a single `<TableRecord>` for non-list, or a `DataFetcherResult` wrapping either).
+- `DataElement.Record(name, fqClassName, wrapper)`: the inner type must be the class
+  named `fqClassName` (or a list / optional thereof matching `wrapper`, or a
+  `DataFetcherResult` wrapping it).
 
-`GraphitronSchemaBuilder.buildSchema`'s `PlainObjectType` arm extends to
-dispatch on the `DataElement` arm:
+Mismatches reject at classify time with a per-mismatch message naming the SDL data
+element, the method's return type, and the gap. Validator-mirrors-classifier coverage:
+every classifier rejection surfaces as a build-time error via the existing typed
+`Resolved` shapes and the validator's `@service` arm.
 
-```java
-case PlainObjectType ignored -> {
-    if (unwrapPassthroughPayload(name, ctx) instanceof PassthroughResolution.Ok ok) {
-        var p = ok.info();
-        switch (p.dataElement()) {
-            case DataElement.Table t ->
-                registry.put(name, p.dataFieldName(),
-                    new ChildField.PassthroughDataField(name, p.dataFieldName(), location,
-                        new ReturnTypeRef.TableBoundReturnType(
-                            t.name(), t.table(), t.wrapper())));
-            case DataElement.Record r ->
-                registry.put(name, p.dataFieldName(),
-                    new ChildField.PassthroughRecordField(name, p.dataFieldName(), location,
-                        new ReturnTypeRef.ResultReturnType(
-                            r.name(), r.wrapper(), r.fqClassName())));
-        }
-        // slot registration per Phase 2
-        for (var slot : p.slots()) {
-            registry.put(name, slot.name(),
-                new ChildField.PassthroughSlotField(name, slot.name(), location,
-                    slot.elementName(), slot.wrapper()));
-        }
-    }
-}
-```
+### Data-field classification
 
-### `@service` classifier admission
+For `@table`-element data on a `@service` mutation: same `ChildField.RecordTableField`
+classification as Phase 1, with the rooted-`BatchKey` arm. The data field's fetcher
+reads `env.getSource()` (the service method's `Result<RecordN<...>>` after wrapper
+unwrap) and runs the response SELECT.
 
-`ServiceCatalog`'s `@service` mutation classifier admits passthrough-payload
-returns. Today it rejects them (per Phase 1's "Out of scope"); Phase 3
-lights up the path.
-
-For each `@service` mutation field, the classifier:
-
-1. Resolves the SDL return type via `unwrapPassthroughPayload`. On `Ok`
-   the `DataElement` arm tells the classifier which method-return shape
-   to expect.
-2. Reflects on the service method's declared return type, applying the
-   existing `@service` wrapper unwrap (`Optional<T>`, `CompletableFuture<T>`,
-   etc.) to recover the inner type.
-3. Verifies the inner type matches the data element:
-   - `DataElement.Table(name, table, wrapper)`: the inner type must be
-     `Result<<TableRecord>>` (or `<TableRecord>` for single-cardinality,
-     or a `DataFetcherResult` wrapping either; see "Wrapper composition"
-     below).
-   - `DataElement.Record(name, fqClassName, wrapper)`: the inner type
-     must be the class named `fqClassName` (or a list / optional thereof
-     matching `wrapper`, or a `DataFetcherResult` wrapping it).
-4. If verification fails, the classifier rejects with a per-mismatch
-   message naming the SDL data element, the method's return type, and
-   the gap.
-
-Validator-mirrors-classifier coverage extends to the new Phase 3
-criteria. Every classifier rejection above must surface as a
-build-time error via the validator: the `@service` mutation classifier
-emits its rejections through the same typed `Resolved` shape Phase 1's
-`ScalarReturnType` and `ResultReturnType` arms route through (or, where
-the rejection lives at the schema-validation layer rather than at
-return-type resolution, through `GraphitronSchemaValidator`'s existing
-arm for the `@service` mutation field). New rejection categories the
-validator carries: data-element-vs-method-return-type mismatch (one
-message shape per `DataElement` arm), `@record`-element fqClassName
-not loadable (existing R-x machinery), wrapper-vs-element-kind
-combinations explicitly rejected (e.g. `Mono<Result<TableRecord>>`
-treated as ambiguous if both are admitted as wrappers; the spec keeps
-the shape simple by requiring at most one wrapper layer outside
-`DataFetcherResult`).
-
-The matched service method is the source value for graphql-java
-traversal. graphql-java calls the data field's identity-passthrough
-fetcher (`($T env) -> env.getSource()`), which yields the service
-method's return value; the per-field fetchers on the `@table` or
-`@record` element type read off that source as today.
-
-Slot fields on a `@service` mutation payload are admitted automatically:
-the service method returns a `DataFetcherResult` whose `.data(value)`
-carries the domain object (or `Result<Record>`) and whose
-`.localContext(slots)` carries the slot map. Graphitron registers the
-slot fetchers per Phase 2; the service method populates the slot map
-directly. No graphitron-side wrap or populator emit is involved for
-`@service` mutations; the consumer's returned `DataFetcherResult` flows
-through unchanged.
+For `@record`-element data: the data field classifies under whichever existing model
+shape covers "record parent → record child" cleanly. The mechanism is graphql-java's
+per-field accessor traversal of the service method's returned domain record;
+graphitron's emit is identity passthrough (the existing `ConstructorField` shape, which
+remains in the model with its pre-R75 documentation). Phase 3 may extend that permit's
+docstring to cover record-on-record use, or introduce a sibling permit if structural
+clarity demands. Implementer call.
 
 ### Wrapper composition
 
-Service methods may return `T`, `Optional<T>`, `CompletableFuture<T>`,
-`Mono<T>`, etc. The existing `@service` unwrap logic in `ServiceCatalog`
-strips these wrappers before classifying the inner `T`; Phase 3's
-admission composes with the existing unwrap unchanged.
+Service methods may return `T`, `Optional<T>`, `CompletableFuture<T>`, `Mono<T>`. The
+existing `@service` unwrap strips these wrappers before classifying the inner `T`.
+`DataFetcherResult<T>` is treated as another wrapper layer: a method returning
+`DataFetcherResult<T>` admits with the same trigger as one returning `T`. A method
+returning bare `T` paired with a payload that has slot fields admits — the slots
+render as null until the consumer wraps in `DataFetcherResult` and populates the
+localContext map.
 
-`DataFetcherResult<T>` is treated as another wrapper layer: a service
-method returning `DataFetcherResult<T>` is admitted with the same
-trigger as one returning `T`, with the consequence that the consumer
-opts into slot population by returning `DataFetcherResult` explicitly.
-A service method returning bare `T` and matching a payload that has
-slot fields is admitted (the slots render as null), parallel to the
-DML case in Phase 2 with no populator wired.
-
-The matrix of wrapper × element kind (4 wrappers × 2 element kinds = 8
-combinations) is verified at the execution tier (see "Tests" below).
-
-### What does *not* change (from Phases 1 and 2)
-
-- `BuildContext.resolveReturnType`'s short-circuit shape is unchanged;
-  only the switch in the `Ok` arm extends to dispatch on `DataElement`.
-- The `IdentityPassthrough` capability gains one permit
-  (`PassthroughRecordField`) but its emit is unchanged
-  (`($T env) -> env.getSource()`).
-- DML mutation paths (Phase 1 single-field, Phase 2 multi-field) are
-  unchanged.
-- `MutationInputResolver.validateReturnType` is still unchanged at the
-  dispatch level; it sees `TableBoundReturnType` (Phase 1+2) or
-  `ResultReturnType` (Phase 3) and applies its existing arm rules.
-- The Phase 1 load-bearing classifier check applies unchanged for
-  `@table`-element data; no equivalent check is needed for
-  `@record`-element (no DML projection to misalign).
-- `PassthroughSlotField` and the `MutationFieldWithSlots` wrapper from
-  Phase 2 are unchanged. `@service` mutations do not produce a
-  `MutationFieldWithSlots`; the consumer's returned `DataFetcherResult`
-  carries the slot map directly.
+The matrix of wrapper × element kind (4 wrappers × 2 element kinds = 8 combinations)
+is verified at the execution tier.
 
 ### Out of scope for Phase 3
 
-- **`@record`-element data on `@mutation` (DML).** Phase 3 admits
-  `@record`-element data on `@service` mutations only. DML mutations
-  returning `@record`-element payloads would require a "DML row →
-  domain record" conversion step at the emitter; that's a separate
-  roadmap item.
-- **Service-side slot populators.** Slot populators remain per-slot
-  roadmap items (Phase 2's "Out of scope" carries forward). The
-  `@service` consumer can populate slots manually via
-  `DataFetcherResult.localContext` without graphitron-side populator
-  wiring.
-- **`@service` queries returning passthrough payloads.** Phase 3 covers
-  `@service` mutations specifically; query-side `@service` admission
-  flows through the same trigger (the unwrap is consumer-agnostic) but
-  the per-query fetcher emit has not been audited end-to-end. Treat
-  query-side `@service` passthrough as a follow-up item.
+- `@record`-element data on `@mutation` (DML). Tracked separately.
+- Service-side slot populators (per-slot roadmap items per Phase 2).
+- `@service` queries returning payload types. The trigger is consumer-agnostic so the
+  classification works, but the per-query fetcher emit hasn't been audited end-to-end.
+  Treat as a follow-up.
 
 ### Tests
 
 Pipeline-tier additions to `PassthroughPayloadPipelineTest`:
 
-- `payload_atRecordElementData_resolvesAsResultReturnType`: a payload
-  with a `@record`-element data field unwraps to `ResultReturnType`
-  (not `TableBoundReturnType`).
-- `payload_atRecordElementData_dataFieldRegistersAsPassthroughRecordField`:
-  the schema-builder dispatches on `DataElement.Record` and registers
-  `PassthroughRecordField`.
-- `payload_atServiceMutation_admittedByServiceCatalog_<elementKind>`:
-  a `@service` mutation returning a passthrough-payload type admits at
-  the `@service` classifier (no `UnclassifiedField`). Parameterised
-  over `{Table, Record}`.
-- `payload_atServiceMutation_methodReturnTypeMismatch_rejects_<elementKind>`:
-  service method's declared return type doesn't match the data
-  element; classifier rejects with the per-mismatch message.
+- `@record`-element data field admits and registers correctly.
+- `@service` mutation returning a payload admits at the service classifier; no
+  `UnclassifiedField` at the mutation site. Parameterised over `{Table, Record}`.
+- Service-method-return-type mismatch rejects with the per-mismatch message.
   Parameterised over `{Table, Record}`.
-- `payload_atServiceMutation_wrapperUnwraps_<wrapperKind>_<elementKind>`:
-  service method's `Optional<T>` / `CompletableFuture<T>` / `Mono<T>` /
-  `DataFetcherResult<T>` wrapper unwraps to the inner `T` for trigger
-  matching. Parameterised over `{T, Optional, CompletableFuture, Mono,
-  DataFetcherResult} × {Table, Record}` (10 cases; the bare `T` case
-  exercises the no-wrapper baseline alongside the four wrapper kinds).
-- `fetcherEmitter_identityPassthrough_dispatchArmCount_phase3`: the
-  `IdentityPassthrough` capability now permits four records
-  (`ConstructorField`, `NestingField`, `PassthroughDataField`,
-  `PassthroughRecordField`); the dispatch logic still has exactly one
-  arm matching the capability and zero against the individual permits.
-  Structural assertion (count of dispatch cases), extending Phase 1's
-  Phase-1-permit-count pin to the Phase-3-permit count.
-- `payload_atServiceMutation_withSlots_methodReturnsDataFetcherResult`:
-  a `@service` payload with both data and slot fields admits when the
-  method returns `DataFetcherResult<T>`; the slot fetchers read from
-  `localContext` populated by the consumer.
+- Wrapper composition: service method's `Optional<T>` / `CompletableFuture<T>` /
+  `Mono<T>` / `DataFetcherResult<T>` unwraps to the inner `T` for trigger matching.
+  Parameterised over `{T, Optional, CompletableFuture, Mono, DataFetcherResult} ×
+  {Table, Record}`.
+- `@service` payload with both data and slot fields: method returning
+  `DataFetcherResult<T>` admits; slot fetchers read from the consumer-populated
+  localContext.
 
-Execution-tier (sakila): a new `PassthroughPayloadServiceTest`
-parameterising over `(elementKind, wrapper)`:
+Execution-tier (`graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/`):
+a new `PassthroughPayloadServiceTest` parameterising over `(elementKind, wrapper)`:
 
-- SDL: two payload variants in parallel:
-  - `type ActorTablePayload { actor: [Actor!] }` (`@table`-element).
-  - `type ActorRecordPayload { actor: ActorRecord! }`
-    (`@record`-element, where `ActorRecord` is a Java record bound via
-    `@record(record: {className: "...sakila.ActorRecord"})`).
-- Per-wrapper drivers (`T`, `Optional<T>`, `CompletableFuture<T>`,
-  `Mono<T>`) for each element kind: invoke the service mutation
-  against the testcontainer, assert response shape and follow-up
-  reads. 8 driver cases (2 element kinds × 4 wrappers).
-- One additional driver per element kind exercises a multi-field
-  payload over `DataFetcherResult<T>` to verify slot population from
-  the consumer side. 2 more driver cases.
-- Total: 10 execution-tier driver cases.
+- SDL: two payload variants — `@table`-element via the existing sakila `Actor`,
+  `@record`-element via an `ActorRecord` Java record bound through
+  `@record(record: {className: "...sakila.ActorRecord"})`.
+- Per-wrapper drivers (`T`, `Optional<T>`, `CompletableFuture<T>`, `Mono<T>`) for each
+  element kind: invoke the service mutation against the testcontainer, assert response
+  shape and follow-up reads. 8 cases.
+- Additional driver per element kind exercising a multi-field payload over
+  `DataFetcherResult<T>` to verify consumer-side slot population. 2 more cases.
+
+Audit-tier: no new load-bearing keys.
 
 Audit-tier: no new load-bearing keys in Phase 3.
 
 ## Non-goals
 
-- **Synthesizing Java payload classes.** Explicitly rejected: the redirect away
-  from this is the entire premise of R75. No `<outputPackage>.synthesized` package,
-  no `SynthesizedPayloadClassGenerator`, no per-payload-type Java emission.
-- **Setter-based errors injection.** Same rejection as before: violates immutability
-  and would have graphitron mutate consumer-produced objects. Legacy's
-  `payload.setErrors(...)` shape is not coming back.
-- **Authored carriers with custom fields.** Anything beyond the trigger's
-  admitted shape stays in the consumer's source tree as `@record(record:
-  {className: ...})` on the existing authored-carrier path.
-- **Removing `@record` entirely from payload types.** The directive still has
-  a job (declaring that the SDL type is record-shaped, distinguishing it from
-  `@table`). Only the `className` argument becomes optional in the sense that
-  omitting it is no longer a footgun: a `@record` without `className` is
-  admitted by `unwrapPassthroughPayload` on the same trigger as a no-`@record`
-  Object.
+- **Synthesizing Java payload classes.** Explicitly rejected. No
+  `<outputPackage>.synthesized` package, no `SynthesizedPayloadClassGenerator`, no
+  per-payload-type Java emission.
+- **Setter-based errors injection.** Violates immutability and would have graphitron
+  mutate consumer-produced objects. Legacy's `payload.setErrors(...)` shape is not
+  coming back.
+- **DELETE returning a payload of pre-deletion data.** Rejected at classify time —
+  the row is gone before the response SELECT can read it. DELETE returns `: ID` /
+  `: [ID!]` only.
+- **Multi-mutation atomicity inside a single GraphQL request.** Mutations are
+  sequential per the GraphQL spec, and federation breaks the illusion anyway.
+  Generated DML mutations commit in their own tight transactions; consumers don't
+  get a "transactionally atomic multi-mutation" knob.
+- **Restructuring R12's authored-carrier emit.** Tracked separately. R12's eventual
+  deprecation is informed by R75's emit pattern (PK-only RETURNING + follow-up
+  SELECT), but R75 doesn't touch R12's classification or carrier shape.
 
 ## Success criteria
 
-**Phase 1: shipped at `3ac4996`.**
+**Phase 1:**
+
+- The reproduction case at the top compiles and serves correctly through
+  `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`, with no
+  `@record(className)` declaration on the SDL payload type and no Java class on disk
+  for the payload.
+- `PassthroughPayloadPipelineTest`'s admission cases pass for INSERT / UPDATE /
+  UPSERT; DELETE-with-payload rejects with the per-mismatch message.
+- `PassthroughPayloadDmlTest`'s execution-tier driver passes against the sakila
+  testcontainer for INSERT / UPDATE / UPSERT, verifying the two-step emit (DML in
+  transaction + follow-up SELECT) compiles and runs end-to-end.
+- The headline correctness pin (`dml_persists_when_followupSelect_throws`) passes:
+  the DML row persists in the DB even when the response-side SELECT or a nested
+  `@table` fetcher throws.
+- Phase 1's shipped attempt retires cleanly: `PassthroughDataField`,
+  `IdentityPassthrough`, the `resolveReturnType` short-circuit, the
+  `FetcherRegistrationsEmitter` filter widening, the
+  `passthrough-payload.data-table-equals-dml-target` load-bearing key, and the
+  `PASSTHROUGH_PAYLOAD_DATA_FIELD` fixture are all gone.
+- Direct-`@table`-return DML mutations (`createFilm: Film` etc.) continue to work
+  under the new two-step emit pattern; existing fixtures regress without changes.
+- Authored payloads with `@record(record: {className: ...})` are unaffected (R12
+  scope unchanged).
 
 **Phase 2:**
 
-- `PassthroughPayloadPipelineTest`'s Phase 2 admission cases pass for all
-  four `DmlKind` values; the
-  `fetcherEmitter_passthroughSlotField_dispatchArmCount` regression pin
-  holds.
-- The classifier produces `MutationFieldWithSlots` wrapping the bare
-  per-kind DML carrier when the resolved `PassthroughInfo` has slots;
-  Phase 1 single-data-field payloads continue to classify as the bare DML
-  carrier (regression pin via existing Phase 1 fixtures).
-- `PassthroughPayloadMultiFieldDmlTest`'s execution-tier driver passes
-  for all four DML kinds with slot fields rendering null (no populator
-  wired in Phase 2; the `DataFetcherResult.localContext(emptyMap())`
-  wrap composes through graphql-java cleanly).
-- No populator framework or catalog ships in Phase 2; the populator
-  contract surface lands alongside the first real populator in its own
-  roadmap item.
+- `PassthroughPayloadPipelineTest`'s Phase 2 admission cases pass for INSERT /
+  UPDATE / UPSERT.
+- The classifier produces the per-kind `Mutation*RecordField` with non-empty
+  `slots` when the trigger admits multi-field; Phase 1 single-field payloads
+  continue to classify with empty `slots` (regression pin).
+- The execution-tier multi-field fixture passes for the three DML kinds with slot
+  fields rendering null (no populator wired in Phase 2; the
+  `DataFetcherResult.localContext(emptyMap())` wrap composes through graphql-java).
+- No populator framework or catalog ships; the populator contract surface lands per
+  slot family in its own roadmap item.
 
 **Phase 3:**
 
-- `PassthroughPayloadPipelineTest`'s Phase 3 admission cases pass for both
-  element kinds and all four wrapper kinds (10 parameterised cases).
-- `PassthroughPayloadServiceTest`'s execution-tier matrix passes (10
-  driver cases over 2 element kinds × 4 wrappers + 2 multi-field
-  variants over `DataFetcherResult`).
-- The `fetcherEmitter_identityPassthrough_dispatchArmCount_phase3`
-  regression pin holds; the capability now permits four records
-  (`ConstructorField`, `NestingField`, `PassthroughDataField`,
-  `PassthroughRecordField`) and the dispatch logic still has exactly one
-  arm matching the capability.
-- `PassthroughInfo`'s `DataElement` sealed sub-taxonomy compiles; Phase 1
-  and Phase 2 callers see `DataElement.Table` and behave unchanged.
-- `ServiceCatalog`'s `@service` mutation classifier admits passthrough
-  payloads (Phase 1's "Out of scope" item lights up).
-- Authored payloads with `@record(record: {className: ...})` are still
-  unaffected across all three phases (regression pin via the existing
-  authored-carrier fixtures).
+- `PassthroughPayloadPipelineTest`'s Phase 3 admission cases pass for both element
+  kinds (`{Table, Record}`) and all wrapper kinds (`{T, Optional, CompletableFuture,
+  Mono, DataFetcherResult}`).
+- `PassthroughPayloadServiceTest`'s execution-tier matrix passes (8 driver cases
+  over 2 element kinds × 4 wrappers + 2 multi-field variants over
+  `DataFetcherResult`).
+- `ServiceCatalog`'s `@service` mutation classifier admits payload-typed returns;
+  the trigger's `DataElement.{Table | Record}` sealed sub-taxonomy distinguishes
+  the two element kinds.
+- Authored payloads with `@record(record: {className: ...})` remain unaffected
+  across all three phases (regression pin via the existing authored-carrier
+  fixtures).
