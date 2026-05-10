@@ -6,7 +6,6 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -15,6 +14,7 @@ import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.RowsMethodBody;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -150,19 +150,20 @@ public final class SplitRowsMethodEmitter {
             TypeFetcherEmissionContext ctx,
             CodeBlock.Builder body,
             String fieldName,
-            BatchKey.RecordParentBatchKey batchKey,
+            SourceKey sourceKey,
             ReturnTypeRef.TableBoundReturnType returnType,
             List<JoinStep> joinPath) {
         TableRef terminalTable = returnType.table();
 
-        // Side-aware column list, polymorphically: RowKeyed's preludeKeyColumns delegates to
-        // parentKeyColumns (catalog-FK side); LifterLeafKeyed / LifterPathKeyed / AccessorKeyedSingle /
-        // AccessorKeyedMany delegate to targetKeyColumns (target side via the LiftedHop). All
-        // four produce RowN<...> of the same Java types as the JOIN target columns. The parameter
-        // type RecordParentBatchKey makes "only the four prelude-reachable permits reach this
-        // site" a compile-time guarantee instead of a switch with a default-throw arm.
-        List<ColumnRef> pkCols = batchKey.preludeKeyColumns();
-        TypeName keyElement = batchKey.keyElementType();
+        // Side-aware column list: ColumnRead carries parent-side FK columns (catalog-FK arm);
+        // SourceRowsCall and AccessorCall carry the join target columns (target side via the
+        // LiftedHop / FkJoin chain). All four produce RowN<...> of the same Java types as the
+        // JOIN target columns. The SourceKey parameter encodes "only the four prelude-reachable
+        // shapes reach this site" structurally; the @service Readers are unreachable here by
+        // entry-point construction (only the four BatchKeyField permits with sourceKey() routed
+        // through buildList/Single/Connection reach the prelude).
+        List<ColumnRef> pkCols = sourceKey.columns();
+        TypeName keyElement = sourceKey.keyElementType();
 
         int parentRowArity = pkCols.size() + 1;
         if (parentRowArity > 22) {
@@ -225,8 +226,7 @@ public final class SplitRowsMethodEmitter {
         // which would leak into the VALUES table as the column name instead of the value. We
         // pull the scalar via value<N>() and wrap it in DSL.val(...) so the argument typechecks
         // against jOOQ's Field-based DSL.row overload alongside the inline-i first argument.
-        boolean isAccessor = batchKey instanceof BatchKey.AccessorKeyedSingle
-                          || batchKey instanceof BatchKey.AccessorKeyedMany;
+        boolean isAccessor = sourceKey.reader() instanceof SourceKey.Reader.AccessorCall;
         for (int i = 0; i < pkCols.size(); i++) {
             if (isAccessor) {
                 rowArgs.add(", $T.val(k.value$L())", DSL, i + 1);
@@ -275,22 +275,22 @@ public final class SplitRowsMethodEmitter {
     static MethodSpec buildForSplitTable(TypeFetcherEmissionContext ctx, ChildField.SplitTableField stf, String outputPackage) {
         var stubReason = unsupportedReason(stf);
         if (stubReason.isPresent()) {
-            return buildRuntimeStub(stf.rowsMethodName(), stf.batchKey(), stf.returnType(), stubReason.get().message(), outputPackage);
+            return buildRuntimeStub(stf.rowsMethodName(), stf.sourceKey(), stf.returnType(), stubReason.get().message(), outputPackage);
         }
         java.util.function.Function<CodeBlock, RowsMethodBody> permit = RowsMethodBody.SqlSplitTable::new;
         if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Single) {
             return buildSingleMethod(
                 ctx, stf.name(), stf.rowsMethodName(), stf.returnType(),
-                stf.joinPath(), stf.filters(), stf.batchKey(), outputPackage, permit);
+                stf.joinPath(), stf.filters(), stf.sourceKey(), outputPackage, permit);
         }
         if (stf.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
             return buildConnectionMethod(
                 ctx, stf.name(), stf.rowsMethodName(), stf.returnType(),
-                stf.joinPath(), stf.filters(), stf.batchKey(), stf.orderBy(), conn, outputPackage, permit);
+                stf.joinPath(), stf.filters(), stf.sourceKey(), stf.orderBy(), conn, outputPackage, permit);
         }
         return buildListMethod(
             ctx, stf.name(), stf.rowsMethodName(), stf.returnType(),
-            stf.joinPath(), stf.filters(), stf.batchKey(),
+            stf.joinPath(), stf.filters(), stf.sourceKey(),
             /* lookupMapping */ null, outputPackage, permit);
     }
 
@@ -336,12 +336,12 @@ public final class SplitRowsMethodEmitter {
     static MethodSpec buildForSplitLookupTable(TypeFetcherEmissionContext ctx, ChildField.SplitLookupTableField slf, String outputPackage) {
         var stubReason = unsupportedReason(slf);
         if (stubReason.isPresent()) {
-            return buildRuntimeStub(slf.rowsMethodName(), slf.batchKey(), slf.returnType(), stubReason.get().message(), outputPackage);
+            return buildRuntimeStub(slf.rowsMethodName(), slf.sourceKey(), slf.returnType(), stubReason.get().message(), outputPackage);
         }
 
         return buildListMethod(
             ctx, slf.name(), slf.rowsMethodName(), slf.returnType(),
-            slf.joinPath(), slf.filters(), slf.batchKey(),
+            slf.joinPath(), slf.filters(), slf.sourceKey(),
             slf.lookupMapping(), outputPackage,
             RowsMethodBody.SqlSplitLookupTable::new);
     }
@@ -354,7 +354,7 @@ public final class SplitRowsMethodEmitter {
     static MethodSpec buildForRecordTable(TypeFetcherEmissionContext ctx, ChildField.RecordTableField rtf, String outputPackage) {
         var stubReason = unsupportedReason(rtf);
         if (stubReason.isPresent()) {
-            return buildRuntimeStub(rtf.rowsMethodName(), rtf.batchKey(), rtf.returnType(), stubReason.get().message(), outputPackage);
+            return buildRuntimeStub(rtf.rowsMethodName(), rtf.sourceKey(), rtf.returnType(), stubReason.get().message(), outputPackage);
         }
         // RecordTableField fields whose rows-method emits 1 record per key (today, only
         // AccessorKeyedMany: each accessor-derived element-PK key maps to exactly one
@@ -367,12 +367,12 @@ public final class SplitRowsMethodEmitter {
         if (rtf.emitsSingleRecordPerKey()) {
             return buildSingleMethod(
                 ctx, rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
-                rtf.joinPath(), rtf.filters(), rtf.batchKey(),
+                rtf.joinPath(), rtf.filters(), rtf.sourceKey(),
                 outputPackage, permit);
         }
         return buildListMethod(
             ctx, rtf.name(), rtf.rowsMethodName(), rtf.returnType(),
-            rtf.joinPath(), rtf.filters(), rtf.batchKey(),
+            rtf.joinPath(), rtf.filters(), rtf.sourceKey(),
             /* lookupMapping */ null, outputPackage, permit);
     }
 
@@ -384,7 +384,7 @@ public final class SplitRowsMethodEmitter {
     static MethodSpec buildForRecordLookupTable(TypeFetcherEmissionContext ctx, ChildField.RecordLookupTableField rltf, String outputPackage) {
         var stubReason = unsupportedReason(rltf);
         if (stubReason.isPresent()) {
-            return buildRuntimeStub(rltf.rowsMethodName(), rltf.batchKey(), rltf.returnType(), stubReason.get().message(), outputPackage);
+            return buildRuntimeStub(rltf.rowsMethodName(), rltf.sourceKey(), rltf.returnType(), stubReason.get().message(), outputPackage);
         }
         // Rows-method body is identical to SplitLookupTableField's — same BatchKey.RowKeyed +
         // LookupMapping shape, so buildListMethod handles both. The record-parent divergence
@@ -392,7 +392,7 @@ public final class SplitRowsMethodEmitter {
         // this seam, in TypeFetcherGenerator.buildRecordBasedDataFetcher.
         return buildListMethod(
             ctx, rltf.name(), rltf.rowsMethodName(), rltf.returnType(),
-            rltf.joinPath(), rltf.filters(), rltf.batchKey(),
+            rltf.joinPath(), rltf.filters(), rltf.sourceKey(),
             rltf.lookupMapping(), outputPackage,
             RowsMethodBody.SqlRecordLookupTable::new);
     }
@@ -411,7 +411,7 @@ public final class SplitRowsMethodEmitter {
             ReturnTypeRef.TableBoundReturnType returnType,
             List<JoinStep> joinPath,
             List<WhereFilter> filters,
-            BatchKey.RecordParentBatchKey batchKey,
+            SourceKey sourceKey,
             LookupMapping lookupMapping,
             String outputPackage,
             java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory) {
@@ -424,7 +424,7 @@ public final class SplitRowsMethodEmitter {
 
         var body = CodeBlock.builder();
         PreludeBindings p = emitParentInputAndFkChain(ctx,
-            body, fieldName, batchKey, returnType, joinPath);
+            body, fieldName, sourceKey, returnType, joinPath);
         List<JoinStep> path = joinPath;
         List<String> aliases = p.aliases();
         String terminalAlias = p.terminalAlias();
@@ -601,7 +601,7 @@ public final class SplitRowsMethodEmitter {
             ReturnTypeRef.TableBoundReturnType returnType,
             List<JoinStep> joinPath,
             List<WhereFilter> filters,
-            BatchKey.RecordParentBatchKey batchKey,
+            SourceKey sourceKey,
             String outputPackage,
             java.util.function.Function<CodeBlock, RowsMethodBody> permitFactory) {
         ClassName typeClass = ClassName.get(
@@ -616,7 +616,7 @@ public final class SplitRowsMethodEmitter {
         // [LiftedHop] joinPath in FieldBuilder), so the shared prelude's FK-chain loop emits
         // exactly one declaration.
         PreludeBindings p = emitParentInputAndFkChain(ctx,
-            body, fieldName, batchKey, returnType, joinPath);
+            body, fieldName, sourceKey, returnType, joinPath);
         String firstAlias = p.firstAlias();
         // Two routes reach this method: SplitTableField single-cardinality (FkJoin first hop,
         // parent-holds-FK) and RecordTableField with AccessorKeyedMany (LiftedHop first hop,
@@ -723,7 +723,7 @@ public final class SplitRowsMethodEmitter {
             ReturnTypeRef.TableBoundReturnType returnType,
             List<JoinStep> joinPath,
             List<WhereFilter> filters,
-            BatchKey.RecordParentBatchKey batchKey,
+            SourceKey sourceKey,
             no.sikt.graphitron.rewrite.model.OrderBySpec orderBy,
             no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn,
             String outputPackage,
@@ -746,7 +746,7 @@ public final class SplitRowsMethodEmitter {
 
         var body = CodeBlock.builder();
         PreludeBindings p = emitParentInputAndFkChain(ctx,
-            body, fieldName, batchKey, returnType, joinPath);
+            body, fieldName, sourceKey, returnType, joinPath);
         List<JoinStep> path = joinPath;
         List<String> aliases = p.aliases();
         String terminalAlias = p.terminalAlias();
@@ -902,9 +902,9 @@ public final class SplitRowsMethodEmitter {
      * regression surfaces the first time the variant is actually called. Used for cardinality,
      * ConditionJoin, and empty-joinPath branches that C1/C2 don't emit real bodies for.
      */
-    private static MethodSpec buildRuntimeStub(String methodName, BatchKey batchKey,
+    private static MethodSpec buildRuntimeStub(String methodName, SourceKey sourceKey,
             ReturnTypeRef.TableBoundReturnType returnType, String reason, String outputPackage) {
-        TypeName keyElement = batchKey.keyElementType();
+        TypeName keyElement = sourceKey.keyElementType();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
         TypeName valueType;
         if (returnType.wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
