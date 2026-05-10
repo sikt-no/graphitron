@@ -1,7 +1,7 @@
 ---
 id: R124
 title: "Source codegen classpath from project + reactor, not plugin realm"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 8
 theme: service
@@ -31,7 +31,7 @@ depends-on: []
 ## Problem
 
 Today every consumer pom carries a block like this (verbatim from
-`graphitron-rewrite/graphitron-sakila-example/pom.xml:303-313`):
+`graphitron-rewrite/graphitron-sakila-example/pom.xml:329-339`):
 
 ```xml
 <plugin>
@@ -255,7 +255,7 @@ win for the 21 sites that don't need init and a no-op for the one that does.
 
 ### Migration: drop the `<plugin><dependencies>` block in sakila-example
 
-Delete `graphitron-sakila-example/pom.xml:303-313`. The existing
+Delete `graphitron-sakila-example/pom.xml:329-339`. The existing
 `<dependency>graphitron-sakila-service</dependency>` block (lines 49-53)
 covers the codegen classpath automatically once the loader is project-aware.
 The build should pass byte-identical generated sources before and after.
@@ -298,7 +298,7 @@ required for service / catalog wiring.
   `ctx.codegenLoader()` (`BuildContext`-holders), the new `JooqCatalog`
   field, or the new explicit parameter (`CheckedExceptionMatcher`).
 - `graphitron-sakila-example/pom.xml` — delete the `<plugin><dependencies>`
-  block (lines 303-313).
+  block (lines 329-339).
 - `graphitron-maven-plugin/src/it/basic-generate/pom.xml` — declare
   `graphitron-sakila-db` as a top-level `<dependency>` (currently only
   declared under `<plugin><dependencies>`) and remove the
