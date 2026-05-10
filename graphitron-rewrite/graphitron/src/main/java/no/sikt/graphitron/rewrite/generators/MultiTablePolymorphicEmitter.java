@@ -153,9 +153,10 @@ public final class MultiTablePolymorphicEmitter {
             .toList();
         var methods = new ArrayList<MethodSpec>();
         if (isList && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildBatchedListFetcher(ctx, fieldName, parentKey, parentResultType, outputPackage));
+            SourceKey parentSourceKey = parentSourceKey(parentKey);
+            methods.add(buildBatchedListFetcher(ctx, fieldName, parentSourceKey, parentResultType, outputPackage));
             methods.add(buildBatchedListRowsMethod(ctx, fieldName, tableBoundParticipants,
-                participantJoinPaths, parentKey, outputPackage));
+                participantJoinPaths, parentSourceKey, outputPackage));
         } else {
             methods.add(buildScalarPerParentFetcher(ctx, fieldName, tableBoundParticipants,
                 participantJoinPaths, isList, outputPackage));
@@ -231,10 +232,11 @@ public final class MultiTablePolymorphicEmitter {
         // The empty-tableBound defensive path falls into the root branch; both fetcher builders
         // emit a non-throwing empty payload when participants is empty.
         if (parentKey != null && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildBatchedConnectionFetcher(ctx, fieldName, parentKey, parentResultType,
+            SourceKey parentSourceKey = parentSourceKey(parentKey);
+            methods.add(buildBatchedConnectionFetcher(ctx, fieldName, parentSourceKey, parentResultType,
                 outputPackage));
             methods.add(buildBatchedConnectionRowsMethod(ctx, fieldName, tableBoundParticipants,
-                participantJoinPaths, defaultPageSize, parentKey, outputPackage));
+                participantJoinPaths, defaultPageSize, parentSourceKey, outputPackage));
         } else {
             methods.add(buildRootConnectionFetcher(ctx, fieldName, tableBoundParticipants,
                 defaultPageSize, outputPackage));
@@ -779,7 +781,7 @@ public final class MultiTablePolymorphicEmitter {
     private static MethodSpec buildBatchedConnectionFetcher(
             TypeFetcherEmissionContext ctx,
             String fieldName,
-            BatchKey.RecordParentBatchKey parentKey,
+            SourceKey parentSourceKey,
             GraphitronType.ResultType parentResultType,
             String outputPackage) {
 
@@ -787,7 +789,6 @@ public final class MultiTablePolymorphicEmitter {
             no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
         TypeName valueType = connectionResultClass;
 
-        SourceKey parentSourceKey = parentSourceKey(parentKey);
         TypeName keyType = parentSourceKey.keyElementType();
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
@@ -847,14 +848,13 @@ public final class MultiTablePolymorphicEmitter {
     private static MethodSpec buildBatchedListFetcher(
             TypeFetcherEmissionContext ctx,
             String fieldName,
-            BatchKey.RecordParentBatchKey parentKey,
+            SourceKey parentSourceKey,
             GraphitronType.ResultType parentResultType,
             String outputPackage) {
 
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName valueType = listOfRecord;
 
-        SourceKey parentSourceKey = parentSourceKey(parentKey);
         TypeName keyType = parentSourceKey.keyElementType();
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
@@ -939,7 +939,7 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
-            int defaultPageSize, BatchKey.RecordParentBatchKey parentKey,
+            int defaultPageSize, SourceKey parentSourceKey,
             String outputPackage) {
 
         var connectionResultClass = ClassName.get(outputPackage + ".util",
@@ -953,11 +953,11 @@ public final class MultiTablePolymorphicEmitter {
 
         String rowsMethodName = "rows" + cap(fieldName);
 
-        // Parent PK columns from the BatchKey's prelude side; arity 1..21 enforced upstream by
-        // validateChildMultiTableParentPk (idx adds one slot to the parentInput Row<N+1>).
-        var parentPkCols = parentKey.preludeKeyColumns();
+        // Parent FK / lifter-projected columns on the source side; arity 1..21 enforced upstream
+        // by validateChildMultiTableParentPk (idx adds one slot to the parentInput Row<N+1>).
+        var parentPkCols = parentSourceKey.columns();
         int parentKeyArity = parentPkCols.size();
-        TypeName keyType = parentKey.keyElementType();
+        TypeName keyType = parentSourceKey.keyElementType();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
         TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);
 
@@ -1339,15 +1339,15 @@ public final class MultiTablePolymorphicEmitter {
             TypeFetcherEmissionContext ctx,
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<JoinStep>> participantJoinPaths,
-            BatchKey.RecordParentBatchKey parentKey,
+            SourceKey parentSourceKey,
             String outputPackage) {
 
         var integerClass = ClassName.get(Integer.class);
         var stringClass = ClassName.get(String.class);
         String rowsMethodName = "rows" + cap(fieldName);
 
-        var parentPkCols = parentKey.preludeKeyColumns();
-        TypeName keyType = parentKey.keyElementType();
+        var parentPkCols = parentSourceKey.columns();
+        TypeName keyType = parentSourceKey.keyElementType();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
