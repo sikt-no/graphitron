@@ -542,7 +542,7 @@ class TypeBuilder {
             return new GraphitronType.PojoResultType(name, location, null);
         }
         try {
-            Class<?> cls = Class.forName(className);
+            Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             if (cls.isRecord()) {
                 recordBackingClasses.put(name, cls);
                 return new GraphitronType.JavaRecordType(name, location, className);
@@ -743,7 +743,7 @@ class TypeBuilder {
             return new GraphitronType.PojoInputType(name, location, null, inputType);
         }
         try {
-            Class<?> cls = Class.forName(className);
+            Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             if (cls.isRecord()) {
                 return new GraphitronType.JavaRecordInputType(name, location, className, inputType);
             }
@@ -940,9 +940,9 @@ class TypeBuilder {
      * {@code Class.isInstance}; a non-{@code Throwable} class would never match anything and
      * is almost certainly a typo.
      */
-    private static String validateExceptionClass(String className, String handlerKind) {
+    private String validateExceptionClass(String className, String handlerKind) {
         try {
-            Class<?> cls = Class.forName(className);
+            Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             if (!Throwable.class.isAssignableFrom(cls)) {
                 return "@error handler {handler: " + handlerKind + ", className: \"" + className
                     + "\"} resolves to a class that does not extend java.lang.Throwable; "

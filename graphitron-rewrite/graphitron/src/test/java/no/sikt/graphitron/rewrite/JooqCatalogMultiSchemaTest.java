@@ -360,7 +360,8 @@ class JooqCatalogMultiSchemaTest {
         // Tables class is hard to forge without bespoke codegen, so the helper takes the
         // (schemaName, packageName) pair the constructor would extract.
         org.assertj.core.api.Assertions.assertThatThrownBy(
-                () -> JooqCatalog.verifyTablesClassPresent("synthetic_schema", "no.such.package"))
+                () -> JooqCatalog.verifyTablesClassPresent("synthetic_schema", "no.such.package",
+                    JooqCatalogMultiSchemaTest.class.getClassLoader()))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("synthetic_schema")
             .hasMessageContaining("<tables>true</tables>")
@@ -371,7 +372,8 @@ class JooqCatalogMultiSchemaTest {
     void verifyTablesClassPresent_existingPackageAcceptsSilently() {
         // Real fixture package: this should not throw.
         JooqCatalog.verifyTablesClassPresent("multischema_a",
-            "no.sikt.graphitron.rewrite.multischemafixture.multischema_a");
+            "no.sikt.graphitron.rewrite.multischemafixture.multischema_a",
+            JooqCatalogMultiSchemaTest.class.getClassLoader());
     }
 
     @Test

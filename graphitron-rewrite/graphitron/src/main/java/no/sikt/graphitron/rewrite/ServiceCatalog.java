@@ -194,7 +194,7 @@ class ServiceCatalog {
             return new ServiceReflectionResult(null, Rejection.structural("service reference is incomplete"));
         }
         try {
-            Class<?> cls = Class.forName(className);
+            Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             var methods = Arrays.stream(cls.getDeclaredMethods())
                 .filter(m -> m.getName().equals(methodName))
                 .toList();
@@ -245,7 +245,7 @@ class ServiceCatalog {
                 PathExpr resolvedPath = pName != null ? argByJavaName.get(pName) : null;
                 if (resolvedPath != null) {
                     params.add(new MethodRef.Param.Typed(displayName, typeName,
-                        new ParamSource.Arg(argExtraction(typeName), resolvedPath)));
+                        new ParamSource.Arg(argExtraction(typeName, ctx.codegenLoader()), resolvedPath)));
                 } else if (pName != null && ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Context()));
                 } else {
@@ -466,7 +466,7 @@ class ServiceCatalog {
             return new ServiceReflectionResult(null, Rejection.structural("table method reference is incomplete"));
         }
         try {
-            Class<?> cls = Class.forName(className);
+            Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             var methods = Arrays.stream(cls.getDeclaredMethods())
                 .filter(m -> m.getName().equals(methodName))
                 .toList();
@@ -523,7 +523,7 @@ class ServiceCatalog {
                 PathExpr resolvedPath = argByJavaName.get(pName);
                 if (resolvedPath != null) {
                     params.add(new MethodRef.Param.Typed(pName, typeName,
-                        new ParamSource.Arg(argExtraction(typeName), resolvedPath)));
+                        new ParamSource.Arg(argExtraction(typeName, ctx.codegenLoader()), resolvedPath)));
                 } else if (ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(pName, typeName, new ParamSource.Context()));
                 } else {
@@ -569,7 +569,7 @@ class ServiceCatalog {
     ServiceReflectionResult reflectExternalField(String className, String methodName,
             ClassName parentTableClass) {
         try {
-            Class<?> cls = Class.forName(className);
+            Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             var methods = Arrays.stream(cls.getDeclaredMethods())
                 .filter(m -> m.getName().equals(methodName))
                 .toList();
@@ -681,9 +681,9 @@ class ServiceCatalog {
      * GraphQL schema access and is handled as a post-processing step in
      * {@link FieldBuilder#enrichArgExtractions}.
      */
-    static CallSiteExtraction argExtraction(String typeName) {
+    static CallSiteExtraction argExtraction(String typeName, ClassLoader codegenLoader) {
         try {
-            if (Class.forName(typeName).isEnum()) {
+            if (Class.forName(typeName, false, codegenLoader).isEnum()) {
                 return new CallSiteExtraction.EnumValueOf(typeName);
             }
         } catch (ClassNotFoundException ignored) {}

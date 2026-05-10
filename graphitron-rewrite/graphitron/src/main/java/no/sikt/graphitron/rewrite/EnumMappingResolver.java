@@ -133,7 +133,7 @@ final class EnumMappingResolver {
     EnumValidation validateEnumFilter(String graphqlTypeName, ColumnRef column) {
         Class<?> colClass;
         try {
-            colClass = Class.forName(column.columnClass());
+            colClass = Class.forName(column.columnClass(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return NOT_ENUM;
         }

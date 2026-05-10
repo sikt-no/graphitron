@@ -42,16 +42,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class CheckedExceptionMatcherTest {
 
+    private static final ClassLoader LOADER = CheckedExceptionMatcherTest.class.getClassLoader();
+
     @Test
     void emptyDeclaredList_returnsEmpty() {
         var channel = channelWith(new ExceptionHandler("java.lang.RuntimeException", Optional.empty(), Optional.empty()));
-        assertThat(CheckedExceptionMatcher.unmatched(List.of(), Optional.of(channel))).isEmpty();
+        assertThat(CheckedExceptionMatcher.unmatched(List.of(), Optional.of(channel), LOADER)).isEmpty();
     }
 
     @Test
     void exceptionHandler_exactClass_matches() {
         var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), Optional.empty()));
-        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel)))
+        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel), LOADER))
             .isEmpty();
     }
 
@@ -60,7 +62,7 @@ class CheckedExceptionMatcherTest {
         // ExceptionHandler(SQLException) covers a method declaring throws SQLDataException
         // because the handler's class is a supertype of the declared class.
         var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), Optional.empty()));
-        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLDataException"), Optional.of(channel)))
+        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLDataException"), Optional.of(channel), LOADER))
             .isEmpty();
     }
 
@@ -69,7 +71,7 @@ class CheckedExceptionMatcherTest {
         // A method throws Throwable is NOT covered by ExceptionHandler(SQLException) — the
         // handler's class is more specific than the declared class.
         var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), Optional.empty()));
-        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.lang.Throwable"), Optional.of(channel)))
+        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.lang.Throwable"), Optional.of(channel), LOADER))
             .containsExactly("java.lang.Throwable");
     }
 
@@ -78,16 +80,16 @@ class CheckedExceptionMatcherTest {
         // SqlStateHandler matches any SQLException at runtime (the state predicate runs
         // inside the cause-chain walk). Same applies to VendorCodeHandler.
         var channel = channelWith(new SqlStateHandler("23503", Optional.empty(), Optional.empty()));
-        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel)))
+        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel), LOADER))
             .isEmpty();
-        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLDataException"), Optional.of(channel)))
+        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLDataException"), Optional.of(channel), LOADER))
             .isEmpty();
     }
 
     @Test
     void vendorCodeHandler_coversAnySqlException() {
         var channel = channelWith(new VendorCodeHandler("12345", Optional.empty(), Optional.empty()));
-        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel)))
+        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel), LOADER))
             .isEmpty();
     }
 
@@ -96,7 +98,7 @@ class CheckedExceptionMatcherTest {
         // SqlStateHandler / VendorCodeHandler only cover SQLException subclasses — a method
         // throws java.lang.Exception needs a corresponding ExceptionHandler.
         var channel = channelWith(new SqlStateHandler("23503", Optional.empty(), Optional.empty()));
-        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.lang.Exception"), Optional.of(channel)))
+        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.lang.Exception"), Optional.of(channel), LOADER))
             .containsExactly("java.lang.Exception");
     }
 
@@ -105,7 +107,7 @@ class CheckedExceptionMatcherTest {
         // ValidationHandler is a wrapper-side flag; it never participates in the dispatch arm
         // and so never covers a declared exception in this matcher.
         var channel = channelWith(new ValidationHandler(Optional.empty()));
-        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel)))
+        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel), LOADER))
             .containsExactly("java.sql.SQLException");
     }
 
@@ -113,7 +115,7 @@ class CheckedExceptionMatcherTest {
     void interruptedException_isExempt() {
         // InterruptedException is exempt: the matcher skips it without consulting the channel.
         var noChannel = Optional.<ErrorChannel>empty();
-        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.lang.InterruptedException"), noChannel))
+        assertThat(CheckedExceptionMatcher.unmatched(List.of("java.lang.InterruptedException"), noChannel, LOADER))
             .isEmpty();
     }
 
@@ -123,7 +125,7 @@ class CheckedExceptionMatcherTest {
         // throws IOException doesn't need a corresponding handler.
         var noChannel = Optional.<ErrorChannel>empty();
         assertThat(CheckedExceptionMatcher.unmatched(
-                List.of("java.io.IOException", "java.io.FileNotFoundException"), noChannel))
+                List.of("java.io.IOException", "java.io.FileNotFoundException"), noChannel, LOADER))
             .isEmpty();
     }
 
@@ -135,7 +137,7 @@ class CheckedExceptionMatcherTest {
         var noChannel = Optional.<ErrorChannel>empty();
         assertThat(CheckedExceptionMatcher.unmatched(
                 List.of("java.lang.IllegalArgumentException", "java.lang.NullPointerException"),
-                noChannel))
+                noChannel, LOADER))
             .isEmpty();
     }
 
@@ -145,7 +147,7 @@ class CheckedExceptionMatcherTest {
         var noChannel = Optional.<ErrorChannel>empty();
         assertThat(CheckedExceptionMatcher.unmatched(
                 List.of("java.sql.SQLException", "java.io.IOException", "java.lang.IllegalArgumentException"),
-                noChannel))
+                noChannel, LOADER))
             .containsExactly("java.sql.SQLException");
     }
 
@@ -156,7 +158,7 @@ class CheckedExceptionMatcherTest {
         // problem on the classifier rejection.
         var noChannel = Optional.<ErrorChannel>empty();
         var unmatched = CheckedExceptionMatcher.unmatched(
-            List.of("com.example.MissingException"), noChannel);
+            List.of("com.example.MissingException"), noChannel, LOADER);
         assertThat(unmatched).hasSize(1);
         assertThat(unmatched.get(0)).contains("com.example.MissingException")
             .contains("not on classifier classpath");
@@ -167,7 +169,7 @@ class CheckedExceptionMatcherTest {
         // A method may declare multiple checked exceptions; only the unmatched ones surface.
         var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), Optional.empty()));
         assertThat(CheckedExceptionMatcher.unmatched(
-                List.of("java.sql.SQLException", "java.lang.Exception"), Optional.of(channel)))
+                List.of("java.sql.SQLException", "java.lang.Exception"), Optional.of(channel), LOADER))
             .containsExactly("java.lang.Exception");
     }
 
