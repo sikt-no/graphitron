@@ -238,17 +238,51 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
 
         /**
          * A DataLoader batch-key parameter whose Java type is fully determined by the
-         * {@link BatchKey} variant — no separate {@code typeName} field is needed.
+         * {@code (wrap, columns, container)} triple — the surviving axes after R38's BatchKey
+         * collapse, where {@link SourceKey.Wrap} carries the per-row shape (Row / Record /
+         * typed TableRecord), {@code columns} is the parent-side PK/FK column tuple driving
+         * the key arity and type args, and {@link LoaderRegistration.Container} carries the
+         * mapped/positional axis that was previously variant identity on {@link BatchKey}.
          *
-         * <p>{@link #typeName()} returns the derived generic list type
-         * (e.g. {@code "java.util.List<org.jooq.Row1<java.lang.Integer>>"} for
-         * {@link BatchKey.RowKeyed} with one {@code Integer} PK column).
+         * <p>{@link #typeName()} returns the derived generic list/set type
+         * (e.g. {@code "java.util.List<org.jooq.Row1<java.lang.Integer>>"} for a
+         * {@code Wrap.Row} + single-column + {@code POSITIONAL_LIST} triple).
          *
-         * <p>{@link #source()} returns {@code new ParamSource.Sources(batchKey)}.
+         * <p>{@link #source()} returns {@code new ParamSource.Sources(wrap, columns, container)}.
          */
-        record Sourced(String name, BatchKey.ParentKeyed batchKey) implements Param {
-            @Override public String typeName() { return batchKey.javaTypeName(); }
-            @Override public ParamSource source() { return new ParamSource.Sources(batchKey); }
+        record Sourced(
+                String name,
+                SourceKey.Wrap wrap,
+                List<ColumnRef> columns,
+                LoaderRegistration.Container container) implements Param {
+            public Sourced {
+                java.util.Objects.requireNonNull(wrap, "wrap");
+                java.util.Objects.requireNonNull(container, "container");
+                if (columns == null || columns.isEmpty()) {
+                    throw new IllegalArgumentException(
+                        "MethodRef.Param.Sourced requires a non-empty columns list");
+                }
+                columns = List.copyOf(columns);
+            }
+            @Override public String typeName() { return computeJavaTypeName(wrap, columns, container); }
+            @Override public ParamSource source() { return new ParamSource.Sources(wrap, columns, container); }
+
+            private static String computeJavaTypeName(
+                    SourceKey.Wrap wrap, List<ColumnRef> columns, LoaderRegistration.Container container) {
+                String outer = container == LoaderRegistration.Container.MAPPED_SET ? "Set" : "List";
+                String element = switch (wrap) {
+                    case SourceKey.Wrap.Row r       -> jooqShape("Row", columns);
+                    case SourceKey.Wrap.Record r    -> jooqShape("Record", columns);
+                    case SourceKey.Wrap.TableRecord tr -> tr.className().canonicalName();
+                };
+                return "java.util." + outer + "<" + element + ">";
+            }
+            private static String jooqShape(String shape, List<ColumnRef> cols) {
+                String args = cols.stream()
+                    .map(ColumnRef::columnClass)
+                    .collect(java.util.stream.Collectors.joining(", "));
+                return "org.jooq." + shape + cols.size() + "<" + args + ">";
+            }
         }
     }
 }

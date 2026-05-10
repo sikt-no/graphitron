@@ -9,11 +9,13 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.RowsMethodShape;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TypeNames;
 
 import java.util.HashSet;
@@ -173,13 +175,13 @@ final class ServiceDirectiveResolver {
     }
 
     /**
-     * Parent-table consistency check for the typed-{@code TableRecord} source-shape arms
-     * ({@link BatchKey.TableRecordKeyed} / {@link BatchKey.MappedTableRecordKeyed}). When the
-     * developer declares {@code Set<X>} or {@code List<X>} where {@code X extends TableRecord},
-     * {@code X} must be the parent type's expected record class — otherwise the emitted
+     * Parent-table consistency check for the typed-{@code TableRecord} source-shape arm
+     * ({@link SourceKey.Wrap.TableRecord}). When the developer declares {@code Set<X>} or
+     * {@code List<X>} where {@code X extends TableRecord}, {@code X} must be the parent type's
+     * expected record class — otherwise the emitted
      * {@code ((Record) env.getSource()).into(Tables.X)} extraction would silently project the
-     * parent's runtime record into a wrong-typed {@code TableRecord}. Other batch-key arms
-     * (RowN / RecordN sources, accessor-keyed @record parents, etc.) are unaffected: their
+     * parent's runtime record into a wrong-typed {@code TableRecord}. The other source-shape
+     * arms ({@link SourceKey.Wrap.Row} / {@link SourceKey.Wrap.Record}) are unaffected: their
      * key shapes don't carry a typed record class to mismatch.
      */
     private String validateTableRecordSourceParentTable(String parentTypeName, MethodRef method) {
@@ -189,16 +191,13 @@ final class ServiceDirectiveResolver {
             .findFirst()
             .orElse(null);
         if (sourced == null) return null;
-        Class<? extends org.jooq.TableRecord<?>> elementClass = switch (sourced.batchKey()) {
-            case BatchKey.TableRecordKeyed trk -> trk.elementClass();
-            case BatchKey.MappedTableRecordKeyed mtrk -> mtrk.elementClass();
-            default -> null;
-        };
-        if (elementClass == null) return null;
+        if (!(sourced.wrap() instanceof SourceKey.Wrap.TableRecord tr)) return null;
         var expected = ctx.recordClassForTypeName(parentTypeName).orElse(null);
-        if (expected == null || expected.equals(elementClass)) return null;
+        if (expected == null) return null;
+        ClassName expectedClassName = ClassName.get(expected);
+        if (expectedClassName.equals(tr.className())) return null;
         return "method '" + method.methodName() + "' in class '" + method.className()
-            + "' takes Sources element type '" + elementClass.getSimpleName()
+            + "' takes Sources element type '" + tr.className().simpleName()
             + "' but the parent type '" + parentTypeName
             + "' is backed by '" + expected.getSimpleName()
             + "' — change the Sources element to '" + expected.getSimpleName()
@@ -309,10 +308,10 @@ final class ServiceDirectiveResolver {
         key = "service-directive-resolver-strict-child-service-return",
         description = "The strict TypeName.equals arm rejects child @service developer methods "
             + "whose declared return type doesn't structurally match the rows-method's "
-            + "Map<K, V>/List<List<V>>/List<V> shape derived from (returnType, batchKey). Lets "
-            + "buildServiceRowsMethod emit `return ServiceClass.method(...)` without a defensive "
-            + "cast or wildcard, and surfaces author errors at classify time rather than as "
-            + "javac errors on the generated source.")
+            + "Map<K, V>/List<List<V>>/List<V> shape derived from (returnType, sourced shape). "
+            + "Lets buildServiceRowsMethod emit `return ServiceClass.method(...)` without a "
+            + "defensive cast or wildcard, and surfaces author errors at classify time rather "
+            + "than as javac errors on the generated source.")
     private static String validateChildServiceReturnType(ReturnTypeRef returnType, MethodRef method) {
         MethodRef.Param.Sourced sourced = method.params().stream()
             .filter(MethodRef.Param.Sourced.class::isInstance)
@@ -320,15 +319,13 @@ final class ServiceDirectiveResolver {
             .findFirst()
             .orElse(null);
         if (sourced == null) return null;
-        BatchKey.ParentKeyed batchKey = sourced.batchKey();
 
         TypeName perKey = RowsMethodShape.strictPerKeyType(returnType);
         if (perKey == null) return null;
-        boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
-                        || batchKey instanceof BatchKey.MappedRecordKeyed
-                        || batchKey instanceof BatchKey.MappedTableRecordKeyed;
+        boolean isMapped = sourced.container() == LoaderRegistration.Container.MAPPED_SET;
+        TypeName keyElementType = SourceKey.keyElementType(sourced.wrap(), sourced.columns());
         TypeName expected = RowsMethodShape.outerRowsReturnType(
-            perKey, returnType, batchKey.keyElementType(), isMapped);
+            perKey, returnType, keyElementType, isMapped);
         if (method.returnType().equals(expected)) return null;
 
         return "method '" + method.methodName() + "' in class '" + method.className()

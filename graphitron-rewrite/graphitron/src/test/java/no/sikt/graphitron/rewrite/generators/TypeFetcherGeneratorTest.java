@@ -334,7 +334,7 @@ class TypeFetcherGeneratorTest {
         var method = TestFixtures.staticServiceMethodRef(
             "no.example.FilmService", "getFilms", ClassName.get("java.util", "List"),
             List.of(
-                new MethodRef.Param.Sourced("keys",
+                TestFixtures.sourced("keys",
                     new BatchKey.RowKeyed(List.of(languageIdCol()))),
                 new MethodRef.Param.Typed("filter", "java.lang.String", new ParamSource.Arg(new CallSiteExtraction.Direct(), no.sikt.graphitron.rewrite.PathExpr.head("filter"))),
                 new MethodRef.Param.Typed("tenantId", "java.lang.String", new ParamSource.Context())
@@ -391,7 +391,7 @@ class TypeFetcherGeneratorTest {
         var returnType = tableBoundFilm(returnWrapper);
         var method = TestFixtures.staticServiceMethodRef(
             "no.example.FilmService", "getFilms", ClassName.get("java.util", "Set"),
-            List.of(new MethodRef.Param.Sourced("keys", batchKey)));
+            List.of(TestFixtures.sourced("keys", batchKey)));
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
             List.of(), List.of(), new OrderBySpec.None(), null, method,
@@ -1402,7 +1402,7 @@ class TypeFetcherGeneratorTest {
         var returnType = new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ScalarReturnType("String", returnWrapper);
         var method = TestFixtures.staticServiceMethodRef(
             "no.example.Service", "getValues", perKeyType,
-            List.of(new MethodRef.Param.Sourced("keys", batchKey)));
+            List.of(TestFixtures.sourced("keys", batchKey)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
             parentType, name, null, returnType, List.of(), method,
             no.sikt.graphitron.rewrite.SourceKeyResolver.resolveServiceRecord(batchKey, returnType, List.of()),
@@ -1417,7 +1417,7 @@ class TypeFetcherGeneratorTest {
             "FilmDetails", returnWrapper, fqBackingClass);
         var method = TestFixtures.staticServiceMethodRef(
             "no.example.Service", "getDetails", ClassName.bestGuess(fqBackingClass),
-            List.of(new MethodRef.Param.Sourced("keys", batchKey)));
+            List.of(TestFixtures.sourced("keys", batchKey)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
             parentType, name, null, returnType, List.of(), method,
             no.sikt.graphitron.rewrite.SourceKeyResolver.resolveServiceRecord(batchKey, returnType, List.of()),

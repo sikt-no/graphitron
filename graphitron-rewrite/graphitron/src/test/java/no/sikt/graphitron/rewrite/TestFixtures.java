@@ -2,15 +2,18 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ForeignKeyRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.ArrayList;
@@ -92,6 +95,33 @@ public final class TestFixtures {
                                                               List<MethodRef.Param> params) {
         return new MethodRef.Service(className, methodName, returnType, params, List.of(),
             new MethodRef.CallShape.InstanceWithDslHolder());
+    }
+
+    /**
+     * Test-only adapter that constructs a {@link MethodRef.Param.Sourced} from a
+     * {@link BatchKey.ParentKeyed} permit. R38 Phase 3 step 13 flipped Sourced storage from
+     * {@code BatchKey.ParentKeyed} to {@code (Wrap, columns, Container)}; the test fixtures
+     * still build {@code BatchKey} values for ergonomic shorthand, and this helper handles
+     * the projection. Deletes alongside {@link BatchKey} when the resolvers inline.
+     */
+    public static MethodRef.Param.Sourced sourced(String name, BatchKey.ParentKeyed bk) {
+        SourceKey.Wrap wrap;
+        if (bk instanceof BatchKey.TableRecordKeyed trk) {
+            wrap = new SourceKey.Wrap.TableRecord(ClassName.get(trk.elementClass()));
+        } else if (bk instanceof BatchKey.MappedTableRecordKeyed mtrk) {
+            wrap = new SourceKey.Wrap.TableRecord(ClassName.get(mtrk.elementClass()));
+        } else if (bk instanceof BatchKey.RecordKeyed || bk instanceof BatchKey.MappedRecordKeyed) {
+            wrap = new SourceKey.Wrap.Record();
+        } else {
+            wrap = new SourceKey.Wrap.Row();
+        }
+        LoaderRegistration.Container container =
+            (bk instanceof BatchKey.MappedRowKeyed
+                || bk instanceof BatchKey.MappedRecordKeyed
+                || bk instanceof BatchKey.MappedTableRecordKeyed)
+                ? LoaderRegistration.Container.MAPPED_SET
+                : LoaderRegistration.Container.POSITIONAL_LIST;
+        return new MethodRef.Param.Sourced(name, wrap, bk.parentKeyColumns(), container);
     }
 
     public static MethodRef.Service instanceServiceMethodRef(String className, String methodName, TypeName returnType,

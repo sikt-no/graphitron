@@ -2,6 +2,9 @@ package no.sikt.graphitron.rewrite.model;
 
 import no.sikt.graphitron.rewrite.PathExpr;
 
+import java.util.List;
+import java.util.Objects;
+
 /**
  * Classifies the runtime source of a single parameter in a {@link MethodRef}.
  *
@@ -61,10 +64,22 @@ public sealed interface ParamSource
     record Context() implements ParamSource {}
 
     /**
-     * The DataLoader batch-key list ({@code List<KeyType>}).
-     * The element type and key-construction strategy are determined by {@link BatchKey}.
+     * The DataLoader batch-key list ({@code List<KeyType>}) or set ({@code Set<KeyType>}).
+     * Carries the {@code (wrap, columns, container)} triple that determines the parameter's
+     * Java type and key-construction strategy: {@link SourceKey.Wrap} for the per-row shape
+     * (Row / Record / typed TableRecord), {@code columns} for the parent-side PK/FK tuple,
+     * and {@link LoaderRegistration.Container} for the mapped/positional axis.
      */
-    record Sources(BatchKey.ParentKeyed batchKey) implements ParamSource {}
+    record Sources(
+            SourceKey.Wrap wrap,
+            List<ColumnRef> columns,
+            LoaderRegistration.Container container) implements ParamSource {
+        public Sources {
+            Objects.requireNonNull(wrap, "wrap");
+            Objects.requireNonNull(container, "container");
+            columns = List.copyOf(columns);
+        }
+    }
 
     /** The jOOQ {@code DSLContext}; injected by the framework. */
     record DslContext() implements ParamSource {}

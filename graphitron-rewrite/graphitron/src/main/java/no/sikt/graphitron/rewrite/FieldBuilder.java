@@ -61,6 +61,7 @@ import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -71,6 +72,7 @@ import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import no.sikt.graphitron.rewrite.model.BodyParam;
@@ -175,18 +177,72 @@ class FieldBuilder {
     // ===== Shared resolution helpers =====
 
     /**
-     * Extracts the {@link BatchKey} from the first {@link MethodRef.Param.Sourced} parameter of the
-     * given method, or {@code null} when the method has no such parameter.
+     * Extracts the first {@link MethodRef.Param.Sourced} parameter from the given method, or
+     * {@code null} when the method has no such parameter.
      *
      * <p>A {@code null} result means the service method lacks the required {@code Sources}
      * parameter — the validator will surface this as an error before code generation runs.
      */
-    private static BatchKey.ParentKeyed extractBatchKey(MethodRef method) {
+    private static MethodRef.Param.Sourced extractSourced(MethodRef method) {
         return method.params().stream()
             .filter(p -> p instanceof MethodRef.Param.Sourced)
-            .map(p -> ((MethodRef.Param.Sourced) p).batchKey())
+            .map(p -> (MethodRef.Param.Sourced) p)
             .findFirst()
             .orElse(null);
+    }
+
+    /**
+     * Builds the service-table-field's {@link SourceKey} from the resolved {@code @service}
+     * method's {@code Sources} parameter and the field's table-bound return type. Mirrors the
+     * service-table case of the (now-deletable) {@code SourceKeyResolver.resolveServiceTable}
+     * helper, but reads {@code wrap} and {@code columns} directly off {@code sourced} instead
+     * of routing through {@link BatchKey}.
+     */
+    private static SourceKey buildServiceTableSourceKey(
+            MethodRef.Param.Sourced sourced, ReturnTypeRef.TableBoundReturnType rt) {
+        return new SourceKey(
+            rt.table(),
+            sourced.columns(),
+            List.of(),
+            sourced.wrap(),
+            rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
+            new SourceKey.Reader.ServiceTableRecord(rt.table().recordClass()));
+    }
+
+    /**
+     * Builds the service-record-field's {@link SourceKey} from the resolved {@code @service}
+     * method's {@code Sources} parameter, the field's (untyped) return type, and the resolved
+     * service-reconnect join path. Target derives from the join path's last hop when present
+     * (service-reconnect path), {@code null} otherwise (scalar-returning service with no
+     * reconnect).
+     */
+    private static SourceKey buildServiceRecordSourceKey(
+            MethodRef.Param.Sourced sourced, ReturnTypeRef rt, List<JoinStep> joinPath) {
+        TableRef target = null;
+        if (!joinPath.isEmpty() && joinPath.get(joinPath.size() - 1) instanceof JoinStep.WithTarget wt) {
+            target = wt.targetTable();
+        }
+        return new SourceKey(
+            target,
+            sourced.columns(),
+            List.of(),
+            sourced.wrap(),
+            rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
+            new SourceKey.Reader.ServiceUntypedRecord());
+    }
+
+    /**
+     * Builds the {@link LoaderRegistration} for a service-backed child field. Dispatch is
+     * always {@link LoaderRegistration.Dispatch#LOAD_ONE} on the service path
+     * ({@link BatchKey.AccessorKeyedMany} is record-parent-only); container reads directly off
+     * {@code sourced}; {@code valueIsList} follows the field's wrapper.
+     */
+    private static LoaderRegistration buildServiceLoaderRegistration(
+            MethodRef.Param.Sourced sourced, ReturnTypeRef rt) {
+        return new LoaderRegistration(
+            rt.wrapper().isList(),
+            sourced.container(),
+            LoaderRegistration.Dispatch.LOAD_ONE);
     }
 
     /**
@@ -2784,9 +2840,9 @@ class FieldBuilder {
             }
             return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
                 case ServiceDirectiveResolver.Resolved.TableBound tb -> {
-                    var serviceBk = extractBatchKey(tb.method());
-                    var sk = serviceBk == null ? null : SourceKeyResolver.resolveServiceTable(serviceBk, tb.returnType());
-                    var lr = serviceBk == null ? null : LoaderRegistrationResolver.resolve(serviceBk, tb.returnType());
+                    var sourced = extractSourced(tb.method());
+                    var sk = sourced == null ? null : buildServiceTableSourceKey(sourced, tb.returnType());
+                    var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, tb.returnType());
                     yield buildMethodBackedWithChannel(tb.returnType(), tb.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new ServiceTableField(parentTypeName, name, location, tb.returnType(),
@@ -3650,9 +3706,9 @@ class FieldBuilder {
             }
             return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
                 case ServiceDirectiveResolver.Resolved.TableBound tb -> {
-                    var bk = extractBatchKey(tb.method());
-                    var sk = bk == null ? null : SourceKeyResolver.resolveServiceTable(bk, tb.returnType());
-                    var lr = bk == null ? null : LoaderRegistrationResolver.resolve(bk, tb.returnType());
+                    var sourced = extractSourced(tb.method());
+                    var sk = sourced == null ? null : buildServiceTableSourceKey(sourced, tb.returnType());
+                    var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, tb.returnType());
                     yield buildMethodBackedWithChannel(tb.returnType(), tb.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new ServiceTableField(parentTypeName, name, location, tb.returnType(),
@@ -3660,18 +3716,18 @@ class FieldBuilder {
                             tb.method(), sk, lr, ch));
                 }
                 case ServiceDirectiveResolver.Resolved.Result r -> {
-                    var bk = extractBatchKey(r.method());
-                    var sk = bk == null ? null : SourceKeyResolver.resolveServiceRecord(bk, r.returnType(), servicePath.elements());
-                    var lr = bk == null ? null : LoaderRegistrationResolver.resolve(bk, r.returnType());
+                    var sourced = extractSourced(r.method());
+                    var sk = sourced == null ? null : buildServiceRecordSourceKey(sourced, r.returnType(), servicePath.elements());
+                    var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, r.returnType());
                     yield buildMethodBackedWithChannel(r.returnType(), r.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new ServiceRecordField(parentTypeName, name, location, r.returnType(),
                             servicePath.elements(), r.method(), sk, lr, ch));
                 }
                 case ServiceDirectiveResolver.Resolved.Scalar s -> {
-                    var bk = extractBatchKey(s.method());
-                    var sk = bk == null ? null : SourceKeyResolver.resolveServiceRecord(bk, s.returnType(), servicePath.elements());
-                    var lr = bk == null ? null : LoaderRegistrationResolver.resolve(bk, s.returnType());
+                    var sourced = extractSourced(s.method());
+                    var sk = sourced == null ? null : buildServiceRecordSourceKey(sourced, s.returnType(), servicePath.elements());
+                    var lr = sourced == null ? null : buildServiceLoaderRegistration(sourced, s.returnType());
                     yield buildMethodBackedWithChannel(s.returnType(), s.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new ServiceRecordField(parentTypeName, name, location, s.returnType(),

@@ -550,29 +550,65 @@ exclusively in `MethodRef.Param.Sourced` consumers
 (`ServiceDirectiveResolver` lines 192, 323; `FieldBuilder` lines 187,
 2754, 2757, 3104-3111). These ride on the `Sourced` storage flip.
 
+13. `MethodRef.Param.Sourced` and `ParamSource.Sources` storage flip from
+    `BatchKey.ParentKeyed` to the `(SourceKey.Wrap, List<ColumnRef>,
+    LoaderRegistration.Container)` triple. The two records carry the same
+    triple: `wrap` is the per-row shape (Row / Record / typed TableRecord),
+    `columns` is the parent-side PK/FK column tuple, and `container` is the
+    mapped/positional axis that used to live on `BatchKey` permit identity.
+    `Sourced.typeName()` derives the Java type from the triple (using a
+    private helper that mirrors the deleted `BatchKey.containerType` shape);
+    `Sourced.source()` returns `new ParamSource.Sources(wrap, columns,
+    container)`. `SourceKey` gains a static
+    `keyElementType(Wrap, List<ColumnRef>)` so consumers holding the triple
+    (no full `SourceKey`) derive the DataLoader key element type the same
+    way `SourceKey#keyElementType()` does. `ServiceCatalog` projects from
+    its internal `BatchKey.ParentKeyed` to the triple at the single
+    construction site (via a new private `wrapFor(BatchKey.ParentKeyed)`
+    helper). `FieldBuilder.extractBatchKey` becomes `extractSourced` and
+    returns the Sourced directly; the four service call sites get three
+    new private FB helpers (`buildServiceTableSourceKey`,
+    `buildServiceRecordSourceKey`, `buildServiceLoaderRegistration`) that
+    take a `Sourced` instead of routing through `SourceKeyResolver.resolveServiceTable/Record`
+    and `LoaderRegistrationResolver.resolve(BatchKey, ...)` (which become
+    deletable once the record-parent paths inline too).
+    `ServiceDirectiveResolver`: line 192's typed-TableRecord parent-table
+    consistency check forks on `sourced.wrap() instanceof
+    SourceKey.Wrap.TableRecord` and compares `ClassName.get(expected)`
+    against `tr.className()`; line 323's strict-return check reads
+    `sourced.container() == MAPPED_SET` for the isMapped predicate and
+    `SourceKey.keyElementType(sourced.wrap(), sourced.columns())` for the
+    key element type. Test fixtures get a `TestFixtures.sourced(name,
+    BatchKey.ParentKeyed)` adapter that does the projection mechanically;
+    `ServiceCatalogTest`'s six `sourced.batchKey()` assertions become
+    explicit `wrap` / `columns` / `container` triple-assertions. 1554
+    tests green; the three pre-existing `MultiSchemaQueryTest` failures
+    (R83 multi-schema fixture) are unchanged.
+
+After step 13 the model-side `BatchKey` storage on `Sourced` / `Sources`
+is gone. Remaining `BatchKey` references in production code live on the
+classifier-side producers (`FieldBuilder.deriveSplitQueryBatchKey`,
+`deriveBatchKeyForResultType`, `resolveRecordParentBatchKey`,
+`deriveBatchKeyFromTypedAccessor`; `ServiceCatalog.classifySourcesType`;
+`SourceRowDirectiveResolver`) and the three resolver helpers
+(`SourceKeyResolver.resolve{Split,RecordParent,RecordParentForPolymorphic,ServiceTable,ServiceRecord}`;
+`LoaderRegistrationResolver.resolve(BatchKey, ReturnTypeRef)`).
+`MappingsConstantNameDedup` already migrated to `f.sourceKey()` /
+`f.loaderRegistration()` in step 11.
+
 Still to land for Phase 3 completion:
-- **`ParamSource.Sources`** and **`MethodRef.Param.Sourced`**: flip to carry
-  `SourceKey` + container kind (today `BatchKey`'s mapped/positional axis
-  is the variant identity; on `SourceKey` it pairs with `LoaderRegistration`).
 - **Producer site inlining**: `FieldBuilder` (`deriveSplitQueryBatchKey`,
   `deriveBatchKeyForResultType`, `resolveRecordParentBatchKey`,
-  `deriveBatchKeyFromTypedAccessor`, `extractBatchKey`), `ServiceCatalog`
+  `deriveBatchKeyFromTypedAccessor`), `ServiceCatalog`
   (`@service` classifier), `SourceRowDirectiveResolver` (lifter variants)
   all construct `SourceKey` + `LoaderRegistration` directly without going
   through `BatchKey`. The resolvers' content moves into the producers; the
   resolvers themselves delete.
-- **`ServiceDirectiveResolver`**: line 192 switch on `sourced.batchKey()`
-  reads `elementClass()` off `TableRecordKeyed` / `MappedTableRecordKeyed`
-  (the `Wrap.TableRecord` payload carries the same class). Line 323 reader
-  on `sourced.batchKey()` migrates with `Sourced` storage.
-- **`FieldBuilder`**: line 187 reader on `MethodRef.Param.Sourced.batchKey()`;
-  lines 3104-3111 switch on `ok.batchKey()` to pull `JoinStep.LiftedHop`.
-  Migrate with the storage flip.
-- **`MappingsConstantNameDedup`**: field-reconstruction sites at lines
-  170, 173 pass `f.batchKey()` to the rebuilt field; mechanical replacement
-  with the new storage field name.
 - **`BatchKey.java`** + `SourceKeyResolver.java` +
   `LoaderRegistrationResolver.java` delete; their tests delete or move.
+  `TestFixtures.sourced(name, BatchKey.ParentKeyed)` deletes with
+  `BatchKey`; the remaining fixture sites move to constructing the
+  triple directly.
 - **Tests**: every `ChildField` constructor call site that today passes a
   `BatchKey` instance moves to passing `SourceKey` + `LoaderRegistration`.
   `LoaderRegistrationResolverTest` / `SourceKeyResolverTest` delete with
