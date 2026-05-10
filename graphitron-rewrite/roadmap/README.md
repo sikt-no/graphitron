@@ -16,6 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R38` | Reshape `BatchKey` into `SourceKey` + unify the rows-method seam | In Progress | [plan](unify-rowsmethodname.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
+| `R83` | Multi-schema fixture: pipeline + compilation + execution tier coverage | Spec | [plan](multischema-fixture-pipeline-coverage.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) | Spec | [plan](custom-scalar-java-types.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
@@ -64,7 +65,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Cleanup
 
-- `R83` [**Multi-schema fixture: pipeline + compilation tier coverage**](multischema-fixture-pipeline-coverage.md): R78 shipped a generated multi-schema jOOQ fixture (`multischema_a` + `multischema_b` with a cross-schema FK `gadget → widget` and a shared `event` table) and proved the catalog-side typed accessors against it via `JooqCatalogMultiSchemaTest`. That test runs at the unit tier. The whole motivation for R78 was a *generated-code* bug ("imports emitted as `<jooqPackage>.tables.X`, dropping the schema segment"), but no test in this repo drives an SDL through `GraphitronSchemaBuilder` against the multi-schema fixture, no emitter is exercised over a cross-schema `TableRef` / `ForeignKeyRef`, and `graphitron-sakila-example` (the compilation tier) has no `multischema_*` consumer. The R78 changelog acknowledges this as deferred ("execution-tier coverage for cross-schema FK joins at runtime (Backlog stub)") but no item was filed.
 - `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md): Root variants drop `joinPath` but share `filters · orderBy · pagination`.
 - `R44` [**Deprecate `@multitableReference`**](deprecate-multitable-reference.md): No consumer of graphitron-rewrite uses `@multitableReference`. Rather than carry the stub through the RC and ship coverage we don't need, the directive joins `@notGenerated` on the deprecation list: it stays declared in `directives.graphqls` so the GraphQL parser does not fail with an "unknown directive" error, but the rewrite classifier rejects every application with a "no longer supported" message and points the schema author at the migration note.
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md): `@externalField` lifted to `IMPLEMENTED_LEAVES` end-to-end in `computed-field-with-reference` (R48, shipped; see [`changelog.md`](changelog.md)). The directive's name is the surviving historical artefact: it predates the `ChildField.ComputedField` model variant and reads as "field resolved by external code" rather than the narrower behaviour the lift settled on (a `Field<X>` returned by a static method, inlined into the SELECT projection at the alias). A clearer name ships in this plan; the old name stays accepted for one consumer-migration window.
@@ -181,7 +181,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### testing
 
-- `R83` [**Multi-schema fixture: pipeline + compilation tier coverage**](multischema-fixture-pipeline-coverage.md) — Backlog, cleanup
+- `R83` [**Multi-schema fixture: pipeline + compilation + execution tier coverage**](multischema-fixture-pipeline-coverage.md) — Spec, cleanup
 - `R25` [**Rebalance test pyramid**](rebalance-test-pyramid.md) — Backlog, architecture
 
 ### legacy-migration
