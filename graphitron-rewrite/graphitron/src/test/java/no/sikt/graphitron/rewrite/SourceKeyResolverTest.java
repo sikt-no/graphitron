@@ -68,7 +68,7 @@ class SourceKeyResolverTest {
         assertThat(resolved).isInstanceOf(SourceKeyResolver.Resolved.Ok.class);
         SourceKey key = ((SourceKeyResolver.Resolved.Ok) resolved).key();
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
-        assertThat(key.wrap()).isEqualTo(SourceKey.Wrap.ROW);
+        assertThat(key.wrap()).isEqualTo(new SourceKey.Wrap.Row());
         assertThat(key.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
         assertThat(key.target().tableName()).isEqualTo("film");
         assertThat(key.columns()).containsExactly(languageIdCol());
@@ -83,7 +83,7 @@ class SourceKeyResolverTest {
         var key = okKey(SourceKeyResolver.resolve(rtf));
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
-        assertThat(key.wrap()).isEqualTo(SourceKey.Wrap.ROW);
+        assertThat(key.wrap()).isEqualTo(new SourceKey.Wrap.Row());
         assertThat(key.path()).isEmpty();
         assertThat(key.columns()).containsExactly(languageIdCol());
     }
@@ -96,7 +96,7 @@ class SourceKeyResolverTest {
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
         assertThat(((SourceKey.Reader.SourceRowsCall) key.reader()).lifter()).isEqualTo(LIFTER);
-        assertThat(key.wrap()).isEqualTo(SourceKey.Wrap.ROW);
+        assertThat(key.wrap()).isEqualTo(new SourceKey.Wrap.Row());
         assertThat(key.path()).containsExactly(hop);
     }
 
@@ -109,7 +109,7 @@ class SourceKeyResolverTest {
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
         assertThat(((SourceKey.Reader.SourceRowsCall) key.reader()).lifter()).isEqualTo(LIFTER);
-        assertThat(key.wrap()).isEqualTo(SourceKey.Wrap.ROW);
+        assertThat(key.wrap()).isEqualTo(new SourceKey.Wrap.Row());
         assertThat(key.path()).containsExactly(hop);
     }
 
@@ -122,7 +122,7 @@ class SourceKeyResolverTest {
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
         assertThat(((SourceKey.Reader.AccessorCall) key.reader()).accessor()).isEqualTo(ACCESSOR);
-        assertThat(key.wrap()).isEqualTo(SourceKey.Wrap.RECORD);
+        assertThat(key.wrap()).isEqualTo(new SourceKey.Wrap.Record());
         assertThat(key.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
     }
 
@@ -134,7 +134,7 @@ class SourceKeyResolverTest {
         var key = okKey(SourceKeyResolver.resolve(rtf));
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
-        assertThat(key.wrap()).isEqualTo(SourceKey.Wrap.RECORD);
+        assertThat(key.wrap()).isEqualTo(new SourceKey.Wrap.Record());
         // AccessorKeyedMany forces MANY regardless of field wrapper (per-element walk).
         assertThat(key.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
     }
@@ -149,7 +149,7 @@ class SourceKeyResolverTest {
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ServiceTableRecord.class);
         assertThat(((SourceKey.Reader.ServiceTableRecord) key.reader()).recordType())
             .isEqualTo(FILM_TABLE.recordClass());
-        assertThat(key.wrap()).isEqualTo(SourceKey.Wrap.ROW);
+        assertThat(key.wrap()).isEqualTo(new SourceKey.Wrap.Row());
     }
 
     @Test
@@ -161,7 +161,9 @@ class SourceKeyResolverTest {
         var key = okKey(SourceKeyResolver.resolve(stf));
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ServiceTableRecord.class);
-        assertThat(key.wrap()).isEqualTo(SourceKey.Wrap.TABLE_RECORD);
+        assertThat(key.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
+        assertThat(((SourceKey.Wrap.TableRecord) key.wrap()).className())
+            .isEqualTo(ClassName.get(no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class));
     }
 
     @Test
@@ -170,7 +172,7 @@ class SourceKeyResolverTest {
         var stf = serviceTableField(mrk);
         var key = okKey(SourceKeyResolver.resolve(stf));
 
-        assertThat(key.wrap()).isEqualTo(SourceKey.Wrap.RECORD);
+        assertThat(key.wrap()).isEqualTo(new SourceKey.Wrap.Record());
     }
 
     // ===== ServiceRecordField =====
