@@ -25,7 +25,6 @@ import no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceFie
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.ErrorsField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
-import no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
 import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordField;
@@ -1487,18 +1486,20 @@ class FieldBuilder {
                 "@notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema."));
         }
 
-        // Detect conflicts among the child-field exclusive directives before the
-        // @multitableReference early-return; that return would otherwise silently mask a
-        // conflicting directive on the same field.
+        // @multitableReference is no longer supported. Reject any application before conflict
+        // detection so the user sees the no-longer-supported reason rather than a misleading
+        // "conflict with @service" message when both directives are present.
+        if (fieldDef.hasAppliedDirective(DIR_MULTITABLE_REFERENCE)) {
+            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.directiveConflict(
+                List.of(DIR_MULTITABLE_REFERENCE),
+                "@multitableReference is no longer supported. Remove the directive; the rewrite generates multi-table interface dispatch from @discriminate / @discriminator without an explicit multitable-reference path."));
+        }
+
         if (!(parentType instanceof RootType)) {
             var conflict = detectChildFieldConflict(fieldDef);
             if (conflict != null) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, conflict);
             }
-        }
-
-        if (fieldDef.hasAppliedDirective(DIR_MULTITABLE_REFERENCE)) {
-            return new MultitableReferenceField(parentTypeName, name, location);
         }
 
         if (parentType instanceof RootType rootType) {
@@ -2732,14 +2733,12 @@ class FieldBuilder {
      * {@code @tableField}, or {@code @nodeId}. It is therefore not included in this check.
      */
     private Rejection.InvalidSchema.DirectiveConflict detectChildFieldConflict(GraphQLFieldDefinition fieldDef) {
-        boolean hasMultitable    = fieldDef.hasAppliedDirective(DIR_MULTITABLE_REFERENCE);
         boolean hasService       = fieldDef.hasAppliedDirective(DIR_SERVICE);
         boolean hasExternalField = fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD);
         boolean hasTableMethod   = fieldDef.hasAppliedDirective(DIR_TABLE_METHOD);
         boolean hasNodeId        = fieldDef.hasAppliedDirective(DIR_NODE_ID);
 
-        int slots = (hasMultitable    ? 1 : 0)
-                  + (hasService       ? 1 : 0)
+        int slots = (hasService       ? 1 : 0)
                   + (hasExternalField ? 1 : 0)
                   + (hasTableMethod   ? 1 : 0)
                   + (hasNodeId        ? 1 : 0);
@@ -2748,7 +2747,6 @@ class FieldBuilder {
 
         var bareNames = new ArrayList<String>();
         var atNames = new ArrayList<String>();
-        if (hasMultitable)    { bareNames.add(DIR_MULTITABLE_REFERENCE); atNames.add("@" + DIR_MULTITABLE_REFERENCE); }
         if (hasService)       { bareNames.add(DIR_SERVICE);              atNames.add("@" + DIR_SERVICE); }
         if (hasExternalField) { bareNames.add(DIR_EXTERNAL_FIELD);       atNames.add("@" + DIR_EXTERNAL_FIELD); }
         if (hasTableMethod)   { bareNames.add(DIR_TABLE_METHOD);         atNames.add("@" + DIR_TABLE_METHOD); }

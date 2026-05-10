@@ -97,13 +97,6 @@ type Film @table(name: "film") {
 
 `content.film_id` FKs back to `film.film_id`; the per-parent fetcher conditions on the FK and projects `CONTENT_TYPE` so the row mapper still routes per row.
 
-*Multi-table with explicit per-implementation routes.* If the multi-table case has more than one FK between participating tables, or each implementer needs a different join shape, use xref:../reference/directives/multitableReference.adoc[`@multitableReference`] with one route per implementer.
-
-[NOTE]
-====
-The rewrite generator currently *stubs* `@multitableReference` on record-based outputs: the directive is recognised and the field validator emits `@multitableReference is not supported in record-based output` plus a stub fetcher. The legacy `graphitron-codegen-parent` generator implements it fully; if you need it today, stay on the legacy modules. Auto-discovered per-branch FK and `@reference`-to-single-table-interface (the two shapes above) work in the rewrite today.
-====
-
 == Pagination across polymorphism
 
 Both layouts compose with xref:../reference/directives/asConnection.adoc[`@asConnection`]. For multi-table polymorphism the connection emitter wraps the per-branch `UNION ALL` in a derived table so `.seek/.limit` and cursor encoding apply uniformly across the union; per-typename stage 2 additionally projects `__sort__` so cursor decoding can read it back per edge. Composite-PK participants project `DSL.jsonbArray(k1, k2)` as the synthetic `__sort__` column, typed as JSONB so PostgreSQL's lexicographic ordering reproduces the multi-column ordering.
@@ -126,14 +119,13 @@ Single-table layouts hinge on the literal database value matching xref:../refere
 * The single-table layout requires every implementer to share the interface's xref:../reference/directives/table.adoc[`@table`]. Mixing tables breaks the contract.
 * The multi-table layout requires that each implementer be xref:../reference/directives/table.adoc[`@table`]-bound; the interface or union itself is not.
 * Subtype-specific fields on a single-table interface may pull from joined tables via xref:../reference/directives/reference.adoc[`@reference`]; the generator emits a conditional `LEFT JOIN` gated by the discriminator value.
-* xref:../reference/directives/multitableReference.adoc[`@multitableReference`] is stubbed on record-based outputs in the rewrite. Auto-discovered per-branch FK paths (the `AddressOccupant` shape) are the supported multi-table-child idiom today.
+* Auto-discovered per-branch FK paths (the `AddressOccupant` shape) are the supported multi-table-child idiom. The legacy `@multitableReference` directive is rejected; see xref:../reference/directives/multitableReference.adoc[`@multitableReference`].
 * For composite-PK multi-table polymorphism with xref:../reference/directives/asConnection.adoc[`@asConnection`], all participating tables must share the same composite-PK shape; the polymorphic emitter projects a single typed `__sort__` column across the branches.
 
 == See also
 
 * xref:../reference/directives/discriminate.adoc[`@discriminate`] declares the interface or union's discriminator column.
 * xref:../reference/directives/discriminator.adoc[`@discriminator`] pins each implementer to a value.
-* xref:../reference/directives/multitableReference.adoc[`@multitableReference`] declares per-implementation routes when auto-discovery is not enough (currently stubbed in the rewrite for record-based outputs).
 * xref:../reference/directives/reference.adoc[`@reference`] for cross-table joins on subtype-specific fields and for FK-chain access to single-table polymorphic interfaces.
 * xref:../reference/directives/asConnection.adoc[`@asConnection`] for cursor pagination across either layout.
 

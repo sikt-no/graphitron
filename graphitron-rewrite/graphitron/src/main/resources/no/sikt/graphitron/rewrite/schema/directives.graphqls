@@ -125,7 +125,10 @@ directive @reference(
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
 """
-Similar to the reference directive, but for fields returning data from multiple tables.
+Removed. `@multitableReference` is no longer supported. The directive stays declared here only so
+the GraphQL parser does not fail with an "unknown directive" error; the rewrite classifier rejects
+any application with a "no longer supported" message. Remove any use of this directive from your
+schema.
 """
 directive @multitableReference(
     routes: [ReferencesForType!]

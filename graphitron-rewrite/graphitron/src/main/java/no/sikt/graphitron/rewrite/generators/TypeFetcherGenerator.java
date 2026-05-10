@@ -260,10 +260,7 @@ public class TypeFetcherGenerator {
                     "nodeidreferencefield-join-projection-form")),
             Map.entry(ChildField.TableMethodField.class,
                 deferredFor(ChildField.TableMethodField.class,
-                    "TableMethodField not yet implemented", "tablemethod-scalar-return")),
-            Map.entry(ChildField.MultitableReferenceField.class,
-                deferredFor(ChildField.MultitableReferenceField.class,
-                    "MultitableReferenceField not yet implemented", "multitable-reference-on-scalar"))
+                    "TableMethodField not yet implemented", "tablemethod-scalar-return"))
         );
 
     private static Rejection.Deferred deferredFor(
@@ -474,7 +471,6 @@ public class TypeFetcherGenerator {
                 case ChildField.RecordField ignored             -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
                 case ChildField.ComputedField ignored           -> { /* wired via FetcherEmitter (ColumnFetcher); projected via TypeClassGenerator.$fields() */ }
                 case ChildField.PropertyField ignored           -> { /* wired via FetcherRegistrationsEmitter.propertyOrRecordValue */ }
-                case ChildField.MultitableReferenceField f      -> builder.addMethod(stub(f));
                 case ChildField.ErrorsField ignored             -> { /* wired via FetcherRegistrationsEmitter: PropertyDataFetcher.fetching(name) */ }
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->

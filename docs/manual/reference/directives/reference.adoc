@@ -89,13 +89,12 @@ There is exactly one FK between `customer` and `store` (`customer.store_id`), so
 * When more than one foreign key exists between the source and destination tables for a given hop, `key` is required. The build fails with an ambiguous-reference error otherwise.
 * When `key` is provided alone, `table` is inferred from the FK target. When `table` is provided alone, `key` is inferred when unique. Setting both is allowed but redundant.
 * A `condition`-only hop (no `table`, no `key`) is treated as a join `ON` condition; the generator joins the field's target table and applies the condition. Use this when the join is non-FK or computed.
-* Cannot be combined with `@multitableReference` on the same field.
 
 == See also
 
 * xref:../../tutorial/04-joining-tables.adoc[Tutorial page 4: Joining tables] introduces single-hop and multi-hop references.
 * xref:../../how-to/join-with-references.adoc[How-to: Join with references] for recipe-shaped variants.
-* xref:multitableReference.adoc[`@multitableReference`] for the union/interface variant.
+* xref:discriminate.adoc[`@discriminate`] / xref:discriminator.adoc[`@discriminator`] for the union/interface variant. See xref:../../how-to/polymorphic-types.adoc[How-to: Polymorphic types] for the supported shapes.
 * xref:table.adoc[`@table`] establishes the table binding both endpoints rely on.
 
 xref:../index.adoc[← Reference index]

@@ -12,7 +12,6 @@ import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.ComputedField;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
-import no.sikt.graphitron.rewrite.model.ChildField.MultitableReferenceField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
 import no.sikt.graphitron.rewrite.model.ChildField.PropertyField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
@@ -401,18 +400,37 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== MultitableReferenceField =====
+    // ===== @multitableReference (deprecated: rejected by the classifier) =====
 
     enum MultitableReferenceFieldCase implements ClassificationCase {
-        BASIC(
-            "@multitableReference produces a MultitableReferenceField",
+        REJECTED(
+            "@multitableReference is no longer supported → UnclassifiedField with reason saying so",
             """
             type Film @table(name: "film") {
               other: String @multitableReference(routes: [{typeName: "X", path: [{key: "K"}]}])
             }
             type Query { film: Film }
             """,
-            schema -> assertThat(schema.field("Film", "other")).isInstanceOf(MultitableReferenceField.class));
+            schema -> {
+                assertThat(schema.field("Film", "other")).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) schema.field("Film", "other")).reason())
+                    .contains("@multitableReference", "no longer supported");
+            }),
+
+        REJECTED_WINS_OVER_CONFLICT(
+            "@multitableReference + @service → UnclassifiedField with deprecation reason, not a mutual-exclusivity reason",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language @multitableReference @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                assertThat(schema.field("Film", "language")).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) schema.field("Film", "language")).reason())
+                    .contains("@multitableReference", "no longer supported");
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
@@ -420,7 +438,7 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
-        @Override public Set<Class<?>> variants() { return Set.of(MultitableReferenceField.class); }
+        @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 
@@ -5972,18 +5990,7 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """,
-            "Film", "language", "@externalField", "@tableMethod"),
-
-        MULTITABLE_REFERENCE_AND_SERVICE_CONFLICT(
-            "@multitableReference and @service → UnclassifiedField with reason naming both",
-            """
-            type Language @table(name: "language") { name: String }
-            type Film @table(name: "film") {
-                language: Language @multitableReference @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
-            }
-            type Query { film: Film }
-            """,
-            "Film", "language", "@multitableReference", "@service");
+            "Film", "language", "@externalField", "@tableMethod");
 
         final String sdl;
         final String parentType;

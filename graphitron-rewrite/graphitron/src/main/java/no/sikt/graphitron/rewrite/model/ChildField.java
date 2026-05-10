@@ -20,7 +20,6 @@ public sealed interface ChildField extends GraphitronField
             ChildField.ServiceRecordField,
             ChildField.RecordField,
             ChildField.ComputedField, ChildField.PropertyField,
-            ChildField.MultitableReferenceField,
             ChildField.ErrorsField {
 
     /**
@@ -598,12 +597,6 @@ public sealed interface ChildField extends GraphitronField
         String columnName,
         ColumnRef column,
         AccessorResolution.Resolved accessor
-    ) implements ChildField {}
-
-    record MultitableReferenceField(
-        String parentTypeName,
-        String name,
-        SourceLocation location
     ) implements ChildField {}
 
     /**

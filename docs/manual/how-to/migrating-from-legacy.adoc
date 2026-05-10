@@ -17,9 +17,13 @@ include::../_generated/supported-directives.adoc[]
 
 include::../_generated/supported-schema-shapes.adoc[]
 
-== The hard removal: `@notGenerated`
+== Hard removals
 
-The single directive the rewrite refuses to accept. Legacy schemas used it to mark fields the developer would wire by hand through `RuntimeWiring`; the rewrite requires every field to be fully described by the schema. Any application is rejected at build time:
+Two directives the rewrite refuses to accept. Both stay declared so the SDL still parses, but every application is rejected at classify time with a "no longer supported" message.
+
+=== `@notGenerated`
+
+Legacy schemas used it to mark fields the developer would wire by hand through `RuntimeWiring`; the rewrite requires every field to be fully described by the schema. Any application is rejected at build time:
 
 [source,text]
 ----
@@ -35,10 +39,21 @@ The directive is still *parsed* (so the SDL still validates), but every classify
 | `field: T @notGenerated` on a child of a `@table` parent | xref:../reference/directives/externalField.adoc[`@externalField`] (column-shaped) or xref:../reference/directives/reference.adoc[`@reference`] (FK-driven) | `@externalField` returns a `Field<T>` from a static method (the framework projects); `@reference` joins through the catalog. xref:join-with-references.adoc[How-to: Join with references] covers the FK-path mechanics.
 | `field: T @notGenerated` on a `@record` parent | xref:../reference/directives/sourceRow.adoc[`@sourceRow`] or a typed Java accessor | The `@record` parent must expose the data either through a typed Java-record accessor (auto-derived `BatchKey`) or through an explicit lifter. xref:result-types.adoc[How-to: Result-type variants] covers the four backing-class shapes.
 | `field: T @splitQuery @notGenerated` (custom batch fetcher) | xref:../reference/directives/service.adoc[`@service`] (with xref:../reference/directives/splitQuery.adoc[`@splitQuery`] for non-root batching) | Service methods can be batched with `@splitQuery` at non-root sites; the developer-supplied method runs once per parent batch. The contract is `Set<Key> → Map<Key, Value>`; see the `@splitQuery` section of xref:handle-services.adoc[How-to: Handle services].
-| `interface T @notGenerated` / `union U @notGenerated` | (no replacement needed) | The legacy "skip interface/union wiring" axis was always tied to `RuntimeWiring`-side type resolvers; the rewrite always generates these from xref:../reference/directives/discriminate.adoc[`@discriminate`] / xref:../reference/directives/discriminator.adoc[`@discriminator`] and xref:../reference/directives/multitableReference.adoc[`@multitableReference`]. Remove the directive.
+| `interface T @notGenerated` / `union U @notGenerated` | (no replacement needed) | The legacy "skip interface/union wiring" axis was always tied to `RuntimeWiring`-side type resolvers; the rewrite always generates these from xref:../reference/directives/discriminate.adoc[`@discriminate`] / xref:../reference/directives/discriminator.adoc[`@discriminator`]. Remove the directive.
 |===
 
 The xref:../reference/directives/notGenerated.adoc[`@notGenerated` reference page] carries the same matrix; this recipe expands the right-hand column with cross-links to the recipe each replacement is best documented in.
+
+=== `@multitableReference`
+
+Legacy schemas used `@multitableReference(routes: [...])` to declare per-implementation join paths for a field returning a multi-table interface or union. The rewrite generates multi-table interface dispatch from xref:../reference/directives/discriminate.adoc[`@discriminate`] / xref:../reference/directives/discriminator.adoc[`@discriminator`] (with `@reference` for the FK-driven join) and does not need a separate per-route description. Any application is rejected at build time:
+
+[source,text]
+----
+@multitableReference is no longer supported. Remove the directive; the rewrite generates multi-table interface dispatch from @discriminate / @discriminator without an explicit multitable-reference path.
+----
+
+Migration is a one-step delete-and-rebuild: drop the `@multitableReference` directive (and its `ReferencesForType` argument tree) and model the multi-table dispatch through `@discriminate` / `@discriminator`. xref:polymorphic-types.adoc[How-to: Polymorphic types] covers the supported shapes.
 
 == Synthesis shims: WARN today, error later
 
@@ -179,7 +194,7 @@ The example schema's `filmsOuterOverrideTableInput` and `filmsOuterOverridePlain
 
 Every other directive on the legacy surface reads under the rewrite the same way, with one nuance per directive worth flagging:
 
-* xref:../reference/directives/table.adoc[`@table`], xref:../reference/directives/field.adoc[`@field`], xref:../reference/directives/reference.adoc[`@reference`], xref:../reference/directives/multitableReference.adoc[`@multitableReference`]: unchanged; the catalog-driven mechanics are identical.
+* xref:../reference/directives/table.adoc[`@table`], xref:../reference/directives/field.adoc[`@field`], xref:../reference/directives/reference.adoc[`@reference`]: unchanged; the catalog-driven mechanics are identical.
 * xref:../reference/directives/service.adoc[`@service`], xref:../reference/directives/tableMethod.adoc[`@tableMethod`], xref:../reference/directives/externalField.adoc[`@externalField`], xref:../reference/directives/enum.adoc[`@enum`], xref:../reference/directives/record.adoc[`@record`]: unchanged surface; the only change is the `name:` → `className:` migration on `ExternalCodeReference` (above).
 * xref:../reference/directives/discriminate.adoc[`@discriminate`] / xref:../reference/directives/discriminator.adoc[`@discriminator`]: unchanged; the rewrite generates the type resolvers and runtime dispatchers automatically (no `RuntimeWiring`-side wiring needed).
 * xref:../reference/directives/asConnection.adoc[`@asConnection`]: unchanged synth-vs-declared shape; only `connectionName:` is deprecated. The rewrite emits the same Relay connection contract.
