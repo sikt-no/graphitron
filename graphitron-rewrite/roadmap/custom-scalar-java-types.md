@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 6
 theme: model-cleanup
-depends-on: []
+depends-on: [reactor-classloader-for-codegen]
 ---
 
 # Custom-scalar Java type configuration (extended-scalars built-in)
@@ -15,28 +15,43 @@ generate time: it materializes input-record component types
 (R94), service-call argument types, and `Field<X>` projection types
 without a runtime introspection step. Today the mapping is
 hard-coded to the five spec built-ins (`Int`, `Float`, `String`,
-`Boolean`, `ID`) at five sites:
+`Boolean`, `ID`) at five sites, with three different fallback
+behaviours for unknown scalars:
 
-- `ServiceCatalog.java:937` (service-method parameter types)
-- `FieldBuilder.java:2783` (fetcher-side scalar projection)
-- `RowsMethodShape.java:71` (row-shape scalar coercion)
-- `AppliedDirectiveEmitter.java:149-152` (SDL default-value emission
-  via `Scalars.GraphQL{Name}`)
+- `ServiceCatalog.mapToJavaTypeName` (`ServiceCatalog.java:980`,
+  service-method parameter-name diagnostic) — switch over the five
+  names, returns `null` for anything else, and the caller silently
+  skips that candidate path.
+- `FieldBuilder.mapGraphQLTypeToReflectType` (`FieldBuilder.java:2986-2989`,
+  fetcher-side scalar reflection) — switch over the five names,
+  falls back to `Object.class` silently for everything else.
+- `RowsMethodShape.standardScalarJavaType` (`RowsMethodShape.java:71-80`,
+  row-shape scalar coercion) — switch over the five names, throws
+  on anything else (the strictest of the three).
+- `AppliedDirectiveEmitter` (`AppliedDirectiveEmitter.java:148-152`,
+  SDL default-value emission via `Scalars.GraphQL{Name}`) — switch
+  over the five names, falls back to `GraphQLString` for everything
+  else (the line 153-156 comment names this as deliberate for
+  federation-namespace late-bound types like `federation__FieldSet`).
 - `GraphitronSchemaClassGenerator.java:197-201` (load-bearing for
-  Phase 4: this is the *current* authority on which scalars get
+  Phase 2: this is the *current* authority on which scalars get
   registered via `.additionalType(Scalars.GraphQLInt)`...).
 
-`ArgBindingMap.java:199` is *not* a Java-type producer — it's
-`GraphQLType` introspection for path-walk error messages — so it's
-not in the migration list, but a follow-up pass should route its
-diagnostic strings through the resolver for consistency.
+`ArgBindingMap.describeKind` (`ArgBindingMap.java:199`) is *not* a
+Java-type producer — it's `GraphQLType` introspection for path-walk
+error messages — so it's not in the migration list, but a follow-up
+pass should route its diagnostic strings through the resolver for
+consistency.
 
-Anything else surfaces as `UnclassifiedType`. That's a hard wall the
-moment a consumer declares `scalar BigDecimal` or `scalar DateTime`
-in their SDL. Sikt's own subgraphs *all* use
-`ExtendedScalars.GraphQLBigDecimal` and `ExtendedScalars.DateTime`,
-so the rewrite is unusable in production without a story for
-extra-spec scalars.
+The two silent fallbacks (`Object.class` in `FieldBuilder` and
+`GraphQLString` in `AppliedDirectiveEmitter`) are the production
+wall: a consumer who declares `scalar BigDecimal` or `scalar DateTime`
+in their SDL gets a fetcher that compiles against `Object` and a
+schema whose default values silently coerce as strings, without an
+error pointing at the misconfigured scalar. Sikt's own subgraphs
+*all* use `ExtendedScalars.GraphQLBigDecimal` and
+`ExtendedScalars.DateTime`, so the rewrite is unusable in production
+without a story for extra-spec scalars.
 
 ## Design: name the scalar instance, reflect the rest
 
@@ -50,24 +65,43 @@ scalar BigDecimal
 
 At codegen, graphitron:
 
-1. Loads the named class (`graphql.scalars.ExtendedScalars`) off the
-   consumer's compile classpath via the Maven plugin's project
-   classpath elements.
+1. Loads the named class (`graphql.scalars.ExtendedScalars`) via
+   `Class.forName(name, false, ctx.codegenLoader())` against the
+   project-aware classloader R124 establishes
+   ([`reactor-classloader-for-codegen.md`](reactor-classloader-for-codegen.md)).
+   That loader is rooted at `project.getCompileClasspathElements()`
+   plus every reactor sibling's `target/classes` and parented on
+   the plugin loader, so a consumer's `<dependency>graphql-java-extended-scalars</dependency>`
+   declaration is visible to the resolver without any
+   `<plugin><dependencies>` boilerplate. R101 sits behind R124 in
+   the dep graph because that boilerplate would otherwise become an
+   absolute requirement for any consumer using `@scalarType` or the
+   convention layer; R124 lifts the same constraint for every other
+   reflection callsite in the codebase, and R101 is one of its
+   beneficiaries.
 2. Reads the named static field (`GraphQLBigDecimal`); confirms it
    is `public static`, not null, and assignable to
-   `graphql.schema.GraphQLScalarType`.
+   `graphql.schema.GraphQLScalarType`. The assignability check uses
+   `GraphQLScalarType.class` as graphitron sees it; because R124's
+   `URLClassLoader` is parented on the plugin loader,
+   `GraphQLScalarType` resolves through the parent chain to a single
+   `Class<?>` identity, and the assignability check has no
+   classloader-isolation footgun.
 3. Pulls the `GraphQLScalarType`'s `Coercing` and reflects on
    `coercing.getClass().getGenericInterfaces()` to recover the
    `Coercing<I, O>` type parameters. The `I` (input) parameter is
    the Java type input-record components, service params, and
-   `Field<X>` projections bind to.
+   `Field<X>` projections bind to. The resolver normalises `I` to the
+   boxed form (`int` → `Integer`, `long` → `Long`, etc.) since
+   graphql-java's argument coercion produces boxed values into the
+   input map regardless of the Coercing's declared parameter shape.
 4. Emits `.additionalType(graphql.scalars.ExtendedScalars.GraphQLBigDecimal)`
    into the synthesized `GraphitronSchema` so the consumer's
    `Graphitron.buildSchema(...)` hook does not have to wire it.
 
 One reference, no second source of truth. The Java type and the
 runtime `Coercing` come from the same instance the consumer points
-at, so the misconfiguration class my earlier `javaClass:` sketch
+at, so the misconfiguration class an earlier `javaClass:` sketch
 created — "directive says `BigDecimal`, Coercing serializes as
 `BigInteger`" — cannot occur by construction.
 
@@ -101,36 +135,111 @@ modeled as their own `Money` wrapper just declares
 introspects their constant instead. Spec built-ins win over both
 because GraphQL itself binds them.
 
+## Resolution carrier shape
+
+Resolution returns a sealed `ScalarResolution`. Per *Builder-step
+results are sealed, not strings or out-params*
+(`rewrite-design-principles.adoc:61`) and *Sub-taxonomies for
+resolution outcomes* (`rewrite-design-principles.adoc:47`), each
+rejection arm carries the data its consumers actually need rather
+than a single prose `reason` string. This precedent diverges from
+R88's `AccessorResolution.Rejected(String reason)` because R88's
+failures all reduce to "no candidate matched"; R101's don't.
+
+```java
+sealed interface ScalarResolution permits Resolved, Rejected {
+
+    record Resolved(
+        TypeName javaType,                  // e.g. ClassName.get(java.math.BigDecimal.class)
+        ClassName scalarConstantOwner,      // e.g. ClassName.get(graphql.scalars.ExtendedScalars.class)
+        String   scalarConstantField        // e.g. "GraphQLBigDecimal"
+    ) implements ScalarResolution {}
+
+    sealed interface Rejected extends ScalarResolution
+        permits ClassNotFound, FieldNotFound, FieldNotAccessible,
+                NullAtCodegen, NotAScalarType, CoercingErased {
+
+        record ClassNotFound(String fqn) implements Rejected {}
+
+        record FieldNotFound(String className, String fieldName) implements Rejected {}
+
+        record FieldNotAccessible(
+            String className, String fieldName,
+            boolean isPublic, boolean isStatic
+        ) implements Rejected {}
+
+        /** public-static field that evaluates to null at codegen
+         *  (an initialization side-effect the consumer must own). */
+        record NullAtCodegen(String className, String fieldName) implements Rejected {}
+
+        /** Field is public-static-non-null but not assignable to GraphQLScalarType. */
+        record NotAScalarType(
+            String className, String fieldName, String actualTypeFqn
+        ) implements Rejected {}
+
+        /** Coercing's I type parameter erases to Object. The declarationKind tells
+         *  the user-facing message which fix to suggest (extract anonymous class,
+         *  declare concrete type parameters, etc.). */
+        record CoercingErased(
+            String coercingClass, CoercingDeclarationKind declarationKind
+        ) implements Rejected {}
+
+        enum CoercingDeclarationKind {
+            ANONYMOUS_CLASS,    // new Coercing<X, X>() { ... } — extract to a named class
+            RAW_TYPE,           // declared as raw Coercing — declare concrete type parameters
+            ERASED_NAMED_CLASS  // named class but parameters resolve to Object — declare concrete parameters
+        }
+    }
+}
+```
+
+Each consumer (validator, LSP diagnostic builder, future
+`InputComponent` / `ServiceCatalog` / `RowsMethodShape` users) switches
+on `ScalarResolution` exhaustively. The LSP fix-its in Phase 4 use
+the per-arm fields directly: `ClassNotFound` triggers a "did you mean
+…" suggestion against classes on the consumer's compile classpath;
+`FieldNotFound` triggers field-name completion off the named class;
+`CoercingErased.ANONYMOUS_CLASS` triggers the "extract to a named
+class" code action.
+
 ## Failure modes are validation errors
 
-The reflection path has several ways to fail; all of them are loud
-validation errors at codegen, named by their failure mode:
+Two `Rejection` taxonomies are involved:
 
-- **Class not found.** The class named in `scalar:` is not on the
-  consumer's classpath.
-- **Field not found / not public / not static.** Self-explanatory.
-- **Field is null at codegen time.** Static initialization side-effect
-  the consumer must own.
-- **Field is not a `GraphQLScalarType`.** The reference points at
-  something else.
-- **Coercing's type parameters erased to `Object`.** The Coercing
-  is declared as a raw type or as `Coercing<Object, Object>` so the
-  `I` parameter doesn't recover a concrete type. The error names
-  the Coercing's class and instructs the consumer to declare
-  concrete type parameters.
-- **`@scalarType` on a spec built-in.** Hard error per the
-  resolution order above.
+- **`Rejection.InvalidSchema.DirectiveConflict`** carries
+  `@scalarType` on a spec built-in name. Structurally this is a
+  directive conflict between the SDL author's `@scalarType` and the
+  GraphQL spec's binding of the name; `AuthorError` (the original
+  sketch's categorisation) doesn't fit because the conflict is with
+  graphql-java's wiring, not with a missing catalog entry. The
+  rejection is raised at directive-read time, *before* the resolver
+  is invoked, so the resolver only ever sees a directive that has
+  already passed this check.
+- **`Rejection.AuthorError.UnknownName` / `Structural`** carries
+  every `ScalarResolution.Rejected` arm. Each arm surfaces as one
+  error per misconfigured scalar declaration with a per-arm prose
+  message. Particular notes:
 
-Each failure mode produces a typed `Rejection` carrier through the
-existing classifier infrastructure; the SDL author sees one error
-per misconfigured scalar declaration.
+- **`CoercingErased.ANONYMOUS_CLASS`** is the most realistic case:
+  Java's anonymous-class generic reflection erases inferred-from-context
+  type args, so a consumer who writes `new Coercing<Money, Money>() { ... }`
+  inside a static initializer sees erasure even though the source
+  *looks* concrete. The fix is mechanical (extract the anonymous
+  class to a named one), and the message says so explicitly.
+- **`CoercingErased.RAW_TYPE`** is the consumer who declared
+  `Coercing` without type parameters at all; the fix is to add
+  them.
+- **`CoercingErased.ERASED_NAMED_CLASS`** is a named class whose
+  type parameters resolve to `Object` (declared `Coercing<Object, Object>`
+  by mistake, or via `extends Coercing` without parameters); the
+  message names the class and the parameter declaration site.
 
-Erasure is treated as a *consumer fix*, not a graphitron fallback.
-The original sketch carried a `javaClass:` fallback for this case;
-that's dropped. If erasure becomes a real obstacle in practice
-(some library ships its Coercings raw and the consumer can't fix
-it upstream), we'll reopen with a follow-up item — but the default
-position is "fix the Coercing's type parameters."
+Erasure is a *consumer fix*, not a graphitron fallback. The original
+sketch carried a `javaClass:` fallback for this case; that's dropped.
+If erasure becomes a real obstacle in practice (some library ships its
+Coercings raw and the consumer can't fix it upstream), we'll reopen
+with a follow-up item — but the default position is "fix the
+Coercing's type parameters."
 
 ## Built-in convention table
 
@@ -213,9 +322,15 @@ construction; out of scope).
   information that lives next to the `scalar X` SDL declaration and
   forks the source-of-truth. SDL-side `@scalarType` keeps the
   declaration in one place; the Maven plugin stays out of it.
-- **Coercion-failure error shape.** R94 already settled
-  `FromMapResult.{Ok | TypeMismatch}` for input-side coercion;
-  this item doesn't change that.
+- **Coercion-failure error shape.** Input-side coercion failures
+  (a consumer hands a `String` where the resolved Java type is
+  `BigDecimal`) are R94's concern, not R101's: R94's emitted
+  `<Input>.fromMap(map)` factory is the slot that decides what the
+  result shape looks like (e.g. `FromMapResult.{Ok | TypeMismatch}`).
+  R101 only resolves *what the Java type is*, not what happens when
+  a runtime value can't be coerced into it. Whichever item ships
+  first carries the live wording; the second one drops the
+  forward-tense reference.
 
 ## Phasing
 
@@ -229,57 +344,124 @@ fine but whose synthesized schema fails to build at startup
 type). So the directive and its `additionalType` emit ship in the
 same phase.
 
-### Phase 1: shared scalar resolver + reflection engine
+### Phase 1: shared scalar resolver + first consumer
 
-Lift the five hardcoded sites into a single `ScalarTypeResolver`.
-Build the reflection engine that loads a
-`public static final GraphQLScalarType` field off the consumer's
-compile classpath, introspects the Coercing's type parameters, and
-returns a `ScalarBinding(TypeName javaType, String constantFqn)`.
-Behavior-neutral: the resolver still drives only the spec built-ins
-through the existing hardcoded path; reflection engine exists but
-isn't yet wired into name resolution.
+Build `ScalarTypeResolver` and the reflection engine that returns
+`ScalarResolution.{Resolved | Rejected}` per the carrier shape above.
+The reflection engine handles the spec built-ins via the same
+reflection path against `graphql.Scalars.GraphQL{Int, Float, String,
+Boolean, ID}`, so the resolver has a single code path from day one.
 
-The resolver's "Coercing's type parameters are not erased to
-`Object`" guarantee carries
-`@LoadBearingClassifierCheck(key = "scalar-resolver.coercing-non-erased")`
-on the producing method. Phase 3's flip lands
-`@DependsOnClassifierCheck` on every downstream consumer that
-exists on trunk at flip time — `ServiceCatalog`'s `mapToJavaTypeName`
-and `RowsMethodShape.standardScalarJavaType` today; R94's
-`InputComponent.javaType` joins the list when R94 ships (whether
-that happens before or after this item). The annotation pair turns
-a future relaxation of the erasure check ("fall back to `Object`
-for unknown") into a global review event rather than a silent
-regression in any of these emitters.
+Land *one* downstream consumer on the resolver in this phase:
+`RowsMethodShape.standardScalarJavaType`. It is the strictest of
+the three (it throws on unknown today, so behavior-parity verification
+is the cheapest), and only spec built-ins reach it on trunk, so the
+resolver path produces exactly the existing types. The other consumers
+(`ServiceCatalog.mapToJavaTypeName`, `FieldBuilder.mapGraphQLTypeToReflectType`,
+`AppliedDirectiveEmitter`) keep their hardcoded switches in Phase 1
+and migrate in Phase 3.
+
+Wiring the first consumer atomically with the producer means Phase 1
+ships a fully-formed `@LoadBearingClassifierCheck` /
+`@DependsOnClassifierCheck` pair rather than an orphan-producer
+annotation that has nothing to depend on it for two phases. Per
+*Validator mirrors classifier invariants*
+(`rewrite-design-principles.adoc:93-97`), the contract a load-bearing
+check documents should be derivable from at least one consumer the
+moment the check lands.
+
+The producer-side keys land at this phase:
+
+- `scalar-resolver.coercing-non-erased` — the resolver only returns
+  `Resolved` when the `Coercing<I, O>` type parameters are concrete;
+  any consumer reading `Resolved.javaType` may assume it is not
+  `Object` from a raw / erased Coercing.
+- `scalar-resolver.javatype-is-typename` — `Resolved.javaType` is
+  `TypeName`-shaped (boxed for primitives, parameterised correctly
+  for collection types) and ready to drop into a JavaPoet
+  `MethodSpec` / `RecordSpec` declaration without further coercion.
+
+`RowsMethodShape.standardScalarJavaType` declares
+`@DependsOnClassifierCheck` against both keys.
+
+A future relaxation of either check ("fall back to `Object` for
+unknown", or "return raw `Class<?>`") surfaces as orphaned consumers
+across the codebase rather than a silent regression in any one
+emitter.
 
 ### Phase 2: `@scalarType(scalar: "...")` directive + runtime registration
 
 Declare `directive @scalarType(scalar: String!) on SCALAR` in
-`directives.graphqls`. Classifier reads. Resolver consults
-directive before convention. Each failure mode from *Failure modes*
-above produces a named typed rejection through the existing
-`Rejection` carrier.
+`directives.graphqls`. Per the directive-shape principle
+(`rewrite-design-principles.adoc`, *Directives carry only what the
+SDL author needs to say*), the argument is a flat `String!` rather
+than a structured `ScalarTypeReference` input wrapper: the directive
+site (`SCALAR`) already disambiguates what's being bound; only the
+underlying constant name needs to flow through. Classifier reads.
+Resolver consults directive before convention.
 
-Same phase emits `.additionalType(<scalar-fqn>)` into the
-synthesized `GraphitronSchema` for every directive-resolved scalar,
-so a `@scalarType`-declaring consumer's schema builds end-to-end
-without any manual `.additionalType(...)` wiring on their side.
-This requires retiring the literal block at
-`GraphitronSchemaClassGenerator.java:197-201` and routing all
-scalar registration (spec built-in *and* custom) through the
-resolver — leaving the literal block in place would fork
-source-of-truth between the resolver and the generator.
+`@scalarType` on a spec built-in name produces
+`Rejection.InvalidSchema.DirectiveConflict` at directive-read time,
+*before* the resolver is invoked (per the carrier-shape note above).
+Every other failure mode produces a typed `ScalarResolution.Rejected`
+that the validator surfaces through the existing classifier
+infrastructure.
 
-### Phase 3: convention layer + four-site flip
+Same phase emits `.additionalType(<scalar-fqn>)` into the synthesized
+`GraphitronSchema` for every resolved scalar — spec built-in *and*
+custom — by routing the registration through the resolver and
+retiring the literal block at `GraphitronSchemaClassGenerator.java:197-201`.
+Leaving the literal block in place would fork source-of-truth
+between the resolver and the generator. This is a real combined load
+that the Risk section calls out: a bug in the spec-built-in path
+through the resolver regresses every existing consumer in this phase,
+not just `@scalarType` users.
+
+**Federation-namespace fallback decision.** `AppliedDirectiveEmitter`
+(`AppliedDirectiveEmitter.java:153-156`) today falls back to
+`GraphQLString` for unknown scalar names, with an explicit comment
+that this is for federation-namespace late-bound types like
+`federation__FieldSet` that the federation-jvm transform registers
+after graphitron has emitted its schema class. R101's "no silent
+fallback" rule contradicts that fallback. Phase 2 resolves it by:
+
+1. Pre-registering the federation-namespace scalars graphitron
+   knows the federation-jvm transform will inject (`federation__FieldSet`
+   for `@key` / `@requires` / `@provides`, `federation__Scope` for
+   `@requiresScopes`, etc.) as resolver-known names that bind to
+   `GraphQLString`. The hard-coded fallback becomes a hard-coded
+   recognition, with the same effective behaviour but a typed
+   `ScalarResolution.Resolved` rather than an `if (unknown) return GraphQLString`
+   silent path.
+2. Anything *outside* that pre-registered set hits the standard
+   "unresolved → `Rejection`" rule. The federation-jvm transform
+   contract documents which scalars it injects; the pre-registered
+   set comes from that contract.
+
+If a future federation extension ships a new namespaced scalar that
+graphitron doesn't yet recognise, the consumer sees a typed rejection
+naming the scalar; the fix is a one-line addition to the federation
+recognition table. This is strictly safer than the silent
+`GraphQLString` fallback (which today coerces, e.g., a
+`federation__Policy` enum value as a string with no error).
+
+### Phase 3: convention layer + remaining-site flip
 
 Wire the built-in *name → static-field-FQN* table for
-graphql-java-extended-scalars. Convert the spec built-in tier to
-the same reflection path against `graphql.Scalars.GraphQL{Int,
-Float, String, Boolean, ID}` so the resolver has one code path,
-not two. Land `@DependsOnClassifierCheck` on the input-record
-emitter, the service-call binder, and `RowsMethodShape`. After
-this phase the five-site hardcoded mapping is fully replaced.
+graphql-java-extended-scalars. Flip the three remaining hardcoded
+sites (`ServiceCatalog.mapToJavaTypeName`,
+`FieldBuilder.mapGraphQLTypeToReflectType`, and the federation
+recognition path inside `AppliedDirectiveEmitter`) onto the resolver,
+each declaring `@DependsOnClassifierCheck` against the keys named
+in Phase 1.
+
+If R94 has already shipped by this phase, `InputComponent.javaType`
+joins the consumer list with the same annotations. If R94 ships
+later, R94's author adds those annotations as part of R94's input-
+record-emitter work; the keys are already on trunk and the integration
+is a one-line additional `@DependsOnClassifierCheck` per consumer.
+
+After this phase the five-site hardcoded mapping is fully replaced.
 
 ### Phase 4: housekeeping
 
@@ -312,67 +494,149 @@ requires this item to ship; that's the value graphitron delivers
 to consumers, not a sequencing constraint between roadmap items.
 
 **Completion housekeeping.** When R101 ships, update R94's
-`emit-input-records.md` so the comment on `InputComponent.javaType`
-(currently around line 219-221: "today, the four-site hardcoded
-spec-built-in mapping … post-R101, the `ScalarTypeResolver`")
-and the classifier-invariants paragraph that names R101 as a
-future event (around line 798) read in present tense. If R94
-ships first, that update is a no-op — its author will already have
-folded R101 into the live picture. If R101 ships first, the R94
-edits are part of closing R101.
+`emit-input-records.md` so its forward-tense references to the
+scalar resolver read in present tense: the `InputComponent.javaType`
+comment (currently "today, the four-site hardcoded spec-built-in
+mapping … post-R101, the `ScalarTypeResolver`") and the
+classifier-invariants paragraph naming R101's load-bearing keys.
+The cross-reference is by plan ID and concept (R101's "scalar
+resolver erasure-check producer key"), not by literal key string,
+so a key rename during R101's build doesn't propagate stale strings
+into R94's spec. If R94 ships first, that update is a no-op — its
+author folds R101's resolver into the live picture using whatever
+key names R101 actually landed.
 
 ## Tests
 
-- `ScalarTypeResolver` unit tests, one per failure mode in
-  *Failure modes*: class-not-found, field-not-found,
-  field-not-public-static, field-null, field-not-scalar,
-  Coercing-erased, `@scalarType`-on-spec-built-in.
-- `ScalarTypeResolver` resolution-order tests: directive beats
-  convention, convention beats unresolved, spec built-in beats
-  directive.
-- Pipeline test: a fixture SDL declaring `scalar BigDecimal` (no
-  directive, extended-scalars on classpath) generates a record
-  with a `BigDecimal` component and synthesizes
-  `.additionalType(graphql.scalars.ExtendedScalars.GraphQLBigDecimal)`
-  in the schema builder.
-- Pipeline test: a fixture SDL declaring `scalar Money` with
+There are no existing test pins on `mapToJavaTypeName`,
+`mapGraphQLTypeToReflectType`, or `standardScalarJavaType` (verified
+by grep across `graphitron/src/test`). Phase 1's lift onto the
+resolver therefore needs to land its own unit-tier coverage rather
+than relying on inherited assertions.
+
+`graphql-java-extended-scalars` is added as `<scope>test</scope>` on
+the `graphitron` module's pom (and on `graphitron-fixtures-codegen`
+where convention-layer fixtures live); the runtime artifact stays
+out, per the *Out of scope* note.
+
+### Resolver unit tier
+
+`ScalarTypeResolverTest`: one case per `Rejected` arm, asserting
+the typed payload (not just that *some* rejection fired):
+
+- `ClassNotFound("does.not.exist.Class")` — round-trips the
+  unknown FQN.
+- `FieldNotFound("graphql.Scalars", "GraphQLDoesNotExist")`.
+- `FieldNotAccessible(..., isPublic=false, isStatic=true)` for a
+  package-private static field; same for `isPublic=true,
+  isStatic=false`.
+- `NullAtCodegen(...)` for a public-static field whose initialiser
+  hasn't run (rare, but real for static-fenced configs).
+- `NotAScalarType(..., actualTypeFqn="java.lang.String")` for a
+  field that's not a `GraphQLScalarType`.
+- `CoercingErased(..., declarationKind=ANONYMOUS_CLASS)` —
+  the realistic case: a fixture class exposes
+  `public static final GraphQLScalarType MONEY` whose Coercing is
+  declared as `new Coercing<Money, Money>() { ... }`. The test
+  asserts the declaration kind so the per-arm hint resolves
+  correctly.
+- `CoercingErased(..., declarationKind=RAW_TYPE)` —
+  fixture exposes a raw `Coercing` declaration.
+- `CoercingErased(..., declarationKind=ERASED_NAMED_CLASS)` —
+  fixture exposes a named class `extends Coercing` with no type
+  parameters.
+
+`ScalarResolutionOrderTest`: directive beats convention; convention
+beats unresolved; `@scalarType` on a spec built-in produces
+`Rejection.InvalidSchema.DirectiveConflict` at the directive-read
+boundary, not at the resolver.
+
+### Pipeline tier (primary behavioural signal)
+
+- `customScalar_conventionResolution_emitsRecordWithBigDecimal`:
+  fixture SDL declaring `scalar BigDecimal` (no directive,
+  extended-scalars on the test classpath) generates a record with
+  a `BigDecimal` component and synthesizes
+  `.additionalType(graphql.scalars.ExtendedScalars.GraphQLBigDecimal)`.
+- `customScalar_directiveResolution_emitsRecordWithCustomType`:
+  fixture SDL declaring `scalar Money` with
   `@scalarType(scalar: "com.example.Scalars.MONEY")` generates a
   record with `Money` components and synthesizes
   `.additionalType(com.example.Scalars.MONEY)`.
-- **Pipeline test (resolution-order interaction):** a fixture SDL
-  declaring *both* `scalar BigDecimal` (no directive, falls to
+- `customScalar_directiveBeatsConvention_inSameRecord`: fixture
+  SDL declaring *both* `scalar BigDecimal` (no directive, falls to
   convention) *and* `scalar Money @scalarType(...)` (directive
-  override) and using both in a single input record's components.
-  Catches a future refactor that accidentally short-circuits one
-  tier of the resolution order — the unit-tier resolver tests
-  cover the resolver in isolation; this is the SDL → emitted-record
-  end-to-end invariant.
-- Compilation test: the generated record + synthesized schema
-  compile and instantiate without the consumer's `buildSchema`
-  hook touching the scalar. (The sakila example currently uses
-  zero custom scalars; this needs a small new fixture in
-  `graphitron-fixtures-codegen` or a dedicated sub-fixture.)
-- **`ConventionTableAuditTest`:** when `graphql.scalars.ExtendedScalars`
-  is on the test classpath, reflect on its public static fields
-  and assert every `GraphQLScalarType` constant is covered by the
-  convention table or explicitly excluded (with a reason). Turns
-  the upstream-drift surface called out in *Risk* into a
-  build-time signal.
-- LSP test: completion on `@scalarType(scalar: |)` for a
-  `scalar GraphQLBigDecimal` declaration suggests
-  `graphql.scalars.ExtendedScalars.GraphQLBigDecimal` from the
-  convention table.
+  override) and using both in a single input record. Catches a
+  future refactor that accidentally short-circuits one tier of
+  the resolution order — the unit-tier `ScalarResolutionOrderTest`
+  covers the resolver in isolation; this is the SDL →
+  emitted-record end-to-end invariant.
+- `customScalar_anonymousClassCoercing_failsWithExtractClassHint`:
+  fixture SDL pointing at a constant whose Coercing is anonymous
+  fails with the expected `CoercingErased` rejection naming the
+  fixture class and instructing the consumer to extract the
+  Coercing.
+
+### Compilation + execution tiers
+
+The existing `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`
+builds sakila against real jOOQ. Sakila uses zero custom scalars,
+so a dedicated sub-fixture (likely `graphitron-fixtures-codegen`'s
+`custom-scalar` sub-fixture) carries an end-to-end test: the
+generated record + synthesized schema compile and instantiate
+without the consumer's `buildSchema` hook touching the scalar.
+
+### Convention-table drift signal
+
+`ConventionTableArtifactDriftTest` (renamed from the original
+`ConventionTableAuditTest` to make the shape clear): when
+`graphql.scalars.ExtendedScalars` is on the test classpath, reflect
+on its public static fields and assert every `GraphQLScalarType`
+constant is covered by the convention table or explicitly excluded
+(with a reason). This is a *unit-tier drift signal* — its purpose
+is precisely that an `extended-scalars` version bump fails the test
+and the maintainer either expands the convention table or adds
+the new constant to the explicit-exclusions list. It is *not* an
+emitter audit on the shape of `LoadBearingGuaranteeAuditTest`
+(which audits annotations in graphitron's own bytecode); the test
+class name and its javadoc make the difference explicit so the
+implementer doesn't put it in the wrong directory or assert in
+the wrong style.
+
+### LSP tier
+
+LSP test: completion on `@scalarType(scalar: |)` for a
+`scalar GraphQLBigDecimal` declaration suggests
+`graphql.scalars.ExtendedScalars.GraphQLBigDecimal` from the
+convention table. LSP diagnostic test: an `@scalarType` reference
+to a non-existent class surfaces the `ClassNotFound` rejection
+inline.
 
 ## Risk
 
-Low. Phase 1 is a pure refactor. Phase 2 ships the directive
-together with its `additionalType` registration, so a consumer
-who reaches for `@scalarType` gets a schema that builds end-to-end
-in the same release that introduces the directive (no half-state
-where the type resolves but the schema fails to build). Phase 3
-expands the recognized set without breaking anything (names that
-previously classified as `UnclassifiedType` now resolve, names that
-previously resolved still resolve through the same engine).
+Low–medium. Phase 1 is a small additive lift (one consumer wired
+to the resolver, four sites unchanged). Phase 3 expands the
+recognized set without breaking anything (names that previously
+fell back to `Object.class` / `null` / `GraphQLString` now resolve
+through the same engine as the spec built-ins).
+
+**Phase 2 carries the combined load.** It ships three things
+together: directive-read in the classifier, new typed rejection
+arms, *and* retiring the literal `additionalType` block at
+`GraphitronSchemaClassGenerator.java:197-201` so all scalar
+registration routes through the resolver. This is by design — see
+the introductory paragraph of *Phasing* on why splitting them would
+leave a half-state — but it means a bug in the spec-built-in path
+through the resolver regresses every existing consumer in Phase 2,
+not just `@scalarType` users. The primary mitigation is the Phase 1
++ pipeline-tier coverage: the `RowsMethodShape` consumer landed in
+Phase 1 has been driving the resolver path against spec built-ins
+for one phase by the time Phase 2 ships. A secondary mitigation:
+Phase 2 has its own pipeline test that asserts the synthesized
+schema's `.additionalType(...)` call list against the existing
+five spec-built-in lines for a fixture using only spec built-ins
+(no `@scalarType`, no extended-scalars). Any change to that list
+is a deliberate decision that surfaces in test diff.
 
 **Duplicate `additionalType` is not idempotent in graphql-java.**
 `GraphQLSchema.Builder.additionalType` rejects duplicate type names
@@ -396,5 +660,5 @@ The one remaining drift surface is the convention table's coverage
 as `graphql-java-extended-scalars` adds scalars; the bound version
 (graphitron *does not* take a runtime dep on the artifact, but
 tracks for the convention table) is recorded in `docs/README.adoc`
-and bumped via changelog. `ConventionTableAuditTest` (see *Tests*)
+and bumped via changelog. `ConventionTableArtifactDriftTest` (see *Tests*)
 reflects this into a build-time check.
