@@ -16,17 +16,15 @@ import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
  * <ul>
  *   <li>{@code Mapped*Keyed} permits → {@link LoaderRegistration.Container#MAPPED_SET}
  *       (drives {@code DataLoaderFactory.newMappedDataLoader}).</li>
- *   <li>{@link BatchKey.AccessorKeyedMany} → {@link LoaderRegistration.Container#MAPPED_SET}
- *       too: the {@code loader.loadMany} contract emits one record per element-PK key, and
- *       the resulting per-key value type folds onto the same mapped container.</li>
- *   <li>All other permits → {@link LoaderRegistration.Container#POSITIONAL_LIST}
+ *   <li>All other permits, including {@link BatchKey.AccessorKeyedMany}, →
+ *       {@link LoaderRegistration.Container#POSITIONAL_LIST}
  *       (drives {@code DataLoaderFactory.newDataLoader}).</li>
  * </ul>
  *
- * <p>Dispatch projection is the orthogonal axis: today only
- * {@link BatchKey.AccessorKeyedMany} reaches {@link LoaderRegistration.Dispatch#LOAD_MANY}
- * (its {@code @record} parent's typed list-accessor fans out per-element-PK); every other
- * permit takes {@link LoaderRegistration.Dispatch#LOAD_ONE}.
+ * <p>Dispatch is orthogonal to container: today only {@link BatchKey.AccessorKeyedMany}
+ * reaches {@link LoaderRegistration.Dispatch#LOAD_MANY} (its {@code @record} parent's
+ * typed list-accessor fans out per-element-PK), and it does so on a positional
+ * DataLoader. Every other permit takes {@link LoaderRegistration.Dispatch#LOAD_ONE}.
  *
  * <p>{@code valueIsList} follows the field's wrapper: {@code true} when the loader returns
  * a list per key (list / connection field cardinality), {@code false} for single-cardinality
@@ -53,8 +51,7 @@ public final class LoaderRegistrationResolver {
     private static LoaderRegistration.Container container(BatchKey bk) {
         if (bk instanceof BatchKey.MappedRowKeyed
                 || bk instanceof BatchKey.MappedRecordKeyed
-                || bk instanceof BatchKey.MappedTableRecordKeyed
-                || bk instanceof BatchKey.AccessorKeyedMany) {
+                || bk instanceof BatchKey.MappedTableRecordKeyed) {
             return LoaderRegistration.Container.MAPPED_SET;
         }
         return LoaderRegistration.Container.POSITIONAL_LIST;

@@ -110,7 +110,7 @@ class LoaderRegistrationResolverTest {
     }
 
     @Test
-    void accessorKeyedMany_recordTableField_mappedSetLoadManySingleValuePerKey() {
+    void accessorKeyedMany_recordTableField_positionalListLoadManySingleValuePerKey() {
         var hop = liftedHop(FILM_TABLE, List.of(filmIdCol()), "films_0");
         var rtf = new ChildField.RecordTableField(
             "Payload", "films", null,
@@ -122,10 +122,13 @@ class LoaderRegistrationResolverTest {
 
         LoaderRegistration reg = LoaderRegistrationResolver.resolve(rtf);
 
-        // AccessorKeyedMany: loadMany contract → MAPPED_SET + LOAD_MANY. The per-key value is
-        // one Record (loadMany supplies one record per element-PK), so valueIsList is FALSE
-        // even though the field's outer cardinality is list.
-        assertThat(reg.container()).isEqualTo(LoaderRegistration.Container.MAPPED_SET);
+        // AccessorKeyedMany: loadMany contract on a positional DataLoader. Container axis
+        // (newDataLoader) and dispatch axis (loader.loadMany) are independent: the per-fetch
+        // dispatch fans the parent's accessor-yielded keys out across the same positional
+        // BatchLoader the rest of the RecordTableField shapes use. The per-key value is one
+        // Record (loadMany supplies one record per element-PK), so valueIsList is FALSE even
+        // though the field's outer cardinality is list.
+        assertThat(reg.container()).isEqualTo(LoaderRegistration.Container.POSITIONAL_LIST);
         assertThat(reg.dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_MANY);
         assertThat(reg.valueIsList()).isFalse();
     }

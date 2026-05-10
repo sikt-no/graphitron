@@ -14,8 +14,11 @@ import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.LoaderRegistrationResolver;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
+import no.sikt.graphitron.rewrite.model.RowsMethodBody;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -2746,41 +2749,17 @@ public class TypeFetcherGenerator {
         TypeName valueType = isList ? ParameterizedTypeName.get(LIST, perKeyType) : perKeyType;
 
         var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
-        boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
-                        || batchKey instanceof BatchKey.MappedRecordKeyed
-                        || batchKey instanceof BatchKey.MappedTableRecordKeyed;
         TypeName keyType = batchKey.keyElementType();
-        var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
-        String rowsMethodName = bkf.rowsMethodName();
+        LoaderRegistration registration = LoaderRegistrationResolver.resolve(bkf);
 
-        String factoryMethod = isMapped ? "newMappedDataLoader" : "newDataLoader";
-        TypeName lambdaKeysType = ParameterizedTypeName.get(isMapped ? SET : LIST, keyType);
-        var lambdaBlock = CodeBlock.builder()
-            .add("($T keys, $T batchEnv) -> {\n", lambdaKeysType, BATCH_LOADER_ENV)
-            .indent()
-            .addStatement("$T dfe = ($T) batchEnv.getKeyContextsList().get(0)", ENV, ENV)
-            .addStatement("return $T.completedFuture($L(keys, dfe))", COMPLETABLE_FUTURE, rowsMethodName)
-            .unindent()
-            .add("}")
-            .build();
-
-        var methodBuilder = MethodSpec.methodBuilder(fieldName)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(asyncResultType(valueType))
-            .addParameter(ENV, "env")
-            .addCode(buildDataLoaderName(ctx))
-            .addCode(
-                "$T loader = env.getDataLoaderRegistry()\n" +
-                "    .computeIfAbsent(name, k -> $T.$L($L));\n",
-                loaderType, DATA_LOADER_FACTORY, factoryMethod, lambdaBlock);
-
-        methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, prt));
-        return methodBuilder
-            .addCode(CodeBlock.builder()
-                .add("return loader.load(key, env)\n")
-                .add("    ").add(asyncWrapTail(valueType, outputPackage, errorChannel)).add(";\n")
-                .build())
-            .build();
+        return DataLoaderFetcherEmitter.build(
+            fieldName,
+            keyType, valueType, asyncResultType(valueType),
+            registration,
+            ctx.graphitronContextCall(),
+            RowsMethodCall.batchLoaderLambda(bkf.rowsMethodName(), keyType, registration),
+            GeneratorUtils.buildKeyExtraction(batchKey, prt),
+            asyncWrapTail(valueType, outputPackage, errorChannel));
     }
 
     /**
@@ -2830,14 +2809,13 @@ public class TypeFetcherGenerator {
             String outputPackage) {
 
         var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
-        boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
-                        || batchKey instanceof BatchKey.MappedRecordKeyed
-                        || batchKey instanceof BatchKey.MappedTableRecordKeyed;
-        TypeName keysContainerType = ParameterizedTypeName.get(isMapped ? SET : LIST, batchKey.keyElementType());
+        LoaderRegistration registration = LoaderRegistrationResolver.resolve(bkf);
+        ClassName containerClass = registration.container() == LoaderRegistration.Container.MAPPED_SET
+            ? SET : LIST;
+        TypeName keysContainerType = ParameterizedTypeName.get(containerClass, batchKey.keyElementType());
         TypeName returnType = no.sikt.graphitron.rewrite.model.RowsMethodShape
             .outerRowsReturnType(perKeyType, schemaReturnType, batchKey);
 
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var serviceClass = ClassName.bestGuess(method.className());
         String conditionsClassName = outputPackage + ".conditions."
             + parentTypeName + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
@@ -2845,21 +2823,19 @@ public class TypeFetcherGenerator {
         boolean needsDsl = needsDsl(service.callShape());
         CodeBlock callTarget = serviceCallTarget(service, serviceClass);
 
-        var builder = MethodSpec.methodBuilder(bkf.rowsMethodName())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(returnType)
-            .addParameter(keysContainerType, "keys")
-            .addParameter(ENV, "env");
+        CodeBlock body = CodeBlock.builder()
+            .addStatement("return $L.$L($L)",
+                callTarget,
+                method.methodName(),
+                ArgCallEmitter.buildMethodBackedCallArgs(ctx, method, null, CodeBlock.of("keys"), conditionsClassName))
+            .build();
 
-        if (needsDsl) {
-            builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
-        }
-        builder.addStatement("return $L.$L($L)",
-            callTarget,
-            method.methodName(),
-            ArgCallEmitter.buildMethodBackedCallArgs(ctx, method, null, CodeBlock.of("keys"), conditionsClassName));
-
-        return builder.build();
+        return RowsMethodSkeleton.build(
+            bkf.rowsMethodName(),
+            returnType,
+            keysContainerType,
+            ctx.graphitronContextCall(),
+            new RowsMethodBody.Service(body, needsDsl));
     }
 
     // -----------------------------------------------------------------------
@@ -2902,52 +2878,28 @@ public class TypeFetcherGenerator {
         } else {
             valueType = RECORD;
         }
-        var returnType = ParameterizedTypeName.get(COMPLETABLE_FUTURE, valueType);
 
         var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
         TypeName keyType = batchKey.keyElementType();
-        var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
-        String rowsMethodName = bkf.rowsMethodName();
         String fieldName = bkfFieldName(bkf);
+        LoaderRegistration registration = LoaderRegistrationResolver.resolve(bkf);
 
-        // Lambda parameters are explicitly typed. The target-typed inference otherwise picks
-        // `List<Object>` — the call `rowsMethodName(keys, dfe)` then can't narrow to
-        // `List<RowN<...>>`. Typing one lambda parameter requires typing both per Java lambda
-        // syntax rules.
-        TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
-        var lambdaBlock = CodeBlock.builder()
-            .add("($T keys, $T batchEnv) -> {\n", lambdaKeysType, BATCH_LOADER_ENV)
-            .indent()
-            .addStatement("$T dfe = ($T) batchEnv.getKeyContextsList().get(0)", ENV, ENV)
-            .addStatement("return $T.completedFuture($L(keys, dfe))", COMPLETABLE_FUTURE, rowsMethodName)
-            .unindent()
-            .add("}")
-            .build();
-
-        var methodBuilder = MethodSpec.methodBuilder(fieldName)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(asyncResultType(valueType))
-            .addParameter(ENV, "env")
-            .addCode(buildDataLoaderName(ctx))
-            .addCode(
-                "$T loader = env.getDataLoaderRegistry()\n" +
-                "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
-                loaderType, DATA_LOADER_FACTORY, lambdaBlock);
-
-        // Single cardinality: NULL-FK short-circuit. The parent row's FK column may be nullable,
+        // Single cardinality: NULL-FK short-circuit (the parent row's FK column may be nullable
         // and no `terminal.pk = parentInput.fk_value` match can exist under ANSI NULL semantics —
-        // skip the DataLoader round-trip and return null directly.
-        if (isList) {
-            methodBuilder.addCode(GeneratorUtils.buildKeyExtraction(batchKey, parentTable));
-        } else {
-            methodBuilder.addCode(GeneratorUtils.buildKeyExtractionWithNullCheck(batchKey, parentTable));
-        }
-        return methodBuilder
-            .addCode(CodeBlock.builder()
-                .add("return loader.load(key, env)\n")
-                .add("    ").add(asyncWrapTail(valueType, outputPackage, Optional.empty())).add(";\n")
-                .build())
-            .build();
+        // skip the DataLoader round-trip and return null directly). The unified emitter accepts
+        // a keyExtraction CodeBlock that may short-circuit before reaching the dispatch line.
+        CodeBlock keyExtraction = isList
+            ? GeneratorUtils.buildKeyExtraction(batchKey, parentTable)
+            : GeneratorUtils.buildKeyExtractionWithNullCheck(batchKey, parentTable);
+
+        return DataLoaderFetcherEmitter.build(
+            fieldName,
+            keyType, valueType, asyncResultType(valueType),
+            registration,
+            ctx.graphitronContextCall(),
+            RowsMethodCall.batchLoaderLambda(bkf.rowsMethodName(), keyType, registration),
+            keyExtraction,
+            asyncWrapTail(valueType, outputPackage, Optional.empty()));
     }
 
     /**
@@ -2997,7 +2949,6 @@ public class TypeFetcherGenerator {
                     GraphitronType.ResultType resultType, String outputPackage) {
 
         boolean isList = field.returnType().wrapper().isList();
-        BatchKey.LoaderDispatch dispatch = batchKey.dispatch();
 
         // The loader's per-key value is `Record` whenever the rows-method emits one record per
         // key (single-cardinality fields, or the LOAD_MANY loadMany contract on list fields);
@@ -3011,48 +2962,16 @@ public class TypeFetcherGenerator {
         TypeName resultValueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
 
         TypeName keyType = batchKey.keyElementType();
-        var loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
-        String rowsMethodName = field.rowsMethodName();
+        LoaderRegistration registration = LoaderRegistrationResolver.resolve(field);
 
-        TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
-        var lambdaBlock = CodeBlock.builder()
-            .add("($T keys, $T batchEnv) -> {\n", lambdaKeysType, BATCH_LOADER_ENV)
-            .indent()
-            .addStatement("$T dfe = ($T) batchEnv.getKeyContextsList().get(0)", ENV, ENV)
-            .addStatement("return $T.completedFuture($L(keys, dfe))", COMPLETABLE_FUTURE, rowsMethodName)
-            .unindent()
-            .add("}")
-            .build();
-
-        // Dispatch: LOAD_ONE emits load(key, env); LOAD_MANY emits loadMany(keys, ...). The
-        // matching key local is emitted by buildRecordParentKeyExtraction (which also reads
-        // the dispatch projection so the local name and the dispatch shape agree).
-        //
-        // DataLoader.loadMany overload that takes key contexts requires a List<Object> of the
-        // same arity as the keys list; the batch loader only ever reads keyContexts[0] (see
-        // the lambda above), so duplicating env across all positions is the cheapest way to
-        // wire the env through. load(key, env) takes a single Object keyContext directly, no
-        // list-wrapping needed.
-        String dispatchCall = switch (dispatch) {
-            case LOAD_ONE  -> "return loader.load(key, env)\n";
-            case LOAD_MANY -> "return loader.loadMany(keys, java.util.Collections.nCopies(keys.size(), env))\n";
-        };
-
-        return MethodSpec.methodBuilder(field.name())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(asyncResultType(resultValueType))
-            .addParameter(ENV, "env")
-            .addCode(buildDataLoaderName(ctx))
-            .addCode(
-                "$T loader = env.getDataLoaderRegistry()\n" +
-                "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
-                loaderType, DATA_LOADER_FACTORY, lambdaBlock)
-            .addCode(GeneratorUtils.buildRecordParentKeyExtraction(batchKey, resultType))
-            .addCode(CodeBlock.builder()
-                .add(dispatchCall)
-                .add("    ").add(asyncWrapTail(resultValueType, outputPackage, Optional.empty())).add(";\n")
-                .build())
-            .build();
+        return DataLoaderFetcherEmitter.build(
+            field.name(),
+            keyType, valueType, asyncResultType(resultValueType),
+            registration,
+            ctx.graphitronContextCall(),
+            RowsMethodCall.batchLoaderLambda(field.rowsMethodName(), keyType, registration),
+            GeneratorUtils.buildRecordParentKeyExtraction(batchKey, resultType),
+            asyncWrapTail(resultValueType, outputPackage, Optional.empty()));
     }
 
     private static String bkfFieldName(BatchKeyField bkf) {
