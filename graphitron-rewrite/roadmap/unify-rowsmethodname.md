@@ -451,8 +451,7 @@ count goes from 10 to 1 + 5 = 6.
 #### Phase 3 in-progress status
 
 Phase 3 is shipping incrementally on `claude/graphitron-rewrite`. Items
-already landed (commits between `f6b10b7` and `6ef0648` inclusive,
-prefix-tagged `R38 Phase 3 (N/N): ...`):
+already landed (prefix-tagged `R38 Phase 3 (N/N): ...`):
 
 1. Drop the four redundant `rowsMethodName()` overrides; add the
    container-axis-independence `@LoadBearingClassifierCheck`.
@@ -474,48 +473,62 @@ prefix-tagged `R38 Phase 3 (N/N): ...`):
    two derived primitives (`keyElementType`, `isMapped`) the function
    actually consumes, so each caller projects from whatever access path it
    already has.
+8. `GeneratorUtils.buildRecordParentKeyExtraction` + four helpers on
+   `SourceKey`: 4-permit `BatchKey.RecordParentBatchKey` switch collapses to
+   `Reader × Cardinality` switch. `TypeFetcherGenerator.buildRecordBasedDataFetcher`
+   threads `field.sourceKey()` through; service-side Readers are unreachable
+   here and rejected eagerly.
+9. `MultiTablePolymorphicEmitter`: project `parentKey → SourceKey` once at
+   the public entry points (`emitMethods` / `emitConnectionMethods`) via a
+   private transitional helper (`parentSourceKey`); all four internal
+   builders (batched connection / list fetcher + rows method) take
+   `SourceKey`. The projection mirrors `SourceKeyResolver.resolveRecordParent`;
+   it goes away once `InterfaceField` / `UnionField` flip `parentKey`
+   storage to `SourceKey`.
+10. `SplitRowsMethodEmitter` internal helpers (`emitParentInputAndFkChain`,
+    `buildListMethod`, `buildSingleMethod`, `buildConnectionMethod`,
+    `buildRuntimeStub`) take `SourceKey`. Public entry points read
+    `field.sourceKey()`. The two-permit accessor check collapses to a
+    single `Reader.AccessorCall` `instanceof`.
+
+After step 10 the entire generator package is off `.batchKey()` reads
+(`grep -rn "\\.batchKey()" .../rewrite/generators/` returns no matches).
+Remaining `.batchKey()` reads live in the resolver layer
+(`ServiceDirectiveResolver`, `FieldBuilder` producers,
+`MappingsConstantNameDedup`) and ride on the storage flip.
 
 Still to land for Phase 3 completion:
 
-- **`GeneratorUtils.buildRecordParentKeyExtraction`** + four helpers
-  (`buildFkRowKey`, `buildLifterRowKey`, `buildAccessorKeySingle`,
-  `buildAccessorKeyMany`): five-permit BatchKey switch needs migration to
-  `(Reader × cardinality)` switch. The mapping is mechanical:
-  `RowKeyed → Reader.ColumnRead`,
-  `LifterLeafKeyed/LifterPathKeyed → Reader.SourceRowsCall`,
-  `AccessorKeyedSingle → Reader.AccessorCall + Cardinality.ONE`,
-  `AccessorKeyedMany → Reader.AccessorCall + Cardinality.MANY`. The two
-  accessor arms split on `SourceKey.cardinality()` rather than identity.
-- **`TypeFetcherGenerator.buildRecordBasedDataFetcher`**: still takes
-  `BatchKey.RecordParentBatchKey batchKey` parameter (line 2948). After
-  `buildRecordParentKeyExtraction` migrates, this parameter becomes
-  `SourceKey` and the two callers at lines 424 / 428 pass
-  `rtf.sourceKey()` / `rltf.sourceKey()`.
-- **`SplitRowsMethodEmitter`**: many sites pass `xxx.batchKey()` to internal
-  helpers (`buildRuntimeStub`, the four `buildForX` entry points). The
-  inner helpers fork on permit identity for the prelude shape; that fork
-  becomes a `SourceKey.Reader` switch (with `path()` empty vs. non-empty
-  carrying what `LiftedHop` / `FkJoin` chain identity carried before).
-- **`MultiTablePolymorphicEmitter`**: four sites read
-  `parentKey.keyElementType()` and pass `parentKey` to
-  `GeneratorUtils.buildRecordParentKeyExtraction`. These migrate when the
-  storage shape on `InterfaceField` / `UnionField` flips.
+- **Storage migration** on the six `BatchKeyField` permits (`SplitTableField`,
+  `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`,
+  `ServiceTableField`, `ServiceRecordField`) — replace the `batchKey`
+  record component with `sourceKey: SourceKey` (and add
+  `loaderRegistration: LoaderRegistration` where the field needs it on the
+  emit path). `BatchKeyField`'s default `sourceKey()` / `loaderRegistration()`
+  become abstract methods backed by the new record components.
+- **`InterfaceField.parentKey`** and **`UnionField.parentKey`**: flip from
+  `BatchKey.RecordParentBatchKey` to `SourceKey`. Drop the transitional
+  `parentSourceKey()` helper in `MultiTablePolymorphicEmitter`.
+- **`ParamSource.Sources`** and **`MethodRef.Param.Sourced`**: flip to carry
+  `SourceKey` + container kind (today `BatchKey`'s mapped/positional axis
+  is the variant identity; on `SourceKey` it pairs with `LoaderRegistration`).
+- **Producer site inlining**: `FieldBuilder` (`deriveSplitQueryBatchKey`,
+  `deriveBatchKeyForResultType`, `resolveRecordParentBatchKey`,
+  `deriveBatchKeyFromTypedAccessor`, `extractBatchKey`), `ServiceCatalog`
+  (`@service` classifier), `SourceRowDirectiveResolver` (lifter variants)
+  all construct `SourceKey` + `LoaderRegistration` directly without going
+  through `BatchKey`. The resolvers' content moves into the producers; the
+  resolvers themselves delete.
 - **`ServiceDirectiveResolver`**: line 192 switch on `sourced.batchKey()`
-  reads `elementClass()` off `TableRecordKeyed` / `MappedTableRecordKeyed`.
-  Migrates when `MethodRef.Param.Sourced` storage flips; the
-  `Wrap.TableRecord` payload carries the same class today.
-- **`FieldBuilder`**: line 187 reader on `MethodRef.Param.Sourced`; lines
-  3104-3111 switch on `ok.batchKey()` to pull `JoinStep.LiftedHop`.
-  Migrates with the storage flip.
-- **Storage migration** on the six `BatchKeyField` permits, plus
-  `InterfaceField.parentKey` (becomes `parentSourceKey`), `UnionField`
-  parentKey same, `ParamSource.Sources` (becomes `sourceKey` + container),
-  `MethodRef.Param.Sourced` same. Producer sites (`FieldBuilder`,
-  `ServiceCatalog`, `SourceRowDirectiveResolver`) inline the projection
-  at this point (the resolvers' content moves into the producers; the
-  resolvers themselves delete).
-- **Default-method-to-abstract swap** on `BatchKeyField` once storage is
-  in place; `BatchKeyField` no longer imports the rewrite package.
+  reads `elementClass()` off `TableRecordKeyed` / `MappedTableRecordKeyed`
+  (the `Wrap.TableRecord` payload carries the same class). Line 323 reader
+  on `sourced.batchKey()` migrates with `Sourced` storage.
+- **`FieldBuilder`**: line 187 reader on `MethodRef.Param.Sourced.batchKey()`;
+  lines 3104-3111 switch on `ok.batchKey()` to pull `JoinStep.LiftedHop`.
+  Migrate with the storage flip.
+- **`MappingsConstantNameDedup`**: field-reconstruction sites at lines
+  170, 173 pass `f.batchKey()` to the rebuilt field; mechanical replacement
+  with the new storage field name.
 - **`BatchKey.java`** + `SourceKeyResolver.java` +
   `LoaderRegistrationResolver.java` delete; their tests delete or move.
 - **Tests**: every `ChildField` constructor call site that today passes a
