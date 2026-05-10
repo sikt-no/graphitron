@@ -29,10 +29,12 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.ENV;
  *       accessor vs backing-class accessor vs lifter call) and on per-field null-handling
  *       (single-cardinality split fields short-circuit on null FK; list-cardinality and
  *       record-parent fields don't)</li>
- *   <li>dispatch onto the loader: {@link Invocation#LOAD_ONE} emits
- *       {@code return loader.load(key, env)} (the keyExtraction emitted a {@code key} local);
- *       {@link Invocation#LOAD_MANY} emits {@code return loader.loadMany(keys, ...)} (the
- *       keyExtraction emitted a {@code keys} local)</li>
+ *   <li>dispatch onto the loader per {@link LoaderRegistration#dispatch()}:
+ *       {@link LoaderRegistration.Dispatch#LOAD_ONE} emits {@code return loader.load(key, env)}
+ *       (the keyExtraction emitted a {@code key} local);
+ *       {@link LoaderRegistration.Dispatch#LOAD_MANY} emits
+ *       {@code return loader.loadMany(keys, ...)} (the keyExtraction emitted a {@code keys}
+ *       local)</li>
  *   <li>chain the async tail — caller-supplied as {@code asyncWrapTail}, since the
  *       error-channel routing concerns vary by field shape</li>
  * </ol>
@@ -47,27 +49,6 @@ public final class DataLoaderFetcherEmitter {
     private static final ClassName DATA_LOADER_FACTORY  = ClassName.get("org.dataloader", "DataLoaderFactory");
 
     private DataLoaderFetcherEmitter() {}
-
-    /**
-     * Per-call dispatch axis: {@link #LOAD_ONE} reads a single {@code key} local emitted by
-     * {@code keyExtraction} and emits {@code loader.load(key, env)}; {@link #LOAD_MANY} reads
-     * a {@code keys} list local and emits {@code loader.loadMany(keys, contexts)} with one
-     * env per key (the BatchLoader only ever inspects {@code keyContexts.get(0)}, so duplicating
-     * is the cheapest way to wire the env through).
-     *
-     * <p>Today only {@code BatchKey.AccessorKeyedMany}'s rows-method ({@code loadMany} contract:
-     * one record per element-PK key) lands on {@link #LOAD_MANY}; every other classification
-     * path takes {@link #LOAD_ONE}. Phase 3 re-grounds this projection against {@code SourceKey}
-     * directly; for now Phase 1's emitter takes the choice as an explicit input so the
-     * BatchKey-to-SourceKey projection question (which {@code Cardinality.MANY} cases
-     * dispatch loadMany vs which dispatch load with a list-valued V) is decided by the caller.
-     */
-    public enum Invocation {
-        /** {@code loader.load(key, env)}; keyExtraction must emit a {@code key} local. */
-        LOAD_ONE,
-        /** {@code loader.loadMany(keys, contexts)}; keyExtraction must emit a {@code keys} local. */
-        LOAD_MANY
-    }
 
     /**
      * Builds the DataFetcher MethodSpec. The fetcher's name is the GraphQL field name; its
@@ -88,9 +69,10 @@ public final class DataLoaderFetcherEmitter {
      *                              {@code CompletableFuture<DataFetcherResult<P>>} by the
      *                              caller (the per-class async-result helper).
      * @param registration          the field's {@link LoaderRegistration}; chooses
-     *                              {@code newDataLoader} vs {@code newMappedDataLoader}.
-     * @param invocation            {@link Invocation#LOAD_ONE} or {@link Invocation#LOAD_MANY};
-     *                              picks the loader-dispatch shape.
+     *                              {@code newDataLoader} vs {@code newMappedDataLoader} via
+     *                              {@link LoaderRegistration#container()} and
+     *                              {@code load} vs {@code loadMany} via
+     *                              {@link LoaderRegistration#dispatch()}.
      * @param graphitronContextCall the call expression for the per-class
      *                              {@code graphitronContext(env)} helper. Used in the path-scoped
      *                              DataLoader name construction (tenantId prefix + path keys).
@@ -98,8 +80,13 @@ public final class DataLoaderFetcherEmitter {
      *                              {@link RowsMethodCall#batchLoaderLambda}.
      * @param keyExtraction         pre-built CodeBlock declaring the {@code key} or {@code keys}
      *                              local that the dispatch consumes. Per-field-shape variation
-     *                              (jOOQ table-row vs backing-class accessor vs lifter call,
-     *                              null-FK short-circuit) lives in the caller.
+     *                              (jOOQ table-row vs backing-class accessor vs lifter call)
+     *                              lives in the caller. The block may also short-circuit before
+     *                              reaching the dispatch line — single-cardinality split fields
+     *                              with a nullable FK emit
+     *                              {@code if (key_value == null) return ...; key = ...;} so the
+     *                              outer fetcher returns a completed null without touching the
+     *                              loader registry.
      * @param asyncWrapTail         pre-built CodeBlock chained after {@code loader.load(...)} /
      *                              {@code loader.loadMany(...)}; lifts the per-key value into a
      *                              {@code DataFetcherResult<P>} via {@code .thenApply(...)} and
@@ -111,7 +98,6 @@ public final class DataLoaderFetcherEmitter {
             TypeName loaderValueType,
             TypeName outerReturnType,
             LoaderRegistration registration,
-            Invocation invocation,
             CodeBlock graphitronContextCall,
             CodeBlock batchLoaderLambda,
             CodeBlock keyExtraction,
@@ -132,7 +118,7 @@ public final class DataLoaderFetcherEmitter {
                 "    .computeIfAbsent(name, k -> $T.$L($L));\n",
                 loaderType, DATA_LOADER_FACTORY, factoryMethod, batchLoaderLambda)
             .addCode(keyExtraction)
-            .addCode(dispatchCall(invocation))
+            .addCode(dispatchCall(registration.dispatch()))
             .addCode(CodeBlock.builder().add("    ").add(asyncWrapTail).add(";\n").build());
 
         return b.build();
@@ -153,16 +139,16 @@ public final class DataLoaderFetcherEmitter {
     }
 
     /**
-     * Per-{@link Invocation} dispatch line.
+     * Per-{@link LoaderRegistration.Dispatch} dispatch line.
      *
-     * <p>{@link Invocation#LOAD_MANY} duplicates the {@code env} across {@code keys.size()} key
-     * contexts because {@code DataLoader.loadMany}'s context-list overload requires the contexts
-     * list to match the keys list arity. The BatchLoader only reads
-     * {@code keyContextsList.get(0)} (see {@link RowsMethodCall#batchLoaderLambda}), so the
-     * duplication is structural padding.
+     * <p>{@link LoaderRegistration.Dispatch#LOAD_MANY} duplicates the {@code env} across
+     * {@code keys.size()} key contexts because {@code DataLoader.loadMany}'s context-list
+     * overload requires the contexts list to match the keys list arity. The BatchLoader only
+     * reads {@code keyContextsList.get(0)} (see {@link RowsMethodCall#batchLoaderLambda}), so
+     * the duplication is structural padding.
      */
-    private static CodeBlock dispatchCall(Invocation invocation) {
-        return switch (invocation) {
+    private static CodeBlock dispatchCall(LoaderRegistration.Dispatch dispatch) {
+        return switch (dispatch) {
             case LOAD_ONE  -> CodeBlock.of("return loader.load(key, env)\n");
             case LOAD_MANY -> CodeBlock.of(
                 "return loader.loadMany(keys, $T.nCopies(keys.size(), env))\n",

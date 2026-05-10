@@ -14,39 +14,40 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class LoaderRegistrationTest {
 
     @Test
-    void positionalListWithListValueRoundTripsComponents() {
+    void positionalListLoadOneRoundTripsComponents() {
         var reg = new LoaderRegistration(
-            "tenant/films/actors",
             true,
-            LoaderRegistration.Container.POSITIONAL_LIST);
-        assertThat(reg.loaderName()).isEqualTo("tenant/films/actors");
+            LoaderRegistration.Container.POSITIONAL_LIST,
+            LoaderRegistration.Dispatch.LOAD_ONE);
         assertThat(reg.valueIsList()).isTrue();
         assertThat(reg.container()).isEqualTo(LoaderRegistration.Container.POSITIONAL_LIST);
+        assertThat(reg.dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_ONE);
     }
 
     @Test
-    void mappedSetWithSingleValueRoundTripsComponents() {
+    void mappedSetLoadManyRoundTripsComponents() {
         var reg = new LoaderRegistration(
-            "tenant/films/category",
             false,
-            LoaderRegistration.Container.MAPPED_SET);
+            LoaderRegistration.Container.MAPPED_SET,
+            LoaderRegistration.Dispatch.LOAD_MANY);
         assertThat(reg.valueIsList()).isFalse();
         assertThat(reg.container()).isEqualTo(LoaderRegistration.Container.MAPPED_SET);
-    }
-
-    @Test
-    void rejectsNullLoaderName() {
-        assertThatThrownBy(() -> new LoaderRegistration(
-                null, false, LoaderRegistration.Container.POSITIONAL_LIST))
-            .isInstanceOf(NullPointerException.class)
-            .hasMessageContaining("loaderName");
+        assertThat(reg.dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_MANY);
     }
 
     @Test
     void rejectsNullContainer() {
         assertThatThrownBy(() -> new LoaderRegistration(
-                "name", false, null))
+                false, null, LoaderRegistration.Dispatch.LOAD_ONE))
             .isInstanceOf(NullPointerException.class)
             .hasMessageContaining("container");
+    }
+
+    @Test
+    void rejectsNullDispatch() {
+        assertThatThrownBy(() -> new LoaderRegistration(
+                false, LoaderRegistration.Container.POSITIONAL_LIST, null))
+            .isInstanceOf(NullPointerException.class)
+            .hasMessageContaining("dispatch");
     }
 }

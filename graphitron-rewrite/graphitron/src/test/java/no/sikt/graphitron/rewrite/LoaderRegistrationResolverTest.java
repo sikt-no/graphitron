@@ -22,9 +22,9 @@ import static no.sikt.graphitron.rewrite.TestFixtures.tableBoundFilm;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit-tier coverage of {@link LoaderRegistrationResolver}'s container projection plus the
- * {@code valueIsList} flag. Sibling of {@link SourceKeyResolverTest}; one test per orthogonal
- * axis (positional vs mapped, list vs single, AccessorKeyedMany loadMany contract).
+ * Unit-tier coverage of {@link LoaderRegistrationResolver}'s container, dispatch, and
+ * {@code valueIsList} projections. Sibling of {@link SourceKeyResolverTest}; one test per
+ * orthogonal axis (positional vs mapped, list vs single, AccessorKeyedMany loadMany contract).
  */
 @UnitTier
 class LoaderRegistrationResolverTest {
@@ -38,7 +38,7 @@ class LoaderRegistrationResolverTest {
         ClassName.bestGuess("com.example.jooq.tables.records.FilmRecord"));
 
     @Test
-    void rowKeyedListField_positionalListWithListValue() {
+    void rowKeyedListField_positionalListLoadOneListValue() {
         var stf = new ChildField.SplitTableField(
             "Language", "films", null,
             tableBoundFilm(nonNullList()),
@@ -50,12 +50,12 @@ class LoaderRegistrationResolverTest {
         LoaderRegistration reg = LoaderRegistrationResolver.resolve(stf);
 
         assertThat(reg.container()).isEqualTo(LoaderRegistration.Container.POSITIONAL_LIST);
+        assertThat(reg.dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_ONE);
         assertThat(reg.valueIsList()).isTrue();
-        assertThat(reg.loaderName()).isEqualTo("Language.films");
     }
 
     @Test
-    void rowKeyedSingleField_positionalListWithSingleValue() {
+    void rowKeyedSingleField_positionalListLoadOneSingleValue() {
         var stf = new ChildField.SplitTableField(
             "Film", "language", null,
             tableBoundFilm(single()),
@@ -67,11 +67,12 @@ class LoaderRegistrationResolverTest {
         LoaderRegistration reg = LoaderRegistrationResolver.resolve(stf);
 
         assertThat(reg.container()).isEqualTo(LoaderRegistration.Container.POSITIONAL_LIST);
+        assertThat(reg.dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_ONE);
         assertThat(reg.valueIsList()).isFalse();
     }
 
     @Test
-    void mappedRowKeyed_serviceField_mappedSet() {
+    void mappedRowKeyed_serviceField_mappedSetLoadOne() {
         var srf = new ChildField.ServiceTableField(
             "Query", "filmsByActor", null,
             tableBoundFilm(nonNullList()),
@@ -85,11 +86,12 @@ class LoaderRegistrationResolverTest {
         LoaderRegistration reg = LoaderRegistrationResolver.resolve(srf);
 
         assertThat(reg.container()).isEqualTo(LoaderRegistration.Container.MAPPED_SET);
+        assertThat(reg.dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_ONE);
         assertThat(reg.valueIsList()).isTrue();
     }
 
     @Test
-    void mappedTableRecordKeyed_serviceField_mappedSet() {
+    void mappedTableRecordKeyed_serviceField_mappedSetLoadOne() {
         var srf = new ChildField.ServiceTableField(
             "Query", "filmsByActor", null,
             tableBoundFilm(nonNullList()),
@@ -104,10 +106,11 @@ class LoaderRegistrationResolverTest {
         LoaderRegistration reg = LoaderRegistrationResolver.resolve(srf);
 
         assertThat(reg.container()).isEqualTo(LoaderRegistration.Container.MAPPED_SET);
+        assertThat(reg.dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_ONE);
     }
 
     @Test
-    void accessorKeyedMany_recordTableField_mappedSetWithSingleValuePerKey() {
+    void accessorKeyedMany_recordTableField_mappedSetLoadManySingleValuePerKey() {
         var hop = liftedHop(FILM_TABLE, List.of(filmIdCol()), "films_0");
         var rtf = new ChildField.RecordTableField(
             "Payload", "films", null,
@@ -119,15 +122,16 @@ class LoaderRegistrationResolverTest {
 
         LoaderRegistration reg = LoaderRegistrationResolver.resolve(rtf);
 
-        // AccessorKeyedMany: loadMany contract → MAPPED_SET. The per-key value is one Record
-        // (loadMany supplies one record per element-PK), so valueIsList is FALSE even though
-        // the field's outer cardinality is list.
+        // AccessorKeyedMany: loadMany contract → MAPPED_SET + LOAD_MANY. The per-key value is
+        // one Record (loadMany supplies one record per element-PK), so valueIsList is FALSE
+        // even though the field's outer cardinality is list.
         assertThat(reg.container()).isEqualTo(LoaderRegistration.Container.MAPPED_SET);
+        assertThat(reg.dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_MANY);
         assertThat(reg.valueIsList()).isFalse();
     }
 
     @Test
-    void accessorKeyedSingle_recordTableField_positionalListWithSingleValue() {
+    void accessorKeyedSingle_recordTableField_positionalListLoadOneSingleValue() {
         var hop = liftedHop(FILM_TABLE, List.of(filmIdCol()), "film_0");
         var rtf = new ChildField.RecordTableField(
             "Payload", "film", null,
@@ -140,6 +144,7 @@ class LoaderRegistrationResolverTest {
         LoaderRegistration reg = LoaderRegistrationResolver.resolve(rtf);
 
         assertThat(reg.container()).isEqualTo(LoaderRegistration.Container.POSITIONAL_LIST);
+        assertThat(reg.dispatch()).isEqualTo(LoaderRegistration.Dispatch.LOAD_ONE);
         assertThat(reg.valueIsList()).isFalse();
     }
 

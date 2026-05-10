@@ -7,8 +7,8 @@ import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 
 /**
- * Projects a {@link BatchKeyField} into a {@link LoaderRegistration}: DataLoader identity +
- * container kind. Sibling of {@link SourceKeyResolver}; both project from today's
+ * Projects a {@link BatchKeyField} into a {@link LoaderRegistration}: container kind +
+ * dispatch shape. Sibling of {@link SourceKeyResolver}; both project from today's
  * {@link BatchKey} (already classified upstream) onto the new R38 model surface.
  *
  * <p>Container projection is mechanical:
@@ -23,16 +23,16 @@ import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
  *       (drives {@code DataLoaderFactory.newDataLoader}).</li>
  * </ul>
  *
+ * <p>Dispatch projection is the orthogonal axis: today only
+ * {@link BatchKey.AccessorKeyedMany} reaches {@link LoaderRegistration.Dispatch#LOAD_MANY}
+ * (its {@code @record} parent's typed list-accessor fans out per-element-PK); every other
+ * permit takes {@link LoaderRegistration.Dispatch#LOAD_ONE}.
+ *
  * <p>{@code valueIsList} follows the field's wrapper: {@code true} when the loader returns
  * a list per key (list / connection field cardinality), {@code false} for single-cardinality
  * fields. The single-record-per-key arms (single-cardinality + {@code AccessorKeyedMany})
  * read {@code loader.load(key) -> Record}; list-cardinality arms read
  * {@code loader.load(key) -> List<Record>}.
- *
- * <p>{@code loaderName} is the field's qualified name (parent type + "." + name), used as a
- * stable logical identifier at the classifier site. The actual runtime path-scoped name is
- * still computed at emit time via {@code GeneratorUtils.buildDataLoaderName}; this string is
- * carried for diagnostics and for any future name-pinning.
  */
 public final class LoaderRegistrationResolver {
 
@@ -45,9 +45,9 @@ public final class LoaderRegistrationResolver {
      */
     public static LoaderRegistration resolve(BatchKeyField field) {
         return new LoaderRegistration(
-            qualifiedName(field),
             valueIsList(field),
-            container(field.batchKey()));
+            container(field.batchKey()),
+            dispatch(field.batchKey()));
     }
 
     private static LoaderRegistration.Container container(BatchKey bk) {
@@ -58,6 +58,12 @@ public final class LoaderRegistrationResolver {
             return LoaderRegistration.Container.MAPPED_SET;
         }
         return LoaderRegistration.Container.POSITIONAL_LIST;
+    }
+
+    private static LoaderRegistration.Dispatch dispatch(BatchKey bk) {
+        return bk instanceof BatchKey.AccessorKeyedMany
+            ? LoaderRegistration.Dispatch.LOAD_MANY
+            : LoaderRegistration.Dispatch.LOAD_ONE;
     }
 
     /**
@@ -92,15 +98,5 @@ public final class LoaderRegistrationResolver {
 
     private static boolean wrapperIsList(ReturnTypeRef rt) {
         return rt.wrapper().isList();
-    }
-
-    private static String qualifiedName(BatchKeyField field) {
-        if (field instanceof ChildField.SplitTableField stf) return stf.parentTypeName() + "." + stf.name();
-        if (field instanceof ChildField.SplitLookupTableField slf) return slf.parentTypeName() + "." + slf.name();
-        if (field instanceof ChildField.RecordTableField rtf) return rtf.parentTypeName() + "." + rtf.name();
-        if (field instanceof ChildField.RecordLookupTableField rltf) return rltf.parentTypeName() + "." + rltf.name();
-        if (field instanceof ChildField.ServiceTableField stf) return stf.parentTypeName() + "." + stf.name();
-        if (field instanceof ChildField.ServiceRecordField srf) return srf.parentTypeName() + "." + srf.name();
-        return field.name();
     }
 }
