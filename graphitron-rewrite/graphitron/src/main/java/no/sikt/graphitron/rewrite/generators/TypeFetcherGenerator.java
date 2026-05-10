@@ -18,6 +18,7 @@ import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.RowsMethodBody;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.CallParam;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -2747,8 +2748,8 @@ public class TypeFetcherGenerator {
         boolean isList = returnType.wrapper().isList();
         TypeName valueType = isList ? ParameterizedTypeName.get(LIST, perKeyType) : perKeyType;
 
-        var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
-        TypeName keyType = batchKey.keyElementType();
+        SourceKey sourceKey = bkf.sourceKey();
+        TypeName keyType = sourceKey.keyElementType();
         LoaderRegistration registration = bkf.loaderRegistration();
 
         return DataLoaderFetcherEmitter.build(
@@ -2757,7 +2758,7 @@ public class TypeFetcherGenerator {
             registration,
             ctx.graphitronContextCall(),
             RowsMethodCall.batchLoaderLambda(bkf.rowsMethodName(), keyType, registration),
-            GeneratorUtils.buildKeyExtraction(batchKey, prt),
+            GeneratorUtils.buildKeyExtraction(sourceKey, prt),
             asyncWrapTail(valueType, outputPackage, errorChannel));
     }
 
@@ -2878,8 +2879,8 @@ public class TypeFetcherGenerator {
             valueType = RECORD;
         }
 
-        var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
-        TypeName keyType = batchKey.keyElementType();
+        SourceKey sourceKey = bkf.sourceKey();
+        TypeName keyType = sourceKey.keyElementType();
         String fieldName = bkfFieldName(bkf);
         LoaderRegistration registration = bkf.loaderRegistration();
 
@@ -2888,8 +2889,8 @@ public class TypeFetcherGenerator {
         // skip the DataLoader round-trip and return null directly). The unified emitter accepts
         // a keyExtraction CodeBlock that may short-circuit before reaching the dispatch line.
         CodeBlock keyExtraction = isList
-            ? GeneratorUtils.buildKeyExtraction(batchKey, parentTable)
-            : GeneratorUtils.buildKeyExtractionWithNullCheck(batchKey, parentTable);
+            ? GeneratorUtils.buildKeyExtraction(sourceKey, parentTable)
+            : GeneratorUtils.buildKeyExtractionWithNullCheck(sourceKey, parentTable);
 
         return DataLoaderFetcherEmitter.build(
             fieldName,
