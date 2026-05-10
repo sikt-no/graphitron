@@ -105,6 +105,21 @@ stays unchanged; switching it would also require either threading a
 `ClassLoader` into a `static` initializer or relaxing the const, neither
 worth the churn for a class that's never been at risk.
 
+**Out of survey scope, by design.** Reflective `getField` / `getMethod`
+calls on already-loaded classes (`JooqCatalog.java:503` / `:504` for the
+`__NODE_TYPE_ID` / `__NODE_KEY_COLUMNS` constant reads, `:666` for
+`DEFAULT_CATALOG`) inherit the new loader through the `Class<?>` token the
+upstream `Class.forName` produced; they need no change. Plugin-owned
+resource loads via `RewriteSchemaLoader.class.getResourceAsStream(...)`
+(`RewriteSchemaLoader.java:46, 115` for `directives.graphqls`) read from
+the plugin's own classpath, which is exactly what's wanted and stays
+unchanged. The `ThreadLocal<Context>` at `ClassificationTrace.java:43` is
+JUnit-extension test infrastructure that doesn't carry `RewriteContext`;
+the "never held in a static or `ThreadLocal`" invariant is scoped to
+`RewriteContext` specifically and isn't in tension here. No `ServiceLoader`
+calls and no `MethodHandles.{lookup, privateLookupIn}` calls exist in
+rewrite sources, so the survey ends at `Class.forName`.
+
 ## What's already in place
 
 Each Mojo already declares `requiresDependencyResolution = ResolutionScope.COMPILE`
@@ -144,18 +159,23 @@ the Hibernate codegen plugin, etc.
 
 **Why both explicit threading *and* the TCCL install.** Our 22 reflection
 sites switch to the three-arg form so the loader is named at the call site
-(`RewriteContext` carries it; no ambient lookup). The TCCL install is the
-escape hatch for third-party code we transitively call into (graphql-java
-schema parsing, jOOQ runtime helpers, ServiceLoader-based JDBC discovery
-inside any consumer-class static initializer that gets triggered) — code we
-don't own and can't pass a `ClassLoader` to. Dropping the TCCL install would
-turn currently-working consumer setups into hard-to-diagnose
-`ClassNotFoundException`s the moment any transitive callee reads TCCL. The
-two layers serve different audiences: explicit threading is the in-process
-generator's contract, TCCL is the defense for everyone else. The
-`RewriteContext` invariant ("never held in a static or `ThreadLocal`") still
-holds — the context itself stays explicit; only the loader it carries gets
-republished onto the running thread for the duration of one call.
+(`RewriteContext` carries it; no ambient lookup). The TCCL install is
+defense-in-depth, not load-bearing for a specific known call: the
+in-process generator's own calls into graphql-java (`RewriteSchemaLoader`,
+schema parsing) and the `org.jooq` reflection helpers
+(`JooqCatalog.loadDefaultCatalog`) are not known to read TCCL on the paths
+we hit, and the explicit threading covers them either way. The install
+protects against two future surfaces we can't pre-empt: third-party
+transitive callees that read TCCL (any future graphql-java / jOOQ /
+ServiceLoader pathway we might pick up) and consumer-class static
+initializers that touch `Thread.currentThread().getContextClassLoader()`
+when the generator's reflection triggers them. The two layers serve
+different audiences: explicit threading is the in-process generator's
+contract, TCCL is defense-in-depth for everyone else. The
+`RewriteContext` invariant ("never held in a static or `ThreadLocal`")
+still holds — the context itself stays explicit; only the loader it
+carries gets republished onto the running thread for the duration of one
+call.
 
 **Resource hygiene: close the loader.** `URLClassLoader` opens a `JarFile`
 handle for every JAR on its URL list and does not release them on GC.
@@ -188,20 +208,34 @@ group in the callsite list above:
 
 1. **`BuildContext`-holders** (16 sites across `ServiceCatalog`,
    `SourceRowDirectiveResolver`, `TypeBuilder`, `EnumMappingResolver`,
-   `FieldBuilder`). Add a thin `BuildContext.codegenLoader()` passthrough
-   that returns `ctx().codegenLoader()`; call sites read
-   `ctx.codegenLoader()` without the two-hop dereference. Passthrough only,
-   no caching, no default — the field is non-null by `RewriteContext`'s
-   constructor contract.
+   `FieldBuilder`). Add a `BuildContext.codegenLoader()` delegator that
+   returns `ctx.codegenLoader()`, mirroring the existing
+   `BuildContext.nodeIdLeafResolver()` accessor at `BuildContext.java:186`
+   and the per-axis `argString`/`argStringList` helpers at `:207` /
+   `:221`. Call sites read `ctx.codegenLoader()` uniformly with the rest
+   of the classifier code; no two-hop `ctx.ctx().codegenLoader()`
+   dereference appears anywhere.
 2. **`JooqCatalog`** (4 sites). Public constructor gains a `ClassLoader`
    parameter, stored as a `private final` field; the two `static` helpers
    (`verifyTablesClassPresent`, `loadDefaultCatalog`) each gain a
    `ClassLoader` parameter threaded from the constructor. The three call
    sites at `GraphitronSchemaBuilder.java:136, 162` and
-   `GraphQLRewriteGenerator.java:92` propagate `ctx.codegenLoader()`.
+   `GraphQLRewriteGenerator.java:92` propagate `ctx.codegenLoader()`. The
+   `ClassLoader` is orthogonal scalar at the same lifecycle as the
+   existing `String generatedJooqPackage`: `generatedJooqPackage` names
+   *which* consumer artifact the catalog reflects against, the loader
+   names *how* it reaches it. A single-arg back-compat overload defaulting
+   the loader to `Thread.currentThread().getContextClassLoader()` keeps
+   the 16+ existing `new JooqCatalog(pkg)` test sites
+   (`JooqCatalogFindColumnTest`, `JooqCatalogIdRefTest`,
+   `JooqCatalogMultiSchemaTest`, `JooqCatalogNodeIdMetadataTest`,
+   `SynthesizeFkJoinReorderedKeysTest`, `CatalogBuilderTest`, etc.)
+   compiling unchanged; production call sites use the two-arg form.
 3. **`CheckedExceptionMatcher`** (2 sites). The free `static`
-   `unmatched(...)` helper gains a `ClassLoader` parameter; its single
-   caller at `FieldBuilder.java:2241` already holds the context.
+   `unmatched(...)` entry point gains a `ClassLoader` parameter, threaded
+   into the internal `covers(...)` helper that holds the second site;
+   `unmatched`'s single caller at `FieldBuilder.java:2241` already holds
+   the context.
 
 No static helper that reads TCCL: the whole point is to keep the loader
 explicit and the `RewriteContext` invariant ("never held in a static or
@@ -245,16 +279,20 @@ required for service / catalog wiring.
 - `RewriteContext.java` — add `codegenLoader` field; the 6-arg back-compat
   overload now defaults both `classpathRoots` (empty) and `codegenLoader`
   (TCCL) so non-Mojo callers don't break.
-- `BuildContext.java` — add a `codegenLoader()` passthrough returning
-  `ctx().codegenLoader()`. No state, no caching; the field stays on the
-  `RewriteContext`.
-- `JooqCatalog.java` — public constructor gains a `ClassLoader`
-  parameter stored as a `private final` field; the two `static` helpers
-  (`verifyTablesClassPresent`, `loadDefaultCatalog`) each gain a
-  `ClassLoader` parameter threaded from the constructor for the four
-  call sites at `:62, 403, 641, 665`. Construction sites at
-  `GraphitronSchemaBuilder.java:136, 162` and
-  `GraphQLRewriteGenerator.java:92` propagate `ctx.codegenLoader()`.
+- `BuildContext.java` — add a `codegenLoader()` delegator returning
+  `ctx.codegenLoader()`. No state, no caching; uniform with the existing
+  `nodeIdLeafResolver()` accessor (`:186`) and the `argString` /
+  `argStringList` helpers (`:207`, `:221`).
+- `JooqCatalog.java` — two-arg public constructor takes
+  `(String generatedJooqPackage, ClassLoader codegenLoader)`, storing the
+  loader as a `private final` field; a single-arg back-compat constructor
+  defaults the loader to TCCL so existing unit-tier call sites compile
+  unchanged. The two `static` helpers (`verifyTablesClassPresent`,
+  `loadDefaultCatalog`) each gain a `ClassLoader` parameter threaded from
+  the constructor for the four call sites at `:62, 403, 641, 665`.
+  Construction sites at `GraphitronSchemaBuilder.java:136, 162` and
+  `GraphQLRewriteGenerator.java:92` switch to the two-arg form and
+  propagate `ctx.codegenLoader()`.
 - The 22 `Class.forName(name)` sites listed above — switch to the
   three-arg form inline, threading the loader from
   `ctx.codegenLoader()` (`BuildContext`-holders), the new `JooqCatalog`
@@ -275,18 +313,15 @@ required for service / catalog wiring.
 
 ### Pipeline-tier
 
-- A new unit test under `graphitron-maven-plugin` that exercises
-  `AbstractRewriteMojo.runGenerator` against a project whose `<dependency>`
-  graph carries a service class the schema references, with no
-  `<plugin><dependencies>` block: assert the codegen resolves the service
-  class via the project classpath. The existing `GenerateMojoTest` is the
-  closest model. The test's fixture schema should touch sites from each
-  of the three plumbing shapes named in "Switch every callsite" — at
-  minimum an `@table` field (`JooqCatalog`), a `@service` reference
-  (`ServiceCatalog`), and an error-channel-bearing payload
-  (`FieldBuilder`'s `result.fqClassName()` reflection) — so that wiring
-  regressions in any single shape surface in the harness rather than
-  waiting on the sakila-example reactor build.
+- One new unit test under `graphitron-maven-plugin`: given a Mojo
+  invocation against a project whose service class sits under
+  `<dependency>` (not `<plugin><dependencies>`), the generator resolves
+  the service class without `ClassNotFoundException`. That single
+  assertion is the new contract surface. The existing `GenerateMojoTest`
+  is the closest model. Per-callsite path coverage (the 22 sites loading
+  correctly under the new loader) is the IT's job for the contract shape
+  and sakila-example's job for behavioural correctness, not the pipeline
+  test's.
 
 ### Integration-tier (Maven Invoker)
 
@@ -332,8 +367,11 @@ required for service / catalog wiring.
 3. **No change to unit-tier tests.** Tests reflecting on classes from
    their own module resolve via the system classloader, which is the
    parent of TCCL in JUnit-launched JVMs. Passing the explicit
-   three-arg form with TCCL is equivalent. No expected test churn beyond
-   the new pipeline-tier coverage.
+   three-arg form with TCCL is equivalent. The 16+ existing
+   `new JooqCatalog(pkg)` test sites continue to compile through the
+   single-arg back-compat overload, which defaults the loader to TCCL;
+   production call sites use the two-arg form. No expected test churn
+   beyond the new pipeline-tier coverage.
 
 4. **`initialize = false` is deliberate.** The generator reads class
    metadata (declared methods, generic return types, annotations); it
