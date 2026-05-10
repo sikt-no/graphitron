@@ -18,16 +18,22 @@ hard-coded to the five spec built-ins (`Int`, `Float`, `String`,
 `Boolean`, `ID`) at five sites, with three different fallback
 behaviours for unknown scalars:
 
-- `ServiceCatalog.mapToJavaTypeName` (`ServiceCatalog.java:980`,
+- `ServiceCatalog.mapToJavaTypeName` (`ServiceCatalog.java:980-986`,
   service-method parameter-name diagnostic) — switch over the five
   names, returns `null` for anything else, and the caller silently
   skips that candidate path.
-- `FieldBuilder.mapGraphQLTypeToReflectType` (`FieldBuilder.java:2986-2989`,
+- `FieldBuilder.mapGraphQLTypeToReflectType` (`FieldBuilder.java:3005-3011`,
   fetcher-side scalar reflection) — switch over the five names,
   falls back to `Object.class` silently for everything else.
-- `RowsMethodShape.standardScalarJavaType` (`RowsMethodShape.java:71-80`,
-  row-shape scalar coercion) — switch over the five names, throws
-  on anything else (the strictest of the three).
+- `RowsMethodShape.standardScalarJavaType` (`RowsMethodShape.java:71-79`,
+  row-shape scalar coercion) — switch over the five names, returns
+  `null` for everything else. The lone caller chain
+  (`strictPerKeyType` → `ChildField.elementType` at
+  `ChildField.java:462-468`) handles the null by falling back to
+  `String` for `ScalarReturnType`, with an explicit forward-tense
+  comment ("Phase A approximation, replaced when the consumer-provided
+  scalar registry lands"). So this site has both a producer-side
+  switch and a downstream String fallback that R101 retires together.
 - `AppliedDirectiveEmitter` (`AppliedDirectiveEmitter.java:148-152`,
   SDL default-value emission via `Scalars.GraphQL{Name}`) — switch
   over the five names, falls back to `GraphQLString` for everything
@@ -37,7 +43,7 @@ behaviours for unknown scalars:
   Phase 2: this is the *current* authority on which scalars get
   registered via `.additionalType(Scalars.GraphQLInt)`...).
 
-`ArgBindingMap.describeKind` (`ArgBindingMap.java:199`) is *not* a
+`ArgBindingMap.describeKind` (`ArgBindingMap.java:198`) is *not* a
 Java-type producer — it's `GraphQLType` introspection for path-walk
 error messages — so it's not in the migration list, but a follow-up
 pass should route its diagnostic strings through the resolver for
@@ -67,18 +73,19 @@ At codegen, graphitron:
 
 1. Loads the named class (`graphql.scalars.ExtendedScalars`) via
    `Class.forName(name, false, ctx.codegenLoader())` against the
-   project-aware classloader R124 establishes
+   project-aware classloader landed by R124
    ([`reactor-classloader-for-codegen.md`](reactor-classloader-for-codegen.md)).
    That loader is rooted at `project.getCompileClasspathElements()`
    plus every reactor sibling's `target/classes` and parented on
    the plugin loader, so a consumer's `<dependency>graphql-java-extended-scalars</dependency>`
    declaration is visible to the resolver without any
-   `<plugin><dependencies>` boilerplate. R101 sits behind R124 in
-   the dep graph because that boilerplate would otherwise become an
-   absolute requirement for any consumer using `@scalarType` or the
-   convention layer; R124 lifts the same constraint for every other
-   reflection callsite in the codebase, and R101 is one of its
-   beneficiaries.
+   `<plugin><dependencies>` boilerplate. R101 sat behind R124 in
+   the dep graph because that boilerplate would otherwise have become
+   an absolute requirement for any consumer using `@scalarType` or
+   the convention layer; R124 lifted the same constraint for every
+   other reflection callsite in the codebase, and R101 is one of its
+   beneficiaries. R124's commits are on trunk; the front-matter
+   `depends-on:` stays until R124 transitions to Done.
 2. Reads the named static field (`GraphQLBigDecimal`); confirms it
    is `public static`, not null, and assignable to
    `graphql.schema.GraphQLScalarType`. The assignability check uses
@@ -353,13 +360,22 @@ reflection path against `graphql.Scalars.GraphQL{Int, Float, String,
 Boolean, ID}`, so the resolver has a single code path from day one.
 
 Land *one* downstream consumer on the resolver in this phase:
-`RowsMethodShape.standardScalarJavaType`. It is the strictest of
-the three (it throws on unknown today, so behavior-parity verification
-is the cheapest), and only spec built-ins reach it on trunk, so the
-resolver path produces exactly the existing types. The other consumers
-(`ServiceCatalog.mapToJavaTypeName`, `FieldBuilder.mapGraphQLTypeToReflectType`,
-`AppliedDirectiveEmitter`) keep their hardcoded switches in Phase 1
-and migrate in Phase 3.
+`RowsMethodShape.standardScalarJavaType`. It is the cheapest of the
+three to verify for behavior parity: its callers route every
+non-spec-built-in through an explicit downstream fallback rather
+than a silent producer-side default (`ChildField.elementType` falls
+back to `String` for `ScalarReturnType`; `strictPerKeyType` returns
+`null` for everything else), and sakila plus the rewrite's pipeline
+fixtures only exercise spec built-ins, so the resolver path produces
+exactly the existing types on trunk. Phase 1 also retires the
+`ChildField.elementType` String-fallback branch (the comment at
+`ChildField.java:455-457` flags it as Phase A scaffolding): once the
+resolver returns Java types for custom scalars, that branch is dead
+and the elementType simplifies to `RowsMethodShape.strictPerKeyType`
+plus the method-return-type fallback. The other producer-side
+consumers (`ServiceCatalog.mapToJavaTypeName`,
+`FieldBuilder.mapGraphQLTypeToReflectType`, `AppliedDirectiveEmitter`)
+keep their hardcoded switches in Phase 1 and migrate in Phase 3.
 
 Wiring the first consumer atomically with the producer means Phase 1
 ships a fully-formed `@LoadBearingClassifierCheck` /
