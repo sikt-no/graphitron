@@ -513,7 +513,9 @@ class FieldBuilder {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 }
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField(
-                    parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), parentBatchKey,
+                    parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                    SourceKeyResolver.resolveSplit(parentBatchKey, returnType),
+                    LoaderRegistrationResolver.resolve(parentBatchKey, returnType),
                     tfc.lookupMapping());
             }
             if (!hasSplitQuery && hasLookupKey) {
@@ -535,7 +537,9 @@ class FieldBuilder {
                             "", ChildField.SplitTableField.class));
                 }
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
-                    parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(), parentBatchKey);
+                    parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                    SourceKeyResolver.resolveSplit(parentBatchKey, returnType),
+                    LoaderRegistrationResolver.resolve(parentBatchKey, returnType));
             }
             if (returnType.wrapper() instanceof FieldWrapper.Connection) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.directiveConflict(
@@ -2749,12 +2753,14 @@ class FieldBuilder {
             // LifterPathKeyed (@reference present). The resolver already constructs the right
             // shape and surfaces it as ok.joinPath().
             List<JoinStep> joinPath = ok.joinPath();
+            var sourceRowSourceKey = SourceKeyResolver.resolveRecordParent(ok.batchKey(), ok.tbReturnType());
+            var sourceRowLoaderReg = LoaderRegistrationResolver.resolve(ok.batchKey(), ok.tbReturnType());
             if (hasLookupKeyAnywhere(fieldDef)) {
                 return new RecordLookupTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
-                    tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.batchKey(), tfc.lookupMapping());
+                    tfc.filters(), tfc.orderBy(), tfc.pagination(), sourceRowSourceKey, sourceRowLoaderReg, tfc.lookupMapping());
             }
             return new RecordTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
-                tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.batchKey());
+                tfc.filters(), tfc.orderBy(), tfc.pagination(), sourceRowSourceKey, sourceRowLoaderReg);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
@@ -2770,12 +2776,16 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(servicePath.errorMessage()));
             }
             return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
-                case ServiceDirectiveResolver.Resolved.TableBound tb ->
-                    buildMethodBackedWithChannel(tb.returnType(), tb.method(),
+                case ServiceDirectiveResolver.Resolved.TableBound tb -> {
+                    var serviceBk = extractBatchKey(tb.method());
+                    var sk = serviceBk == null ? null : SourceKeyResolver.resolveServiceTable(serviceBk, tb.returnType());
+                    var lr = serviceBk == null ? null : LoaderRegistrationResolver.resolve(serviceBk, tb.returnType());
+                    yield buildMethodBackedWithChannel(tb.returnType(), tb.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new ServiceTableField(parentTypeName, name, location, tb.returnType(),
                             servicePath.elements(), List.of(), new OrderBySpec.None(), null,
-                            tb.method(), extractBatchKey(tb.method()), ch));
+                            tb.method(), sk, lr, ch));
+                }
                 // @service on a @record-typed parent returning scalar/record is DEFERRED:
                 // deriving the batch key would require lifting through the parent chain to the
                 // rooted @table whose PK provides the key columns, which is its own design
@@ -2855,11 +2865,14 @@ class FieldBuilder {
                 var resolved = (RecordBatchKeyResolution.Resolved) resolution;
                 var batchKey = resolved.batchKey();
                 var resolvedJoinPath = resolved.joinPath();
+                var recordParentSourceKey = SourceKeyResolver.resolveRecordParent(batchKey, tb);
+                var recordParentLoaderReg = LoaderRegistrationResolver.resolve(batchKey, tb);
                 if (isLookup) {
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                        batchKey, tfc.lookupMapping());
+                        recordParentSourceKey, recordParentLoaderReg, tfc.lookupMapping());
                 }
-                yield new RecordTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(), batchKey);
+                yield new RecordTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                    recordParentSourceKey, recordParentLoaderReg);
             }
             case ReturnTypeRef.ResultReturnType r -> recordFieldOrUnclassified(
                 fieldDef, parentTypeName, name, location, r, columnName, parentResultType, parentBackingClass);
@@ -3628,22 +3641,34 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(servicePath.errorMessage()));
             }
             return switch ((ServiceDirectiveResolver.Resolved.Success) resolved) {
-                case ServiceDirectiveResolver.Resolved.TableBound tb ->
-                    buildMethodBackedWithChannel(tb.returnType(), tb.method(),
+                case ServiceDirectiveResolver.Resolved.TableBound tb -> {
+                    var bk = extractBatchKey(tb.method());
+                    var sk = bk == null ? null : SourceKeyResolver.resolveServiceTable(bk, tb.returnType());
+                    var lr = bk == null ? null : LoaderRegistrationResolver.resolve(bk, tb.returnType());
+                    yield buildMethodBackedWithChannel(tb.returnType(), tb.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new ServiceTableField(parentTypeName, name, location, tb.returnType(),
                             servicePath.elements(), List.of(), new OrderBySpec.None(), null,
-                            tb.method(), extractBatchKey(tb.method()), ch));
-                case ServiceDirectiveResolver.Resolved.Result r ->
-                    buildMethodBackedWithChannel(r.returnType(), r.method(),
+                            tb.method(), sk, lr, ch));
+                }
+                case ServiceDirectiveResolver.Resolved.Result r -> {
+                    var bk = extractBatchKey(r.method());
+                    var sk = bk == null ? null : SourceKeyResolver.resolveServiceRecord(bk, r.returnType(), servicePath.elements());
+                    var lr = bk == null ? null : LoaderRegistrationResolver.resolve(bk, r.returnType());
+                    yield buildMethodBackedWithChannel(r.returnType(), r.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new ServiceRecordField(parentTypeName, name, location, r.returnType(),
-                            servicePath.elements(), r.method(), extractBatchKey(r.method()), ch));
-                case ServiceDirectiveResolver.Resolved.Scalar s ->
-                    buildMethodBackedWithChannel(s.returnType(), s.method(),
+                            servicePath.elements(), r.method(), sk, lr, ch));
+                }
+                case ServiceDirectiveResolver.Resolved.Scalar s -> {
+                    var bk = extractBatchKey(s.method());
+                    var sk = bk == null ? null : SourceKeyResolver.resolveServiceRecord(bk, s.returnType(), servicePath.elements());
+                    var lr = bk == null ? null : LoaderRegistrationResolver.resolve(bk, s.returnType());
+                    yield buildMethodBackedWithChannel(s.returnType(), s.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new ServiceRecordField(parentTypeName, name, location, s.returnType(),
-                            servicePath.elements(), s.method(), extractBatchKey(s.method()), ch));
+                            servicePath.elements(), s.method(), sk, lr, ch));
+                }
             };
         }
 

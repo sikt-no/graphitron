@@ -1,16 +1,15 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.BatchKey;
-import no.sikt.graphitron.rewrite.model.BatchKeyField;
-import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 
 /**
- * Projects a {@link BatchKeyField} into a {@link LoaderRegistration}: container kind +
- * dispatch shape. Sibling of {@link SourceKeyResolver}; both project from today's
- * {@link BatchKey} (already classified upstream) onto the new R38 model surface.
+ * Projects a {@link BatchKey} plus field-shape inputs into a {@link LoaderRegistration}:
+ * container kind + dispatch shape + valueIsList. Sibling of {@link SourceKeyResolver}; both
+ * project from today's {@link BatchKey} (already classified upstream) onto the new R38 model
+ * surface, and the producers call the matching entry point at field-construction time.
  *
  * <p>Container projection is mechanical:
  *
@@ -38,15 +37,16 @@ public final class LoaderRegistrationResolver {
     private LoaderRegistrationResolver() {}
 
     /**
-     * Pure projection: every {@link BatchKeyField} produces a {@link LoaderRegistration}, no
-     * rejection arm needed (the field-permit / batchkey-permit cross product is fully covered
-     * by the rules above).
+     * Projects a {@link BatchKey} plus the field's return-type wrapper into a
+     * {@link LoaderRegistration}. The {@code returnType} parameter supplies the field's
+     * cardinality via {@link ReturnTypeRef#wrapper()}; service-side and record-parent permits
+     * both flow through the same projection.
      */
-    public static LoaderRegistration resolve(BatchKeyField field) {
+    public static LoaderRegistration resolve(BatchKey bk, ReturnTypeRef returnType) {
         return new LoaderRegistration(
-            valueIsList(field),
-            container(field.batchKey()),
-            dispatch(field.batchKey()));
+            valueIsList(bk, returnType),
+            container(bk),
+            dispatch(bk));
     }
 
     @LoadBearingClassifierCheck(
@@ -78,35 +78,12 @@ public final class LoaderRegistrationResolver {
 
     /**
      * The DataLoader's per-key value is a list iff the field is list-cardinality AND the
-     * loader.load contract returns a list per key. Single-cardinality fields and
-     * {@link BatchKey.AccessorKeyedMany}'s loadMany contract both emit one record per key,
-     * so their {@code valueIsList} is false.
+     * loader.load contract returns a list per key. List-cardinality fields with
+     * {@link BatchKey.AccessorKeyedMany} use the {@code loader.loadMany} contract which emits
+     * one record per key, so their {@code valueIsList} is false.
      */
-    private static boolean valueIsList(BatchKeyField field) {
-        if (field instanceof ChildField.SplitTableField stf) {
-            return stf.returnType().wrapper().isList();
-        }
-        if (field instanceof ChildField.SplitLookupTableField slf) {
-            return slf.returnType().wrapper().isList();
-        }
-        if (field instanceof ChildField.RecordTableField rtf) {
-            return rtf.returnType().wrapper().isList()
-                && !(rtf.batchKey() instanceof BatchKey.AccessorKeyedMany);
-        }
-        if (field instanceof ChildField.RecordLookupTableField rltf) {
-            return rltf.returnType().wrapper().isList()
-                && !(rltf.batchKey() instanceof BatchKey.AccessorKeyedMany);
-        }
-        if (field instanceof ChildField.ServiceTableField stf) {
-            return stf.returnType().wrapper().isList();
-        }
-        if (field instanceof ChildField.ServiceRecordField srf) {
-            return wrapperIsList(srf.returnType());
-        }
-        return false;
-    }
-
-    private static boolean wrapperIsList(ReturnTypeRef rt) {
-        return rt.wrapper().isList();
+    private static boolean valueIsList(BatchKey bk, ReturnTypeRef rt) {
+        if (!rt.wrapper().isList()) return false;
+        return !(bk instanceof BatchKey.AccessorKeyedMany);
     }
 }

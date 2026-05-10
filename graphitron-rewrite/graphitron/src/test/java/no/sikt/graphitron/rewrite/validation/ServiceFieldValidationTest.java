@@ -2,18 +2,22 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.rewrite.LoaderRegistrationResolver;
+import no.sikt.graphitron.rewrite.SourceKeyResolver;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -37,18 +41,24 @@ class ServiceFieldValidationTest {
     private static final MethodRef RESOLVED_METHOD = TestFixtures.staticServiceMethodRef("com.example.Service", "method", TypeName.VOID, List.of());
     private static final BatchKey.ParentKeyed RESOLVED_BATCH_KEY = new BatchKey.RowKeyed(
         List.of(new ColumnRef("FILM_ID", "filmId", "java.lang.Integer")));
+    private static final ReturnTypeRef.ResultReturnType RECORD_RT_SINGLE =
+        new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null);
+    private static final SourceKey RECORD_SOURCE_KEY =
+        SourceKeyResolver.resolveServiceRecord(RESOLVED_BATCH_KEY, RECORD_RT_SINGLE, List.of());
+    private static final LoaderRegistration RECORD_LR =
+        LoaderRegistrationResolver.resolve(RESOLVED_BATCH_KEY, RECORD_RT_SINGLE);
 
     enum RecordCase implements ValidatorCase {
 
         NO_PATH("no @reference — passes validation now that ServiceRecordField is implemented (Phase A)",
-            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(), RESOLVED_METHOD, RESOLVED_BATCH_KEY, Optional.empty()),
+            new ServiceRecordField("Film", "externalChild", null, RECORD_RT_SINGLE, List.of(), RESOLVED_METHOD, RECORD_SOURCE_KEY, RECORD_LR, Optional.empty()),
             List.of()),
 
         WITH_LIFT_CONDITION("lift condition with a resolved method — DEFERRED until the lift form ships",
-            new ServiceRecordField("Film", "externalChild", null, new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null), List.of(
+            new ServiceRecordField("Film", "externalChild", null, RECORD_RT_SINGLE, List.of(
                 new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "liftCondition", ClassName.get("org.jooq", "Condition"),
                     List.of(new MethodRef.Param.Typed("ctx", "org.jooq.DSLContext", new ParamSource.DslContext()))), "")),
-                RESOLVED_METHOD, RESOLVED_BATCH_KEY, Optional.empty()),
+                RESOLVED_METHOD, RECORD_SOURCE_KEY, RECORD_LR, Optional.empty()),
             List.of("Field 'Film.externalChild': @service with a @reference path "
                 + "(condition-join lift form) is not yet supported — see "
                 + "graphitron-rewrite/roadmap/service-record-field.md"));
@@ -81,15 +91,11 @@ class ServiceFieldValidationTest {
     enum TableCase implements ValidatorCase {
 
         SOURCES_CORRECT_TYPE("SOURCES param is RowKeyed — no error (parent is RootType, no PK cross-check)",
-            new ServiceTableField("Film", "externalChild", null,
+            buildServiceTableField(
                 new ReturnTypeRef.TableBoundReturnType("Film",
                     TestFixtures.tableRef("film", "FILM", "Film", List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))),
                     new FieldWrapper.Single(true)),
-                List.of(), List.of(), new OrderBySpec.None(), null,
-                TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
-                    List.of(new MethodRef.Param.Sourced("filmKeys", new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))))),
-                new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))),
-                Optional.empty()),
+                new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))),
             List.of()),
 
         NO_SOURCES_PARAM("no Sources param — missing DataLoader batch key error",
@@ -99,7 +105,7 @@ class ServiceFieldValidationTest {
                     new FieldWrapper.Single(true)),
                 List.of(), List.of(), new OrderBySpec.None(), null,
                 TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT, List.of()),
-                null,
+                null, null,
                 Optional.empty()),
             List.of("Field 'Film.externalChild': @service on a table-bound return type requires a Sources parameter for DataLoader batching"));
 
@@ -169,7 +175,33 @@ class ServiceFieldValidationTest {
             List.of(), List.of(), new OrderBySpec.None(), null,
             TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
                 List.of(new MethodRef.Param.Sourced("filmKeys", batchKey))),
-            batchKey, Optional.empty());
+            SourceKeyResolver.resolveServiceTable(batchKey, FILM_RETURN),
+            LoaderRegistrationResolver.resolve(batchKey, FILM_RETURN),
+            Optional.empty());
+    }
+
+    private static ServiceTableField buildServiceTableField(
+            ReturnTypeRef.TableBoundReturnType returnType, BatchKey.ParentKeyed batchKey) {
+        return new ServiceTableField("Film", "externalChild", null, returnType,
+            List.of(), List.of(), new OrderBySpec.None(), null,
+            TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
+                List.of(new MethodRef.Param.Sourced("filmKeys", batchKey))),
+            SourceKeyResolver.resolveServiceTable(batchKey, returnType),
+            LoaderRegistrationResolver.resolve(batchKey, returnType),
+            Optional.empty());
+    }
+
+    private static ServiceTableField multipleSourcesField() {
+        var bk = new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns());
+        return new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
+            List.of(), List.of(), new OrderBySpec.None(), null,
+            TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
+                List.of(
+                    new MethodRef.Param.Sourced("filmKeys1", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
+                    new MethodRef.Param.Sourced("filmKeys2", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())))),
+            SourceKeyResolver.resolveServiceTable(bk, FILM_RETURN),
+            LoaderRegistrationResolver.resolve(bk, FILM_RETURN),
+            Optional.empty());
     }
 
     enum TablePkValidationCase implements TablePkCase {
@@ -224,14 +256,7 @@ class ServiceFieldValidationTest {
         MULTIPLE_SOURCES_ROW_KEYED(
             "two RowKeyed SOURCES params — no errors when parent has PK",
             filmTableType(FILM_TABLE_SINGLE_PK),
-            new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
-                List.of(), List.of(), new OrderBySpec.None(), null,
-                TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
-                    List.of(
-                        new MethodRef.Param.Sourced("filmKeys1", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
-                        new MethodRef.Param.Sourced("filmKeys2", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())))),
-                new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns()),
-                Optional.empty()),
+            multipleSourcesField(),
             List.of());
 
         private final String description;

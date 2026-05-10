@@ -1,15 +1,14 @@
 package no.sikt.graphitron.rewrite.model;
 
-import no.sikt.graphitron.rewrite.LoaderRegistrationResolver;
-import no.sikt.graphitron.rewrite.SourceKeyResolver;
-
 /**
- * A field that requires DataLoader setup — it has a batch key and a corresponding rows method.
+ * A field that requires DataLoader setup — it carries the source-side metadata
+ * ({@link SourceKey}) and DataLoader registration shape ({@link LoaderRegistration}) the
+ * rows-method emitter and the DataFetcher emitter both dispatch on.
  *
  * <p>Implemented by all field variants that are DataLoader-backed:
  * {@link ChildField.SplitTableField}, {@link ChildField.SplitLookupTableField},
  * {@link ChildField.ServiceTableField}, {@link ChildField.RecordTableField},
- * {@link ChildField.RecordLookupTableField}.
+ * {@link ChildField.RecordLookupTableField}, {@link ChildField.ServiceRecordField}.
  *
  * <p>This interface is intentionally standalone (does not extend {@link GraphitronField}) so that
  * it can be applied as an orthogonal capability without being restricted by the sealed hierarchy.
@@ -21,33 +20,18 @@ import no.sikt.graphitron.rewrite.SourceKeyResolver;
  * service-backed variants override to {@code load<Name>} to mark the body as a service delegation.
  */
 public interface BatchKeyField {
-    BatchKey batchKey();
+    /**
+     * Singular per-field source-side metadata. Populated by the classifier (see
+     * {@link no.sikt.graphitron.rewrite.SourceKeyResolver}) at field-construction time.
+     */
+    SourceKey sourceKey();
 
     /**
-     * Singular per-field metadata projected from the classifier shape. Phase 3 (in progress)
-     * is folding consumer reads off the legacy {@link BatchKey} and onto this method; once the
-     * migration finishes, {@link #batchKey()} deletes and {@code sourceKey} / {@code
-     * loaderRegistration} become abstract record components on each {@link BatchKeyField}
-     * permit, populated at classifier time. The default-method delegation lets consumers
-     * migrate one site at a time without forcing every producer and test fixture to flip
-     * storage shape in a single change.
+     * DataLoader container + dispatch projection for this field. Populated by the classifier
+     * (see {@link no.sikt.graphitron.rewrite.LoaderRegistrationResolver}) at field-construction
+     * time.
      */
-    default SourceKey sourceKey() {
-        SourceKeyResolver.Resolved resolved = SourceKeyResolver.resolve(this);
-        if (resolved instanceof SourceKeyResolver.Resolved.Ok ok) return ok.key();
-        SourceKeyResolver.Resolved.Rejected rejected = (SourceKeyResolver.Resolved.Rejected) resolved;
-        throw new IllegalStateException(
-            "BatchKeyField.sourceKey: resolver rejected the field " + this.getClass().getSimpleName()
-            + " (no projection rule). " + rejected.message());
-    }
-
-    /**
-     * DataLoader container + dispatch projection for this field. Companion to {@link #sourceKey()};
-     * see that method's javadoc for the Phase 3 default-vs-abstract migration plan.
-     */
-    default LoaderRegistration loaderRegistration() {
-        return LoaderRegistrationResolver.resolve(this);
-    }
+    LoaderRegistration loaderRegistration();
 
     /**
      * Method name shared by the rows method's declaration and the DataLoader fetcher's call site.
@@ -55,8 +39,6 @@ public interface BatchKeyField {
      * <p>Default: {@code "rows" + capitalize(name())} for DataLoader-backed variants. Service-
      * backed variants ({@link ChildField.ServiceTableField}, {@link ChildField.ServiceRecordField})
      * override to {@code "load" + capitalize(name())} to mark the body as a service delegation.
-     * The four SQL leaves' overrides survive Phase 1 even though they re-derive the default;
-     * R38 Phase 3 deletes them.
      */
     default String rowsMethodName() {
         String n = name();
@@ -76,12 +58,11 @@ public interface BatchKeyField {
      *
      * <p>True iff the field is single-cardinality
      * ({@link ChildField.SplitTableField} with {@code !returnType().wrapper().isList()}) or
-     * carries {@link BatchKey.AccessorKeyedMany} (the {@code loader.loadMany} contract: one
-     * record per element-PK key, regardless of the field's GraphQL cardinality). False for
+     * carries {@link LoaderRegistration.Dispatch#LOAD_MANY} (the {@code loader.loadMany} contract:
+     * one record per element-PK key, regardless of the field's GraphQL cardinality). False for
      * list-cardinality {@code SplitTableField} / {@code SplitLookupTableField} /
-     * {@code RecordLookupTableField}, single-key {@code RecordTableField}
-     * ({@code RowKeyed} / {@code LifterLeafKeyed} / {@code LifterPathKeyed} /
-     * {@code AccessorKeyedSingle}, which return a {@code List<Record>} per key).
+     * {@code RecordLookupTableField}, single-key {@code RecordTableField} (which return a
+     * {@code List<Record>} per key).
      *
      * <p>The two consumer sites are
      * {@code TypeFetcherGenerator}'s {@code scatterSingleByIdx} helper-emission gate and

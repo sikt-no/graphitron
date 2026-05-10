@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.rewrite.LoaderRegistrationResolver;
+import no.sikt.graphitron.rewrite.SourceKeyResolver;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -8,10 +10,12 @@ import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -34,6 +38,16 @@ class RecordLookupTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
     }
 
+    private static final ReturnTypeRef.TableBoundReturnType RT_SINGLE = filmReturn(new FieldWrapper.Single(true));
+    private static final ReturnTypeRef.TableBoundReturnType RT_LIST = filmReturn(new FieldWrapper.List(true, true));
+    private static final ReturnTypeRef.TableBoundReturnType RT_CONN = filmReturn(new FieldWrapper.Connection(true, 100));
+    private static final SourceKey SOURCE_KEY_SINGLE = SourceKeyResolver.resolveRecordParent(BATCH_KEY, RT_SINGLE);
+    private static final SourceKey SOURCE_KEY_LIST = SourceKeyResolver.resolveRecordParent(BATCH_KEY, RT_LIST);
+    private static final SourceKey SOURCE_KEY_CONN = SourceKeyResolver.resolveRecordParent(BATCH_KEY, RT_CONN);
+    private static final LoaderRegistration LR_SINGLE = LoaderRegistrationResolver.resolve(BATCH_KEY, RT_SINGLE);
+    private static final LoaderRegistration LR_LIST = LoaderRegistrationResolver.resolve(BATCH_KEY, RT_LIST);
+    private static final LoaderRegistration LR_CONN = LoaderRegistrationResolver.resolve(BATCH_KEY, RT_CONN);
+
     // Validator messages for RecordLookupTableField. CONDITION_JOIN_STUB comes from the
     // SplitRowsMethodEmitter.unsupportedReason delegation; the single-cardinality gate
     // (Invariant #10) was lifted in R61 alongside emitsSingleRecordPerKey extending to
@@ -45,29 +59,29 @@ class RecordLookupTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         SINGLE_NO_PATH("single cardinality, empty joinPath — emittable post-R61",
-            new RecordLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
+            new RecordLookupTableField("Language", "film", null, RT_SINGLE, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE, EMPTY_LOOKUP),
             List.of()),
 
         SINGLE_WITH_FK_PATH("single cardinality with FK path — emittable post-R61",
-            new RecordLookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)),
+            new RecordLookupTableField("Language", "film", null, RT_SINGLE,
                 List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
-                List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE, EMPTY_LOOKUP),
             List.of()),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
-            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),
+            new RecordLookupTableField("Language", "films", null, RT_LIST,
                 List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
-                List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP),
             List.of(CONDITION_JOIN_STUB)),
 
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
-            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),
+            new RecordLookupTableField("Language", "films", null, RT_LIST,
                 List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
-                List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP),
             List.of()),
 
         CONNECTION_BLOCKED("connection return — lookup-field rejection",
-            new RecordLookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, 100)), List.of(), List.of(), new OrderBySpec.None(), null, BATCH_KEY, EMPTY_LOOKUP),
+            new RecordLookupTableField("Language", "films", null, RT_CONN, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_CONN, LR_CONN, EMPTY_LOOKUP),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 
         private final String description;

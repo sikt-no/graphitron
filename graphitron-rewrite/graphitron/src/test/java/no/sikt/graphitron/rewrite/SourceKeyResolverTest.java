@@ -3,18 +3,13 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.AccessorRef;
 import no.sikt.graphitron.rewrite.model.BatchKey;
-import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LifterRef;
-import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Optional;
 
 import static no.sikt.graphitron.rewrite.TestFixtures.filmIdCol;
 import static no.sikt.graphitron.rewrite.TestFixtures.languageIdCol;
@@ -51,22 +46,13 @@ class SourceKeyResolverTest {
         ClassName.bestGuess("com.example.lifters.PayloadLifters"),
         "filmKey");
 
-    // ===== SplitTableField (RowKeyed only by record narrowing) =====
+    // ===== Split (RowKeyed only by record narrowing) =====
 
     @Test
     void splitTableField_projectsToColumnReadRowMany() {
-        var stf = new ChildField.SplitTableField(
-            "Language", "films", null,
-            tableBoundFilm(nonNullList()),
-            List.of(),
-            List.of(),
-            new OrderBySpec.None(), null,
-            new BatchKey.RowKeyed(List.of(languageIdCol())));
+        var bk = new BatchKey.RowKeyed(List.of(languageIdCol()));
+        var key = SourceKeyResolver.resolveSplit(bk, tableBoundFilm(nonNullList()));
 
-        var resolved = SourceKeyResolver.resolve(stf);
-
-        assertThat(resolved).isInstanceOf(SourceKeyResolver.Resolved.Ok.class);
-        SourceKey key = ((SourceKeyResolver.Resolved.Ok) resolved).key();
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
         assertThat(key.wrap()).isEqualTo(new SourceKey.Wrap.Row());
         assertThat(key.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
@@ -75,12 +61,12 @@ class SourceKeyResolverTest {
         assertThat(key.path()).isEmpty();
     }
 
-    // ===== RecordTableField permits =====
+    // ===== RecordParent permits =====
 
     @Test
-    void recordTableField_rowKeyed_projectsToColumnRead() {
-        var rtf = recordTableField(new BatchKey.RowKeyed(List.of(languageIdCol())));
-        var key = okKey(SourceKeyResolver.resolve(rtf));
+    void recordParent_rowKeyed_projectsToColumnRead() {
+        var bk = new BatchKey.RowKeyed(List.of(languageIdCol()));
+        var key = SourceKeyResolver.resolveRecordParent(bk, tableBoundFilm(listWrapper()));
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
         assertThat(key.wrap()).isEqualTo(new SourceKey.Wrap.Row());
@@ -89,10 +75,10 @@ class SourceKeyResolverTest {
     }
 
     @Test
-    void recordTableField_lifterLeafKeyed_projectsToSourceRowsCall() {
+    void recordParent_lifterLeafKeyed_projectsToSourceRowsCall() {
         var hop = liftedHop(FILM_TABLE, List.of(filmIdCol()), "films_0");
-        var rtf = recordTableField(new BatchKey.LifterLeafKeyed(hop, LIFTER));
-        var key = okKey(SourceKeyResolver.resolve(rtf));
+        var bk = new BatchKey.LifterLeafKeyed(hop, LIFTER);
+        var key = SourceKeyResolver.resolveRecordParent(bk, tableBoundFilm(listWrapper()));
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
         assertThat(((SourceKey.Reader.SourceRowsCall) key.reader()).lifter()).isEqualTo(LIFTER);
@@ -101,11 +87,10 @@ class SourceKeyResolverTest {
     }
 
     @Test
-    void recordTableField_lifterPathKeyed_projectsToSourceRowsCall() {
+    void recordParent_lifterPathKeyed_projectsToSourceRowsCall() {
         var hop = liftedHop(FILM_TABLE, List.of(filmIdCol()), "films_0");
-        var lpk = new BatchKey.LifterPathKeyed(List.of(hop), LIFTER);
-        var rtf = recordTableField(lpk);
-        var key = okKey(SourceKeyResolver.resolve(rtf));
+        var bk = new BatchKey.LifterPathKeyed(List.of(hop), LIFTER);
+        var key = SourceKeyResolver.resolveRecordParent(bk, tableBoundFilm(listWrapper()));
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.SourceRowsCall.class);
         assertThat(((SourceKey.Reader.SourceRowsCall) key.reader()).lifter()).isEqualTo(LIFTER);
@@ -114,11 +99,10 @@ class SourceKeyResolverTest {
     }
 
     @Test
-    void recordTableField_accessorKeyedSingle_projectsToAccessorCallRecordOne() {
+    void recordParent_accessorKeyedSingle_projectsToAccessorCallRecordOne() {
         var hop = liftedHop(FILM_TABLE, List.of(filmIdCol()), "film_0");
-        var aks = new BatchKey.AccessorKeyedSingle(hop, ACCESSOR);
-        var rtf = recordTableField(aks, single());
-        var key = okKey(SourceKeyResolver.resolve(rtf));
+        var bk = new BatchKey.AccessorKeyedSingle(hop, ACCESSOR);
+        var key = SourceKeyResolver.resolveRecordParent(bk, tableBoundFilm(single()));
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
         assertThat(((SourceKey.Reader.AccessorCall) key.reader()).accessor()).isEqualTo(ACCESSOR);
@@ -127,11 +111,10 @@ class SourceKeyResolverTest {
     }
 
     @Test
-    void recordTableField_accessorKeyedMany_projectsToAccessorCallRecordMany() {
+    void recordParent_accessorKeyedMany_projectsToAccessorCallRecordMany() {
         var hop = liftedHop(FILM_TABLE, List.of(filmIdCol()), "films_0");
-        var akm = new BatchKey.AccessorKeyedMany(hop, ACCESSOR);
-        var rtf = recordTableField(akm, listWrapper());
-        var key = okKey(SourceKeyResolver.resolve(rtf));
+        var bk = new BatchKey.AccessorKeyedMany(hop, ACCESSOR);
+        var key = SourceKeyResolver.resolveRecordParent(bk, tableBoundFilm(listWrapper()));
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
         assertThat(key.wrap()).isEqualTo(new SourceKey.Wrap.Record());
@@ -143,8 +126,8 @@ class SourceKeyResolverTest {
 
     @Test
     void serviceTableField_rowKeyed_projectsToServiceTableRecordWrapRow() {
-        var stf = serviceTableField(new BatchKey.RowKeyed(List.of(filmIdCol())));
-        var key = okKey(SourceKeyResolver.resolve(stf));
+        var bk = new BatchKey.RowKeyed(List.of(filmIdCol()));
+        var key = SourceKeyResolver.resolveServiceTable(bk, tableBoundFilm(nonNullList()));
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ServiceTableRecord.class);
         assertThat(((SourceKey.Reader.ServiceTableRecord) key.reader()).recordType())
@@ -157,8 +140,7 @@ class SourceKeyResolverTest {
         var trk = new BatchKey.TableRecordKeyed(
             List.of(filmIdCol()),
             no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class);
-        var stf = serviceTableField(trk);
-        var key = okKey(SourceKeyResolver.resolve(stf));
+        var key = SourceKeyResolver.resolveServiceTable(trk, tableBoundFilm(nonNullList()));
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ServiceTableRecord.class);
         assertThat(key.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
@@ -169,8 +151,7 @@ class SourceKeyResolverTest {
     @Test
     void serviceTableField_mappedRecordKeyed_projectsToWrapRecord() {
         var mrk = new BatchKey.MappedRecordKeyed(List.of(filmIdCol()));
-        var stf = serviceTableField(mrk);
-        var key = okKey(SourceKeyResolver.resolve(stf));
+        var key = SourceKeyResolver.resolveServiceTable(mrk, tableBoundFilm(nonNullList()));
 
         assertThat(key.wrap()).isEqualTo(new SourceKey.Wrap.Record());
     }
@@ -180,65 +161,13 @@ class SourceKeyResolverTest {
     @Test
     void serviceRecordField_projectsToServiceUntypedRecord() {
         var rk = new BatchKey.RowKeyed(List.of(filmIdCol()));
-        var srf = new ChildField.ServiceRecordField(
-            "Query", "filmTitle", null,
+        var key = SourceKeyResolver.resolveServiceRecord(rk,
             new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ScalarReturnType("String", single()),
-            List.of(),
-            stubMethodRef(),
-            rk,
-            Optional.empty());
-        var key = okKey(SourceKeyResolver.resolve(srf));
+            List.of());
 
         assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ServiceUntypedRecord.class);
         // Scalar return + empty joinPath → null target.
         assertThat(key.target()).isNull();
         assertThat(key.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
-    }
-
-    // ===== Helpers =====
-
-    private static SourceKey okKey(SourceKeyResolver.Resolved resolved) {
-        assertThat(resolved).isInstanceOf(SourceKeyResolver.Resolved.Ok.class);
-        return ((SourceKeyResolver.Resolved.Ok) resolved).key();
-    }
-
-    private static ChildField.RecordTableField recordTableField(BatchKey.RecordParentBatchKey bk) {
-        return recordTableField(bk, listWrapper());
-    }
-
-    private static ChildField.RecordTableField recordTableField(
-            BatchKey.RecordParentBatchKey bk,
-            no.sikt.graphitron.rewrite.model.FieldWrapper wrapper) {
-        return new ChildField.RecordTableField(
-            "FilmPayload", "film", null,
-            tableBoundFilm(wrapper),
-            List.of(),
-            List.of(),
-            new OrderBySpec.None(),
-            null,
-            bk);
-    }
-
-    private static ChildField.ServiceTableField serviceTableField(BatchKey.ParentKeyed bk) {
-        return new ChildField.ServiceTableField(
-            "Query", "filmsByActor", null,
-            tableBoundFilm(nonNullList()),
-            List.of(),
-            List.of(),
-            new OrderBySpec.None(),
-            null,
-            stubMethodRef(),
-            bk,
-            Optional.empty());
-    }
-
-    private static no.sikt.graphitron.rewrite.model.MethodRef stubMethodRef() {
-        return new no.sikt.graphitron.rewrite.model.MethodRef.Service(
-            "com.example.FilmService",
-            "loadFilms",
-            ClassName.OBJECT,
-            List.of(),
-            List.of(),
-            new no.sikt.graphitron.rewrite.model.MethodRef.CallShape.Static(false));
     }
 }

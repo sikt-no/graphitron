@@ -255,12 +255,15 @@ class TypeFetcherGeneratorTest {
     private static final TableRef LANGUAGE_TABLE = languageTableWithPk();
 
     private static GraphitronField splitQueryField(String parentType, String name) {
+        var rt = tableBoundFilm(nonNullList());
+        var bk = new BatchKey.RowKeyed(List.of(languageIdCol()));
         return new ChildField.SplitTableField(parentType, name, null,
-            tableBoundFilm(nonNullList()),
+            rt,
             List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE, List.of(),
                 FILM_TABLE, List.of(), null, name + "_0")),
             List.of(), new OrderBySpec.None(), null,
-            new BatchKey.RowKeyed(List.of(languageIdCol())));
+            no.sikt.graphitron.rewrite.SourceKeyResolver.resolveSplit(bk, rt),
+            no.sikt.graphitron.rewrite.LoaderRegistrationResolver.resolve(bk, rt));
     }
 
     private static TypeSpec specWithSplitQuery(String parentType, String fieldName) {
@@ -337,10 +340,12 @@ class TypeFetcherGeneratorTest {
                 new MethodRef.Param.Typed("tenantId", "java.lang.String", new ParamSource.Context())
             )
         );
+        var bk = new BatchKey.RowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")));
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
             List.of(), List.of(), new OrderBySpec.None(), null, method,
-            new BatchKey.RowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer"))),
+            no.sikt.graphitron.rewrite.SourceKeyResolver.resolveServiceTable(bk, returnType),
+            no.sikt.graphitron.rewrite.LoaderRegistrationResolver.resolve(bk, returnType),
             java.util.Optional.empty());
     }
 
@@ -389,7 +394,9 @@ class TypeFetcherGeneratorTest {
             List.of(new MethodRef.Param.Sourced("keys", batchKey)));
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
-            List.of(), List.of(), new OrderBySpec.None(), null, method, batchKey,
+            List.of(), List.of(), new OrderBySpec.None(), null, method,
+            no.sikt.graphitron.rewrite.SourceKeyResolver.resolveServiceTable(batchKey, returnType),
+            no.sikt.graphitron.rewrite.LoaderRegistrationResolver.resolve(batchKey, returnType),
             java.util.Optional.empty());
     }
 
@@ -1397,7 +1404,10 @@ class TypeFetcherGeneratorTest {
             "no.example.Service", "getValues", perKeyType,
             List.of(new MethodRef.Param.Sourced("keys", batchKey)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
-            parentType, name, null, returnType, List.of(), method, batchKey, java.util.Optional.empty());
+            parentType, name, null, returnType, List.of(), method,
+            no.sikt.graphitron.rewrite.SourceKeyResolver.resolveServiceRecord(batchKey, returnType, List.of()),
+            no.sikt.graphitron.rewrite.LoaderRegistrationResolver.resolve(batchKey, returnType),
+            java.util.Optional.empty());
     }
 
     private static no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField recordBackedServiceRecordField(
@@ -1409,7 +1419,10 @@ class TypeFetcherGeneratorTest {
             "no.example.Service", "getDetails", ClassName.bestGuess(fqBackingClass),
             List.of(new MethodRef.Param.Sourced("keys", batchKey)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
-            parentType, name, null, returnType, List.of(), method, batchKey, java.util.Optional.empty());
+            parentType, name, null, returnType, List.of(), method,
+            no.sikt.graphitron.rewrite.SourceKeyResolver.resolveServiceRecord(batchKey, returnType, List.of()),
+            no.sikt.graphitron.rewrite.LoaderRegistrationResolver.resolve(batchKey, returnType),
+            java.util.Optional.empty());
     }
 
     private static TypeSpec specWith(GraphitronField field) {
