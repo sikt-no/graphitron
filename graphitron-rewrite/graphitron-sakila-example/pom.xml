@@ -299,6 +299,32 @@
                             <outputPackage>no.sikt.graphitron.generated.federated</outputPackage>
                         </configuration>
                     </execution>
+                    <!--
+                        Multi-schema fixture (R83). Points at the multischemafixture jOOQ catalog
+                        in graphitron-sakila-db (the multischema_a / multischema_b two-schema
+                        codegen R78 set up) and writes generated emission to its own disjoint
+                        subpackage. Compiling against this catalog is the compile-tier signal
+                        that emitters wire schema-segmented FQNs correctly through the typed
+                        TableRef.tableClass() / ForeignKeyRef.keysClass() seams: any regression
+                        that re-derives a ClassName from the bare jooqPackage produces source
+                        that does not exist (root.Keys / root.tables.Widget never resolve under
+                        multi-schema codegen) and the maven-compiler-plugin fails the build.
+                    -->
+                    <execution>
+                        <id>rewrite-generate-multischema</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <schemaInputs>
+                                <schemaInput>
+                                    <pattern>src/main/resources/graphql/multischema.graphqls</pattern>
+                                </schemaInput>
+                            </schemaInputs>
+                            <jooqPackage>no.sikt.graphitron.rewrite.multischemafixture</jooqPackage>
+                            <outputPackage>no.sikt.graphitron.generated.multischema</outputPackage>
+                        </configuration>
+                    </execution>
                 </executions>
                 <dependencies>
                     <!-- Single entry: -service brings the catalog (-db) transitively via its

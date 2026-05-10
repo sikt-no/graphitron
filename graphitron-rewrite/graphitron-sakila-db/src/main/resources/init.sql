@@ -631,3 +631,14 @@ CREATE TABLE multischema_b.event (
     event_id   serial      PRIMARY KEY,
     code       varchar(50) NOT NULL
 );
+
+-- R83 execution-tier seed: minimal rows so a query that traverses the cross-schema
+-- FK (gadget -> widget) round-trips end-to-end. Keeps the dataset small enough
+-- that pagination / ordering concerns stay out of scope: one widget, two gadgets
+-- pointing at it, plus one row in each event collision table to prove qualified
+-- @table resolution serves real data.
+INSERT INTO multischema_a.widget (widget_id, name) VALUES (1, 'alpha-widget');
+INSERT INTO multischema_a.event  (event_id,  name) VALUES (10, 'launch-a');
+INSERT INTO multischema_b.event  (event_id,  code) VALUES (20, 'B-001');
+INSERT INTO multischema_b.gadget (gadget_id, widget_id, note) VALUES (100, 1, 'first-gadget');
+INSERT INTO multischema_b.gadget (gadget_id, widget_id, note) VALUES (101, 1, 'second-gadget');
