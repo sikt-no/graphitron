@@ -80,8 +80,13 @@ public class DevMojo extends AbstractRewriteMojo {
     public void execute() throws MojoExecutionException {
         // Initial codegen and LSP catalog build both reflect on consumer classes, so they share
         // one URLClassLoader scope. Watchers that follow only resolve paths (no reflection); they
-        // capture the ctx returned here, whose loader is closed by the time setup proceeds. Each
-        // file-change callback (regenerate / rebuildCatalog) opens its own scope.
+        // capture the ctx returned here, whose loader is *closed* by the time setup proceeds.
+        //
+        // LOAD-BEARING: code added below that uses `initialCtx` must read only path-shaped fields
+        // (`schemaInputs`, `basedir`, `classpathRoots`). Calling `initialCtx.codegenLoader()` here
+        // returns a closed URLClassLoader and would surface as a confusing ClassNotFoundException
+        // on the next reflection attempt. Each file-change callback (regenerate / rebuildCatalog)
+        // opens its own scope and is the right place to reach for a live loader.
         var initialCtxHolder = new AtomicReference<RewriteContext>();
         var initialCatalogHolder = new AtomicReference<CompletionData>();
         withCodegenScope(ctx -> {

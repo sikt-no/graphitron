@@ -2242,6 +2242,10 @@ class FieldBuilder {
      * the {@code throws} clause). When the field has no channel, every non-exempt declared
      * checked exception is unmatched.
      */
+    // Instance method (not static) so it can read `ctx.codegenLoader()`; the two callers
+    // `buildWithChannel` and `buildServiceField` are on the same class and already hold `ctx`.
+    // The explicit-parameter sibling lives at `CheckedExceptionMatcher.unmatched`, which
+    // crosses a class boundary.
     private String checkDeclaredCheckedExceptions(
             no.sikt.graphitron.rewrite.model.MethodRef method, Optional<ErrorChannel> channel) {
         var unmatched = CheckedExceptionMatcher.unmatched(

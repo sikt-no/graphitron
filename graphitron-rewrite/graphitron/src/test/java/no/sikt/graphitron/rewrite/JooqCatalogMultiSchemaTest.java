@@ -299,7 +299,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void unknownTableRejection_unqualifiedAmbiguous_namesSchemasAndQualifiedForms() {
-        var ctx = new BuildContext(null, multi(), null);
+        var ctx = new BuildContext(null, multi(), stubRewriteContext());
         var rejection = ctx.unknownTableRejection("event");
         // Author-error structural variant: rule violation with structured prose, not a closed-set
         // "did you mean" lookup. The candidate-hint shape doesn't fit because the user spelled
@@ -315,7 +315,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void unknownTableRejection_unqualifiedMissing_fallsThroughToUnknownTable() {
-        var ctx = new BuildContext(null, multi(), null);
+        var ctx = new BuildContext(null, multi(), stubRewriteContext());
         var rejection = ctx.unknownTableRejection("nonexistent");
         // Missing-name path: route through Rejection.unknownTable so the candidate hint
         // surfaces a typo fix.
@@ -326,7 +326,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void unknownTableRejection_qualifiedMiss_fallsThroughToUnknownTable() {
-        var ctx = new BuildContext(null, multi(), null);
+        var ctx = new BuildContext(null, multi(), stubRewriteContext());
         // Qualified name where the schema is unknown; the qualified form parses to a two-arg
         // findTable miss, so the ambiguity branch is skipped (qualified lookups never produce
         // Ambiguous by construction).
@@ -340,7 +340,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void unknownForeignKeyRejection_namesMissingFkAndCarriesFkAttemptKind() {
-        var ctx = new BuildContext(null, multi(), null);
+        var ctx = new BuildContext(null, multi(), stubRewriteContext());
         var rejection = ctx.unknownForeignKeyRejection("not_a_fk");
         // UnknownName variant routes Levenshtein candidates over the catalog's FK names; the
         // attempt kind tags the rejection so LSP fix-its can scope candidate sets.
@@ -387,7 +387,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void synthesizeFkJoin_resolvedHappyPath() {
-        var ctx = new BuildContext(null, multi(), null);
+        var ctx = new BuildContext(null, multi(), stubRewriteContext());
         var fk = multi().findForeignKey("gadget_widget_id_fkey").orElseThrow();
         var result = ctx.synthesizeFkJoin(fk, "gadget", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
         assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.Resolved.class);
@@ -403,7 +403,7 @@ class JooqCatalogMultiSchemaTest {
         // Force the source-side endpoint to a fabricated name. The FK still resolves, but the
         // origin findTable call hits NotInCatalog, so synthesizeFkJoin propagates UnknownTable
         // carrying the failing TableResolution variant.
-        var ctx = new BuildContext(null, multi(), null);
+        var ctx = new BuildContext(null, multi(), stubRewriteContext());
         var fk = multi().findForeignKey("gadget_widget_id_fkey").orElseThrow();
         var result = ctx.synthesizeFkJoin(fk, "fabricated_source", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
         assertThat(result).isInstanceOf(BuildContext.FkJoinResolution.UnknownTable.class);
@@ -429,7 +429,7 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void fkJoinResolution_resolved_projectsToOptionalOfFkJoin() {
-        var ctx = new BuildContext(null, multi(), null);
+        var ctx = new BuildContext(null, multi(), stubRewriteContext());
         var fk = multi().findForeignKey("gadget_widget_id_fkey").orElseThrow();
         var result = ctx.synthesizeFkJoin(fk, "gadget", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
         assertThat(result.asFkJoin()).isPresent();
@@ -437,9 +437,19 @@ class JooqCatalogMultiSchemaTest {
 
     @Test
     void fkJoinResolution_unknownTable_projectsToEmpty() {
-        var ctx = new BuildContext(null, multi(), null);
+        var ctx = new BuildContext(null, multi(), stubRewriteContext());
         var fk = multi().findForeignKey("gadget_widget_id_fkey").orElseThrow();
         var result = ctx.synthesizeFkJoin(fk, "fabricated_source", "fieldName", 0, null, /*selfRefFkOnSource=*/false);
         assertThat(result.asFkJoin()).isEmpty();
+    }
+
+    private static RewriteContext stubRewriteContext() {
+        return new RewriteContext(
+            java.util.List.of(),
+            java.nio.file.Path.of("."),
+            java.nio.file.Path.of("."),
+            "unused",
+            "unused",
+            java.util.Map.of());
     }
 }

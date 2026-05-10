@@ -42,7 +42,7 @@ class SynthesizeFkJoinReorderedKeysTest {
 
     @Test
     void synthesizeFkJoin_pairsSlotsByFkOwnReferencedColumnList() {
-        var ctx = new BuildContext(null, nodeIdCatalog(), null);
+        var ctx = new BuildContext(null, nodeIdCatalog(), stubRewriteContext());
         var fk = nodeIdCatalog().findForeignKey("reordered_fk_child_parent_fkey").orElseThrow();
 
         // Sanity-check the FK shape: jOOQ exposes two distinct lists; this fixture provokes the
@@ -87,5 +87,15 @@ class SynthesizeFkJoinReorderedKeysTest {
         assertThat(fkJoin.targetSideColumns()).extracting(c -> c.sqlName())
             .as("target-side (child) columns iterate the FK's own referencing-column list")
             .containsExactly("fk_b", "fk_c", "fk_a");
+    }
+
+    private static RewriteContext stubRewriteContext() {
+        return new RewriteContext(
+            java.util.List.of(),
+            java.nio.file.Path.of("."),
+            java.nio.file.Path.of("."),
+            "unused",
+            "unused",
+            java.util.Map.of());
     }
 }

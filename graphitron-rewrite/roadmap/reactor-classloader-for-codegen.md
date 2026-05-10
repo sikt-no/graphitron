@@ -23,8 +23,11 @@ callees), restored in `finally`, and closed to release JAR file descriptors.
 - `RewriteContext` carries `ClassLoader codegenLoader`; a six-arg and a
   seven-arg back-compat overload default it to TCCL for unit-tier callers.
 - `BuildContext.codegenLoader()` is a thin passthrough mirroring the
-  existing `nodeIdLeafResolver()` shape (with a null-`ctx` fallback to TCCL
-  for the three unit-tier tests that construct `BuildContext(null, _, null)`).
+  existing `nodeIdLeafResolver()` shape. `BuildContext.ctx` is now
+  `@NonNull` (enforced by `Objects.requireNonNull` in the constructor);
+  the three unit-tier tests that previously passed `(null, _, null)` now
+  supply a deterministic `stubRewriteContext()` via the 6-arg
+  back-compat overload.
 - `JooqCatalog`'s public constructor takes `(String, ClassLoader)`; the
   one-arg constructor is the back-compat overload defaulting to TCCL. The
   two `static` helpers (`verifyTablesClassPresent`,
