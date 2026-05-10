@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
-| `R38` | Reshape `BatchKey` into `SourceKey` + unify the rows-method seam | Spec | [plan](unify-rowsmethodname.md) |
+| `R38` | Reshape `BatchKey` into `SourceKey` + unify the rows-method seam | Ready | [plan](unify-rowsmethodname.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec | [plan](custom-scalar-java-types.md) |
@@ -144,7 +144,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### model-cleanup
 
-- `R38` [**Reshape `BatchKey` into `SourceKey` + unify the rows-method seam**](unify-rowsmethodname.md) — Spec, architecture
+- `R38` [**Reshape `BatchKey` into `SourceKey` + unify the rows-method seam**](unify-rowsmethodname.md) — Ready, architecture
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md) — Backlog, validation
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Backlog, stubs
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
