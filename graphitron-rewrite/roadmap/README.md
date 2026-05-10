@@ -26,6 +26,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R74` | Row/Record return shapes for typed accessor batch keys | Spec | [plan](accessor-row-record-shapes.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Ready | [plan](error-handling-parity.md) |
+| `R124` | Source codegen classpath from project + reactor, not plugin realm | Spec | [plan](reactor-classloader-for-codegen.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | [plan](catalog-check-constraint-validation.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | [plan](retire-maven-plugin.md) |
@@ -126,6 +127,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
 - `R74` [**Row/Record return shapes for typed accessor batch keys**](accessor-row-record-shapes.md) — Spec, architecture
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
+- `R124` [**Source codegen classpath from project + reactor, not plugin realm**](reactor-classloader-for-codegen.md) — Spec, cleanup
 
 ### mutations-errors
 
