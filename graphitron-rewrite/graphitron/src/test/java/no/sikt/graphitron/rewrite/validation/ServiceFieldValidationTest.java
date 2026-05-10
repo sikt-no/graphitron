@@ -174,7 +174,7 @@ class ServiceFieldValidationTest {
         return new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
             List.of(), List.of(), new OrderBySpec.None(), null,
             TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
-                List.of(new MethodRef.Param.Sourced("filmKeys", batchKey))),
+                List.of(TestFixtures.sourced("filmKeys", batchKey))),
             SourceKeyResolver.resolveServiceTable(batchKey, FILM_RETURN),
             LoaderRegistrationResolver.resolve(batchKey, FILM_RETURN),
             Optional.empty());
@@ -185,7 +185,7 @@ class ServiceFieldValidationTest {
         return new ServiceTableField("Film", "externalChild", null, returnType,
             List.of(), List.of(), new OrderBySpec.None(), null,
             TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
-                List.of(new MethodRef.Param.Sourced("filmKeys", batchKey))),
+                List.of(TestFixtures.sourced("filmKeys", batchKey))),
             SourceKeyResolver.resolveServiceTable(batchKey, returnType),
             LoaderRegistrationResolver.resolve(batchKey, returnType),
             Optional.empty());
@@ -197,8 +197,8 @@ class ServiceFieldValidationTest {
             List.of(), List.of(), new OrderBySpec.None(), null,
             TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
                 List.of(
-                    new MethodRef.Param.Sourced("filmKeys1", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
-                    new MethodRef.Param.Sourced("filmKeys2", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())))),
+                    TestFixtures.sourced("filmKeys1", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
+                    TestFixtures.sourced("filmKeys2", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())))),
             SourceKeyResolver.resolveServiceTable(bk, FILM_RETURN),
             LoaderRegistrationResolver.resolve(bk, FILM_RETURN),
             Optional.empty());

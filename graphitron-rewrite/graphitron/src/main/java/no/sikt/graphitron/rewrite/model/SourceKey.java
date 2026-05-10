@@ -168,6 +168,17 @@ public record SourceKey(
      * {@link Wrap.TableRecord#className()}.
      */
     public TypeName keyElementType() {
+        return keyElementType(wrap, columns);
+    }
+
+    /**
+     * Static derivation of the DataLoader key element type from the {@code (wrap, columns)}
+     * pair alone. Used by {@link MethodRef.Param.Sourced} and {@link ParamSource.Sources}
+     * consumers that hold the triple {@code (wrap, columns, container)} directly without a
+     * full {@link SourceKey} (only the source-shape side of the data is available, not the
+     * field-side {@code target} / {@code path} / {@code cardinality} / {@code reader}).
+     */
+    public static TypeName keyElementType(Wrap wrap, List<ColumnRef> columns) {
         return switch (wrap) {
             case Wrap.Row r            -> jooqShape("Row", columns);
             case Wrap.Record r         -> jooqShape("Record", columns);

@@ -5,8 +5,10 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -146,9 +148,10 @@ class ServiceCatalogTest {
             .map(p -> (MethodRef.Param.Sourced) p)
             .findFirst()
             .orElseThrow();
-        assertThat(sourced.batchKey()).isEqualTo(
-            new BatchKey.TableRecordKeyed(filmPk,
-                no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class));
+        assertThat(sourced.wrap()).isEqualTo(new SourceKey.Wrap.TableRecord(
+            ClassName.get(no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class)));
+        assertThat(sourced.columns()).isEqualTo(filmPk);
+        assertThat(sourced.container()).isEqualTo(LoaderRegistration.Container.POSITIONAL_LIST);
     }
 
     @Test
@@ -343,7 +346,9 @@ class ServiceCatalogTest {
             .map(p -> (MethodRef.Param.Sourced) p)
             .findFirst()
             .orElseThrow();
-        assertThat(sourced.batchKey()).isEqualTo(new BatchKey.RecordKeyed(filmPk));
+        assertThat(sourced.wrap()).isEqualTo(new SourceKey.Wrap.Record());
+        assertThat(sourced.columns()).isEqualTo(filmPk);
+        assertThat(sourced.container()).isEqualTo(LoaderRegistration.Container.POSITIONAL_LIST);
     }
 
     @Test
@@ -366,9 +371,10 @@ class ServiceCatalogTest {
             .map(p -> (MethodRef.Param.Sourced) p)
             .findFirst()
             .orElseThrow();
-        assertThat(sourced.batchKey()).isEqualTo(
-            new BatchKey.MappedTableRecordKeyed(filmActorPk,
-                no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord.class));
+        assertThat(sourced.wrap()).isEqualTo(new SourceKey.Wrap.TableRecord(
+            ClassName.get(no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmActorRecord.class)));
+        assertThat(sourced.columns()).isEqualTo(filmActorPk);
+        assertThat(sourced.container()).isEqualTo(LoaderRegistration.Container.MAPPED_SET);
     }
 
     @Test
@@ -383,9 +389,10 @@ class ServiceCatalogTest {
             .map(p -> (MethodRef.Param.Sourced) p)
             .findFirst()
             .orElseThrow();
-        assertThat(sourced.batchKey()).isEqualTo(
-            new BatchKey.MappedTableRecordKeyed(filmPk,
-                no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class));
+        assertThat(sourced.wrap()).isEqualTo(new SourceKey.Wrap.TableRecord(
+            ClassName.get(no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord.class)));
+        assertThat(sourced.columns()).isEqualTo(filmPk);
+        assertThat(sourced.container()).isEqualTo(LoaderRegistration.Container.MAPPED_SET);
     }
 
     @Test
@@ -400,7 +407,9 @@ class ServiceCatalogTest {
             .map(p -> (MethodRef.Param.Sourced) p)
             .findFirst()
             .orElseThrow();
-        assertThat(sourced.batchKey()).isEqualTo(new BatchKey.MappedRowKeyed(filmPk));
+        assertThat(sourced.wrap()).isEqualTo(new SourceKey.Wrap.Row());
+        assertThat(sourced.columns()).isEqualTo(filmPk);
+        assertThat(sourced.container()).isEqualTo(LoaderRegistration.Container.MAPPED_SET);
     }
 
     @Test
@@ -415,7 +424,9 @@ class ServiceCatalogTest {
             .map(p -> (MethodRef.Param.Sourced) p)
             .findFirst()
             .orElseThrow();
-        assertThat(sourced.batchKey()).isEqualTo(new BatchKey.MappedRecordKeyed(filmPk));
+        assertThat(sourced.wrap()).isEqualTo(new SourceKey.Wrap.Record());
+        assertThat(sourced.columns()).isEqualTo(filmPk);
+        assertThat(sourced.container()).isEqualTo(LoaderRegistration.Container.MAPPED_SET);
     }
 
     @Test

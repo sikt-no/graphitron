@@ -14,9 +14,11 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.TypeNames;
 import org.slf4j.Logger;
@@ -322,7 +324,16 @@ class ServiceCatalog {
                             Rejection.structural("parameter '" + displayName + "' in method '" + methodName
                             + "' has an unrecognized sources type: '" + typeName + "'"));
                     }
-                    params.add(new MethodRef.Param.Sourced(displayName, batchKey.get()));
+                    BatchKey.ParentKeyed bk = batchKey.get();
+                    SourceKey.Wrap wrap = wrapFor(bk);
+                    LoaderRegistration.Container container =
+                        bk instanceof BatchKey.MappedRowKeyed
+                                || bk instanceof BatchKey.MappedRecordKeyed
+                                || bk instanceof BatchKey.MappedTableRecordKeyed
+                            ? LoaderRegistration.Container.MAPPED_SET
+                            : LoaderRegistration.Container.POSITIONAL_LIST;
+                    params.add(new MethodRef.Param.Sourced(
+                        displayName, wrap, bk.parentKeyColumns(), container));
                 }
             }
             MethodRef.CallShape callShape;
@@ -993,6 +1004,28 @@ class ServiceCatalog {
             result = "java.util.List<" + result + ">";
         }
         return result;
+    }
+
+    /**
+     * Maps the developer's source-shape declaration (carried on the {@link BatchKey.ParentKeyed}
+     * permit identity until the BatchKey deletion) to the corresponding {@link SourceKey.Wrap}
+     * stored on {@link MethodRef.Param.Sourced}. {@code Row*Keyed} → {@code Wrap.Row};
+     * {@code Record*Keyed} → {@code Wrap.Record}; {@code TableRecord*Keyed} →
+     * {@code Wrap.TableRecord} carrying the developer-declared subclass via
+     * {@link ClassName#get(Class)}.
+     */
+    private static SourceKey.Wrap wrapFor(BatchKey.ParentKeyed bk) {
+        if (bk instanceof BatchKey.TableRecordKeyed trk) {
+            return new SourceKey.Wrap.TableRecord(ClassName.get(trk.elementClass()));
+        }
+        if (bk instanceof BatchKey.MappedTableRecordKeyed mtrk) {
+            return new SourceKey.Wrap.TableRecord(ClassName.get(mtrk.elementClass()));
+        }
+        if (bk instanceof BatchKey.RecordKeyed
+                || bk instanceof BatchKey.MappedRecordKeyed) {
+            return new SourceKey.Wrap.Record();
+        }
+        return new SourceKey.Wrap.Row();
     }
 
     // ===== Result container =====
