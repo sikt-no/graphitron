@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 6
 theme: model-cleanup
-depends-on: [reactor-classloader-for-codegen]
+depends-on: []
 ---
 
 # Custom-scalar Java type configuration (extended-scalars built-in)
@@ -73,19 +73,18 @@ At codegen, graphitron:
 
 1. Loads the named class (`graphql.scalars.ExtendedScalars`) via
    `Class.forName(name, false, ctx.codegenLoader())` against the
-   project-aware classloader landed by R124
-   ([`reactor-classloader-for-codegen.md`](reactor-classloader-for-codegen.md)).
-   That loader is rooted at `project.getCompileClasspathElements()`
-   plus every reactor sibling's `target/classes` and parented on
-   the plugin loader, so a consumer's `<dependency>graphql-java-extended-scalars</dependency>`
+   project-aware classloader R124 landed (now Done; see the
+   [changelog](changelog.md) entry for landing SHAs). That loader is
+   rooted at `project.getCompileClasspathElements()` plus every reactor
+   sibling's `target/classes` and parented on the plugin loader, so a
+   consumer's `<dependency>graphql-java-extended-scalars</dependency>`
    declaration is visible to the resolver without any
-   `<plugin><dependencies>` boilerplate. R101 sat behind R124 in
-   the dep graph because that boilerplate would otherwise have become
-   an absolute requirement for any consumer using `@scalarType` or
-   the convention layer; R124 lifted the same constraint for every
-   other reflection callsite in the codebase, and R101 is one of its
-   beneficiaries. R124's commits are on trunk; the front-matter
-   `depends-on:` stays until R124 transitions to Done.
+   `<plugin><dependencies>` boilerplate. R101 sat behind R124 in the
+   dep graph because that boilerplate would otherwise have become an
+   absolute requirement for any consumer using `@scalarType` or the
+   convention layer; R124 lifted the same constraint for every other
+   reflection callsite in the codebase, and R101 is one of its
+   beneficiaries.
 2. Reads the named static field (`GraphQLBigDecimal`); confirms it
    is `public static`, not null, and assignable to
    `graphql.schema.GraphQLScalarType`. The assignability check uses
