@@ -353,7 +353,7 @@ Four families, by what they emit. The Generators package holds emitter helpers (
 === Directives
 
 - *SDL definitions*: `graphitron-rewrite/graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`. `RewriteSchemaLoader` auto-injects this file into the merged schema.
-- *Directive reference with examples*: see the directive reference under `docs/manual/reference/directives/` (rendered at the published manual). The contributor-facing chapter consolidating runtime extension points is tracked under R86 (`graphitron-rewrite/roadmap/architecture-chapter.md`); until it ships, this Source Map is the canonical reference for what each generator emits.
+- *Directive reference with examples*: see the directive reference under `docs/manual/reference/directives/` (rendered at the published manual). For the contributor-facing chapter consolidating runtime extension points and the typed-rejection narrative, see xref:runtime-extension-points.adoc[Runtime Extension Points] and xref:typed-rejection.adoc[Typed rejection]; this Source Map is the canonical reference for what each generator emits.
 
 '''
 
