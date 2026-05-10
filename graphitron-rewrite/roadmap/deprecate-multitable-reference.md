@@ -55,6 +55,16 @@ application before conflict detection so the user sees the no-longer-supported r
 rather than a misleading 'conflict with @service' message when both directives are
 present.").
 
+Delete the existing block-comment at `FieldBuilder.java:1428–1430` ("Detect conflicts
+among the child-field exclusive directives before the @multitableReference early-return;
+that return would otherwise silently mask a conflicting directive on the same field.").
+The comment pins the *pre-R44* invariant — conflict detection runs first to avoid
+masking by the multitable early-return. R44 inverts the ordering, so the rationale
+becomes wrong. A stale ordering comment next to a freshly-edited code path is the most
+insidious flavour of drift; reviewers trust comments that survived a diff. The
+replacement is the new one-line comment above the multitable rejection (per the previous
+paragraph); the conflict-detection block needs no ordering comment of its own.
+
 `detectChildFieldConflict` at the same file's line 2667: drop the `hasMultitable` /
 `DIR_MULTITABLE_REFERENCE` slot from the mutual-exclusivity vocabulary. Once the
 deprecation rejection runs first, the conflict detector never sees a live
@@ -160,6 +170,74 @@ guidance after R44.
 the `_(rejected, remove from the schema)_` annotation that line 29 (`@notGenerated`)
 already carries; move the entry from the "Joining" category at line 46 down to the
 "Rejected by the rewrite" category at line 66 (alongside `@notGenerated`).
+
+`docs/manual/reference/index.adoc:43,64`: the parent reference index also lists
+`@multitableReference` (alphabetical at line 43, "Joining" category at line 64). Apply
+the same fix — `_(rejected, remove from the schema)_` annotation, move under "Rejected
+by the rewrite" if that category exists at this level (mirror whichever shape is in use).
+
+`docs/manual/reference/directives/reference.adoc:92,98`: the `@reference` page carries
+two cross-references to `@multitableReference` — line 92 ("Cannot be combined with
+`@multitableReference` on the same field") and line 98 ("for the union/interface
+variant"). Both become misleading after R44; line 92's combinability constraint is
+trivially true (you can't combine with a deprecated directive in any meaningful way) and
+line 98 directs readers at a recipe that no longer exists. Drop line 92, retarget line
+98 to `@discriminate` / `@discriminator` (or to the `polymorphic-types.adoc` recipe).
+
+`docs/manual/how-to/join-with-references.adoc:233,239`: the recipe carries the same two
+cross-references — combinability constraint at 233, "for the union/interface variant"
+pointer at 239. Same fix as `reference.adoc`.
+
+`docs/manual/how-to/polymorphic-types.adoc:100–104,129,136`: the most damaging surface.
+Line 100 actively recommends `@multitableReference` as the recipe for "more than one FK
+between participating tables, or each implementer needs a different join shape"; lines
+102–105 carry the legacy `[NOTE]` block ("the rewrite generator currently *stubs*
+`@multitableReference` on record-based outputs") that R44 invalidates; lines 129 and 136
+repeat the "stubbed in the rewrite" framing. Rewrite the section: drop the recommendation
+at line 100 (or replace with "use auto-discovered per-branch FK paths or an explicit
+discriminator-driven shape"), strike the `[NOTE]` block, and remove the "stubbed"
+framing from lines 129 and 136. The `AddressOccupant` shape the page already documents
+remains the supported multi-table-child idiom; the page reads consistently once the
+`@multitableReference` paragraphs are out.
+
+`graphitron-rewrite/docs/code-generation-triggers.adoc:230`: the dispatch table row
+"`@reference` to multi-table interface | `MultitableReferenceField` | Field method stub"
+contradicts the post-R44 classifier. Rewrite the row in the shape of line 232 (the
+`@notGenerated` row), e.g. "| `@multitableReference` | `UnclassifiedField` | Validation
+error; the directive is no longer supported (`INVALID_SCHEMA` rejection). Remove it; the
+rewrite generates multi-table interface dispatch from `@discriminate` /
+`@discriminator`."
+
+### Surfaces that survive unchanged (call-out, not edit)
+
+The following sites mention `@multitableReference` and intentionally stay:
+
+- `graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/util/SchemaDirectiveRegistryTest.java:15`
+  asserts the directive name appears in `GENERATOR_ONLY_DIRECTIVES`. The directive is
+  still SDL-declared, so the membership stands.
+- `graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/schema/DirectiveDefinitionEmitterTest.java:24`
+  asserts the directive appears in emitted SDL output. Same reasoning.
+- `docs/manual/_generated/supported-directives.adoc` regenerates from the SDL declaration
+  set (`@notGenerated` is still listed there at line 25 post-its-deprecation, by the same
+  logic). No Spec action.
+- `graphitron-rewrite/roadmap/inference-axis-coverage.adoc:233` is regenerated from
+  `mvn -Pleaf-coverage verify`; once `MultitableReferenceField` leaves the sealed
+  hierarchy, the row drops out automatically. The file's banner says "Never edit by hand."
+- `graphitron-rewrite/roadmap/synthesize-payload-carrier.md:250` mentions
+  `@multitableReference` in a list of fetcher-contract directives. That plan's author is
+  out-of-scope for R44 to amend; if they accept the deprecation, they will retarget on
+  their next revision.
+
+## Pattern note
+
+After R44, `@multitableReference` shares the deprecated-but-declared shape with
+`@notGenerated`: SDL-declared for parser tolerance, classifier-rejected via
+`Rejection.directiveConflict(List.of(<NAME>), "<NAME> is no longer supported. ...")`,
+ordered ahead of `detectChildFieldConflict` so the deprecation message wins over a
+mutual-exclusivity message. Two parallel implementations is fine — the cleanup is small
+and the duplication is local to the classifier. If a *third* deprecated-but-declared
+directive lands, factor out a `Rejection.deprecatedDirective(name, message)` helper and a
+shared early-return form; do not pre-extract for two.
 
 ## Non-goals
 
