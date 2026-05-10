@@ -1,0 +1,46 @@
+# Slim multi-schema fixture. Types here exercise the three multischema-fixture
+# shape cases R83 set out to cover at the compilation tier:
+#
+#   1. Unique-per-schema:        Widget @table(name: "widget")
+#      Resolves to multischema_a.tables.Widget via the unqualified-and-unique
+#      branch (widget exists only in multischema_a).
+#
+#   2. Shared-table requiring qualification: Event @table(name: "multischema_a.event")
+#      The unqualified "event" name is ambiguous (collides between multischema_a
+#      and multischema_b); the schema-qualified form pins resolution to A.
+#
+#   3. Cross-schema FK traversal: Gadget.widget @reference(path:[{key:"gadget_widget_id_fkey"}])
+#      The FK constraint is held on multischema_b (gadget's schema) and targets
+#      multischema_a.widget. Every emitter that touches the FK ref must wire
+#      the schema-segmented FQN: the Keys class lookup must route to the
+#      FK-holder schema (multischema_b.Keys), not the FK target's schema; the
+#      target table class is multischema_a.tables.Widget. R78 fixed a bug
+#      where a per-emit-site ClassName.get(jooqPackage, "Keys") would compile
+#      to root.Keys in multi-schema codegen — this slice makes that bug class
+#      visible at compile time.
+#
+# This SDL is loaded by the third graphitron-maven-plugin execution
+# (`rewrite-generate-multischema`) which writes its output to a disjoint
+# subpackage of the example module's generated-sources tree.
+
+type Query {
+    widgets: [Widget!]!
+    events: [Event!]!
+    gadgets: [Gadget!]!
+}
+
+type Widget @table(name: "widget") {
+    widgetId: Int! @field(name: "widget_id")
+    name: String!
+}
+
+type Event @table(name: "multischema_a.event") {
+    eventId: Int! @field(name: "event_id")
+    name: String!
+}
+
+type Gadget @table(name: "gadget") {
+    gadgetId: Int! @field(name: "gadget_id")
+    note: String
+    widget: Widget @reference(path: [{key: "gadget_widget_id_fkey"}])
+}

@@ -1,7 +1,7 @@
 ---
 id: R83
 title: "Multi-schema fixture: pipeline + compilation + execution tier coverage"
-status: Ready
+status: In Review
 bucket: cleanup
 priority: 4
 theme: testing
@@ -45,3 +45,13 @@ The `mvn install -Plocal-db` invocation already builds `graphitron-sakila-exampl
 - A dedicated `graphitron-multischema-example` module. The third graphitron-maven-plugin execution in `graphitron-sakila-example` writes to a disjoint `outputPackage`, so the existing module hosts the slice without contamination of the sakila-side codegen.
 
 Principles cited: *Pipeline tests are the primary behavioural tier*; *Compilation against real jOOQ is a test tier*.
+
+## Shipped
+
+All three tiers landed in one commit:
+
+- Pipeline tier: `graphitron/src/test/java/no/sikt/graphitron/rewrite/MultiSchemaPipelineTest.java`. Asserts `TableRef.tableClass()` for the unique-per-schema (`Widget`), qualified (`Event` via `multischema_a.event`), and cross-schema-FK-target (`Gadget`) cases; the cross-schema `ForeignKeyRef.keysClass()` routes to `multischema_b.Keys`; the rendered TypeSpec text carries the schema-segmented FQNs for all three table classes (in imports for `QueryConditions`, inline for `Widget`/`Gadget` typeclasses where the SDL type name collides with the jOOQ class simple name and JavaPoet inlines).
+- Compilation tier: third `rewrite-generate-multischema` execution in `graphitron-sakila-example/pom.xml` consuming `src/main/resources/graphql/multischema.graphqls`, writing to `no.sikt.graphitron.generated.multischema`. The full `mvn install -Plocal-db` reactor compiles the multischema slice against the live multi-schema jOOQ catalog.
+- Execution tier: `graphitron-sakila-example/src/test/java/.../MultiSchemaQueryTest.java` issues three queries (`gadgets { widget { ... } }` round-trip across the FK; `widgets`; `events`) against `rewrite_test`, loading the multischema slice's own `Graphitron.buildSchema(...)`. Seed rows added to `init.sql`.
+
+Departures from the spec are minor: the pipeline test searches the rendered TypeSpec text rather than only the imports list, because JavaPoet inlines an FQN whenever the simple name collides with the enclosing TypeSpec's name (the `Widget` typeclass inlines `multischema_a.tables.Widget` rather than importing it). The text-substring search subsumes the imports-list assertion and is the load-bearing regression signal R78 cares about.
