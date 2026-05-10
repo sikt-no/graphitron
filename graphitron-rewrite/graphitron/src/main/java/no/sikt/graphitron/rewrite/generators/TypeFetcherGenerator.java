@@ -2808,13 +2808,13 @@ public class TypeFetcherGenerator {
             String parentTypeName,
             String outputPackage) {
 
-        var batchKey = (BatchKey.ParentKeyed) bkf.batchKey();
+        SourceKey sourceKey = bkf.sourceKey();
         LoaderRegistration registration = bkf.loaderRegistration();
-        ClassName containerClass = registration.container() == LoaderRegistration.Container.MAPPED_SET
-            ? SET : LIST;
-        TypeName keysContainerType = ParameterizedTypeName.get(containerClass, batchKey.keyElementType());
+        boolean isMapped = registration.container() == LoaderRegistration.Container.MAPPED_SET;
+        ClassName containerClass = isMapped ? SET : LIST;
+        TypeName keysContainerType = ParameterizedTypeName.get(containerClass, sourceKey.keyElementType());
         TypeName returnType = no.sikt.graphitron.rewrite.model.RowsMethodShape
-            .outerRowsReturnType(perKeyType, schemaReturnType, batchKey);
+            .outerRowsReturnType(perKeyType, schemaReturnType, sourceKey.keyElementType(), isMapped);
 
         var serviceClass = ClassName.bestGuess(method.className());
         String conditionsClassName = outputPackage + ".conditions."
