@@ -6,7 +6,9 @@ import no.sikt.graphitron.javapoet.TypeName;
 
 /**
  * Pure structural derivation of the {@code @service} rows-method's outer return type and
- * per-key element type {@code V} from the field's {@link ReturnTypeRef} and {@link BatchKey}.
+ * per-key element type {@code V}. Composes the field's {@link ReturnTypeRef}, the
+ * DataLoader key element type, and the container-axis choice (mapped vs positional) into
+ * the rows-method's {@code Map<K, V>} / {@code List<V>} shape.
  *
  * <p>The shapes:
  *
@@ -78,18 +80,25 @@ public final class RowsMethodShape {
 
     /**
      * Builds the structurally-expected outer return type of the rows method from a known
-     * {@code perKey} value, the field's return type wrapper, and the batch-key variant.
-     * Validator and emitter both call this; only the {@code perKey} input differs (validator
-     * passes {@link #strictPerKeyType}, emitter passes the field-known {@code V}).
+     * {@code perKey} value, the field's return type wrapper, and the two derived primitives
+     * needed for the outer shape: the DataLoader key element type and whether the loader
+     * uses a mapped (Set-keyed) container. Validator and emitter both call this; only
+     * {@code perKey} differs (validator passes {@link #strictPerKeyType}, emitter passes the
+     * field-known {@code V}). Taking primitives instead of {@link SourceKey} /
+     * {@link LoaderRegistration} keeps this helper independent of the storage shape, so
+     * callers that have a different access path (e.g. {@link MethodRef.Param.Sourced} during
+     * service-method validation) can call without round-tripping through the field-level
+     * accessors.
      */
-    public static TypeName outerRowsReturnType(TypeName perKey, ReturnTypeRef returnType, BatchKey.ParentKeyed batchKey) {
-        boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
-                        || batchKey instanceof BatchKey.MappedRecordKeyed
-                        || batchKey instanceof BatchKey.MappedTableRecordKeyed;
+    public static TypeName outerRowsReturnType(
+            TypeName perKey,
+            ReturnTypeRef returnType,
+            TypeName keyElementType,
+            boolean isMapped) {
         boolean isList = returnType.wrapper().isList();
         TypeName valuePerKey = isList ? ParameterizedTypeName.get(LIST, perKey) : perKey;
         if (isMapped) {
-            return ParameterizedTypeName.get(MAP, batchKey.keyElementType(), valuePerKey);
+            return ParameterizedTypeName.get(MAP, keyElementType, valuePerKey);
         }
         return isList
             ? ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, perKey))

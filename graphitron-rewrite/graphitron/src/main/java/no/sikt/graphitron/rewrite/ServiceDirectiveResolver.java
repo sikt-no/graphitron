@@ -324,7 +324,11 @@ final class ServiceDirectiveResolver {
 
         TypeName perKey = RowsMethodShape.strictPerKeyType(returnType);
         if (perKey == null) return null;
-        TypeName expected = RowsMethodShape.outerRowsReturnType(perKey, returnType, batchKey);
+        boolean isMapped = batchKey instanceof BatchKey.MappedRowKeyed
+                        || batchKey instanceof BatchKey.MappedRecordKeyed
+                        || batchKey instanceof BatchKey.MappedTableRecordKeyed;
+        TypeName expected = RowsMethodShape.outerRowsReturnType(
+            perKey, returnType, batchKey.keyElementType(), isMapped);
         if (method.returnType().equals(expected)) return null;
 
         return "method '" + method.methodName() + "' in class '" + method.className()
