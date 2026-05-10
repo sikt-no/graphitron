@@ -32,7 +32,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | [plan](list-valued-external-field-multiset.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | [plan](operation-driven-test-corpus.md) |
-| `R86` | Architecture chapter for the manual | In Review | [plan](architecture-chapter.md) |
 
 ---
 
@@ -205,7 +204,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### (untagged)
 
-- `R86` [**Architecture chapter for the manual**](architecture-chapter.md)
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
