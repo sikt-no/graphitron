@@ -206,10 +206,6 @@ public sealed interface ChildField extends GraphitronField
         BatchKey.RowKeyed batchKey
     ) implements TableTargetField, BatchKeyField, ConditionJoinReportable {
         @Override
-        public String rowsMethodName() {
-            return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
-        }
-        @Override
         public boolean emitsSingleRecordPerKey() {
             return !returnType().wrapper().isList();
         }
@@ -243,10 +239,6 @@ public sealed interface ChildField extends GraphitronField
         BatchKey.RowKeyed batchKey,
         LookupMapping lookupMapping
     ) implements TableTargetField, BatchKeyField, LookupField, ConditionJoinReportable {
-        @Override
-        public String rowsMethodName() {
-            return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
-        }
         @Override public Rejection.EmitBlockReason emitBlockReason() {
             return Rejection.EmitBlockReason.SPLIT_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;
         }
@@ -485,10 +477,6 @@ public sealed interface ChildField extends GraphitronField
         BatchKey.RecordParentBatchKey batchKey
     ) implements TableTargetField, BatchKeyField, ConditionJoinReportable {
         @Override
-        public String rowsMethodName() {
-            return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
-        }
-        @Override
         public boolean emitsSingleRecordPerKey() {
             // Two structurally distinct triggers fold onto the same router decision in
             // SplitRowsMethodEmitter.buildForRecordTable: (a) single-cardinality fields whose
@@ -518,10 +506,6 @@ public sealed interface ChildField extends GraphitronField
         BatchKey.RecordParentBatchKey batchKey,
         LookupMapping lookupMapping
     ) implements TableTargetField, BatchKeyField, LookupField, ConditionJoinReportable {
-        @Override
-        public String rowsMethodName() {
-            return "rows" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
-        }
         @Override
         public boolean emitsSingleRecordPerKey() {
             // Mirrors RecordTableField: single-cardinality fields fold onto the same

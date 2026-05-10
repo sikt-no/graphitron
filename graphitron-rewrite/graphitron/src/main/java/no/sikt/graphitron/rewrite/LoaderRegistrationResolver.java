@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 
@@ -48,6 +49,18 @@ public final class LoaderRegistrationResolver {
             dispatch(field.batchKey()));
     }
 
+    @LoadBearingClassifierCheck(
+        key = "loader-registration.container-axis-independent-of-dispatch",
+        description = "container() projects only the three Mapped* permits to MAPPED_SET; every "
+            + "other permit (including AccessorKeyedMany, whose dispatch is LOAD_MANY) lands on "
+            + "POSITIONAL_LIST. The container axis is therefore independent of the dispatch axis: "
+            + "AccessorKeyedMany pairs POSITIONAL_LIST + LOAD_MANY (newDataLoader takes List<K>; "
+            + "loader.loadMany emits one Record per element-PK), and Mapped* permits pair "
+            + "MAPPED_SET + LOAD_ONE. The independence is load-bearing for "
+            + "TypeFetcherGenerator.buildRecordBasedDataFetcher's `valueType = Record` choice on "
+            + "AccessorKeyedMany: routing it to MAPPED_SET would break the generated newDataLoader "
+            + "type signature (Set<Record1<Integer>> cannot satisfy newDataLoader's List<K> "
+            + "parameter), as Phase 2 caught at compile time when the spec table mis-routed it.")
     private static LoaderRegistration.Container container(BatchKey bk) {
         if (bk instanceof BatchKey.MappedRowKeyed
                 || bk instanceof BatchKey.MappedRecordKeyed
