@@ -238,11 +238,12 @@ seam shrinks to one entry per concern.
    (`ServiceTableField`, `ServiceRecordField`) keep their `load<X>` overrides
    as documented exceptions; the four SQL leaves' overrides become redundant
    and delete in Phase 3.
-2. **Declaration scaffolding.** `RowsMethodSkeleton.build(BatchKeyField,
-   returnTypeName, RowsMethodBody)` emits modifiers, parameters, return
-   type, and dispatches the body via exhaustive switch on `RowsMethodBody`.
-   `RowsMethodBody` is a sealed type with one variant per body shape:
-   `SqlSplitTable`, `SqlSplitLookupTable`, `SqlRecordTable`,
+2. **Declaration scaffolding.** `RowsMethodSkeleton.build(String methodName,
+   TypeName outerReturnType, TypeName keysContainerType, CodeBlock
+   graphitronContextCall, RowsMethodBody body)` emits modifiers, parameters,
+   return type, and dispatches the body via exhaustive switch on
+   `RowsMethodBody`. `RowsMethodBody` is a sealed type with one variant per
+   body shape: `SqlSplitTable`, `SqlSplitLookupTable`, `SqlRecordTable`,
    `SqlRecordLookupTable`, `Service`. Each construct site projects from the
    field's `(SourceKey.reader(), LoaderRegistration.container())` pair to the
    matching `RowsMethodBody` permit. The four SQL permits emit the
@@ -254,18 +255,22 @@ seam shrinks to one entry per concern.
    .emitParentInputAndFkChain` (line 148, `PreludeBindings` line 120);
    service-side consumes the typed key container directly. Unchanged.
 4. **Call site (BatchLoader lambda).** `RowsMethodCall.batchLoaderLambda(
-   BatchKeyField) -> CodeBlock` emits the `(keys, batchEnv) -> { dfe = ...;
-   return CompletableFuture.completedFuture(rowsXxx(keys, dfe)); }` lambda
-   once. Single source of truth for containing-class name, method name,
-   keys-container type (`Set` or `List` per `LoaderRegistration.container()`),
-   result type (via `RowsMethodShape.outerRowsReturnType`).
-5. **DataFetcher dance.** `DataLoaderFetcherEmitter.build(BatchKeyField,
-   ReturnTypeRef, AsyncWrapTail) -> MethodSpec` emits the full DataFetcher:
-   name resolution (`buildDataLoaderName`), `computeIfAbsent` registry call
-   wrapping `RowsMethodCall.batchLoaderLambda(...)` (factory chosen by
-   `container()`), `GeneratorUtils.buildKeyExtraction(...)`,
-   `loader.load(key, env)` (or `loader.loadMany` per `cardinality()`),
-   async-wrap tail.
+   String rowsMethodName, TypeName keyType, LoaderRegistration registration)
+   -> CodeBlock` emits the `(keys, batchEnv) -> { dfe = ...; return
+   CompletableFuture.completedFuture(rowsXxx(keys, dfe)); }` lambda once.
+   Single source of truth for method name, keys-container type (`Set` or
+   `List` per `LoaderRegistration.container()`), and result type.
+5. **DataFetcher dance.** `DataLoaderFetcherEmitter.build(String fieldName,
+   TypeName keyType, TypeName loaderValueType, TypeName outerReturnType,
+   LoaderRegistration registration, CodeBlock graphitronContextCall, CodeBlock
+   batchLoaderLambda, CodeBlock keyExtraction, CodeBlock asyncWrapTail) ->
+   MethodSpec` emits the full DataFetcher: name resolution
+   (`buildDataLoaderName`), `computeIfAbsent` registry call wrapping the
+   pre-built `batchLoaderLambda` (factory chosen by `container()`),
+   pre-built `keyExtraction` (the parent-side projection from `dfe.getSource()`
+   to the per-fetch key value, supplied by the caller because the projection
+   is parent-shape-specific), `loader.load(key, env)` (or `loader.loadMany`
+   per `dispatch()`), then the pre-built `asyncWrapTail`.
 
 Every dispatch in the seam reads off `SourceKey` and `LoaderRegistration`
 rather than reconstructing the axis from `instanceof BatchKey.X`.
@@ -414,6 +419,25 @@ design.
   by Phase 2.
 - **`String rowsMethodName = bkf.rowsMethodName();` locals** at sites that no
   longer reference the name directly.
+
+Two design checkpoints surface during Phase 3, not deletions:
+
+- **`@LoadBearingClassifierCheck` for container-axis independence.** Phase 2
+  caught the `AccessorKeyedMany → MAPPED_SET` spec error at compile time
+  precisely because `LoaderRegistration` separates container and dispatch as
+  orthogonal axes. The resolver's `AccessorKeyedMany → POSITIONAL_LIST +
+  LOAD_MANY` projection is now load-bearing for the emitter's `valueType =
+  Record` choice in `buildRecordBasedDataFetcher`. Phase 3 is the natural
+  moment to declare a check pinning the independence (the existing
+  `accessor-rowkey-cardinality-matches-field` key covers cardinality, not
+  container-axis independence).
+- **Flat `SourceKey` vs sub-typing.** Three DataFetcher sites today narrow
+  `bkf.batchKey()` to `BatchKey.ParentKeyed` / `BatchKey.RecordParentBatchKey`
+  before reading parent-key columns. When the `BatchKey` cast goes away, Phase
+  3 needs to confirm the new `SourceKey.columns()` + `SourceKey.path()`
+  cleanly subsume what each cast gates today; if not, `SourceKey` may need a
+  `(ParentKeyed | RecordParent)` sub-seal rather than staying flat. Current
+  starting cut: flat. Test it against the four call-site narrowings.
 
 Verify by grep: no caller of any deleted symbol; no inline emit of patterns
 now owned by the new emitters.
