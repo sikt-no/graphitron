@@ -21,7 +21,8 @@ class RowsMethodCallTest {
 
     @Test
     void positionalList_keysParameterIsListOfKey() {
-        var reg = new LoaderRegistration("Language.films", true, LoaderRegistration.Container.POSITIONAL_LIST);
+        var reg = new LoaderRegistration(
+            true, LoaderRegistration.Container.POSITIONAL_LIST, LoaderRegistration.Dispatch.LOAD_ONE);
         CodeBlock lambda = RowsMethodCall.batchLoaderLambda("rowsFilms", KEY, reg);
 
         String src = lambda.toString();
@@ -32,7 +33,8 @@ class RowsMethodCallTest {
 
     @Test
     void mappedSet_keysParameterIsSetOfKey() {
-        var reg = new LoaderRegistration("Query.filmsByActor", true, LoaderRegistration.Container.MAPPED_SET);
+        var reg = new LoaderRegistration(
+            true, LoaderRegistration.Container.MAPPED_SET, LoaderRegistration.Dispatch.LOAD_ONE);
         CodeBlock lambda = RowsMethodCall.batchLoaderLambda("loadFilms", KEY, reg);
 
         String src = lambda.toString();
@@ -44,10 +46,12 @@ class RowsMethodCallTest {
     void lambdaBody_isIdenticalAcrossContainerAxes_modKeysContainerType() {
         var positional = RowsMethodCall.batchLoaderLambda(
             "rowsX", KEY,
-            new LoaderRegistration("X", true, LoaderRegistration.Container.POSITIONAL_LIST));
+            new LoaderRegistration(
+                true, LoaderRegistration.Container.POSITIONAL_LIST, LoaderRegistration.Dispatch.LOAD_ONE));
         var mapped = RowsMethodCall.batchLoaderLambda(
             "rowsX", KEY,
-            new LoaderRegistration("X", true, LoaderRegistration.Container.MAPPED_SET));
+            new LoaderRegistration(
+                true, LoaderRegistration.Container.MAPPED_SET, LoaderRegistration.Dispatch.LOAD_ONE));
 
         // Replacing the keys container reduces both lambdas to the same string — the body invariant.
         String normalize = positional.toString().replace("java.util.List<", "C<");

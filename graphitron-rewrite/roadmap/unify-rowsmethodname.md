@@ -310,9 +310,21 @@ API misfit surfaces here, not at the flip.
   gate for SQL permits, `DSLContext dsl` resolution) and dispatches body
   framing per permit; `RowsMethodCall.batchLoaderLambda` folds the
   keys-container axis onto `LoaderRegistration.container()`;
-  `DataLoaderFetcherEmitter.build` emits the unified DataFetcher with
-  `Invocation.{LOAD_ONE, LOAD_MANY}` deciding the loader-dispatch shape.
-  15 unit tests pin framing, container choice, and dispatch.)*
+  `DataLoaderFetcherEmitter.build` emits the unified DataFetcher reading
+  `LoaderRegistration.dispatch()` (`LOAD_ONE` / `LOAD_MANY`) for the
+  loader-dispatch shape. 15 unit tests pin framing, container choice, and
+  dispatch.)*
+
+  *(Phase 1 follow-up, shipped after architect self-review: dropped
+  vestigial `LoaderRegistration.loaderName` (the runtime path-scoped name
+  is computed at fetcher emit time from `env.getExecutionStepInfo().getPath()`
+  and cannot be carried on a build-time record); lifted the load-vs-loadMany
+  predicate from a `DataLoaderFetcherEmitter.build` parameter onto
+  `LoaderRegistration.Dispatch` so the resolver projects it once instead of
+  Phase 2's three callers each re-deriving the `AccessorKeyedMany` predicate;
+  clarified the `keyExtraction` parameter contract that the block may
+  short-circuit before reaching the dispatch line (legitimising
+  `buildSplitQueryDataFetcher`'s null-FK case under the unified emitter).)*
 - **Interface default** on `BatchKeyField`: `default String rowsMethodName()
   { return "rows" + capitalize(name()); }`. Javadoc tightened: replace
   "naming convention is determined by each implementing type independently"

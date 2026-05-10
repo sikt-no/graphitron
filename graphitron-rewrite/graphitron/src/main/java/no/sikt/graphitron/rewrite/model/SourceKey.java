@@ -11,9 +11,9 @@ import java.util.Objects;
  * components encode orthogonal axes the dispatch sites previously recovered through
  * {@code instanceof} checks.
  *
- * <p>Pairs with {@link LoaderRegistration} (DataLoader identity + container kind) at the
- * field-classifier site: one {@link SourceKey} per field; the {@link LoaderRegistration} is a
- * separate value because the same {@link SourceKey} shape can be loaded into either a
+ * <p>Pairs with {@link LoaderRegistration} (DataLoader container kind + dispatch shape) at
+ * the field-classifier site: one {@link SourceKey} per field; the {@link LoaderRegistration}
+ * is a separate value because the same {@link SourceKey} shape can be loaded into either a
  * positional or mapped DataLoader container.
  *
  * <h2>Components</h2>

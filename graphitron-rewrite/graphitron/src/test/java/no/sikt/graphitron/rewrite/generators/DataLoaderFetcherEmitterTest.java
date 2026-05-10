@@ -14,8 +14,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Unit-tier coverage of {@link DataLoaderFetcherEmitter#build} — the unified DataFetcher
  * outer dance. Pins the path-scoped name construction, the loader-factory choice (positional
- * vs mapped), the key-extraction paste-through, the load-vs-loadMany dispatch, and the
- * async-wrap tail paste-through.
+ * vs mapped), the key-extraction paste-through, the load-vs-loadMany dispatch (read off
+ * {@link LoaderRegistration#dispatch()}), and the async-wrap tail paste-through.
  */
 @UnitTier
 class DataLoaderFetcherEmitterTest {
@@ -42,13 +42,13 @@ class DataLoaderFetcherEmitterTest {
 
     @Test
     void positionalList_loadOne_emitsNewDataLoaderAndLoadKeyEnv() {
-        var reg = new LoaderRegistration("Language.films", true, LoaderRegistration.Container.POSITIONAL_LIST);
+        var reg = new LoaderRegistration(
+            true, LoaderRegistration.Container.POSITIONAL_LIST, LoaderRegistration.Dispatch.LOAD_ONE);
 
         MethodSpec spec = DataLoaderFetcherEmitter.build(
             "films",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            DataLoaderFetcherEmitter.Invocation.LOAD_ONE,
             CTX_CALL, LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL);
 
         String src = spec.toString();
@@ -61,13 +61,13 @@ class DataLoaderFetcherEmitterTest {
 
     @Test
     void mappedSet_loadOne_emitsNewMappedDataLoader() {
-        var reg = new LoaderRegistration("Query.filmsByActor", true, LoaderRegistration.Container.MAPPED_SET);
+        var reg = new LoaderRegistration(
+            true, LoaderRegistration.Container.MAPPED_SET, LoaderRegistration.Dispatch.LOAD_ONE);
 
         MethodSpec spec = DataLoaderFetcherEmitter.build(
             "filmsByActor",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            DataLoaderFetcherEmitter.Invocation.LOAD_ONE,
             CTX_CALL, LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL);
 
         String src = spec.toString();
@@ -77,13 +77,13 @@ class DataLoaderFetcherEmitterTest {
 
     @Test
     void loadMany_emitsLoaderLoadManyWithDuplicatedContexts() {
-        var reg = new LoaderRegistration("Payload.films", true, LoaderRegistration.Container.POSITIONAL_LIST);
+        var reg = new LoaderRegistration(
+            false, LoaderRegistration.Container.MAPPED_SET, LoaderRegistration.Dispatch.LOAD_MANY);
 
         MethodSpec spec = DataLoaderFetcherEmitter.build(
             "films",
             KEY, RECORD, ASYNC_RESULT,
             reg,
-            DataLoaderFetcherEmitter.Invocation.LOAD_MANY,
             CTX_CALL, LAMBDA, KEYS_EXTRACTION, TRIVIAL_TAIL);
 
         String src = spec.toString();
@@ -92,12 +92,13 @@ class DataLoaderFetcherEmitterTest {
 
     @Test
     void loaderTypeReflectsKeyAndValueGenericArgs() {
-        var reg = new LoaderRegistration("Language.films", true, LoaderRegistration.Container.POSITIONAL_LIST);
+        var reg = new LoaderRegistration(
+            true, LoaderRegistration.Container.POSITIONAL_LIST, LoaderRegistration.Dispatch.LOAD_ONE);
 
         MethodSpec spec = DataLoaderFetcherEmitter.build(
             "films",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
-            reg, DataLoaderFetcherEmitter.Invocation.LOAD_ONE,
+            reg,
             CTX_CALL, LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL);
 
         // DataLoader<Integer, List<Record>> — first generic = key, second = loader's per-key V.
@@ -107,13 +108,14 @@ class DataLoaderFetcherEmitterTest {
 
     @Test
     void asyncWrapTail_isPastedAfterDispatchCall() {
-        var reg = new LoaderRegistration("Language.films", true, LoaderRegistration.Container.POSITIONAL_LIST);
+        var reg = new LoaderRegistration(
+            true, LoaderRegistration.Container.POSITIONAL_LIST, LoaderRegistration.Dispatch.LOAD_ONE);
         CodeBlock customTail = CodeBlock.of(".thenApply(payload -> payload).exceptionally(t -> null)");
 
         MethodSpec spec = DataLoaderFetcherEmitter.build(
             "films",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
-            reg, DataLoaderFetcherEmitter.Invocation.LOAD_ONE,
+            reg,
             CTX_CALL, LAMBDA, KEY_EXTRACTION, customTail);
 
         String src = spec.toString();
