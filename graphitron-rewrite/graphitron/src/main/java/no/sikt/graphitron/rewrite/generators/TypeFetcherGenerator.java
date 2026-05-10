@@ -421,11 +421,11 @@ public class TypeFetcherGenerator {
                 // resolver reads it back via FetcherEmitter's ParticipantColumnReferenceField arm.
                 case ChildField.ParticipantColumnReferenceField ignored -> { }
                 case ChildField.RecordTableField rtf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rtf, rtf.batchKey(), resultType, outputPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rtf, rtf.sourceKey(), resultType, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForRecordTable(ctx, rtf, outputPackage));
                 }
                 case ChildField.RecordLookupTableField rltf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rltf, rltf.batchKey(), resultType, outputPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rltf, rltf.sourceKey(), resultType, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForRecordLookupTable(ctx, rltf, outputPackage));
                     // Input-rows helper identical in shape to SplitLookupTableField's — reads
                     // @lookupKey args from env.getArgument(name) and emits the typed Row<M+1>[].
@@ -2945,7 +2945,7 @@ public class TypeFetcherGenerator {
             + "field would emit code expecting List<Record> from a loadMany that supplies "
             + "Record, miscompiling generated *Fetchers.")
     private static <T extends ChildField.TableTargetField & BatchKeyField> MethodSpec
-            buildRecordBasedDataFetcher(TypeFetcherEmissionContext ctx, T field, BatchKey.RecordParentBatchKey batchKey,
+            buildRecordBasedDataFetcher(TypeFetcherEmissionContext ctx, T field, SourceKey sourceKey,
                     GraphitronType.ResultType resultType, String outputPackage) {
 
         boolean isList = field.returnType().wrapper().isList();
@@ -2961,7 +2961,7 @@ public class TypeFetcherGenerator {
         // The fetcher's overall result follows the field's cardinality regardless of dispatch.
         TypeName resultValueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
 
-        TypeName keyType = batchKey.keyElementType();
+        TypeName keyType = sourceKey.keyElementType();
         LoaderRegistration registration = field.loaderRegistration();
 
         return DataLoaderFetcherEmitter.build(
@@ -2970,7 +2970,7 @@ public class TypeFetcherGenerator {
             registration,
             ctx.graphitronContextCall(),
             RowsMethodCall.batchLoaderLambda(field.rowsMethodName(), keyType, registration),
-            GeneratorUtils.buildRecordParentKeyExtraction(batchKey, resultType),
+            GeneratorUtils.buildRecordParentKeyExtraction(sourceKey, resultType),
             asyncWrapTail(resultValueType, outputPackage, Optional.empty()));
     }
 

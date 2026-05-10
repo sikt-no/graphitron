@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import javax.lang.model.element.Modifier;
@@ -786,7 +787,8 @@ public final class MultiTablePolymorphicEmitter {
             no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
         TypeName valueType = connectionResultClass;
 
-        TypeName keyType = parentKey.keyElementType();
+        SourceKey parentSourceKey = parentSourceKey(parentKey);
+        TypeName keyType = parentSourceKey.keyElementType();
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
         String rowsMethodName = "rows" + cap(fieldName);
@@ -813,9 +815,9 @@ public final class MultiTablePolymorphicEmitter {
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
             loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        // Parent-object key extraction: delegated to the canonical four-shape × four-permit
-        // helper. Emits the typed {@code <KeyType> key = ...} statement consumed by load(key, env).
-        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentKey, parentResultType));
+        // Parent-object key extraction: delegated to the canonical Reader × Cardinality helper.
+        // Emits the typed {@code <KeyType> key = ...} statement consumed by load(key, env).
+        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentResultType));
 
         builder.addCode(CodeBlock.builder()
             .add("return loader.load(key, env)\n")
@@ -852,7 +854,8 @@ public final class MultiTablePolymorphicEmitter {
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName valueType = listOfRecord;
 
-        TypeName keyType = parentKey.keyElementType();
+        SourceKey parentSourceKey = parentSourceKey(parentKey);
+        TypeName keyType = parentSourceKey.keyElementType();
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
         TypeName lambdaKeysType = ParameterizedTypeName.get(LIST, keyType);
         String rowsMethodName = "rows" + cap(fieldName);
@@ -879,7 +882,7 @@ public final class MultiTablePolymorphicEmitter {
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
             loaderType, DATA_LOADER_FACTORY, lambdaBlock);
 
-        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentKey, parentResultType));
+        builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(parentSourceKey, parentResultType));
 
         builder.addCode(CodeBlock.builder()
             .add("return loader.load(key, env)\n")
@@ -1522,5 +1525,54 @@ public final class MultiTablePolymorphicEmitter {
                 DATA_FETCHER_RESULT, boxed)
             .add(".exceptionally(t -> $T.redact(t, env))", errorRouter)
             .build();
+    }
+
+    /**
+     * Transitional projection of {@link BatchKey.RecordParentBatchKey} into the {@link SourceKey}
+     * shape consumed by {@link GeneratorUtils#buildRecordParentKeyExtraction}. Mirrors the
+     * record-parent arms of {@code SourceKeyResolver.resolveRecordParent} without taking a field
+     * dependency. Removable once {@link no.sikt.graphitron.rewrite.model.ChildField.InterfaceField}
+     * and {@link no.sikt.graphitron.rewrite.model.ChildField.UnionField} flip {@code parentKey}
+     * storage to {@link SourceKey}.
+     *
+     * <p>Cardinality is variant-derived: only the {@code AccessorKeyedMany} arm projects to
+     * {@link SourceKey.Cardinality#MANY}; the rest project to {@link SourceKey.Cardinality#ONE}.
+     * The downstream helper only forks on cardinality inside the {@code AccessorCall} arm, so the
+     * non-accessor arms' cardinality is irrelevant past the projection.
+     */
+    private static SourceKey parentSourceKey(BatchKey.RecordParentBatchKey parentKey) {
+        if (parentKey instanceof BatchKey.RowKeyed rk) {
+            return new SourceKey(
+                null, rk.parentKeyColumns(), List.of(),
+                new SourceKey.Wrap.Row(), SourceKey.Cardinality.ONE,
+                new SourceKey.Reader.ColumnRead());
+        }
+        if (parentKey instanceof BatchKey.LifterLeafKeyed llk) {
+            return new SourceKey(
+                null, llk.parentSideColumns(), List.of(llk.hop()),
+                new SourceKey.Wrap.Row(), SourceKey.Cardinality.ONE,
+                new SourceKey.Reader.SourceRowsCall(llk.lifter()));
+        }
+        if (parentKey instanceof BatchKey.LifterPathKeyed lpk) {
+            return new SourceKey(
+                null, lpk.parentSideColumns(), lpk.path(),
+                new SourceKey.Wrap.Row(), SourceKey.Cardinality.ONE,
+                new SourceKey.Reader.SourceRowsCall(lpk.lifter()));
+        }
+        if (parentKey instanceof BatchKey.AccessorKeyedSingle aks) {
+            return new SourceKey(
+                aks.hop().targetTable(), aks.targetKeyColumns(), List.of(aks.hop()),
+                new SourceKey.Wrap.Record(), SourceKey.Cardinality.ONE,
+                new SourceKey.Reader.AccessorCall(aks.accessor()));
+        }
+        if (parentKey instanceof BatchKey.AccessorKeyedMany akm) {
+            return new SourceKey(
+                akm.hop().targetTable(), akm.targetKeyColumns(), List.of(akm.hop()),
+                new SourceKey.Wrap.Record(), SourceKey.Cardinality.MANY,
+                new SourceKey.Reader.AccessorCall(akm.accessor()));
+        }
+        throw new IllegalArgumentException(
+            "parentSourceKey: unknown RecordParentBatchKey permit "
+            + parentKey.getClass().getSimpleName());
     }
 }
