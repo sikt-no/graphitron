@@ -1,66 +1,401 @@
 ---
 id: R38
-title: "Unify `rowsMethodName()` and the rows-method seam"
-status: Ready
-bucket: cleanup
+title: "Reshape `BatchKey` into `SourceKey` + unify the rows-method seam"
+status: Spec
+bucket: architecture
 priority: 1
 theme: model-cleanup
 depends-on: []
 ---
 
-# Unify `rowsMethodName()` and the rows-method seam
+# Reshape `BatchKey` into `SourceKey` + unify the rows-method seam
 
-The DataLoader-backed leaf taxonomy has six members, all implementing `BatchKeyField` and emitting a "rows-method" the registered DataLoader's batch lambda calls into. Four (`SplitTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`) override `rowsMethodName()` with `"rows" + capitalize(name())`; two (`ServiceTableField`, `ServiceRecordField`) override with `"load" + capitalize(name())`. The prefix is a body-shape marker: `rows` for "this method emits SQL to shape rows", `load` for "this method delegates to a developer-supplied service". Underneath, every site that emits or invokes a rows-method handcrafts the same scaffolding: signature `(keys, env)`, optional empty-input gate, optional `DSLContext dsl = ...` line, and the BatchLoader lambda the DataLoader registers.
+`BatchKey` carries 11 permits across two sub-hierarchies. A `Mapped*` family
+doubles them on a container axis (`newDataLoader` vs `newMappedDataLoader`); a
+`Lifter*` / `Accessor*` family doubles them again on a reader axis
+(`@sourceRows` lifter vs `@record` accessor vs catalog-FK column read). The
+rows-method seam — declaration scaffolding, BatchLoader lambda, DataFetcher
+dance — is handcrafted across five emitter sites that all dispatch on the same
+conflated permit shape, every one of them recovering an axis the type system
+already knows about (through redundant permits) but doesn't expose as
+orthogonal properties.
 
-The end goal is hardening: when conceptually doing the same thing, share the emitter. After R38 every BatchKeyField rows-method declaration goes through one emitter, every BatchLoader lambda through one emitter, every DataLoader-registering DataFetcher through one emitter. The SQL-vs-service split survives only as a sealed `RowsMethodBody` permit plugged into the shared skeleton.
+These are facets of the same root cause: `BatchKey` is the wrong shape for
+what the system dispatches on. R38 reshapes the model so the dispatch axes
+are first-class. The unified rows-method emitter falls out as a consequence
+rather than as a parallel cleanup.
 
-## Patterns
+## The reshape
 
-Five distinct concepts live in the rows-method seam. R38 hardens four; one is already factored on the SQL side and stays where it is.
+A field with a DataLoader-backed source side becomes three concepts:
 
-1. **Naming.** The `rowsMethodName()` string. Today: six overrides on `ChildField.java` at lines 209, 247, 488, 522 (the `rows<X>` group) and 419, 447 (the `load<X>` group). The default-vs-override split is encodable on `BatchKeyField` itself.
-2. **Declaration scaffolding.** The MethodSpec skeleton: `public static`, parameters, return type, empty-input gate, optional DSL-context line. Today: the SQL siblings inside `SplitRowsMethodEmitter` share a prelude past the gate but each handcrafts the signature; `TypeFetcherGenerator.buildServiceRowsMethod` (line 2823) handcrafts the whole skeleton inline and skips the empty-input gate.
-3. **Lift (keys → body-shaped input).** Transform `keys` into the form the body consumes. SQL paths build a typed `parentRows[]` array and wrap as a jOOQ VALUES table named `parentInput`; service paths consume the typed key container directly. Already factored on the SQL side: `SplitRowsMethodEmitter.emitParentInputAndFkChain` (line 148) produces a `PreludeBindings` record (line 120). Stays SQL-internal under R38; the asymmetry is the SQL-vs-service distinction itself, not a missing extraction.
-4. **Call site (BatchLoader lambda).** The expression that invokes the rows-method given `(keys, env)`. Today: handcrafted three times in `TypeFetcherGenerator` at lines 2762, 2922, 3022, each inside a `(keys, batchEnv) -> { dfe = ...; return CompletableFuture.completedFuture(rowsXxx(keys, dfe)); }` block.
-5. **DataFetcher dance.** The DataFetcher MethodSpec that registers the loader, extracts the per-parent batch key from `env`, calls `loader.load(key, env)` (or `loader.loadMany`), and async-wraps the result. Today: handcrafted in three emitters: `buildServiceDataFetcher` (line 2733), `buildSplitQueryDataFetcher` (line 2888), `buildRecordBasedDataFetcher` (line 2995).
+- **`SourceKey`** — singular per-field metadata. The shape descriptor the
+  classifier produces and consumers (validator, fetcher emitter, rows-method
+  emitter) read off.
+- **`SourceRow`** — plural runtime instance. A row of data flowing at
+  execution time. Java type dictated by `SourceKey.wrap × columns`; not a
+  generated type.
+- **`LoaderRegistration`** — small per-field record. DataLoader identity and
+  container kind.
 
-## Phases
+### `SourceKey`
 
-Three phases, each one job. Phase 1 is purely additive (new code, no consumers); Phase 2 is the single flip across all consumers; Phase 3 deletes the dead code Phase 2 orphans. Risk concentrates in Phase 2; Phases 1 and 3 are mechanically simple.
+```java
+record SourceKey(
+    List<ColumnRef> columns,         // entry-point columns: match target's columns when path
+                                     // empty; first-hop source-side when path non-empty
+    List<JoinStep.FkJoin> path,      // empty = target-aligned; non-empty = FK chain to target
+    Wrap wrap,                       // ROW | RECORD | TABLE_RECORD
+    Cardinality cardinality,         // ONE | MANY (per source)
+    Reader reader                    // sealed sub-level; see below
+) {
+    public TableRef target() {
+        return path.isEmpty()
+            ? columns.getFirst().table()
+            : path.getLast().targetTable();
+    }
+}
+
+enum Wrap { ROW, RECORD, TABLE_RECORD }
+enum Cardinality { ONE, MANY }
+```
+
+`target` is derivable from path/columns and exposed as a method, not stored.
+The R75 mapping table in `synthesize-payload-carrier.md` (Fork B resolution)
+shows the projection from today's 11 `BatchKey` permits onto the new shape.
+
+### `Reader` (sealed sub-level)
+
+```java
+sealed interface Reader {
+    record ColumnRead() implements Reader {}                                // catalog FK on parent record
+    record AccessorCall(MethodRef accessor) implements Reader {}            // typed accessor on @record parent
+    record SourceRowsCall(MethodRef lifter) implements Reader {}            // @sourceRows static lifter
+    record ServiceTableRecord(Class<?> recordType) implements Reader {}     // service returns TableRecord<X>
+    record ServiceUntypedRecord() implements Reader {}                      // service returns Record<>
+}
+```
+
+Five permits in R38. R75 adds a sixth (`ResultRowWalk` — walk a
+`Result<RecordN>` from upstream DML); that addition lives in R75's spec, not
+R38's. R38's job is the foundation that makes R75's permit a one-line
+addition rather than a 12th `BatchKey` permit.
+
+### `SourceRow`
+
+The runtime form of what `SourceKey` describes. Java type dictated by `wrap
+× columns`:
+
+- `SourceKey(wrap=ROW, columns=[FILM_ID])` → `Row1<Integer>`.
+- `SourceKey(wrap=RECORD, columns=[FILM_ID, LANGUAGE_ID])` →
+  `Record2<Integer, Integer>`.
+- `SourceKey(wrap=TABLE_RECORD, reader=ServiceTableRecord(FilmRecord.class))`
+  → `FilmRecord`.
+
+One `SourceKey` per field; potentially many `SourceRow`s per source per
+fetch. `SourceRow` is documentation of the type discipline, not a generated
+type.
+
+### `LoaderRegistration`
+
+```java
+record LoaderRegistration(
+    String loaderName,           // existing buildDataLoaderName output
+    boolean valueIsList,         // false → load(key)→Record; true → load(key)→List<Record>
+    Container container          // POSITIONAL_LIST | MAPPED_SET
+) {}
+
+enum Container { POSITIONAL_LIST, MAPPED_SET }
+```
+
+`Container` drives the `newDataLoader` vs `newMappedDataLoader` choice. The
+same `SourceKey` shape can be loaded into either container (positional from a
+uniqueness invariant; mapped from a one-to-many or set-valued relation), so
+container is a per-field decision that doesn't belong on `SourceKey`. The
+`Mapped*` family in today's `BatchKey` collapses to `container = MAPPED_SET`.
+
+The R75 rooted case has no `LoaderRegistration` — the DataFetcher reads
+`env.getSource()` and uses `SourceKey` directly to extract `SourceRow`
+instances. `LoaderRegistration` being a separate value (not a field on
+`SourceKey`) is what makes that absence representable.
+
+### Per-fetch dispatch
+
+`load(sourceRow)` vs `loadMany(sourceRows)` reads `sourceKey.cardinality()`
+at the call site. Today's `LoaderDispatch` enum on `RecordParentBatchKey`
+becomes redundant after the reshape and is deleted in Phase 3.
+
+### Cross-axis invariants
+
+`SourceKey`'s compact constructor rejects shapes that violate Reader-specific
+invariants:
+
+- `SourceRowsCall` → `wrap == ROW`. The `@sourceRows` lifter contract pins
+  output to entry-point columns shaped as `Row<...>`.
+- `AccessorCall` returning `List<X>` → `cardinality == MANY` and
+  `wrap == RECORD`.
+- `ServiceTableRecord` with `recordType == target().recordType()` →
+  `path.isEmpty()`. Walking past target is structurally redundant; the
+  service already produced a target-aligned record.
+- (R75 will add: `ResultRowWalk` cardinality matches the upstream Result's
+  row count.)
+
+These invariants are load-bearing. The rows-method emitter's `Reader`
+dispatch relies on them; each gets a `@LoadBearingClassifierCheck`
+declaration consumed by an `@DependsOnClassifierCheck` on the corresponding
+emit site.
+
+### `SourceKeyResolver`
+
+Sibling to `OrderByResolver`, `PaginationResolver`, `LookupKeyDirectiveResolver`,
+`SourceRowDirectiveResolver`, `ClassAccessorResolver`. Lives at
+`no.sikt.graphitron.rewrite.SourceKeyResolver`. Single-concern projection: reads
+the same classification context the existing field classifiers read (catalog FK,
+`@record` accessor, `@sourceRows` lifter, service-return reflection) and produces
+a `SourceKey`.
+
+`LoaderRegistrationResolver` is the sibling that produces `LoaderRegistration`
+from the same context plus the field's container decision.
+
+## Rows-method seam, after the reshape
+
+The narrow R38's five-pattern catalog re-grounds against the new model. The
+seam shrinks to one entry per concern.
+
+1. **Naming.** `default String rowsMethodName()` on `BatchKeyField` returning
+   `"rows" + capitalize(name())`. The two service-backed leaves
+   (`ServiceTableField`, `ServiceRecordField`) keep their `load<X>` overrides
+   as documented exceptions; the four SQL leaves' overrides become redundant
+   and delete in Phase 3.
+2. **Declaration scaffolding.** `RowsMethodSkeleton.build(BatchKeyField,
+   returnTypeName, RowsMethodBody)` emits modifiers, parameters, return
+   type, and dispatches the body via exhaustive switch on `RowsMethodBody`.
+   `RowsMethodBody` is a sealed type with one variant per body shape:
+   `SqlSplitTable`, `SqlSplitLookupTable`, `SqlRecordTable`,
+   `SqlRecordLookupTable`, `Service`. Each construct site projects from the
+   field's `(SourceKey.reader(), LoaderRegistration.container())` pair to the
+   matching `RowsMethodBody` permit. The four SQL permits emit the
+   empty-input gate and the `DSLContext dsl = ...` line; the `Service` permit
+   emits the dsl line per `callShape` and omits the gate (matching today's
+   service-path behaviour; see "Out of scope").
+3. **Lift.** SQL-side `parentRows[]` / VALUES-table assembly stays internal
+   to the `Sql*` body permits via `SplitRowsMethodEmitter
+   .emitParentInputAndFkChain` (line 148, `PreludeBindings` line 120);
+   service-side consumes the typed key container directly. Unchanged.
+4. **Call site (BatchLoader lambda).** `RowsMethodCall.batchLoaderLambda(
+   BatchKeyField) -> CodeBlock` emits the `(keys, batchEnv) -> { dfe = ...;
+   return CompletableFuture.completedFuture(rowsXxx(keys, dfe)); }` lambda
+   once. Single source of truth for containing-class name, method name,
+   keys-container type (`Set` or `List` per `LoaderRegistration.container()`),
+   result type (via `RowsMethodShape.outerRowsReturnType`).
+5. **DataFetcher dance.** `DataLoaderFetcherEmitter.build(BatchKeyField,
+   ReturnTypeRef, AsyncWrapTail) -> MethodSpec` emits the full DataFetcher:
+   name resolution (`buildDataLoaderName`), `computeIfAbsent` registry call
+   wrapping `RowsMethodCall.batchLoaderLambda(...)` (factory chosen by
+   `container()`), `GeneratorUtils.buildKeyExtraction(...)`,
+   `loader.load(key, env)` (or `loader.loadMany` per `cardinality()`),
+   async-wrap tail.
+
+Every dispatch in the seam reads off `SourceKey` and `LoaderRegistration`
+rather than reconstructing the axis from `instanceof BatchKey.X`.
+
+## Phasing
+
+Three phases, each one job. Phase 1 is purely additive (new code, no
+consumers); Phase 2 is the single flip across all consumers; Phase 3 deletes
+the dead code Phase 2 orphans. Risk concentrates in Phase 2; Phases 1 and 3
+are mechanically simple.
 
 ### Phase 1: additive
 
-Land four new emitters and one interface default. Nothing routes through them yet. Build stays green; emitted source byte-identical. Each new emitter ships with unit tests against fixture call shapes that mirror what Phase 2 will feed it, so the new APIs have coverage independently of consumers and an API misfit surfaces here, not at the flip.
+Land the new model alongside the existing one. Nothing routes through it
+yet. Build stays green; emitted source byte-identical. Each new emitter and
+resolver ships with unit tests against fixture call shapes that mirror what
+Phase 2 will feed it, so API misfit surfaces here, not at the flip.
 
-- **Interface default.** Add `default String rowsMethodName()` on `BatchKeyField` returning `"rows" + capitalize(name())`. Tighten the Javadoc: replace "naming convention is determined by each implementing type independently" (`BatchKeyField.java:17-18`) with "DataLoader-backed variants default to `rows<Name>`; service-backed variants override to `load<Name>` to mark the body as a service delegation." The four SQL leaves keep their (now redundant) overrides; the two service leaves keep their `load<X>` overrides as the documented exception.
-- **`RowsMethodSkeleton` + sealed `RowsMethodBody`.** `RowsMethodBody` is a sealed type with one variant per body shape: `SqlSplitTable`, `SqlSplitLookupTable`, `SqlRecordTable`, `SqlRecordLookupTable`, `Service`. Each permit carries only the data its body needs (the SQL permits carry the inputs `emitParentInputAndFkChain` consumes; `Service` carries the `MethodRef` and `callShape`). `RowsMethodSkeleton.build(BatchKeyField, returnTypeName, RowsMethodBody)` emits modifiers, parameters, and return type, then dispatches via exhaustive switch on the permit: the four SQL permits emit the empty-input gate and the `DSLContext dsl = ...` line; the `Service` permit emits the dsl line per `callShape` and omits the gate (matching today's service-path behaviour; see "Out of scope" below). No predicate accessors on `RowsMethodBody`: the type identity encodes which scaffolding the body needs.
-- **`RowsMethodCall`.** New utility class with one factory: `batchLoaderLambda(BatchKeyField) -> CodeBlock` emits the `(keys, batchEnv) -> { dfe = ...; return CompletableFuture.completedFuture(rowsXxx(keys, dfe)); }` lambda. Single source of truth for the four pieces: containing-class name, method name (Phase 1's interface default), keys-container type (`Set` or `List` per `isMapped`), result type (via `RowsMethodShape.outerRowsReturnType`).
-- **`DataLoaderFetcherEmitter`.** New utility class. `build(BatchKeyField, ReturnTypeRef, AsyncWrapTail) -> MethodSpec` emits the full DataFetcher: name resolution (`buildDataLoaderName`), `computeIfAbsent` registry call wrapping `RowsMethodCall.batchLoaderLambda(...)` (factory chosen by `isMapped`), `GeneratorUtils.buildKeyExtraction(...)`, `loader.load(key, env)` (or `loader.loadMany` per dispatch), async-wrap tail.
+- **`SourceKey`, `Reader`, `LoaderRegistration`** records in
+  `no.sikt.graphitron.rewrite.model`. Compact-constructor invariants per
+  `Reader`. Each invariant gets a `@LoadBearingClassifierCheck` declaration.
+- **`SourceKeyResolver` + `LoaderRegistrationResolver`** in
+  `no.sikt.graphitron.rewrite`, alongside `OrderByResolver` etc. Each ships
+  per-`Reader` projection tests from a fixture classification context.
+- **`RowsMethodSkeleton`** + sealed `RowsMethodBody` (five permits as
+  enumerated above). The skeleton's exhaustive switch is the dispatch site;
+  no predicate accessors on `RowsMethodBody`.
+- **`RowsMethodCall.batchLoaderLambda`**, single factory.
+- **`DataLoaderFetcherEmitter.build`**, single entry.
+- **Interface default** on `BatchKeyField`: `default String rowsMethodName()
+  { return "rows" + capitalize(name()); }`. Javadoc tightened: replace
+  "naming convention is determined by each implementing type independently"
+  (`BatchKeyField.java:17-18`) with "DataLoader-backed variants default to
+  `rows<Name>`; service-backed variants override to `load<Name>` to mark the
+  body as a service delegation." The four SQL leaves keep their (now
+  redundant) overrides; the two service leaves keep their `load<X>` overrides
+  as the documented exception.
 
 ### Phase 2: flip
 
-Migrate every consumer in one PR. The diff is delete-and-replace; emitted source diffs to zero.
+Migrate every consumer in one PR. The diff is delete-and-replace; emitted
+source diffs to zero modulo the empty-input gate non-change (out of scope,
+see below).
 
-- **Five rows-method emitters → `RowsMethodSkeleton`.** Each construct site builds the matching `RowsMethodBody` permit and hands it to the skeleton:
-  - `SplitRowsMethodEmitter.buildForSplitTable` / `buildForSplitLookupTable` / `buildForRecordTable` / `buildForRecordLookupTable`: build the matching `Sql*` permit carrying the prelude inputs; the skeleton's switch invokes `emitParentInputAndFkChain` (Pattern 3, unchanged) and emits the SELECT body for that permit.
-  - `TypeFetcherGenerator.buildServiceRowsMethod` (line 2823): build the `Service` permit carrying `MethodRef` + `callShape`; the skeleton emits `return <callTarget>.<methodName>(<args>);`.
-- **Three BatchLoader-lambda call sites → `RowsMethodCall.batchLoaderLambda`.** Replace the inline lambda blocks at `TypeFetcherGenerator.java:2762`, `:2922`, `:3022`, each with one `RowsMethodCall.batchLoaderLambda(bkf)` call.
-- **Three DataFetcher emitters → `DataLoaderFetcherEmitter`.** Migrate `buildServiceDataFetcher` (line 2733), `buildSplitQueryDataFetcher` (line 2888), `buildRecordBasedDataFetcher` (line 2995). Each shrinks from a multi-block builder to one `DataLoaderFetcherEmitter.build(...)` call.
+- **Field classifiers populate `SourceKey` + `LoaderRegistration`** alongside
+  today's `BatchKey`. Both values populate; `BatchKey` is computed for
+  compatibility but no longer dispatched on past Phase 2.
+- **Five rows-method emitters → `RowsMethodSkeleton`.** Each construct site
+  reads `SourceKey.reader()` + `LoaderRegistration.container()`, builds the
+  matching `RowsMethodBody` permit, hands it to the skeleton:
+  - `SplitRowsMethodEmitter.buildForSplitTable` / `buildForSplitLookupTable`
+    / `buildForRecordTable` / `buildForRecordLookupTable` build the matching
+    `Sql*` permit; the skeleton's switch invokes `emitParentInputAndFkChain`
+    (Pattern 3, unchanged) and emits the SELECT body.
+  - `TypeFetcherGenerator.buildServiceRowsMethod` (line 2823) builds the
+    `Service` permit carrying `MethodRef` + `callShape`; the skeleton emits
+    `return <callTarget>.<methodName>(<args>);`.
+- **Three BatchLoader-lambda call sites → `RowsMethodCall.batchLoaderLambda`.**
+  Replace the inline lambda blocks at `TypeFetcherGenerator.java:2762`,
+  `:2922`, `:3022`, each with one `RowsMethodCall.batchLoaderLambda(bkf)`
+  call.
+- **Three DataFetcher emitters → `DataLoaderFetcherEmitter`.** Migrate
+  `buildServiceDataFetcher` (line 2733), `buildSplitQueryDataFetcher` (line
+  2888), `buildRecordBasedDataFetcher` (line 2995). Each shrinks from a
+  multi-block builder to one `DataLoaderFetcherEmitter.build(...)` call.
+- **Per-fetch dispatch reads `SourceKey.cardinality()`** at the call site.
+  `LoaderDispatch` enum is no longer consulted (deletion in Phase 3).
 
 ### Phase 3: clean
 
-Delete code Phase 2 orphans. Mechanical, no design.
+Delete the orphaned hierarchy and the orphaned scaffolding. Mechanical, no
+design.
 
-- Four `rowsMethodName()` overrides on `ChildField.SplitTableField` (line 209), `ChildField.SplitLookupTableField` (line 247), `ChildField.RecordTableField` (line 488), `ChildField.RecordLookupTableField` (line 522): the default produces the same string.
-- Per-emitter handcrafted skeleton fragments (signature builder, empty-input gate, DSL extraction line) and per-site lambda blocks orphaned by Phase 2.
-- `String rowsMethodName = bkf.rowsMethodName();` locals at sites that no longer reference the name directly.
+- **The 11 `BatchKey` permits** in their two sub-hierarchies. Replaced by
+  `SourceKey` + `Reader`.
+- **`BatchKeyField.batchKey()` accessor.** Replaced by `sourceKey()` +
+  `loaderRegistration()`.
+- **`LoaderDispatch` enum** on `RecordParentBatchKey`. Replaced by
+  `SourceKey.cardinality()`.
+- **Four `rowsMethodName()` overrides** on `ChildField.SplitTableField` (line
+  209), `ChildField.SplitLookupTableField` (line 247),
+  `ChildField.RecordTableField` (line 488),
+  `ChildField.RecordLookupTableField` (line 522).
+- **Per-emitter handcrafted scaffolding fragments** (signature builder,
+  empty-input gate, DSL extraction line) and per-site lambda blocks orphaned
+  by Phase 2.
+- **`String rowsMethodName = bkf.rowsMethodName();` locals** at sites that no
+  longer reference the name directly.
 
-Verify by grep: no caller of any deleted symbol; no inline emit of patterns now owned by the new emitters.
+Verify by grep: no caller of any deleted symbol; no inline emit of patterns
+now owned by the new emitters.
 
-End state: one place to look for each of naming, declaration, call site, and fetcher dance. The SQL-vs-service distinction lives only in the five `RowsMethodBody` permits.
+End state: `SourceKey` + `Reader` is the source-side dispatch axis;
+`LoaderRegistration` carries DataLoader identity; one place to look for each
+of naming, declaration, call site, fetcher dance. The SQL-vs-service
+distinction lives only in the five `RowsMethodBody` permits. Net type-identity
+count goes from 11 to 1 + 5 = 6.
 
 ## Out of scope
 
-**Service-path empty-input gate.** Today the four SQL rows-methods short-circuit on `keys.isEmpty()`; the two service rows-methods don't, and `Service.method(emptySet, dsl)` runs as a wasted call when batch keys are empty. Adding the gate is a behaviour change visible to schema authors with side-effecting service methods, not a refactor; it lands as a separate Backlog item with its own pipeline test pinning the new shape. R38 preserves current per-variant gate behaviour (the `RowsMethodSkeleton` switch on the `Service` permit omits the gate) so Phase 2's flip is purely structural.
+**Service-path empty-input gate.** Today the four SQL rows-methods
+short-circuit on `keys.isEmpty()`; the two service rows-methods don't, and
+`Service.method(emptySet, dsl)` runs as a wasted call when batch keys are
+empty. Adding the gate is a behaviour change visible to schema authors with
+side-effecting service methods, not a refactor; it lands as a separate
+Backlog item with its own pipeline test pinning the new shape. R38 preserves
+current per-variant gate behaviour (the `RowsMethodSkeleton` switch on the
+`Service` permit omits the gate) so Phase 2's flip is purely structural.
 
-**`RowsMethodCall.directCall` for tests.** "Tests reach generated rows-methods through one emitter" was a secondary motivation in the Spec discussion but has no real consumer in R38. Today's analogous pattern is reflective: `ScatterSingleByIdxTest` reaches its target via `getDeclaredMethod`. Designing a `directCall` factory now without an actual test consumer is the kind of "anticipated future use" the principles tell us not to build for. A future Backlog item adding rows-method execution-tier tests adds the factory shaped to that test's actual call shape.
+**`RowsMethodCall.directCall` for tests.** "Tests reach generated rows-methods
+through one emitter" has no real consumer in R38. Today's analogous pattern
+is reflective: `ScatterSingleByIdxTest` reaches its target via
+`getDeclaredMethod`. Designing a `directCall` factory now without an actual
+test consumer is the kind of "anticipated future use" the principles tell us
+not to build for. A future Backlog item adding rows-method execution-tier
+tests adds the factory shaped to that test's actual call shape.
+
+**`ResultRowWalk` Reader permit.** R75's rooted DML payload data-field case
+introduces it; lands as a one-Reader-permit addition on the foundation R38
+establishes. R75's spec, not R38's.
+
+**FK-on-X target-align optimization** for `ServiceTableRecord`. When `X`
+carries an FK to `target`, the chain can shortcut to a single hop. R38 keeps
+the conservative full-chain walk; the optimization is a sibling Backlog item.
+
+**Args-side reshape.** `LookupMapping.ColumnMapping.LookupArg` already exists
+as the args-side sealed type (three arms: `ScalarLookupArg`, `DecodedRecord`,
+`MapInput`), driven by `@lookupKey` and projected by `LookupMappingResolver`.
+The args/source split is intact today. R38 doesn't touch the args side.
+
+## Tests
+
+**Pipeline-tier:**
+
+- **`SourceKeyResolverTest`** — projection from each classification context
+  (catalog FK, `@record` accessor, `@sourceRows` lifter, service
+  `TableRecord`, service untyped `Record`) produces the expected `SourceKey`
+  shape. Cross-axis invariants reject malformed shapes with informative
+  messages.
+- **`LoaderRegistrationResolverTest`** — projection per field shape produces
+  the expected container kind.
+- **Classifier regression pin** — for each of the 11 `BatchKey` permits, a
+  fixture asserts the new classifier produces the expected `SourceKey` per
+  the mapping in R75's Fork B resolution. Pin survives until Phase 3 deletes
+  `BatchKey`.
+- **Rows-method emit pin per `Reader` sub-permit.** Each `Reader` permit
+  drives a structural assertion on the emitted method body (signature, gate
+  presence, body shape).
+- **`fetcherEmitter_unifiedDispatch`** — structural pin that the three
+  DataFetcher sites all route through `DataLoaderFetcherEmitter.build(...)`
+  post-flip.
+- **`rowsMethodEmitter_unifiedSkeleton`** — structural pin that the five
+  rows-method emit sites all route through `RowsMethodSkeleton.build(...)`
+  post-flip.
+
+**Compilation-tier:** existing `graphitron-sakila-example` fixtures compile
+unchanged; emitted source diffs to zero modulo the empty-input gate
+non-change.
+
+**Execution-tier:** all existing execution-tier tests pass unchanged. The
+reshape is an internal model refactor; user-visible behaviour is fixed.
+
+**Audit-tier:** new load-bearing classifier checks declared per `Reader`
+invariant. The audit framework verifies each `@LoadBearingClassifierCheck` is
+consumed by at least one `@DependsOnClassifierCheck` on an emit site.
+
+## Success criteria
+
+**Phase 1:**
+
+- `SourceKey`, `Reader`, `LoaderRegistration` exist in
+  `no.sikt.graphitron.rewrite.model`. `SourceRow` documented as the
+  runtime-instance vocabulary (no generated type).
+- `SourceKeyResolver` and `LoaderRegistrationResolver` exist alongside the
+  existing `*Resolver` siblings; their tests pass.
+- `RowsMethodSkeleton`, `RowsMethodCall`, `DataLoaderFetcherEmitter` exist
+  consuming the new shape; their unit tests pass.
+- `BatchKeyField.rowsMethodName()` interface default exists; the four SQL
+  leaves' overrides survive (deleted in Phase 3).
+- Build green; emitted source byte-identical (no consumer dispatches on the
+  new types yet).
+
+**Phase 2:**
+
+- Field classifiers produce `SourceKey` + `LoaderRegistration` for every
+  DataLoader-backed field.
+- All five rows-method emitter sites route through `RowsMethodSkeleton`.
+- All three BatchLoader-lambda call sites use `RowsMethodCall.batchLoaderLambda`.
+- All three DataFetcher emit sites use `DataLoaderFetcherEmitter.build`.
+- `BatchKey` hierarchy still compiles but is no longer dispatched on
+  downstream of the classifier.
+- Build green; emitted source byte-identical.
+
+**Phase 3:**
+
+- 11 `BatchKey` permits deleted. Net type-identity count: 1 `SourceKey` +
+  5 `Reader` sub-permits = 6.
+- `LoaderDispatch` enum deleted.
+- Four `rowsMethodName()` overrides deleted.
+- Per-emitter handcrafted scaffolding orphans deleted.
+- Verify by grep: no caller of any deleted symbol.
+- Build green; emitted source byte-identical to before R38.
+- R75's `ResultRowWalk` Reader permit lands as a one-permit addition
+  (validated by R75's spec, not R38's).
