@@ -66,7 +66,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Cleanup
 
-- `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md): Root variants drop `joinPath` but share `filters · orderBy · pagination`.
 - `R44` [**Deprecate `@multitableReference`**](deprecate-multitable-reference.md): No consumer of graphitron-rewrite uses `@multitableReference`. Rather than carry the stub through the RC and ship coverage we don't need, the directive joins `@notGenerated` on the deprecation list: it stays declared in `directives.graphqls` so the GraphQL parser does not fail with an "unknown directive" error, but the rewrite classifier rejects every application with a "no longer supported" message and points the schema author at the migration note.
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md): `@externalField` lifted to `IMPLEMENTED_LEAVES` end-to-end in `computed-field-with-reference` (R48, shipped; see [`changelog.md`](changelog.md)). The directive's name is the surviving historical artefact: it predates the `ChildField.ComputedField` model variant and reads as "field resolved by external code" rather than the narrower behaviour the lift settled on (a `Field<X>` returned by a static method, inlined into the SELECT projection at the alias). A clearer name ships in this plan; the old name stays accepted for one consumer-migration window.
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md): Two parallel shims survive in the classifier so legacy SDL keeps building. Both should retire on the same gate (sis migration to canonical SDL); their wire shape is independent but the user-visible migration is one piece of work, so the two retirements ship together. _(blocked by [sis-rewrite-migration](sis-rewrite-migration.md))_
@@ -162,7 +161,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### structural-refactor
 
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
-- `R33` [**Shared interface for `QueryField` / `ChildField` table-bound parallels**](shared-interface-queryfield-childfield.md) — Backlog, cleanup
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
 - `R72` [**Slim ServiceCatalog down to a lookup primitive**](slim-servicecatalog-to-lookup.md) — Backlog, architecture
 - `R125` [**@LoadBearingClassifierCheck on multi-schema TableRef.tableClass / ForeignKeyRef.keysClass**](loadbearing-classifier-checks-multischema-fqn.md) — Backlog, cleanup
