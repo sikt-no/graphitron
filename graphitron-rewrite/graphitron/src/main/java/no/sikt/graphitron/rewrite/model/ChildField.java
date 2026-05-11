@@ -77,7 +77,7 @@ public sealed interface ChildField extends GraphitronField
      * (after the existing {@code @service} wrapper unwrap); this data field's value IS the source
      * value verbatim. Fetcher emit is identity passthrough — {@code env -> env.getSource()} —
      * with no {@link SourceKey} synthesis (no source rows to extract; the parent's value is the
-     * data field's value). Decliines {@link TableTargetField} (no table to target) and
+     * data field's value). Declines {@link TableTargetField} (no table to target) and
      * {@link BatchKeyField} (no DataLoader); the read-mechanism axis is explicit at the type-system
      * level rather than overloading {@code ConstructorField} per the spec's "deliberate spec-time
      * fork" reasoning.
