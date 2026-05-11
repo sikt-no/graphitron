@@ -1838,6 +1838,21 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("FilmPayload", "films"))
                 .isInstanceOf(ChildField.SingleRecordTableField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(ChildField.SingleRecordTableField.class); }
+        },
+
+        SINGLE_RECORD_IDENTITY_FIELD(
+            "Plain Object carrier (no @record/@table) wrapping a single record-element data field "
+                + "(@record-backed ResultType) → SingleRecordIdentityField on the carrier (R75 Phase 2)",
+            """
+            type FilmDto @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+                title: String
+            }
+            type FilmDtoPayload { film: FilmDto }
+            type Query { wrappedFilm: FilmDtoPayload }
+            """,
+            schema -> assertThat(schema.field("FilmDtoPayload", "film"))
+                .isInstanceOf(ChildField.SingleRecordIdentityField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(ChildField.SingleRecordIdentityField.class); }
         };
 
         final String sdl;
