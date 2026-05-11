@@ -36,6 +36,7 @@ public final class SchemaDirectiveRegistry {
      */
     public static final Set<String> GENERATOR_ONLY_DIRECTIVES = Set.of(
         "table",
+        "scalarType",
         "record",
         "discriminate",
         "discriminator",

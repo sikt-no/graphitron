@@ -13,6 +13,20 @@ directive @notGenerated on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_
 directive @table(name: String) on OBJECT | INPUT_OBJECT | INTERFACE
 
 """
+Binds an SDL scalar to a `GraphQLScalarType` constant on the consumer's classpath. The
+argument is the fully-qualified Java reference to a `public static final GraphQLScalarType`
+field (e.g. `graphql.scalars.ExtendedScalars.GraphQLBigDecimal`). Graphitron reflects on the
+constant to recover the Java type for input records, service parameters, and `Field<X>`
+projections, and registers the constant on the synthesized schema so the consumer's
+`buildSchema` hook does not have to wire it.
+
+Hard validation error if the reference does not resolve, the constant's Coercing has erased
+type parameters, or the directive is applied to a GraphQL spec built-in (`Int`, `Float`,
+`String`, `Boolean`, `ID`).
+"""
+directive @scalarType(scalar: String!) on SCALAR
+
+"""
 Names the underlying-binding target for the annotated GraphQL slot. The axis is determined by the
 directive site:
 - On FIELD_DEFINITION / INPUT_FIELD_DEFINITION of a @table-backed type, the column to bind to.

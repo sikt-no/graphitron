@@ -4,6 +4,7 @@ import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.RejectionKind;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.ChildField.ErrorsField;
@@ -53,6 +54,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType;
@@ -3794,6 +3796,111 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(TypeClassificationCase.class)
     void typeClassification(TypeClassificationCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== ScalarType =====
+
+    enum ScalarTypeClassificationCase implements ClassificationCase {
+        SPEC_BUILT_IN_STRING_RESOLVES(
+            "spec built-in 'String' → ScalarType with Resolved(String, Scalars, GraphQLString)",
+            """
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (ScalarType) schema.type("String");
+                assertThat(t.resolution().scalarConstantField()).isEqualTo("GraphQLString");
+                assertThat(t.resolution().scalarConstantOwner().toString()).isEqualTo("graphql.Scalars");
+            }),
+
+        SPEC_BUILT_IN_ID_RESOLVES(
+            "spec built-in 'ID' → ScalarType with Resolved(String, Scalars, GraphQLID)",
+            """
+            type Query { id: ID }
+            """,
+            schema -> {
+                var t = (ScalarType) schema.type("ID");
+                assertThat(t.resolution().scalarConstantField()).isEqualTo("GraphQLID");
+            }),
+
+        DIRECTIVE_RESOLVES_CONSUMER_SCALAR(
+            "scalar with @scalarType referencing a well-formed Coercing → ScalarType resolved to fixture",
+            """
+            scalar Money @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
+            type Query { x: Money }
+            """,
+            schema -> {
+                var t = (ScalarType) schema.type("Money");
+                assertThat(t.resolution().scalarConstantField()).isEqualTo("MONEY");
+                assertThat(t.resolution().scalarConstantOwner().toString())
+                    .isEqualTo("no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants");
+                assertThat(t.resolution().javaType().toString())
+                    .isEqualTo("no.sikt.graphitron.rewrite.scalarfixture.Money");
+            }),
+
+        DIRECTIVE_ON_SPEC_BUILT_IN_DIRECTIVE_CONFLICT(
+            "@scalarType on a spec built-in name → UnclassifiedType with DirectiveConflict",
+            """
+            scalar String @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("String");
+                assertThat(t.rejection()).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
+                assertThat(t.reason()).contains("not allowed on the GraphQL spec built-in 'String'");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(); }
+        },
+
+        DIRECTIVE_CLASS_NOT_FOUND_REJECTS(
+            "@scalarType pointing at a missing class → UnclassifiedType with ClassNotFound-derived reason",
+            """
+            scalar Money @scalarType(scalar: "does.not.exist.Class.FIELD")
+            type Query { x: Money }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("Money");
+                assertThat(t.reason()).contains("not on the codegen classpath");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(); }
+        },
+
+        DIRECTIVE_COERCING_ERASED_REJECTS(
+            "@scalarType pointing at a raw Coercing → UnclassifiedType with CoercingErased reason",
+            """
+            scalar Money @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.RAW_MONEY")
+            type Query { x: Money }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("Money");
+                assertThat(t.reason()).contains("erased type parameters").contains("RAW_TYPE");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(); }
+        },
+
+        UNANNOTATED_NON_SPEC_SCALAR_SKIPPED(
+            "non-spec scalar without @scalarType → not classified (Phase 2 leaves Phase 3 / convention layer to escalate)",
+            """
+            scalar Money
+            type Query { x: Money }
+            """,
+            schema -> assertThat(schema.type("Money")).isNull()) {
+            @Override public Set<Class<?>> variants() { return Set.of(); }
+        };
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        ScalarTypeClassificationCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(ScalarType.class); }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(ScalarTypeClassificationCase.class)
+    void scalarTypeClassification(ScalarTypeClassificationCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 

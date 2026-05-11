@@ -4,6 +4,7 @@ import graphql.language.SourceLocation;
 import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLScalarType;
 
 import java.util.List;
 import java.util.Optional;
@@ -17,7 +18,8 @@ public sealed interface GraphitronType
             GraphitronType.InterfaceType, GraphitronType.UnionType, GraphitronType.ErrorType,
             GraphitronType.InputType, GraphitronType.TableInputType,
             GraphitronType.ConnectionType, GraphitronType.EdgeType, GraphitronType.PageInfoType,
-            GraphitronType.PlainObjectType, GraphitronType.EnumType, GraphitronType.UnclassifiedType {
+            GraphitronType.PlainObjectType, GraphitronType.EnumType, GraphitronType.ScalarType,
+            GraphitronType.UnclassifiedType {
 
     String name();
 
@@ -389,6 +391,38 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         GraphQLEnumType schemaType
+    ) implements GraphitronType {}
+
+    /**
+     * A GraphQL scalar type whose Java type and {@code GraphQLScalarType} constant have been
+     * resolved by {@link no.sikt.graphitron.rewrite.ScalarTypeResolver}. Carries the
+     * {@link ScalarResolution.Resolved} so emitters (notably {@code GraphitronSchemaClassGenerator}'s
+     * {@code .additionalType(...)} loop) can route the owner / field-name pair without re-running
+     * reflection.
+     *
+     * <p>The classifier produces this variant for:
+     * <ul>
+     *   <li>The five GraphQL spec built-ins ({@code Int}, {@code Float}, {@code String},
+     *       {@code Boolean}, {@code ID}) — always resolved through the resolver's closed
+     *       built-in table.</li>
+     *   <li>Consumer-declared scalars carrying a {@code @scalarType(scalar: "...")} directive
+     *       that resolves cleanly. A directive that fails to resolve (unknown class, missing
+     *       field, erased Coercing) surfaces as {@link UnclassifiedType} instead.</li>
+     * </ul>
+     *
+     * <p>Consumer scalars without {@code @scalarType} (and not on the convention layer's
+     * recognized-name table once Phase 3 ships) are not classified — the classifier returns
+     * {@code null} for them, mirroring pre-R101 behaviour, so the build stays green for
+     * consumers who haven't reached for the new directive.
+     *
+     * <p>{@code schemaType} is the graphql-java object referenced from the assembled schema at
+     * classification time; emitters read directive applications through it (when they need to).
+     */
+    record ScalarType(
+        String name,
+        SourceLocation location,
+        ScalarResolution.Resolved resolution,
+        GraphQLScalarType schemaType
     ) implements GraphitronType {}
 
     /**

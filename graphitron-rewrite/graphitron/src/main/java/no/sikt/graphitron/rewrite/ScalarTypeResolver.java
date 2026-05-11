@@ -15,6 +15,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Resolves a GraphQL scalar to its Java type + {@code GraphQLScalarType} constant via reflection.
@@ -95,6 +96,34 @@ public final class ScalarTypeResolver {
     }
 
     private record BuiltIn(String fieldName, Class<?> javaType) {}
+
+    /**
+     * Federation-namespace scalars the federation-jvm transform injects after Graphitron has
+     * emitted its base schema (see {@code Federation.transform()} in
+     * {@code com.apollographql.federation.graphqljava}). At emit time these names appear in
+     * applied-directive arguments (e.g. {@code @key(fields: "id")} where the {@code fields}
+     * argument is typed {@code federation__FieldSet!}) but the scalar type itself isn't in the
+     * assembled schema yet, so Graphitron emits {@link String} for the Java type and
+     * {@code Scalars.GraphQLString} for the argument-type reference. The federation transform
+     * later replaces the {@code GraphQLString} reference with its own scalar definition.
+     *
+     * <p>Pre-registering these names through the resolver replaces the previous silent fallback
+     * in {@code AppliedDirectiveEmitter.emitInputType} ("unknown scalar name → GraphQLString")
+     * with a typed {@link ScalarResolution.Resolved}. Phase 2 adds the recognition; Phase 3
+     * routes {@code AppliedDirectiveEmitter} through the resolver to consume it.
+     *
+     * <p>The set tracks federation-jvm's {@code FederationDirectives.loadFederationSpecDefinitions}
+     * output; bump the federation spec version in {@code FederationSpec.URL} when new namespaced
+     * scalars land and extend this set in the same commit.
+     */
+    private static final Set<String> FEDERATION_NAMESPACE_SCALARS = Set.of(
+        "federation__FieldSet",
+        "federation__Scope",
+        "federation__Policy",
+        "_FieldSet",
+        "link__Import",
+        "link__Purpose"
+    );
 
     /**
      * Resolves one of the five GraphQL spec built-ins by SDL name. Returns
@@ -278,6 +307,55 @@ public final class ScalarTypeResolver {
      */
     public static boolean isSpecBuiltIn(String scalarName) {
         return SPEC_BUILT_INS.containsKey(scalarName);
+    }
+
+    /**
+     * Verifies (without invoking the resolver) that a SDL name is a federation-namespace scalar
+     * the federation-jvm transform injects after Graphitron has emitted its base schema. See
+     * {@link #FEDERATION_NAMESPACE_SCALARS} for the rationale.
+     */
+    public static boolean isFederationNamespaceScalar(String scalarName) {
+        return FEDERATION_NAMESPACE_SCALARS.contains(scalarName);
+    }
+
+    /**
+     * Resolves a federation-namespace scalar to a {@link ScalarResolution.Resolved} binding to
+     * {@code Scalars.GraphQLString} and {@link String} as the Java type. The federation-jvm
+     * transform replaces the {@code GraphQLString} reference with its own scalar definition
+     * after Graphitron's base schema is built; the {@link String} Java type matches the
+     * runtime shape these scalars carry (a serialized selection-set, a scope string, etc.).
+     */
+    public static ScalarResolution resolveFederationNamespaceScalar(String scalarName) {
+        if (!FEDERATION_NAMESPACE_SCALARS.contains(scalarName)) {
+            return new ScalarResolution.Rejected.FieldNotFound(SCALARS_FQN, scalarName);
+        }
+        return new ScalarResolution.Resolved(
+            ClassName.get(String.class),
+            ClassName.get("graphql", "Scalars"),
+            "GraphQLString"
+        );
+    }
+
+    /**
+     * Resolves a {@code @scalarType(scalar:)} directive value. The value is a fully-qualified
+     * Java reference to a {@code public static final GraphQLScalarType} field; the resolver
+     * splits at the last {@code .} into a class FQN and a field name, then delegates to
+     * {@link #resolveFromConstantFqn(String, String, ClassLoader)}.
+     *
+     * <p>A value with no {@code .} (e.g. just {@code "Scalars"}) is treated as a
+     * {@link ScalarResolution.Rejected.ClassNotFound} pointing at the value as written, since
+     * the per-arm LSP fix-it for {@code ClassNotFound} suggests classes on the classpath. A
+     * value with a {@code .} that names a missing class or field surfaces the appropriate
+     * downstream rejection arm.
+     */
+    public static ScalarResolution resolveFromDirectiveValue(String scalarFqn, ClassLoader loader) {
+        int dot = scalarFqn.lastIndexOf('.');
+        if (dot <= 0 || dot == scalarFqn.length() - 1) {
+            return new ScalarResolution.Rejected.ClassNotFound(scalarFqn);
+        }
+        String classFqn = scalarFqn.substring(0, dot);
+        String fieldName = scalarFqn.substring(dot + 1);
+        return resolveFromConstantFqn(classFqn, fieldName, loader);
     }
 
     /**

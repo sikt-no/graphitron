@@ -41,6 +41,7 @@ import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.rewrite.model.ScalarResolution;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,6 +66,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_MATCHES;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_ON;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_RECORD;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_SCALAR;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_SQL_STATE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_VALUE;
@@ -76,6 +78,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_RECORD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_SCALAR_TYPE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
@@ -155,6 +158,7 @@ class TypeBuilder {
                 case PageInfoType ignored     -> type;
                 case PlainObjectType ignored  -> type;
                 case no.sikt.graphitron.rewrite.model.GraphitronType.EnumType ignored -> type;
+                case no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType ignored -> type;
                 case UnclassifiedType ignored -> type;
             };
             if (enriched != type) {
@@ -306,8 +310,8 @@ class TypeBuilder {
     // ===== Type classification =====
 
     GraphitronType classifyType(GraphQLNamedType namedType) {
-        if (namedType instanceof graphql.schema.GraphQLScalarType) {
-            return null;
+        if (namedType instanceof graphql.schema.GraphQLScalarType scalarType) {
+            return classifyScalarType(scalarType);
         }
         // Federation-injected types (e.g. _Service, _Any) are not Graphitron-managed.
         if (namedType.getName().startsWith("_")) {
@@ -367,6 +371,112 @@ class TypeBuilder {
             return new UnionType(name, location, List.of());
         }
         return null;
+    }
+
+    /**
+     * Classifies a {@link graphql.schema.GraphQLScalarType} via the {@link ScalarTypeResolver}.
+     * Three cases in Phase 2:
+     *
+     * <ul>
+     *   <li>One of the five GraphQL spec built-ins ({@code Int}, {@code Float}, {@code String},
+     *       {@code Boolean}, {@code ID}) — always resolved through the resolver's closed
+     *       built-in table. Carrying {@code @scalarType} on a spec built-in is a hard
+     *       {@link Rejection.InvalidSchema.DirectiveConflict} raised at directive-read time,
+     *       before the resolver is invoked.</li>
+     *   <li>A consumer-declared scalar carrying {@code @scalarType(scalar: "FQN.FIELD")} — the
+     *       resolver looks up the named class + field through {@link BuildContext#codegenLoader},
+     *       validates the field, and reflects on the {@code Coercing<I, O>} type parameters. A
+     *       successful resolution produces {@link GraphitronType.ScalarType}; a typed
+     *       {@link ScalarResolution.Rejected} payload becomes an {@link UnclassifiedType}.</li>
+     *   <li>Any other case (consumer scalar without {@code @scalarType}, federation-namespace
+     *       scalar in the assembled schema, etc.) — returns {@code null}. Phase 3 will extend
+     *       this to the extended-scalars convention layer; until then non-classified scalars
+     *       fall through with the same effective behaviour as before R101 shipped.</li>
+     * </ul>
+     */
+    private GraphitronType classifyScalarType(graphql.schema.GraphQLScalarType scalarType) {
+        String name = scalarType.getName();
+        SourceLocation location = locationOf(scalarType);
+        // SDL-level directive presence: graphql-java strips applied directives from spec built-in
+        // redeclarations, so the assembled GraphQLScalarType is unreliable for "user wrote
+        // @scalarType String { ... }". The build pre-pass in GraphitronSchemaBuilder copies the
+        // SDL applied-directive names onto BuildContext so the check here sees the directive even
+        // for built-ins. For non-built-ins, the assembled scalar still carries the directive and
+        // the two sources agree.
+        boolean sdlHasScalarType = ctx.sdlScalarDirectiveNames(name).contains(DIR_SCALAR_TYPE);
+        boolean assembledHasDirective = scalarType.hasAppliedDirective(DIR_SCALAR_TYPE);
+        boolean hasDirective = sdlHasScalarType || assembledHasDirective;
+
+        if (ScalarTypeResolver.isSpecBuiltIn(name)) {
+            if (hasDirective) {
+                return new UnclassifiedType(name, location,
+                    new Rejection.InvalidSchema.DirectiveConflict(
+                        List.of(DIR_SCALAR_TYPE),
+                        "@" + DIR_SCALAR_TYPE + " is not allowed on the GraphQL spec built-in '"
+                            + name + "' — the GraphQL spec and graphql-java already bind this "
+                            + "scalar's Java type and Coercing. Remove the directive."));
+            }
+            var resolution = ScalarTypeResolver.resolveBuiltIn(name);
+            if (resolution instanceof ScalarResolution.Resolved r) {
+                return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, r, scalarType);
+            }
+            return new UnclassifiedType(name, location, asRejection(resolution, name));
+        }
+
+        if (!hasDirective) {
+            // Phase 2: consumer scalars without @scalarType fall through unclassified, preserving
+            // pre-R101 behaviour. Phase 3 (convention layer) brings these into the resolver and
+            // escalates the unresolved case to a hard validation error.
+            return null;
+        }
+
+        String scalarFqn = argString(scalarType, DIR_SCALAR_TYPE, ARG_SCALAR).orElse("");
+        if (scalarFqn.isBlank()) {
+            return new UnclassifiedType(name, location, Rejection.structural(
+                "@" + DIR_SCALAR_TYPE + " requires a non-blank scalar reference of the form "
+                    + "'fully.qualified.Class.FIELD' pointing at a public static final GraphQLScalarType."));
+        }
+
+        var resolution = ScalarTypeResolver.resolveFromDirectiveValue(scalarFqn, ctx.codegenLoader());
+        if (resolution instanceof ScalarResolution.Resolved r) {
+            return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, r, scalarType);
+        }
+        return new UnclassifiedType(name, location, asRejection(resolution, name));
+    }
+
+    /**
+     * Projects a {@link ScalarResolution.Rejected} arm to a {@link Rejection} the validator
+     * surfaces alongside the rest of the type-classification rejections. Each arm carries the
+     * structured payload the per-arm LSP fix-it consumes (Phase 4); the prose here is the
+     * build-log surface only.
+     */
+    private static Rejection asRejection(ScalarResolution resolution, String scalarName) {
+        return switch (resolution) {
+            case ScalarResolution.Resolved ignored ->
+                throw new IllegalStateException("asRejection invoked on Resolved");
+            case ScalarResolution.Rejected.ClassNotFound r -> Rejection.structural(
+                "scalar '" + scalarName + "': @scalarType references class '" + r.fqn()
+                    + "' which is not on the codegen classpath.");
+            case ScalarResolution.Rejected.FieldNotFound r -> Rejection.structural(
+                "scalar '" + scalarName + "': @scalarType references field '" + r.fieldName()
+                    + "' on '" + r.className() + "' which does not exist.");
+            case ScalarResolution.Rejected.FieldNotAccessible r -> Rejection.structural(
+                "scalar '" + scalarName + "': @scalarType references '" + r.className() + "."
+                    + r.fieldName() + "' which is not public static (isPublic=" + r.isPublic()
+                    + ", isStatic=" + r.isStatic() + ").");
+            case ScalarResolution.Rejected.NullAtCodegen r -> Rejection.structural(
+                "scalar '" + scalarName + "': @scalarType references '" + r.className() + "."
+                    + r.fieldName() + "' which evaluates to null at codegen.");
+            case ScalarResolution.Rejected.NotAScalarType r -> Rejection.structural(
+                "scalar '" + scalarName + "': @scalarType references '" + r.className() + "."
+                    + r.fieldName() + "' whose type is '" + r.actualTypeFqn()
+                    + "', not graphql.schema.GraphQLScalarType.");
+            case ScalarResolution.Rejected.CoercingErased r -> Rejection.structural(
+                "scalar '" + scalarName + "': the Coercing on '" + r.coercingClass()
+                    + "' has erased type parameters (" + r.declarationKind()
+                    + "). Declare concrete <Input, Output> parameters so the resolver can "
+                    + "recover the Java type without falling back to Object.");
+        };
     }
 
     private GraphitronType buildTableType(GraphQLObjectType objType) {

@@ -134,12 +134,49 @@ public class GraphitronSchemaBuilder {
             throw e;
         }
         var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), ctx);
+        recordSdlScalarDirectives(registry, bctx);
         var svc = new ServiceCatalog(bctx);
         bctx.svc = svc;
         var typeBuilder = new TypeBuilder(bctx, svc);
         var fieldBuilder = new FieldBuilder(bctx, svc);
         var result = buildSchema(bctx, typeBuilder, fieldBuilder);
         return new Bundle(result.model, result.assembled, federationLink);
+    }
+
+    /**
+     * Reads the {@link TypeDefinitionRegistry}'s scalar definitions / extensions and copies the
+     * applied-directive names onto the {@link BuildContext}. Graphql-java's {@code SchemaGenerator}
+     * picks its own {@code GraphQLScalarType} instances for spec built-ins ({@code GraphQLString},
+     * {@code GraphQLInt}, ...) and discards SDL applied directives that target those names, so a
+     * {@code scalar String @scalarType(...)} declaration silently loses the directive at
+     * assembly time. The pre-pass keeps the directive-name signal alive so the type classifier
+     * can raise a {@code Rejection.InvalidSchema.DirectiveConflict} at directive-read time.
+     *
+     * <p>Non-built-in scalars carry their applied directives through to the assembled schema, so
+     * for those the classifier can keep reading from the {@code GraphQLScalarType} directly. The
+     * pre-pass is general enough to record both regardless; the consumer decides which source to
+     * trust.
+     */
+    private static void recordSdlScalarDirectives(TypeDefinitionRegistry registry, BuildContext bctx) {
+        java.util.function.BiConsumer<String, java.util.List<graphql.language.Directive>> record = (name, directives) -> {
+            if (directives == null || directives.isEmpty()) return;
+            var names = new java.util.LinkedHashSet<String>();
+            for (var d : directives) names.add(d.getName());
+            bctx.recordSdlScalarDirectives(name, names);
+        };
+        registry.scalars().forEach((name, def) -> record.accept(name, def.getDirectives()));
+        registry.scalarTypeExtensions().forEach((name, exts) -> {
+            var collected = new java.util.LinkedHashSet<String>();
+            for (var ext : exts) {
+                if (ext.getDirectives() == null) continue;
+                for (var d : ext.getDirectives()) collected.add(d.getName());
+            }
+            if (!collected.isEmpty()) {
+                var existing = new java.util.LinkedHashSet<>(bctx.sdlScalarDirectiveNames(name));
+                existing.addAll(collected);
+                bctx.recordSdlScalarDirectives(name, existing);
+            }
+        });
     }
 
     /**
@@ -160,6 +197,7 @@ public class GraphitronSchemaBuilder {
         );
         GraphQLSchema assembled = new SchemaGenerator().makeExecutableSchema(registry, runtimeWiring);
         var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), ctx);
+        recordSdlScalarDirectives(registry, bctx);
         var svc = new ServiceCatalog(bctx);
         bctx.svc = svc;
         var typeBuilder = new TypeBuilder(bctx, svc);
