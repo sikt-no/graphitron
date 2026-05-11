@@ -1,7 +1,7 @@
 ---
 id: R68
 title: "Diataxis user manual: absorb legacy README into the docs site"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 15
 theme: docs
@@ -683,6 +683,53 @@ through `JooqCatalog.findCandidateSchemasFor` before falling back to
 `TypeBuilder` (`buildTableType`, `buildTableInterfaceType`,
 `buildTableInputType`) all use it, so the better message reaches
 authors at every site that resolves a directive `name:` argument.)
+
+## In Review → Ready: review pass (rework)
+
+Review of the shipped surface against this plan's contract found a green
+build (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`: `Tests
+run: 312, Failures: 0`), all five spec-named drift-protection verifiers
+green (`DirectiveDocCoverageTest`, `MojoDocCoverageTest`,
+`DiagnosticsDocCoverageTest`, `DeprecationsDocCoverageTest`,
+`TutorialSmokeTest`), directive coverage 1:1 against `directives.graphqls`
+(26 declarations ↔ 26 doc pages, plus `index-directive.adoc` carrying
+`@index`), Phase 6 cutover applied (`docs/quick-start.adoc:15` now
+xrefs the in-tree directive index), and the IA scaffold (manual nav
+link, index row, quadrant CSS, pom wiring) complete.
+
+One class of finding holds the milestone: the spec's "User-facing-doc
+check" paragraph (workflow.adoc) names `R<n>` as the first marker to
+strip from user-facing prose, and four pages still leak roadmap IDs:
+
+. *`docs/manual/how-to/external-code.adoc:116`*: "Package-prefix
+  short-name resolution is on the roadmap as `R47` (Backlog) but is
+  not yet implemented". Drop the `R47` reference; the value-neutral
+  half of the sentence ("not yet implemented; spell out the FQCN for
+  now") carries the user-actionable content on its own.
+. *`docs/manual/how-to/multi-hop-nodeid-filter.adoc:15`*: "is not what
+  R114 ships". Rephrase to "is not what the multi-hop `@nodeId` lift
+  covers" or similar prose that frames the scope by what the feature
+  does, not by which roadmap item shipped it.
+. *`docs/manual/how-to/result-types.adoc:142`*: "Single-cardinality
+  `RecordTableField` was gated behind validator Invariant #10 until
+  R61. Older fixture comments reference the gate". The historical
+  aside has no user value, drop the bullet entirely, or at minimum the
+  `R61` half-sentence.
+. *`docs/manual/_generated/supported-schema-shapes.adoc:42`*
+  (included by `docs/manual/how-to/migrating-from-legacy.adoc:18`):
+  "*PassthroughDataField*: R75: a passthrough payload's data field…".
+  Leaks from sealed-class Javadoc through the roadmap-tool's
+  description-reflection. Fix at the source: strip the leading
+  `R\d+:\s*` token from the `PassthroughDataField` description in the
+  sealed hierarchy, or have the report's emitter (the
+  `--mode=migration` leaf-coverage generator) strip that prefix before
+  emitting.
+
+All four are surgical (one-line-per-occurrence in three cases; one
+upstream Javadoc edit plus a sibling regeneration in the fourth). No
+other phase regressed; rework is scoped to the user-facing-prose
+sweep. Once the four leaks are cleared, the next In Review handoff is
+mechanical.
 
 ## Out of scope
 
