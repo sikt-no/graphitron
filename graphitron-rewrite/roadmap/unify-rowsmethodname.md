@@ -687,26 +687,51 @@ classifier-side producers (`FieldBuilder.deriveSplitQueryBatchKey`,
     `BatchKey`. 1553 tests green; the three pre-existing `MultiSchemaQueryTest`
     failures unchanged.
 
+19. `TestFixtures` grows direct-triple `sourced(name, wrap, columns, container)`
+    overload plus convenience overloads `sourcedRow`, `sourcedRowMapped`,
+    `sourcedRecord`, `sourcedRecordMapped`, `sourcedTableRecord`,
+    `sourcedTableRecordMapped`, and resolver-replacement helpers
+    (`splitSourceKey`, `recordParentRowSourceKey`,
+    `polymorphicRowParentSourceKey`, `serviceTableSourceKey`,
+    `serviceRecordSourceKey`, `loaderRegistration`) for the test sites that
+    previously routed through `SourceKeyResolver` /
+    `LoaderRegistrationResolver`. The transitional
+    `sourced(name, BatchKey.ParentKeyed)` adapter stays for now alongside
+    the new helpers; tests migrate in step 20 ahead of the `BatchKey`
+    deletion. Production code that no longer needs `BatchKey` (FieldBuilder,
+    ServiceDirectiveResolver) drops the import; only docstring `@link`
+    references remain (cleaned up in step 20). 1553 tests green; the three
+    pre-existing `MultiSchemaQueryTest` failures unchanged.
+
+After step 19 every production-code consumer of the `SourceKeyResolver` /
+`LoaderRegistrationResolver` is gone. `BatchKey` references in main src are
+limited to javadoc `@link` references and historical comments in
+`ChildField`, `MultiTablePolymorphicEmitter`, `TypeFetcherGenerator`,
+`SplitRowsMethodEmitter`, and the model package (`SourceKey`, `JoinStep`,
+`MethodRef`, `ParamSource`, `BatchKeyField`, `AccessorRef`, `LifterRef`,
+`LoaderRegistration`, `ConditionJoinReportable`, `ChildField`).
+
 Still to land for Phase 3 completion:
-- **Producer site inlining**: `FieldBuilder` (`deriveSplitQueryBatchKey`,
-  `deriveBatchKeyForResultType`, `resolveRecordParentBatchKey`,
-  `deriveBatchKeyFromTypedAccessor`), `ServiceCatalog`
-  (`@service` classifier), `SourceRowDirectiveResolver` (lifter variants)
-  all construct `SourceKey` + `LoaderRegistration` directly without going
-  through `BatchKey`. The resolvers' content moves into the producers; the
-  resolvers themselves delete.
+- **`TestFixtures` migration**: tests still use ergonomic
+  `TestFixtures.sourced(name, new BatchKey.X(cols))` and inline
+  `SourceKeyResolver.X(bk, rt)` / `LoaderRegistrationResolver.resolve(bk, rt)`
+  calls. The new direct-triple `sourced(name, wrap, columns, container)`
+  overload and the resolver-replacement helpers
+  (`splitSourceKey`, `recordParentRowSourceKey`,
+  `polymorphicRowParentSourceKey`, `serviceTableSourceKey`,
+  `serviceRecordSourceKey`, `loaderRegistration`) land in step 19; the test
+  migration to the new shapes lands in step 20.
 - **`BatchKey.java`** + `SourceKeyResolver.java` +
-  `LoaderRegistrationResolver.java` delete; their tests delete or move.
-  `TestFixtures.sourced(name, BatchKey.ParentKeyed)` deletes with
-  `BatchKey`; the remaining fixture sites move to constructing the
-  triple directly.
-- **Tests**: every `ChildField` constructor call site that today passes a
-  `BatchKey` instance moves to passing `SourceKey` + `LoaderRegistration`.
-  `LoaderRegistrationResolverTest` / `SourceKeyResolverTest` delete with
-  their resolvers. `BatchKeyTest` deletes with `BatchKey`. The
-  classifier-side projection rules get coverage on the producers'
-  end-to-end pipeline tests (`GraphitronSchemaBuilderTest` etc.) rather
-  than on the now-deleted projection helpers.
+  `LoaderRegistrationResolver.java` delete in step 20 once every test
+  migrates to the direct-triple form. `BatchKeyTest`,
+  `SourceKeyResolverTest`, and `LoaderRegistrationResolverTest` delete with
+  their subjects. The classifier-side projection rules get coverage on the
+  producers' end-to-end pipeline tests (`GraphitronSchemaBuilderTest` etc.)
+  rather than on the deleted projection helpers.
+- **`@link BatchKey.X` references** in main src javadoc get scrubbed in
+  step 20 alongside the deletion (replaced with `@link SourceKey` /
+  `@link LoaderRegistration` references where appropriate, dropped
+  where historical-only).
 
 Pattern conventions established during the incremental work:
 - Consumer migration always reads off `bkf.sourceKey()` /

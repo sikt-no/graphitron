@@ -98,11 +98,12 @@ public final class TestFixtures {
     }
 
     /**
-     * Test-only adapter that constructs a {@link MethodRef.Param.Sourced} from a
-     * {@link BatchKey.ParentKeyed} permit. R38 Phase 3 step 13 flipped Sourced storage from
-     * {@code BatchKey.ParentKeyed} to {@code (Wrap, columns, Container)}; the test fixtures
-     * still build {@code BatchKey} values for ergonomic shorthand, and this helper handles
-     * the projection. Deletes alongside {@link BatchKey} when the resolvers inline.
+     * Transitional test adapter that constructs a {@link MethodRef.Param.Sourced} from a
+     * {@link BatchKey.ParentKeyed} permit. The fixture sites that built ergonomic
+     * {@code new BatchKey.X(cols)} values stay readable; the helper handles the projection
+     * onto the triple {@code (Wrap, columns, Container)}. Deletes when the tests migrate to
+     * the direct-triple {@code sourced(name, wrap, columns, container)} overload below
+     * (alongside the {@link BatchKey} deletion).
      */
     public static MethodRef.Param.Sourced sourced(String name, BatchKey.ParentKeyed bk) {
         SourceKey.Wrap wrap;
@@ -122,6 +123,165 @@ public final class TestFixtures {
                 ? LoaderRegistration.Container.MAPPED_SET
                 : LoaderRegistration.Container.POSITIONAL_LIST;
         return new MethodRef.Param.Sourced(name, wrap, bk.parentKeyColumns(), container);
+    }
+
+    /**
+     * Builds a {@link MethodRef.Param.Sourced} carrying the full per-axis triple. The convenience
+     * overloads below cover the common shorthand cases (Wrap.Row + POSITIONAL_LIST; typed
+     * TableRecord with POSITIONAL_LIST or MAPPED_SET).
+     */
+    public static MethodRef.Param.Sourced sourced(String name, SourceKey.Wrap wrap,
+                                                   List<ColumnRef> columns,
+                                                   LoaderRegistration.Container container) {
+        return new MethodRef.Param.Sourced(name, wrap, columns, container);
+    }
+
+    /**
+     * Shorthand for the common case: {@code List<RowN<...>>}-shaped SOURCES, projecting to
+     * {@link SourceKey.Wrap.Row} + {@link LoaderRegistration.Container#POSITIONAL_LIST}.
+     */
+    public static MethodRef.Param.Sourced sourcedRow(String name, List<ColumnRef> columns) {
+        return new MethodRef.Param.Sourced(name, new SourceKey.Wrap.Row(),
+            columns, LoaderRegistration.Container.POSITIONAL_LIST);
+    }
+
+    /**
+     * Shorthand for the {@code Set<RowN<...>>}-shaped SOURCES: {@link SourceKey.Wrap.Row} +
+     * {@link LoaderRegistration.Container#MAPPED_SET}.
+     */
+    public static MethodRef.Param.Sourced sourcedRowMapped(String name, List<ColumnRef> columns) {
+        return new MethodRef.Param.Sourced(name, new SourceKey.Wrap.Row(),
+            columns, LoaderRegistration.Container.MAPPED_SET);
+    }
+
+    /**
+     * Shorthand for the {@code List<RecordN<...>>}-shaped SOURCES: {@link SourceKey.Wrap.Record} +
+     * {@link LoaderRegistration.Container#POSITIONAL_LIST}.
+     */
+    public static MethodRef.Param.Sourced sourcedRecord(String name, List<ColumnRef> columns) {
+        return new MethodRef.Param.Sourced(name, new SourceKey.Wrap.Record(),
+            columns, LoaderRegistration.Container.POSITIONAL_LIST);
+    }
+
+    /**
+     * Shorthand for the {@code Set<RecordN<...>>}-shaped SOURCES: {@link SourceKey.Wrap.Record} +
+     * {@link LoaderRegistration.Container#MAPPED_SET}.
+     */
+    public static MethodRef.Param.Sourced sourcedRecordMapped(String name, List<ColumnRef> columns) {
+        return new MethodRef.Param.Sourced(name, new SourceKey.Wrap.Record(),
+            columns, LoaderRegistration.Container.MAPPED_SET);
+    }
+
+    /**
+     * Shorthand for the {@code List<X extends TableRecord>}-shaped SOURCES: typed
+     * {@link SourceKey.Wrap.TableRecord} carrying {@code recordClass} + POSITIONAL_LIST.
+     */
+    public static MethodRef.Param.Sourced sourcedTableRecord(String name,
+                                                              List<ColumnRef> columns,
+                                                              Class<? extends org.jooq.TableRecord<?>> recordClass) {
+        return new MethodRef.Param.Sourced(name,
+            new SourceKey.Wrap.TableRecord(ClassName.get(recordClass)),
+            columns, LoaderRegistration.Container.POSITIONAL_LIST);
+    }
+
+    /**
+     * Shorthand for the {@code Set<X extends TableRecord>}-shaped SOURCES: typed
+     * {@link SourceKey.Wrap.TableRecord} carrying {@code recordClass} + MAPPED_SET.
+     */
+    public static MethodRef.Param.Sourced sourcedTableRecordMapped(String name,
+                                                                    List<ColumnRef> columns,
+                                                                    Class<? extends org.jooq.TableRecord<?>> recordClass) {
+        return new MethodRef.Param.Sourced(name,
+            new SourceKey.Wrap.TableRecord(ClassName.get(recordClass)),
+            columns, LoaderRegistration.Container.MAPPED_SET);
+    }
+
+    // ===== SourceKey / LoaderRegistration test fixtures =====
+    //
+    // The projections below replace the deleted SourceKeyResolver / LoaderRegistrationResolver
+    // helpers (R38 Phase 3 inlined them into the field-classifier producers). Test fixtures use
+    // these to compose the same per-axis shapes the producers build.
+
+    /**
+     * Split-query parent-side {@link SourceKey}: {@link SourceKey.Wrap.Row} +
+     * {@link SourceKey.Reader.ColumnRead} over the FK columns, target-aligned (empty path).
+     * Mirrors the FK-derived projection in {@code FieldBuilder.deriveSplitQuerySource}.
+     */
+    public static SourceKey splitSourceKey(TableRef target, List<ColumnRef> fkColumns,
+                                            boolean isList) {
+        return new SourceKey(target, fkColumns, List.of(), new SourceKey.Wrap.Row(),
+            isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
+            new SourceKey.Reader.ColumnRead());
+    }
+
+    /**
+     * Catalog-FK record-parent {@link SourceKey}: {@link SourceKey.Wrap.Row} +
+     * {@link SourceKey.Reader.ColumnRead} over the FK source-side columns, target-aligned (empty
+     * path). Mirrors the FK arm of {@code FieldBuilder.deriveFkRecordParentSource}.
+     */
+    public static SourceKey recordParentRowSourceKey(TableRef target, List<ColumnRef> fkColumns,
+                                                      boolean isList) {
+        return new SourceKey(target, fkColumns, List.of(), new SourceKey.Wrap.Row(),
+            isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
+            new SourceKey.Reader.ColumnRead());
+    }
+
+    /**
+     * Polymorphic-Row {@link SourceKey} for an {@link ChildField.InterfaceField} /
+     * {@link ChildField.UnionField} on a table-backed parent: target=null (the parent IS the
+     * source), {@link SourceKey.Wrap.Row} + {@link SourceKey.Reader.ColumnRead},
+     * {@link SourceKey.Cardinality#ONE}.
+     */
+    public static SourceKey polymorphicRowParentSourceKey(List<ColumnRef> pkColumns) {
+        return new SourceKey(null, pkColumns, List.of(), new SourceKey.Wrap.Row(),
+            SourceKey.Cardinality.ONE, new SourceKey.Reader.ColumnRead());
+    }
+
+    /**
+     * Service-table {@link SourceKey}: target=rt.table(), {@code parentKeyColumns} as entry
+     * columns, empty path, {@code wrap} per developer's source-shape declaration, cardinality
+     * from rt, {@link SourceKey.Reader.ServiceTableRecord} carrying {@code rt.table().recordClass()}.
+     */
+    public static SourceKey serviceTableSourceKey(ReturnTypeRef.TableBoundReturnType rt,
+                                                   SourceKey.Wrap wrap,
+                                                   List<ColumnRef> parentKeyColumns) {
+        return new SourceKey(rt.table(), parentKeyColumns, List.of(), wrap,
+            rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
+            new SourceKey.Reader.ServiceTableRecord(rt.table().recordClass()));
+    }
+
+    /**
+     * Service-record {@link SourceKey}: target derived from {@code joinPath}'s last hop
+     * ({@code null} when empty), {@code parentKeyColumns} as entry columns, empty path,
+     * {@code wrap} per declaration, cardinality from rt, {@link SourceKey.Reader.ServiceUntypedRecord}.
+     */
+    public static SourceKey serviceRecordSourceKey(ReturnTypeRef rt,
+                                                    SourceKey.Wrap wrap,
+                                                    List<ColumnRef> parentKeyColumns,
+                                                    List<JoinStep> joinPath) {
+        TableRef target = null;
+        if (!joinPath.isEmpty()) {
+            JoinStep last = joinPath.get(joinPath.size() - 1);
+            if (last instanceof JoinStep.WithTarget wt) target = wt.targetTable();
+        }
+        return new SourceKey(target, parentKeyColumns, List.of(), wrap,
+            rt.wrapper().isList() ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
+            new SourceKey.Reader.ServiceUntypedRecord());
+    }
+
+    /**
+     * {@link LoaderRegistration} for a DataLoader-backed field: container is mapped or positional
+     * per {@code mapped}; dispatch is {@code LOAD_MANY} per {@code loadMany} (only the
+     * accessor-many arm sets this to true today); {@code valueIsList} follows
+     * {@code rt.wrapper().isList()} but flips to false for the loadMany arm (loadMany emits one
+     * record per element-PK).
+     */
+    public static LoaderRegistration loaderRegistration(ReturnTypeRef rt, boolean mapped, boolean loadMany) {
+        boolean valueIsList = rt.wrapper().isList() && !loadMany;
+        return new LoaderRegistration(
+            valueIsList,
+            mapped ? LoaderRegistration.Container.MAPPED_SET : LoaderRegistration.Container.POSITIONAL_LIST,
+            loadMany ? LoaderRegistration.Dispatch.LOAD_MANY : LoaderRegistration.Dispatch.LOAD_ONE);
     }
 
     public static MethodRef.Service instanceServiceMethodRef(String className, String methodName, TypeName returnType,
