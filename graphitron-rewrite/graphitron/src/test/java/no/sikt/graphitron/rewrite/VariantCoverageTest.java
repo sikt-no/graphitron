@@ -66,14 +66,7 @@ class VariantCoverageTest {
             + "shim cases land via the same buildInputNodeIdReference helper for the "
             + "[ID!] @nodeId(typeName: T) branch, but no test fixture exercises an arity > 1 FK "
             + "target yet (the fixtures use `bar` (composite PK) only for same-table NodeId "
-            + "paths). Add a NodeIdPipelineTest case when a composite-PK FK target lands.",
-        ChildField.SingleRecordIdentityField.class,
-            "R75 Phase 2 permit added alongside DataElement.Record-element admission and the "
-            + "GraphitronSchemaBuilder data-field classification arm. The classifier produces it "
-            + "when an SDL Object passes the single-record-carrier trigger and the data field's "
-            + "element type is a record-backed ResultType (e.g. @record(record: {className: ...})). "
-            + "Add a GraphitronSchemaBuilderTest case when a sakila record-element carrier fixture "
-            + "lands."
+            + "paths). Add a NodeIdPipelineTest case when a composite-PK FK target lands."
     );
 
     private static final List<Class<?>> ROOTS = List.of(
