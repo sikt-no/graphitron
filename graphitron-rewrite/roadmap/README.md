@@ -16,7 +16,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
-| `R127` | Accept List<XRecord> as well as Result<XRecord> at root @service | In Review | [plan](service-root-list-record-return.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) | Ready | [plan](custom-scalar-java-types.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
@@ -201,7 +200,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### (untagged)
 
-- `R127` [**Accept List<XRecord> as well as Result<XRecord> at root @service**](service-root-list-record-return.md)
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
