@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: service
-depends-on: [synthesize-payload-carrier]
+depends-on: []
 ---
 
 # @service method return-type wrapper composition

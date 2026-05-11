@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 8
 theme: mutations-errors
-depends-on: [synthesize-payload-carrier]
+depends-on: []
 ---
 
 # Multi-field mutation carriers via localContext
