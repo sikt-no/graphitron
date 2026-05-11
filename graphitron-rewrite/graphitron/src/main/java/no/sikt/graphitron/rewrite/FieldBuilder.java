@@ -38,6 +38,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.AccessorRef;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.PayloadAssembly;
@@ -2400,7 +2401,7 @@ class FieldBuilder {
     private static String requireDataTableMatchesInputTable(
             TableRef inputTable,
             no.sikt.graphitron.rewrite.model.PassthroughInfo info,
-            MutationInputResolver.DmlKind kind,
+            DmlKind kind,
             String name) {
         if (inputTable.equals(info.dataTable())) {
             return null;
@@ -2606,12 +2607,12 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_MUTATION)) {
-            MutationInputResolver.DmlKind kind;
+            DmlKind kind;
             switch (mutationInputResolver.parseDmlKind(fieldDef)) {
                 case MutationInputResolver.DmlKindResult.Absent a -> kind = null;
                 case MutationInputResolver.DmlKindResult.Kind k -> kind = k.kind();
                 case MutationInputResolver.DmlKindResult.Unknown u -> {
-                    List<String> dmlCandidates = Arrays.stream(MutationInputResolver.DmlKind.values())
+                    List<String> dmlCandidates = Arrays.stream(DmlKind.values())
                         .map(Enum::name).toList();
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.unknownDmlKind(
                         "unknown @mutation(typeName:) value '" + u.raw() + "'",

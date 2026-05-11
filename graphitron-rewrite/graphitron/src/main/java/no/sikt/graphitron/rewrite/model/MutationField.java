@@ -16,7 +16,7 @@ import java.util.Optional;
  */
 public sealed interface MutationField extends RootField, WithErrorChannel
     permits MutationField.DmlTableField, MutationField.MutationServiceTableField,
-            MutationField.MutationServiceRecordField {
+            MutationField.MutationServiceRecordField, MutationField.MutationDmlRecordField {
 
     /**
      * Sealed common supertype of the four DML mutation variants. Carries the per-field data the
@@ -114,4 +114,47 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         Optional<ErrorChannel> errorChannel,
         Optional<ResultAssembly> resultAssembly
     ) implements MutationField, MethodBackedField {}
+
+    /**
+     * R75 / Phase 1 — a record-returning DML mutation: the schema field carries
+     * {@code @mutation(typeName: INSERT|UPDATE|UPSERT)}, takes a {@code @table} input, and
+     * returns a payload carrier (an SDL Object the
+     * {@link no.sikt.graphitron.rewrite.BuildContext#unwrapPassthroughPayload tryResolveSingleRecordCarrier}
+     * trigger resolves to {@code Ok}). Sibling to {@link DmlTableField}: the latter covers the
+     * "direct @table return" shape ({@code createFilm: Film}), this covers the "payload wrap"
+     * shape ({@code createFilm: CreateFilmPayload}). The carrier's data field is classified
+     * as {@link ChildField.SingleRecordTableField}.
+     *
+     * <p>The {@code kind} discriminator drives per-DML-kind emit variation (INSERT vs UPDATE vs
+     * UPSERT each have distinct SQL shapes); the model is one permit because the components are
+     * identical across the three kinds. {@code kind == DELETE} is rejected at classify time, not
+     * encoded here: DELETE-with-payload-return is incorrect by construction (the row is gone
+     * before the response SELECT can read it). The compact-constructor invariant pins that
+     * type-system guarantee.
+     *
+     * <p>{@link #returnType()} is the carrier's {@link ReturnTypeRef.ResultReturnType} (no
+     * unwrap — the SDL's structural truth). {@link #tableInputArg()} carries the input
+     * {@code @table} exactly like the existing {@link DmlTableField} permits do; the
+     * emitter reads {@code tableInputArg.inputTable().primaryKeyColumns()} for the
+     * PK-only {@code RETURNING} clause of the two-step DML.
+     */
+    record MutationDmlRecordField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.ResultReturnType returnType,
+        ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
+        DmlKind kind,
+        Optional<ErrorChannel> errorChannel
+    ) implements MutationField {
+
+        public MutationDmlRecordField {
+            if (kind == DmlKind.DELETE) {
+                throw new IllegalArgumentException(
+                    "MutationDmlRecordField cannot carry DmlKind.DELETE — DELETE-with-payload-return "
+                    + "is rejected at classify time (returning pre-deletion state is incorrect by "
+                    + "construction; the row is gone before the response SELECT can read it).");
+            }
+        }
+    }
 }

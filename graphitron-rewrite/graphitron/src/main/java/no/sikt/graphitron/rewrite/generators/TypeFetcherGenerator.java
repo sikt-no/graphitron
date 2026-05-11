@@ -266,6 +266,14 @@ public class TypeFetcherGenerator {
                     + "emitted; the permit is added structurally so the model can carry it, but the "
                     + "fetcher emit (env.getSource() walk into Result<RecordN<...>>) and the "
                     + "two-step DML root fetcher land in R75's intrusive Phase 1 work.",
+                    "synthesize-payload-carrier")),
+            Map.entry(MutationField.MutationDmlRecordField.class,
+                deferredFor(MutationField.MutationDmlRecordField.class,
+                    "MutationDmlRecordField (R75 record-returning DML mutation) is not yet "
+                    + "emitted; the permit is added structurally so the model can carry it, but "
+                    + "the classifier admission and the two-step DML emit (PK-only RETURNING in a "
+                    + "tight transaction, follow-up SELECT outside it) land in R75's intrusive "
+                    + "Phase 1 work.",
                     "synthesize-payload-carrier"))
         );
 
@@ -402,6 +410,7 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationUpsertTableField f  -> builder.addMethod(buildMutationUpsertFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(ctx, f, outputPackage));
+                case MutationField.MutationDmlRecordField f    -> builder.addMethod(stub(f));
                 case ChildField.ColumnReferenceField f          -> {
                     if (f.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                         // Reference-side NodeId carrier: no fetcher method. The DataFetcher value

@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.MutationField;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -69,6 +70,11 @@ class VariantCoverageTest {
         ChildField.SingleRecordTableField.class,
             "R75 / Phase 1 — permit added structurally; the classifier arm that produces it "
             + "(payload-returning DML mutations whose carrier is PojoResultType.NoBacking) "
+            + "lands with the intrusive Phase 1 work alongside the new SingleRecordCarrierPipelineTest. "
+            + "Remove this entry when that case lands.",
+        MutationField.MutationDmlRecordField.class,
+            "R75 / Phase 1 — permit added structurally; the classifier arm that produces it "
+            + "(payload-returning DML mutations admitted via tryResolveSingleRecordCarrier) "
             + "lands with the intrusive Phase 1 work alongside the new SingleRecordCarrierPipelineTest. "
             + "Remove this entry when that case lands."
     );
