@@ -107,13 +107,78 @@ class SingleRecordCarrierDmlTest {
             Map<String, Object> data = execute("""
                 mutation {
                     createFilmPayload(in: { title: "%s", languageId: 1 }) {
-                        film { title languageId }
+                        film { filmId title languageId }
                     }
                 }
                 """.formatted(m));
             Map<String, Object> payload = (Map<String, Object>) data.get("createFilmPayload");
             Map<String, Object> row = (Map<String, Object>) payload.get("film");
             assertThat(row.get("title")).isEqualTo(m);
+            assertThat(row.get("languageId")).isEqualTo(1);
+            // filmId is auto-generated; the input didn't carry it. A non-null filmId on the
+            // response proves the follow-up SELECT projected the DB column, not echoed input.
+            assertThat(row.get("filmId"))
+                .as("filmId comes from the follow-up SELECT, not from the input map")
+                .isNotNull();
+            assertThat(((Number) row.get("filmId")).intValue()).isPositive();
+        } finally {
+            dsl.deleteFrom(DSL.table("film")).where(DSL.field("title").eq(m)).execute();
+        }
+    }
+
+    /**
+     * Strong proof that the follow-up SELECT runs and honors the selection set: query
+     * {@code rentalDuration} (DB default {@code 3}) without setting it in the input, and
+     * verify it comes back populated. An echo-the-input emit would return {@code null} (the
+     * input map has no key for {@code rentalDuration}); the two-step SELECT reads the DB
+     * after the DML committed and surfaces the default.
+     */
+    @Test
+    void createFilmPayload_followupSelect_returnsColumnDefault() {
+        String m = randomMarker("R75-DEFAULT");
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    createFilmPayload(in: { title: "%s", languageId: 1 }) {
+                        film { rentalDuration }
+                    }
+                }
+                """.formatted(m));
+            Map<String, Object> payload = (Map<String, Object>) data.get("createFilmPayload");
+            Map<String, Object> row = (Map<String, Object>) payload.get("film");
+            assertThat(row.get("rentalDuration"))
+                .as("rentalDuration comes from the follow-up SELECT projection (DB DEFAULT 3), not the input")
+                .isNotNull();
+            assertThat(((Number) row.get("rentalDuration")).intValue()).isEqualTo(3);
+        } finally {
+            dsl.deleteFrom(DSL.table("film")).where(DSL.field("title").eq(m)).execute();
+        }
+    }
+
+    /**
+     * The follow-up SELECT's {@code $fields(env.getSelectionSet(), <table>, env)} projection
+     * must include any {@code @reference} the selection set requests. Querying
+     * {@code languageName} (a {@code @reference} from {@code Film.languageName} to
+     * {@code Language.name} via the {@code film_language_id_fkey} FK) exercises the
+     * correlated-subquery path on the response SELECT.
+     */
+    @Test
+    void createFilmPayload_followupSelect_projectsReferenceField() {
+        String m = randomMarker("R75-REF");
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    createFilmPayload(in: { title: "%s", languageId: 1 }) {
+                        film { title languageName }
+                    }
+                }
+                """.formatted(m));
+            Map<String, Object> payload = (Map<String, Object>) data.get("createFilmPayload");
+            Map<String, Object> row = (Map<String, Object>) payload.get("film");
+            assertThat(row.get("title")).isEqualTo(m);
+            assertThat(((String) row.get("languageName")).strip())
+                .as("@reference projection on the carrier's data field returns Language.name")
+                .isEqualTo("English");
         } finally {
             dsl.deleteFrom(DSL.table("film")).where(DSL.field("title").eq(m)).execute();
         }
@@ -128,13 +193,24 @@ class SingleRecordCarrierDmlTest {
             Map<String, Object> data = execute("""
                 mutation {
                     updateFilmPayload(in: { filmId: %d, title: "%s" }) {
-                        film { filmId title }
+                        film { filmId title languageId rentalDuration }
                     }
                 }
                 """.formatted(id, updated));
             Map<String, Object> payload = (Map<String, Object>) data.get("updateFilmPayload");
             Map<String, Object> row = (Map<String, Object>) payload.get("film");
+            // title was changed in the UPDATE.
             assertThat(row.get("title")).isEqualTo(updated);
+            // filmId was the lookupKey; it should match the original.
+            assertThat(((Number) row.get("filmId")).intValue()).isEqualTo(id);
+            // languageId / rentalDuration were not in the input map. The follow-up SELECT
+            // reads the DB after UPDATE; an echo-the-input emit would return null for both.
+            assertThat(row.get("languageId"))
+                .as("languageId comes from the follow-up SELECT, not the input")
+                .isNotNull();
+            assertThat(row.get("rentalDuration"))
+                .as("rentalDuration (DB default 3) comes from the follow-up SELECT")
+                .isNotNull();
 
             String dbTitle = dsl.select(DSL.field("title", String.class))
                 .from(DSL.table("film")).where(DSL.field("film_id", Integer.class).eq(id))
@@ -154,13 +230,18 @@ class SingleRecordCarrierDmlTest {
             Map<String, Object> data = execute("""
                 mutation {
                     upsertFilmPayload(in: { filmId: %d, title: "%s", languageId: 1 }) {
-                        film { filmId title }
+                        film { filmId title rentalDuration languageName }
                     }
                 }
                 """.formatted(novelId, novelMarker));
             Map<String, Object> payload = (Map<String, Object>) data.get("upsertFilmPayload");
             Map<String, Object> row = (Map<String, Object>) payload.get("film");
             assertThat(row.get("title")).isEqualTo(novelMarker);
+            assertThat(((Number) row.get("filmId")).intValue()).isEqualTo(novelId);
+            // Insert branch took the column DEFAULT for rentalDuration; the SELECT reads it.
+            assertThat(((Number) row.get("rentalDuration")).intValue()).isEqualTo(3);
+            // @reference projection works through the carrier's data field on UPSERT too.
+            assertThat(((String) row.get("languageName")).strip()).isEqualTo("English");
         } finally {
             deleteFilmById(novelId);
         }
@@ -243,13 +324,18 @@ class SingleRecordCarrierDmlTest {
             Map<String, Object> data = execute("""
                 mutation {
                     upsertFilmPayload(in: { filmId: %d, title: "%s", languageId: 1 }) {
-                        film { filmId title }
+                        film { filmId title rentalDuration }
                     }
                 }
                 """.formatted(existingId, upsertedMarker));
             Map<String, Object> payload = (Map<String, Object>) data.get("upsertFilmPayload");
             Map<String, Object> row = (Map<String, Object>) payload.get("film");
             assertThat(row.get("title")).isEqualTo(upsertedMarker);
+            assertThat(((Number) row.get("filmId")).intValue()).isEqualTo(existingId);
+            // rentalDuration was set to the DB default (3) by insertFilm; the input didn't
+            // change it. The SELECT must surface that value — proving the response read the DB
+            // after the UPSERT update branch, not echoed input.
+            assertThat(((Number) row.get("rentalDuration")).intValue()).isEqualTo(3);
 
             String dbTitle = dsl.select(DSL.field("title", String.class))
                 .from(DSL.table("film")).where(DSL.field("film_id", Integer.class).eq(existingId))
