@@ -84,27 +84,27 @@ subsystem summary of what shipped:
   no longer holds `NO_CASE_REQUIRED` entries for the two new permits — both surface
   through the SDL fixtures.
 
-### Deferred from Phase 1 to a follow-up roadmap item
+### Phase 1 remainders — landed
 
-Two pieces from the Phase 1 success criteria did not ship in this cycle and need to
-land before R75 closes Done:
+The two pieces flagged as deferred at the first In Review handoff are now in:
 
-1. **Direct-`@table`-return DML mutations migrating to the two-step emit.** The
-   `MutationInsertTableField` / `MutationUpdateTableField` / `MutationUpsertTableField`
-   fetchers still emit single-statement `RETURNING $fields(...)` today. The carrier
-   path (`MutationDmlRecordField`) ships the durability-correct two-step shape; the
-   direct-`@table` path keeps the legacy emit. The pipeline-tier structural pin
-   "direct-`@table`-return two-step emit pin" and the execution-tier durability test
-   `dml_persists_when_directReturnSelect_throws` are not yet added.
-2. **Headline correctness pin `dml_persists_when_followupSelect_throws`** for the
-   carrier path (synthetic error injection at the data-field fetcher's SELECT or
-   nested traversal asserting the row exists in the DB after the response).
-   Round-trip coverage is in place; the synthetic-error variant is a follow-up.
-
-Both items remain in scope of the R75 contract and should be tracked as Phase 1
-remainders before requesting In Review → Done sign-off. Either land them as
-additional commits on the same roadmap item, or split off a sibling item that
-explicitly depends on R75's carrier path.
+1. **Direct-`@table`-return DML migrated to two-step.** `emitProjected` in
+   `TypeFetcherGenerator` wraps the DML chain in `dsl.transactionResult(tx ->
+   DSL.using(tx).<chain>.returningResult(<PK columns>).fetch[One]())`, then runs the
+   follow-up SELECT outside the transaction with `where(PK.in(keys.getValues(PK)))`
+   (list shape) or `where(PK.eq(keys.value1()))` (single shape). Composite-PK tables
+   use the row-tuple variants symmetric to the carrier path's data-field fetcher. The
+   single-row null guard (`keys == null → return null DFR`) preserves the pre-two-step
+   `.fetchOne(r -> r)` contract for UPDATE / DELETE with no match.
+2. **Structural pin and durability tests.** `SingleRecordCarrierPipelineTest`'s
+   `directReturn_dmlFetcher_emitsTwoStepShape` asserts (per INSERT / UPDATE / UPSERT)
+   that the emitted fetcher contains exactly one `transactionResult(` invocation and
+   at least one follow-up `.select(`. `SingleRecordCarrierDmlTest`'s
+   `dml_persists_when_followupSelect_throws` and
+   `dml_persists_when_directReturnSelect_throws` use a new
+   `DurabilityErrorService.synthesize` wired through the synthetic `Film.durabilityError`
+   SDL field to throw mid-traversal; both assert the response carries a field error on
+   the `durabilityError` path *and* the DB row exists after the response.
 
 ---
 

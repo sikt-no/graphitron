@@ -602,6 +602,16 @@ type Film implements Node & Searchable @table(name: "film") @node {
         className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions",
         method: "isEnglish"
     })
+    # R75 Phase 1 durability-test fixture: a @service-backed leaf that always throws.
+    # Queries that select this field force a mid-traversal field error, which the
+    # SingleRecordCarrierDmlTest uses to prove the two-step DML emit's durability
+    # invariant — the row was committed when the mutation fetcher's transactionResult
+    # returned, so a field error during the response SELECT or nested traversal cannot
+    # undo it. Tests assert the row exists in the DB after the response.
+    durabilityError: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.DurabilityErrorService",
+        method: "synthesize"
+    })
     # R49 ServiceRecordField Phase A fixture: child @service with a scalar return.
     # FilmService.titleUppercase has the mapped-batch shape
     # Map<Row1<Integer>, String>(Set<Row1<Integer>>, DSLContext); the generator
