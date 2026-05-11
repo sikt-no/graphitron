@@ -1,7 +1,7 @@
 ---
 id: R101
 title: "Custom-scalar Java type configuration (extended-scalars built-in)"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 6
 theme: model-cleanup
