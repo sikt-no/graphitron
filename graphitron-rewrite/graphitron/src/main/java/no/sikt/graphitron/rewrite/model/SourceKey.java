@@ -9,9 +9,8 @@ import java.util.Objects;
 
 /**
  * Singular per-field metadata for a DataLoader-backed (or otherwise source-bearing) child
- * field. Replaces the eleven-permit {@link BatchKey} hierarchy with a flat record whose
- * components encode orthogonal axes the dispatch sites previously recovered through
- * {@code instanceof} checks.
+ * field. A flat record whose components encode orthogonal axes the dispatch sites resolve
+ * by reading components rather than {@code instanceof} branches.
  *
  * <p>Pairs with {@link LoaderRegistration} (DataLoader container kind + dispatch shape) at
  * the field-classifier site: one {@link SourceKey} per field; the {@link LoaderRegistration}
@@ -159,7 +158,7 @@ public record SourceKey(
     /**
      * The DataLoader key element type — {@code RowN<...>}, {@code RecordN<...>}, or the
      * developer-declared {@code TableRecord} subclass — derived from {@link #wrap()} and
-     * {@link #columns()}. Replaces {@code BatchKey.keyElementType()}.
+     * {@link #columns()}.
      *
      * <p>For {@link Wrap.Row}: {@code Row<n>} parameterised by each column's
      * {@link ColumnRef#columnClass()}.
@@ -195,29 +194,25 @@ public record SourceKey(
     }
 
     /**
-     * The rows-method body's input contract. Five permits in R38 (R75 will add a sixth,
-     * {@code ResultRowWalk}, on this same axis as a one-permit addition rather than as a
-     * twelfth {@link BatchKey} permit).
+     * The rows-method body's input contract. Five permits today; R75 will add a sixth,
+     * {@code ResultRowWalk}, on this same axis.
      *
      * <p>The five permits split on what data the rows-method body reads to produce its
      * output:
      *
      * <ul>
-     *   <li>{@link ColumnRead} — read FK columns from the parent record (catalog-FK arms,
-     *       today's {@link BatchKey.RowKeyed} on a non-{@code @record} or {@code @record}
-     *       parent whose backing class is a jOOQ {@code TableRecord}).</li>
+     *   <li>{@link ColumnRead} — read FK columns from the parent record (catalog-FK arms on
+     *       non-{@code @record} parents, or {@code @record} parents whose backing class is a
+     *       jOOQ {@code TableRecord}).</li>
      *   <li>{@link AccessorCall} — call a typed zero-arg instance accessor on the parent's
-     *       backing class (today's {@link BatchKey.AccessorKeyedSingle} /
-     *       {@link BatchKey.AccessorKeyedMany} arms).</li>
+     *       backing class (single or list/set cardinality recorded by
+     *       {@link SourceKey#cardinality()}).</li>
      *   <li>{@link SourceRowsCall} — call a {@code @sourceRows} static lifter on a utility
-     *       class to produce a {@code RowN<...>} (today's {@link BatchKey.LifterLeafKeyed}
-     *       / {@link BatchKey.LifterPathKeyed} arms).</li>
+     *       class to produce a {@code RowN<...>} (single-hop and FK-chain shapes both).</li>
      *   <li>{@link ServiceTableRecord} — invoke a {@code @service} method whose return
-     *       type is a typed jOOQ {@code TableRecord} (today's {@code ServiceTableField}
-     *       projection).</li>
+     *       type is a typed jOOQ {@code TableRecord}.</li>
      *   <li>{@link ServiceUntypedRecord} — invoke a {@code @service} method whose return
-     *       type is {@code Record<>} or scalar (today's {@code ServiceRecordField}
-     *       projection).</li>
+     *       type is {@code Record<>} or scalar; no typed {@code TableRecord} subclass.</li>
      * </ul>
      */
     public sealed interface Reader {

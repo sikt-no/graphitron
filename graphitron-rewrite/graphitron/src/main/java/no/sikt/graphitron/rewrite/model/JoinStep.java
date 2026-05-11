@@ -15,9 +15,9 @@ import java.util.List;
  *       with an optional WHERE filter on the enclosing SELECT.</li>
  *   <li>{@link ConditionJoin} — navigate via a user-supplied condition method (no FK constraint);
  *       the condition becomes the ON clause of an explicit JOIN.</li>
- *   <li>{@link LiftedHop} — single-hop terminal pre-keyed by a {@link BatchKey.LifterLeafKeyed}
- *       or accessor permit; no FK, no source-side columns, the DataLoader key tuple
- *       <em>is</em> the target-column tuple.</li>
+ *   <li>{@link LiftedHop} — single-hop terminal pre-keyed by a {@code @sourceRows} lifter or
+ *       a {@code @record}-parent accessor; no FK, no source-side columns, the DataLoader key
+ *       tuple <em>is</em> the target-column tuple.</li>
  * </ul>
  *
  * <p>{@link FkJoin} and {@link LiftedHop} share the {@link WithTarget} capability so the
@@ -86,9 +86,9 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
 
         /**
          * Source-side columns for this hop, materialised as a {@link List} for readers that
-         * need the columns themselves (e.g. constructing a {@link BatchKey.RowKeyed} key tuple)
-         * rather than slot-by-slot iteration. The order matches {@link #slots()}; index {@code i}
-         * is {@code slots[i].sourceSide()}.
+         * need the columns themselves (e.g. constructing a {@link SourceKey} entry-point
+         * column tuple) rather than slot-by-slot iteration. The order matches {@link #slots()};
+         * index {@code i} is {@code slots[i].sourceSide()}.
          */
         @LoadBearingClassifierCheck(
             key = "fk-join.slots-oriented-source-and-target",
@@ -99,8 +99,9 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
                 + "the catalog FK each maps to. Readers that previously consumed "
                 + "fk.sourceColumns() under an implicit FK-on-source precondition "
                 + "(parent-holds-FK in the older vocabulary) — to obtain 'the source-table "
-                + "column' for a JOIN predicate or BatchKey tuple — now read sourceSide() "
-                + "without the precondition: orientation is structural, not dispatched. "
+                + "column' for a JOIN predicate or SourceKey entry-point tuple — now read "
+                + "sourceSide() without the precondition: orientation is structural, not "
+                + "dispatched. "
                 + "LifterSlot folds both sides onto a single column by construction "
                 + "(DataLoader key tuple IS target-column tuple) so the same accessor reads "
                 + "uniformly across FkJoin and LiftedHop variants.")
@@ -206,21 +207,17 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
     record ConditionJoin(MethodRef condition, String alias) implements JoinStep {}
 
     /**
-     * One hop pre-keyed by a {@link BatchKey.LifterLeafKeyed} or accessor permit — no foreign
-     * key, no traversal direction, no source-side-distinct-from-target columns. The
-     * DataLoader key tuple carried by the BatchKey <em>is</em> the target-column tuple,
-     * encoded as a type fact: each slot is a {@link JoinSlot.LifterSlot} whose single
-     * {@code column} component answers both {@link JoinSlot#sourceSide()} and
-     * {@link JoinSlot#targetSide()}. The JOIN-on predicate of the rows-method becomes
-     * {@code target.<slot.targetSide()> = parentInput.field(i+1)} directly, identical in
-     * shape to the FK case.
+     * One hop pre-keyed by a {@code @sourceRows} lifter or a {@code @record}-parent accessor —
+     * no foreign key, no traversal direction, no source-side-distinct-from-target columns. The
+     * DataLoader key tuple <em>is</em> the target-column tuple, encoded as a type fact: each
+     * slot is a {@link JoinSlot.LifterSlot} whose single {@code column} component answers both
+     * {@link JoinSlot#sourceSide()} and {@link JoinSlot#targetSide()}. The JOIN-on predicate of
+     * the rows-method becomes {@code target.<slot.targetSide()> = parentInput.field(i+1)}
+     * directly, identical in shape to the FK case.
      *
-     * <p>{@link BatchKey.LifterLeafKeyed} holds a single {@code LiftedHop} on its own record
-     * (the no-{@code @reference} leaf-PK shape); the classifier publishes the same instance
-     * through {@code joinPath = [hop]} for back-compat with the existing rows-method loop,
-     * but the BatchKey is the source of truth. The {@code @reference}-composed shape lives on
-     * {@link BatchKey.LifterPathKeyed} as a list of {@link FkJoin} hops; that arm does not
-     * use {@code LiftedHop}.
+     * <p>The leaf-PK shape (no {@code @reference}) sits at {@code SourceKey.path = [hop]} with
+     * a single {@code LiftedHop}. The {@code @reference}-composed shape is a list of
+     * {@link FkJoin} hops; that path does not use {@code LiftedHop}.
      */
     record LiftedHop(
         TableRef targetTable,
@@ -231,9 +228,9 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
         public LiftedHop {
             if (slots.isEmpty()) {
                 throw new IllegalArgumentException(
-                    "JoinStep.LiftedHop requires a non-empty slots list — every BatchKey permit "
-                    + "delegating its key columns through this hop (LifterLeafKeyed, "
-                    + "AccessorKeyedSingle, AccessorKeyedMany) needs at least one column.");
+                    "JoinStep.LiftedHop requires a non-empty slots list — every Reader arm "
+                    + "delegating its key columns through this hop (SourceRowsCall, "
+                    + "AccessorCall) needs at least one column.");
             }
             slots = List.copyOf(slots);
         }

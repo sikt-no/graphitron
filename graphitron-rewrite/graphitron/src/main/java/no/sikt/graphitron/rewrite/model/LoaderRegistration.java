@@ -12,8 +12,8 @@ import java.util.Objects;
  * {@code load} or {@code loadMany}: container choice is a per-field decision driven by the
  * source-shape declaration ({@code List<...>} positional vs. {@code Set<...>} mapped) or the
  * {@code loader.loadMany} contract on accessor-many fields, not by the source-row shape itself.
- * Today's {@code Mapped*Keyed} family in {@link BatchKey} collapses onto
- * {@code Container.MAPPED_SET}; the catalog-FK and {@code List<...>}-source declarations
+ * Mapped-source declarations ({@code Set<...>} on the {@code @sources}-typed parameter) collapse
+ * onto {@code Container.MAPPED_SET}; catalog-FK and {@code List<...>}-source declarations
  * collapse onto {@code Container.POSITIONAL_LIST}.
  *
  * <p>The R75 rooted DML payload case has no {@link LoaderRegistration} — the DataFetcher
@@ -36,8 +36,8 @@ import java.util.Objects;
  *       {@link Dispatch#LOAD_MANY} drives
  *       {@code loader.loadMany(keys, contexts)} (one fetch site, many keys, many values back).
  *       Container and dispatch are independent axes: {@code Container.MAPPED_SET} pairs with
- *       both {@link Dispatch#LOAD_ONE} (today's single-cardinality {@code Mapped*Keyed} arms)
- *       and {@link Dispatch#LOAD_MANY} ({@code AccessorKeyedMany}'s loadMany contract).</li>
+ *       both {@link Dispatch#LOAD_ONE} (single-cardinality mapped-source declarations) and
+ *       {@link Dispatch#LOAD_MANY} (accessor-many's loadMany contract).</li>
  * </ul>
  *
  * <p>The path-scoped tenant-qualified DataLoader name is computed at fetcher emit time from
@@ -83,8 +83,8 @@ public record LoaderRegistration(
          * Many keys per fetch site: emits
          * {@code loader.loadMany(keys, Collections.nCopies(keys.size(), env))}. The fetch
          * site's key-extraction supplies a {@code keys} list local; the loader returns one
-         * record per element-PK key. Today only {@code AccessorKeyedMany} reaches this arm
-         * (the {@code @record} parent's typed list-accessor fans out per-element).
+         * record per element-PK key. Today only the accessor-many arm reaches this dispatch
+         * (a {@code @record} parent's typed list-accessor fans out per-element).
          */
         LOAD_MANY
     }

@@ -139,9 +139,9 @@ class ServiceFieldValidationTest {
      * rather than the {@code validate(field)} shortcut, which would wrap the field in a
      * {@link GraphitronType.RootType} and skip all PK checks.
      *
-     * <p>With {@link BatchKey}, key columns are guaranteed to match the parent PK by construction
-     * (they are passed in from {@code parentPkColumns} during reflection). The validator only
-     * needs to check that Row-keyed and Record-keyed parameters have a parent with a primary key.
+     * <p>Key columns are guaranteed to match the parent PK by construction (they are passed in
+     * from {@code parentPkColumns} during reflection). The validator only needs to check that
+     * {@code Sources}-typed parameters have a parent with a primary key.
      */
     interface TablePkCase {
         GraphitronType parentType();

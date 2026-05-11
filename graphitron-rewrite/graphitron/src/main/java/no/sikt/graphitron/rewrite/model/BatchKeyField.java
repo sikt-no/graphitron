@@ -21,15 +21,14 @@ package no.sikt.graphitron.rewrite.model;
  */
 public interface BatchKeyField {
     /**
-     * Singular per-field source-side metadata. Populated by the classifier (see
-     * {@link no.sikt.graphitron.rewrite.SourceKeyResolver}) at field-construction time.
+     * Singular per-field source-side metadata. Built inline by the field classifier in
+     * {@link no.sikt.graphitron.rewrite.FieldBuilder} at field-construction time.
      */
     SourceKey sourceKey();
 
     /**
-     * DataLoader container + dispatch projection for this field. Populated by the classifier
-     * (see {@link no.sikt.graphitron.rewrite.LoaderRegistrationResolver}) at field-construction
-     * time.
+     * DataLoader container + dispatch projection for this field. Built inline by the field
+     * classifier in {@link no.sikt.graphitron.rewrite.FieldBuilder} at field-construction time.
      */
     LoaderRegistration loaderRegistration();
 

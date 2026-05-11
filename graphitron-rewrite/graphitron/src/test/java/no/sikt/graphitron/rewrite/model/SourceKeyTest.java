@@ -21,9 +21,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       {@code recordClass} ⇒ empty {@link SourceKey#path()}.</li>
  * </ul>
  *
- * <p>Sibling of {@link BatchKeyTest} for the new model surface; the projection rules
- * (which {@link SourceKey} shape each {@link BatchKey} permit produces) live in the resolver
- * test in Phase 1b.
+ * <p>Exercises the canonical-constructor invariants and the {@link SourceKey#keyElementType()}
+ * derivation on the flat-record model.
  */
 @UnitTier
 class SourceKeyTest {

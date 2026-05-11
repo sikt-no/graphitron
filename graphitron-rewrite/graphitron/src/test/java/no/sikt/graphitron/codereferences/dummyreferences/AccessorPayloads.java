@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Test fixtures for the {@code R60} accessor-derived BatchKey classifier path. Each public
+ * Test fixtures for the {@code R60} accessor-derived classifier path. Each public
  * type exposes a typed zero-arg accessor whose return type is a concrete jOOQ
  * {@link org.jooq.TableRecord} subtype (single, list, or set), or matches one of the rejection
  * shapes the classifier tests pin down.

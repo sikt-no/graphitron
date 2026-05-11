@@ -88,10 +88,10 @@ public class TypeClassGenerator {
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
         // Split* fields don't appear in $fields (they're handled by DataLoader-backed fetchers),
-        // but their BatchKey columns must land in the parent SELECT so key extraction reads
+        // but their SourceKey columns must land in the parent SELECT so key extraction reads
         // non-null values off env.getSource(). Recurse into NestingField.nestedFields() so nested
-        // Split fields' BatchKey columns are also projected by the outer parent's SELECT.
-        var requiredProjectionColumns = collectBatchKeyColumns(schema.fieldsOf(typeName))
+        // Split fields' SourceKey columns are also projected by the outer parent's SELECT.
+        var requiredProjectionColumns = collectSourceKeyColumns(schema.fieldsOf(typeName))
             .distinct()
             .toList();
         return buildTypeSpec(typeName, type.table(), columnFields, compositeColumnFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage);
@@ -199,7 +199,7 @@ public class TypeClassGenerator {
         flat.addAll(computedFields);
         emitSelectionSwitch(builder, 0, flat, "table", entryType, outputPackage);
 
-        // Required-projection set: BatchKey columns of every DataLoader-backed Split* child on
+        // Required-projection set: SourceKey columns of every DataLoader-backed Split* child on
         // this type must land in the SELECT regardless of selection, so parent key extraction
         // in the fetcher reads non-null values. Dedup at runtime against whatever the selection
         // switch appended (jOOQ Field identity on the aliased table).
@@ -284,14 +284,14 @@ public class TypeClassGenerator {
     private static String sfName(int depth) { return depth == 0 ? "sf" : "sf" + depth; }
     private static String entryName(int depth) { return depth == 0 ? "entry" : "entry" + depth; }
 
-    private static java.util.stream.Stream<ColumnRef> collectBatchKeyColumns(List<? extends GraphitronField> fields) {
+    private static java.util.stream.Stream<ColumnRef> collectSourceKeyColumns(List<? extends GraphitronField> fields) {
         return fields.stream().flatMap(f -> {
             if (f instanceof ChildField.SplitTableField stf)
                 return stf.sourceKey().columns().stream();
             if (f instanceof ChildField.SplitLookupTableField slf)
                 return slf.sourceKey().columns().stream();
             if (f instanceof ChildField.NestingField nf)
-                return collectBatchKeyColumns(nf.nestedFields());
+                return collectSourceKeyColumns(nf.nestedFields());
             return java.util.stream.Stream.empty();
         });
     }

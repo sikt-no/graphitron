@@ -725,7 +725,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         SPLIT_TABLE_SINGLE_CARDINALITY(
-            "@splitQuery with single-cardinality parent-holds-FK reference → SplitTableField with FK-column BatchKey",
+            "@splitQuery with single-cardinality parent-holds-FK reference → SplitTableField with FK-column SourceKey",
             """
             type Address @table(name: "address") { address: String }
             type Customer @table(name: "customer") {
@@ -745,7 +745,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         IMPLICIT_REFERENCE_SPLIT_TABLE_SINGLE_CARDINALITY(
-            "no @reference on single-cardinality @splitQuery with single FK → SplitTableField, parent-FK BatchKey",
+            "no @reference on single-cardinality @splitQuery with single FK → SplitTableField, parent-FK SourceKey",
             """
             type Address @table(name: "address") { address: String }
             type Customer @table(name: "customer") { address: Address @splitQuery }
@@ -1644,7 +1644,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         RECORD_LOOKUP_TABLE_FIELD(
-            "@record parent (typed POJO) + @table return type + @lookupKey → RecordLookupTableField with populated BatchKey",
+            "@record parent (typed POJO) + @table return type + @lookupKey → RecordLookupTableField with populated SourceKey",
             """
             type Language @table(name: "language") { name: String }
             type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
@@ -2390,13 +2390,13 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== Accessor-derived BatchKey classifier matrix (R60) =====
+    // ===== Accessor-derived SourceKey classifier matrix (R60) =====
 
     /**
      * Classifier-level coverage for the auto-derivation that runs on {@code @record} parents
      * whose backing class exposes a typed zero-arg accessor returning a concrete jOOQ
      * {@code TableRecord} subtype. Pins the
-     * {@link no.sikt.graphitron.rewrite.FieldBuilder#deriveBatchKeyFromTypedAccessor} match
+     * {@link no.sikt.graphitron.rewrite.FieldBuilder#deriveAccessorRecordParentSource} match
      * rule across the cross-product corners: list-field × list / set accessor, single-field ×
      * single accessor, ambiguous candidates, cardinality mismatches, and heterogeneous element
      * types that fall through to the rewritten three-option AUTHOR_ERROR.
@@ -2404,9 +2404,9 @@ class GraphitronSchemaBuilderTest {
      * <p>Backing-class fixtures live in
      * {@link no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads}.
      */
-    enum AccessorDerivedBatchKeyCase implements ClassificationCase {
+    enum AccessorDerivedSourceCase implements ClassificationCase {
         ACCESSOR_ROWKEYED_MANY_LIST_FIELD_LIST_ACCESSOR(
-            "List field + list-of-TableRecord accessor → RecordTableField with AccessorKeyedMany",
+            "List field + list-of-TableRecord accessor → RecordTableField with AccessorCall + Cardinality.MANY",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$ListPayload"}) {
@@ -2429,7 +2429,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         ACCESSOR_ROWKEYED_MANY_LIST_FIELD_SET_ACCESSOR(
-            "List field + set-of-TableRecord accessor → RecordTableField with AccessorKeyedMany",
+            "List field + set-of-TableRecord accessor → RecordTableField with AccessorCall + Cardinality.MANY",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SetPayload"}) {
@@ -2449,7 +2449,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         ACCESSOR_ROWKEYED_SINGLE_SINGLE_FIELD_SINGLE_ACCESSOR(
-            "Single field + single-TableRecord accessor → RecordTableField with AccessorKeyedSingle",
+            "Single field + single-TableRecord accessor → RecordTableField with AccessorCall + Cardinality.ONE",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$SinglePayload"}) {
@@ -2532,7 +2532,7 @@ class GraphitronSchemaBuilderTest {
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
-        AccessorDerivedBatchKeyCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+        AccessorDerivedSourceCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
             this.sdl = sdl;
             this.assertions = assertions;
         }
@@ -2541,8 +2541,8 @@ class GraphitronSchemaBuilderTest {
     }
 
     @ParameterizedTest(name = "{0}")
-    @EnumSource(AccessorDerivedBatchKeyCase.class)
-    void accessorDerivedBatchKeyClassification(AccessorDerivedBatchKeyCase tc) {
+    @EnumSource(AccessorDerivedSourceCase.class)
+    void accessorDerivedSourceClassification(AccessorDerivedSourceCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 

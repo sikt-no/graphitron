@@ -191,10 +191,8 @@ class FieldBuilder {
 
     /**
      * Builds the service-table-field's {@link SourceKey} from the resolved {@code @service}
-     * method's {@code Sources} parameter and the field's table-bound return type. Mirrors the
-     * service-table case of the (now-deletable) {@code SourceKeyResolver.resolveServiceTable}
-     * helper, but reads {@code wrap} and {@code columns} directly off {@code sourced} instead
-     * of routing through {@link BatchKey}.
+     * method's {@code Sources} parameter and the field's table-bound return type. Reads
+     * {@code wrap} and {@code columns} directly off {@code sourced}.
      */
     private static SourceKey buildServiceTableSourceKey(
             MethodRef.Param.Sourced sourced, ReturnTypeRef.TableBoundReturnType rt) {
@@ -231,8 +229,8 @@ class FieldBuilder {
 
     /**
      * Builds the {@link LoaderRegistration} for a service-backed child field. Dispatch is
-     * always {@link LoaderRegistration.Dispatch#LOAD_ONE} on the service path
-     * ({@link BatchKey.AccessorKeyedMany} is record-parent-only); container reads directly off
+     * always {@link LoaderRegistration.Dispatch#LOAD_ONE} on the service path (the
+     * loadMany / accessor-many shape is record-parent-only); container reads directly off
      * {@code sourced}; {@code valueIsList} follows the field's wrapper.
      */
     private static LoaderRegistration buildServiceLoaderRegistration(
@@ -525,16 +523,15 @@ class FieldBuilder {
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-table-backed",
         description = "Table-backed-parent producer of ChildField.InterfaceField and "
-            + "ChildField.UnionField. Both parentKey: BatchKey.RecordParentBatchKey "
-            + "(specifically a BatchKey.RowKeyed off the parent table's PK) and parentResultType: "
-            + "GraphitronType.ResultType are resolved at classification time. Lets the multi-table "
-            + "polymorphic emitter delegate to GeneratorUtils.buildRecordParentKeyExtraction with "
-            + "no parallel inline cast-to-Record path. Empty-PK parents are routed through "
-            + "UnclassifiedField above, so the BatchKey.RowKeyed canonical-constructor non-empty "
-            + "invariant is unreachable on this construction path. Sibling key "
-            + "'…-record-parent' covers the @record-parent producer in "
-            + "classifyChildFieldOnResultType, which can produce any of the four "
-            + "RecordParentBatchKey permits; emitter consumers depend on both keys.")
+            + "ChildField.UnionField. Both parentSourceKey (a SourceKey with Wrap.Row over the "
+            + "parent table's PK columns) and parentResultType (GraphitronType.ResultType) are "
+            + "resolved at classification time. Lets the multi-table polymorphic emitter "
+            + "delegate to GeneratorUtils.buildRecordParentKeyExtraction with no parallel inline "
+            + "cast-to-Record path. Empty-PK parents are routed through UnclassifiedField above, "
+            + "so the non-empty-columns invariant on SourceKey is unreachable on this "
+            + "construction path. Sibling key '…-record-parent' covers the @record-parent "
+            + "producer in classifyChildFieldOnResultType, which can produce any of the "
+            + "record-parent SourceKey shapes; emitter consumers depend on both keys.")
     private GraphitronField classifyObjectReturnChildField(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType parentTableType, Set<String> expandingTypes) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
@@ -2914,11 +2911,11 @@ class FieldBuilder {
                 var tfc = (TableFieldComponents.Ok) components;
                 boolean isLookup = hasLookupKeyAnywhere(fieldDef);
                 String fieldKind = isLookup ? "RecordLookupTableField" : "RecordTableField";
-                var resolution = resolveRecordParentBatchKey(name, tb, objectPath.elements(), parentResultType, fieldKind);
-                if (resolution instanceof RecordBatchKeyResolution.Rejected rj) {
+                var resolution = resolveRecordParentSource(name, tb, objectPath.elements(), parentResultType, fieldKind);
+                if (resolution instanceof RecordParentSourceResolution.Rejected rj) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
                 }
-                var resolved = (RecordBatchKeyResolution.Resolved) resolution;
+                var resolved = (RecordParentSourceResolution.Resolved) resolution;
                 var resolvedJoinPath = resolved.joinPath();
                 if (isLookup) {
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
@@ -3096,7 +3093,7 @@ class FieldBuilder {
      * {@link LoaderRegistration} is {@link LoaderRegistration.Container#POSITIONAL_LIST} +
      * {@link LoaderRegistration.Dispatch#LOAD_ONE} (the {@code @splitQuery} loader contract).
      *
-     * <p>Sibling of {@link #deriveBatchKeyForResultType} — that helper is for record parents and
+     * <p>Sibling of {@link #deriveFkRecordParentSource} — that helper is for record parents and
      * unconditionally reads {@code fk.sourceSideColumns()} because record parents never batch by
      * parent PK.
      */
@@ -3205,22 +3202,22 @@ class FieldBuilder {
     private record RecordParentSource(SourceKey sourceKey, LoaderRegistration loaderRegistration) {}
 
     /**
-     * Outcome of {@link #resolveRecordParentBatchKey} for a {@code @record}-parent table-bound
+     * Outcome of {@link #resolveRecordParentSource} for a {@code @record}-parent table-bound
      * child field. Two arms; the caller exhausts them with a sealed switch and either projects
      * the resolved {@link SourceKey} + {@link LoaderRegistration} into {@link RecordTableField} /
      * {@link RecordLookupTableField}, or surfaces the rejection as
      * {@link GraphitronField.UnclassifiedField}. Builder-internal sealed result per the
      * {@code rewrite-design-principles.adoc} rule on {@code Builder-step results are sealed}.
      */
-    private sealed interface RecordBatchKeyResolution {
+    private sealed interface RecordParentSourceResolution {
         /**
          * {@code joinPath} is the FK-derived original path on the FK arm; on the auto-derived
          * accessor arm it is replaced with {@code [liftedHop]} (mirroring the {@code @sourceRow}
          * leaf-PK call-site convention) so {@link SplitRowsMethodEmitter}'s prelude reads the
          * target-side columns through {@link JoinStep.WithTarget} uniformly.
          */
-        record Resolved(SourceKey sourceKey, LoaderRegistration loaderRegistration, List<JoinStep> joinPath) implements RecordBatchKeyResolution {}
-        record Rejected(Rejection rejection) implements RecordBatchKeyResolution {}
+        record Resolved(SourceKey sourceKey, LoaderRegistration loaderRegistration, List<JoinStep> joinPath) implements RecordParentSourceResolution {}
+        record Rejected(Rejection rejection) implements RecordParentSourceResolution {}
     }
 
     /**
@@ -3231,25 +3228,25 @@ class FieldBuilder {
      * the {@link RecordTableField} and {@link RecordLookupTableField} branches;
      * {@code fieldKindLabel} parameterises only the leading clause of the rejection.
      */
-    private RecordBatchKeyResolution resolveRecordParentBatchKey(
+    private RecordParentSourceResolution resolveRecordParentSource(
             String fieldName, ReturnTypeRef.TableBoundReturnType tb,
             List<JoinStep> joinPath, GraphitronType.ResultType parentResultType,
             String fieldKindLabel) {
         var fkSource = deriveFkRecordParentSource(joinPath, parentResultType, tb);
         if (fkSource != null) {
-            return new RecordBatchKeyResolution.Resolved(
+            return new RecordParentSourceResolution.Resolved(
                 fkSource.sourceKey(), fkSource.loaderRegistration(), joinPath);
         }
 
         var derived = deriveAccessorRecordParentSource(fieldName, tb, parentResultType);
         return switch (derived) {
-            case AccessorDerivation.Ok ok -> new RecordBatchKeyResolution.Resolved(
+            case AccessorDerivation.Ok ok -> new RecordParentSourceResolution.Resolved(
                 ok.sourceKey(), ok.loaderRegistration(), List.of(ok.hop()));
-            case AccessorDerivation.Ambiguous a -> new RecordBatchKeyResolution.Rejected(
+            case AccessorDerivation.Ambiguous a -> new RecordParentSourceResolution.Rejected(
                 Rejection.structural(a.message()));
-            case AccessorDerivation.CardinalityMismatch m -> new RecordBatchKeyResolution.Rejected(
+            case AccessorDerivation.CardinalityMismatch m -> new RecordParentSourceResolution.Rejected(
                 Rejection.structural(m.message()));
-            case AccessorDerivation.None _ -> new RecordBatchKeyResolution.Rejected(
+            case AccessorDerivation.None _ -> new RecordParentSourceResolution.Rejected(
                 Rejection.structural(fieldKindLabel + " on a free-form DTO parent requires a typed accessor or @sourceRow to lift the batch key; the catalog has no FK metadata for the parent class. Either expose a typed accessor on the parent returning List<...Record>, Set<...Record>, or ...Record (where ...Record is the element type's jOOQ TableRecord); or add @sourceRow(className: ..., method: ...) optionally composed with @reference; or back the parent with a typed jOOQ TableRecord so the FK can be derived"));
         };
     }
@@ -3264,7 +3261,7 @@ class FieldBuilder {
      * matched cleanly). The {@link Ok} arm carries the resolved {@link SourceKey} +
      * {@link LoaderRegistration} pair plus the {@link JoinStep.LiftedHop} the orchestrator
      * needs to assemble the {@code joinPath} for the surrounding
-     * {@link RecordBatchKeyResolution.Resolved}.
+     * {@link RecordParentSourceResolution.Resolved}.
      */
     private sealed interface AccessorDerivation {
         record Ok(SourceKey sourceKey, LoaderRegistration loaderRegistration, JoinStep.LiftedHop hop) implements AccessorDerivation {}
@@ -3413,9 +3410,9 @@ class FieldBuilder {
      * it are kept (table-bound case); when null, every {@code TableRecord} element matches and the
      * caller (polymorphic-hub case) discovers the hub from the unique surviving match.
      *
-     * <p>Shared between {@link #deriveBatchKeyFromTypedAccessor} (table-bound, expected-table check)
-     * and {@code deriveBatchKeyFromHubAccessor} (polymorphic, hub discovery). The reduction step
-     * differs across callers; only the per-method match logic is shared.
+     * <p>Shared between {@link #deriveAccessorRecordParentSource} (table-bound, expected-table
+     * check) and {@link #derivePolymorphicHubSource} (polymorphic, hub discovery). The reduction
+     * step differs across callers; only the per-method match logic is shared.
      */
     private List<AccessorMatch> collectAccessorMatches(Class<?> parentClass, String fieldName,
             boolean fieldIsList, String expectedSqlName) {
@@ -3470,7 +3467,7 @@ class FieldBuilder {
      * branch (the table-backed branch produces them in {@link #classifyObjectReturnChildField};
      * those two construction sites are the entirety of the multi-table polymorphic surface).
      *
-     * <p>Resolves the parent's {@link BatchKey.RecordParentBatchKey} and hub
+     * <p>Resolves the parent's {@link SourceKey} and hub
      * {@link TableRef} via {@link #resolvePolymorphicRecordParent}; routes the resolved hub through
      * {@link #resolveChildPolymorphicJoinPaths} for per-participant FK auto-discovery; constructs
      * the appropriate {@code ChildField} variant. Any rejection at either step lands as
@@ -3479,18 +3476,17 @@ class FieldBuilder {
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-record-parent",
         description = "@record-parent producer of ChildField.InterfaceField and "
-            + "ChildField.UnionField. Both parentKey: BatchKey.RecordParentBatchKey (any of the "
-            + "four RecordParentBatchKey permits — RowKeyed when the parent is JooqTableRecord, "
-            + "AccessorKeyedSingle / AccessorKeyedMany when the parent is Pojo or JavaRecord with "
-            + "a typed hub accessor; LifterLeafKeyed / LifterPathKeyed are deferred per spec Out of scope) and "
-            + "parentResultType: GraphitronType.ResultType are resolved at classification time. "
-            + "Lets the multi-table polymorphic emitter delegate to "
-            + "GeneratorUtils.buildRecordParentKeyExtraction with no parallel inline cast-to-Record "
-            + "path. Empty-PK / unresolved-hub parents are routed through UnclassifiedField, so the "
-            + "JoinStep.LiftedHop and BatchKey.RowKeyed canonical-constructor non-empty invariants "
-            + "are unreachable on this construction path. Sibling key '…-table-backed' covers the "
-            + "table-backed producer in classifyObjectReturnChildField; emitter consumers depend "
-            + "on both keys.")
+            + "ChildField.UnionField. Both parentSourceKey: SourceKey (Wrap.Row + ColumnRead "
+            + "when the parent is JooqTableRecord, Wrap.Record + AccessorCall when the parent "
+            + "is Pojo or JavaRecord with a typed hub accessor; @sourceRows lifters are deferred "
+            + "per spec Out of scope) and parentResultType: GraphitronType.ResultType are "
+            + "resolved at classification time. Lets the multi-table polymorphic emitter "
+            + "delegate to GeneratorUtils.buildRecordParentKeyExtraction with no parallel inline "
+            + "cast-to-Record path. Empty-PK / unresolved-hub parents are routed through "
+            + "UnclassifiedField, so the JoinStep.LiftedHop and SourceKey non-empty-columns "
+            + "invariants are unreachable on this construction path. Sibling key '…-table-backed' "
+            + "covers the table-backed producer in classifyObjectReturnChildField; emitter "
+            + "consumers depend on both keys.")
     private GraphitronField classifyRecordParentPolymorphicChild(
             GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
             SourceLocation location, String elementTypeName,
@@ -3568,7 +3564,7 @@ class FieldBuilder {
      *       Empty PK or null table is routed through {@code Rejected(structural)} — same shape
      *       as the existing table-backed arm's {@code UnclassifiedField} path.</li>
      *   <li>{@link GraphitronType.PojoResultType} / {@link GraphitronType.JavaRecordType} →
-     *       delegates to {@link #deriveBatchKeyFromHubAccessor}, which discovers the hub from
+     *       delegates to {@link #derivePolymorphicHubSource}, which discovers the hub from
      *       the unique matching typed accessor and projects to {@code AccessorCall} + the
      *       Single / Many cardinality.</li>
      *   <li>{@link GraphitronType.JooqRecordType} → {@code Rejected(structural)} (no table
@@ -3625,7 +3621,7 @@ class FieldBuilder {
                         + "parentKey + parentResultType analogously to the list arm.",
                         "polymorphic-child-record-parent-single-cardinality"));
                 }
-                yield deriveBatchKeyFromHubAccessor(fieldName, fieldIsList, parentResultType);
+                yield derivePolymorphicHubSource(fieldName, fieldIsList, parentResultType);
             }
             case GraphitronType.JooqRecordType jrt ->
                 new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
@@ -3649,7 +3645,7 @@ class FieldBuilder {
             + "structurally otherwise; "
             + "GeneratorUtils.buildAccessorKeySingle / buildAccessorKeyMany cast env.getSource() to "
             + "the parent backing class and invoke the accessor by name without instanceof guards.")
-    private PolymorphicRecordParentResolution deriveBatchKeyFromHubAccessor(
+    private PolymorphicRecordParentResolution derivePolymorphicHubSource(
             String fieldName, boolean fieldIsList, GraphitronType.ResultType parentResultType) {
         String parentFqClassName = switch (parentResultType) {
             case GraphitronType.JavaRecordType jrt -> jrt.fqClassName();

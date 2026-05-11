@@ -39,8 +39,8 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RECORD;
  *       corresponding typed {@link org.jooq.Table} carries {@link org.jooq.Record Record}&lt;N+1&gt;,
  *       and column access via {@code parentInput.fieldsRow().fieldK()} returns typed
  *       {@link org.jooq.Field Field}&lt;T&gt;. Arity is known at codegen time from
- *       {@link BatchKey.RowKeyed#keyColumns()}; generic array creation is the one unavoidable
- *       {@code @SuppressWarnings("unchecked")} per generated method.</li>
+ *       {@link no.sikt.graphitron.rewrite.model.SourceKey#columns()}; generic array creation is the
+ *       one unavoidable {@code @SuppressWarnings("unchecked")} per generated method.</li>
  *   <li>Key unpacking uses {@code k.field1()}…{@code k.fieldN()} — {@code Row1/Row2/…} expose
  *       their cells as typed {@code Field<T>} references (the inline {@code Field} jOOQ created
  *       when {@link GeneratorUtils#buildKeyExtraction} built the key via {@code DSL.row(record.get(col))}).
@@ -104,7 +104,7 @@ public final class SplitRowsMethodEmitter {
      * predicate matches against {@code firstAlias}: on the catalog-FK path, that's
      * {@link JoinStep.FkJoin#sourceColumns()} (FK-holder side, terminal for list cardinality); on
      * the lifter path, {@link JoinStep.LiftedHop#targetColumns()} (the DataLoader key tuple IS the
-     * target-column tuple by {@link BatchKey.LifterLeafKeyed} construction); on the
+     * target-column tuple by {@code LiftedHop} construction); on the
      * @sourceRow + @reference path, {@link JoinStep.FkJoin#sourceColumns()} again. The prelude resolves
      * this fork once via a sealed switch and exports the ready list; the consumer iterates without
      * re-switching.
@@ -140,7 +140,7 @@ public final class SplitRowsMethodEmitter {
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "sourcerow-classifies-as-record-table-field",
         reliesOn = "The JOIN-on side-aware switch admits exactly FkJoin and LiftedHop. "
-            + "SourceRowDirectiveResolver and FieldBuilder.deriveBatchKeyFromTypedAccessor "
+            + "SourceRowDirectiveResolver and FieldBuilder.deriveAccessorRecordParentSource "
             + "both guarantee the field classifies as RecordTableField or RecordLookupTableField "
             + "with a joinPath whose steps implement WithTarget (LiftedHop on the leaf-PK / "
             + "accessor arms; FkJoin chain on the @sourceRow + @reference arm), so the prelude "
@@ -185,10 +185,9 @@ public final class SplitRowsMethodEmitter {
         // Classifier contract: joinPath is non-empty and its first step carries a target table
         // (FkJoin or LiftedHop, both implementing JoinStep.WithTarget). Empty paths are rejected
         // in BuildContext.parsePath; ConditionJoin-first paths are short-circuited by
-        // unsupportedReason on each enclosing variant. The lifter path is single-hop by type
-        // construction (BatchKey.LifterLeafKeyed holds one LiftedHop, not a list); the bridging
-        // loop below executes for the @sourceRow + @reference arm (LifterPathKeyed) where the
-        // path is a chain of FkJoin hops.
+        // unsupportedReason on each enclosing variant. The lifter-leaf path is single-hop by
+        // construction (one LiftedHop, not a list); the bridging loop below executes for the
+        // @sourceRow + @reference arm where the path is a chain of FkJoin hops.
         JoinStep firstStep = joinPath.get(0);
         // Parent-side and target-side column lists, materialised through the WithTarget capability.
         // Both FkJoin and LiftedHop carry slots; FkSlot pairs source/target distinctly, LifterSlot
@@ -386,10 +385,10 @@ public final class SplitRowsMethodEmitter {
         if (stubReason.isPresent()) {
             return buildRuntimeStub(rltf.rowsMethodName(), rltf.sourceKey(), rltf.returnType(), stubReason.get().message(), outputPackage);
         }
-        // Rows-method body is identical to SplitLookupTableField's — same BatchKey.RowKeyed +
-        // LookupMapping shape, so buildListMethod handles both. The record-parent divergence
-        // (backing-object accessor vs jOOQ-table-row accessor for key extraction) lives above
-        // this seam, in TypeFetcherGenerator.buildRecordBasedDataFetcher.
+        // Rows-method body is identical to SplitLookupTableField's — same SourceKey
+        // (Wrap.Row + ColumnRead) + LookupMapping shape, so buildListMethod handles both. The
+        // record-parent divergence (backing-object accessor vs jOOQ-table-row accessor for key
+        // extraction) lives above this seam, in TypeFetcherGenerator.buildRecordBasedDataFetcher.
         return buildListMethod(
             ctx, rltf.name(), rltf.rowsMethodName(), rltf.returnType(),
             rltf.joinPath(), rltf.filters(), rltf.sourceKey(),
@@ -579,8 +578,8 @@ public final class SplitRowsMethodEmitter {
     /**
      * Single-cardinality sibling of {@link #buildListMethod} for {@link ChildField.SplitTableField}.
      * Classifier contract: single-hop, parent-holds-FK ({@link ChildField.SplitTableField}'s
-     * {@code batchKey} carries the parent's FK columns per
-     * {@code FieldBuilder.deriveSplitQueryBatchKey}). Emits a flat
+     * {@code sourceKey} carries the parent's FK columns per
+     * {@code FieldBuilder.deriveSplitQuerySource}). Emits a flat
      * {@code terminal JOIN parentInput ON terminal.pk = parentInput.fk_value} SELECT that returns
      * {@code List<Record>} indexed 1:1 with {@code keys} (nulls where no match).
      *

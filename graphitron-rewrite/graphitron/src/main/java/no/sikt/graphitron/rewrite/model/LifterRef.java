@@ -12,13 +12,11 @@ import no.sikt.graphitron.javapoet.ClassName;
  * {@code LifterRef} models the narrow case of a {@code @sourceRow} static method whose
  * call-site signature is exactly {@code (ParentBackingClass) -> RowN<...>}. Reusing
  * {@code MethodRef.StaticOnly} would force {@code params}/{@code returnType} slots that are
- * fully recoverable from the lifter permit's parent-side columns
- * ({@link BatchKey.LifterLeafKeyed#hop()} or
- * {@link BatchKey.LifterPathKeyed#parentSideColumns()}), and would risk a lifter ref flowing
- * through {@code MethodRef}-walking call sites (e.g. {@code ArgCallEmitter})
- * that have no semantics for it. Following the in-tree {@link HelperRef} precedent: a typed
- * sibling whose only components are the pre-resolved {@link ClassName} plus the simple method
- * name.
+ * fully recoverable from the surrounding {@link SourceKey}'s columns and path, and would risk
+ * a lifter ref flowing through {@code MethodRef}-walking call sites (e.g.
+ * {@code ArgCallEmitter}) that have no semantics for it. Following the in-tree
+ * {@link HelperRef} precedent: a typed sibling whose only components are the pre-resolved
+ * {@link ClassName} plus the simple method name.
  *
  * <p>{@code declaringClass} is the fully resolved javapoet {@link ClassName} (binary class name
  * already turned into a {@code ClassName} at the resolver boundary, never re-parsed at emit
