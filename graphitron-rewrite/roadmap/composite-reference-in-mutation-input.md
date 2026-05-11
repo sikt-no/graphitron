@@ -1,7 +1,7 @@
 ---
 id: R130
 title: "Admit @nodeId-decoded carriers in @mutation inputs and @lookupKey bindings"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 5
 theme: mutations-errors
