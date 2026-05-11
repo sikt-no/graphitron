@@ -12,6 +12,7 @@ import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -233,22 +234,22 @@ public final class Diagnostics {
     ) {
         String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (fqn.isEmpty()) return;
-        int dot = fqn.lastIndexOf('.');
-        if (dot <= 0 || dot == fqn.length() - 1) {
-            out.add(diagnostic(file, valueNode,
-                "Invalid scalar reference '" + fqn + "'. Expected a fully-qualified field "
-                + "reference of the form 'fully.qualified.Class.FIELD' pointing at a "
-                + "public static final GraphQLScalarType."));
-            return;
-        }
-        if (catalog.externalReferences().isEmpty()) return;
-        String classFqn = fqn.substring(0, dot);
-        boolean found = catalog.externalReferences().stream()
-            .anyMatch(r -> r.className().equals(classFqn));
-        if (!found) {
-            out.add(diagnostic(file, valueNode,
-                "Unknown class '" + classFqn + "' on @scalarType. Not found in compiled "
-                + "target/classes."));
+        switch (ScalarTypeResolver.parseDirectiveValue(fqn)) {
+            case ScalarTypeResolver.ParsedDirectiveValue.Malformed m ->
+                out.add(diagnostic(file, valueNode,
+                    "Invalid scalar reference '" + m.value() + "'. Expected a fully-qualified "
+                    + "field reference of the form 'fully.qualified.Class.FIELD' pointing at a "
+                    + "public static final GraphQLScalarType."));
+            case ScalarTypeResolver.ParsedDirectiveValue.Parsed p -> {
+                if (catalog.externalReferences().isEmpty()) return;
+                boolean found = catalog.externalReferences().stream()
+                    .anyMatch(r -> r.className().equals(p.classFqn()));
+                if (!found) {
+                    out.add(diagnostic(file, valueNode,
+                        "Unknown class '" + p.classFqn() + "' on @scalarType. Not found in "
+                        + "compiled target/classes."));
+                }
+            }
         }
     }
 

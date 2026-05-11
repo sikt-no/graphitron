@@ -18,7 +18,7 @@ import java.util.Set;
 /**
  * Completion for {@code @scalarType(scalar: "|")} on a {@code scalar X}
  * declaration. Suggests entries from
- * {@link ScalarTypeResolver#conventionTableFqns()}, prioritising the FQN
+ * {@link ScalarTypeResolver#conventionTable()}, prioritising the FQN
  * whose convention-table key matches the enclosing scalar's SDL name.
  *
  * <p>The convention layer is the easy-onramp story: if the consumer has
@@ -53,12 +53,13 @@ public final class ScalarTypeCompletions {
             .flatMap(n -> TypeContext.declaredNameOf(n, source))
             .orElse(null);
 
+        var table = ScalarTypeResolver.conventionTable();
         Set<String> fqns = new LinkedHashSet<>();
         if (scalarName != null) {
-            String preferred = ScalarTypeResolver.conventionTableFqnFor(scalarName);
+            String preferred = table.get(scalarName);
             if (preferred != null) fqns.add(preferred);
         }
-        fqns.addAll(ScalarTypeResolver.conventionTableFqns());
+        fqns.addAll(table.values());
         var items = new ArrayList<CompletionItem>(fqns.size());
         for (String fqn : fqns) {
             var item = new CompletionItem(fqn);
