@@ -14,14 +14,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
-| `R38` | Reshape `BatchKey` into `SourceKey` + unify the rows-method seam | In Review | [plan](unify-rowsmethodname.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) | In Progress | [plan](custom-scalar-java-types.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
-| `R75` | Plain payload types for DML mutations <sub>blocked by: [unify-rowsmethodname](unify-rowsmethodname.md)</sub> | Spec | [plan](synthesize-payload-carrier.md) |
+| `R75` | Plain payload types for DML mutations | Spec | [plan](synthesize-payload-carrier.md) |
 | `R74` | Row/Record return shapes for typed accessor batch keys | Spec | [plan](accessor-row-record-shapes.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Ready | [plan](error-handling-parity.md) |
@@ -128,7 +127,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Ready, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
-- `R75` [**Plain payload types for DML mutations**](synthesize-payload-carrier.md) — Spec, architecture, blocked by [unify-rowsmethodname](unify-rowsmethodname.md)
+- `R75` [**Plain payload types for DML mutations**](synthesize-payload-carrier.md) — Spec, architecture
 - `R63` [**Type UPSERT dialect requirement on the model**](dml-dialect-requirement-on-model.md) — Spec, architecture
 - `R122` [**Compound mutations: parent entity row + child normalised rows in one INSERT**](compound-entity-mutations.md) — Backlog, architecture
 - `R92` [**Surface database CHECK constraints as Jakarta validation rules**](catalog-check-constraint-validation.md) — Spec, architecture
@@ -140,7 +139,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### model-cleanup
 
-- `R38` [**Reshape `BatchKey` into `SourceKey` + unify the rows-method seam**](unify-rowsmethodname.md) — In Review, architecture
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md) — Backlog, validation
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Backlog, stubs
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
