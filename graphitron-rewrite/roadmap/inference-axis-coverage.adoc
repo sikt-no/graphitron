@@ -15,7 +15,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | no
 | 1
 | CheckedExceptionClassificationTest, GraphitronSchemaBuilderTest, LookupTableFieldPipelineTest, MutationDmlNodeIdClassificationTest, NestingFieldPipelineTest, PassthroughPayloadPipelineTest, RecordParentMultiTablePolymorphicPipelineTest, catalog.CatalogBuilderTest, generators.FetcherPipelineTest, generators.TablePipelineTest, generators.schema.AppliedDirectiveEmitterTest, generators.schema.ConnectionRegistrationsTest, generators.schema.DefaultValueEmissionTest, generators.schema.DirectiveDefinitionEmitterTest, generators.schema.EnumTypeGeneratorTest, generators.schema.GraphitronSchemaClassGeneratorTest, generators.schema.InputTypeGeneratorTest, generators.schema.ObjectTypeGeneratorTest, generators.schema.ObjectTypeRegisterFetchersTest, schema.federation.EntityResolutionBuilderTest
-| R12, R13, R2, R44, R66, R68, R75, R92, R94, R96, R97
+| R12, R13, R2, R66, R68, R75, R92, R94, R96, R97
 |===
 
 == RootField
@@ -173,7 +173,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | no
 | 0
 | GraphitronSchemaBuilderTest
-| R13, R23, R24, R27, R42, R44, R51
+| R13, R23, R24, R27, R42, R51
 | `CompositeColumnField`
 | Composite-key output carrier on a table-backed parent. Carries `columns` of arity
 | 9
@@ -189,7 +189,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | no
 | -
 | -
-| R13, R23, R24, R27, R44
+| R13, R23, R24, R27
 | `ComputedField`
 | A child field using `@externalField` — the developer provides a static method
 | 14
@@ -253,7 +253,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, PassthroughPayloadPipelineTest, test.internal.GeneratorDeterminismTest
-| R75
+| R68, R75
 | `PropertyField`
 | _(no javadoc)_
 | 176
@@ -285,7 +285,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
-| R109, R116, R23, R38, R64, R75
+| R109, R116, R23, R38, R64, R68, R75
 | `ServiceRecordField`
 | A child field backed by a developer-provided service method (`@service`), where the
 | 15
@@ -341,7 +341,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | no
 | 0
 | GraphitronSchemaBuilderTest
-| R12, R43, R44
+| R12, R43
 | `UnionField`
 | A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
 | 11
@@ -372,7 +372,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | no
 | 0
 | GraphitronSchemaBuilderTest, NodeIdLeafResolverTest
-| R13, R23, R24, R27, R42, R44, R51
+| R13, R23, R24, R27, R42, R51
 | `CompositeColumnField`
 | Composite-key input carrier on a `@table`-annotated input type. Carries
 | 6
@@ -388,7 +388,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | no
 | 0
 | MutationDmlNodeIdClassificationTest, generators.QueryConditionsPipelineTest
-| R13, R23, R24, R27, R44
+| R13, R23, R24, R27
 | `NestingField`
 | A field in a `@table`-annotated input type whose GraphQL type is itself an input
 | 12
@@ -491,7 +491,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, RecordParentMultiTablePolymorphicPipelineTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
-| R51
+| R38, R51
 | `NodeType`
 | A GraphQL object type annotated with both `@table` and `@node`
 | 45
