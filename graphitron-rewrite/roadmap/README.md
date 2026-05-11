@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R131` | Singular ID! @nodeId classifier emits Reference variants on same-table case | In Review | [plan](singular-nodeid-same-table-classification.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R134` | Fix mutation empty-input short-circuit to use newRecord for single-record payloads | Ready | [plan](mutation-empty-input-short-circuit-newrecord.md) |
-| `R132` | Move leaf-coverage report verification off local builds | Ready | [plan](leaf-coverage-verify-off-local.md) |
+| `R132` | Move leaf-coverage report verification off local builds | In Review | [plan](leaf-coverage-verify-off-local.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready | [plan](tablemethod-child-table-bound.md) |
 | `R130` | Lift reference-field deferral on @mutation inputs | Spec | [plan](composite-reference-in-mutation-input.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
@@ -165,7 +165,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R132` [**Move leaf-coverage report verification off local builds**](leaf-coverage-verify-off-local.md) — Ready, cleanup
+- `R132` [**Move leaf-coverage report verification off local builds**](leaf-coverage-verify-off-local.md) — In Review, cleanup
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
