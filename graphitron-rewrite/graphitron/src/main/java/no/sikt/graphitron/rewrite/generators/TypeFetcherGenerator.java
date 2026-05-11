@@ -2123,11 +2123,11 @@ public class TypeFetcherGenerator {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList el ->
                 emitEncoded(el.encode(), valueType, tableRef, tablesOnly, dmlChain, /*isList=*/ true);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle ps ->
-                emitProjected(ps.returnTypeName(), valueType, outputPackage, tableLocal,
-                    dmlChain, /*isList=*/ false);
+                emitProjected(ps.returnTypeName(), valueType, tableRef, tablesOnly, outputPackage,
+                    tableLocal, dmlChain, /*isList=*/ false);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList pl ->
-                emitProjected(pl.returnTypeName(), valueType, outputPackage, tableLocal,
-                    dmlChain, /*isList=*/ true);
+                emitProjected(pl.returnTypeName(), valueType, tableRef, tablesOnly, outputPackage,
+                    tableLocal, dmlChain, /*isList=*/ true);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload p ->
                 emitPayload(p.assembly(), valueType, dmlChain);
         };
@@ -2163,19 +2163,115 @@ public class TypeFetcherGenerator {
         return body.build();
     }
 
+    /**
+     * R75 Phase 1: TableBoundReturnType direct-{@code @table} return — two-step emit. The DML
+     * runs inside {@code dsl.transactionResult(tx -> ...)} with a PK-only {@code RETURNING}
+     * clause; the transaction commits when the lambda returns and yields a {@code Result} (list
+     * shape) or a single {@code RecordN<...>} (single shape) of PK keys. The response SELECT
+     * then runs against those keys outside the transaction, projecting
+     * {@code Type.$fields(env.getSelectionSet(), table, env)} so graphql-java's per-field
+     * fetchers see the full row record. Read errors during the SELECT or during nested
+     * traversal propagate as field errors and cannot undo the DML.
+     *
+     * <p>Mirror of the carrier path's two-step shape in
+     * {@link #buildMutationDmlRecordFetcher} and the data-field fetcher emitted by
+     * {@code FetcherEmitter.buildSingleRecordTableFetcherValue}; the difference is that the
+     * direct-{@code @table} path keeps the follow-up SELECT inside the same fetcher and returns
+     * a {@code Record} (or {@code List<Record>}) directly, where the carrier path hands the
+     * key Result to the data field's fetcher and lets it run the SELECT.
+     */
     private static CodeBlock emitProjected(
             String returnTypeName, TypeName valueType,
+            TableRef tableRef,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
             String outputPackage, String tableLocal,
             CodeBlock dmlChain, boolean isList) {
-        // TableBoundReturnType: use Type.$fields(env.getSelectionSet(), table, env) and
-        // return the row record. graphql-java's column fetchers walk it.
         var typeClass = ClassName.get(outputPackage + ".types", returnTypeName);
+        var pkCols = tableRef.primaryKeyColumns();
+        if (pkCols.isEmpty()) {
+            // Fallback: no PK metadata, can't do two-step. The classifier rejects DML on
+            // pkless tables ahead of emit, so this branch only runs in degenerate fixtures.
+            var body = CodeBlock.builder()
+                .add("$T payload = dsl\n", valueType).indent()
+                .add(dmlChain)
+                .add(".returningResult($T.$$fields(env.getSelectionSet(), $L, env))\n",
+                    typeClass, tableLocal)
+                .add(isList ? ".fetch(r -> r);\n" : ".fetchOne(r -> r);\n").unindent();
+            return body.build();
+        }
+        var keyRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
+            new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), pkCols);
+        TypeName keysType = isList
+            ? ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), keyRowType)
+            : keyRowType;
+
         var body = CodeBlock.builder()
-            .add("$T payload = dsl\n", valueType).indent()
+            .add("$T keys = dsl.transactionResult(tx -> $T.using(tx)\n", keysType, DSL).indent()
             .add(dmlChain)
-            .add(".returningResult($T.$$fields(env.getSelectionSet(), $L, env))\n",
-                typeClass, tableLocal)
-            .add(isList ? ".fetch(r -> r);\n" : ".fetchOne(r -> r);\n").unindent();
+            .add(".returningResult(");
+        for (int i = 0; i < pkCols.size(); i++) {
+            if (i > 0) body.add(", ");
+            var col = pkCols.get(i);
+            body.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+        }
+        body.add(")\n")
+            .add(isList ? ".fetch());\n" : ".fetchOne());\n").unindent();
+
+        if (!isList) {
+            // Single-row UPDATE / DELETE with no match: keys is null. Skip the follow-up SELECT
+            // and return null; matches the pre-two-step .fetchOne(r -> r) contract.
+            body.add("if (keys == null) return $T.<$T>newResult().data(null).build();\n",
+                DATA_FETCHER_RESULT, valueType);
+        }
+
+        body.add("$T payload = dsl.select($T.$$fields(env.getSelectionSet(), $L, env))\n",
+            valueType, typeClass, tableLocal)
+            .add("    .from($L)\n", tableLocal)
+            .add("    .where(");
+        if (isList) {
+            if (pkCols.size() == 1) {
+                var col = pkCols.get(0);
+                body.add("$T.$L.$L.in(keys.getValues($T.$L.$L))",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            } else {
+                body.add("$T.row(", DSL);
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkCols.get(i);
+                    body.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                }
+                body.add(").in(keys.stream().map(r -> $T.row(", DSL);
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkCols.get(i);
+                    body.add("r.get($T.$L.$L)", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                }
+                body.add(")).toList())");
+            }
+            body.add(")\n").add("    .fetch(r -> r);\n");
+        } else {
+            if (pkCols.size() == 1) {
+                var col = pkCols.get(0);
+                body.add("$T.$L.$L.eq(keys.value1())",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            } else {
+                body.add("$T.row(", DSL);
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkCols.get(i);
+                    body.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                }
+                body.add(").eq($T.row(", DSL);
+                for (int i = 0; i < pkCols.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkCols.get(i);
+                    body.add("keys.get($T.$L.$L)", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                }
+                body.add("))");
+            }
+            body.add(")\n").add("    .fetchOne(r -> r);\n");
+        }
         return body.build();
     }
 

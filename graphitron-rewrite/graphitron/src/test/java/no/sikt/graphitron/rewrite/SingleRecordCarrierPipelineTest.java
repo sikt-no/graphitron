@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -9,6 +10,8 @@ import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
+
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -277,6 +280,54 @@ class SingleRecordCarrierPipelineTest {
             "'ActorPayload'",
             "table 'actor'",
             "input table 'film'");
+    }
+
+    // ===== Direct-@table two-step emit pin =====
+
+    @ParameterizedTest
+    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE", "UPSERT"})
+    void directReturn_dmlFetcher_emitsTwoStepShape(DmlKind kind) {
+        // Direct-@table-return DML mutations migrate to the two-step shape uniformly with the
+        // carrier path: PK-only RETURNING inside dsl.transactionResult(...), follow-up SELECT
+        // outside the transaction lambda. Without this pin, a regression to single-statement
+        // RETURNING $fields(...) would compile clean and pass the round-trip tests but defeat
+        // the durability invariant the reshape exists to establish.
+        String sdl = """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { %s }
+            type Query { x: String }
+            type Mutation { %s(in: FilmInput!): Film @mutation(typeName: %s) }
+            """.formatted(directReturnInputBody(kind), mutationName(kind), kind.name());
+
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        var mutationFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals("MutationFetchers"))
+            .findFirst()
+            .orElseThrow();
+        var fetcherMethod = mutationFetchers.methodSpecs().stream()
+            .filter(m -> m.name().equals(mutationName(kind)))
+            .findFirst()
+            .orElseThrow();
+        String body = fetcherMethod.code().toString();
+        long transactionResultCalls = countMatches(body, Pattern.compile("transactionResult\\("));
+        long selectFromCalls = countMatches(body, Pattern.compile("\\.select\\("));
+        assertThat(transactionResultCalls)
+            .as("direct-@table " + kind + " fetcher wraps PK-only RETURNING in exactly one transactionResult(...)")
+            .isEqualTo(1);
+        assertThat(selectFromCalls)
+            .as("direct-@table " + kind + " fetcher runs a follow-up SELECT outside the transaction")
+            .isGreaterThanOrEqualTo(1);
+    }
+
+    private static String directReturnInputBody(DmlKind kind) {
+        // Direct-@table returns can use single inputs uniformly here; the two-step pin only
+        // cares about the emit shape, not the input cardinality.
+        return switch (kind) {
+            case INSERT -> "title: String";
+            case UPDATE -> "filmId: Int! @field(name: \"film_id\") @lookupKey, title: String";
+            case DELETE -> "filmId: Int! @field(name: \"film_id\") @lookupKey";
+            case UPSERT -> "filmId: Int! @field(name: \"film_id\") @lookupKey, title: String";
+        };
     }
 
     // ===== Dispatch-arm structural regression pin =====
