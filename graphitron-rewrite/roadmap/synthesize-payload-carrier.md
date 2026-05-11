@@ -1,7 +1,7 @@
 ---
 id: R75
 title: "Plain payload types for DML mutations"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 7
 theme: mutations-errors
