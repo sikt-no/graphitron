@@ -421,6 +421,83 @@ class SingleRecordCarrierPipelineTest {
             .isEqualTo(1);
     }
 
+    // ===== R75 Phase 2: record-element data fields =====
+
+    @Test
+    void carrier_recordElement_dataFieldClassifiesAsSingleRecordIdentityField() {
+        // Phase 2 widens the trigger's condition #3 to admit record-backed ResultType elements
+        // (any ResultType arm with a non-null fqClassName). The data field's element type here
+        // is @record(record: {className: ...}) → PojoResultType.Backed; the trigger emits
+        // SingleRecordCarrierShape with DataElement.Record, and the schema-builder classifies
+        // the data field as SingleRecordIdentityField with the resolved ResultReturnType.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type FilmDto @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+                title: String
+            }
+            type FilmDtoPayload { film: FilmDto }
+            type Query { x: FilmDtoPayload }
+            """);
+
+        var carrier = schema.type("FilmDtoPayload");
+        assertThat(carrier).isInstanceOf(GraphitronType.PojoResultType.NoBacking.class);
+
+        var dataField = schema.field("FilmDtoPayload", "film");
+        assertThat(dataField).isInstanceOf(ChildField.SingleRecordIdentityField.class);
+        var identityField = (ChildField.SingleRecordIdentityField) dataField;
+        assertThat(identityField.returnType()).isInstanceOf(ReturnTypeRef.ResultReturnType.class);
+        assertThat(identityField.returnType().returnTypeName()).isEqualTo("FilmDto");
+        assertThat(identityField.returnType().fqClassName())
+            .isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.DummyRecord");
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE", "UPSERT"})
+    void carrier_recordElement_dmlMutationRejectsAtClassifier(DmlKind kind) {
+        // Phase 2 keeps @mutation (DML) restricted to @table-element data. A record-element
+        // carrier (DataElement.Record) on a DML mutation would require a "DML row → domain
+        // record" conversion step at the emitter, which the spec tracks separately. The
+        // mutation classifier rejects at classify time with a per-mismatch message naming the
+        // carrier, the data field, and pointing to @service as the right path.
+        String sdl = """
+            type Film @table(name: "film") { title: String }
+            type FilmDto @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+                title: String
+            }
+            type FilmDtoPayload { film: FilmDto }
+            input FilmInput @table(name: "film") { %s }
+            type Query { x: String }
+            type Mutation { %s(in: FilmInput!): FilmDtoPayload @mutation(typeName: %s) }
+            """.formatted(inputBody(kind), mutationName(kind), kind.name());
+
+        var schema = TestSchemaHelper.buildSchema(sdl);
+
+        var mutField = schema.field("Mutation", mutationName(kind));
+        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
+        var reason = ((UnclassifiedField) mutField).rejection().message();
+        assertThat(reason).contains(
+            "'FilmDtoPayload'",
+            "record-element data field",
+            "DML mutations require an @table-element data field",
+            "@service mutation");
+    }
+
+    @Test
+    void fetcherEmitter_singleRecordIdentityFieldArm() throws Exception {
+        // Phase 2 structural pin: FetcherEmitter.dataFetcherValue dispatches
+        // SingleRecordIdentityField as its own arm (identity passthrough — env -> env.getSource()).
+        // Overloading ConstructorField with an identity-accessor variant was rejected at spec
+        // time per the principles doc's "god accessor" smell; the sibling-permit shape keeps the
+        // read-mechanism axis explicit at the type-system level.
+        var src = Files.readString(Path.of(
+            "src/main/java/no/sikt/graphitron/rewrite/generators/FetcherEmitter.java"));
+        long identityArms = countMatches(src, Pattern.compile(
+            "field\\s+instanceof\\s+ChildField\\.SingleRecordIdentityField\\b"));
+        assertThat(identityArms)
+            .as("SingleRecordIdentityField has its own dispatch arm")
+            .isEqualTo(1);
+    }
+
     // ===== Helpers =====
 
     private static String mutationName(DmlKind kind) {

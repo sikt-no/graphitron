@@ -1,7 +1,7 @@
 ---
 id: R75
 title: "Plain payload types for DML mutations"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 7
 theme: mutations-errors
@@ -83,6 +83,74 @@ subsystem summary of what shipped:
   `MUTATION_DML_RECORD_FIELD` case (Mutation-side classifier). `VariantCoverageTest`
   no longer holds `NO_CASE_REQUIRED` entries for the two new permits — both surface
   through the SDL fixtures.
+
+## Phase 2 shipping status — lean (In Review)
+
+Phase 2's structural surface landed; the 8-case wrapper-composition execution
+matrix was carved out to R137 (`service-wrapper-composition`) because the
+existing `@service` substrate has no support for any of `Optional<T>` /
+`CompletableFuture<T>` / `Mono<T>` / `DataFetcherResult<T>` on method return
+types — admitting any one of them is a focused `@service`-infrastructure change
+distinct from R75's carrier-admission story. What shipped subsystem-by-
+subsystem:
+
+- New sealed sub-taxonomy `DataElement` on the trigger's `Ok` result:
+  `Table(name, TableRef, FieldWrapper)` / `Record(name, fqClassName, FieldWrapper)`.
+  `SingleRecordCarrierShape` carries `DataElement` instead of the Phase 1
+  table-only triplet (`dataElementName`, `dataTable`, `dataWrapper`); every
+  consumer pattern-matches on the sealed type.
+- Trigger condition #3 widened: admits `TableBackedType` (→ `Table`) or any
+  `ResultType` arm with a non-null `fqClassName()` (`PojoResultType.Backed`,
+  `JavaRecordType`, `JooqRecordType`, `JooqTableRecordType` → `Record`).
+  `PojoResultType.NoBacking` is rejected as element (no class to match against
+  a future strict service-return validator).
+- DML mutation classifier rejects record-element carriers at classify time
+  with a per-mismatch message naming the carrier, the data field, and pointing
+  to `@service` as the right consumer. `requireDataTableMatchesInputTable`
+  retains its `@LoadBearingClassifierCheck`; the new code path narrows on
+  `DataElement.Table` first, then runs the existing table-equality compare.
+- New `ChildField.SingleRecordIdentityField(parentTypeName, name,
+  SourceLocation, ResultReturnType)` permit. Declines `TableTargetField`
+  (no table) and `BatchKeyField` (no DataLoader); no `SourceKey` — fetcher
+  emit is identity passthrough `env -> env.getSource()`.
+- `GraphitronSchemaBuilder` per-type pass classifies the data field on
+  `Ok(Table)` as `SingleRecordTableField` (Phase 1 unchanged) or on
+  `Ok(Record)` as the new `SingleRecordIdentityField`. The `@service`
+  Mutation case lands through the existing `serviceResolver.resolve`
+  path → `MutationServiceRecordField` with the carrier's `ResultReturnType`;
+  no new classifier wiring at the mutation seam.
+- `FetcherEmitter.dataFetcherValue` dispatches `SingleRecordIdentityField`
+  as its own arm (one-line `env -> env.getSource()`).
+  `TypeFetcherGenerator.IMPLEMENTED_LEAVES` carries the new permit;
+  `GraphitronSchemaValidator` has a no-op switch arm pinning the structural
+  shape; `VariantCoverageTest.NO_CASE_REQUIRED` allows the permit through
+  until a sakila-side classification fixture lands.
+- Pipeline tier: `SingleRecordCarrierPipelineTest` gains
+  `carrier_recordElement_dataFieldClassifiesAsSingleRecordIdentityField`,
+  parameterised `carrier_recordElement_dmlMutationRejectsAtClassifier`
+  (INSERT/UPDATE/UPSERT), and the structural pin
+  `fetcherEmitter_singleRecordIdentityFieldArm`.
+- Compilation tier: sakila fixture
+  `FilmCardFactoryService.create(Integer)` returns `FilmCardData`, wired
+  through `Mutation.createFilmCard(filmId: Int!): SingleFilmCardCarrier`
+  (`SingleFilmCardCarrier { card: FilmCardWrapper }`). Confirms `@service`
+  Mutation + NoBacking carrier + record-element data field compiles end-
+  to-end through `mvn install -Plocal-db`.
+
+### Deferred to R137 (carved out cleanly)
+
+- Service-method return-type strict validation against the resolved
+  `DataElement` (the data element's class for `Record`, the input table's PK
+  row shape for `Table`). Today's path leaves `ResultReturnType` with null
+  fqClassName unvalidated — consistent with Phase 1 `NoBacking` behaviour,
+  but the spec's Phase 2 "method's declared return type matched against
+  the data field's element kind" gate needs the wrapper-composition work
+  underneath it to be useful.
+- The 8-case execution matrix `SingleRecordCarrierServiceTest` over
+  `{T, Optional, CompletableFuture, Mono, DataFetcherResult} × {Table, Record}`.
+  None of the four wrapper layers are admitted on `@service` return types
+  today; R137 admits them at the substrate level, then this matrix lands as
+  the execution-tier sign-off.
 
 ### Phase 1 remainders — landed
 
@@ -195,7 +263,14 @@ implementation track; it binds structurally to Phase 1 but is not schedule-coupl
   signal is `@record(record: {className: ...})`; after R96 Phase 3 it is
   `@service`-method-return-type introspection. R75 reads the model
   classification, not the producing signal. The work is at the
-  mutation-classifier and `@service`-resolver layer.
+  mutation-classifier and `@service`-resolver layer. Phase 2 ships
+  the structural surface (`DataElement` sub-taxonomy +
+  `SingleRecordIdentityField` permit + DML rejection of record-element
+  carriers + pipeline tests + a compilation-tier sakila fixture); the
+  full 8-case wrapper-composition execution matrix and the strict
+  service-return-shape validator carve out cleanly to R137
+  (`service-wrapper-composition`). See "Phase 2 shipping status — lean"
+  above for the subsystem-by-subsystem summary.
 
 Both phases are specified in implementation-ready detail below.
 Promoting R75 from Spec → Ready means signing off on the entire body;
@@ -987,16 +1062,47 @@ new `SingleRecordCarrierServiceTest` parameterising over
   `mutation-dml-record-field.data-table-equals-input-table` — declared,
   consumed, and clean under `LoadBearingGuaranteeAuditTest`.
 
-**Phase 2:**
+**Phase 2 (lean — what shipped under R75):**
 
-- `SingleRecordCarrierPipelineTest`'s Phase 2 admission cases pass for
-  both element kinds (`{Table, Record}`) and all wrapper kinds
-  (`{T, Optional, CompletableFuture, Mono, DataFetcherResult}`).
-- `SingleRecordCarrierServiceTest`'s execution-tier matrix passes (8
-  driver cases over 2 element kinds × 4 wrappers).
-- `ServiceCatalog`'s `@service` mutation classifier admits
-  single-record-carrier returns; the trigger's `DataElement.{Table |
-  Record}` sealed sub-taxonomy distinguishes the two element kinds.
+- Trigger admits record-backed `ResultType` elements (any arm with a
+  non-null `fqClassName()`); the resolved shape carries a
+  `DataElement.Table` or `DataElement.Record` discriminator.
+  `SingleRecordCarrierShape` carries `DataElement` instead of the
+  Phase 1 table-only triplet; every consumer pattern-matches.
+- `SingleRecordCarrierPipelineTest`'s Phase 2 cases pass: trigger
+  admits a record-element carrier with `DataElement.Record`; the
+  data field classifies as `ChildField.SingleRecordIdentityField`
+  carrying the resolved `ResultReturnType`; DML mutations reject
+  record-element carriers with a per-mismatch message naming the
+  carrier, the data field, and pointing to `@service` (parameterised
+  over INSERT/UPDATE/UPSERT); `FetcherEmitter.dataFetcherValue`
+  dispatches `SingleRecordIdentityField` as its own arm.
+- `GraphitronSchemaBuilder`'s per-type pass classifies record-element
+  data fields as `SingleRecordIdentityField` and `@table`-element
+  data fields as `SingleRecordTableField` from one switch over
+  `DataElement`; the `@service` Mutation surface lands through the
+  existing `serviceResolver.resolve` → `MutationServiceRecordField`
+  path with no new classifier wiring at the mutation seam.
+- Compilation-tier sakila fixture
+  (`Mutation.createFilmCard(filmId: Int!): SingleFilmCardCarrier`
+  via `FilmCardFactoryService.create`) compiles end-to-end through
+  `mvn install -Plocal-db`, confirming the @service-mutation +
+  NoBacking-carrier + record-element-data-field shape works against
+  the full generator surface.
 - Authored carriers with `@record(record: {className: ...})` remain
   unaffected across both phases (regression pin via the existing
   authored-carrier fixtures).
+
+**Phase 2 — deferred to R137 (`service-wrapper-composition`):**
+
+- The 8-case execution matrix `SingleRecordCarrierServiceTest` over
+  `{T, Optional, CompletableFuture, Mono, DataFetcherResult} × {Table, Record}`.
+  Today's `@service` substrate has no support for any of the four
+  wrapper layers on method return types; admitting them is a focused
+  `@service`-infrastructure change R137 carves out cleanly.
+- Service-method return-type strict validation against the resolved
+  `DataElement` (the data element's class for `Record`, the input
+  table's PK row shape for `Table`). Phase 1's `NoBacking` policy of
+  "no strict validation when `fqClassName == null`" carries forward
+  unchanged at the R75 seam; R137 introduces the
+  data-element-aware validator alongside the wrapper-composition work.
