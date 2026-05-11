@@ -3018,6 +3018,29 @@ class GraphitronSchemaBuilderTest {
                     .contains("@lookupKey is only supported on scalar column fields");
             }),
 
+        LOOKUP_KEY_ON_NODEID_INPUT_FIELD_REJECTED(
+            "R131: @lookupKey on a same-table singular `id: ID! @nodeId` input field → classify-time error."
+                + " Pre-R131 the singular @nodeId branch produced a Reference variant and the"
+                + " EnumMappingResolver scalar-column-fields gate rejected the combination."
+                + " Post-R131 the same-table arm produces a ColumnField, which would otherwise"
+                + " pass the gate and silently bind the base64-encoded wire value against the"
+                + " raw column (deriveExtraction overwrites the resolver-supplied decode method)."
+                + " The new explicit guard preserves pre-R131 rejection semantics.",
+            """
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId }
+            input FilmLookupKey @table(name: "film") {
+                id: ID! @nodeId @lookupKey
+            }
+            type Query {
+                filmByKey(key: FilmLookupKey): [Film!]!
+            }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) schema.field("Query", "filmByKey");
+                assertThat(f.reason())
+                    .contains("@lookupKey on an @nodeId-decoded input field is not supported");
+            }),
+
         // ===== Phase 4: @condition on INPUT_FIELD_DEFINITION (condition emission via projectFilters) =====
 
         TABLE_INPUT_ARG_FIELD_CONDITION_EMITTED(
