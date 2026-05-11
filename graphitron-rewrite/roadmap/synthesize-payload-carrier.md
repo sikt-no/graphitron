@@ -123,8 +123,8 @@ subsystem:
   as its own arm (one-line `env -> env.getSource()`).
   `TypeFetcherGenerator.IMPLEMENTED_LEAVES` carries the new permit;
   `GraphitronSchemaValidator` has a no-op switch arm pinning the structural
-  shape; `VariantCoverageTest.NO_CASE_REQUIRED` allows the permit through
-  until a sakila-side classification fixture lands.
+  shape; the sakila compilation fixture below covers the permit for
+  `VariantCoverageTest` (no `NO_CASE_REQUIRED` entry needed).
 - Pipeline tier: `SingleRecordCarrierPipelineTest` gains
   `carrier_recordElement_dataFieldClassifiesAsSingleRecordIdentityField`,
   parameterised `carrier_recordElement_dmlMutationRejectsAtClassifier`
