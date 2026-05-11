@@ -17,6 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R131` | Singular ID! @nodeId classifier emits Reference variants on same-table case | Spec | [plan](singular-nodeid-same-table-classification.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R132` | Move leaf-coverage report verification off local builds | Spec | [plan](leaf-coverage-verify-off-local.md) |
+| `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Spec | [plan](tablemethod-child-table-bound.md) |
 | `R42` | Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`) | In Review | [plan](column-reference-on-scalar-field.md) |
 | `R130` | Lift reference-field deferral on @mutation inputs | Spec | [plan](composite-reference-in-mutation-input.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
@@ -61,7 +62,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Stubs
 
-- `R43` [**Stub: child `@tableMethod` with table-bound return (`TableMethodField`)**](tablemethod-child-table-bound.md): Lift `ChildField.TableMethodField` out of `TypeFetcherGenerator.STUBBED_VARIANTS`. Today schemas using `@tableMethod` on a child field of a `@table`-bound parent fail the build with `[deferred] child @tableMethod (table-bound return) not yet implemented`, even though classification succeeds and the directive's reflection path already ships at the root site (`QueryField.QueryTableMethodTableField` in `IMPLEMENTED_LEAVES`).
 - `R129` [**Stub: ConditionJoin path in @reference on ColumnReferenceField**](column-reference-on-scalar-field-condition-join.md): When R42 lifts `ChildField.ColumnReferenceField` for `CallSiteCompaction.Direct` with FK-only `joinPath`, schemas whose `@reference` resolves through a developer-supplied `@condition` method (a `JoinStep.ConditionJoin` step in the path) remain unsupported. R42's validator emits `Rejection.Deferred` keyed to this slug for that case, so the SDL author sees a build-time error rather than a runtime stub.
 
 ### Cleanup
@@ -149,7 +149,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md) — Backlog, validation
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — In Review, stubs
-- `R43` [**Stub: child `@tableMethod` with table-bound return (`TableMethodField`)**](tablemethod-child-table-bound.md) — Backlog, stubs
+- `R43` [**Stub: child `@tableMethod` with table-bound return (`TableMethodField`)**](tablemethod-child-table-bound.md) — Spec, stubs
 - `R129` [**Stub: ConditionJoin path in @reference on ColumnReferenceField**](column-reference-on-scalar-field-condition-join.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [deprecate-record-directive](deprecate-record-directive.md)
