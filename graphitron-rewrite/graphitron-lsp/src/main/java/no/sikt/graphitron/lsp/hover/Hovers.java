@@ -75,6 +75,7 @@ public final class Hovers {
             case Behavior.CatalogColumnBinding ignored -> columnHover(directive, file, catalog, rangeNode);
             case Behavior.CatalogFkBinding ignored -> fkHover(file, catalog, rangeNode);
             case Behavior.ArgMappingBinding ignored -> Optional.empty();
+            case Behavior.ScalarTypeBinding ignored -> Optional.empty();
         };
     }
 

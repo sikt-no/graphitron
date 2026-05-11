@@ -33,13 +33,30 @@ type Invoice @table(name: "invoice") {
 
 The generator produces an input record with a `java.math.BigDecimal` component, a `Field<BigDecimal>` projection for SELECT paths, and registers `ExtendedScalars.GraphQLBigDecimal` via `.additionalType(...)` on the synthesized schema. Consumer code does not need to wire the scalar in its `buildSchema` hook.
 
+== Resolution order
+
+Graphitron's scalar resolver tries three layers in order, first hit wins:
+
+. *Spec built-ins.* `Int`, `Float`, `String`, `Boolean`, `ID` resolve through a closed table baked into the resolver. `@scalarType` on a spec built-in name is a hard validation error.
+. *`@scalarType(scalar:)` directive.* The consumer's explicit reference. Beats the convention layer, so a consumer who imports extended-scalars but wants `BigDecimal` modeled as their own `Money` wrapper just declares `scalar BigDecimal @scalarType(scalar: "com.example.Scalars.MONEY")` and the directive wins.
+. *graphql-java-extended-scalars convention.* When the SDL name matches one of the 30 entries in `ScalarTypeResolver`'s convention table _and_ `graphql.scalars.ExtendedScalars` is on the consumer's compile classpath, the scalar resolves automatically. Both the bare (`scalar BigDecimal`) and `GraphQL`-prefixed (`scalar GraphQLBigDecimal`) names map to `ExtendedScalars.GraphQLBigDecimal`.
+
+If none of the three layers produces a hit, the scalar is unresolved and the build fails with an error pointing at `@scalarType(scalar:)` or extended-scalars as the fix. There is no silent fallback to `Object`.
+
+== Migration
+
+Consumers upgrading to the resolver-driven additional-type registration must *remove* manual `.additionalType(ExtendedScalars.GraphQLBigDecimal)` (or other graphitron-resolved scalar constant) calls from their `buildSchema(...)` hooks. graphql-java's `GraphQLSchema.Builder.additionalType` rejects duplicate type names at build time, so leaving the manual call in turns the upgrade into a `SchemaProblem` rather than silent tolerance.
+
 == Constraints
 
 * `@scalarType` is only valid on `scalar` declarations. Applying it to a spec built-in (`Int`, `Float`, `String`, `Boolean`, `ID`) raises a directive-conflict validation error: the GraphQL spec and graphql-java already bind these names.
 * The referenced class must be on the codegen classpath (`<project>/target/classes`, every reactor sibling's `target/classes`, or a declared dependency). Classes from `<plugin><dependencies>` are *not* visible.
 * The referenced field must be `public static`, non-null at code generation, and assignable to `graphql.schema.GraphQLScalarType`. Validation errors name the specific mismatch (`FieldNotFound`, `FieldNotAccessible`, `NullAtCodegen`, `NotAScalarType`).
 * The constant's `Coercing<I, O>` must declare concrete type parameters. A raw `Coercing` declaration, a `Coercing<Object, Object>` declaration, or an anonymous-class declaration whose `I` resolves to `Object` produces a `CoercingErased` rejection with a per-arm hint (extract anonymous class, declare concrete parameters, etc.).
-* When the directive is omitted on a non-spec scalar, Phase 2 (R101) leaves the scalar unclassified. Phase 3 will route names recognised by the extended-scalars convention layer through the same resolver; until then the SDL `scalar Foo` declaration without `@scalarType` is silently skipped by the additional-type loop.
+
+== Editor support
+
+The graphitron LSP completes `@scalarType(scalar: |)` on a `scalar X` declaration with the convention-table FQNs, preferring the entry that matches `X` when one exists. Diagnostics surface malformed references (no dot) and unknown classes (FQN whose class part is not on the compile classpath scan) inline; field-level failures (`FieldNotFound`, `CoercingErased`, etc.) surface during the build.
 
 == See also
 

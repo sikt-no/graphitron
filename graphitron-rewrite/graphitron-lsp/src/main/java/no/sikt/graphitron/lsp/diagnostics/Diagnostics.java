@@ -205,6 +205,50 @@ public final class Diagnostics {
             case Behavior.MethodNameBinding mnb ->
                 validateMethod(vocabulary, directive, leaf, mnb, file, catalog, out);
             case Behavior.ArgMappingBinding ignored -> { /* sibling roadmap item */ }
+            case Behavior.ScalarTypeBinding ignored ->
+                validateScalarType(leaf.valueNode(), file, catalog, out);
+        }
+    }
+
+    /**
+     * Validates {@code @scalarType(scalar: "fully.qualified.Class.FIELD")}. The LSP has the
+     * compile-classpath scan but not a live classloader, so it cannot run the resolver's full
+     * reflection path; it surfaces the two checks the catalog can answer:
+     *
+     * <ul>
+     *   <li>Shape: the value must split at the last dot into a class FQN + field name. A value
+     *       with no dot cannot be resolved at codegen and is flagged here.</li>
+     *   <li>Classpath: the class part must be present in the catalog's external-reference scan
+     *       (mirrors {@link #validateClassName}). Skipped when the scan is empty (pre-compile
+     *       state); the build-tier resolver produces the precise rejection arm then.</li>
+     * </ul>
+     *
+     * <p>Field-level validation ({@code FieldNotFound}, {@code NotAScalarType},
+     * {@code CoercingErased}) requires reflection on the actual class and lives in the
+     * build-tier {@link no.sikt.graphitron.rewrite.ScalarTypeResolver}; the LSP surfaces those
+     * errors via the build pipeline's diagnostics, not inline.
+     */
+    private static void validateScalarType(
+        Node valueNode, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+    ) {
+        String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
+        if (fqn.isEmpty()) return;
+        int dot = fqn.lastIndexOf('.');
+        if (dot <= 0 || dot == fqn.length() - 1) {
+            out.add(diagnostic(file, valueNode,
+                "Invalid scalar reference '" + fqn + "'. Expected a fully-qualified field "
+                + "reference of the form 'fully.qualified.Class.FIELD' pointing at a "
+                + "public static final GraphQLScalarType."));
+            return;
+        }
+        if (catalog.externalReferences().isEmpty()) return;
+        String classFqn = fqn.substring(0, dot);
+        boolean found = catalog.externalReferences().stream()
+            .anyMatch(r -> r.className().equals(classFqn));
+        if (!found) {
+            out.add(diagnostic(file, valueNode,
+                "Unknown class '" + classFqn + "' on @scalarType. Not found in compiled "
+                + "target/classes."));
         }
     }
 

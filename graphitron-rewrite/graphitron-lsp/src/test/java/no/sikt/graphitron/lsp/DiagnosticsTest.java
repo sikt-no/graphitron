@@ -676,6 +676,88 @@ class DiagnosticsTest {
         assertThat(diags).isEmpty();
     }
 
+    // R101 Phase 4 — @scalarType(scalar:) diagnostics.
+
+    @Test
+    void scalarType_malformedReference_producesError() {
+        var file = file("""
+            scalar Money @scalarType(scalar: "NoDotsHere")
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.Scalars"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
+        assertThat(diags.get(0).getMessage())
+            .contains("NoDotsHere")
+            .contains("fully.qualified.Class.FIELD");
+    }
+
+    @Test
+    void scalarType_trailingDot_producesError() {
+        var file = file("""
+            scalar Money @scalarType(scalar: "com.example.Scalars.")
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.Scalars"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("fully.qualified.Class.FIELD");
+    }
+
+    @Test
+    void scalarType_unknownClass_producesError() {
+        var file = file("""
+            scalar Money @scalarType(scalar: "com.example.Missing.MONEY")
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.Scalars"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
+        assertThat(diags.get(0).getMessage())
+            .contains("com.example.Missing")
+            .contains("@scalarType");
+    }
+
+    @Test
+    void scalarType_knownClass_producesNoDiagnostic() {
+        var file = file("""
+            scalar Money @scalarType(scalar: "com.example.Scalars.MONEY")
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.Scalars"));
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void scalarType_emptyValueProducesNoDiagnostic() {
+        // Mid-edit state: empty quoted value. Completion fires, diagnostics
+        // stay quiet so the user is not yelled at while still typing.
+        var file = file("""
+            scalar Money @scalarType(scalar: "")
+            """);
+
+        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.Scalars"));
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void scalarType_emptyExternalReferencesSuppressesUnknownClass() {
+        // Pre-`mvn compile` state: scanner saw nothing. Reporting every
+        // reference as unknown would be noise; defer to the build-tier
+        // resolver. Mirrors the @service / @condition class-name policy.
+        var file = file("""
+            scalar Money @scalarType(scalar: "com.example.Missing.MONEY")
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog());  // empty externalReferences
+
+        assertThat(diags).isEmpty();
+    }
+
     private static CompletionData catalogWithKnownClass(String fqn) {
         // The class diagnostic now also validates the sibling `method:` slot
         // when the class resolves; include the method names referenced by

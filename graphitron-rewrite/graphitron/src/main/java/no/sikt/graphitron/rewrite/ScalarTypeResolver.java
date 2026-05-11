@@ -449,6 +449,17 @@ public final class ScalarTypeResolver {
     }
 
     /**
+     * The static-field FQN the convention table maps {@code scalarName} to, or {@code null} when
+     * the name is not in the table. Resolution-independent: cheaper than
+     * {@link #resolveByConvention(String, ClassLoader)} when the caller only needs the FQN and
+     * has no classloader at hand (e.g. the LSP, which suggests the FQN as a completion candidate
+     * without trying to load the class).
+     */
+    public static String conventionTableFqnFor(String scalarName) {
+        return CONVENTION_TABLE.get(scalarName);
+    }
+
+    /**
      * Resolves an SDL scalar through the extended-scalars convention layer. Returns
      * {@link ScalarResolution.Resolved} when the SDL name is in the convention table
      * <em>and</em> the named constant is on the consumer's classpath; otherwise returns a

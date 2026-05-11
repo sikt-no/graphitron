@@ -213,7 +213,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest
-| R12
+| R12, R128
 | `InterfaceField`
 | A child field on a `GraphitronType.TableBackedType` parent returning a multi-table
 | 9
@@ -261,7 +261,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, generators.TablePipelineTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest
-| R12, R51
+| R12, R128, R51, R75
 | `RecordField`
 | _(no javadoc)_
 | 8

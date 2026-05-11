@@ -665,6 +665,8 @@ public record LspVocabulary(
                 new Behavior.CatalogFkBinding());
             out.put(new SchemaCoordinate.InputField("ReferenceElement", "table"),
                 new Behavior.CatalogTableBinding());
+            out.put(new SchemaCoordinate.DirectiveArg("scalarType", "scalar"),
+                new Behavior.ScalarTypeBinding());
             return out;
         }
     }
