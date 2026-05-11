@@ -358,7 +358,7 @@ public sealed interface ChildField extends GraphitronField
     ) implements IdentityPassthrough {}
 
     /**
-     * R75: a passthrough payload's data field — the unique {@code @table}-element field on
+     * A passthrough payload's data field — the unique {@code @table}-element field on
      * an SDL Object whose {@link no.sikt.graphitron.rewrite.BuildContext#unwrapPassthroughPayload}
      * resolves to {@link no.sikt.graphitron.rewrite.model.PassthroughResolution.Ok}. Carries
      * no Java backing class; the parent type is left as

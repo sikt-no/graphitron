@@ -12,7 +12,7 @@ The same property generalises across multiple hops, but only when each hop prese
 
 The emitted SQL is the same direct row predicate the single-hop case emits. Chain length is purely a classifier-time concept; the runtime touches one table.
 
-When the lift fails at some step, the schema is asking the runtime to walk a JOIN with translation. That shape is real but is not what R114 ships; the diagnostic names the failing step and points back to this article.
+When the lift fails at some step, the schema is asking the runtime to walk a JOIN with translation. That shape is real but is not what the multi-hop `@nodeId` lift covers; the diagnostic names the failing step and points back to this article.
 
 == Worked example: a 2-hop chain
 
