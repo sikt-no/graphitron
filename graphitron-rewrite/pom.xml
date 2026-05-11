@@ -350,10 +350,12 @@
                  Activation: property-based negation (active unless -Dleaf-coverage.skip is set)
                  rather than activeByDefault, which Maven silently deactivates whenever any other
                  profile (e.g. -Plocal-db) is explicitly activated. Property activation runs on
-                 its own condition and is unaffected by that rule, so the trace emission and the
-                 paired verify-leaf-coverage-report tripwire fire on every default contributor
-                 build. Opt out with `mvn ... -Dleaf-coverage.skip` for a faster local turnaround
-                 when the report is known to be untouched. -->
+                 its own condition and is unaffected by that rule, so the trace emission fires
+                 on every default contributor and CI build. The traces feed the leaf-coverage
+                 report regenerated and published from CI (.github/workflows/rewrite-build.yml
+                 uploads inference-axis-coverage.adoc; deploy-docs picks it up); no local verify
+                 gate reads them. Opt out with `mvn ... -Dleaf-coverage.skip` for a faster local
+                 turnaround when the traces are not needed. -->
             <id>leaf-coverage</id>
             <activation>
                 <property>
