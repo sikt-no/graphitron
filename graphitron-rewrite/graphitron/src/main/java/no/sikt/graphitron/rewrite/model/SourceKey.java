@@ -67,6 +67,11 @@ import java.util.Objects;
  *   <li>{@link Reader.ServiceTableRecord} with {@code recordType} equal to
  *       {@code target().recordClass()} → {@link #path()} empty. Walking past target is
  *       structurally redundant when the service produced a target-aligned record.</li>
+ *   <li>{@link Reader.ResultRowWalk} → {@link Wrap#RECORD} and {@link #path()} empty.
+ *       The upstream DML mutation fetcher produces {@code RecordN<...>} rows directly
+ *       on the DML's input table; cardinality determines whether the consumer sees a
+ *       single {@code RecordN} ({@link Cardinality#ONE}) or a {@code Result<RecordN>}
+ *       ({@link Cardinality#MANY}).</li>
  * </ul>
  */
 @LoadBearingClassifierCheck(
@@ -87,6 +92,14 @@ import java.util.Objects;
         + "recordType matches target's recordClass paired with a non-empty path. The service "
         + "already produced a target-aligned record; walking past target is structurally "
         + "redundant.")
+@LoadBearingClassifierCheck(
+    key = "source-key.result-row-walk-cardinality-matches-upstream-result",
+    description = "SourceKey's compact constructor rejects Reader.ResultRowWalk paired with "
+        + "anything other than Wrap.Record or with a non-empty path. The upstream DML "
+        + "mutation fetcher emits Record_N_<...> rows (cardinality ONE -> single RecordN, "
+        + "cardinality MANY -> Result<RecordN>); the data-field fetcher's typed source read "
+        + "via SourceKey.wrap x columns relies on wrap=Record to type the source value, and "
+        + "path=empty pins the source row shape to the DML's input table.")
 public record SourceKey(
     TableRef target,
     List<ColumnRef> columns,
@@ -153,6 +166,20 @@ public record SourceKey(
                 + "recordClass cannot carry a non-empty path (the service already produced a "
                 + "target-aligned record; walking past target is structurally redundant).");
         }
+        if (reader instanceof Reader.ResultRowWalk) {
+            if (!(wrap instanceof Wrap.Record)) {
+                throw new IllegalArgumentException(
+                    "SourceKey: Reader.ResultRowWalk requires Wrap.Record (upstream DML emit "
+                    + "produces Record_N_<...> rows; cardinality determines whether the rows-"
+                    + "method consumer sees a single RecordN (ONE) or a Result<RecordN> (MANY)); "
+                    + "got " + wrap);
+            }
+            if (!path.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "SourceKey: Reader.ResultRowWalk requires empty path (target-aligned by "
+                    + "construction; the DML's input table IS the source row shape).");
+            }
+        }
     }
 
     /**
@@ -194,10 +221,9 @@ public record SourceKey(
     }
 
     /**
-     * The rows-method body's input contract. Five permits today; R75 will add a sixth,
-     * {@code ResultRowWalk}, on this same axis.
+     * The rows-method body's input contract. Six permits today.
      *
-     * <p>The five permits split on what data the rows-method body reads to produce its
+     * <p>The permits split on what data the rows-method body reads to produce its
      * output:
      *
      * <ul>
@@ -213,6 +239,12 @@ public record SourceKey(
      *       type is a typed jOOQ {@code TableRecord}.</li>
      *   <li>{@link ServiceUntypedRecord} — invoke a {@code @service} method whose return
      *       type is {@code Record<>} or scalar; no typed {@code TableRecord} subclass.</li>
+     *   <li>{@link ResultRowWalk} — source rows come from a {@code Result<RecordN<...>>}
+     *       that an upstream DML mutation fetcher produced and graphql-java is now
+     *       traversing. The data field's fetcher reads {@code env.getSource()} typed by
+     *       {@link SourceKey#wrap()} × {@link SourceKey#columns()} and extracts
+     *       {@code SourceRow} instances directly; no DataLoader, no
+     *       {@link LoaderRegistration}.</li>
      * </ul>
      */
     public sealed interface Reader {
@@ -265,5 +297,25 @@ public record SourceKey(
          * scalar Java type or raw {@code org.jooq.Record}.
          */
         record ServiceUntypedRecord() implements Reader {}
+
+        /**
+         * Source rows come from a {@code Result<RecordN<...>>} that an upstream DML
+         * mutation fetcher produced and graphql-java is now traversing. The data field's
+         * fetcher reads {@code env.getSource()} typed by {@link SourceKey#wrap()} ×
+         * {@link SourceKey#columns()} and extracts {@code SourceRow} instances directly;
+         * the single-record DML carrier's data field is plain {@code DataFetcher}, not
+         * DataLoader-batched, so the paired {@link LoaderRegistration} is absent at the
+         * field record level.
+         *
+         * <p>{@link SourceKey#path()} is empty by construction (target-aligned: the DML's
+         * input table IS the source row shape); {@link SourceKey#wrap()} is
+         * {@link Wrap.Record} (upstream emit produces {@code RecordN<...>}). Cardinality
+         * matches the mutation's input cardinality (single {@code TableInputArg} →
+         * {@link Cardinality#ONE}; list → {@link Cardinality#MANY}). The structural
+         * invariants are enforced by {@link SourceKey}'s compact constructor under the
+         * load-bearing key
+         * {@code source-key.result-row-walk-cardinality-matches-upstream-result}.
+         */
+        record ResultRowWalk() implements Reader {}
     }
 }
