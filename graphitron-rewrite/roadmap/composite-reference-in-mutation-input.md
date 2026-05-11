@@ -28,9 +28,11 @@ does not build. `regelverksamling` has a composite primary key, so post-R131 the
 classifies as `InputField.CompositeColumnField` carrying `extraction = NodeIdDecodeKeys`. The
 classifier is correct; two downstream gates block this shape:
 
-1. **`EnumMappingResolver.buildLookupBindings:284`** rejects `@lookupKey` on any non-`ColumnField`
-   carrier with *"@lookupKey is only supported on scalar column fields"*. The composite-PK case
-   trips this gate because `CompositeColumnField` is structurally distinct from `ColumnField`.
+1. **`EnumMappingResolver.buildLookupBindings:296-303`** rejects `@lookupKey` on any
+   `@nodeId`-decorated input field at the SDL boundary (the R131 cleanup `beb0e92` unified the
+   single-PK and composite-PK arities into one SDL-boundary check) with *"@lookupKey on an
+   @nodeId-decoded input field is not supported … expose the decoded key column(s) explicitly
+   via @field instead, or move @lookupKey to the outer argument"*.
 2. **`MutationInputResolver:293`** rejects `CompositeColumnField` (and three sibling carriers) in
    any `@mutation` input with *"CompositeColumnField in @mutation inputs is not yet supported"*.
 
@@ -44,14 +46,17 @@ in sis today. R130 lifts the two reachable carriers; the joined-reference half f
 
 ## Implicated load-bearing bug
 
-R131's follow-up `R131 follow-up: reject @lookupKey on @nodeId-decoded input field`
-(`fe2de55`) introduced a structural-rejection guard at `EnumMappingResolver:305-312` keyed
-`lookup-key-input-field-non-nodeid-decoded`. The guard's stated reason is that
-`deriveExtraction:179-192` would silently re-derive a `Direct` / `JooqConvert` extraction from the
-column's `typeName` and `javaName`, *dropping the resolver-supplied `NodeIdDecodeKeys`
-extraction the carrier already holds* (`buildLookupBindings:324` calls `deriveExtraction(cf.
-typeName(), cf.column(), …)`, never reading `cf.extraction()`). The net effect would be a binding
-that compares a base64-encoded wire value against the raw PK column.
+R131's follow-up chain (`fe2de55` then `beb0e92`) introduced a structural-rejection guard at
+`EnumMappingResolver:296-303` keyed `lookup-key-input-field-non-nodeid-decoded`. The guard's
+stated reason is that `deriveExtraction:179-192` would silently re-derive a `Direct` /
+`JooqConvert` extraction from the column's `typeName` and `javaName`, *dropping the
+resolver-supplied `NodeIdDecodeKeys` extraction the carrier already holds*
+(`buildLookupBindings:327` calls `deriveExtraction(cf.typeName(), cf.column(), …)`, never
+reading `cf.extraction()`). The net effect would be a binding that compares a base64-encoded
+wire value against the raw PK column. The `beb0e92` cleanup moved the guard from a post-cast
+`cf.extraction() instanceof NodeIdDecodeKeys` check to a pre-cast
+`sdlField.hasAppliedDirective(DIR_NODE_ID)` check so both single-PK and composite-PK arities
+surface the same diagnostic; the underlying re-derivation bug is unchanged.
 
 The guard works around a deeper bug: `buildLookupBindings` discards `cf.extraction()` and
 re-derives an extraction from raw column metadata. The architecturally clean fix is to make
@@ -80,7 +85,7 @@ carriers defer:
 Three load-bearing changes follow:
 
 - **`buildLookupBindings` propagates the carrier's extraction** rather than re-deriving one from
-  raw column metadata. The R131 follow-up guard at `EnumMappingResolver:305-312` retires once
+  raw column metadata. The R131 follow-up guard at `EnumMappingResolver:296-303` retires once
   the re-derivation is gone; the load-bearing key `lookup-key-input-field-non-nodeid-decoded`
   retires with it.
 - **The lookup-binding return shape becomes a group**, mirroring R50's query-side
@@ -109,7 +114,7 @@ lives in the model for the lifetime of the gap.
 Two model edits land together; both are prerequisites for the carrier admission.
 
 **Extraction propagation in `buildLookupBindings`.** Replace the `deriveExtraction(cf.typeName(),
-cf.column(), …)` call at `EnumMappingResolver:324` with logic that honors `cf.extraction()` when
+cf.column(), …)` call at `EnumMappingResolver:327` with logic that honors `cf.extraction()` when
 the carrier already holds a context-specific extraction:
 
 - If `cf.extraction()` is `Direct`, fall through to `deriveExtraction` (enum / map / JooqConvert
@@ -117,12 +122,12 @@ the carrier already holds a context-specific extraction:
 - If `cf.extraction()` is `NodeIdDecodeKeys` (or any other resolver-supplied non-`Direct` arm),
   use it directly. The carrier already named the right extraction; re-deriving discards it.
 
-With this fix, the R131 follow-up guard at `EnumMappingResolver:305-312` becomes inert and
+With this fix, the R131 follow-up guard at `EnumMappingResolver:296-303` becomes inert and
 deletes. The load-bearing key `lookup-key-input-field-non-nodeid-decoded` retires; it has zero
 `@DependsOnClassifierCheck` consumers in the codebase today (verified by grep — the producer
-declaration at `EnumMappingResolver:259` is the only site), so retirement is producer-only and
+declaration at `EnumMappingResolver:258` is the only site), so retirement is producer-only and
 `LoadBearingGuaranteeAuditTest` surfaces no orphan. The class-level javadoc on
-`buildLookupBindings` (`EnumMappingResolver:234-244`) regenerates against the post-R130
+`buildLookupBindings` (`EnumMappingResolver:231-244`) regenerates against the post-R130
 rejection set. The `LOOKUP_KEY_ON_NODEID_INPUT_FIELD_REJECTED` test case retypes to assert the
 post-R130 admission (the encoded id round-trips through the decode helper and matches the raw
 PK column correctly).
@@ -336,11 +341,12 @@ Test tiers (per `rewrite-design-principles.adoc`):
   pre-state via direct jOOQ (or a prior mutation), builds the NodeId, runs the mutation,
   asserts post-state. The composite-PK DELETE test is the headline `slettRegelverksamling`-
   shaped forcing-function execution proof.
-- **Rejection cleanup:** the existing R131 follow-up rejection test
+- **Rejection cleanup:** the R131 follow-up rejection tests
   `GraphitronSchemaBuilderTest.ArgumentParsingCase.LOOKUP_KEY_ON_NODEID_INPUT_FIELD_REJECTED`
-  retypes to an admission test (the combination is now valid; the test asserts the
-  classifier-to-emission round-trip rather than the rejection). The R131 follow-up's load-
-  bearing-key audit pair retires with it.
+  (single-PK, from `fe2de55`) and `LOOKUP_KEY_ON_NODEID_INPUT_FIELD_REJECTED_COMPOSITE_PK`
+  (composite-PK, from the `beb0e92` cleanup) both retype to admission tests (the combinations
+  are now valid; the tests assert the classifier-to-emission round-trip rather than the
+  rejection). The R131 follow-up's load-bearing-key audit pair retires with them.
 
 ### Phase 5: validator + axis-coverage roll-up
 
@@ -379,7 +385,7 @@ validator-arm-per-leaf discipline.
 
 - **The R131 follow-up entanglement is the design crux.** R131's follow-up
   (`R131 follow-up: reject @lookupKey on @nodeId-decoded input field`, `fe2de55`) added a
-  composition guard at `EnumMappingResolver:305-312` because `deriveExtraction` re-derives
+  composition guard at `EnumMappingResolver:296-303` because `deriveExtraction` re-derives
   extractions from raw column metadata, dropping the carrier's resolver-supplied extraction.
   R130 fixes that bug at the source (`buildLookupBindings` honors `cf.extraction()`) and
   retires the guard plus its `lookup-key-input-field-non-nodeid-decoded` load-bearing key.
