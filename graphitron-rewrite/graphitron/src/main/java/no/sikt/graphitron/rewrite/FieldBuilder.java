@@ -2812,14 +2812,12 @@ class FieldBuilder {
             // LifterPathKeyed (@reference present). The resolver already constructs the right
             // shape and surfaces it as ok.joinPath().
             List<JoinStep> joinPath = ok.joinPath();
-            var sourceRowSourceKey = SourceKeyResolver.resolveRecordParent(ok.batchKey(), ok.tbReturnType());
-            var sourceRowLoaderReg = LoaderRegistrationResolver.resolve(ok.batchKey(), ok.tbReturnType());
             if (hasLookupKeyAnywhere(fieldDef)) {
                 return new RecordLookupTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
-                    tfc.filters(), tfc.orderBy(), tfc.pagination(), sourceRowSourceKey, sourceRowLoaderReg, tfc.lookupMapping());
+                    tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.sourceKey(), ok.loaderRegistration(), tfc.lookupMapping());
             }
             return new RecordTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
-                tfc.filters(), tfc.orderBy(), tfc.pagination(), sourceRowSourceKey, sourceRowLoaderReg);
+                tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.sourceKey(), ok.loaderRegistration());
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
