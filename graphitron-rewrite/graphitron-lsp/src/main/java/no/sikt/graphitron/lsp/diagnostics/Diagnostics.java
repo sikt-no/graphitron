@@ -240,16 +240,27 @@ public final class Diagnostics {
                     "Invalid scalar reference '" + m.value() + "'. Expected a fully-qualified "
                     + "field reference of the form 'fully.qualified.Class.FIELD' pointing at a "
                     + "public static final GraphQLScalarType."));
-            case ScalarTypeResolver.ParsedDirectiveValue.Parsed p -> {
-                if (catalog.externalReferences().isEmpty()) return;
-                boolean found = catalog.externalReferences().stream()
-                    .anyMatch(r -> r.className().equals(p.classFqn()));
-                if (!found) {
-                    out.add(diagnostic(file, valueNode,
-                        "Unknown class '" + p.classFqn() + "' on @scalarType. Not found in "
-                        + "compiled target/classes."));
-                }
-            }
+            case ScalarTypeResolver.ParsedDirectiveValue.Parsed p ->
+                validateScalarTypeClasspath(p, valueNode, file, catalog, out);
+        }
+    }
+
+    /**
+     * Classpath half of {@link #validateScalarType}. Skipped when the catalog's reference scan
+     * is empty (pre-`mvn compile` state). The structural / malformed-FQN diagnostic fires
+     * regardless; only the unknown-class check defers until the scan has at least one entry.
+     */
+    private static void validateScalarTypeClasspath(
+        ScalarTypeResolver.ParsedDirectiveValue.Parsed parsed,
+        Node valueNode, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+    ) {
+        if (catalog.externalReferences().isEmpty()) return;
+        boolean found = catalog.externalReferences().stream()
+            .anyMatch(r -> r.className().equals(parsed.classFqn()));
+        if (!found) {
+            out.add(diagnostic(file, valueNode,
+                "Unknown class '" + parsed.classFqn() + "' on @scalarType. Not found in "
+                + "compiled target/classes."));
         }
     }
 
