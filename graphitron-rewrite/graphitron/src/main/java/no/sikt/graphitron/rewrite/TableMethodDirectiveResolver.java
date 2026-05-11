@@ -23,22 +23,23 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  * <ul>
  *   <li>External-reference parse, argMapping parse, arg-bindings validation.</li>
  *   <li>{@link ServiceCatalog#reflectTableMethod} reflection with the strict
- *       expected-return-class invariant (Invariants §3) — always present at root, only
- *       present at child sites when the resolved return type is table-bound.</li>
- *   <li>Root-only invariants: non-{@code TableBound} return rejection and Connection
- *       wrapper rejection (Invariants §1).</li>
+ *       expected-return-class invariant (Invariants §3).</li>
+ *   <li>Shape invariants: the return type must be {@code @table}-annotated (a
+ *       {@link ReturnTypeRef.TableBoundReturnType}); at root the additional Connection-wrapper
+ *       rejection fires (Invariants §1).</li>
  * </ul>
  *
- * <p>Each classify arm projects {@link Resolved.TableBound} / {@link Resolved.NonTableBound}
- * into its specific variant ({@code QueryTableMethodTableField} at root,
- * {@code TableMethodField} at child sites carrying the resolved join path) and handles
- * parent-context-only concerns (the child-site join-path parse runs before this resolver, since
- * a path-parse error must surface ahead of any reflection failure).
+ * <p>Each classify arm projects {@link Resolved.TableBound} into its specific variant
+ * ({@code QueryTableMethodTableField} at root, {@code TableMethodField} at child sites carrying
+ * the resolved join path) and handles parent-context-only concerns (the child-site join-path
+ * parse runs before this resolver, since a path-parse error must surface ahead of any reflection
+ * failure).
  *
- * <p>Root vs child is signalled by {@code isRoot}: root sites pass {@code true} (Connection /
- * non-table-bound rejections fire, expected-return-class is always non-null); child sites pass
- * {@code false} (those rejections skip; expected-return-class is non-null only on table-bound
- * returns, matching the deferred shape of scalar/enum {@code TableMethodField}).
+ * <p>Root vs child is signalled by {@code isRoot}: root sites pass {@code true} so the
+ * Connection-wrapper rejection fires. The non-table-bound return rejection fires at both sites
+ * since {@code @tableMethod} returning a scalar / enum is never a valid shape (R43): the
+ * directive exists precisely to bind a developer-authored jOOQ table method, which by
+ * construction returns a generated jOOQ table class.
  *
  * <p>Implementation note: like {@link ServiceDirectiveResolver}, the helpers this resolver
  * calls back into ({@code parseExternalRef}, {@code fieldArgumentNames},
@@ -48,23 +49,19 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 final class TableMethodDirectiveResolver {
 
     /**
-     * Outcome of {@link #resolve}. Three terminal arms; the caller exhausts them with a switch.
+     * Outcome of {@link #resolve}. Two terminal arms; the caller exhausts them with a switch.
      *
      * <ul>
      *   <li>{@link TableBound} — successful resolution to a {@code @table}-annotated return type.
      *       Carries the typed {@link ReturnTypeRef.TableBoundReturnType} and the resolved
-     *       {@link MethodRef}. Reachable from both root and child sites.</li>
-     *   <li>{@link NonTableBound} — successful resolution to a non-table-bound return type
-     *       (scalar / enum / record / polymorphic). Carries the resolved {@link ReturnTypeRef}
-     *       and {@link MethodRef}. Reachable only from child sites; root rejects this shape
-     *       inside the resolver.</li>
+     *       {@link MethodRef}. The only success shape: {@code @tableMethod} returning a
+     *       non-table type is rejected here (R43).</li>
      *   <li>{@link Rejected} — every error path: directive-parse failure, method-reflection
-     *       failure, root-only return-type / Connection rejections.</li>
+     *       failure, return-type rejection (non-table-bound or Connection at root).</li>
      * </ul>
      */
     sealed interface Resolved {
         record TableBound(ReturnTypeRef.TableBoundReturnType returnType, MethodRef method) implements Resolved {}
-        record NonTableBound(ReturnTypeRef returnType, MethodRef method) implements Resolved {}
         record Rejected(Rejection rejection) implements Resolved {
             public String message() { return rejection.message(); }
             public RejectionKind kind() { return RejectionKind.of(rejection); }
@@ -85,8 +82,11 @@ final class TableMethodDirectiveResolver {
 
     /**
      * Resolves {@code @tableMethod} on {@code fieldDef}. Pass {@code isRoot=true} at root sites
-     * (Query) so the non-table-bound and Connection invariants fire; pass {@code false} at child
-     * sites on a {@code @table}-typed parent.
+     * (Query) so the Connection invariant fires; pass {@code false} at child sites on a
+     * {@code @table}-typed parent. The non-table-bound return rejection fires at both sites:
+     * {@code @tableMethod} is, by construction, a binding to a developer-authored jOOQ table
+     * method, and those return generated jOOQ table classes. A schema declaring a scalar / enum
+     * return on {@code @tableMethod} is malformed (R43).
      */
     Resolved resolve(String parentTypeName, GraphQLFieldDefinition fieldDef, boolean isRoot) {
         String rawTypeName = baseTypeName(fieldDef);
@@ -95,14 +95,12 @@ final class TableMethodDirectiveResolver {
             : rawTypeName;
         ReturnTypeRef returnType = ctx.resolveReturnType(elementTypeName, fb.buildWrapper(fieldDef));
 
-        if (isRoot) {
-            if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType)) {
-                return new Resolved.Rejected(Rejection.structural("@tableMethod requires a @table-annotated return type"));
-            }
+        if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tableBoundReturnType)) {
+            return new Resolved.Rejected(Rejection.structural("@tableMethod requires a @table-annotated return type"));
+        }
+        if (isRoot && returnType.wrapper() instanceof FieldWrapper.Connection) {
             // Invariants §1: Connection wrapper not supported on @tableMethod at root.
-            if (returnType.wrapper() instanceof FieldWrapper.Connection) {
-                return new Resolved.Rejected(Rejection.invalidSchema("@tableMethod at the root does not support Connection return types — use [T] or T instead"));
-            }
+            return new Resolved.Rejected(Rejection.invalidSchema("@tableMethod at the root does not support Connection return types — use [T] or T instead"));
         }
 
         FieldBuilder.ExternalRef ref = fb.parseExternalRef(parentTypeName, fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
@@ -124,14 +122,9 @@ final class TableMethodDirectiveResolver {
         List<String> contextArgs = fb.parseContextArguments(fieldDef, DIR_TABLE_METHOD);
 
         // Invariants §3 (return-type strictness): the developer's @tableMethod must return the
-        // generated jOOQ table class exactly, not a wider Table<R>. Always present at root (the
-        // earlier instanceof check guarantees TableBoundReturnType); at child sites only when the
-        // resolved return type is table-bound. The child arm with a non-table-bound return is
-        // a deferred stub (TableMethodField with scalar/enum return); see
-        // graphitron-rewrite/roadmap/tablemethod-scalar-return.md.
-        ClassName expectedReturnClass = returnType instanceof ReturnTypeRef.TableBoundReturnType tbr
-            ? tbr.table().tableClass()
-            : null;
+        // generated jOOQ table class exactly, not a wider Table<R>. The instanceof gate above
+        // guarantees a TableBoundReturnType at both root and child sites.
+        ClassName expectedReturnClass = tableBoundReturnType.table().tableClass();
 
         var result = svc.reflectTableMethod(
             ref != null ? ref.className() : null,
@@ -142,8 +135,6 @@ final class TableMethodDirectiveResolver {
             return new Resolved.Rejected(result.rejection().prefixedWith("table method could not be resolved — "));
         }
         MethodRef method = enumMapping.enrichArgExtractions((MethodRef.StaticOnly) result.ref(), fieldDef);
-        return returnType instanceof ReturnTypeRef.TableBoundReturnType tb
-            ? new Resolved.TableBound(tb, method)
-            : new Resolved.NonTableBound(returnType, method);
+        return new Resolved.TableBound(tableBoundReturnType, method);
     }
 }

@@ -259,7 +259,8 @@ public class TypeFetcherGenerator {
                     "nodeidreferencefield-join-projection-form")),
             Map.entry(ChildField.TableMethodField.class,
                 deferredFor(ChildField.TableMethodField.class,
-                    "TableMethodField not yet implemented", "tablemethod-scalar-return")),
+                    "child @tableMethod (table-bound return) not yet implemented",
+                    "tablemethod-child-table-bound")),
             Map.entry(ChildField.SingleRecordTableField.class,
                 deferredFor(ChildField.SingleRecordTableField.class,
                     "SingleRecordTableField (R75 single-record DML carrier data field) is not yet "
