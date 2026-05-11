@@ -513,6 +513,14 @@ type FilmCard @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.
     filmId: Int @field(name: "film_id")
 }
 
+# R75 Phase 2 compilation-tier fixture: plain SDL Object carrier whose single data field
+# 'card' has a @record-backed element type (FilmCardWrapper, see below). No @record /
+# @table on the carrier itself; TypeBuilder.promoteSingleRecordCarriers promotes it to
+# PojoResultType.NoBacking, and GraphitronSchemaBuilder classifies 'card' as
+# ChildField.SingleRecordIdentityField (identity passthrough — env -> env.getSource()).
+# Wired through createFilmCard on the Mutation below.
+type SingleFilmCardCarrier { card: FilmCardWrapper }
+
 type FilmCardWrapper @record(record: {className: "no.sikt.graphitron.rewrite.test.services.FilmCardData"}) {
     # AccessorKeyedSingle: the canonical Java-record accessor `film()` on FilmCardData returns
     # FilmRecord (typed accessor matching this field's @table return). The framework
@@ -1173,5 +1181,21 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "submit"
+        })
+
+    # R75 Phase 2 compilation-tier fixture: @service Mutation returning a single-record
+    # carrier with a record-element data field. The service method returns FilmCardData
+    # directly; the carrier classifies as MutationServiceRecordField with a NoBacking
+    # ResultReturnType, and the data field 'card: FilmCardWrapper' classifies as
+    # ChildField.SingleRecordIdentityField (identity passthrough — env -> env.getSource()).
+    # graphql-java's traversal walks through the carrier into FilmCardWrapper and beyond.
+    # Scope notes: execution-tier round-trip coverage and wrapper composition (Optional /
+    # CompletableFuture / Mono / DataFetcherResult on the service method's return) are
+    # tracked under a separate roadmap item — admitting any wrapper layer is an @service-
+    # infrastructure change distinct from R75's carrier-admission story.
+    createFilmCard(filmId: Int!): SingleFilmCardCarrier
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCardFactoryService",
+            method: "create"
         })
 }
