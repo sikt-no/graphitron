@@ -10,6 +10,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
+import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -25,7 +26,6 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
 
@@ -229,24 +229,37 @@ final class EnumMappingResolver {
 
     /**
      * Walks a {@link GraphitronType.TableInputType} argument's fields and builds one
-     * {@link InputColumnBinding.MapBinding} per {@code @lookupKey}-bearing input field.
+     * {@link InputColumnBindingGroup} per {@code @lookupKey}-bearing input field. Each admitted
+     * carrier produces one group:
      *
-     * <p>Only {@link InputField.ColumnField} entries contribute bindings: a {@code @lookupKey}
-     * on a {@code @reference}-navigating, nesting, or NodeId input field is rejected here.
-     * List-typed input fields are also rejected; list cardinality must live on the outer
-     * argument, not on an individual input-type field.
+     * <ul>
+     *   <li>{@link InputField.ColumnField} (whether {@link CallSiteExtraction.Direct} or
+     *       arity-1 {@link CallSiteExtraction.NodeIdDecodeKeys}) — one
+     *       {@link InputColumnBindingGroup.MapGroup} carrying one
+     *       {@link InputColumnBinding.MapBinding}. The binding's extraction honors the carrier's
+     *       {@code cf.extraction()} when non-{@code Direct}; otherwise it is re-derived via
+     *       {@link #deriveExtraction} from the column's raw metadata (enum / map / JooqConvert
+     *       fallback).</li>
+     *   <li>{@link InputField.CompositeColumnField} (arity &ge; 2 NodeId-decoded, own table) —
+     *       one {@link InputColumnBindingGroup.DecodedRecordGroup} carrying the per-NodeType
+     *       decode helper once on {@code extraction} and N
+     *       {@link InputColumnBinding.RecordBinding} slots indexed {@code 0..N-1} into the
+     *       decoded {@code Record<N>}.</li>
+     * </ul>
      *
-     * <p>Returns {@link List#of()} when no input field carries {@code @lookupKey}. The caller
-     * (validity gate in {@code FieldBuilder.projectForFilter}) reports "empty lookup mapping
-     * despite {@code @lookupKey}" only when the field trips the lookup gate with no other
+     * <p>{@code @lookupKey} on a reference-navigating, nesting, or list-typed input field is
+     * rejected here. List cardinality must live on the outer argument, not on an individual
+     * input-type field. Returns {@link List#of()} when no input field carries {@code @lookupKey}.
+     * The caller (validity gate in {@code FieldBuilder.projectForFilter}) reports "empty lookup
+     * mapping despite {@code @lookupKey}" only when the field trips the lookup gate with no other
      * source of lookup columns.
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "lookup-mapping-bindings-table-coherent",
-        description = "Each MapBinding's targetColumn resolves against the @table-backed input "
-            + "type's inputTable, so all bindings of one MapInput target columns of a single "
-            + "table — the lookup target. Lets the LookupValuesJoinEmitter read b.targetColumn() "
-            + "across bindings without re-checking table coherence.")
+        description = "Each binding's targetColumn resolves against the @table-backed input "
+            + "type's inputTable, so all bindings of one MapInput / DecodedRecord target "
+            + "columns of a single table — the lookup target. Lets the LookupValuesJoinEmitter "
+            + "read b.targetColumn() across bindings without re-checking table coherence.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "lookup-key-input-field-non-list",
         description = "Rejects @lookupKey on a list-typed input field with the 'move list "
@@ -254,23 +267,24 @@ final class EnumMappingResolver {
             + "binding-level cardinality is scalar; only the outer LookupArg.list() drives "
             + "row-count broadcasting in the emitter.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "lookup-key-input-field-non-nodeid-decoded",
-        description = "Rejects @lookupKey on an @nodeId-decorated input field, detected at the "
-            + "SDL boundary so both arity variants surface the same focused diagnostic regardless "
-            + "of the underlying carrier shape (Column/CompositeColumn{,Reference}Field). "
-            + "Pre-R131 the same-table singular @nodeId path produced a Reference variant which "
-            + "the InputField.ColumnField gate rejected structurally; post-R131 the same-table "
-            + "single-PK arm produces a ColumnField that would otherwise pass that gate and "
-            + "silently re-derive a Direct extraction from the column's typeName/javaName, "
-            + "dropping the resolver-supplied decode method (net effect: lookup binding comparing "
-            + "the base64-encoded wire value against the raw PK column). The composite-PK arm "
-            + "would still fail the ColumnField gate structurally but with stale prose. Detecting "
-            + "@nodeId on the SDL field unifies the rejection text across arities and surfaces "
-            + "the actionable hint (\"expose the decoded key column(s) via @field\"). "
-            + "Argument-level @nodeId @lookupKey is unrelated and handled in "
-            + "FieldBuilder.classifyArgument (the SameTable arm reads the directive and routes "
-            + "to the N×M lookup shape via isLookupKey).")
-    List<InputColumnBinding.MapBinding> buildLookupBindings(GraphitronType.TableInputType tit,
+        key = "mutation-input.lookup-binding-honors-carrier-extraction",
+        description = "Each MapBinding's extraction comes from the carrier's cf.extraction() "
+            + "when non-Direct (NodeIdDecodeKeys for an arity-1 NodeId-decoded ColumnField) and "
+            + "falls through to deriveExtraction(typeName, column, enumClass, mapField) only when "
+            + "the carrier is Direct. Pre-R130 the call always re-derived from raw column "
+            + "metadata, discarding the resolver-supplied NodeIdDecodeKeys; the R131 follow-up "
+            + "SDL-boundary @nodeId guard papered over this bug at the cost of rejecting the "
+            + "shape entirely. The fix at source lets the lookup-WHERE emitter read the binding's "
+            + "extraction and emit decodeBar(in.get(name)) for NodeId-decoded keys instead of a "
+            + "raw column read.")
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "mutation-input.lookup-binding-decoded-record-arity-matches-carrier-columns",
+        description = "DecodedRecordGroup.bindings.size() equals CompositeColumnField.columns.size() "
+            + "by construction (one binding per column, indexed 0..N-1). Lets the lookup-WHERE / "
+            + "row-IN emitter read Record<N> slots positionally without re-checking arity, and "
+            + "lets INSERT/UPDATE/UPSERT walks that dispatch on CompositeColumnField iterate "
+            + "0..columns.size()-1 with record.value(i) reads against the carrier's columns.")
+    List<InputColumnBindingGroup> buildLookupBindings(GraphitronType.TableInputType tit,
             GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String argName, List<String> errors) {
         var sdlType = ctx.schema.getType(tit.name());
         if (!(sdlType instanceof GraphQLInputObjectType iot)) {
@@ -278,55 +292,61 @@ final class EnumMappingResolver {
         }
         var byName = tit.inputFields().stream()
             .collect(Collectors.toMap(InputField::name, f -> f));
-        var bindings = new ArrayList<InputColumnBinding.MapBinding>();
+        var groups = new ArrayList<InputColumnBindingGroup>();
         for (var sdlField : iot.getFieldDefinitions()) {
             if (!sdlField.hasAppliedDirective(DIR_LOOKUP_KEY)) continue;
-            // R131: @lookupKey on an @nodeId-decoded input field is rejected uniformly across
-            // carrier shapes. Pre-R131 the same-table singular path produced a Reference variant
-            // which the InputField.ColumnField gate below rejected structurally; post-R131 the
-            // same-table arm produces a ColumnField (single-PK) or CompositeColumnField
-            // (composite-PK). The single-PK case would otherwise pass the ColumnField gate and
-            // silently re-derive a Direct extraction (dropping the resolver-supplied decode
-            // method); the composite-PK case still fails the ColumnField gate but with a stale
-            // "scalar column fields" message that's structurally true but unhelpful here. Detect
-            // @nodeId at the SDL boundary so both arities surface the same focused diagnostic.
-            // Argument-side @nodeId @lookupKey is handled separately in
-            // FieldBuilder.classifyArgument (the SameTable arm reads the directive and routes
-            // to the N×M lookup shape).
-            if (sdlField.hasAppliedDirective(DIR_NODE_ID)) {
-                errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
-                    + "': @lookupKey on an @nodeId-decoded input field is not supported "
-                    + "(the encoded node id would be matched against the raw column value);"
-                    + " expose the decoded key column(s) explicitly via @field instead,"
-                    + " or move @lookupKey to the outer argument");
-                continue;
-            }
             var resolved = byName.get(sdlField.getName());
-            if (!(resolved instanceof InputField.ColumnField cf)) {
-                errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
-                    + "': @lookupKey is only supported on scalar column fields");
-                continue;
-            }
-            if (cf.list()) {
-                errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
-                    + "': @lookupKey on a list-typed input field is not supported; "
-                    + "move list cardinality to the outer argument");
-                continue;
-            }
-            String enumClassName;
-            switch (validateEnumFilter(cf.typeName(), cf.column())) {
-                case EnumValidation.NotEnum n -> enumClassName = null;
-                case EnumValidation.Valid v -> enumClassName = v.fqcn();
-                case EnumValidation.Mismatch m -> {
-                    errors.add(m.message());
-                    continue;
+            switch (resolved) {
+                case InputField.ColumnField cf -> {
+                    if (cf.list()) {
+                        errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
+                            + "': @lookupKey on a list-typed input field is not supported; "
+                            + "move list cardinality to the outer argument");
+                        continue;
+                    }
+                    String enumClassName;
+                    switch (validateEnumFilter(cf.typeName(), cf.column())) {
+                        case EnumValidation.NotEnum n -> enumClassName = null;
+                        case EnumValidation.Valid v -> enumClassName = v.fqcn();
+                        case EnumValidation.Mismatch m -> {
+                            errors.add(m.message());
+                            continue;
+                        }
+                    }
+                    // R130: honor the carrier's resolver-supplied extraction when non-Direct
+                    // (NodeIdDecodeKeys for arity-1 NodeId-decoded ColumnFields). The pre-R130
+                    // unconditional deriveExtraction call discarded the NodeIdDecodeKeys and
+                    // silently re-derived a generic extraction from raw column metadata; the
+                    // R131 follow-up papered over the bug at the cost of rejecting the shape.
+                    CallSiteExtraction extraction;
+                    if (cf.extraction() instanceof CallSiteExtraction.Direct) {
+                        String mapFieldName = fieldDef.getName().toUpperCase() + "_"
+                            + argName.toUpperCase() + "_" + sdlField.getName().toUpperCase() + "_MAP";
+                        extraction = deriveExtraction(cf.typeName(), cf.column(), enumClassName, mapFieldName);
+                    } else {
+                        extraction = cf.extraction();
+                    }
+                    groups.add(new InputColumnBindingGroup.MapGroup(List.of(
+                        new InputColumnBinding.MapBinding(sdlField.getName(), cf.column(), extraction))));
                 }
+                case InputField.CompositeColumnField ccf -> {
+                    if (ccf.list()) {
+                        errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
+                            + "': @lookupKey on a list-typed input field is not supported; "
+                            + "move list cardinality to the outer argument");
+                        continue;
+                    }
+                    var recordBindings = new ArrayList<InputColumnBinding.RecordBinding>();
+                    for (int i = 0; i < ccf.columns().size(); i++) {
+                        recordBindings.add(new InputColumnBinding.RecordBinding(i, ccf.columns().get(i)));
+                    }
+                    groups.add(new InputColumnBindingGroup.DecodedRecordGroup(
+                        sdlField.getName(), ccf.extraction(), recordBindings));
+                }
+                case null, default -> errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
+                    + "': @lookupKey is only supported on scalar column fields");
             }
-            String mapFieldName = fieldDef.getName().toUpperCase() + "_"
-                + argName.toUpperCase() + "_" + sdlField.getName().toUpperCase() + "_MAP";
-            CallSiteExtraction extraction = deriveExtraction(cf.typeName(), cf.column(), enumClassName, mapFieldName);
-            bindings.add(new InputColumnBinding.MapBinding(sdlField.getName(), cf.column(), extraction));
         }
-        return List.copyOf(bindings);
+        return List.copyOf(groups);
     }
 }

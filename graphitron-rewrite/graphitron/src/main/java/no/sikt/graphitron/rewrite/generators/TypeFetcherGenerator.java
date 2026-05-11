@@ -25,6 +25,8 @@ import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.InputColumnBinding;
+import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -1444,15 +1446,19 @@ public class TypeFetcherGenerator {
         String tableLocal = tablesOnly.tableLocalName();
 
         var dmlChain = CodeBlock.builder().add(".deleteFrom($L)\n", tableLocal);
+        var postInGuard = CodeBlock.builder();
         if (tia.list()) {
             dmlChain.add(".where(").add(buildBulkLookupRowIn(tia, tablesOnly, tableRef)).add(")\n");
         } else {
-            dmlChain.add(".where(").add(buildLookupWhere(tia, tablesOnly, tableRef)).add(")\n");
+            var chunk = buildLookupWhereSingleRow(tia, tablesOnly, tableRef);
+            postInGuard.add(chunk.decodeLocals());
+            dmlChain.add(".where(").add(chunk.whereExpr()).add(")\n");
         }
 
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain.build(), tia.list());
+            outputPackage, dmlChain.build(),
+            /*postDslGuard=*/ CodeBlock.of(""), postInGuard.build(), tia.list());
     }
 
     /**
@@ -1486,31 +1492,57 @@ public class TypeFetcherGenerator {
         String tableLocal = tablesOnly.tableLocalName();
 
         var fields = tia.fields();
-        var colList = CodeBlock.builder();
-        for (int i = 0; i < fields.size(); i++) {
-            var cf = (InputField.ColumnField) fields.get(i);
-            if (i > 0) colList.add(", ");
-            colList.add("$T.$L.$L",
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
-        }
+        var colList = buildInsertColumnList(fields, tablesOnly, tableRef);
 
         var dmlChain = CodeBlock.builder()
-            .add(".insertInto($L, ", tableLocal).add(colList.build()).add(")\n");
+            .add(".insertInto($L, ", tableLocal).add(colList).add(")\n");
+        var postInGuard = CodeBlock.builder();
         if (tia.list()) {
-            dmlChain.add(".valuesOfRows(in.stream()\n").indent()
-                .add(".map(row -> $T.row(\n", DSL).indent()
-                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row")).unindent()
-                .add("))\n")
-                .add(".toList())\n").unindent();
+            // Bulk INSERT: per-row decode locals (if any) live inside the stream lambda body,
+            // switching the lambda from single-expression form to block form when needed.
+            boolean hasDecodeLocals = anyNodeIdCarrier(fields);
+            if (hasDecodeLocals) {
+                dmlChain.add(".valuesOfRows(in.stream()\n").indent()
+                    .add(".map(row -> {\n").indent()
+                    .add(buildInsertDecodeLocals(fields, "row", "__insertKey"))
+                    .add("return $T.row(\n", DSL).indent()
+                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent()
+                    .add(");\n").unindent()
+                    .add("})\n")
+                    .add(".toList())\n").unindent();
+            } else {
+                dmlChain.add(".valuesOfRows(in.stream()\n").indent()
+                    .add(".map(row -> $T.row(\n", DSL).indent()
+                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent()
+                    .add("))\n")
+                    .add(".toList())\n").unindent();
+            }
         } else {
+            postInGuard.add(buildInsertDecodeLocals(fields, "in", "__insertKey"));
             dmlChain.add(".values(\n").indent()
-                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in")).unindent()
+                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "__insertKey")).unindent()
                 .add(")\n");
         }
 
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain.build(), tia.list());
+            outputPackage, dmlChain.build(),
+            /*postDslGuard=*/ CodeBlock.of(""), postInGuard.build(), tia.list());
+    }
+
+    /**
+     * True iff any field on {@code fields} bears a {@link CallSiteExtraction.NodeIdDecodeKeys}
+     * carrier (a {@link InputField.ColumnField} with NodeId extraction, or a
+     * {@link InputField.CompositeColumnField}). Drives the bulk-INSERT / bulk-UPSERT lambda
+     * shape choice (single-expression vs block-with-decode-locals).
+     */
+    private static boolean anyNodeIdCarrier(List<InputField> fields) {
+        for (var f : fields) {
+            if (f instanceof InputField.ColumnField cf
+                && cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) return true;
+            if (f instanceof InputField.CompositeColumnField) return true;
+        }
+        return false;
     }
 
     /**
@@ -1519,23 +1551,147 @@ public class TypeFetcherGenerator {
      * Absent key → {@code DSL.defaultValue(dataType)} (jOOQ renders {@code DEFAULT}); present key
      * (including explicit null) → {@code DSL.val(map.get("name"), dataType)} (typed bind).
      * Comma-separated, newline-terminated per cell so the formatted output is readable.
+     *
+     * <p>Dispatches on carrier identity (R130):
+     * <ul>
+     *   <li>{@link InputField.ColumnField} with {@link CallSiteExtraction.Direct} (or non-NodeId
+     *       extraction) — one cell, value read directly from {@code mapLocal.get(name)}.</li>
+     *   <li>{@link InputField.ColumnField} with {@link CallSiteExtraction.NodeIdDecodeKeys} —
+     *       one cell, value read from the per-record decode local
+     *       ({@code __insertKey_<fi>.value1()}). Caller must declare the decode local; see
+     *       {@link #buildInsertDecodeLocals}.</li>
+     *   <li>{@link InputField.CompositeColumnField} — N cells, values read from
+     *       {@code __insertKey_<fi>.value1()..value<N>()}.</li>
+     * </ul>
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "mutation-input.lookup-binding-decoded-record-arity-matches-carrier-columns",
+        reliesOn = "Iterates CompositeColumnField.columns() positionally and reads "
+            + "decodeLocal.value<i+1>() for each column slot; the load-bearing classifier "
+            + "guarantee that the carrier's columns.size() equals the decoded record's arity "
+            + "lets the emitter wire jOOQ's typed value1()..valueN() accessors per slot.")
     private static CodeBlock buildPerCellValueList(
             List<InputField> fields,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
-            String mapLocal) {
+            String mapLocal,
+            String localPrefix) {
         var b = CodeBlock.builder();
-        for (int i = 0; i < fields.size(); i++) {
-            var cf = (InputField.ColumnField) fields.get(i);
-            if (i > 0) b.add(",\n");
-            b.add("$L.containsKey($S) ? $T.val($L.get($S), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
-                mapLocal, cf.name(),
-                DSL, mapLocal, cf.name(),
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
-                DSL,
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+        boolean first = true;
+        for (int fi = 0; fi < fields.size(); fi++) {
+            var f = fields.get(fi);
+            switch (f) {
+                case InputField.ColumnField cf -> {
+                    if (!first) b.add(",\n");
+                    first = false;
+                    if (cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) {
+                        String recLocal = localPrefix + "_" + fi;
+                        b.add("$L.containsKey($S) ? $T.val($L.value1(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                            mapLocal, cf.name(),
+                            DSL, recLocal,
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                            DSL,
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+                    } else {
+                        b.add("$L.containsKey($S) ? $T.val($L.get($S), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                            mapLocal, cf.name(),
+                            DSL, mapLocal, cf.name(),
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                            DSL,
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+                    }
+                }
+                case InputField.CompositeColumnField ccf -> {
+                    String recLocal = localPrefix + "_" + fi;
+                    for (int ci = 0; ci < ccf.columns().size(); ci++) {
+                        var col = ccf.columns().get(ci);
+                        if (!first) b.add(",\n");
+                        first = false;
+                        b.add("$L.containsKey($S) ? $T.val($L.value$L(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                            mapLocal, ccf.name(),
+                            DSL, recLocal, ci + 1,
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                            DSL,
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                    }
+                }
+                default -> throw new IllegalStateException(
+                    "INSERT cell-list dispatch reached unsupported carrier: "
+                    + f.getClass().getSimpleName() + "; classifier should have rejected this");
+            }
         }
         return b.build();
+    }
+
+    /**
+     * Builds the INSERT column list by walking {@code tia.fields()} and dispatching on carrier:
+     * {@link InputField.ColumnField} contributes one column ref; {@link InputField.CompositeColumnField}
+     * contributes N column refs (one per {@code columns()} slot, in declaration order).
+     */
+    private static CodeBlock buildInsertColumnList(
+            List<InputField> fields,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        var b = CodeBlock.builder();
+        boolean first = true;
+        for (var f : fields) {
+            switch (f) {
+                case InputField.ColumnField cf -> {
+                    if (!first) b.add(", ");
+                    first = false;
+                    b.add("$T.$L.$L",
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+                }
+                case InputField.CompositeColumnField ccf -> {
+                    for (var col : ccf.columns()) {
+                        if (!first) b.add(", ");
+                        first = false;
+                        b.add("$T.$L.$L",
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                    }
+                }
+                default -> throw new IllegalStateException(
+                    "INSERT column-list dispatch reached unsupported carrier: "
+                    + f.getClass().getSimpleName() + "; classifier should have rejected this");
+            }
+        }
+        return b.build();
+    }
+
+    /**
+     * Builds the per-record NodeId decode locals for an INSERT/UPSERT INSERT-arm. For each
+     * NodeId-bearing carrier ({@link InputField.ColumnField} with
+     * {@link CallSiteExtraction.NodeIdDecodeKeys}, {@link InputField.CompositeColumnField}),
+     * emits one {@code Record<N> __insertKey_<fi> = ...} local reading from {@code mapLocal}.
+     * Locals are conditional on the source key's presence so an absent key (DEFAULT-resolved
+     * cell) does not force a decode; null returns on a present key throw
+     * {@code GraphqlErrorException}, mirroring the lookup-WHERE null handling.
+     */
+    private static CodeBlock buildInsertDecodeLocals(
+            List<InputField> fields,
+            String mapLocal,
+            String localPrefix) {
+        var locals = CodeBlock.builder();
+        ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
+        for (int fi = 0; fi < fields.size(); fi++) {
+            var f = fields.get(fi);
+            CallSiteExtraction.NodeIdDecodeKeys nidk = switch (f) {
+                case InputField.ColumnField cf when cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys n -> n;
+                case InputField.CompositeColumnField ccf -> ccf.extraction();
+                default -> null;
+            };
+            if (nidk == null) continue;
+            String sourceField = f.name();
+            String recLocal = localPrefix + "_" + fi;
+            ClassName encoderClass = nidk.decodeMethod().encoderClass();
+            String methodName = nidk.decodeMethod().methodName();
+            TypeName recordType = nidk.decodeMethod().returnType();
+            locals.addStatement("$T $L = ($L.get($S) instanceof $T _s$L) ? $T.$L(_s$L) : null",
+                recordType, recLocal, mapLocal, sourceField, String.class, recLocal, encoderClass, methodName, recLocal);
+            locals.beginControlFlow("if ($L.containsKey($S) && $L == null)", mapLocal, sourceField, recLocal)
+                .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
+                    "Decoded NodeId did not match the expected type for input field '" + sourceField + "'")
+                .endControlFlow();
+        }
+        return locals.build();
     }
 
     /**
@@ -1585,7 +1741,8 @@ public class TypeFetcherGenerator {
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var postInGuard = CodeBlock.builder();
         postInGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        for (var cf : tia.setFields()) {
+        for (var sf : tia.setFields()) {
+            var cf = (InputField.ColumnField) sf;
             postInGuard.beginControlFlow("if (in.containsKey($S))", cf.name())
                 .addStatement("sets.put($T.$L.$L, $T.val(in.get($S), $T.$L.$L.getDataType()))",
                     tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
@@ -1599,10 +1756,12 @@ public class TypeFetcherGenerator {
                     + "only @lookupKey fields were provided")
             .endControlFlow();
 
+        var whereChunk = buildLookupWhereSingleRow(tia, tablesOnly, tableRef);
+        postInGuard.add(whereChunk.decodeLocals());
         var dmlChain = CodeBlock.builder()
             .add(".update($L)\n", tableLocal)
             .add(".set(sets)\n")
-            .add(".where(").add(buildLookupWhere(tia, tablesOnly, tableRef)).add(")\n")
+            .add(".where(").add(whereChunk.whereExpr()).add(")\n")
             .build();
 
         return buildDmlFetcher(ctx, f.name(), f.returnExpression(), f.errorChannel(),
@@ -1642,7 +1801,11 @@ public class TypeFetcherGenerator {
         // of the typed Row1<T1>...Row22 forms).
         var rowClass = ClassName.get("org.jooq", "RowN");
         var tableClass = ClassName.get("org.jooq", "Table");
-        var bindings = tia.fieldBindings();
+        var groups = tia.fieldBindings();
+        // Flatten lookup-key target columns across groups for the join-on-column-names construction;
+        // every column appears once at slot index i in vColNames / cells / WHERE.
+        var lookupTargetColumns = new ArrayList<no.sikt.graphitron.rewrite.model.ColumnRef>();
+        for (var g : groups) lookupTargetColumns.addAll(g.targetColumns());
 
         var postInGuard = CodeBlock.builder();
         postInGuard.addStatement("$T<?> firstKeys = in.get(0).keySet()", SET);
@@ -1653,11 +1816,12 @@ public class TypeFetcherGenerator {
         // so jOOQ's typed v.field(Field<T>) overload returns the correctly typed v-column.
         postInGuard.addStatement("$T<String> vColNames = new $T<>()",
             ClassName.get(List.class), arrayList);
-        for (var b : bindings) {
+        for (var col : lookupTargetColumns) {
             postInGuard.addStatement("vColNames.add($T.$L.$L.getName())",
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), b.targetColumn().javaName());
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
         }
-        for (var cf : tia.setFields()) {
+        for (var sf : tia.setFields()) {
+            var cf = (InputField.ColumnField) sf;
             postInGuard.beginControlFlow("if (firstKeys.contains($S))", cf.name())
                 .addStatement("vColNames.add($T.$L.$L.getName())",
                     tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
@@ -1674,12 +1838,15 @@ public class TypeFetcherGenerator {
         postInGuard.beginControlFlow("for ($T<?, ?> row : in)", MAP);
         postInGuard.addStatement("$T<$T<?>> cells = new $T<>()",
             ClassName.get(List.class), fieldClass, arrayList);
-        for (var b : bindings) {
-            postInGuard.addStatement("cells.add($T.val(row.get($S), $T.$L.$L.getDataType()))",
-                DSL, b.fieldName(),
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), b.targetColumn().javaName());
+        // Per-row decode locals for any NodeId-decoded groups (composite-PK or arity-1 NodeId
+        // ColumnField), shared by all positional bindings of the same source field.
+        emitLookupKeyDecodeLocals(postInGuard, groups, "row");
+        for (int gi = 0; gi < groups.size(); gi++) {
+            var g = groups.get(gi);
+            emitLookupKeyCellAdds(postInGuard, g, gi, "row", tablesOnly, tableRef);
         }
-        for (var cf : tia.setFields()) {
+        for (var sf : tia.setFields()) {
+            var cf = (InputField.ColumnField) sf;
             postInGuard.beginControlFlow("if (firstKeys.contains($S))", cf.name())
                 .addStatement("cells.add($T.val(row.get($S), $T.$L.$L.getDataType()))",
                     DSL, cf.name(),
@@ -1696,7 +1863,8 @@ public class TypeFetcherGenerator {
         // the matching v-column with the target column's type, so no cast is needed at the
         // .set(Map<? extends Field<?>, ?>) call site.
         postInGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        for (var cf : tia.setFields()) {
+        for (var sf : tia.setFields()) {
+            var cf = (InputField.ColumnField) sf;
             postInGuard.beginControlFlow("if (firstKeys.contains($S))", cf.name())
                 .addStatement("sets.put($T.$L.$L, v.field($T.$L.$L))",
                     tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
@@ -1710,12 +1878,27 @@ public class TypeFetcherGenerator {
             .endControlFlow();
 
         // Duplicate-lookup-key guard: build a HashSet<List<Object>> over the per-row lookup-key
-        // tuples; throw when set size differs from row count. Value-equal tuples (List.of(...))
-        // ensure two rows with the same key collide regardless of bound-value identity.
+        // tuples; throw when set size differs from row count. The tuple identity comes from the
+        // wire-format source-field values (MapBinding.fieldName per binding; DecodedRecordGroup
+        // uses its sourceFieldName once for the whole group — the encoded NodeId string is a
+        // stable identity for the decoded tuple).
         var lookupKeyTuple = CodeBlock.builder().add("$T.of(", ClassName.get(List.class));
-        for (int i = 0; i < bindings.size(); i++) {
-            if (i > 0) lookupKeyTuple.add(", ");
-            lookupKeyTuple.add("row.get($S)", bindings.get(i).fieldName());
+        boolean firstTupleSlot = true;
+        for (var g : groups) {
+            switch (g) {
+                case InputColumnBindingGroup.MapGroup mg -> {
+                    for (var binding : mg.bindings()) {
+                        if (!firstTupleSlot) lookupKeyTuple.add(", ");
+                        firstTupleSlot = false;
+                        lookupKeyTuple.add("row.get($S)", binding.fieldName());
+                    }
+                }
+                case InputColumnBindingGroup.DecodedRecordGroup drg -> {
+                    if (!firstTupleSlot) lookupKeyTuple.add(", ");
+                    firstTupleSlot = false;
+                    lookupKeyTuple.add("row.get($S)", drg.sourceFieldName());
+                }
+            }
         }
         lookupKeyTuple.add(")");
         postInGuard.addStatement("$T<$T<Object>> seenKeys = new $T<>()",
@@ -1733,12 +1916,12 @@ public class TypeFetcherGenerator {
         // WHERE clause joins t to v on the lookup-key columns (chained .and(...)). The lookup
         // keys are unconditional in vColNames, so v.field(t.k) always resolves.
         var whereExpr = CodeBlock.builder();
-        for (int i = 0; i < bindings.size(); i++) {
-            var b = bindings.get(i);
+        for (int i = 0; i < lookupTargetColumns.size(); i++) {
+            var col = lookupTargetColumns.get(i);
             if (i > 0) whereExpr.add(".and(");
             whereExpr.add("$T.$L.$L.eq(v.field($T.$L.$L))",
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), b.targetColumn().javaName(),
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), b.targetColumn().javaName());
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
             if (i > 0) whereExpr.add(")");
         }
 
@@ -1807,13 +1990,7 @@ public class TypeFetcherGenerator {
         String tableLocal = tablesOnly.tableLocalName();
 
         var fields = tia.fields();
-        var colList = CodeBlock.builder();
-        for (int i = 0; i < fields.size(); i++) {
-            var cf = (InputField.ColumnField) fields.get(i);
-            if (i > 0) colList.add(", ");
-            colList.add("$T.$L.$L",
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
-        }
+        var colList = buildInsertColumnList(fields, tablesOnly, tableRef);
 
         // When the .doUpdate() branch fires, build the SET map dynamically from
         // the present-key set and bind each value to DSL.excluded(col) (the just-attempted
@@ -1841,7 +2018,8 @@ public class TypeFetcherGenerator {
                 presentKeysLocal = "in.keySet()";
             }
             postInGuard.addStatement("$T<$T<?>, Object> setsUpdate = new $T<>()", MAP, fieldClass, linkedHashMap);
-            for (var cf : tia.setFields()) {
+            for (var sf : tia.setFields()) {
+                var cf = (InputField.ColumnField) sf;
                 postInGuard.beginControlFlow("if ($L.contains($S))", presentKeysLocal, cf.name())
                     .addStatement("setsUpdate.put($T.$L.$L, $T.excluded($T.$L.$L))",
                         tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
@@ -1857,25 +2035,42 @@ public class TypeFetcherGenerator {
         }
 
         var conflictCols = CodeBlock.builder();
-        var bindings = tia.fieldBindings();
-        for (int i = 0; i < bindings.size(); i++) {
+        var conflictTargetColumns = new ArrayList<no.sikt.graphitron.rewrite.model.ColumnRef>();
+        for (var g : tia.fieldBindings()) conflictTargetColumns.addAll(g.targetColumns());
+        for (int i = 0; i < conflictTargetColumns.size(); i++) {
             if (i > 0) conflictCols.add(", ");
             conflictCols.add("$T.$L.$L",
                 tablesOnly.tablesClass(), tableRef.javaFieldName(),
-                bindings.get(i).targetColumn().javaName());
+                conflictTargetColumns.get(i).javaName());
         }
 
         var dmlChain = CodeBlock.builder()
-            .add(".insertInto($L, ", tableLocal).add(colList.build()).add(")\n");
+            .add(".insertInto($L, ", tableLocal).add(colList).add(")\n");
         if (tia.list()) {
-            dmlChain.add(".valuesOfRows(in.stream()\n").indent()
-                .add(".map(row -> $T.row(\n", DSL).indent()
-                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row")).unindent()
-                .add("))\n")
-                .add(".toList())\n").unindent();
+            boolean hasDecodeLocals = anyNodeIdCarrier(fields);
+            if (hasDecodeLocals) {
+                dmlChain.add(".valuesOfRows(in.stream()\n").indent()
+                    .add(".map(row -> {\n").indent()
+                    .add(buildInsertDecodeLocals(fields, "row", "__insertKey"))
+                    .add("return $T.row(\n", DSL).indent()
+                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent()
+                    .add(");\n").unindent()
+                    .add("})\n")
+                    .add(".toList())\n").unindent();
+            } else {
+                dmlChain.add(".valuesOfRows(in.stream()\n").indent()
+                    .add(".map(row -> $T.row(\n", DSL).indent()
+                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent()
+                    .add("))\n")
+                    .add(".toList())\n").unindent();
+            }
         } else {
+            // Single-row decode locals lift into postInGuard. The if-not-empty block above
+            // already wrote setsUpdate-side guards; appending the decode locals here keeps the
+            // statement order (uniform-shape guard → setsUpdate construction → decode locals).
+            postInGuard.add(buildInsertDecodeLocals(fields, "in", "__insertKey"));
             dmlChain.add(".values(\n").indent()
-                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in")).unindent()
+                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "__insertKey")).unindent()
                 .add(")\n");
         }
         dmlChain.add(".onConflict(").add(conflictCols.build()).add(")\n");
@@ -1927,56 +2122,331 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * Single-row lookup-WHERE chunk: a CodeBlock to drop into {@code postInGuard} declaring any
+     * per-NodeId decode locals (for {@link InputColumnBindingGroup.DecodedRecordGroup} and for
+     * arity-1 NodeId-decoded {@link InputColumnBinding.MapBinding}), plus the WHERE expression
+     * that reads the typed slot values out of those locals.
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "mutation-input.lookup-binding-decoded-record-arity-matches-carrier-columns",
+        reliesOn = "Iterates DecodedRecordGroup.bindings() positionally and reads "
+            + "decodeLocal.value<i+1>() for each binding's slot; the load-bearing classifier "
+            + "guarantee that bindings.size() equals the carrier's columns.size() lets this "
+            + "emit jOOQ's typed value1()..valueN() accessors without re-checking arity.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "mutation-input.lookup-binding-honors-carrier-extraction",
+        reliesOn = "Reads each MapBinding.extraction() and emits a decode<TypeName> call for "
+            + "NodeIdDecodeKeys, raw read otherwise. The classifier guarantee that the binding's "
+            + "extraction matches the carrier's wire-format intent lets the emitter pick the "
+            + "right form without consulting the SDL or re-deriving from raw column metadata.")
+    private record LookupWhereChunk(CodeBlock decodeLocals, CodeBlock whereExpr) {}
+
+    /**
+     * Builds the single-row lookup-WHERE chunk: decode locals lifted to {@code postInGuard}, plus
+     * the WHERE expression chained with {@code .and(...)} per slot. Shared by DELETE and UPDATE.
+     *
+     * <ul>
+     *   <li>{@link InputColumnBindingGroup.MapGroup} — per binding, emits
+     *       {@code t.col.eq(DSL.val(in.get(name), t.col.getDataType()))}. When the binding's
+     *       extraction is {@link CallSiteExtraction.NodeIdDecodeKeys}, the value source becomes
+     *       {@code __lookupKey<i>.value1()} (the per-row decode local, declared above) and the
+     *       wrapping {@code DSL.val} keeps the typed column-data-type binding.</li>
+     *   <li>{@link InputColumnBindingGroup.DecodedRecordGroup} — emits one decode local
+     *       (with {@code ThrowOnMismatch} / {@code SkipMismatchedElement} null handling) above,
+     *       and N {@code t.col_k.eq(__lookupKey<i>.value<k+1>())} chained equalities into the
+     *       WHERE expression.</li>
+     * </ul>
+     */
+    private static LookupWhereChunk buildLookupWhereSingleRow(
+            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        var locals = CodeBlock.builder();
+        var whereExpr = CodeBlock.builder();
+        var groups = tia.fieldBindings();
+        int slotIndex = 0;
+        for (int gi = 0; gi < groups.size(); gi++) {
+            var g = groups.get(gi);
+            switch (g) {
+                case InputColumnBindingGroup.MapGroup mg -> {
+                    for (var binding : mg.bindings()) {
+                        if (slotIndex > 0) whereExpr.add(".and(");
+                        whereExpr.add("$T.$L.$L.eq(",
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+                        appendMapBindingValueExpr(whereExpr, locals, binding, "in",
+                            tablesOnly, tableRef, gi);
+                        whereExpr.add(")");
+                        if (slotIndex > 0) whereExpr.add(")");
+                        slotIndex++;
+                    }
+                }
+                case InputColumnBindingGroup.DecodedRecordGroup drg -> {
+                    String recLocal = "__lookupKey" + gi;
+                    appendDecodeLocal(locals, recLocal, drg.extraction(), "in", drg.sourceFieldName());
+                    for (var binding : drg.bindings()) {
+                        if (slotIndex > 0) whereExpr.add(".and(");
+                        whereExpr.add("$T.$L.$L.eq($L.value$L())",
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName(),
+                            recLocal, binding.index() + 1);
+                        if (slotIndex > 0) whereExpr.add(")");
+                        slotIndex++;
+                    }
+                }
+            }
+        }
+        return new LookupWhereChunk(locals.build(), whereExpr.build());
+    }
+
+    /**
+     * Emits a value expression for one {@link InputColumnBinding.MapBinding} reading
+     * {@code mapLocal.get(fieldName)}. For {@link CallSiteExtraction.NodeIdDecodeKeys} extractions,
+     * lifts the per-binding decode call to a local (declared into {@code locals}) and emits
+     * {@code DSL.val(decoded.value1(), t.col.getDataType())}. For all other extractions, emits
+     * {@code DSL.val(mapLocal.get(name), t.col.getDataType())} verbatim.
+     */
+    private static void appendMapBindingValueExpr(
+            CodeBlock.Builder whereExpr,
+            CodeBlock.Builder locals,
+            InputColumnBinding.MapBinding binding,
+            String mapLocal,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
+            int groupIndex) {
+        if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
+            String recLocal = "__lookupKey" + groupIndex;
+            appendDecodeLocal(locals, recLocal, nidk, mapLocal, binding.fieldName());
+            whereExpr.add("$T.val($L.value1(), $T.$L.$L.getDataType())",
+                DSL, recLocal,
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+        } else {
+            whereExpr.add("$T.val($L.get($S), $T.$L.$L.getDataType())",
+                DSL, mapLocal, binding.fieldName(),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+        }
+    }
+
+    /**
+     * Declares a per-row decode local {@code recLocal} reading {@code mapLocal.get(sourceField)},
+     * with {@code ThrowOnMismatch} producing a {@code GraphqlErrorException} on a null decode
+     * return (lookup-key paths: wrong-type id is an authored-input contract violation) or
+     * {@code SkipMismatchedElement} dropping silently via "no row matches" semantics — at the
+     * single-row mutation site, a malformed id surfaces as a runtime failure regardless of arm,
+     * because there is no per-row "skip" semantics in the SET / DELETE WHERE shape.
+     */
+    private static void appendDecodeLocal(
+            CodeBlock.Builder locals,
+            String recLocal,
+            CallSiteExtraction.NodeIdDecodeKeys nidk,
+            String mapLocal,
+            String sourceField) {
+        ClassName encoderClass = nidk.decodeMethod().encoderClass();
+        String methodName = nidk.decodeMethod().methodName();
+        TypeName recordType = nidk.decodeMethod().returnType();
+        ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
+        locals.addStatement("$T $L = ($L.get($S) instanceof $T _s$L) ? $T.$L(_s$L) : null",
+            recordType, recLocal, mapLocal, sourceField, String.class, recLocal, encoderClass, methodName, recLocal);
+        locals.beginControlFlow("if ($L == null)", recLocal)
+            .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
+                "Decoded NodeId did not match the expected type for input field '" + sourceField + "'")
+            .endControlFlow();
+    }
+
+    /**
+     * Emits per-row decode locals for every NodeId-decoded lookup-key group on the TIA. One
+     * {@code Record<N>} local per {@link InputColumnBindingGroup.DecodedRecordGroup} or per
+     * NodeIdDecodeKeys-extracted {@link InputColumnBinding.MapBinding}, named
+     * {@code __bulkKey<gi>} (composite) / {@code __bulkKey<gi>_<bi>} (per-binding). Reads from
+     * {@code mapLocal.get(sourceField)}. Used by bulk-arm walks where the decode runs inside the
+     * per-row loop / lambda body. {@link InputColumnBindingGroup.MapGroup} bindings with
+     * non-NodeId extractions emit no locals.
+     */
+    private static void emitLookupKeyDecodeLocals(
+            CodeBlock.Builder block,
+            List<InputColumnBindingGroup> groups,
+            String mapLocal) {
+        for (int gi = 0; gi < groups.size(); gi++) {
+            var g = groups.get(gi);
+            switch (g) {
+                case InputColumnBindingGroup.MapGroup mg -> {
+                    for (int bi = 0; bi < mg.bindings().size(); bi++) {
+                        var binding = mg.bindings().get(bi);
+                        if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
+                            appendDecodeLocal(block, "__bulkKey" + gi + "_" + bi, nidk, mapLocal, binding.fieldName());
+                        }
+                    }
+                }
+                case InputColumnBindingGroup.DecodedRecordGroup drg ->
+                    appendDecodeLocal(block, "__bulkKey" + gi, drg.extraction(), mapLocal, drg.sourceFieldName());
+            }
+        }
+    }
+
+    /**
+     * Emits per-row {@code cells.add($T.val(...))} statements for one lookup-key group.
+     * MapBinding entries with NodeIdDecodeKeys read from the matching {@code __bulkKey<gi>_<bi>}
+     * local declared by {@link #emitLookupKeyDecodeLocals}; DecodedRecordGroup entries read
+     * {@code __bulkKey<gi>.value<k+1>()} per slot. Direct-extracted MapBindings read raw
+     * {@code mapLocal.get(name)} verbatim.
+     */
+    private static void emitLookupKeyCellAdds(
+            CodeBlock.Builder block,
+            InputColumnBindingGroup g,
+            int groupIndex,
+            String mapLocal,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        switch (g) {
+            case InputColumnBindingGroup.MapGroup mg -> {
+                for (int bi = 0; bi < mg.bindings().size(); bi++) {
+                    var binding = mg.bindings().get(bi);
+                    if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) {
+                        String recLocal = "__bulkKey" + groupIndex + "_" + bi;
+                        block.addStatement("cells.add($T.val($L.value1(), $T.$L.$L.getDataType()))",
+                            DSL, recLocal,
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+                    } else {
+                        block.addStatement("cells.add($T.val($L.get($S), $T.$L.$L.getDataType()))",
+                            DSL, mapLocal, binding.fieldName(),
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+                    }
+                }
+            }
+            case InputColumnBindingGroup.DecodedRecordGroup drg -> {
+                String recLocal = "__bulkKey" + groupIndex;
+                for (var binding : drg.bindings()) {
+                    block.addStatement("cells.add($T.val($L.value$L(), $T.$L.$L.getDataType()))",
+                        DSL, recLocal, binding.index() + 1,
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+                }
+            }
+        }
+    }
+
+    /**
      * Builds a bulk lookup-key row-tuple {@code IN} predicate from the TIA's
-     * {@code @lookupKey} {@code fieldBindings}: emits
-     * {@code DSL.row(t.k1, t.k2, ...).in(in.stream().map(row -> DSL.row(DSL.val(row.get(n1), …), DSL.val(row.get(n2), …))).toList())}.
-     * One shape regardless of key arity (PostgreSQL renders 1-key
-     * {@code (col) IN ((v))} identically to {@code col IN (v)}).
+     * {@code @lookupKey} groups: emits
+     * {@code DSL.row(t.k1, ...).in(in.stream().map(row -> DSL.row(<per-slot value expr>)).toList())}.
+     * Per-row decode for {@link InputColumnBindingGroup.DecodedRecordGroup} and
+     * NodeIdDecodeKeys-extracted {@link InputColumnBinding.MapBinding} lives inside the stream
+     * lambda (one decode call per arg per row). One shape regardless of key arity (PostgreSQL
+     * renders 1-key {@code (col) IN ((v))} identically to {@code col IN (v)}).
      */
     private static CodeBlock buildBulkLookupRowIn(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
-        var bindings = tia.fieldBindings();
+        var groups = tia.fieldBindings();
         var b = CodeBlock.builder().add("$T.row(", DSL);
-        for (int i = 0; i < bindings.size(); i++) {
-            if (i > 0) b.add(", ");
-            b.add("$T.$L.$L",
-                tablesOnly.tablesClass(), tableRef.javaFieldName(),
-                bindings.get(i).targetColumn().javaName());
+        boolean first = true;
+        for (var g : groups) {
+            for (var col : g.targetColumns()) {
+                if (!first) b.add(", ");
+                first = false;
+                b.add("$T.$L.$L",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            }
         }
-        b.add(").in(in.stream().map(row -> $T.row(", DSL);
-        for (int i = 0; i < bindings.size(); i++) {
-            if (i > 0) b.add(", ");
-            var binding = bindings.get(i);
-            b.add("$T.val(row.get($S), $T.$L.$L.getDataType())",
-                DSL, binding.fieldName(),
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+        // Block-lambda form when any group requires a per-row decode; expression-lambda form
+        // (today's all-Direct shape) otherwise, so existing pipeline tests stay byte-identical.
+        boolean needsDecodeLambda = groupsNeedDecode(groups);
+        if (needsDecodeLambda) {
+            b.add(").in(in.stream().map(row -> {\n").indent();
+            var lambdaLocals = CodeBlock.builder();
+            for (int gi = 0; gi < groups.size(); gi++) {
+                var g = groups.get(gi);
+                switch (g) {
+                    case InputColumnBindingGroup.MapGroup mg -> {
+                        for (int bi = 0; bi < mg.bindings().size(); bi++) {
+                            var binding = mg.bindings().get(bi);
+                            if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys nidk) {
+                                String recLocal = "__bulkKey" + gi + "_" + bi;
+                                appendDecodeLocal(lambdaLocals, recLocal, nidk, "row", binding.fieldName());
+                            }
+                        }
+                    }
+                    case InputColumnBindingGroup.DecodedRecordGroup drg -> {
+                        String recLocal = "__bulkKey" + gi;
+                        appendDecodeLocal(lambdaLocals, recLocal, drg.extraction(), "row", drg.sourceFieldName());
+                    }
+                }
+            }
+            b.add(lambdaLocals.build());
+            b.add("return $T.row(", DSL);
+            first = true;
+            for (int gi = 0; gi < groups.size(); gi++) {
+                var g = groups.get(gi);
+                appendBulkRowCells(b, g, gi, first, tablesOnly, tableRef);
+                first = first && g.targetColumns().isEmpty();
+            }
+            b.add(");\n").unindent().add("}).toList())");
+        } else {
+            b.add(").in(in.stream().map(row -> $T.row(", DSL);
+            first = true;
+            for (var g : groups) {
+                switch (g) {
+                    case InputColumnBindingGroup.MapGroup mg -> {
+                        for (var binding : mg.bindings()) {
+                            if (!first) b.add(", ");
+                            first = false;
+                            b.add("$T.val(row.get($S), $T.$L.$L.getDataType())",
+                                DSL, binding.fieldName(),
+                                tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+                        }
+                    }
+                    case InputColumnBindingGroup.DecodedRecordGroup drg ->
+                        throw new IllegalStateException("groupsNeedDecode bug: DecodedRecordGroup reached the expression-lambda arm");
+                }
+            }
+            b.add(")).toList())");
         }
-        b.add(")).toList())");
         return b.build();
     }
 
-    /**
-     * Builds the WHERE clause from the TIA's {@code @lookupKey} {@code fieldBindings}, chaining
-     * each binding's {@code .eq(DSL.val(...))} with {@code .and(...)}. Shared between DELETE
-     * and UPDATE.
-     */
-    private static CodeBlock buildLookupWhere(
-            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
-            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
-        var whereExpr = CodeBlock.builder();
-        var bindings = tia.fieldBindings();
-        for (int i = 0; i < bindings.size(); i++) {
-            var binding = bindings.get(i);
-            if (i > 0) whereExpr.add(".and(");
-            whereExpr.add("$T.$L.eq($T.val(in.get($S), $T.$L.getDataType()))",
-                tablesOnly.tablesClass(), tableRef.javaFieldName() + "." + binding.targetColumn().javaName(),
-                DSL,
-                binding.fieldName(),
-                tablesOnly.tablesClass(), tableRef.javaFieldName() + "." + binding.targetColumn().javaName());
-            if (i > 0) whereExpr.add(")");
+    /** True iff any group on the TIA's bindings requires a per-row decode call. */
+    private static boolean groupsNeedDecode(List<InputColumnBindingGroup> groups) {
+        for (var g : groups) {
+            switch (g) {
+                case InputColumnBindingGroup.MapGroup mg -> {
+                    for (var binding : mg.bindings()) {
+                        if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) return true;
+                    }
+                }
+                case InputColumnBindingGroup.DecodedRecordGroup drg -> { return true; }
+            }
         }
-        return whereExpr.build();
+        return false;
+    }
+
+    /** Block-lambda cell emission for one group; helper for the decode-bearing arm of buildBulkLookupRowIn. */
+    private static void appendBulkRowCells(
+            CodeBlock.Builder b, InputColumnBindingGroup g, int groupIndex, boolean startFirst,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        boolean first = startFirst;
+        switch (g) {
+            case InputColumnBindingGroup.MapGroup mg -> {
+                for (int bi = 0; bi < mg.bindings().size(); bi++) {
+                    var binding = mg.bindings().get(bi);
+                    if (!first) b.add(", ");
+                    first = false;
+                    if (binding.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) {
+                        String recLocal = "__bulkKey" + groupIndex + "_" + bi;
+                        b.add("$T.val($L.value1(), $T.$L.$L.getDataType())",
+                            DSL, recLocal,
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+                    } else {
+                        b.add("$T.val(row.get($S), $T.$L.$L.getDataType())",
+                            DSL, binding.fieldName(),
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+                    }
+                }
+            }
+            case InputColumnBindingGroup.DecodedRecordGroup drg -> {
+                String recLocal = "__bulkKey" + groupIndex;
+                for (var binding : drg.bindings()) {
+                    if (!first) b.add(", ");
+                    first = false;
+                    b.add("$T.val($L.value$L(), $T.$L.$L.getDataType())",
+                        DSL, recLocal, binding.index() + 1,
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+                }
+            }
+        }
     }
 
     /**
@@ -2904,7 +3374,7 @@ public class TypeFetcherGenerator {
             GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal) {
         return switch (f.kind()) {
-            case INSERT -> new DmlChainAndGuards(buildRecordInsertChain(tia, tableRef, tablesOnly, tableLocal), CodeBlock.builder().build());
+            case INSERT -> buildRecordInsertChain(tia, tableRef, tablesOnly, tableLocal);
             case UPDATE -> buildRecordUpdateChain(tia, tableRef, tablesOnly, tableLocal);
             case UPSERT -> buildRecordUpsertChain(tia, tableRef, tablesOnly, tableLocal);
             case DELETE -> throw new IllegalStateException(
@@ -2912,31 +3382,39 @@ public class TypeFetcherGenerator {
         };
     }
 
-    private static CodeBlock buildRecordInsertChain(
+    private static DmlChainAndGuards buildRecordInsertChain(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
         var fields = tia.fields();
-        var colList = CodeBlock.builder();
-        for (int i = 0; i < fields.size(); i++) {
-            var cf = (InputField.ColumnField) fields.get(i);
-            if (i > 0) colList.add(", ");
-            colList.add("$T.$L.$L",
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
-        }
+        var colList = buildInsertColumnList(fields, tablesOnly, tableRef);
+        var preGuard = CodeBlock.builder();
         var chain = CodeBlock.builder()
-            .add(".insertInto($L, ", tableLocal).add(colList.build()).add(")\n");
+            .add(".insertInto($L, ", tableLocal).add(colList).add(")\n");
         if (tia.list()) {
-            chain.add(".valuesOfRows(in.stream()\n").indent()
-                .add(".map(row -> $T.row(\n", DSL).indent()
-                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row")).unindent()
-                .add("))\n")
-                .add(".toList())\n").unindent();
+            boolean hasDecodeLocals = anyNodeIdCarrier(fields);
+            if (hasDecodeLocals) {
+                chain.add(".valuesOfRows(in.stream()\n").indent()
+                    .add(".map(row -> {\n").indent()
+                    .add(buildInsertDecodeLocals(fields, "row", "__insertKey"))
+                    .add("return $T.row(\n", DSL).indent()
+                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent()
+                    .add(");\n").unindent()
+                    .add("})\n")
+                    .add(".toList())\n").unindent();
+            } else {
+                chain.add(".valuesOfRows(in.stream()\n").indent()
+                    .add(".map(row -> $T.row(\n", DSL).indent()
+                    .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent()
+                    .add("))\n")
+                    .add(".toList())\n").unindent();
+            }
         } else {
+            preGuard.add(buildInsertDecodeLocals(fields, "in", "__insertKey"));
             chain.add(".values(\n").indent()
-                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in")).unindent()
+                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "__insertKey")).unindent()
                 .add(")\n");
         }
-        return chain.build();
+        return new DmlChainAndGuards(chain.build(), preGuard.build());
     }
 
     private static DmlChainAndGuards buildRecordUpdateChain(
@@ -2951,7 +3429,8 @@ public class TypeFetcherGenerator {
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var preGuard = CodeBlock.builder();
         preGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        for (var cf : tia.setFields()) {
+        for (var sf : tia.setFields()) {
+            var cf = (InputField.ColumnField) sf;
             preGuard.beginControlFlow("if (in.containsKey($S))", cf.name())
                 .addStatement("sets.put($T.$L.$L, $T.val(in.get($S), $T.$L.$L.getDataType()))",
                     tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
@@ -2964,10 +3443,12 @@ public class TypeFetcherGenerator {
                 "@mutation(typeName: UPDATE) call has no settable fields present; "
                     + "only @lookupKey fields were provided")
             .endControlFlow();
+        var whereChunk = buildLookupWhereSingleRow(tia, tablesOnly, tableRef);
+        preGuard.add(whereChunk.decodeLocals());
         var chain = CodeBlock.builder()
             .add(".update($L)\n", tableLocal)
             .add(".set(sets)\n")
-            .add(".where(").add(buildLookupWhere(tia, tablesOnly, tableRef)).add(")\n")
+            .add(".where(").add(whereChunk.whereExpr()).add(")\n")
             .build();
         return new DmlChainAndGuards(chain, preGuard.build());
     }
@@ -2981,19 +3462,14 @@ public class TypeFetcherGenerator {
                     + "UPSERT or open a follow-up for the bulk-conflict shape");
         }
         var fields = tia.fields();
-        var colList = CodeBlock.builder();
-        for (int i = 0; i < fields.size(); i++) {
-            var cf = (InputField.ColumnField) fields.get(i);
-            if (i > 0) colList.add(", ");
-            colList.add("$T.$L.$L",
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
-        }
+        var colList = buildInsertColumnList(fields, tablesOnly, tableRef);
         var fieldClass = ClassName.get("org.jooq", "Field");
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var preGuard = CodeBlock.builder();
         if (!tia.setFields().isEmpty()) {
             preGuard.addStatement("$T<$T<?>, Object> setsUpdate = new $T<>()", MAP, fieldClass, linkedHashMap);
-            for (var cf : tia.setFields()) {
+            for (var sf : tia.setFields()) {
+                var cf = (InputField.ColumnField) sf;
                 preGuard.beginControlFlow("if (in.containsKey($S))", cf.name())
                     .addStatement("setsUpdate.put($T.$L.$L, $T.excluded($T.$L.$L))",
                         tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
@@ -3007,18 +3483,20 @@ public class TypeFetcherGenerator {
                         + "only @lookupKey fields were provided")
                 .endControlFlow();
         }
+        preGuard.add(buildInsertDecodeLocals(fields, "in", "__insertKey"));
         var conflictCols = CodeBlock.builder();
-        var bindings = tia.fieldBindings();
-        for (int i = 0; i < bindings.size(); i++) {
+        var conflictTargetColumns = new ArrayList<no.sikt.graphitron.rewrite.model.ColumnRef>();
+        for (var g : tia.fieldBindings()) conflictTargetColumns.addAll(g.targetColumns());
+        for (int i = 0; i < conflictTargetColumns.size(); i++) {
             if (i > 0) conflictCols.add(", ");
             conflictCols.add("$T.$L.$L",
                 tablesOnly.tablesClass(), tableRef.javaFieldName(),
-                bindings.get(i).targetColumn().javaName());
+                conflictTargetColumns.get(i).javaName());
         }
         var chain = CodeBlock.builder()
-            .add(".insertInto($L, ", tableLocal).add(colList.build()).add(")\n")
+            .add(".insertInto($L, ", tableLocal).add(colList).add(")\n")
             .add(".values(\n").indent()
-            .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in")).unindent()
+            .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in", "__insertKey")).unindent()
             .add(")\n")
             .add(".onConflict(").add(conflictCols.build()).add(")\n");
         if (!tia.setFields().isEmpty()) {

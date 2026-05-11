@@ -38,10 +38,12 @@ class MutationDeleteTableFieldValidationTest {
                 ArgumentRef.InputTypeArg.TableInputArg.of(
                     "in", "FilmKey", true, false,
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()),
-                    List.of(new InputColumnBinding.MapBinding(
-                        "filmId",
-                        new ColumnRef("film_id", "FILM_ID", "java.lang.Long"),
-                        new CallSiteExtraction.Direct())),
+                    List.<no.sikt.graphitron.rewrite.model.InputColumnBindingGroup>of(
+                        new no.sikt.graphitron.rewrite.model.InputColumnBindingGroup.MapGroup(List.of(
+                            new InputColumnBinding.MapBinding(
+                                "filmId",
+                                new ColumnRef("film_id", "FILM_ID", "java.lang.Long"),
+                                new CallSiteExtraction.Direct())))),
                     Optional.empty(),
                     List.of()),
                 Optional.empty()),

@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
+import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -216,12 +217,18 @@ public sealed interface ArgumentRef {
          * Used by composite-key lookups and by mutations.
          *
          * <p>{@code lookupKeyFields} / {@code setFields} are the typed partition of {@code fields}
-         * around {@code fieldBindings}: lookup-key-bound {@code ColumnField}s go in the first list,
-         * non-lookup-key {@code ColumnField}s in the second. The narrow element type expresses the
-         * mutation-arm guarantee (DML inputs admit only {@code Direct}-extracted {@code ColumnField};
-         * see {@code MutationInputResolver.resolveInput}); query-side TIAs simply contribute zero
-         * entries because {@code @lookupKey} only ever lands on a {@code ColumnField}. Construct
-         * via {@link #of} so the partition has a single derivation path.
+         * around {@code fieldBindings}: lookup-key-bound carriers in the first list, non-lookup-key
+         * carriers in the second. Both lists are sealed on
+         * {@link InputField.LookupKeyField} / {@link InputField.SetField} respectively (R130
+         * admitted-carrier set: {@code ColumnField}, {@code CompositeColumnField}); reference
+         * carriers stay outside the permits set. Construct via {@link #of} so the partition has
+         * a single derivation path.
+         *
+         * <p>{@code fieldBindings} is {@code List<InputColumnBindingGroup>}: one group per
+         * {@code @lookupKey}-bearing input field. {@link InputColumnBindingGroup.MapGroup} for a
+         * {@code ColumnField} carrier, {@link InputColumnBindingGroup.DecodedRecordGroup} for a
+         * {@code CompositeColumnField} carrier (the composite-PK NodeId case where decode runs
+         * once per row at the arg layer into a {@code Record<N>}).
          */
         record TableInputArg(
             String name,
@@ -229,11 +236,11 @@ public sealed interface ArgumentRef {
             boolean nonNull,
             boolean list,
             TableRef inputTable,
-            List<InputColumnBinding.MapBinding> fieldBindings,
+            List<InputColumnBindingGroup> fieldBindings,
             Optional<ArgConditionRef> argCondition,
             List<InputField> fields,
-            List<InputField.ColumnField> lookupKeyFields,
-            List<InputField.ColumnField> setFields
+            List<InputField.LookupKeyField> lookupKeyFields,
+            List<InputField.SetField> setFields
         ) implements InputTypeArg {
 
             public TableInputArg {
@@ -254,22 +261,29 @@ public sealed interface ArgumentRef {
                 boolean nonNull,
                 boolean list,
                 TableRef inputTable,
-                List<InputColumnBinding.MapBinding> fieldBindings,
+                List<InputColumnBindingGroup> fieldBindings,
                 Optional<ArgConditionRef> argCondition,
                 List<InputField> fields
             ) {
-                var lookupNames = fieldBindings.stream()
-                    .map(InputColumnBinding.MapBinding::fieldName)
-                    .collect(java.util.stream.Collectors.toSet());
+                var lookupNames = new java.util.HashSet<String>();
+                for (var g : fieldBindings) {
+                    switch (g) {
+                        case InputColumnBindingGroup.MapGroup mg -> {
+                            for (var b : mg.bindings()) lookupNames.add(b.fieldName());
+                        }
+                        case InputColumnBindingGroup.DecodedRecordGroup drg ->
+                            lookupNames.add(drg.sourceFieldName());
+                    }
+                }
                 var lookupKeyFields = fields.stream()
-                    .filter(f -> f instanceof InputField.ColumnField)
-                    .map(f -> (InputField.ColumnField) f)
-                    .filter(cf -> lookupNames.contains(cf.name()))
+                    .filter(f -> f instanceof InputField.LookupKeyField)
+                    .map(f -> (InputField.LookupKeyField) f)
+                    .filter(lk -> lookupNames.contains(((InputField) lk).name()))
                     .toList();
                 var setFields = fields.stream()
-                    .filter(f -> f instanceof InputField.ColumnField)
-                    .map(f -> (InputField.ColumnField) f)
-                    .filter(cf -> !lookupNames.contains(cf.name()))
+                    .filter(f -> f instanceof InputField.SetField)
+                    .map(f -> (InputField.SetField) f)
+                    .filter(sf -> !lookupNames.contains(((InputField) sf).name()))
                     .toList();
                 return new TableInputArg(
                     name, typeName, nonNull, list, inputTable, fieldBindings,

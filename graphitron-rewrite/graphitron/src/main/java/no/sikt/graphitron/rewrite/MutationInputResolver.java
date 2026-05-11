@@ -7,11 +7,10 @@ import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
-import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.InputColumnBinding;
+import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -249,7 +248,7 @@ final class MutationInputResolver {
             }
 
             var bindingErrors = new java.util.ArrayList<String>();
-            List<InputColumnBinding.MapBinding> bindings =
+            List<InputColumnBindingGroup> bindings =
                 enumMapping.buildLookupBindings(tit, arg, fieldDef, argName, bindingErrors);
             if (!bindingErrors.isEmpty()) {
                 return new Resolved.Rejected(Rejection.structural(String.join("; ", bindingErrors)));
@@ -280,21 +279,82 @@ final class MutationInputResolver {
         if (foundTia.argCondition().isPresent()) {
             return new Resolved.Rejected(Rejection.structural("@condition on a @mutation field argument is not supported"));
         }
+        // Index @lookupKey-bearing field names from the resolved bindings so the per-field check
+        // can dispatch on (carrier × isLookupKey × verb). One InputColumnBindingGroup per
+        // @lookupKey-bearing input field: MapGroup carries one or more MapBindings (each named
+        // by an input-field name); DecodedRecordGroup names its source input field directly.
+        var lookupKeyFieldNames = new java.util.HashSet<String>();
+        for (var g : foundTia.fieldBindings()) {
+            switch (g) {
+                case InputColumnBindingGroup.MapGroup mg -> {
+                    for (var b : mg.bindings()) lookupKeyFieldNames.add(b.fieldName());
+                }
+                case InputColumnBindingGroup.DecodedRecordGroup drg ->
+                    lookupKeyFieldNames.add(drg.sourceFieldName());
+            }
+        }
+
         for (var f : foundTia.fields()) {
-            // ColumnField with Direct extraction is the canonical mutation-input shape;
-            // NodeIdDecodeKeys extraction is not yet supported in @mutation inputs.
-            if (f instanceof InputField.ColumnField cf
-                    && !(cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys)) {
+            // ColumnField admission rule:
+            //   Direct extraction  → always admitted (canonical mutation-input shape).
+            //   NodeIdDecodeKeys   → admitted (R130): single-PK NodeId-decoded column write.
+            //                        Lookup-WHERE / INSERT-side value reads dispatch on the
+            //                        extraction at emit time (Phase 3).
+            if (f instanceof InputField.ColumnField) {
                 continue;
             }
+            // CompositeColumnField is admitted only on lookup-bearing verbs as a @lookupKey
+            // field. INSERT / non-@lookupKey-position is carved out (R130 spec): structurally
+            // valid but easy to misuse with auto-generated PKs; lifting waits for a forcing-
+            // function schema. Lookup-bearing verbs (DELETE/UPDATE/UPSERT) accept the carrier
+            // when it bears @lookupKey because the emitter consumes the DecodedRecordGroup;
+            // a CompositeColumnField in non-@lookupKey position would require the emitter to
+            // write N PK columns from a decoded record on the SET / INSERT-arm side, which
+            // is out of R130's scope.
+            if (f instanceof InputField.CompositeColumnField ccf) {
+                if (kind == DmlKind.INSERT) {
+                    return new Resolved.Rejected(Rejection.deferred(
+                        "@mutation input '" + foundTia.typeName() + "' field '" + f.name()
+                        + "': CompositeColumnField on @mutation(typeName: INSERT) is not"
+                        + " supported; the composite-PK INSERT shape is structurally valid"
+                        + " but architecturally rare. Route through individual @field columns"
+                        + " if you really need it.",
+                        ""));
+                }
+                if (!lookupKeyFieldNames.contains(ccf.name())) {
+                    return new Resolved.Rejected(Rejection.deferred(
+                        "@mutation input '" + foundTia.typeName() + "' field '" + f.name()
+                        + "': CompositeColumnField is admitted only as a @lookupKey field on"
+                        + " lookup-bearing @mutation verbs (DELETE/UPDATE/UPSERT). Apply"
+                        + " @lookupKey to this field, or route through individual @field"
+                        + " columns if a composite-PK column write was intended.",
+                        ""));
+                }
+                continue;
+            }
+            // Reference carriers (ColumnReferenceField / CompositeColumnReferenceField) stay
+            // deferred: no forcing-function schema reaches them today, and re-admission
+            // tracks R24's NodeIdReferenceField join-projection work.
             String reason = switch (f) {
                 case InputField.NestingField nf -> "nested input types in @mutation fields are not yet supported";
-                case InputField.ColumnReferenceField crf -> "ColumnReferenceField in @mutation inputs is not yet supported";
-                case InputField.CompositeColumnField ccf -> "CompositeColumnField in @mutation inputs is not yet supported";
-                case InputField.CompositeColumnReferenceField ccrf -> "CompositeColumnReferenceField in @mutation inputs is not yet supported";
-                case InputField.ColumnField cf -> "NodeId-decoded ColumnField in @mutation inputs is not yet supported";
+                case InputField.ColumnReferenceField crf ->
+                    "@reference / FK-target @nodeId in @mutation inputs is not yet supported;"
+                    + " tracked in R24's scope when a forcing-function schema appears";
+                case InputField.CompositeColumnReferenceField ccrf ->
+                    "@reference / FK-target @nodeId in @mutation inputs is not yet supported;"
+                    + " tracked in R24's scope when a forcing-function schema appears";
+                // ColumnField / CompositeColumnField are admitted above; this default exists
+                // because the sealed sub-interfaces LookupKeyField / SetField widen the surface
+                // pattern even though every leaf is reachable through the named arms.
+                default -> "input field shape " + f.getClass().getSimpleName() + " is not yet supported";
             };
-            return new Resolved.Rejected(Rejection.structural("@mutation input '" + foundTia.typeName() + "' field '" + f.name() + "': " + reason));
+            Rejection rej = (f instanceof InputField.ColumnReferenceField
+                || f instanceof InputField.CompositeColumnReferenceField)
+                ? Rejection.deferred("@mutation input '" + foundTia.typeName() + "' field '"
+                    + f.name() + "': " + reason, "nodeidreferencefield-join-projection-form")
+                : Rejection.structural("@mutation input '" + foundTia.typeName() + "' field '"
+                    + f.name() + "': " + reason);
+            return new Resolved.Rejected(rej);
         }
 
         if (kind.requiresLookupKey() && foundTia.fieldBindings().isEmpty()) {
@@ -309,7 +369,8 @@ final class MutationInputResolver {
             var pkColumns = ctx.catalog.findPkColumns(foundTia.inputTable().tableName());
             if (!pkColumns.isEmpty()) {
                 var boundSqlNames = foundTia.fieldBindings().stream()
-                    .map(b -> b.targetColumn().sqlName())
+                    .flatMap(g -> g.targetColumns().stream())
+                    .map(c -> c.sqlName())
                     .collect(Collectors.toSet());
                 var missing = pkColumns.stream()
                     .map(JooqCatalog.ColumnEntry::sqlName)
