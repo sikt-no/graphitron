@@ -126,7 +126,7 @@ class SingleRecordCarrierPipelineTest {
         var mutField = schema.field("Mutation", mutationName(DmlKind.INSERT));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains("element type 'String' is not @table-mapped");
+        assertThat(reason).contains("element type 'String' is not admissible");
     }
 
     @Test
@@ -144,8 +144,8 @@ class SingleRecordCarrierPipelineTest {
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
         assertThat(reason).contains(
-            "element type 'Searchable' is not @table-mapped",
-            "Phase 1 admits @table elements only");
+            "element type 'Searchable' is not admissible",
+            "require @table-mapped or @record-backed");
     }
 
     @Test

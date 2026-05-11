@@ -20,6 +20,7 @@ import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
+import no.sikt.graphitron.rewrite.model.DataElement;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
@@ -516,12 +517,23 @@ class BuildContext {
         String dataFieldName = dataField.getName();
         String dataElementName = baseTypeName(dataField);
 
-        // Condition #3: the data field's element type is registered as TableBackedType.
+        // Condition #3: the data field's element type is registered as TableBackedType (Phase 1)
+        // or a record-backed ResultType with a non-null backing class (Phase 2). Plain SDL
+        // Objects promoted to PojoResultType.NoBacking have no class to match against a
+        // @service method's reflected return type, so they're rejected as elements (only
+        // admissible as the carrier itself).
         GraphitronType elementType = types.get(dataElementName);
-        if (!(elementType instanceof TableBackedType tbt)) {
+        FieldWrapper dataWrapper = buildWrapper(dataField);
+        DataElement dataElement;
+        if (elementType instanceof TableBackedType tbt) {
+            dataElement = new DataElement.Table(dataElementName, tbt.table(), dataWrapper);
+        } else if (elementType instanceof ResultType rt && rt.fqClassName() != null) {
+            dataElement = new DataElement.Record(dataElementName, rt.fqClassName(), dataWrapper);
+        } else {
             return new SingleRecordCarrierResolution.Rejected(
                 "single-record carrier field '" + dataFieldName + "' element type '"
-                + dataElementName + "' is not @table-mapped; Phase 1 admits @table elements only");
+                + dataElementName + "' is not admissible; require @table-mapped or @record-backed "
+                + "with a backing class");
         }
 
         // Condition #4: the data field carries no graphitron-domain directive. Directives like
@@ -547,7 +559,7 @@ class BuildContext {
         }
 
         return new SingleRecordCarrierResolution.Ok(new SingleRecordCarrierShape(
-            typeName, dataFieldName, dataElementName, tbt.table(), buildWrapper(dataField)));
+            typeName, dataFieldName, dataElement));
     }
 
     // ===== Error-message helpers =====

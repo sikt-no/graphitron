@@ -65,6 +65,14 @@ public final class FetcherEmitter {
             // errors during this read or during nested traversal cannot undo the DML.
             return buildSingleRecordTableFetcherValue(srtf, outputPackage);
         }
+        if (field instanceof ChildField.SingleRecordIdentityField) {
+            // R75 Phase 2: data field on a single-record carrier whose element type is
+            // record-backed. The parent operation (@service mutation, after wrapper unwrap)
+            // produced a domain record that graphql-java is now traversing; the data field's
+            // value IS that source value verbatim. Identity passthrough — no SourceKey
+            // synthesis, no SELECT.
+            return CodeBlock.of("($T env) -> env.getSource()", DATA_FETCHING_ENV);
+        }
         if (field instanceof ChildField.ErrorsField) {
             // Passthrough off the parent payload's errors accessor. PropertyDataFetcher reflects
             // through record-style accessor → JavaBean getter → field, which covers every payload
