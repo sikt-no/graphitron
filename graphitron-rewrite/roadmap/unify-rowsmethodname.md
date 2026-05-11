@@ -431,13 +431,14 @@ Two design checkpoints surface during Phase 3, not deletions:
   moment to declare a check pinning the independence (the existing
   `accessor-rowkey-cardinality-matches-field` key covers cardinality, not
   container-axis independence).
-- **Flat `SourceKey` vs sub-typing.** Three DataFetcher sites today narrow
-  `bkf.batchKey()` to `BatchKey.ParentKeyed` / `BatchKey.RecordParentBatchKey`
-  before reading parent-key columns. When the `BatchKey` cast goes away, Phase
-  3 needs to confirm the new `SourceKey.columns()` + `SourceKey.path()`
-  cleanly subsume what each cast gates today; if not, `SourceKey` may need a
-  `(ParentKeyed | RecordParent)` sub-seal rather than staying flat. Current
-  starting cut: flat. Test it against the four call-site narrowings.
+- **Flat `SourceKey` vs sub-typing.** Three DataFetcher sites pre-reshape
+  narrowed `bkf.batchKey()` to `BatchKey.ParentKeyed` /
+  `BatchKey.RecordParentBatchKey` before reading parent-key columns. The
+  checkpoint asked whether `SourceKey.columns()` + `SourceKey.path()` would
+  cleanly subsume what those casts gated. **Resolved: flat held.** The four
+  call-site narrowings collapsed onto direct `SourceKey.columns()` reads with
+  no sub-seal; no consumer needs `(ParentKeyed | RecordParent)` identity past
+  the classifier.
 
 Verify by grep: no caller of any deleted symbol; no inline emit of patterns
 now owned by the new emitters.
@@ -448,287 +449,59 @@ of naming, declaration, call site, fetcher dance. The SQL-vs-service
 distinction lives only in the five `RowsMethodBody` permits. Net type-identity
 count goes from 10 to 1 + 5 = 6.
 
-#### Phase 3 in-progress status
+#### Phase 3 — what shipped
 
-Phase 3 is shipping incrementally on `claude/graphitron-rewrite`. Items
-already landed (prefix-tagged `R38 Phase 3 (N/N): ...`):
+Phase 3 landed incrementally across 20 commits on `claude/graphitron-rewrite`,
+each prefix-tagged `R38 Phase 3 (N/N): ...`. Full per-commit narrative lives
+in `git log --grep "R38 Phase 3"`. One-line summary per step:
 
-1. Drop the four redundant `rowsMethodName()` overrides; add the
-   container-axis-independence `@LoadBearingClassifierCheck`.
-2. `SourceKey.Wrap` enum → sealed (`Row` / `Record` / `TableRecord(ClassName)`);
-   add `SourceKey.keyElementType()` derivation.
-3. Default `sourceKey()` / `loaderRegistration()` on `BatchKeyField` (delegate
-   to the existing resolvers; lets consumers migrate one site at a time
-   without touching every producer simultaneously). The defaults swap out for
-   abstract methods backed by record components once storage migrates.
-4. `TypeFetcherGenerator`: four `LoaderRegistrationResolver.resolve(...)`
-   calls → `bkf.loaderRegistration()`.
-5. `TypeClassGenerator.collectBatchKeyColumns` → `sourceKey().columns()`.
-6. `GeneratorUtils.buildKeyExtraction` and `buildKeyExtractionWithNullCheck`
-   on `SourceKey`: the six-permit BatchKey switch collapses onto the
-   three-permit `Wrap` switch (the container axis already lives on
-   `LoaderRegistration`); the `TableRecord` arm picks up the developer's
-   typed class through `Wrap.TableRecord`'s payload.
-7. `RowsMethodShape.outerRowsReturnType` decoupled from BatchKey: takes the
-   two derived primitives (`keyElementType`, `isMapped`) the function
-   actually consumes, so each caller projects from whatever access path it
-   already has.
-8. `GeneratorUtils.buildRecordParentKeyExtraction` + four helpers on
-   `SourceKey`: 4-permit `BatchKey.RecordParentBatchKey` switch collapses to
-   `Reader × Cardinality` switch. `TypeFetcherGenerator.buildRecordBasedDataFetcher`
-   threads `field.sourceKey()` through; service-side Readers are unreachable
-   here and rejected eagerly.
-9. `MultiTablePolymorphicEmitter`: project `parentKey → SourceKey` once at
-   the public entry points (`emitMethods` / `emitConnectionMethods`) via a
-   private transitional helper (`parentSourceKey`); all four internal
-   builders (batched connection / list fetcher + rows method) take
-   `SourceKey`. The projection mirrors `SourceKeyResolver.resolveRecordParent`;
-   it goes away once `InterfaceField` / `UnionField` flip `parentKey`
-   storage to `SourceKey`.
-10. `SplitRowsMethodEmitter` internal helpers (`emitParentInputAndFkChain`,
-    `buildListMethod`, `buildSingleMethod`, `buildConnectionMethod`,
-    `buildRuntimeStub`) take `SourceKey`. Public entry points read
-    `field.sourceKey()`. The two-permit accessor check collapses to a
-    single `Reader.AccessorCall` `instanceof`.
-11. Storage flip on all six `BatchKeyField` permits (`SplitTableField`,
-    `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`,
-    `ServiceTableField`, `ServiceRecordField`): replace the `batchKey`
-    record component with `sourceKey: SourceKey` + `loaderRegistration:
-    LoaderRegistration`. `BatchKeyField` interface drops the default
-    `sourceKey()` / `loaderRegistration()` methods (record components shadow
-    them as abstract). `RecordTableField.emitsSingleRecordPerKey` /
-    `RecordLookupTableField.emitsSingleRecordPerKey` read
-    `loaderRegistration().dispatch() == LOAD_MANY` rather than the deleted
-    `batchKey().dispatch()`. `SourceKeyResolver` and
-    `LoaderRegistrationResolver` refactor to value-based per-shape entry
-    points (`resolveSplit`, `resolveRecordParent`, `resolveServiceTable`,
-    `resolveServiceRecord`, `LoaderRegistrationResolver.resolve(BatchKey,
-    ReturnTypeRef)`). Producers (`FieldBuilder` at ten constructor sites,
-    `MappingsConstantNameDedup` at two reconstruction sites) compute
-    `SourceKey + LoaderRegistration` at field-construction time via the
-    new entry points; the no-Sources-param service path passes null for
-    both (the validator's missing-Sources-param check remains the
-    surfacing site). Tests on the projection surface (`SourceKeyResolverTest`,
-    `LoaderRegistrationResolverTest`) move to the value-based API;
-    classifier-side coverage in `GraphitronSchemaBuilderTest` switches to
-    `f.sourceKey()` shape assertions; validation tests
-    (`RecordTableFieldValidationTest`, `RecordLookupTableFieldValidationTest`,
-    `SplitTableFieldValidationTest`, `SplitLookupTableFieldValidationTest`,
-    `ServiceFieldValidationTest`) thread `SourceKey + LoaderRegistration`
-    through their fixture builders. 1554 tests green.
+ 1. Drop redundant `rowsMethodName()` overrides; add container-axis-independence `@LoadBearingClassifierCheck`.
+ 2. `SourceKey.Wrap` enum → sealed (`Row` / `Record` / `TableRecord(ClassName)`); add `keyElementType()` derivation.
+ 3. Default `sourceKey()` / `loaderRegistration()` on `BatchKeyField` (transitional, swap out for record components in step 11).
+ 4. `TypeFetcherGenerator`: four `LoaderRegistrationResolver.resolve(...)` calls → `bkf.loaderRegistration()`.
+ 5. `TypeClassGenerator.collectBatchKeyColumns` → `sourceKey().columns()`.
+ 6. `GeneratorUtils.buildKeyExtraction` family: 6-permit BatchKey switch → 3-permit `Wrap` switch.
+ 7. `RowsMethodShape.outerRowsReturnType` decoupled from BatchKey (takes `keyElementType` + `isMapped`).
+ 8. `GeneratorUtils.buildRecordParentKeyExtraction`: 4-permit `RecordParentBatchKey` switch → `Reader × Cardinality` switch.
+ 9. `MultiTablePolymorphicEmitter`: project `parentKey → SourceKey` at public entry points; internal builders take `SourceKey`.
+10. `SplitRowsMethodEmitter` internal helpers take `SourceKey`; two-permit accessor check collapses to one `Reader.AccessorCall instanceof`.
+11. Storage flip on all six `BatchKeyField` permits: `batchKey` record component → `sourceKey: SourceKey` + `loaderRegistration: LoaderRegistration`. Resolvers refactor to value-based per-shape entry points; producers compute the values at field-construction time.
+12. `InterfaceField.parentKey` and `UnionField.parentKey` flip from `BatchKey.RecordParentBatchKey` to `SourceKey`; transitional `parentSourceKey()` helper deletes.
+13. `MethodRef.Param.Sourced` / `ParamSource.Sources` storage flip from `BatchKey.ParentKeyed` to the `(Wrap, columns, Container)` triple.
+14. `FieldBuilder` split-query and table-backed polymorphic-Row producers inline the resolver projections (returns a `(SourceKey, LoaderRegistration)` pair).
+15. `FieldBuilder` record-parent FK and typed-accessor producers inline the resolver projections.
+16. `FieldBuilder` polymorphic record-parent producers inline the resolver projection.
+17. `SourceRowDirectiveResolver` inlines the resolver projections; classifier-check keys re-shape from BatchKey-permit identity to SourceKey shape.
+18. `ServiceCatalog.classifySourcesType` inlines the source-shape projection (returns `Optional<SourcesShape>`); `ServiceCatalog` drops the `BatchKey` import.
+19. `TestFixtures` grows direct-triple helpers and resolver-replacement helpers for tests; production code drops `BatchKey` imports.
+20. Validation-test migration + `BatchKeyTest` / `SourceKeyResolverTest` / `LoaderRegistrationResolverTest` deletion; `BatchKey.java`, `SourceKeyResolver.java`, `LoaderRegistrationResolver.java` delete from `main`.
 
-After step 11 the generator package, the field-classifier producers, and
-the validator's classifier-side pin all run off `sourceKey()` /
-`loaderRegistration()`. Remaining `.batchKey()` reads live exclusively in
-`MethodRef.Param.Sourced` consumers (`ServiceDirectiveResolver` lines 192,
-323; `FieldBuilder` lines 187, 2754, 2757, 3104-3111) plus
-`MultiTablePolymorphicEmitter.parentSourceKey()` (still projects from
-`InterfaceField.parentKey` / `UnionField.parentKey`, both still
-`BatchKey.RecordParentBatchKey`-typed). These ride on subsequent flips.
+Post-Phase-3 follow-ups (independent commits, same trunk):
 
-12. `InterfaceField.parentKey` and `UnionField.parentKey` flip from
-    `BatchKey.RecordParentBatchKey` to `SourceKey`. The transitional
-    `MultiTablePolymorphicEmitter.parentSourceKey()` helper deletes; its
-    contents move to `SourceKeyResolver.resolveRecordParentForPolymorphic`
-    (the polymorphic case is its own entry point because the field's
-    return type is `PolymorphicReturnType` rather than table-bound, so it
-    doesn't fit the `resolveRecordParent(BatchKey, TableBoundReturnType)`
-    shape). Producers (FieldBuilder at four construction sites) project
-    at field-construction time. `MultiTablePolymorphicEmitter.emitMethods`
-    and `.emitConnectionMethods` signatures take `SourceKey` directly;
-    the `null` parentSourceKey path (root queries) is preserved unchanged.
-    `GraphitronSchemaValidator.validateChildMultiTableParentPk` reads
-    `parentSourceKey().columns()` rather than `parentKey().preludeKeyColumns()`.
-    Tests on the polymorphic surface (RecordParentMultiTablePolymorphicPipelineTest,
-    InterfaceFieldValidationTest, UnionFieldValidationTest, plus
-    TypeFetcherGeneratorTest's polymorphic helpers) thread `SourceKey`
-    through their fixture builders.
-
-After step 12 the generator package and the multi-table polymorphic
-classifier surface are fully migrated. Remaining `.batchKey()` reads live
-exclusively in `MethodRef.Param.Sourced` consumers
-(`ServiceDirectiveResolver` lines 192, 323; `FieldBuilder` lines 187,
-2754, 2757, 3104-3111). These ride on the `Sourced` storage flip.
-
-13. `MethodRef.Param.Sourced` and `ParamSource.Sources` storage flip from
-    `BatchKey.ParentKeyed` to the `(SourceKey.Wrap, List<ColumnRef>,
-    LoaderRegistration.Container)` triple. The two records carry the same
-    triple: `wrap` is the per-row shape (Row / Record / typed TableRecord),
-    `columns` is the parent-side PK/FK column tuple, and `container` is the
-    mapped/positional axis that used to live on `BatchKey` permit identity.
-    `Sourced.typeName()` derives the Java type from the triple (using a
-    private helper that mirrors the deleted `BatchKey.containerType` shape);
-    `Sourced.source()` returns `new ParamSource.Sources(wrap, columns,
-    container)`. `SourceKey` gains a static
-    `keyElementType(Wrap, List<ColumnRef>)` so consumers holding the triple
-    (no full `SourceKey`) derive the DataLoader key element type the same
-    way `SourceKey#keyElementType()` does. `ServiceCatalog` projects from
-    its internal `BatchKey.ParentKeyed` to the triple at the single
-    construction site (via a new private `wrapFor(BatchKey.ParentKeyed)`
-    helper). `FieldBuilder.extractBatchKey` becomes `extractSourced` and
-    returns the Sourced directly; the four service call sites get three
-    new private FB helpers (`buildServiceTableSourceKey`,
-    `buildServiceRecordSourceKey`, `buildServiceLoaderRegistration`) that
-    take a `Sourced` instead of routing through `SourceKeyResolver.resolveServiceTable/Record`
-    and `LoaderRegistrationResolver.resolve(BatchKey, ...)` (which become
-    deletable once the record-parent paths inline too).
-    `ServiceDirectiveResolver`: line 192's typed-TableRecord parent-table
-    consistency check forks on `sourced.wrap() instanceof
-    SourceKey.Wrap.TableRecord` and compares `ClassName.get(expected)`
-    against `tr.className()`; line 323's strict-return check reads
-    `sourced.container() == MAPPED_SET` for the isMapped predicate and
-    `SourceKey.keyElementType(sourced.wrap(), sourced.columns())` for the
-    key element type. Test fixtures get a `TestFixtures.sourced(name,
-    BatchKey.ParentKeyed)` adapter that does the projection mechanically;
-    `ServiceCatalogTest`'s six `sourced.batchKey()` assertions become
-    explicit `wrap` / `columns` / `container` triple-assertions. 1554
-    tests green; the three pre-existing `MultiSchemaQueryTest` failures
-    (R83 multi-schema fixture) are unchanged.
-
-After step 13 the model-side `BatchKey` storage on `Sourced` / `Sources`
-is gone. Remaining `BatchKey` references in production code live on the
-classifier-side producers (`FieldBuilder.deriveSplitQueryBatchKey`,
-`deriveBatchKeyForResultType`, `resolveRecordParentBatchKey`,
-`deriveBatchKeyFromTypedAccessor`; `ServiceCatalog.classifySourcesType`;
-`SourceRowDirectiveResolver`) and the three resolver helpers
-(`SourceKeyResolver.resolve{Split,RecordParent,RecordParentForPolymorphic,ServiceTable,ServiceRecord}`;
-`LoaderRegistrationResolver.resolve(BatchKey, ReturnTypeRef)`).
-`MappingsConstantNameDedup` already migrated to `f.sourceKey()` /
-`f.loaderRegistration()` in step 11.
-
-14. `FieldBuilder` split-query and table-backed polymorphic-Row producers
-    inline the resolver projections. `deriveSplitQueryBatchKey` (returning
-    `BatchKey.RowKeyed`) becomes `deriveSplitQuerySource` returning a small
-    `SplitQuerySource(SourceKey, LoaderRegistration)` pair record; the helper
-    folds in the projection rules previously split between
-    `SourceKeyResolver.resolveSplit` (target / Wrap.Row / ColumnRead / cardinality
-    from return wrapper) and `LoaderRegistrationResolver.resolve`
-    (POSITIONAL_LIST / LOAD_ONE / valueIsList from wrapper). The two
-    `SplitTableField` / `SplitLookupTableField` construction sites read the
-    pair components directly. The two table-backed polymorphic-Row sites
-    (interface / union child on `@table` parent) drop the inline
-    `BatchKey.RowKeyed → SourceKeyResolver.resolveRecordParentForPolymorphic`
-    chain in favour of a new private helper
-    `buildTableBackedPolymorphicParentSourceKey(pkCols)` that builds the
-    `Wrap.Row + ColumnRead + Cardinality.ONE` projection inline. 1554 tests
-    green; the three pre-existing `MultiSchemaQueryTest` failures unchanged.
-
-15. `FieldBuilder` record-parent FK and typed-accessor producers inline the
-    resolver projections. `deriveBatchKeyForResultType` (returning
-    `BatchKey.RowKeyed | null`) becomes `deriveFkRecordParentSource` returning
-    a `RecordParentSource(SourceKey, LoaderRegistration)` pair record or null;
-    the helper folds the FK arm of `SourceKeyResolver.resolveRecordParent`
-    (target / Wrap.Row / ColumnRead) and the constant
-    `LoaderRegistrationResolver.resolve` projection
-    (POSITIONAL_LIST / LOAD_ONE) onto the FK source-side columns.
-    `deriveBatchKeyFromTypedAccessor` is renamed
-    `deriveAccessorRecordParentSource`; its tail builds the
-    `AccessorCall + Wrap.Record + (LOAD_ONE | LOAD_MANY)` projection directly
-    instead of routing the AccessorMatch through `BatchKey.AccessorKeyedSingle /
-    Many` and then projecting. `AccessorDerivation.Ok` carries
-    `(SourceKey, LoaderRegistration, JoinStep.LiftedHop)` so the orchestrator
-    `resolveRecordParentBatchKey` can stitch the `[hop]` joinPath without
-    needing to re-derive it from a BatchKey permit. `RecordBatchKeyResolution
-    .Resolved` carries `(SourceKey, LoaderRegistration, joinPath)`; the
-    `RecordTableField` / `RecordLookupTableField` construction site reads the
-    triple directly, and the `SourceKeyResolver.resolveRecordParent` +
-    `LoaderRegistrationResolver.resolve` calls on the non-`@sourceRow`
-    record-parent arm delete. 1553 tests green; the three pre-existing
-    `MultiSchemaQueryTest` failures unchanged.
-
-16. `FieldBuilder` polymorphic record-parent producers inline the resolver
-    projection. `PolymorphicRecordParentResolution.Resolved` carries
-    `(SourceKey parentSourceKey, TableRef hubTable)` instead of
-    `(BatchKey.RecordParentBatchKey parentKey, TableRef hubTable)`;
-    `resolvePolymorphicRecordParent`'s `JooqTableRecordType` arm builds
-    `SourceKey(target=null, columns=pk, Wrap.Row, Cardinality.ONE, ColumnRead)`
-    inline (the parent IS the source — no separate target — and cardinality is
-    variant-derived rather than field-cardinality-derived);
-    `deriveBatchKeyFromHubAccessor`'s tail builds
-    `SourceKey(target=hubTable, columns=hub.PK, path=[hop], Wrap.Record, ONE|MANY,
-    AccessorCall(ref))` directly. The
-    `SourceKeyResolver.resolveRecordParentForPolymorphic` call at
-    `classifyRecordParentPolymorphicChild`'s tail deletes; the consumer reads
-    `resolved.parentSourceKey()` directly. 1553 tests green; the three
-    pre-existing `MultiSchemaQueryTest` failures unchanged.
-
-17. `SourceRowDirectiveResolver` inlines the resolver projections. `Resolved.Ok`
-    carries `(SourceKey, LoaderRegistration, joinPath, tbReturnType)` instead
-    of `(BatchKey.LifterKeyed, joinPath, tbReturnType)`. The leaf and path
-    derivation arms in `resolve` build `SourceKey(target=leafTable,
-    columns=expectedTuple, path=[hop]|steps, Wrap.Row, cardinality from
-    wrapper, SourceRowsCall(lifter))` + the `@sourceRow` constant
-    `LoaderRegistration(valueIsList, POSITIONAL_LIST, LOAD_ONE)` directly,
-    folding in the lifter arms of `SourceKeyResolver.resolveRecordParent` and
-    the constant `LoaderRegistrationResolver.resolve`. The consumer at
-    `FieldBuilder.classifyChildFieldOnRecordType`'s `@sourceRow` arm reads
-    `ok.sourceKey()` / `ok.loaderRegistration()` directly. Three classifier-
-    check keys re-shaped from BatchKey-permit identity to SourceKey shape:
-    `sourcerow-leafkey-batchkey-is-lifterleafkeyed` →
-    `sourcerow-leafkey-sourcerows-singlehop` (path-size invariant on
-    SourceRowsCall), `sourcerow-pathkey-batchkey-is-lifterpathkeyed` →
-    `sourcerow-pathkey-sourcerows-fkchain` (multi-step FK-chain invariant on
-    SourceRowsCall); the consumer-side `@DependsOnClassifierCheck` on
-    `GeneratorUtils.buildLifterRowKey` updates to match. 1553 tests green;
-    the three pre-existing `MultiSchemaQueryTest` failures unchanged.
-
-18. `ServiceCatalog.classifySourcesType` inlines the source-shape projection.
-    The method returns `Optional<SourcesShape>` (a new record carrying
-    `(SourceKey.Wrap wrap, LoaderRegistration.Container container)`) instead of
-    `Optional<BatchKey.ParentKeyed>`. The `Set` vs `List` container axis and
-    the `RowN` / `RecordN` / `TableRecord` element-shape axis project directly
-    onto the two values; the columns axis is the caller's `parentPkColumns`
-    input and so isn't repeated on the result. The producer at line 254 reads
-    `shape.wrap()` / `shape.container()` and constructs `MethodRef.Param.Sourced`
-    with the same `parentPkColumns` directly. The transitional helpers
-    `wrapFor(BatchKey.ParentKeyed)` and the inline `bk instanceof Mapped*Keyed
-    ? MAPPED_SET : POSITIONAL_LIST` switch (added in step 13 to bridge the
-    Sourced storage flip) both delete; `ServiceCatalog` no longer imports
-    `BatchKey`. 1553 tests green; the three pre-existing `MultiSchemaQueryTest`
-    failures unchanged.
-
-19. `TestFixtures` grows direct-triple `sourced(name, wrap, columns, container)`
-    overload plus convenience overloads `sourcedRow`, `sourcedRowMapped`,
-    `sourcedRecord`, `sourcedRecordMapped`, `sourcedTableRecord`,
-    `sourcedTableRecordMapped`, and resolver-replacement helpers
-    (`splitSourceKey`, `recordParentRowSourceKey`,
-    `polymorphicRowParentSourceKey`, `serviceTableSourceKey`,
-    `serviceRecordSourceKey`, `loaderRegistration`) for the test sites that
-    previously routed through `SourceKeyResolver` /
-    `LoaderRegistrationResolver`. The transitional
-    `sourced(name, BatchKey.ParentKeyed)` adapter stays for now alongside
-    the new helpers; tests migrate in step 20 ahead of the `BatchKey`
-    deletion. Production code that no longer needs `BatchKey` (FieldBuilder,
-    ServiceDirectiveResolver) drops the import; only docstring `@link`
-    references remain (cleaned up in step 20). 1553 tests green; the three
-    pre-existing `MultiSchemaQueryTest` failures unchanged.
-
-20. (a) The six validation tests (`SplitTableFieldValidationTest`,
-    `SplitLookupTableFieldValidationTest`, `RecordTableFieldValidationTest`,
-    `RecordLookupTableFieldValidationTest`, `UnionFieldValidationTest`,
-    `InterfaceFieldValidationTest`) migrate off `SourceKeyResolver` /
-    `LoaderRegistrationResolver` / `new BatchKey.X(...)` and onto the new
-    `TestFixtures` helpers. `ServiceFieldValidationTest`'s
-    `serviceField(batchKey)` / `buildServiceTableField(rt, batchKey)`
-    helpers convert to the direct triple `(wrap, keyColumns, mapped)`
-    shape. `BatchKeyTest`, `SourceKeyResolverTest`,
-    `LoaderRegistrationResolverTest` (the three dedicated test files about
-    the to-delete projections) delete; classifier-side projection coverage
-    comes from the pipeline tests (`GraphitronSchemaBuilderTest` etc.).
-    (b) `TypeFetcherGeneratorTest`'s 27 `BatchKey` references migrate;
-    `ServiceCatalogTest`, `GraphitronSchemaBuilderTest`,
-    `RecordParentMultiTablePolymorphicPipelineTest` drop the unused
-    `BatchKey` import. (c) `TestFixtures.sourced(name,
-    BatchKey.ParentKeyed)` transitional adapter deletes (all callers
-    migrated). (d) `BatchKey.java`, `SourceKeyResolver.java`, and
-    `LoaderRegistrationResolver.java` delete in `main`; the two stale
-    `import no.sikt.graphitron.rewrite.model.BatchKey` declarations in
-    `TypeFetcherGenerator` and `MultiTablePolymorphicEmitter` drop. The
-    remaining `BatchKey` references in main src and tests are all in
-    javadoc / comment prose (historical context, no compile linkage); they
-    stay for now and can be scrubbed independently. 1523 tests green; the
-    three pre-existing `MultiSchemaQueryTest` failures (R83 multi-schema
-    fixture) are unchanged baseline.
+- **Stale-prose scrub.** 118 remaining `BatchKey` references in javadoc /
+  comment prose across model, generators, and test docstrings — scrubbed in
+  one commit; five file-local private symbols renamed off the `BatchKey`
+  suffix (`RecordBatchKeyResolution` → `RecordParentSourceResolution`,
+  `resolveRecordParentBatchKey` → `resolveRecordParentSource`,
+  `deriveBatchKeyFromHubAccessor` → `derivePolymorphicHubSource`,
+  `collectBatchKeyColumns` → `collectSourceKeyColumns`,
+  `AccessorDerivedBatchKeyCase` → `AccessorDerivedSourceCase`).
+- **Audit-framework pairing.** The three `source-key.*`
+  `@LoadBearingClassifierCheck` declarations in `SourceKey`'s compact
+  constructor (`SourceRowsCall ⇒ Wrap.Row`, `AccessorCall ⇒ Wrap.Record`,
+  `ServiceTableRecord` target-aligned ⇒ empty path) were producer-only;
+  paired now with `@DependsOnClassifierCheck` consumers at
+  `GeneratorUtils.buildLifterRowKey`, `SplitRowsMethodEmitter
+  .emitParentInputAndFkChain`, and `GeneratorUtils.buildKeyExtraction`.
+- **Named structural pins.** `fetcherEmitter_unifiedDispatch` and
+  `rowsMethodEmitter_unifiedSkeleton` (the two named pins in the Tests
+  section below) shipped as source-file-scan assertions in
+  `UnifiedEmissionPinsTest`.
+- **Principles-doc refactor.** The "Sealed hierarchies over enums" worked
+  example moved to a new sibling page at
+  `graphitron-rewrite/docs/dispatch-axes.adoc`, with the principles entry
+  shrinking to a 1-paragraph summary plus `xref:`. Matches the existing
+  `typed-rejection.adoc` / `argument-resolution.adoc` treatment.
 
 R38 Phase 3 is **done**: `BatchKey` is gone from the production model and
 the test surface that depended on it; `SourceKeyResolver` and
