@@ -2,8 +2,6 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.LoaderRegistrationResolver;
-import no.sikt.graphitron.rewrite.SourceKeyResolver;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -14,7 +12,6 @@ import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SourceKey;
@@ -39,14 +36,14 @@ class ServiceFieldValidationTest {
     // ===== ServiceRecordField — non-table return type =====
 
     private static final MethodRef RESOLVED_METHOD = TestFixtures.staticServiceMethodRef("com.example.Service", "method", TypeName.VOID, List.of());
-    private static final BatchKey.ParentKeyed RESOLVED_BATCH_KEY = new BatchKey.RowKeyed(
-        List.of(new ColumnRef("FILM_ID", "filmId", "java.lang.Integer")));
+    private static final List<ColumnRef> RESOLVED_KEY_COLUMNS =
+        List.of(new ColumnRef("FILM_ID", "filmId", "java.lang.Integer"));
     private static final ReturnTypeRef.ResultReturnType RECORD_RT_SINGLE =
         new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), null);
     private static final SourceKey RECORD_SOURCE_KEY =
-        SourceKeyResolver.resolveServiceRecord(RESOLVED_BATCH_KEY, RECORD_RT_SINGLE, List.of());
+        TestFixtures.serviceRecordSourceKey(RECORD_RT_SINGLE, new SourceKey.Wrap.Row(), RESOLVED_KEY_COLUMNS, List.of());
     private static final LoaderRegistration RECORD_LR =
-        LoaderRegistrationResolver.resolve(RESOLVED_BATCH_KEY, RECORD_RT_SINGLE);
+        TestFixtures.loaderRegistration(RECORD_RT_SINGLE, false, false);
 
     enum RecordCase implements ValidatorCase {
 
@@ -95,7 +92,9 @@ class ServiceFieldValidationTest {
                 new ReturnTypeRef.TableBoundReturnType("Film",
                     TestFixtures.tableRef("film", "FILM", "Film", List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"))),
                     new FieldWrapper.Single(true)),
-                new BatchKey.RowKeyed(List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")))),
+                new SourceKey.Wrap.Row(),
+                List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer")),
+                false),
             List.of()),
 
         NO_SOURCES_PARAM("no Sources param — missing DataLoader batch key error",
@@ -170,37 +169,36 @@ class ServiceFieldValidationTest {
     private static final ReturnTypeRef.TableBoundReturnType FILM_RETURN =
         new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE_SINGLE_PK, new FieldWrapper.Single(true));
 
-    private static ServiceTableField serviceField(BatchKey.ParentKeyed batchKey) {
-        return new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
-            List.of(), List.of(), new OrderBySpec.None(), null,
-            TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
-                List.of(TestFixtures.sourced("filmKeys", batchKey))),
-            SourceKeyResolver.resolveServiceTable(batchKey, FILM_RETURN),
-            LoaderRegistrationResolver.resolve(batchKey, FILM_RETURN),
-            Optional.empty());
+    private static ServiceTableField serviceField(SourceKey.Wrap wrap, List<ColumnRef> keyColumns, boolean mapped) {
+        return buildServiceTableField(FILM_RETURN, wrap, keyColumns, mapped);
     }
 
     private static ServiceTableField buildServiceTableField(
-            ReturnTypeRef.TableBoundReturnType returnType, BatchKey.ParentKeyed batchKey) {
+            ReturnTypeRef.TableBoundReturnType returnType,
+            SourceKey.Wrap wrap, List<ColumnRef> keyColumns, boolean mapped) {
+        LoaderRegistration.Container container = mapped
+            ? LoaderRegistration.Container.MAPPED_SET
+            : LoaderRegistration.Container.POSITIONAL_LIST;
         return new ServiceTableField("Film", "externalChild", null, returnType,
             List.of(), List.of(), new OrderBySpec.None(), null,
             TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
-                List.of(TestFixtures.sourced("filmKeys", batchKey))),
-            SourceKeyResolver.resolveServiceTable(batchKey, returnType),
-            LoaderRegistrationResolver.resolve(batchKey, returnType),
+                List.of(TestFixtures.sourced("filmKeys", wrap, keyColumns, container))),
+            TestFixtures.serviceTableSourceKey(returnType, wrap, keyColumns),
+            TestFixtures.loaderRegistration(returnType, mapped, false),
             Optional.empty());
     }
 
     private static ServiceTableField multipleSourcesField() {
-        var bk = new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns());
+        var keyCols = FILM_TABLE_SINGLE_PK.primaryKeyColumns();
+        var wrap = new SourceKey.Wrap.Row();
         return new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
             List.of(), List.of(), new OrderBySpec.None(), null,
             TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
                 List.of(
-                    TestFixtures.sourced("filmKeys1", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
-                    TestFixtures.sourced("filmKeys2", new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())))),
-            SourceKeyResolver.resolveServiceTable(bk, FILM_RETURN),
-            LoaderRegistrationResolver.resolve(bk, FILM_RETURN),
+                    TestFixtures.sourced("filmKeys1", wrap, keyCols, LoaderRegistration.Container.POSITIONAL_LIST),
+                    TestFixtures.sourced("filmKeys2", wrap, keyCols, LoaderRegistration.Container.POSITIONAL_LIST))),
+            TestFixtures.serviceTableSourceKey(FILM_RETURN, wrap, keyCols),
+            TestFixtures.loaderRegistration(FILM_RETURN, false, false),
             Optional.empty());
     }
 
@@ -209,48 +207,48 @@ class ServiceFieldValidationTest {
         ROW_KEYED_SINGLE_PK(
             "RowKeyed — single-column parent PK — no errors",
             filmTableType(FILM_TABLE_SINGLE_PK),
-            serviceField(new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
+            serviceField(new SourceKey.Wrap.Row(), FILM_TABLE_SINGLE_PK.primaryKeyColumns(), false),
             List.of()),
 
         ROW_KEYED_PARENT_NO_PK(
             "RowKeyed — parent table has no PK — missing PK error",
             filmTableType(FILM_TABLE_NO_PK),
-            // BatchKey content is irrelevant here — the validator inspects the parent table's
-            // own primaryKeyColumns(); the BatchKey is just present to make the field
-            // structurally valid. Phase A's canonical-constructor invariant on
-            // BatchKey.RowKeyed prevents an empty list at this site.
-            serviceField(new BatchKey.RowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
+            // Source columns are irrelevant here — the validator inspects the parent table's
+            // own primaryKeyColumns(); the source-key is just present to make the field
+            // structurally valid. SourceKey's canonical-constructor non-empty invariant
+            // prevents an empty list at this site.
+            serviceField(new SourceKey.Wrap.Row(), FILM_TABLE_SINGLE_PK.primaryKeyColumns(), false),
             List.of("Field 'Film.externalChild': @service on a table-bound return type requires the " +
                 "parent table 'film' to have a primary key")),
 
         ROW_KEYED_COMPOSITE_PK(
             "RowKeyed — parent table has composite PK — no errors",
             filmTableType(FILM_TABLE_COMPOSITE_PK),
-            serviceField(new BatchKey.RowKeyed(FILM_TABLE_COMPOSITE_PK.primaryKeyColumns())),
+            serviceField(new SourceKey.Wrap.Row(), FILM_TABLE_COMPOSITE_PK.primaryKeyColumns(), false),
             List.of()),
 
         RECORD_KEYED_SINGLE_PK(
             "RecordKeyed — single-column parent PK — no errors",
             filmTableType(FILM_TABLE_SINGLE_PK),
-            serviceField(new BatchKey.RecordKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
+            serviceField(new SourceKey.Wrap.Record(), FILM_TABLE_SINGLE_PK.primaryKeyColumns(), false),
             List.of()),
 
         RECORD_KEYED_COMPOSITE_PK(
             "RecordKeyed — parent table has composite PK — no errors",
             filmTableType(FILM_TABLE_COMPOSITE_PK),
-            serviceField(new BatchKey.RecordKeyed(FILM_TABLE_COMPOSITE_PK.primaryKeyColumns())),
+            serviceField(new SourceKey.Wrap.Record(), FILM_TABLE_COMPOSITE_PK.primaryKeyColumns(), false),
             List.of()),
 
         MAPPED_ROW_KEYED_SINGLE_PK(
             "MappedRowKeyed — Set<Row1<Integer>> source classifies cleanly (R61 dual-shape acceptance)",
             filmTableType(FILM_TABLE_SINGLE_PK),
-            serviceField(new BatchKey.MappedRowKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
+            serviceField(new SourceKey.Wrap.Row(), FILM_TABLE_SINGLE_PK.primaryKeyColumns(), true),
             List.of()),
 
         MAPPED_RECORD_KEYED_SINGLE_PK(
             "MappedRecordKeyed — Set<Record1<Integer>> source classifies cleanly (R61 dual-shape acceptance)",
             filmTableType(FILM_TABLE_SINGLE_PK),
-            serviceField(new BatchKey.MappedRecordKeyed(FILM_TABLE_SINGLE_PK.primaryKeyColumns())),
+            serviceField(new SourceKey.Wrap.Record(), FILM_TABLE_SINGLE_PK.primaryKeyColumns(), true),
             List.of()),
 
         MULTIPLE_SOURCES_ROW_KEYED(
