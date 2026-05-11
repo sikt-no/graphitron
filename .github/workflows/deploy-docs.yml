@@ -28,6 +28,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        # workflow_run sets GITHUB_REF to the default branch (main), which
+        # doesn't carry graphitron-rewrite. Pin the checkout to the head SHA
+        # of the triggering reactor run so the docs build sees the same tree
+        # that produced the artifact. workflow_dispatch falls through to the
+        # checkout default (current branch of the manual trigger).
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
       - name: Set up JDK 25
         uses: actions/setup-java@v5
         with:
