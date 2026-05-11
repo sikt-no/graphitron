@@ -14,7 +14,7 @@ You're *integrating an editor or agent with the dev loop*, what the `dev` Mojo w
 
 You want to *read the classification taxonomy*, every variant the schema builder produces, every generator's input. → xref:code-generation-triggers.adoc[Code Generation Triggers].
 
-You're looking for a *deeper reference*, the architectural principles that govern both classifier and emitter, the test-tier rubric, the unified argument-resolution lift. → see xref:rewrite-design-principles.adoc[Rewrite Design Principles], xref:testing.adoc[Test-tier guide], xref:argument-resolution.adoc[Argument Resolution]. The ongoing-work view lives at xref:../roadmap/index.adoc[Rewrite Roadmap].
+You're looking for a *deeper reference*, the architectural principles that govern both classifier and emitter, the test-tier rubric, the unified argument-resolution lift, the dispatch-axis model behind DataLoader-backed source-side fields. → see xref:rewrite-design-principles.adoc[Rewrite Design Principles], xref:testing.adoc[Test-tier guide], xref:argument-resolution.adoc[Argument Resolution], xref:dispatch-axes.adoc[Dispatch axes]. The ongoing-work view lives at xref:../roadmap/index.adoc[Rewrite Roadmap].
 
 == Pipeline at a glance
 
