@@ -17,7 +17,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R38` | Reshape `BatchKey` into `SourceKey` + unify the rows-method seam | In Progress | [plan](unify-rowsmethodname.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
-| `R44` | Deprecate `@multitableReference` | In Review | [plan](deprecate-multitable-reference.md) |
 | `R101` | Custom-scalar Java type configuration (extended-scalars built-in) | Spec | [plan](custom-scalar-java-types.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
@@ -109,7 +108,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### interface-union
 
 - `R108` [**Per-variant projection on polymorphic fields**](polymorphic-per-variant-projection.md) — Backlog, architecture
-- `R44` [**Deprecate `@multitableReference`**](deprecate-multitable-reference.md) — In Review, cleanup
 
 ### nodeid
 
