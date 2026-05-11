@@ -613,6 +613,29 @@ classifier-side producers (`FieldBuilder.deriveSplitQueryBatchKey`,
     `Wrap.Row + ColumnRead + Cardinality.ONE` projection inline. 1554 tests
     green; the three pre-existing `MultiSchemaQueryTest` failures unchanged.
 
+15. `FieldBuilder` record-parent FK and typed-accessor producers inline the
+    resolver projections. `deriveBatchKeyForResultType` (returning
+    `BatchKey.RowKeyed | null`) becomes `deriveFkRecordParentSource` returning
+    a `RecordParentSource(SourceKey, LoaderRegistration)` pair record or null;
+    the helper folds the FK arm of `SourceKeyResolver.resolveRecordParent`
+    (target / Wrap.Row / ColumnRead) and the constant
+    `LoaderRegistrationResolver.resolve` projection
+    (POSITIONAL_LIST / LOAD_ONE) onto the FK source-side columns.
+    `deriveBatchKeyFromTypedAccessor` is renamed
+    `deriveAccessorRecordParentSource`; its tail builds the
+    `AccessorCall + Wrap.Record + (LOAD_ONE | LOAD_MANY)` projection directly
+    instead of routing the AccessorMatch through `BatchKey.AccessorKeyedSingle /
+    Many` and then projecting. `AccessorDerivation.Ok` carries
+    `(SourceKey, LoaderRegistration, JoinStep.LiftedHop)` so the orchestrator
+    `resolveRecordParentBatchKey` can stitch the `[hop]` joinPath without
+    needing to re-derive it from a BatchKey permit. `RecordBatchKeyResolution
+    .Resolved` carries `(SourceKey, LoaderRegistration, joinPath)`; the
+    `RecordTableField` / `RecordLookupTableField` construction site reads the
+    triple directly, and the `SourceKeyResolver.resolveRecordParent` +
+    `LoaderRegistrationResolver.resolve` calls on the non-`@sourceRow`
+    record-parent arm delete. 1553 tests green; the three pre-existing
+    `MultiSchemaQueryTest` failures unchanged.
+
 Still to land for Phase 3 completion:
 - **Producer site inlining**: `FieldBuilder` (`deriveSplitQueryBatchKey`,
   `deriveBatchKeyForResultType`, `resolveRecordParentBatchKey`,

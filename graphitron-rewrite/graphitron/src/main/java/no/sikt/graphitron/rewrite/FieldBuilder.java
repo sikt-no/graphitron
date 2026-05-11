@@ -2922,16 +2922,13 @@ class FieldBuilder {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
                 }
                 var resolved = (RecordBatchKeyResolution.Resolved) resolution;
-                var batchKey = resolved.batchKey();
                 var resolvedJoinPath = resolved.joinPath();
-                var recordParentSourceKey = SourceKeyResolver.resolveRecordParent(batchKey, tb);
-                var recordParentLoaderReg = LoaderRegistrationResolver.resolve(batchKey, tb);
                 if (isLookup) {
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                        recordParentSourceKey, recordParentLoaderReg, tfc.lookupMapping());
+                        resolved.sourceKey(), resolved.loaderRegistration(), tfc.lookupMapping());
                 }
                 yield new RecordTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                    recordParentSourceKey, recordParentLoaderReg);
+                    resolved.sourceKey(), resolved.loaderRegistration());
             }
             case ReturnTypeRef.ResultReturnType r -> recordFieldOrUnclassified(
                 fieldDef, parentTypeName, name, location, r, columnName, parentResultType, parentBackingClass);
@@ -3154,10 +3151,10 @@ class FieldBuilder {
     }
 
     /**
-     * Derives the {@link BatchKey} for a record-parent batched field
-     * ({@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableField},
-     * {@link no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField}) by reading the FK
-     * source columns from the join path's first {@link JoinStep.FkJoin} step.
+     * Derives the FK-based {@link SourceKey} + {@link LoaderRegistration} for a record-parent
+     * batched field ({@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableField},
+     * {@link no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField}) by reading the
+     * FK source columns from the join path's first {@link JoinStep.FkJoin} step.
      *
      * <p>Returns {@code null} (→ caller falls through to typed-accessor derivation) when:
      * <ul>
@@ -3166,30 +3163,54 @@ class FieldBuilder {
      *       (cannot generate a typed cast for key extraction)</li>
      * </ul>
      *
-     * <p>Otherwise returns a {@link BatchKey.RowKeyed} with the FK source-side columns.
-     * {@link BatchKey.RowKeyed} produces {@code RowN<...>} keys; {@code GeneratorUtils.buildFkRowKey}
-     * forks per parent {@link GraphitronType.ResultType} (jOOQ table record / jOOQ record / Java
-     * record / typed POJO) to extract scalar values and build the key via {@code DSL.row(...)}.
+     * <p>Otherwise returns the projection: {@link SourceKey.Wrap.Row} +
+     * {@link SourceKey.Reader.ColumnRead} (the catalog-FK row-keyed shape) with
+     * {@code fkJoin.sourceSideColumns()} as the entry columns, and
+     * {@link LoaderRegistration.Container#POSITIONAL_LIST} +
+     * {@link LoaderRegistration.Dispatch#LOAD_ONE}.
+     * {@code GeneratorUtils.buildFkRowKey} forks per parent
+     * {@link GraphitronType.ResultType} (jOOQ table record / jOOQ record / Java record / typed
+     * POJO) to extract scalar values and build the key via {@code DSL.row(...)}.
      */
     @DependsOnClassifierCheck(
         key = "fk-join.slots-oriented-source-and-target",
-        reliesOn = "Reads fkJoin.sourceSideColumns() to build a record-parent BatchKey.RowKeyed "
+        reliesOn = "Reads fkJoin.sourceSideColumns() to build a record-parent SourceKey.columns "
             + "key tuple over the parent-side columns of the FK, regardless of FK direction.")
-    private static BatchKey.RecordParentBatchKey deriveBatchKeyForResultType(
-            List<JoinStep> joinPath, GraphitronType.ResultType parentResultType) {
+    private static RecordParentSource deriveFkRecordParentSource(
+            List<JoinStep> joinPath, GraphitronType.ResultType parentResultType,
+            ReturnTypeRef.TableBoundReturnType tb) {
         if (joinPath.isEmpty() || !(joinPath.get(0) instanceof JoinStep.FkJoin fkJoin)) {
             return null;
         }
         if (parentResultType instanceof GraphitronType.PojoResultType prt && prt.fqClassName() == null) {
             return null;
         }
-        return new BatchKey.RowKeyed(fkJoin.sourceSideColumns());
+        boolean isList = tb.wrapper().isList();
+        SourceKey sourceKey = new SourceKey(
+            tb.table(),
+            fkJoin.sourceSideColumns(),
+            List.of(),
+            new SourceKey.Wrap.Row(),
+            isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
+            new SourceKey.Reader.ColumnRead());
+        LoaderRegistration loaderRegistration = new LoaderRegistration(
+            isList,
+            LoaderRegistration.Container.POSITIONAL_LIST,
+            LoaderRegistration.Dispatch.LOAD_ONE);
+        return new RecordParentSource(sourceKey, loaderRegistration);
     }
+
+    /**
+     * Builder-internal pair returned by {@link #deriveFkRecordParentSource}: the FK-arm or
+     * accessor-arm projection of a {@code @record}-parent table-bound field's source-side
+     * metadata. Pairs the two values so the producer computes both in one place.
+     */
+    private record RecordParentSource(SourceKey sourceKey, LoaderRegistration loaderRegistration) {}
 
     /**
      * Outcome of {@link #resolveRecordParentBatchKey} for a {@code @record}-parent table-bound
      * child field. Two arms; the caller exhausts them with a sealed switch and either projects
-     * the resolved {@link BatchKey.RecordParentBatchKey} into {@link RecordTableField} /
+     * the resolved {@link SourceKey} + {@link LoaderRegistration} into {@link RecordTableField} /
      * {@link RecordLookupTableField}, or surfaces the rejection as
      * {@link GraphitronField.UnclassifiedField}. Builder-internal sealed result per the
      * {@code rewrite-design-principles.adoc} rule on {@code Builder-step results are sealed}.
@@ -3201,36 +3222,32 @@ class FieldBuilder {
          * leaf-PK call-site convention) so {@link SplitRowsMethodEmitter}'s prelude reads the
          * target-side columns through {@link JoinStep.WithTarget} uniformly.
          */
-        record Resolved(BatchKey.RecordParentBatchKey batchKey, List<JoinStep> joinPath) implements RecordBatchKeyResolution {}
+        record Resolved(SourceKey sourceKey, LoaderRegistration loaderRegistration, List<JoinStep> joinPath) implements RecordBatchKeyResolution {}
         record Rejected(Rejection rejection) implements RecordBatchKeyResolution {}
     }
 
     /**
-     * Resolves the batch key for a {@code @record}-parent table-bound child field. Tries the FK
-     * derivation first (via {@link #deriveBatchKeyForResultType}); on null, attempts the typed-
-     * accessor derivation; on null again, returns the three-option AUTHOR_ERROR rejection. The
-     * helper is shared between the {@link RecordTableField} and {@link RecordLookupTableField}
-     * branches; {@code fieldKindLabel} parameterises only the leading clause of the rejection.
+     * Resolves the {@link SourceKey} + {@link LoaderRegistration} for a {@code @record}-parent
+     * table-bound child field. Tries the FK derivation first (via
+     * {@link #deriveFkRecordParentSource}); on null, attempts the typed-accessor derivation; on
+     * null again, returns the three-option AUTHOR_ERROR rejection. The helper is shared between
+     * the {@link RecordTableField} and {@link RecordLookupTableField} branches;
+     * {@code fieldKindLabel} parameterises only the leading clause of the rejection.
      */
     private RecordBatchKeyResolution resolveRecordParentBatchKey(
             String fieldName, ReturnTypeRef.TableBoundReturnType tb,
             List<JoinStep> joinPath, GraphitronType.ResultType parentResultType,
             String fieldKindLabel) {
-        var fkBk = deriveBatchKeyForResultType(joinPath, parentResultType);
-        if (fkBk != null) return new RecordBatchKeyResolution.Resolved(fkBk, joinPath);
+        var fkSource = deriveFkRecordParentSource(joinPath, parentResultType, tb);
+        if (fkSource != null) {
+            return new RecordBatchKeyResolution.Resolved(
+                fkSource.sourceKey(), fkSource.loaderRegistration(), joinPath);
+        }
 
-        var derived = deriveBatchKeyFromTypedAccessor(fieldName, tb, parentResultType);
+        var derived = deriveAccessorRecordParentSource(fieldName, tb, parentResultType);
         return switch (derived) {
-            case AccessorDerivation.Ok ok -> {
-                JoinStep.LiftedHop hop = switch (ok.batchKey()) {
-                    case BatchKey.AccessorKeyedSingle ars -> ars.hop();
-                    case BatchKey.AccessorKeyedMany arm -> arm.hop();
-                    case BatchKey.RowKeyed _, BatchKey.LifterLeafKeyed _, BatchKey.LifterPathKeyed _ -> throw new IllegalStateException(
-                        "deriveBatchKeyFromTypedAccessor must produce only AccessorKeyedSingle or "
-                        + "AccessorKeyedMany; got " + ok.batchKey().getClass().getSimpleName());
-                };
-                yield new RecordBatchKeyResolution.Resolved(ok.batchKey(), List.of(hop));
-            }
+            case AccessorDerivation.Ok ok -> new RecordBatchKeyResolution.Resolved(
+                ok.sourceKey(), ok.loaderRegistration(), List.of(ok.hop()));
             case AccessorDerivation.Ambiguous a -> new RecordBatchKeyResolution.Rejected(
                 Rejection.structural(a.message()));
             case AccessorDerivation.CardinalityMismatch m -> new RecordBatchKeyResolution.Rejected(
@@ -3241,23 +3258,26 @@ class FieldBuilder {
     }
 
     /**
-     * Outcome of {@link #deriveBatchKeyFromTypedAccessor}. Four arms, all builder-internal:
+     * Outcome of {@link #deriveAccessorRecordParentSource}. Four arms, all builder-internal:
      * {@link Ok} when reflection finds exactly one matching accessor with aligned cardinality;
      * {@link None} when no matching accessor exists at all (callers fall through to the existing
      * three-option AUTHOR_ERROR); {@link Ambiguous} when two or more accessors match the
      * name-and-shape rule; {@link CardinalityMismatch} when at least one accessor matches name
      * + element table but the field/accessor cardinalities don't align (and no other accessor
-     * matched cleanly).
+     * matched cleanly). The {@link Ok} arm carries the resolved {@link SourceKey} +
+     * {@link LoaderRegistration} pair plus the {@link JoinStep.LiftedHop} the orchestrator
+     * needs to assemble the {@code joinPath} for the surrounding
+     * {@link RecordBatchKeyResolution.Resolved}.
      */
     private sealed interface AccessorDerivation {
-        record Ok(BatchKey.RecordParentBatchKey batchKey) implements AccessorDerivation {}
+        record Ok(SourceKey sourceKey, LoaderRegistration loaderRegistration, JoinStep.LiftedHop hop) implements AccessorDerivation {}
         record None() implements AccessorDerivation {}
         record Ambiguous(String message) implements AccessorDerivation {}
         record CardinalityMismatch(String message) implements AccessorDerivation {}
     }
 
     /**
-     * Per-method match outcome inside {@link #deriveBatchKeyFromTypedAccessor}'s reflection
+     * Per-method match outcome inside {@link #deriveAccessorRecordParentSource}'s reflection
      * loop. Cardinality alignment is part of the match rule, not a downstream filter, so the
      * reduction over the collected matches is a single pass over identity rather than a
      * predicate-and-filter chain.
@@ -3281,14 +3301,16 @@ class FieldBuilder {
             + "value type as Record without defending against a wider declared accessor return.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "accessor-rowkey-cardinality-matches-field",
-        description = "Returns AccessorKeyedSingle only when "
-            + "field.returnType().wrapper().isList() is false; returns AccessorKeyedMany only "
-            + "when it is true; mismatched cells become AccessorDerivation.CardinalityMismatch "
-            + "rejections. TypeFetcherGenerator.buildRecordBasedDataFetcher's "
+        description = "Returns SourceKey.Cardinality.ONE only when "
+            + "field.returnType().wrapper().isList() is false (Single accessor on a single field); "
+            + "returns Cardinality.MANY with LOAD_MANY dispatch only when it is true (Many "
+            + "accessor on a list field); mismatched cells become "
+            + "AccessorDerivation.CardinalityMismatch rejections. "
+            + "TypeFetcherGenerator.buildRecordBasedDataFetcher's "
             + "((dispatch == LOAD_MANY || !isList) → valueType = Record) rule depends on this; "
-            + "an AccessorKeyedMany on a non-list field would emit code expecting List<Record> "
-            + "from a loadMany that supplies Record, miscompiling generated *Fetchers.")
-    private AccessorDerivation deriveBatchKeyFromTypedAccessor(
+            + "an accessor-many SourceKey on a non-list field would emit code expecting "
+            + "List<Record> from a loadMany that supplies Record, miscompiling generated *Fetchers.")
+    private AccessorDerivation deriveAccessorRecordParentSource(
             String fieldName, ReturnTypeRef.TableBoundReturnType tb,
             GraphitronType.ResultType parentResultType) {
         // Resolve parent backing class via sealed switch over GraphitronType.ResultType's four
@@ -3344,27 +3366,45 @@ class FieldBuilder {
             return new AccessorDerivation.CardinalityMismatch(joined);
         }
 
-        // Exactly one resolvable match; build the corresponding permit. The accessor's
-        // DataLoader key tuple equals the element table's PK tuple by classifier construction
-        // (Invariant Acc-1), so each slot is a LifterSlot whose single ColumnRef is the PK col.
+        // Exactly one resolvable match; build the corresponding SourceKey + LoaderRegistration
+        // pair. The accessor's DataLoader key tuple equals the element table's PK tuple by
+        // classifier construction (Invariant Acc-1), so each slot is a LifterSlot whose single
+        // ColumnRef is the PK col. Wrap is Record (the accessor returns a TableRecord, projected
+        // as RecordN<...> keys at emit time); the container axis is always POSITIONAL_LIST and
+        // the dispatch fork is Single → LOAD_ONE, Many → LOAD_MANY (the loadMany contract that
+        // emits one Record per element-PK).
         List<JoinSlot.LifterSlot> hopSlots = expectedTable.primaryKeyColumns().stream()
             .map(JoinSlot.LifterSlot::new)
             .toList();
         var hop = new JoinStep.LiftedHop(expectedTable, hopSlots, fieldName + "_0");
         AccessorMatch only = resolvable.get(0);
-        if (only instanceof AccessorMatch.Single s) {
-            var ref = new AccessorRef(
-                ClassName.bestGuess(parentFqClassName),
-                s.method().getName(),
-                ClassName.bestGuess(s.elementClass().getName()));
-            return new AccessorDerivation.Ok(new BatchKey.AccessorKeyedSingle(hop, ref));
-        }
-        var mm = (AccessorMatch.Many) only;
+        boolean accessorIsMany = only instanceof AccessorMatch.Many;
+        java.lang.reflect.Method accessorMethod = switch (only) {
+            case AccessorMatch.Single s -> s.method();
+            case AccessorMatch.Many mm -> mm.method();
+            case AccessorMatch.CardinalityMismatch _ -> throw new IllegalStateException("filtered above");
+        };
+        Class<?> accessorElementClass = switch (only) {
+            case AccessorMatch.Single s -> s.elementClass();
+            case AccessorMatch.Many mm -> mm.elementClass();
+            case AccessorMatch.CardinalityMismatch _ -> throw new IllegalStateException("filtered above");
+        };
         var ref = new AccessorRef(
             ClassName.bestGuess(parentFqClassName),
-            mm.method().getName(),
-            ClassName.bestGuess(mm.elementClass().getName()));
-        return new AccessorDerivation.Ok(new BatchKey.AccessorKeyedMany(hop, ref));
+            accessorMethod.getName(),
+            ClassName.bestGuess(accessorElementClass.getName()));
+        SourceKey sourceKey = new SourceKey(
+            tb.table(),
+            expectedTable.primaryKeyColumns(),
+            List.of(hop),
+            new SourceKey.Wrap.Record(),
+            accessorIsMany ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
+            new SourceKey.Reader.AccessorCall(ref));
+        LoaderRegistration loaderRegistration = new LoaderRegistration(
+            false,
+            LoaderRegistration.Container.POSITIONAL_LIST,
+            accessorIsMany ? LoaderRegistration.Dispatch.LOAD_MANY : LoaderRegistration.Dispatch.LOAD_ONE);
+        return new AccessorDerivation.Ok(sourceKey, loaderRegistration, hop);
     }
 
     /**
