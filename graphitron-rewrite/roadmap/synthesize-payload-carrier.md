@@ -1,7 +1,7 @@
 ---
 id: R75
 title: "Plain payload types for DML mutations"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 7
 theme: mutations-errors
@@ -296,7 +296,7 @@ record SingleRecordTableField(
 ```
 
 The permit carries `SourceKey` without `LoaderRegistration`; the
-`source-key.result-row-walk-cardinality-matches-upstream-result` invariant
+`source-key.result-row-walk-wrap-record-empty-path` invariant
 declared on `SourceKey`'s compact constructor (R75's contribution to R38's
 invariant inventory) is what pins the single-record shape at the model level.
 It does *not* implement `BatchKeyField`; the dispatch-axes split between
@@ -720,9 +720,12 @@ mutations.
 **Audit-tier:** R75's contributions to the load-bearing-check inventory
 are two new keys:
 
-- `source-key.result-row-walk-cardinality-matches-upstream-result`
-  (cardinality invariant on `SourceKey`'s compact constructor when
-  `reader == Reader.ResultRowWalk`).
+- `source-key.result-row-walk-wrap-record-empty-path` (structural
+  invariant on `SourceKey`'s compact constructor when
+  `reader == Reader.ResultRowWalk`: forces `wrap == Wrap.Record` and
+  `path` empty, so the data-field fetcher's typed source read via
+  `SourceKey.wrap × columns` can type the upstream `Result<RecordN<...>>`
+  against the DML's input-table PK columns).
 - `mutation-dml-record-field.data-table-equals-input-table` (table-equality
   produced at `FieldBuilder.classifyMutationField`'s admission step,
   consumed at the mutation-fetcher RETURNING emit and the data-field
@@ -949,12 +952,15 @@ new `SingleRecordCarrierServiceTest` parameterising over
 - The mutation classifier rejects table-equality mismatches with the
   per-mismatch message naming the SDL carrier, its data field's element
   table, and the DML's input table.
-- `PojoResultType` ships split into `Backed(ClassName)` / `NoBacking()`;
-  no-`@record` plain SDL Objects passing the trigger promote to
-  `NoBacking`; authored `@record` carriers (with or without className)
-  promote to `Backed`. Downstream consumers that previously read
-  `fqClassName` and checked for `null` switch over the two arms
-  exhaustively.
+- `PojoResultType` ships split into `Backed(ClassName)` / `NoBacking()`.
+  `Backed` requires a non-null `ClassName`; `NoBacking` carries no
+  className. The two consumers of `@record`-with-className resolution
+  in `TypeBuilder.buildResultType` route accordingly: plain-class
+  backing yields `Backed(className)`; trigger-promoted plain SDL
+  Objects and `@record` declarations whose `className` argument is
+  unset both yield `NoBacking` (no class to reflect on in either case).
+  Downstream consumers that previously read `fqClassName` and checked
+  for `null` switch over the two arms exhaustively.
 - `SingleRecordCarrierDmlTest`'s execution-tier driver passes against
   the sakila testcontainer for INSERT / UPDATE / UPSERT, verifying the
   two-step emit (DML in transaction + follow-up SELECT, both halves
@@ -977,7 +983,7 @@ new `SingleRecordCarrierServiceTest` parameterising over
 - Authored carriers with `@record(record: {className: ...})` are
   unaffected (R12 scope unchanged).
 - R75's contributions to the load-bearing-check inventory —
-  `source-key.result-row-walk-cardinality-matches-upstream-result` and
+  `source-key.result-row-walk-wrap-record-empty-path` and
   `mutation-dml-record-field.data-table-equals-input-table` — declared,
   consumed, and clean under `LoadBearingGuaranteeAuditTest`.
 

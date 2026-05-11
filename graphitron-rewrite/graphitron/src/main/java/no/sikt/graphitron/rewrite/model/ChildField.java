@@ -39,7 +39,7 @@ public sealed interface ChildField extends GraphitronField
      * permit: ChildField.SingleRecordTableField", for the design rationale.
      *
      * <p>The {@link #sourceKey()} component is pinned by the {@code SourceKey} compact-constructor
-     * invariant {@code source-key.result-row-walk-cardinality-matches-upstream-result} to use
+     * invariant {@code source-key.result-row-walk-wrap-record-empty-path} to use
      * {@link SourceKey.Reader.ResultRowWalk} with {@link SourceKey.Wrap.Record}. {@link #joinPath()},
      * {@link #filters()}, {@link #orderBy()}, and {@link #pagination()} are structurally empty/None
      * for this permit (no navigation, no WHERE, no ordering, no pagination); accessor methods return
