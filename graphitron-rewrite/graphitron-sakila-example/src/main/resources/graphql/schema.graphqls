@@ -1172,6 +1172,16 @@ type Mutation {
     updateFilmPayload(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE)
     upsertFilmPayload(in: FilmUpsertInput!): FilmPayload @mutation(typeName: UPSERT)
 
+    # R134 compilation-tier regression: bulk @table input ([FilmCreateInput!]!) returning a
+    # single-cardinality payload. dataIsList = false because the mutation's direct return is
+    # FilmPayload (not [FilmPayload!]!); the empty-list short-circuit therefore must call
+    # DSL.using(...).newRecord(<pk>), not newResult(<pk>) — a regression to newResult(...) emits
+    # Result<Record> into a Record1<...> local and fails to compile against real jOOQ in this
+    # module. The pipeline-tier code-string assertion that previously pinned this branch was
+    # banned by rewrite-design-principles "Code-string assertions on generated method bodies are
+    # banned at every tier"; the compilation tier here owns the regression instead.
+    createFilmsPayload(in: [FilmCreateInput!]!): FilmPayload @mutation(typeName: INSERT)
+
     # R12 fixture (error-handling-parity.md): mutation-side @error end-to-end. The
     # @service-backed mutation classifies as MutationServiceRecordField (same shape that
     # BehandleSakPayload took in production); the per-fetcher try/catch wrapper routes

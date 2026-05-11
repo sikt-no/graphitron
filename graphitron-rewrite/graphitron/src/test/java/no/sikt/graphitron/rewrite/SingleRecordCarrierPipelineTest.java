@@ -342,48 +342,6 @@ class SingleRecordCarrierPipelineTest {
         };
     }
 
-    // ===== R134 emission regression: empty-input short-circuit constructor =====
-
-    @Test
-    void bulkInput_singlePayloadCarrier_insertEmptyShortCircuitBuildsEmptyRecordNotResult() {
-        // R134: with a bulk @table input ([FilmInput!]!) and a single-cardinality payload return
-        // (FilmPayload, not [FilmPayload!]!), the fetcher's local payload type is a single
-        // Record1<...> (because dataIsList = f.returnType().wrapper().isList() is false). The
-        // empty-list short-circuit must therefore call DSL.using(...).newRecord(<pkProjection>)
-        // — newResult(...) returns Result<Record>, which is not assignable to Record1<...> and
-        // produces a compile error in the generated source. Distinct from the projected-list
-        // arm in FetcherPipelineTest, where the local is Result<Record> and newResult(...) is
-        // correct.
-        //
-        // Scoped to INSERT only: bulk UPDATE and UPSERT on MutationDmlRecordField are not yet
-        // implemented (the chain builders throw before this branch runs). When those land, this
-        // test should be parameterised over INSERT / UPDATE / UPSERT.
-        var sdl = payloadDml(DmlKind.INSERT, "type FilmPayload { films: [Film!] }");
-        var mutationFetchers = TypeFetcherGenerator.generate(
-                TestSchemaHelper.buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals("MutationFetchers"))
-            .findFirst()
-            .orElseThrow();
-        var fetcherMethod = mutationFetchers.methodSpecs().stream()
-            .filter(m -> m.name().equals(mutationName(DmlKind.INSERT)))
-            .findFirst()
-            .orElseThrow();
-        String body = fetcherMethod.code().toString();
-        assertThat(body)
-            .as("bulk arm casts in to List<Map<?,?>>")
-            .contains("java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument")
-            .as("empty-list short-circuit constructs an empty single Record1<...>, not a Result<Record>")
-            .contains(".newRecord(")
-            .as("newResult(...) belongs to the list-payload arm; the single-record arm must not emit it")
-            .doesNotContain(".newResult(");
-        // The local's static type pins the contract: payloadType is Record1<...> when the
-        // mutation's direct return is single. If a refactor changed dataIsList semantics, this
-        // pin would surface the divergence.
-        assertThat(fetcherMethod.returnType().toString())
-            .as("DataFetcherResult parameter is a single org.jooq.Record1 (not Result<Record1<...>>)")
-            .startsWith("graphql.execution.DataFetcherResult<org.jooq.Record1<");
-    }
-
     // ===== Dispatch-arm structural regression pin =====
 
     @Test
