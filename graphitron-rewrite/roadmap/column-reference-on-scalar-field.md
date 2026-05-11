@@ -1,7 +1,7 @@
 ---
 id: R42
 title: "Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)"
-status: Spec
+status: Ready
 bucket: stubs
 priority: 4
 theme: model-cleanup
