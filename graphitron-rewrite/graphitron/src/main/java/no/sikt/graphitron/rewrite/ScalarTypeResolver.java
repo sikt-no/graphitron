@@ -344,23 +344,50 @@ public final class ScalarTypeResolver {
     /**
      * Resolves a {@code @scalarType(scalar:)} directive value. The value is a fully-qualified
      * Java reference to a {@code public static final GraphQLScalarType} field; the resolver
-     * splits at the last {@code .} into a class FQN and a field name, then delegates to
+     * splits at the last {@code .} via {@link #parseDirectiveValue(String)} and delegates to
      * {@link #resolveFromConstantFqn(String, String, ClassLoader)}.
      *
-     * <p>A value with no {@code .} (e.g. just {@code "Scalars"}) is treated as a
-     * {@link ScalarResolution.Rejected.ClassNotFound} pointing at the value as written, since
-     * the per-arm LSP fix-it for {@code ClassNotFound} suggests classes on the classpath. A
-     * value with a {@code .} that names a missing class or field surfaces the appropriate
-     * downstream rejection arm.
+     * <p>A value with no usable dot (e.g. just {@code "Scalars"}, or a trailing {@code "."}) is
+     * treated as a {@link ScalarResolution.Rejected.ClassNotFound} pointing at the value as
+     * written, since the per-arm LSP fix-it for {@code ClassNotFound} suggests classes on the
+     * classpath. A value with a usable dot that names a missing class or field surfaces the
+     * appropriate downstream rejection arm.
      */
     public static ScalarResolution resolveFromDirectiveValue(String scalarFqn, ClassLoader loader) {
+        return switch (parseDirectiveValue(scalarFqn)) {
+            case ParsedDirectiveValue.Malformed m ->
+                new ScalarResolution.Rejected.ClassNotFound(m.value());
+            case ParsedDirectiveValue.Parsed p ->
+                resolveFromConstantFqn(p.classFqn(), p.fieldName(), loader);
+        };
+    }
+
+    /**
+     * Parses a {@code @scalarType(scalar:)} directive value into its class-FQN + field-name
+     * components, or surfaces a {@link ParsedDirectiveValue.Malformed} arm naming the original
+     * value when the shape is wrong (no dot, leading dot, trailing dot).
+     *
+     * <p>Factored out so the LSP can validate the shape without constructing a classloader. Both
+     * the LSP diagnostic and {@link #resolveFromDirectiveValue} switch on the same sealed result;
+     * tightening the shape rule (e.g. rejecting consecutive dots later) lives in one place.
+     */
+    public static ParsedDirectiveValue parseDirectiveValue(String scalarFqn) {
         int dot = scalarFqn.lastIndexOf('.');
         if (dot <= 0 || dot == scalarFqn.length() - 1) {
-            return new ScalarResolution.Rejected.ClassNotFound(scalarFqn);
+            return new ParsedDirectiveValue.Malformed(scalarFqn);
         }
-        String classFqn = scalarFqn.substring(0, dot);
-        String fieldName = scalarFqn.substring(dot + 1);
-        return resolveFromConstantFqn(classFqn, fieldName, loader);
+        return new ParsedDirectiveValue.Parsed(scalarFqn.substring(0, dot), scalarFqn.substring(dot + 1));
+    }
+
+    /**
+     * Outcome of parsing a {@code @scalarType(scalar:)} value into its class-FQN + field-name
+     * components. The {@link Malformed} arm carries the value as written; the {@link Parsed}
+     * arm carries the split components ready for {@link #resolveFromConstantFqn} or a downstream
+     * catalog lookup.
+     */
+    public sealed interface ParsedDirectiveValue {
+        record Parsed(String classFqn, String fieldName) implements ParsedDirectiveValue {}
+        record Malformed(String value) implements ParsedDirectiveValue {}
     }
 
     /**
@@ -423,40 +450,24 @@ public final class ScalarTypeResolver {
     }
 
     /**
-     * Returns {@code true} when the SDL name is recognised by the extended-scalars convention
-     * table. Recognition is independent of whether the constant is on the consumer's classpath;
-     * use {@link #resolveByConvention(String, ClassLoader)} when the answer depends on classpath
-     * presence.
+     * The full extended-scalars convention table as an immutable map from SDL scalar name to
+     * static-field FQN. Callers project as needed:
+     *
+     * <ul>
+     *   <li>"Is this name in the table?" — {@code conventionTable().containsKey(name)}.</li>
+     *   <li>"What FQN does this name resolve to?" — {@code conventionTable().get(name)} (returns
+     *       {@code null} for misses; callers wanting an {@code Optional} wrap at the call site).</li>
+     *   <li>"What FQNs does the table cover, deduplicated?" —
+     *       {@code Set.copyOf(new LinkedHashSet<>(conventionTable().values()))}.</li>
+     * </ul>
+     *
+     * <p>One accessor, three projections; alternatives would invite a fourth accessor when the
+     * next consumer needs an inverse lookup or a name-with-FQN pair. Resolution-independent: when
+     * the caller wants classpath-aware resolution, route through
+     * {@link #resolveByConvention(String, ClassLoader)} instead.
      */
-    public static boolean hasConventionEntry(String scalarName) {
-        return CONVENTION_TABLE.containsKey(scalarName);
-    }
-
-    /**
-     * Names in the convention table, in declaration order. Used by drift tests that compare the
-     * authored table against {@code ExtendedScalars}'s reflected field set.
-     */
-    public static Set<String> conventionTableNames() {
-        return CONVENTION_TABLE.keySet();
-    }
-
-    /**
-     * Static-field FQNs the convention table covers, deduplicated (both {@code BigDecimal} and
-     * {@code GraphQLBigDecimal} map to the same FQN; the returned set drops the duplicate).
-     */
-    public static Set<String> conventionTableFqns() {
-        return Set.copyOf(new java.util.LinkedHashSet<>(CONVENTION_TABLE.values()));
-    }
-
-    /**
-     * The static-field FQN the convention table maps {@code scalarName} to, or {@code null} when
-     * the name is not in the table. Resolution-independent: cheaper than
-     * {@link #resolveByConvention(String, ClassLoader)} when the caller only needs the FQN and
-     * has no classloader at hand (e.g. the LSP, which suggests the FQN as a completion candidate
-     * without trying to load the class).
-     */
-    public static String conventionTableFqnFor(String scalarName) {
-        return CONVENTION_TABLE.get(scalarName);
+    public static Map<String, String> conventionTable() {
+        return CONVENTION_TABLE;
     }
 
     /**

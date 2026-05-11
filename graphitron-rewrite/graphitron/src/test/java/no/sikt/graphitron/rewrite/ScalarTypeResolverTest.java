@@ -273,14 +273,14 @@ class ScalarTypeResolverTest {
     // ===== Phase 3: convention layer =====
 
     @Test
-    void hasConventionEntry_recognisesBigDecimal() {
-        assertThat(ScalarTypeResolver.hasConventionEntry("BigDecimal")).isTrue();
-        assertThat(ScalarTypeResolver.hasConventionEntry("GraphQLBigDecimal")).isTrue();
+    void conventionTable_recognisesBigDecimal() {
+        assertThat(ScalarTypeResolver.conventionTable()).containsKey("BigDecimal");
+        assertThat(ScalarTypeResolver.conventionTable()).containsKey("GraphQLBigDecimal");
     }
 
     @Test
-    void hasConventionEntry_rejectsUnknownName() {
-        assertThat(ScalarTypeResolver.hasConventionEntry("NotAnExtendedScalar")).isFalse();
+    void conventionTable_rejectsUnknownName() {
+        assertThat(ScalarTypeResolver.conventionTable()).doesNotContainKey("NotAnExtendedScalar");
     }
 
     @Test
@@ -350,7 +350,8 @@ class ScalarTypeResolverTest {
             reflectedFqns.add(cls.getName() + "." + f.getName());
         }
 
-        java.util.Set<String> covered = ScalarTypeResolver.conventionTableFqns();
+        java.util.Set<String> covered =
+            java.util.Set.copyOf(new java.util.LinkedHashSet<>(ScalarTypeResolver.conventionTable().values()));
         java.util.Set<String> exclusions = java.util.Set.of(
             // Coercing<Object, Object> — graphitron's resolver treats Object as unbound. Consumers
             // wanting JSON or unstructured Object should declare a typed wrapper and reach for
@@ -375,7 +376,7 @@ class ScalarTypeResolverTest {
         // Inverse direction: any FQN we author must actually exist on the library at the resolver's
         // declared version. Phantom entries (typo, library rename) surface here as ClassNotFound or
         // FieldNotFound rejections instead of being discovered by a consumer.
-        for (String name : ScalarTypeResolver.conventionTableNames()) {
+        for (String name : ScalarTypeResolver.conventionTable().keySet()) {
             ScalarResolution result = ScalarTypeResolver.resolveByConvention(name, LOADER);
             assertThat(result)
                 .as("convention entry '%s' must resolve against extended-scalars on the test classpath", name)
