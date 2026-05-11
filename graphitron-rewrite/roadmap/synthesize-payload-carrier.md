@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 7
 theme: mutations-errors
-depends-on: [unify-rowsmethodname]
+depends-on: []
 ---
 
 # Plain payload types for DML mutations
