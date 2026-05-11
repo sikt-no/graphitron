@@ -16,8 +16,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R131` | Singular ID! @nodeId classifier emits Reference variants on same-table case | In Review | [plan](singular-nodeid-same-table-classification.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
+| `R134` | Fix mutation empty-input short-circuit to use newRecord for single-record payloads | Ready | [plan](mutation-empty-input-short-circuit-newrecord.md) |
 | `R132` | Move leaf-coverage report verification off local builds | Ready | [plan](leaf-coverage-verify-off-local.md) |
-| `R134` | Fix mutation empty-input short-circuit to use newRecord for single-record payloads | In Review | [plan](mutation-empty-input-short-circuit-newrecord.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready | [plan](tablemethod-child-table-bound.md) |
 | `R130` | Lift reference-field deferral on @mutation inputs | Spec | [plan](composite-reference-in-mutation-input.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
