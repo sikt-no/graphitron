@@ -23,6 +23,50 @@ public sealed interface ChildField extends GraphitronField
             ChildField.ErrorsField {
 
     /**
+     * R75 / Phase 1 — the single data field on a payload carrier (an SDL Object passing
+     * {@link no.sikt.graphitron.rewrite.BuildContext#unwrapPassthroughPayload tryResolveSingleRecordCarrier})
+     * for a record-returning DML mutation. The parent mutation classifies as
+     * {@code MutationField.MutationDmlRecordField}; its fetcher returns
+     * {@code Result<RecordN<...>>} (single-row), and this data field's fetcher reads
+     * {@code env.getSource()} directly to walk into that result row.
+     *
+     * <p>Implements {@link TableTargetField} for structural uniformity with the existing
+     * {@code RecordTableField} family; does not implement {@link BatchKeyField} because there
+     * is no DataLoader setup — the single source row is in hand at fetch time, not batched
+     * across multiple parent rows. See {@code synthesize-payload-carrier.md}, "New sibling
+     * permit: ChildField.SingleRecordTableField", for the design rationale.
+     *
+     * <p>The {@link #sourceKey()} component is pinned by the {@code SourceKey} compact-constructor
+     * invariant {@code source-key.result-row-walk-cardinality-matches-upstream-result} to use
+     * {@link SourceKey.Reader.ResultRowWalk} with {@link SourceKey.Wrap.Record}. {@link #joinPath()},
+     * {@link #filters()}, {@link #orderBy()}, and {@link #pagination()} are structurally empty/None
+     * for this permit (no navigation, no WHERE, no ordering, no pagination); accessor methods return
+     * empty/{@code None}/{@code null} rather than storing the values, encoding the invariant in the
+     * type system per the "narrow component types" principle.
+     */
+    record SingleRecordTableField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        SourceKey sourceKey
+    ) implements TableTargetField {
+
+        public SingleRecordTableField {
+            if (!(sourceKey.reader() instanceof SourceKey.Reader.ResultRowWalk)) {
+                throw new IllegalArgumentException(
+                    "SingleRecordTableField requires SourceKey with Reader.ResultRowWalk; got "
+                    + sourceKey.reader().getClass().getSimpleName());
+            }
+        }
+
+        @Override public List<JoinStep> joinPath() { return List.of(); }
+        @Override public List<WhereFilter> filters() { return List.of(); }
+        @Override public OrderBySpec orderBy() { return new OrderBySpec.None(); }
+        @Override public PaginationSpec pagination() { return null; }
+    }
+
+    /**
      * Capability sealed sub-interface (R75): the emitted fetcher value is the literal
      * {@code ($T env) -> env.getSource()} for every permit. {@link ConstructorField} and
      * {@link NestingField} pass the parent record through to a {@code @record}-typed or
@@ -173,7 +217,8 @@ public sealed interface ChildField extends GraphitronField
                 ChildField.LookupTableField, ChildField.SplitLookupTableField,
                 ChildField.TableInterfaceField,
                 ChildField.ServiceTableField,
-                ChildField.RecordTableField, ChildField.RecordLookupTableField {
+                ChildField.RecordTableField, ChildField.RecordLookupTableField,
+                ChildField.SingleRecordTableField {
 
         ReturnTypeRef.TableBoundReturnType returnType();
         List<JoinStep> joinPath();

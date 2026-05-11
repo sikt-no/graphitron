@@ -259,7 +259,14 @@ public class TypeFetcherGenerator {
                     "nodeidreferencefield-join-projection-form")),
             Map.entry(ChildField.TableMethodField.class,
                 deferredFor(ChildField.TableMethodField.class,
-                    "TableMethodField not yet implemented", "tablemethod-scalar-return"))
+                    "TableMethodField not yet implemented", "tablemethod-scalar-return")),
+            Map.entry(ChildField.SingleRecordTableField.class,
+                deferredFor(ChildField.SingleRecordTableField.class,
+                    "SingleRecordTableField (R75 single-record DML carrier data field) is not yet "
+                    + "emitted; the permit is added structurally so the model can carry it, but the "
+                    + "fetcher emit (env.getSource() walk into Result<RecordN<...>>) and the "
+                    + "two-step DML root fetcher land in R75's intrusive Phase 1 work.",
+                    "synthesize-payload-carrier"))
         );
 
     private static Rejection.Deferred deferredFor(
@@ -433,6 +440,7 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
+                case ChildField.SingleRecordTableField f        -> builder.addMethod(stub(f));
                 case ChildField.InterfaceField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
