@@ -163,12 +163,11 @@ final class MutationInputResolver {
                     }
                     yield null;
                 }
-                // R75 Phase 1: PlainObjectType candidates that fail a trigger condition land here.
-                // Substitute the per-condition reason from the unwrap so the validator surfaces the
-                // same criterion the classifier checked, rather than the generic "not yet supported"
-                // line that doesn't tell the author what to fix.
-                if (ctx != null && ctx.unwrapPassthroughPayload(s.returnTypeName())
-                        instanceof no.sikt.graphitron.rewrite.model.PassthroughResolution.Rejected rej) {
+                // R75 Phase 1: candidates whose carrier types failed to promote land here as a
+                // ScalarReturnType (no PojoResultType registered). Surface the per-condition reason
+                // from the trigger so the validator names the same criterion the classifier checked.
+                if (ctx != null && ctx.tryResolveSingleRecordCarrier(s.returnTypeName())
+                        instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Rejected rej) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + s.returnTypeName() + "': " + rej.reason()
                         + "; or author a carrier with @record(record: {className: ...})";
@@ -201,13 +200,13 @@ final class MutationInputResolver {
                         + r.returnTypeName() + "' (list of @record) is not yet supported; "
                         + "use a single @record payload, an ID, or a @table type";
                 }
-                // R75 Phase 1: PojoResultType(_, _, null) candidates that fail a trigger condition
+                // R75 Phase 1: PojoResultType.NoBacking candidates that fail a trigger condition
                 // land here (not in ScalarReturnType, because the classifier still recognises the
                 // type as a ResultType). Surface the per-condition reason, same shape as the
                 // ScalarReturnType arm above; an authored carrier with className is the redirect.
                 if (r.fqClassName() == null && ctx != null
-                        && ctx.unwrapPassthroughPayload(r.returnTypeName())
-                            instanceof no.sikt.graphitron.rewrite.model.PassthroughResolution.Rejected rej) {
+                        && ctx.tryResolveSingleRecordCarrier(r.returnTypeName())
+                            instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Rejected rej) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + r.returnTypeName() + "': " + rej.reason()
                         + "; or author a carrier with @record(record: {className: ...})";

@@ -35,8 +35,8 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.JoinStep.ConditionJoin;
 import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
 import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.PassthroughInfo;
-import no.sikt.graphitron.rewrite.model.PassthroughResolution;
+import no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution;
+import no.sikt.graphitron.rewrite.model.SingleRecordCarrierShape;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import org.jooq.ForeignKey;
 import org.slf4j.Logger;
@@ -405,20 +405,14 @@ class BuildContext {
      * Converts a type name and wrapper into the correct {@link ReturnTypeRef} variant by
      * consulting the populated {@link #types} map.
      *
-     * <p>Short-circuits via {@link #unwrapPassthroughPayload}: when the target is a
-     * passthrough-shaped Object, the returned reference is the data field's
-     * {@link ReturnTypeRef.TableBoundReturnType} (the typed inner shape) rather than the
-     * payload's wire-shape wrapper. Downstream consumers see only the existing four arms;
-     * the wire-format wrap is resolved at this boundary, never carried in the model. The
-     * outer {@code wrapper} parameter (the SDL field's wrapper around the payload type) is
-     * discarded; the inner shape carries the data field's own wrapper.
+     * <p>R75 Phase 1: single-record DML carriers are not short-circuited here. Plain SDL
+     * Objects that pass {@link #tryResolveSingleRecordCarrier} are promoted to
+     * {@link GraphitronType.PojoResultType.NoBacking} during type classification (see
+     * {@link TypeBuilder#promoteSingleRecordCarriers}), so they resolve through the
+     * {@code target instanceof ResultType} arm below and return a
+     * {@link ReturnTypeRef.ResultReturnType} the mutation classifier reads structurally.
      */
     ReturnTypeRef resolveReturnType(String targetTypeName, FieldWrapper wrapper) {
-        if (unwrapPassthroughPayload(targetTypeName) instanceof PassthroughResolution.Ok ok) {
-            var p = ok.info();
-            return new ReturnTypeRef.TableBoundReturnType(
-                p.dataElementName(), p.dataTable(), p.dataWrapper());
-        }
         GraphitronType target = types.get(targetTypeName);
         if (target instanceof TableBackedType tbt)
             return new ReturnTypeRef.TableBoundReturnType(targetTypeName, tbt.table(), wrapper);
@@ -443,8 +437,8 @@ class BuildContext {
      *
      * <p>Lives on {@link BuildContext} (rather than the field-builder pipeline) so non-builder
      * sites can compute a wrapper without holding a {@code FieldBuilder} reference. R75's
-     * {@link #unwrapPassthroughPayload} is one such caller — the data field's wrapper has to be
-     * computed at trigger time, before the field-builder pipeline runs.
+     * {@link #tryResolveSingleRecordCarrier} is one such caller — the data field's wrapper has
+     * to be computed at trigger time, before the field-builder pipeline runs.
      */
     FieldWrapper buildWrapper(GraphQLFieldDefinition fieldDef) {
         GraphQLType fieldType = fieldDef.getType();
@@ -469,18 +463,19 @@ class BuildContext {
     }
 
     /**
-     * Trigger function for passthrough payloads (R75 Phase 1). A pure function over
-     * {@link #schema} and {@link #types} returning a sealed {@link PassthroughResolution}
+     * Trigger function for single-record DML carriers (R75 Phase 1). A pure function over
+     * {@link #schema} and {@link #types} returning a sealed {@link SingleRecordCarrierResolution}
      * that callers route on:
      *
      * <ul>
-     *   <li>{@link PassthroughResolution.Ok} — admit the type as a passthrough payload;
-     *       carries the resolved {@link PassthroughInfo}.</li>
-     *   <li>{@link PassthroughResolution.NotCandidate} — type is not a passthrough-shaped
-     *       Object (carries {@code @table}, {@code @record} with {@code className}, is an
-     *       interface / union / enum / scalar, etc.); consumers fall through silently.</li>
-     *   <li>{@link PassthroughResolution.Rejected} — type is a candidate (no domain
-     *       directive, or {@code @record} without {@code className}) but failed a per-condition
+     *   <li>{@link SingleRecordCarrierResolution.Ok} — admit the type as a single-record DML
+     *       carrier; carries the resolved {@link SingleRecordCarrierShape}.</li>
+     *   <li>{@link SingleRecordCarrierResolution.NotCandidate} — type is not a single-record-
+     *       carrier-shaped Object (carries {@code @table}, {@code @record} with
+     *       {@code className}, is an interface / union / enum / scalar, etc.); consumers fall
+     *       through silently.</li>
+     *   <li>{@link SingleRecordCarrierResolution.Rejected} — type is a candidate (plain SDL
+     *       Object, or {@code @record} without {@code className}) but failed a per-condition
      *       check; the reason names the failed positive criterion and is plumbed into the
      *       validator's rejection-message paths.</li>
      * </ul>
@@ -488,27 +483,33 @@ class BuildContext {
      * <p>The function is referentially transparent given a frozen {@link #schema} and
      * {@link #types}; it materialises no state and is called on demand at the production
      * sites and one validator site.
+     *
+     * <p>Plain SDL Objects passing this trigger are promoted to
+     * {@link GraphitronType.PojoResultType.NoBacking} during type classification (see
+     * {@link TypeBuilder#promoteSingleRecordCarriers}); the trigger remains callable on the
+     * pre-promotion shape ({@link GraphitronType.PlainObjectType}) so the promoter itself can
+     * use it.
      */
-    PassthroughResolution unwrapPassthroughPayload(String typeName) {
+    SingleRecordCarrierResolution tryResolveSingleRecordCarrier(String typeName) {
         GraphitronType target = types.get(typeName);
-        // Condition #1: registered as PlainObjectType, or PojoResultType without className
-        // (the @record-without-className case TypeBuilder.buildResultType produces).
-        boolean isCandidate = (target instanceof GraphitronType.PlainObjectType)
+        // Condition #1: registered as PlainObjectType (pre-promotion), or
+        // PojoResultType.NoBacking (post-promotion / @record-without-className case).
+        boolean isCandidate = target instanceof GraphitronType.PlainObjectType
             || target instanceof GraphitronType.PojoResultType.NoBacking;
         if (!isCandidate) {
-            return new PassthroughResolution.NotCandidate();
+            return new SingleRecordCarrierResolution.NotCandidate();
         }
         GraphQLType raw = schema.getType(typeName);
         if (!(raw instanceof GraphQLObjectType objType)) {
-            return new PassthroughResolution.NotCandidate();
+            return new SingleRecordCarrierResolution.NotCandidate();
         }
 
         var fields = objType.getFieldDefinitions();
-        // Condition #2: exactly one field (Phase 1 scope; Phase 2 admits multi-field).
+        // Condition #2: exactly one field (Phase 1 scope; R128 admits multi-field).
         if (fields.size() != 1) {
-            return new PassthroughResolution.Rejected(
-                "payload '" + typeName + "' declares " + fields.size() + " fields; "
-                + "Phase 1 admits exactly one data field");
+            return new SingleRecordCarrierResolution.Rejected(
+                "single-record carrier '" + typeName + "' declares " + fields.size()
+                + " fields; Phase 1 admits exactly one data field");
         }
 
         GraphQLFieldDefinition dataField = fields.get(0);
@@ -518,46 +519,36 @@ class BuildContext {
         // Condition #3: the data field's element type is registered as TableBackedType.
         GraphitronType elementType = types.get(dataElementName);
         if (!(elementType instanceof TableBackedType tbt)) {
-            return new PassthroughResolution.Rejected(
-                "payload field '" + dataFieldName + "' element type '" + dataElementName
-                + "' is not @table-mapped; Phase 1 admits @table elements only");
+            return new SingleRecordCarrierResolution.Rejected(
+                "single-record carrier field '" + dataFieldName + "' element type '"
+                + dataElementName + "' is not @table-mapped; Phase 1 admits @table elements only");
         }
 
-        // Phase 1 scope: the data field carries no graphitron-domain directive. Directives like
+        // Condition #4: the data field carries no graphitron-domain directive. Directives like
         // @service, @sourceRow, @reference, @nodeId, @field, @asConnection, @splitQuery, and
-        // @externalField signal a different fetcher contract than the IdentityPassthrough
-        // capability emits; routing through the unwrap would fight the field's intended
-        // classification. Pure-metadata directives (@deprecated, user-defined custom directives
-        // without execution semantics) are not on the list and pass through silently. Authors
-        // who need graphitron-domain behaviour on the data field can opt back in with
-        // @record(record: {className: ...}) explicitly.
+        // @externalField signal a different fetcher contract than SingleRecordTableField's
+        // ResultRowWalk emit; routing the data field through here would fight the field's
+        // intended classification. Pure-metadata directives (@deprecated, user-defined custom
+        // directives without execution semantics) are not on the list and pass through
+        // silently. Authors who need graphitron-domain behaviour on the data field can opt
+        // back in with @record(record: {className: ...}) explicitly.
+        Set<String> forbidden = Set.of(
+            DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_NODE_ID, DIR_FIELD,
+            DIR_AS_CONNECTION, DIR_SPLIT_QUERY, DIR_EXTERNAL_FIELD, DIR_CONDITION,
+            DIR_LOOKUP_KEY, DIR_NOT_GENERATED, DIR_TABLE_METHOD, DIR_DEFAULT_ORDER,
+            DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
         for (var applied : dataField.getAppliedDirectives()) {
-            if (PASSTHROUGH_FORBIDDEN_DATA_FIELD_DIRECTIVES.contains(applied.getName())) {
-                return new PassthroughResolution.Rejected(
-                    "payload field '" + dataFieldName + "' carries '@" + applied.getName()
-                    + "'; Phase 1 admits @table-element data fields without graphitron-domain "
-                    + "field-level directives");
+            if (forbidden.contains(applied.getName())) {
+                return new SingleRecordCarrierResolution.Rejected(
+                    "single-record carrier field '" + dataFieldName + "' carries '@"
+                    + applied.getName() + "'; Phase 1 admits @table-element data fields without "
+                    + "graphitron-domain field-level directives");
             }
         }
 
-        return new PassthroughResolution.Ok(new PassthroughInfo(
+        return new SingleRecordCarrierResolution.Ok(new SingleRecordCarrierShape(
             typeName, dataFieldName, dataElementName, tbt.table(), buildWrapper(dataField)));
     }
-
-    /**
-     * Graphitron-domain directives that change a field's fetcher contract or classification arm.
-     * The {@link #unwrapPassthroughPayload} trigger rejects when any of these appears on the
-     * payload's data field; pure-metadata directives ({@code @deprecated}, user-defined custom
-     * directives without execution semantics) are absent from this set and pass through
-     * silently. Adding a future graphitron directive that coexists cleanly with the
-     * IdentityPassthrough fetcher means leaving it off this list; adding one that conflicts
-     * means appending it.
-     */
-    private static final Set<String> PASSTHROUGH_FORBIDDEN_DATA_FIELD_DIRECTIVES = Set.of(
-        DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_NODE_ID, DIR_FIELD,
-        DIR_AS_CONNECTION, DIR_SPLIT_QUERY, DIR_EXTERNAL_FIELD, DIR_CONDITION,
-        DIR_LOOKUP_KEY, DIR_NOT_GENERATED, DIR_TABLE_METHOD, DIR_DEFAULT_ORDER,
-        DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
 
     // ===== Error-message helpers =====
 

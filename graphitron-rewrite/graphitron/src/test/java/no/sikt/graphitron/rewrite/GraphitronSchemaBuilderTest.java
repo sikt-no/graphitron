@@ -1827,17 +1827,17 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
-        PASSTHROUGH_PAYLOAD_DATA_FIELD(
-            "Plain Object payload (no @record/@table) wrapping a single @table-element data field "
-                + "→ PassthroughDataField on the payload (R75 Phase 1)",
+        SINGLE_RECORD_CARRIER_DATA_FIELD(
+            "Plain Object carrier (no @record/@table) wrapping a single @table-element data field "
+                + "→ SingleRecordTableField on the carrier (R75 Phase 1)",
             """
             type Film @table(name: "film") { title: String }
             type FilmPayload { films: [Film!] }
             type Query { wrappedFilms: FilmPayload }
             """,
             schema -> assertThat(schema.field("FilmPayload", "films"))
-                .isInstanceOf(ChildField.PassthroughDataField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(ChildField.PassthroughDataField.class); }
+                .isInstanceOf(ChildField.SingleRecordTableField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(ChildField.SingleRecordTableField.class); }
         };
 
         final String sdl;
@@ -5051,6 +5051,22 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Mutation", "externalMutation")).isInstanceOf(MutationField.MutationServiceRecordField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
+        },
+
+        MUTATION_DML_RECORD_FIELD(
+            "R75 / Phase 1: @mutation(typeName: INSERT) returning a single-record DML carrier "
+                + "(plain SDL Object wrapping one @table-element data field) → MutationDmlRecordField",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { films: [Film!] }
+            input FilmCreateInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                createFilms(in: [FilmCreateInput!]!): FilmPayload @mutation(typeName: INSERT)
+            }
+            """,
+            schema -> assertThat(schema.field("Mutation", "createFilms")).isInstanceOf(MutationField.MutationDmlRecordField.class)) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationDmlRecordField.class); }
         },
 
         SERVICE_MUTATION_FIELD_NAME_OVERRIDE_TEXT_ENUM(

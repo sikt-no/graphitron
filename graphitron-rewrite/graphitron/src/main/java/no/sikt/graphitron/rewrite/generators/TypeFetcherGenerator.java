@@ -164,6 +164,7 @@ public class TypeFetcherGenerator {
         MutationField.MutationUpdateTableField.class,
         MutationField.MutationDeleteTableField.class,
         MutationField.MutationUpsertTableField.class,
+        MutationField.MutationDmlRecordField.class,
         MutationField.MutationServiceTableField.class,
         MutationField.MutationServiceRecordField.class,
         ChildField.ServiceTableField.class,
@@ -175,7 +176,7 @@ public class TypeFetcherGenerator {
         ChildField.RecordTableField.class,
         ChildField.RecordLookupTableField.class,
         ChildField.ConstructorField.class,
-        ChildField.PassthroughDataField.class,
+        ChildField.SingleRecordTableField.class,
         QueryField.QueryTableInterfaceField.class,
         ChildField.TableInterfaceField.class,
         ChildField.ParticipantColumnReferenceField.class,
@@ -259,22 +260,7 @@ public class TypeFetcherGenerator {
             Map.entry(ChildField.TableMethodField.class,
                 deferredFor(ChildField.TableMethodField.class,
                     "child @tableMethod (table-bound return) not yet implemented",
-                    "tablemethod-child-table-bound")),
-            Map.entry(ChildField.SingleRecordTableField.class,
-                deferredFor(ChildField.SingleRecordTableField.class,
-                    "SingleRecordTableField (R75 single-record DML carrier data field) is not yet "
-                    + "emitted; the permit is added structurally so the model can carry it, but the "
-                    + "fetcher emit (env.getSource() walk into Result<RecordN<...>>) and the "
-                    + "two-step DML root fetcher land in R75's intrusive Phase 1 work.",
-                    "synthesize-payload-carrier")),
-            Map.entry(MutationField.MutationDmlRecordField.class,
-                deferredFor(MutationField.MutationDmlRecordField.class,
-                    "MutationDmlRecordField (R75 record-returning DML mutation) is not yet "
-                    + "emitted; the permit is added structurally so the model can carry it, but "
-                    + "the classifier admission and the two-step DML emit (PK-only RETURNING in a "
-                    + "tight transaction, follow-up SELECT outside it) land in R75's intrusive "
-                    + "Phase 1 work.",
-                    "synthesize-payload-carrier"))
+                    "tablemethod-child-table-bound"))
         );
 
     private static Rejection.Deferred deferredFor(
@@ -410,7 +396,7 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationUpsertTableField f  -> builder.addMethod(buildMutationUpsertFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(ctx, f, outputPackage));
-                case MutationField.MutationDmlRecordField f    -> builder.addMethod(stub(f));
+                case MutationField.MutationDmlRecordField f    -> builder.addMethod(buildMutationDmlRecordFetcher(ctx, f, outputPackage));
                 // ColumnReferenceField has no fetcher method — inline projection via
                 // TypeClassGenerator.$fields (Direct compaction) and a ColumnFetcher value emitted
                 // by FetcherEmitter. The validator rejects the NodeIdEncodeKeys and ConditionJoin
@@ -445,7 +431,11 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
-                case ChildField.SingleRecordTableField f        -> builder.addMethod(stub(f));
+                // SingleRecordTableField has no per-field fetcher method — its DataFetcher
+                // value is emitted inline by FetcherEmitter (env.getSource() typed cast +
+                // response SELECT outside the DML transaction). The wiring happens in
+                // FetcherRegistrationsEmitter.registrationEntry.
+                case ChildField.SingleRecordTableField ignored  -> { }
                 case ChildField.InterfaceField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
@@ -476,7 +466,6 @@ public class TypeFetcherGenerator {
                 }
                 case ChildField.NestingField ignored            -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
                 case ChildField.ConstructorField ignored        -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() */ }
-                case ChildField.PassthroughDataField ignored    -> { /* wired via FetcherRegistrationsEmitter: env -> env.getSource() (R75 IdentityPassthrough capability arm) */ }
                 // ServiceRecordField is dispatched alongside ServiceTableField above (shared
                 // emitters parameterised by perKeyType). The "no-op" arm here keeps the switch
                 // exhaustive without re-emitting; the variant has IMPLEMENTED_LEAVES membership.
@@ -2120,14 +2109,6 @@ public class TypeFetcherGenerator {
      * {@code .returningResult(...).fetchOne(...)} (or {@code .returning().fetchOne()} +
      * payload-class constructor for the {@code Payload} arm).
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "passthrough-payload.data-table-equals-dml-target",
-        reliesOn = "The ProjectedSingle / ProjectedList arms call <returnTypeName>Type.$fields("
-            + "env.getSelectionSet(), <tableLocal>, env). When the SDL return type was a passthrough "
-            + "payload, returnTypeName is the data field's element type; tableLocal is the DML "
-            + "target table (the input @table). FieldBuilder.requireDataTableMatchesInputTable "
-            + "rejects at classify time when these refer to different tables, so jOOQ never sees "
-            + "a RETURNING projection that references columns from a different table.")
     private static CodeBlock emitDmlReturnExpression(
             no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
             TypeName valueType,
@@ -2708,6 +2689,238 @@ public class TypeFetcherGenerator {
                 .add("    ").add(asyncWrapTail(valueType, outputPackage, Optional.empty())).add(";\n")
                 .build())
             .build();
+    }
+
+    /**
+     * R75 Phase 1: emits the fetcher for a {@link MutationField.MutationDmlRecordField} — the
+     * record-returning DML mutation. Body is two-step: the DML chain (per-kind) runs inside
+     * {@code dsl.transactionResult(tx -> DSL.using(tx)....)}, projects the input table's PK
+     * columns via {@code .returningResult(PK1, PK2, ...)}, and returns either a single
+     * {@code RecordN<...>} ({@code .fetchOne()}, when the data field is single-cardinality) or a
+     * {@code Result<RecordN<...>>} ({@code .fetch()}, when the data field is list). The
+     * transaction commits when {@code transactionResult} returns; the materialised key Result
+     * outlives it, and the response SELECT happens later in the data field's
+     * {@link ChildField.SingleRecordTableField} fetcher — outside the transaction, so read
+     * errors during traversal cannot undo the DML.
+     *
+     * <p>DML chain construction reuses the existing per-kind helpers
+     * ({@link #buildPerCellValueList}, {@link #buildLookupWhere}) so the SET / WHERE /
+     * ON CONFLICT logic stays in lock-step with the direct-{@code @table} fetcher. DELETE is
+     * not handled here because the mutation classifier rejects DELETE-with-carrier; the row
+     * is gone before the response SELECT can read it.
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "mutation-dml-record-field.data-table-equals-input-table",
+        reliesOn = "The two-step body's RETURNING clause projects "
+            + "tableInputArg.inputTable().primaryKeyColumns(); the data field's response "
+            + "SELECT reads the same columns off env.getSource(). Without table-equality the "
+            + "two halves would reference different column sets, and jOOQ would reject the "
+            + "data-field WHERE predicate at runtime.")
+    private static MethodSpec buildMutationDmlRecordFetcher(
+            TypeFetcherEmissionContext ctx, MutationField.MutationDmlRecordField f, String outputPackage) {
+        var tia = f.tableInputArg();
+        var tableRef = tia.inputTable();
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
+        String tableLocal = tablesOnly.tableLocalName();
+        var pkCols = tableRef.primaryKeyColumns();
+        if (pkCols.isEmpty()) {
+            throw new IllegalStateException(
+                "MutationDmlRecordField '" + f.qualifiedName() + "' references table '"
+                + tableRef.tableName() + "' that has no primary key; admission requires PK columns");
+        }
+        boolean dataIsList = f.returnType().wrapper().isList();
+        var rowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
+            new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), pkCols);
+        TypeName payloadType = dataIsList
+            ? ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), rowType)
+            : rowType;
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+
+        var builder = MethodSpec.methodBuilder(f.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(syncResultType(payloadType))
+            .addParameter(ENV, "env");
+        builder.beginControlFlow("try");
+        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+        if (tia.list()) {
+            builder.addStatement("$T<$T<?, ?>> in = ($T<$T<?, ?>>) env.getArgument($S)",
+                ClassName.get(java.util.List.class), MAP,
+                ClassName.get(java.util.List.class), MAP, tia.name());
+            // Empty-list short-circuit. jOOQ rejects empty VALUES on every verb; emit a typed
+            // empty Result so the data field's response SELECT sees an empty source.
+            builder.beginControlFlow("if (in.isEmpty())");
+            var pkProjection = CodeBlock.builder();
+            for (int i = 0; i < pkCols.size(); i++) {
+                if (i > 0) pkProjection.add(", ");
+                pkProjection.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), pkCols.get(i).javaName());
+            }
+            builder.addStatement("$T payload = $T.using(dsl.configuration()).newResult($L)",
+                payloadType, DSL, pkProjection.build());
+            builder.addCode(returnSyncSuccess(payloadType, "payload"));
+            builder.endControlFlow();
+        } else {
+            builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, tia.name());
+        }
+        builder.addStatement("$T $L = $T.$L",
+            tablesOnly.jooqTableClass(), tableLocal, tablesOnly.tablesClass(), tableRef.javaFieldName());
+
+        // DML chain per kind. Each branch produces a CodeBlock starting with `.<verb>(...)`
+        // suitable for chaining off `DSL.using(tx)` inside transactionResult.
+        var chainAndGuards = buildDmlChainForRecord(f, tia, tableRef, tablesOnly, tableLocal);
+        builder.addCode(chainAndGuards.preGuard());
+
+        var dmlEmit = CodeBlock.builder()
+            .add("$T payload = dsl.transactionResult(tx -> $T.using(tx)\n", payloadType, DSL).indent()
+            .add(chainAndGuards.chain())
+            .add(".returningResult(");
+        for (int i = 0; i < pkCols.size(); i++) {
+            if (i > 0) dmlEmit.add(", ");
+            dmlEmit.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), pkCols.get(i).javaName());
+        }
+        dmlEmit.add(")\n")
+            .add(dataIsList ? ".fetch());\n" : ".fetchOne());\n").unindent();
+        builder.addCode(dmlEmit.build());
+
+        builder.addCode(returnSyncSuccess(payloadType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(catchArm(outputPackage, f.errorChannel()));
+        builder.endControlFlow();
+        return builder.build();
+    }
+
+    /** Pair: the DML chain (everything from {@code .insertInto(...)} through {@code .doUpdate()....}) plus any pre-DML guard statements (e.g. dynamic SET-map construction). */
+    private record DmlChainAndGuards(CodeBlock chain, CodeBlock preGuard) {}
+
+    private static DmlChainAndGuards buildDmlChainForRecord(
+            MutationField.MutationDmlRecordField f,
+            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            TableRef tableRef,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            String tableLocal) {
+        return switch (f.kind()) {
+            case INSERT -> new DmlChainAndGuards(buildRecordInsertChain(tia, tableRef, tablesOnly, tableLocal), CodeBlock.builder().build());
+            case UPDATE -> buildRecordUpdateChain(tia, tableRef, tablesOnly, tableLocal);
+            case UPSERT -> buildRecordUpsertChain(tia, tableRef, tablesOnly, tableLocal);
+            case DELETE -> throw new IllegalStateException(
+                "MutationDmlRecordField with DmlKind.DELETE — classifier should have rejected this");
+        };
+    }
+
+    private static CodeBlock buildRecordInsertChain(
+            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
+        var fields = tia.fields();
+        var colList = CodeBlock.builder();
+        for (int i = 0; i < fields.size(); i++) {
+            var cf = (InputField.ColumnField) fields.get(i);
+            if (i > 0) colList.add(", ");
+            colList.add("$T.$L.$L",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+        }
+        var chain = CodeBlock.builder()
+            .add(".insertInto($L, ", tableLocal).add(colList.build()).add(")\n");
+        if (tia.list()) {
+            chain.add(".valuesOfRows(in.stream()\n").indent()
+                .add(".map(row -> $T.row(\n", DSL).indent()
+                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row")).unindent()
+                .add("))\n")
+                .add(".toList())\n").unindent();
+        } else {
+            chain.add(".values(\n").indent()
+                .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in")).unindent()
+                .add(")\n");
+        }
+        return chain.build();
+    }
+
+    private static DmlChainAndGuards buildRecordUpdateChain(
+            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
+        if (tia.list()) {
+            throw new UnsupportedOperationException(
+                "Bulk UPDATE on MutationDmlRecordField is not yet implemented; use single-input "
+                    + "UPDATE or open a follow-up for the VALUES-join shape");
+        }
+        var fieldClass = ClassName.get("org.jooq", "Field");
+        var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
+        var preGuard = CodeBlock.builder();
+        preGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
+        for (var cf : tia.setFields()) {
+            preGuard.beginControlFlow("if (in.containsKey($S))", cf.name())
+                .addStatement("sets.put($T.$L.$L, $T.val(in.get($S), $T.$L.$L.getDataType()))",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                    DSL, cf.name(),
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
+                .endControlFlow();
+        }
+        preGuard.beginControlFlow("if (sets.isEmpty())")
+            .addStatement("throw new $T($S)", IllegalArgumentException.class,
+                "@mutation(typeName: UPDATE) call has no settable fields present; "
+                    + "only @lookupKey fields were provided")
+            .endControlFlow();
+        var chain = CodeBlock.builder()
+            .add(".update($L)\n", tableLocal)
+            .add(".set(sets)\n")
+            .add(".where(").add(buildLookupWhere(tia, tablesOnly, tableRef)).add(")\n")
+            .build();
+        return new DmlChainAndGuards(chain, preGuard.build());
+    }
+
+    private static DmlChainAndGuards buildRecordUpsertChain(
+            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
+        if (tia.list()) {
+            throw new UnsupportedOperationException(
+                "Bulk UPSERT on MutationDmlRecordField is not yet implemented; use single-input "
+                    + "UPSERT or open a follow-up for the bulk-conflict shape");
+        }
+        var fields = tia.fields();
+        var colList = CodeBlock.builder();
+        for (int i = 0; i < fields.size(); i++) {
+            var cf = (InputField.ColumnField) fields.get(i);
+            if (i > 0) colList.add(", ");
+            colList.add("$T.$L.$L",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName());
+        }
+        var fieldClass = ClassName.get("org.jooq", "Field");
+        var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
+        var preGuard = CodeBlock.builder();
+        if (!tia.setFields().isEmpty()) {
+            preGuard.addStatement("$T<$T<?>, Object> setsUpdate = new $T<>()", MAP, fieldClass, linkedHashMap);
+            for (var cf : tia.setFields()) {
+                preGuard.beginControlFlow("if (in.containsKey($S))", cf.name())
+                    .addStatement("setsUpdate.put($T.$L.$L, $T.excluded($T.$L.$L))",
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                        DSL,
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
+                    .endControlFlow();
+            }
+            preGuard.beginControlFlow("if (setsUpdate.isEmpty())")
+                .addStatement("throw new $T($S)", IllegalArgumentException.class,
+                    "@mutation(typeName: UPSERT) call has no settable fields present; "
+                        + "only @lookupKey fields were provided")
+                .endControlFlow();
+        }
+        var conflictCols = CodeBlock.builder();
+        var bindings = tia.fieldBindings();
+        for (int i = 0; i < bindings.size(); i++) {
+            if (i > 0) conflictCols.add(", ");
+            conflictCols.add("$T.$L.$L",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(),
+                bindings.get(i).targetColumn().javaName());
+        }
+        var chain = CodeBlock.builder()
+            .add(".insertInto($L, ", tableLocal).add(colList.build()).add(")\n")
+            .add(".values(\n").indent()
+            .add(buildPerCellValueList(fields, tablesOnly, tableRef, "in")).unindent()
+            .add(")\n")
+            .add(".onConflict(").add(conflictCols.build()).add(")\n");
+        if (!tia.setFields().isEmpty()) {
+            chain.add(".doUpdate()\n").add(".set(setsUpdate)\n");
+        } else {
+            chain.add(".doNothing()\n");
+        }
+        return new DmlChainAndGuards(chain.build(), preGuard.build());
     }
 
     private static MethodSpec stub(GraphitronField field) {

@@ -2379,38 +2379,40 @@ class FieldBuilder {
      */
     /**
      * Load-bearing classifier check (R75 Phase 1): when a {@code @mutation} field returns a
-     * passthrough payload, the data field's {@code @table} must equal the DML target table
-     * (the input's {@code @table}). The DML emitter's {@link DmlReturnExpression.ProjectedSingle}
-     * / {@link DmlReturnExpression.ProjectedList} arms emit
-     * {@code RETURNING $fields(<DataElementType>, <DmlTargetTable>)}, which jOOQ rejects when
-     * the columns reference a different table than the one being written to. Holding the
-     * invariant here keeps the projected arms total without a defensive cross-check on the
-     * emitter side.
+     * single-record DML carrier, the data field's {@code @table} must equal the DML target
+     * table (the input's {@code @table}). Two consumer sites depend on this equality: (a) the
+     * mutation fetcher's PK-only {@code RETURNING} clause projects
+     * {@code tableInputArg.inputTable().primaryKeyColumns()}, and (b) the data field fetcher's
+     * response SELECT builds {@code where(TABLE.PK.in(source.getValues(TABLE.PK)))}. Both
+     * sites need the upstream Result's row type to match the data field's element table's PK
+     * columns, exactly the equality this check enforces.
      *
-     * <p>Returns {@code null} when the tables match; a non-null rejection reason otherwise. This
-     * is the single producer site for {@code passthrough-payload.data-table-equals-dml-target}.
+     * <p>Returns {@code null} when the tables match; a non-null rejection reason otherwise.
+     * This is the single producer site for
+     * {@code mutation-dml-record-field.data-table-equals-input-table}.
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "passthrough-payload.data-table-equals-dml-target",
-        description = "Rejects @mutation fields whose passthrough payload's data field projects "
-            + "onto a table other than the input @table. Lets the DML emitter's "
-            + "ProjectedSingle / ProjectedList arms call "
-            + "<DataElementType>Type.$fields(env.getSelectionSet(), <DmlTargetTable>, env) "
-            + "without a defensive cross-table check; jOOQ would otherwise reject the "
-            + "RETURNING projection at runtime.")
+        key = "mutation-dml-record-field.data-table-equals-input-table",
+        description = "Rejects @mutation fields whose single-record DML carrier's data field "
+            + "binds to a table other than the input @table. Lets the mutation fetcher's "
+            + "PK-only RETURNING and the data-field fetcher's WHERE-PK-IN response SELECT "
+            + "share one column set without a defensive cross-table check; jOOQ would "
+            + "otherwise reject the RETURNING projection or the SELECT predicate at runtime.")
     private static String requireDataTableMatchesInputTable(
             TableRef inputTable,
-            no.sikt.graphitron.rewrite.model.PassthroughInfo info,
+            no.sikt.graphitron.rewrite.model.SingleRecordCarrierShape shape,
             DmlKind kind,
             String name) {
-        if (inputTable.equals(info.dataTable())) {
+        if (inputTable.equals(shape.dataTable())) {
             return null;
         }
         return "@mutation(typeName: " + kind + ") field '" + name
-            + "' returns passthrough payload '" + info.payloadTypeName()
-            + "' projecting onto table '" + info.dataTable().tableName()
-            + "', but the input @table is '" + inputTable.tableName()
-            + "'; the data field's @table must match the input table";
+            + "' returns single-record DML carrier '" + shape.carrierTypeName()
+            + "' whose data field element type '" + shape.dataElementName()
+            + "' is bound to table '" + shape.dataTable().tableName()
+            + "', which does not match @table input table '" + inputTable.tableName()
+            + "'; payload-returning DML mutations require the data field's table to equal the "
+            + "DML's input table";
     }
 
     private static DmlReturnExpression buildDmlReturnExpression(
@@ -2632,16 +2634,34 @@ class FieldBuilder {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(returnTypeError));
                 }
 
-                // R75 Phase 1: when the SDL return type unwrapped through a passthrough payload,
-                // hold the load-bearing invariant that the data field's @table matches the DML
-                // target table (the input @table). The unwrap is pure; re-running it here lets
-                // the check stay local and read off PassthroughInfo without threading a flag
-                // through the call chain.
-                if (ctx.unwrapPassthroughPayload(rawReturn) instanceof no.sikt.graphitron.rewrite.model.PassthroughResolution.Ok ok) {
-                    String mismatch = requireDataTableMatchesInputTable(tia.inputTable(), ok.info(), kind, name);
+                // R75 Phase 1: payload-returning DML mutations classify as MutationDmlRecordField.
+                // Trigger admits when the return type is a single-record DML carrier; the data
+                // field's element table must equal the input @table (the load-bearing
+                // mutation-dml-record-field.data-table-equals-input-table check); DELETE-with-
+                // carrier is rejected at classify time (the row is gone before the response
+                // SELECT can read it).
+                if (returnType instanceof ReturnTypeRef.ResultReturnType rrt
+                        && ctx.tryResolveSingleRecordCarrier(rawReturn)
+                            instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok ok) {
+                    if (kind == DmlKind.DELETE) {
+                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                            "@mutation(typeName: DELETE) field '" + name + "' returning a payload "
+                            + "type is not supported; use ID or [ID!] (DELETE removes the row "
+                            + "before the response SELECT can read it)"));
+                    }
+                    String mismatch = requireDataTableMatchesInputTable(tia.inputTable(), ok.shape(), kind, name);
                     if (mismatch != null) {
                         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(mismatch));
                     }
+                    Optional<ErrorChannel> dmlChannel;
+                    switch (resolveErrorChannel(returnType)) {
+                        case ErrorChannelResult.NoChannel ignored -> dmlChannel = Optional.empty();
+                        case ErrorChannelResult.Channel c          -> dmlChannel = Optional.of(c.channel());
+                        case ErrorChannelResult.Reject r ->
+                            { return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(r.reason())); }
+                    }
+                    return new MutationField.MutationDmlRecordField(
+                        parentTypeName, name, location, rrt, tia, kind, dmlChannel);
                 }
 
                 Optional<HelperRef.Encode> encodeReturn = Optional.empty();

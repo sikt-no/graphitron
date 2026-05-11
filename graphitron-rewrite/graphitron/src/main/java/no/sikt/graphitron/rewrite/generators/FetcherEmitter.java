@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
@@ -53,8 +54,16 @@ public final class FetcherEmitter {
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage) {
-        if (field instanceof ChildField.IdentityPassthrough) {
+        if (field instanceof ChildField.ConstructorField || field instanceof ChildField.NestingField) {
             return CodeBlock.of("($T env) -> env.getSource()", DATA_FETCHING_ENV);
+        }
+        if (field instanceof ChildField.SingleRecordTableField srtf) {
+            // R75 Phase 1: data field on a single-record DML carrier. The mutation fetcher
+            // populated env.getSource() with a Result<RecordN<...>> (Cardinality.MANY) or a
+            // RecordN<...> (Cardinality.ONE) from a PK-only RETURNING inside a tight
+            // transaction. Run the response SELECT here, outside that transaction; jOOQ field
+            // errors during this read or during nested traversal cannot undo the DML.
+            return buildSingleRecordTableFetcherValue(srtf, outputPackage);
         }
         if (field instanceof ChildField.ErrorsField) {
             // Passthrough off the parent payload's errors accessor. PropertyDataFetcher reflects
@@ -174,6 +183,112 @@ public final class FetcherEmitter {
                     + "' requires JOIN-with-projection emission — not yet implemented.");
         }
         return CodeBlock.of("$T::$L", fetchersClass, field.name());
+    }
+
+    /**
+     * R75 Phase 1: data-fetcher value for a {@link ChildField.SingleRecordTableField}. Reads
+     * {@code env.getSource()} typed by {@code SourceKey.wrap × columns} and runs the response
+     * SELECT keyed by the PK columns. The upstream value is whatever the mutation's two-step
+     * fetcher returned: a single {@code RecordN<...>} when the input was single
+     * ({@code Cardinality.ONE}) or a {@code Result<RecordN<...>>} when the input was bulk
+     * ({@code Cardinality.MANY}).
+     *
+     * <p>Single-PK tables (the sakila fixtures) emit {@code where(PK.eq(value))} or
+     * {@code where(PK.in(getValues(PK)))}; composite-PK tables emit {@code where(row(PK1,...).
+     * in(...))}. The {@code mutation-dml-record-field.data-table-equals-input-table} load-
+     * bearing key pins that the data field's table equals the input table, so the PK columns
+     * here are exactly what the upstream RETURNING projected.
+     */
+    @DependsOnClassifierCheck(
+        key = "mutation-dml-record-field.data-table-equals-input-table",
+        reliesOn = "The response SELECT's WHERE predicate reads source.getValues(<DataTable.PK>) "
+            + "/ source.value1() against the upstream Result's row type. That row type is the "
+            + "DML's input @table PK columns (the mutation fetcher's RETURNING clause), which "
+            + "the load-bearing classifier check forces to equal the data field's element table "
+            + "PK columns. Without that equality the source.getValues call would request a "
+            + "column the upstream Result does not carry.")
+    @DependsOnClassifierCheck(
+        key = "source-key.result-row-walk-cardinality-matches-upstream-result",
+        reliesOn = "The SingleRecordTableField permit's compact constructor requires "
+            + "Reader.ResultRowWalk, and SourceKey's compact constructor pins ResultRowWalk to "
+            + "Wrap.Record with empty path. The emitted source cast (Result<RecordN<...>> for "
+            + "MANY, RecordN<...> for ONE) reads SourceKey.wrap × columns directly.")
+    private static CodeBlock buildSingleRecordTableFetcherValue(
+            ChildField.SingleRecordTableField srtf, String outputPackage) {
+        var table = srtf.returnType().table();
+        var typeClass = ClassName.get(outputPackage + ".types", srtf.returnType().returnTypeName());
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        var graphitronContextClass = ClassName.get(outputPackage + ".schema", "GraphitronContext");
+        var sk = srtf.sourceKey();
+        var rowType = sk.keyElementType();
+        var pkColumns = sk.columns();
+        boolean many = sk.cardinality() == SourceKey.Cardinality.MANY;
+
+        var body = CodeBlock.builder().add("($T env) -> {\n", DATA_FETCHING_ENV);
+        if (many) {
+            var resultClass = ClassName.get("org.jooq", "Result");
+            var resultOfRow = no.sikt.graphitron.javapoet.ParameterizedTypeName.get(resultClass, rowType);
+            body.add("    $T source = ($T) env.getSource();\n", resultOfRow, resultOfRow);
+            body.add("    if (source.isEmpty()) return source;\n");
+        } else {
+            body.add("    $T source = ($T) env.getSource();\n", rowType, rowType);
+            body.add("    if (source == null) return null;\n");
+        }
+        body.add("    $T dsl = (($T) env.getGraphQlContext().get($T.class)).getDslContext(env);\n",
+            dslContextClass, graphitronContextClass, graphitronContextClass);
+        body.add("    return dsl.select($T.$$fields(env.getSelectionSet(), $T.$L, env))\n",
+            typeClass, table.constantsClass(), table.javaFieldName());
+        body.add("        .from($T.$L)\n", table.constantsClass(), table.javaFieldName());
+        if (many) {
+            body.add("        .where(");
+            if (pkColumns.size() == 1) {
+                var col = pkColumns.get(0);
+                body.add("$T.$L.$L.in(source.getValues($T.$L.$L))",
+                    table.constantsClass(), table.javaFieldName(), col.javaName(),
+                    table.constantsClass(), table.javaFieldName(), col.javaName());
+            } else {
+                body.add("$T.row(", DSL);
+                for (int i = 0; i < pkColumns.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkColumns.get(i);
+                    body.add("$T.$L.$L", table.constantsClass(), table.javaFieldName(), col.javaName());
+                }
+                body.add(").in(source.stream().map(r -> $T.row(", DSL);
+                for (int i = 0; i < pkColumns.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkColumns.get(i);
+                    body.add("r.get($T.$L.$L)", table.constantsClass(), table.javaFieldName(), col.javaName());
+                }
+                body.add(")).toList())");
+            }
+            body.add(")\n");
+            body.add("        .fetch();\n");
+        } else {
+            body.add("        .where(");
+            if (pkColumns.size() == 1) {
+                var col = pkColumns.get(0);
+                body.add("$T.$L.$L.eq(source.value1())",
+                    table.constantsClass(), table.javaFieldName(), col.javaName());
+            } else {
+                body.add("$T.row(", DSL);
+                for (int i = 0; i < pkColumns.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkColumns.get(i);
+                    body.add("$T.$L.$L", table.constantsClass(), table.javaFieldName(), col.javaName());
+                }
+                body.add(").eq($T.row(", DSL);
+                for (int i = 0; i < pkColumns.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkColumns.get(i);
+                    body.add("source.get($T.$L.$L)", table.constantsClass(), table.javaFieldName(), col.javaName());
+                }
+                body.add("))");
+            }
+            body.add(")\n");
+            body.add("        .fetchOne();\n");
+        }
+        body.add("}");
+        return body.build();
     }
 
     @DependsOnClassifierCheck(

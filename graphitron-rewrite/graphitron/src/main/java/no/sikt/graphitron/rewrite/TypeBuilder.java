@@ -172,7 +172,36 @@ class TypeBuilder {
         // issued IDs, which would violate the durability invariant.
         validateNodeTypeIdUniqueness(ctx.typeRegistry);
 
+        // R75 Phase 1: promote plain SDL Objects that pass the single-record-carrier trigger
+        // to PojoResultType.NoBacking. After promotion the type machinery treats them as a
+        // ResultType arm (resolveReturnType produces ResultReturnType; the mutation classifier
+        // reads the trigger to admit MutationDmlRecordField); plain SDL Objects that don't
+        // match the trigger remain as PlainObjectType for the developer to wire by hand.
+        promoteSingleRecordCarriers();
+
         return ctx.typeRegistry.entries();
+    }
+
+    /**
+     * Walks every {@link PlainObjectType} in the registry and promotes those passing
+     * {@link BuildContext#tryResolveSingleRecordCarrier} to
+     * {@link GraphitronType.PojoResultType.NoBacking}. Must run after the second pass so the
+     * trigger sees the fully-classified element-type registry; the trigger reads
+     * {@code types.get(dataElementName)} and requires it to be a {@link TableBackedType}.
+     */
+    private void promoteSingleRecordCarriers() {
+        var plainObjectNames = ctx.typeRegistry.entries().entrySet().stream()
+            .filter(e -> e.getValue() instanceof PlainObjectType)
+            .map(java.util.Map.Entry::getKey)
+            .toList();
+        for (var name : plainObjectNames) {
+            if (ctx.tryResolveSingleRecordCarrier(name)
+                    instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok) {
+                var current = (PlainObjectType) ctx.typeRegistry.get(name);
+                ctx.typeRegistry.enrich(name,
+                    new GraphitronType.PojoResultType.NoBacking(name, current.location()));
+            }
+        }
     }
 
     private static void validateNodeTypeIdUniqueness(TypeRegistry registry) {

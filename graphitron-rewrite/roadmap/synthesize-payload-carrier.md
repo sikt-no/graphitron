@@ -1,7 +1,7 @@
 ---
 id: R75
 title: "Plain payload types for DML mutations"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 7
 theme: mutations-errors
@@ -16,6 +16,100 @@ correctly without the consumer authoring a Java carrier. Today the rewrite force
 authored class on every payload that isn't a bare `ID` or `@table`, which inverts legacy
 graphitron's default and drags graphql-java's mapping concerns into the consumer's
 source tree.
+
+## Phase 1 shipping status (In Review)
+
+The full reshape landed on the feature branch as a single cohesive change. Subsystem-by-
+subsystem summary of what shipped:
+
+- `SingleRecordCarrierResolution` / `SingleRecordCarrierShape` replace
+  `PassthroughResolution` / `PassthroughInfo`; the trigger function on `BuildContext`
+  is named `tryResolveSingleRecordCarrier` and admits both pre-promotion
+  `PlainObjectType` and post-promotion `PojoResultType.NoBacking`.
+- `TypeBuilder.promoteSingleRecordCarriers` runs as a third pass after the existing
+  enrichment pass; every `PlainObjectType` passing the trigger promotes to
+  `PojoResultType.NoBacking`. `BuildContext.resolveReturnType`'s wire-format-unwrap
+  short-circuit is retired; plain SDL Objects resolve through the `ResultType` arm
+  uniformly.
+- `FieldBuilder.classifyMutationField` admits payload-returning DML as
+  `MutationField.MutationDmlRecordField` when the return is a `ResultReturnType` and
+  the trigger returns `Ok`. The load-bearing key
+  `mutation-dml-record-field.data-table-equals-input-table` replaces
+  `passthrough-payload.data-table-equals-dml-target`; the rejection message names the
+  carrier, the data field's element type/table, and the DML's input table. DELETE-
+  with-carrier is rejected at classify time.
+- `GraphitronSchemaBuilder.buildSchema` registers the carrier's data field as
+  `ChildField.SingleRecordTableField` with an inline-constructed `SourceKey`
+  (`Reader.ResultRowWalk`, `Wrap.Record`, empty path, the data field's element-table
+  PK columns; cardinality from the data field's wrapper). The `PlainObjectType`
+  widening of `FetcherRegistrationsEmitter`'s filter is retired.
+- `FetcherEmitter.dataFetcherValue` reverts the `IdentityPassthrough` capability arm:
+  `ConstructorField` and `NestingField` each match on their own permit (both still
+  emit `env -> env.getSource()`). A new `SingleRecordTableField` arm emits the
+  typed-cast read (`Result<RecordN<...>>` for `MANY`, `RecordN<...>` for `ONE`) and
+  runs the response SELECT outside the DML transaction. Single-PK tables emit
+  `where(PK.eq(...))` / `where(PK.in(...))`; composite-PK paths emit the row-tuple
+  variants.
+- `TypeFetcherGenerator.buildMutationDmlRecordFetcher` emits the mutation fetcher:
+  per-`DmlKind` chain (`INSERT` / `UPDATE` / `UPSERT`; `DELETE` unreachable), `PK-only
+  RETURNING` inside `dsl.transactionResult(tx -> DSL.using(tx)....)`,
+  `.fetch()` or `.fetchOne()` depending on the data field's wrapper. The transaction
+  commits when `transactionResult` returns; the materialised `Result` / `Record`
+  outlives it, and the data field's `SingleRecordTableField` fetcher runs the response
+  SELECT outside it. Read errors during traversal propagate as field errors and cannot
+  undo the DML.
+- Model retirements: `ChildField.IdentityPassthrough` capability and
+  `ChildField.PassthroughDataField` permit are gone; `ConstructorField` and
+  `NestingField` are direct `ChildField` permits.
+  `GraphitronSchemaValidator.validateField`'s `PassthroughDataField` no-op arm is
+  removed; `IMPLEMENTED_LEAVES` carries `MutationDmlRecordField` and
+  `SingleRecordTableField`; `STUBBED_VARIANTS` no longer references them.
+- SDL fixtures: `FilmPassthroughPayload` renamed to `FilmPayload`; the four bulk-input
+  mutations collapse to three single-input ones (`createFilmPayload`,
+  `updateFilmPayload`, `upsertFilmPayload`); `deleteFilmsPassthrough` is gone (DELETE-
+  with-carrier rejected at classify time; bulk DELETE returning `[ID!]!` still
+  available via the existing `deleteFilms` surface).
+- Tests: `SingleRecordCarrierPipelineTest` (renamed from
+  `PassthroughPayloadPipelineTest`) covers per-`DmlKind` admission of
+  `MutationDmlRecordField`, `SingleRecordTableField` classification with full
+  `SourceKey` shape assertion (`Reader.ResultRowWalk`, `Wrap.Record`, empty path,
+  cardinality matching wrapper, PK columns), DELETE-with-carrier rejection,
+  table-equality rejection, carrier promotion to `PojoResultType.NoBacking`, and the
+  structural pin on `FetcherEmitter.dataFetcherValue`'s arm count.
+  `SingleRecordCarrierDmlTest` (renamed from `PassthroughPayloadDmlTest`) covers
+  end-to-end round-trip for INSERT / UPDATE / UPSERT (new row) / UPSERT (existing row)
+  against the sakila Postgres testcontainer. `GraphitronSchemaBuilderTest` carries
+  one `SINGLE_RECORD_CARRIER_DATA_FIELD` case (Query-side trigger admission) and one
+  `MUTATION_DML_RECORD_FIELD` case (Mutation-side classifier). `VariantCoverageTest`
+  no longer holds `NO_CASE_REQUIRED` entries for the two new permits — both surface
+  through the SDL fixtures.
+
+### Deferred from Phase 1 to a follow-up roadmap item
+
+Two pieces from the Phase 1 success criteria did not ship in this cycle and need to
+land before R75 closes Done:
+
+1. **Direct-`@table`-return DML mutations migrating to the two-step emit.** The
+   `MutationInsertTableField` / `MutationUpdateTableField` / `MutationUpsertTableField`
+   fetchers still emit single-statement `RETURNING $fields(...)` today. The carrier
+   path (`MutationDmlRecordField`) ships the durability-correct two-step shape; the
+   direct-`@table` path keeps the legacy emit. The pipeline-tier structural pin
+   "direct-`@table`-return two-step emit pin" and the execution-tier durability test
+   `dml_persists_when_directReturnSelect_throws` are not yet added.
+2. **Headline correctness pin `dml_persists_when_followupSelect_throws`** for the
+   carrier path (synthetic error injection at the data-field fetcher's SELECT or
+   nested traversal asserting the row exists in the DB after the response).
+   Round-trip coverage is in place; the synthetic-error variant is a follow-up.
+
+Both items remain in scope of the R75 contract and should be tracked as Phase 1
+remainders before requesting In Review → Done sign-off. Either land them as
+additional commits on the same roadmap item, or split off a sibling item that
+explicitly depends on R75's carrier path.
+
+---
+
+## Original spec body
+
 
 The fix is not to synthesize a Java class — generating transport DTOs is the legacy
 mistake the rewrite already disowns under the "no DTOs, no TypeMappers" emitter
