@@ -88,6 +88,14 @@ final class TableMethodDirectiveResolver {
      * method, and those return generated jOOQ table classes. A schema declaring a scalar / enum
      * return on {@code @tableMethod} is malformed (R43).
      */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "tablemethod-resolver-return-is-table-bound",
+        description = "The instanceof TableBoundReturnType rejection at both root and child sites "
+            + "guarantees every successful Resolved.TableBound carries a TableBoundReturnType. "
+            + "Lets ChildField.TableMethodField (and QueryField.QueryTableMethodTableField) "
+            + "declare returnType with the narrow ReturnTypeRef.TableBoundReturnType component "
+            + "type instead of the wider ReturnTypeRef root — downstream consumers reach "
+            + ".table() / .table().tableClass() without a sealed-switch or instanceof guard.")
     Resolved resolve(String parentTypeName, GraphQLFieldDefinition fieldDef, boolean isRoot) {
         String rawTypeName = baseTypeName(fieldDef);
         String elementTypeName = ctx.isConnectionType(rawTypeName)

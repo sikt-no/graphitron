@@ -82,10 +82,9 @@ type Query {
 
 == Constraints
 
-* At root sites, the field's return type must be `@table`-bound. A non-`@table` return (scalar, enum, plain `@record`, polymorphic) at root is rejected with `@tableMethod requires a @table-annotated return type`.
+* The field's return type must be `@table`-bound at every site (root and child). A non-`@table` return (scalar, enum, plain `@record`, polymorphic) is rejected with `@tableMethod requires a @table-annotated return type`. The directive's whole purpose is to bind a developer-authored jOOQ table method, which by construction returns a generated jOOQ table class; a scalar / enum return is malformed.
 * At root sites, `Connection`-wrapped return types are rejected: `@tableMethod at the root does not support Connection return types — use [T] or T instead`. Use plain `[Film!]!` or `Film` at the field, the rewrite does not synthesise a Connection envelope around a developer-chosen table.
-* At child sites, scalar / enum return types route to a deferred stub variant (`TableMethodField` carrying a non-table-bound return), the runtime path lands with a future roadmap item.
-* The reflected method's *exact* return type must equal the generated jOOQ table class for the field's element type, not a wider `Table<R>`. The strict invariant catches catalog-vs-method-signature drift at build time. (At child sites with non-table-bound returns the strictness check is skipped: there's no expected jOOQ table class to compare against.)
+* The reflected method's *exact* return type must equal the generated jOOQ table class for the field's element type, not a wider `Table<R>`. The strict invariant catches catalog-vs-method-signature drift at build time.
 * `tableMethodReference.className:` and `tableMethodReference.method:` are both required. Bare `@tableMethod` (no reference) and references missing `className:` or `method:` surface as `table method could not be resolved — ...`.
 * `argMapping:` is supported on `@tableMethod` and rebinds GraphQL argument names to differently-named Java parameters when conventions diverge. argMapping errors surface as `table method could not be resolved — @tableMethod ...`.
 * `contextArguments:` values must already be wired into the runtime `GraphQLContext` map. A typo surfaces as a `null` parameter at request time, not as a build error.
