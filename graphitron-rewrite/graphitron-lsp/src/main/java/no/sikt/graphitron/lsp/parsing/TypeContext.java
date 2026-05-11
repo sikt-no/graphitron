@@ -22,7 +22,9 @@ public final class TypeContext {
     private static final Set<String> TYPE_DEFINITION_KINDS = Set.of(
         "object_type_definition",
         "interface_type_definition",
-        "input_object_type_definition"
+        "input_object_type_definition",
+        "scalar_type_definition",
+        "enum_type_definition"
     );
 
     private TypeContext() {}
@@ -65,6 +67,17 @@ public final class TypeContext {
             if (value != null) return Optional.of(value);
         }
         return Optional.empty();
+    }
+
+    /**
+     * Returns the declared name on {@code typeDef} (e.g. the {@code "BigDecimal"}
+     * in {@code scalar BigDecimal @scalarType(...)}). Reads the first
+     * {@code name} child of any type-definition node.
+     */
+    public static Optional<String> declaredNameOf(Node typeDef, byte[] source) {
+        Node nameNode = childOfKind(typeDef, "name");
+        if (nameNode == null) return Optional.empty();
+        return Optional.of(Nodes.text(nameNode, source));
     }
 
     /**

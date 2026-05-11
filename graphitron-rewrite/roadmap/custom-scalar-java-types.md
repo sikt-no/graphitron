@@ -1,7 +1,7 @@
 ---
 id: R101
 title: "Custom-scalar Java type configuration (extended-scalars built-in)"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 6
 theme: model-cleanup
@@ -503,21 +503,61 @@ later, R94's author adds those annotations as part of R94's input-
 record-emitter work; the keys are already on trunk and the integration
 is a one-line additional `@DependsOnClassifierCheck` per consumer.
 
-### Phase 4: housekeeping
+### Phase 4: shipped
 
-- LSP completion on `@scalarType(scalar: |)` for a `scalar X`
-  declaration: suggest the convention-table FQN if the SDL name
-  matches a recognized name; suggest static `GraphQLScalarType`
-  fields off the consumer's classpath otherwise.
-- LSP diagnostics surface the validation errors inline.
-- Migration note in `changelog.md` naming the SHA where Phases 2
-  and 3 land, and instructing consumers to *remove* their manual
-  `.additionalType(...)` calls for any scalar graphitron now
-  resolves (graphql-java's `GraphQLSchema.Builder.additionalType`
-  rejects duplicate type names; see Risk).
-- `code-generation-triggers.adoc` row for `@scalarType`.
-- Document the resolution order in `docs/README.adoc` (or wherever
-  the scalar story lives post-R9).
+LSP completion + diagnostics for `@scalarType(scalar:)` plus the
+documentation surface.
+
+**LSP completion.** New `Behavior.ScalarTypeBinding` arm on the
+`@scalarType(scalar:)` coordinate. `ScalarTypeCompletions` reads
+the enclosing `scalar X` declaration's SDL name; when `X` matches
+an entry in `ScalarTypeResolver.CONVENTION_TABLE`, the matching FQN
+is offered first, then every other convention FQN as a secondary
+candidate. The "static `GraphQLScalarType` fields off the consumer's
+classpath" sketch in the original phase notes turned out to be out
+of reach: `CompletionData.ExternalReference` carries methods but
+not field metadata, so the catalog cannot tell us which classes
+expose scalar constants. Consumers binding a custom scalar fall
+back to typing the FQN by hand; the diagnostic surface tells them
+whether the class exists. `TypeContext.declaredNameOf(typeDef, source)`
+helper plus an extension of `TYPE_DEFINITION_KINDS` to include
+`scalar_type_definition` + `enum_type_definition` makes the
+enclosing-scalar lookup work uniformly. A new
+`ScalarTypeResolver.conventionTableFqnFor(name)` accessor exposes
+the per-name FQN to the LSP without forcing it to construct a
+classloader and re-run resolution.
+
+**LSP diagnostics.** New arm on `Diagnostics.dispatch()` covers the
+two checks the LSP catalog can answer offline: malformed FQN (no
+dot in the value → structural error pointing at
+`fully.qualified.Class.FIELD`) and unknown class (FQN's class part
+not in `externalReferences()` → error mirroring `@service`-style
+class diagnostic). Field-level rejections (`FieldNotFound`,
+`NotAScalarType`, `CoercingErased`) need reflection on the actual
+class and surface from the build-tier resolver, not the LSP. The
+empty-`externalReferences` gate (pre-`mvn compile` state) is the
+same one `validateClassName` uses for `@service`. Eight new tests
+in `DiagnosticsTest` and a new `ScalarTypeCompletionsTest` cover
+the surface.
+
+**Changelog migration note.** Entry in `roadmap/changelog.md`
+names the Phase 1–4 SHAs and instructs consumers to remove manual
+`.additionalType(ExtendedScalars.GraphQLBigDecimal)` (and any other
+graphitron-resolved scalar constant) calls from their
+`buildSchema(...)` hooks. graphql-java's
+`GraphQLSchema.Builder.additionalType` rejects duplicate type
+names at build time, so leaving the manual call in turns the
+upgrade into a `SchemaProblem` rather than silent tolerance.
+
+**Documentation.** `code-generation-triggers.adoc` gains four rows
+in the Type Classification table covering the directive, the
+convention layer, spec built-ins, and the unresolved-error case.
+`docs/manual/reference/directives/scalarType.adoc` rewritten to
+document the three-layer resolution order (spec built-ins → directive
+→ convention) and the migration note, with the forward-tense Phase 2
+caveat from the original page stripped now that Phase 3 has shipped.
+A new "Editor support" section names the LSP completion/diagnostic
+behavior.
 
 ## Relation to R94 / R96 / R97 / R98
 
