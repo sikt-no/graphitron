@@ -596,6 +596,23 @@ classifier-side producers (`FieldBuilder.deriveSplitQueryBatchKey`,
 `MappingsConstantNameDedup` already migrated to `f.sourceKey()` /
 `f.loaderRegistration()` in step 11.
 
+14. `FieldBuilder` split-query and table-backed polymorphic-Row producers
+    inline the resolver projections. `deriveSplitQueryBatchKey` (returning
+    `BatchKey.RowKeyed`) becomes `deriveSplitQuerySource` returning a small
+    `SplitQuerySource(SourceKey, LoaderRegistration)` pair record; the helper
+    folds in the projection rules previously split between
+    `SourceKeyResolver.resolveSplit` (target / Wrap.Row / ColumnRead / cardinality
+    from return wrapper) and `LoaderRegistrationResolver.resolve`
+    (POSITIONAL_LIST / LOAD_ONE / valueIsList from wrapper). The two
+    `SplitTableField` / `SplitLookupTableField` construction sites read the
+    pair components directly. The two table-backed polymorphic-Row sites
+    (interface / union child on `@table` parent) drop the inline
+    `BatchKey.RowKeyed → SourceKeyResolver.resolveRecordParentForPolymorphic`
+    chain in favour of a new private helper
+    `buildTableBackedPolymorphicParentSourceKey(pkCols)` that builds the
+    `Wrap.Row + ColumnRead + Cardinality.ONE` projection inline. 1554 tests
+    green; the three pre-existing `MultiSchemaQueryTest` failures unchanged.
+
 Still to land for Phase 3 completion:
 - **Producer site inlining**: `FieldBuilder` (`deriveSplitQueryBatchKey`,
   `deriveBatchKeyForResultType`, `resolveRecordParentBatchKey`,
