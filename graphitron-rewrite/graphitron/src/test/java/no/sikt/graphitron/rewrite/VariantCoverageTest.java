@@ -66,17 +66,7 @@ class VariantCoverageTest {
             + "shim cases land via the same buildInputNodeIdReference helper for the "
             + "[ID!] @nodeId(typeName: T) branch, but no test fixture exercises an arity > 1 FK "
             + "target yet (the fixtures use `bar` (composite PK) only for same-table NodeId "
-            + "paths). Add a NodeIdPipelineTest case when a composite-PK FK target lands.",
-        ChildField.SingleRecordTableField.class,
-            "R75 / Phase 1 — permit added structurally; the classifier arm that produces it "
-            + "(payload-returning DML mutations whose carrier is PojoResultType.NoBacking) "
-            + "lands with the intrusive Phase 1 work alongside the new SingleRecordCarrierPipelineTest. "
-            + "Remove this entry when that case lands.",
-        MutationField.MutationDmlRecordField.class,
-            "R75 / Phase 1 — permit added structurally; the classifier arm that produces it "
-            + "(payload-returning DML mutations admitted via tryResolveSingleRecordCarrier) "
-            + "lands with the intrusive Phase 1 work alongside the new SingleRecordCarrierPipelineTest. "
-            + "Remove this entry when that case lands."
+            + "paths). Add a NodeIdPipelineTest case when a composite-PK FK target lands."
     );
 
     private static final List<Class<?>> ROOTS = List.of(
