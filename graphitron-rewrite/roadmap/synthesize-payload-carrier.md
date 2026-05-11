@@ -158,20 +158,48 @@ input table. Mismatch (e.g. SDL author writing
 `Mutation.x(in: FilmInput!): ActorPayload`) is rejected at classification
 time with a per-mismatch message.
 
-### `RecordTableField.loaderRegistration` widening
+### New sibling permit: `ChildField.RootedPayloadDataField`
 
-R38's `ChildField.RecordTableField` permit declares
-`LoaderRegistration loaderRegistration` as a non-null record component;
-every existing producer pairs a `SourceKey` with a `LoaderRegistration`
-because every existing arm is DataLoader-batched. R75's rooted DML payload
-case introduces the first `RecordTableField` instance with no DataLoader,
-so the component widens to nullable (or `Optional<LoaderRegistration>`,
-implementer's call) and consumers that dispatch on `loaderRegistration`
-admit a "no-loader, plain DataFetcher" arm gated on
-`sourceKey.reader() instanceof Reader.ResultRowWalk`. The widening is
-strictly additive — every existing producer continues to supply a
-`LoaderRegistration` and every existing consumer goes down the
-DataLoader-batched path as before.
+R38's `ChildField.RecordTableField` implements the `BatchKeyField` capability,
+whose contract is "a field that requires DataLoader setup"; every existing
+producer pairs a non-null `SourceKey` with a non-null `LoaderRegistration` and
+every consumer (notably `RecordTableField.emitsSingleRecordPerKey()`, which
+reads `loaderRegistration().dispatch()` unconditionally) relies on that
+invariant. R75's rooted DML payload data field is structurally not
+DataLoader-backed: the upstream DML produced a `Result<RecordN<...>>` that
+graphql-java is now traversing, and the data field's fetcher reads
+`env.getSource()` directly.
+
+Rather than widen `RecordTableField.loaderRegistration` to nullable (which
+would dissolve the `BatchKeyField` invariant and force every existing
+consumer site to guard a "no-loader" arm), R75 introduces a sibling
+`ChildField` permit:
+
+```java
+record RootedPayloadDataField(
+    String parentTypeName,
+    String name,
+    SourceLocation location,
+    ReturnTypeRef.TableBoundReturnType returnType,
+    SourceKey sourceKey   // reader is Reader.ResultRowWalk by construction
+) implements ChildField, TableTargetField {}
+```
+
+The permit carries `SourceKey` without `LoaderRegistration`; the
+`source-key.result-row-walk-cardinality-matches-upstream-result` invariant
+declared on `SourceKey`'s compact constructor (R75's contribution to R38's
+invariant inventory) is what pins the rooted shape at the model level. It
+does *not* implement `BatchKeyField`; the dispatch-axes split between
+`SourceKey` and `LoaderRegistration` (see
+`graphitron-rewrite/docs/dispatch-axes.adoc`) is preserved at the field
+record level. Every existing `RecordTableField` producer and consumer is
+unchanged.
+
+`RootedPayloadDataField` implements `TableTargetField` so polymorphic and
+nested-`@table` consumers that read `target()` work uniformly. The data
+fetcher emit dispatches on `RootedPayloadDataField` at the same seam that
+dispatches on `RecordTableField` (one new arm in
+`FetcherEmitter.dataFetcherValue` or its sibling).
 
 ## Phase 1 conventions
 
@@ -190,14 +218,31 @@ once here so the phase bodies don't litter "we picked X over Y":
   `localContext` attachment is purely additive. The carrier ships with a
   `slots: List<SlotDescriptor>` component (empty in Phase 1) for the same
   reason.
-- **`PojoResultType` for plain payload Objects.** No-`@record` plain SDL
-  Objects passing the trigger promote to `PojoResultType` with
-  `fqClassName == null` at type-classification time, not at
-  `resolveReturnType` call time. This keeps the trigger's downstream
-  consumers on one `ResultType` machinery and avoids re-introducing a
-  short-circuit at `resolveReturnType` (the very seam the pivot retired).
-  The `fqClassName == null` overload now carries two meanings; sub-splitting
-  `PojoResultType` is a sibling Backlog item.
+- **`PojoResultType` split into `Backed | NoBacking` sub-taxonomy.**
+  No-`@record` plain SDL Objects passing the trigger promote to a
+  `ResultType` arm at type-classification time, not at `resolveReturnType`
+  call time, so the trigger's downstream consumers stay on one
+  `ResultType` machinery and `resolveReturnType` is free of the
+  short-circuit the pivot retired. Today's `PojoResultType` carries
+  `String fqClassName` (nullable, with `null` meaning either "authored
+  payload with no className declared" or "plain payload Object promoted"):
+  R75 Phase 1 ships the sub-taxonomy split as part of the implementation
+  rather than deferring it.
+  ```java
+  sealed interface PojoResultType extends ResultType
+      permits PojoResultType.Backed, PojoResultType.NoBacking {
+      record Backed(String name, SourceLocation location, ClassName className)
+          implements PojoResultType {}
+      record NoBacking(String name, SourceLocation location)
+          implements PojoResultType {}
+  }
+  ```
+  `Backed` is authored payloads with `@record(record: {className: ...})`;
+  `NoBacking` is plain payload Objects promoted by the trigger. Consumers
+  that today read `fqClassName` and check for `null` (the validator,
+  emitter helpers) switch over the two arms exhaustively. The split lifts
+  the sentinel overload at the type level: every consumer knows which case
+  it's looking at from the variant, not from a nullable.
 - **Two-step emit uniformly.** Direct-`@table`-return DML mutations
   (`createFilm: Film`) get the same two-step shape as payload-returning
   mutations (PK-only RETURNING in a tight transaction, follow-up SELECT
@@ -257,10 +302,11 @@ construction; the row is gone before the response SELECT can read it.
 sealed `PayloadResolution` (`Ok(PayloadShape)` / `NotCandidate` /
 `Rejected(Reason)`). Four conditions:
 
-1. The type is registered as `PojoResultType` with `fqClassName == null`.
-   No-`@record` plain SDL Objects promote to that shape at
-   type-classification time per the conventions above; `PlainObjectType`
-   never reaches the trigger.
+1. The type is registered as `PojoResultType.NoBacking`. No-`@record` plain
+   SDL Objects promote to that arm at type-classification time per the
+   conventions above; `PlainObjectType` never reaches the trigger.
+   `PojoResultType.Backed` (authored payloads with `@record`) falls into
+   `NotCandidate`.
 2. The SDL Object declares exactly one field — the data field. (Phase 2
    widens to "exactly one `@table`-element field plus zero or more
    non-`@table`-element slot fields".)
@@ -275,10 +321,10 @@ sealed `PayloadResolution` (`Ok(PayloadShape)` / `NotCandidate` /
 
 The trigger is consulted at the mutation classifier (admitting the payload
 return as `MutationDmlRecordField`) and at the schema-builder's per-type
-pass (admitting the data field as `RecordTableField`). The same resolution
-flows into `MutationInputResolver.validateReturnType`'s `ResultReturnType`
-arm, which substitutes the `Rejected` reason on per-condition failure;
-validator-mirrors-classifier discipline holds.
+pass (admitting the data field as `RootedPayloadDataField`). The same
+resolution flows into `MutationInputResolver.validateReturnType`'s
+`ResultReturnType` arm, which substitutes the `Rejected` reason on per-
+condition failure; validator-mirrors-classifier discipline holds.
 
 ### Mutation-field classification
 
@@ -288,8 +334,8 @@ branch to the existing direct-`@table` admission:
 - The mutation has `@mutation(typeName: <KIND>)` and a registered
   `TableInputArg`.
 - `ctx.resolveReturnType(rawReturn, wrapper)` returns `ResultReturnType`
-  (the payload type having been promoted to `PojoResultType` with
-  `fqClassName == null` at type-classification time).
+  (the payload type having been promoted to `PojoResultType.NoBacking` at
+  type-classification time).
 - The classifier consults the trigger. On `Ok`, classify as
   `MutationDmlRecordField` with `kind` from the `@mutation` directive. For
   `kind == DELETE`, reject with `"@mutation(typeName: DELETE) returning a
@@ -298,18 +344,19 @@ branch to the existing direct-`@table` admission:
   `ResultReturnType`-arm rejection (the `@record`-with-`className`
   non-payload case is unchanged).
 
-### Data-field classification: `RecordTableField` with rooted `SourceKey`
+### Data-field classification: `RootedPayloadDataField`
 
 The schema-builder's per-type pass classifies the data field as
-`ChildField.RecordTableField` when the trigger returns `Ok`:
+`ChildField.RootedPayloadDataField` (the new sibling permit introduced in the
+Foundation section) when the trigger returns `Ok`:
 
 - `parentTypeName`: the payload type name.
 - `name`: the data field's name.
 - `returnType`: `TableBoundReturnType` carrying the data field's element
-  type, resolved `TableRef`, and SDL `FieldWrapper` (single or list).
-- `joinPath`: empty — rooted; rows filter by PK directly.
-- `filters` / `orderBy` / `pagination`: empty / null. Phase 1's trigger
-  forbids arguments and directives on the data field.
+  type, resolved `TableRef`, and SDL `FieldWrapper` (single or list). Phase
+  1's trigger forbids arguments and directives on the data field, so
+  there's no `filters` / `orderBy` / `pagination` / `joinPath` slot to
+  carry; rows filter by PK directly inside the fetcher's follow-up SELECT.
 - `sourceKey`: constructed inline by the `FieldBuilder` producer from the
   upstream `MutationDmlRecordField`'s `tableInputArg` (R38 Phase 3 deleted
   the `SourceKeyResolver` indirection; producers `new SourceKey(...)`
@@ -322,14 +369,13 @@ The schema-builder's per-type pass classifies the data field as
   - `cardinality = tableInputArg.wrapper().isList() ? Cardinality.MANY
     : Cardinality.ONE`
   - `reader = new SourceKey.Reader.ResultRowWalk()`
-- `loaderRegistration = null` — rooted plain `DataFetcher`, per the
-  widening described in the Foundation section.
 
 The mutation is invoked exactly once per request and its result is the
 singleton parent of the payload's traversal; the data field is fetched once.
-`SourceKey.reader == ResultRowWalk` signals this to the emitter; existing
-`RecordTableField` emit for non-rooted parents (`reader == ColumnRead` etc.,
-established in R38) stays on the DataLoader path.
+The `Reader.ResultRowWalk` arm on the `SourceKey` signals the rooted shape;
+existing `RecordTableField` emit for non-rooted parents
+(`reader instanceof Reader.ColumnRead` etc., established in R38) stays on
+the DataLoader path, unchanged.
 
 ### Generator emit
 
@@ -435,23 +481,35 @@ from `PassthroughPayloadPipelineTest` to align with the directive rename):
 - Per-`DmlKind ∈ {INSERT, UPDATE, UPSERT}`:
   - Mutation field classifies as `MutationDmlRecordField` with the
     expected `kind` for payload returns.
-  - Data field classifies as `ChildField.RecordTableField` with the
-    expected `SourceKey` shape: `reader instanceof Reader.ResultRowWalk`,
-    `path` empty, `wrap instanceof Wrap.Record`, `cardinality` matching
-    input arg, `columns == inputTable.primaryKeyColumns()`, and
-    `loaderRegistration == null` (the no-loader rooted arm).
+  - Data field classifies as `ChildField.RootedPayloadDataField` (the new
+    sibling permit) with the expected `SourceKey` shape:
+    `reader instanceof Reader.ResultRowWalk`, `path` empty,
+    `wrap instanceof Wrap.Record`, `cardinality` matching input arg,
+    `columns == inputTable.primaryKeyColumns()`. The permit does not
+    implement `BatchKeyField`; no `loaderRegistration` slot to assert.
+- Payload type promotes to `PojoResultType.NoBacking`; authored payloads
+  with `@record(record: {className: ...})` continue to promote to
+  `PojoResultType.Backed`. Exhaustive-switch assertion over the sealed sub-
+  taxonomy on a small consumer (validator helper) confirms the split is
+  load-bearing rather than cosmetic.
 - DELETE-with-payload return rejects with the per-mismatch message.
 - Trigger rejections (multi-field, scalar element, interface element,
   graphitron-domain directives on the data field, `@table`-typed payload,
   `@record`-with-`className`).
 - `@deprecated` on the data field admits.
-- Direct-`@table`-return tests (`MutationInsertTableField` etc.): emit
-  shape is two-step. Pin via structural assertion on the generated method
-  body if pipeline-tier can reach it; otherwise rely on compilation +
-  execution tier.
+- *Direct-`@table`-return two-step emit pin.* For each
+  `DmlKind ∈ {INSERT, UPDATE, UPSERT}`, the existing `MutationInsertTableField`
+  / `MutationUpdateTableField` / `MutationUpsertTableField` fetcher's emitted
+  `MethodSpec` is structurally walked (not body-string compared) to assert
+  the two-step shape: exactly one `dsl.transactionResult(...)` invocation
+  inside the body, and a follow-up `SELECT` call site outside the
+  transaction lambda. A regression to single-statement
+  `INSERT…RETURNING $fields(table)` (compile-correct, but durability-
+  defeating) fails this pin.
 - `fetcherEmitter_revertedTwoArms`: structural pin that
   `FetcherEmitter.dataFetcherValue` has the two pre-R75 `instanceof` arms
-  (`ConstructorField`, `NestingField`).
+  (`ConstructorField`, `NestingField`), plus the new
+  `RootedPayloadDataField` arm.
 
 **Compilation-tier** (`graphitron-sakila-example`): SDL fixture from the
 shipped attempt survives — `FilmPayload` + the `create / update / upsert`
@@ -476,6 +534,13 @@ mutations.
 - Direct-`@table`-return mutations (`createFilm: Film` etc.): same
   round-trip check confirms the existing carrier types work under the
   two-step emit.
+- *Durability pin replayed for direct-`@table` return*
+  (`dml_persists_when_directReturnSelect_throws`): the same synthetic-error
+  injection as the headline pin, against `createFilm: Film` (and one
+  per-`DmlKind` variant). Direct-`@table` DML is changing emit pattern from
+  single-statement `INSERT…RETURNING $fields(table)` to two-step inside
+  this work; the durability invariant the reshape exists to establish must
+  hold across both surfaces, not just the payload one.
 
 **Audit-tier:** R75's contribution to R38's invariant inventory is the
 `source-key.result-row-walk-cardinality-matches-upstream-result`
@@ -495,9 +560,6 @@ site.
   uses narrow `ResultReturnType`; existing `MutationServiceRecordField`
   uses broad `ReturnTypeRef`. Aligning the existing carrier to the narrow
   shape is a sibling Backlog item.
-- **`PojoResultType` sub-taxonomy** (`Backed | NoBacking`) to disambiguate
-  the two meanings of `fqClassName == null`. R75 inherits the wart; the
-  refinement is a sibling Backlog item.
 
 ## Phase 2: multi-field payloads via localContext
 
@@ -767,17 +829,26 @@ new `PayloadServiceTest` parameterising over `(elementKind, wrapper)`:
   class on disk for the payload.
 - `PayloadPipelineTest`'s admission cases pass for INSERT / UPDATE /
   UPSERT; DELETE-with-payload rejects with the per-mismatch message. The
-  data-field's `SourceKey` shape is asserted (`reader instanceof
-  Reader.ResultRowWalk`, `path` empty, `wrap instanceof Wrap.Record`,
-  `cardinality` matching input arg, `columns ==
-  inputTable.primaryKeyColumns()`, `loaderRegistration == null`).
+  data-field classifies as `ChildField.RootedPayloadDataField` (the new
+  sibling permit, not implementing `BatchKeyField`) with the expected
+  `SourceKey` shape (`reader instanceof Reader.ResultRowWalk`, `path`
+  empty, `wrap instanceof Wrap.Record`, `cardinality` matching input arg,
+  `columns == inputTable.primaryKeyColumns()`).
+- `PojoResultType` ships split into `Backed(ClassName)` / `NoBacking()`;
+  no-`@record` plain SDL Objects passing the trigger promote to
+  `NoBacking`; authored `@record` payloads (with or without className)
+  promote to `Backed`. Downstream consumers that previously read
+  `fqClassName` and checked for `null` switch over the two arms
+  exhaustively.
 - `PayloadDmlTest`'s execution-tier driver passes against the sakila
   testcontainer for INSERT / UPDATE / UPSERT, verifying the two-step emit
   (DML in transaction + follow-up SELECT, both halves typed via
   `SourceKey`) compiles and runs end-to-end.
 - The headline correctness pin (`dml_persists_when_followupSelect_throws`)
-  passes: the DML row persists in the DB even when the response-side
-  SELECT or a nested `@table` fetcher throws.
+  passes for payload-returning DML, *and* the direct-`@table`-return
+  variant (`dml_persists_when_directReturnSelect_throws`) passes for
+  `createFilm: Film` etc. — the durability invariant the reshape exists
+  to establish holds across both surfaces the two-step emit applies to.
 - Phase 1's shipped attempt retires cleanly: `PassthroughDataField`,
   `IdentityPassthrough`, the `resolveReturnType` short-circuit, the
   `FetcherRegistrationsEmitter` filter widening, the
@@ -785,7 +856,8 @@ new `PayloadServiceTest` parameterising over `(elementKind, wrapper)`:
   and the `PASSTHROUGH_PAYLOAD_DATA_FIELD` fixture are all gone.
 - Direct-`@table`-return DML mutations (`createFilm: Film` etc.) continue
   to work under the new two-step emit pattern; existing fixtures regress
-  without changes.
+  without changes; the structural two-step-emit pin guards against a
+  silent revert to single-statement emit.
 - Authored payloads with `@record(record: {className: ...})` are
   unaffected (R12 scope unchanged).
 - R75's contribution to R38's invariant inventory —
