@@ -82,6 +82,54 @@ class ServiceRootFetcherPipelineTest {
                 && m.contains("FilmRecord"));
     }
 
+    /**
+     * R127: a root {@code @service} field with a {@code [Film!]!} return type accepts a
+     * developer method that returns {@code java.util.List<FilmRecord>} as well as the
+     * historical {@code org.jooq.Result<FilmRecord>}. Pipeline-tier positive witness for
+     * the looser pair check in
+     * {@code ServiceDirectiveResolver.validateRootListTableBoundReturnPair}.
+     */
+    @Test
+    void serviceWithListOfRecordReturn_isAccepted() {
+        var errors = validate("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                acceptsListShape: [Film!]!
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsAsList"})
+            }
+            """);
+
+        assertThat(messages(errors))
+            .noneMatch(m -> m.contains("Field 'Query.acceptsListShape'"));
+    }
+
+    /**
+     * R127: a root {@code @service} on a {@code [Film!]!} return whose method returns
+     * neither {@code Result<FilmRecord>} nor {@code List<FilmRecord>} rejects with both
+     * accepted shapes named, the actual mismatched shape named, and the same
+     * {@code "service method could not be resolved — "} prefix the Single-arm rejection
+     * carries. Locks in the error-quality contract the looser pair check is most likely
+     * to regress.
+     */
+    @Test
+    void serviceWithWrongInnerGenericOnList_surfacesAsValidationErrorWithPairedShapes() {
+        var errors = validate("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+                wrongInnerGenericOnList: [Film!]!
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguages"})
+            }
+            """);
+
+        assertThat(messages(errors))
+            .anyMatch(m -> m.contains("Field 'Query.wrongInnerGenericOnList'")
+                && m.contains("service method could not be resolved")
+                && m.contains("must return")
+                && m.contains("Result<FilmRecord>")
+                && m.contains("List<FilmRecord>")
+                && m.contains("Result<LanguageRecord>"));
+    }
+
     private static List<ValidationError> validate(String sdl) {
         var schema = TestSchemaHelper.buildSchema(sdl);
         return new GraphitronSchemaValidator().validate(schema);
