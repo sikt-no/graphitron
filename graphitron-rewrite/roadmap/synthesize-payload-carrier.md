@@ -220,6 +220,17 @@ fetcher emit dispatches on `SingleRecordTableField` at the same seam that
 dispatches on `RecordTableField` (one new arm in
 `FetcherEmitter.dataFetcherValue` or its sibling).
 
+No new "has-a-`SourceKey`" capability is minted alongside the permit. Both
+`RecordTableField` (`BatchKeyField`) and `SingleRecordTableField` carry
+`SourceKey` as a record component, but no current generator site asks "does
+this field have a `SourceKey`" uniformly across the two — every site forks
+on the field-permit identity to decide DataLoader-vs-direct dispatch. Per
+the "Capability interfaces and sealed switches serve different roles"
+principle, a `SourceBoundField` capability would relocate exhaustiveness
+bookkeeping without removing any per-site fork. If a future site does want
+to read `sourceKey()` uniformly across both, that's when the capability
+earns its place.
+
 ## Phase 1 conventions
 
 A handful of decisions ride through both phases below. Stating them once
@@ -256,16 +267,26 @@ here so the phase bodies don't litter "we picked X over Y":
   }
   ```
   `Backed` is authored payloads with `@record(record: {className: ...})`;
-  `NoBacking` is plain payload Objects promoted by the trigger. Consumers
-  that today read `fqClassName` and check for `null` (the validator,
-  emitter helpers) switch over the two arms exhaustively. The split lifts
-  the sentinel overload at the type level: every consumer knows which case
-  it's looking at from the variant, not from a nullable.
+  `NoBacking` is plain payload Objects promoted by the trigger. The
+  consumers that today read `fqClassName` and check for `null` all migrate
+  to exhaustive `switch (PojoResultType)`: (a) the trigger's condition #1,
+  (b) `MutationInputResolver.validateReturnType`'s `ResultReturnType` arm,
+  (c) the `FetcherRegistrationsEmitter` filter that admits `PojoResultType`
+  for fetcher registration, and (d) the R12 authored-payload emit path that
+  reads `className`. The split lifts the sentinel overload at the type
+  level: every consumer knows which case it's looking at from the variant,
+  not from a nullable.
 - **Two-step emit uniformly.** Direct-`@table`-return DML mutations
   (`createFilm: Film`) get the same two-step shape as payload-returning
   mutations (PK-only RETURNING in a tight transaction, follow-up SELECT
   outside it). The transaction-durability win applies to both; one emit
-  pattern across both reduces the surface to maintain.
+  pattern across both reduces the surface to maintain. The existing
+  `MutationInsertTableField` / `MutationUpdateTableField` /
+  `MutationUpsertTableField` permits carry sufficient information for the
+  two-step emit without component changes: `tableInputArg.inputTable()
+  .primaryKeyColumns()` for the RETURNING clause, `returnType.tableRef()`
+  for the follow-up SELECT. The reshape is an emit-pattern change inside
+  existing arms, not a model-shape change.
 - **Trigger function name.** The classify-time helper is
   `tryResolveSingleRecordCarrier`. The earlier `unwrapPassthroughPayload`
   name was residue from the retired wire-format-unwrap design;
@@ -377,6 +398,19 @@ branch to the existing direct-`@table` admission:
   retired `passthrough-payload.data-table-equals-dml-target` check; the
   validator threads the same rejection via the
   validator-mirrors-classifier path.
+
+  *Load-bearing.* This producer wears
+  `@LoadBearingClassifierCheck(key = "mutation-dml-record-field.data-table-
+  equals-input-table", ...)`. Two consumer sites wear the paired
+  `@DependsOnClassifierCheck`: (a) the mutation-fetcher emit that builds
+  `RETURNING tableInputArg.inputTable().primaryKeyColumns()` (relies on
+  the input-table's PK columns being the same shape the data field's
+  follow-up SELECT will read), and (b) the data-field fetcher emit that
+  builds `where(TABLE.PK.in(source.getValues(TABLE.PK)))` (relies on the
+  upstream Result's row type matching the data-field's element table's
+  PK columns). `LoadBearingGuaranteeAuditTest` will surface relaxation
+  of this check as orphaned consumers, the same way it does for the
+  three R38 `source-key.*` keys.
 
 ### Data-field classification: `SingleRecordTableField`
 
@@ -499,16 +533,18 @@ The following retire as part of Phase 1's implementation:
   but moves inside the trigger function alongside the other classify-time
   conditions.
 - The load-bearing classifier check
-  `passthrough-payload.data-table-equals-dml-target`. Replaced at the
-  mutation-classifier admission step (see "Mutation-field classification"
-  above): after the trigger returns `Ok`, the classifier compares the
-  resolved data-element table against `tableInputArg.inputTable()` and
-  rejects on mismatch. The validator threads that rejection through the
-  validator-mirrors-classifier path. R75's new `SourceKey` invariant
-  (`source-key.result-row-walk-cardinality-matches-upstream-result`) pins
-  cardinality only — table-equality is a cross-component concern between
-  the data field's `returnType` and the mutation's `tableInputArg`, which
-  the classifier-admission step is the natural site for.
+  `passthrough-payload.data-table-equals-dml-target`. Renamed and relocated
+  rather than retired wholesale: the new key is
+  `mutation-dml-record-field.data-table-equals-input-table`, produced at
+  `FieldBuilder.classifyMutationField`'s admission step (see "Mutation-field
+  classification" above) and consumed at the mutation-fetcher RETURNING
+  emit + the data-field fetcher's WHERE-PK-IN emit. R75's new `SourceKey`
+  invariant (`source-key.result-row-walk-cardinality-matches-upstream-
+  result`) pins cardinality only — table-equality is a cross-component
+  concern between the data field's `returnType` and the mutation's
+  `tableInputArg`, which the classifier-admission step is the natural site
+  for; the `@LoadBearingClassifierCheck` annotation pair preserves the
+  audit discipline at the new location.
 
 ### Tests
 
@@ -584,11 +620,20 @@ mutations.
   this work; the durability invariant the reshape exists to establish must
   hold across both surfaces, not just the payload one.
 
-**Audit-tier:** R75's contribution to R38's invariant inventory is the
-`source-key.result-row-walk-cardinality-matches-upstream-result`
-load-bearing classifier check. The audit framework verifies the check is
-consumed by the mutation-fetcher emit site and the data-field fetcher emit
-site.
+**Audit-tier:** R75's contributions to the load-bearing-check inventory
+are two new keys:
+
+- `source-key.result-row-walk-cardinality-matches-upstream-result`
+  (cardinality invariant on `SourceKey`'s compact constructor when
+  `reader == Reader.ResultRowWalk`).
+- `mutation-dml-record-field.data-table-equals-input-table` (table-equality
+  produced at `FieldBuilder.classifyMutationField`'s admission step,
+  consumed at the mutation-fetcher RETURNING emit and the data-field
+  fetcher WHERE-PK-IN emit).
+
+`LoadBearingGuaranteeAuditTest` walks the rewrite module's compiled output
+and fails on any consumer whose key has no producer (or duplicate producer)
+for both keys.
 
 ### Out of scope for Phase 1
 
@@ -797,9 +842,10 @@ new `SingleRecordCarrierServiceTest` parameterising over
   silent revert to single-statement emit.
 - Authored carriers with `@record(record: {className: ...})` are
   unaffected (R12 scope unchanged).
-- R75's contribution to R38's invariant inventory —
-  `source-key.result-row-walk-cardinality-matches-upstream-result` —
-  declared and consumed.
+- R75's contributions to the load-bearing-check inventory —
+  `source-key.result-row-walk-cardinality-matches-upstream-result` and
+  `mutation-dml-record-field.data-table-equals-input-table` — declared,
+  consumed, and clean under `LoadBearingGuaranteeAuditTest`.
 
 **Phase 2:**
 
