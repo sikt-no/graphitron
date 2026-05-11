@@ -1,10 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.rewrite.LoaderRegistrationResolver;
-import no.sikt.graphitron.rewrite.SourceKeyResolver;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -32,7 +29,7 @@ class RecordLookupTableFieldValidationTest {
 
     private static final TableRef FILM_TABLE = TestFixtures.tableRef("film", "FILM", "Film", List.of());
     private static final LookupMapping EMPTY_LOOKUP = new LookupMapping.ColumnMapping(List.of(), FILM_TABLE);
-    private static final BatchKey.RecordParentBatchKey BATCH_KEY = new BatchKey.RowKeyed(java.util.List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer")));
+    private static final List<ColumnRef> PARENT_KEY_COLS = List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer"));
 
     private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {
         return new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
@@ -41,12 +38,12 @@ class RecordLookupTableFieldValidationTest {
     private static final ReturnTypeRef.TableBoundReturnType RT_SINGLE = filmReturn(new FieldWrapper.Single(true));
     private static final ReturnTypeRef.TableBoundReturnType RT_LIST = filmReturn(new FieldWrapper.List(true, true));
     private static final ReturnTypeRef.TableBoundReturnType RT_CONN = filmReturn(new FieldWrapper.Connection(true, 100));
-    private static final SourceKey SOURCE_KEY_SINGLE = SourceKeyResolver.resolveRecordParent(BATCH_KEY, RT_SINGLE);
-    private static final SourceKey SOURCE_KEY_LIST = SourceKeyResolver.resolveRecordParent(BATCH_KEY, RT_LIST);
-    private static final SourceKey SOURCE_KEY_CONN = SourceKeyResolver.resolveRecordParent(BATCH_KEY, RT_CONN);
-    private static final LoaderRegistration LR_SINGLE = LoaderRegistrationResolver.resolve(BATCH_KEY, RT_SINGLE);
-    private static final LoaderRegistration LR_LIST = LoaderRegistrationResolver.resolve(BATCH_KEY, RT_LIST);
-    private static final LoaderRegistration LR_CONN = LoaderRegistrationResolver.resolve(BATCH_KEY, RT_CONN);
+    private static final SourceKey SOURCE_KEY_SINGLE = TestFixtures.recordParentRowSourceKey(FILM_TABLE, PARENT_KEY_COLS, false);
+    private static final SourceKey SOURCE_KEY_LIST = TestFixtures.recordParentRowSourceKey(FILM_TABLE, PARENT_KEY_COLS, true);
+    private static final SourceKey SOURCE_KEY_CONN = TestFixtures.recordParentRowSourceKey(FILM_TABLE, PARENT_KEY_COLS, true);
+    private static final LoaderRegistration LR_SINGLE = TestFixtures.loaderRegistration(RT_SINGLE, false, false);
+    private static final LoaderRegistration LR_LIST = TestFixtures.loaderRegistration(RT_LIST, false, false);
+    private static final LoaderRegistration LR_CONN = TestFixtures.loaderRegistration(RT_CONN, false, false);
 
     // Validator messages for RecordLookupTableField. CONDITION_JOIN_STUB comes from the
     // SplitRowsMethodEmitter.unsupportedReason delegation; the single-cardinality gate

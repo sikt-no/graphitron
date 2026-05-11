@@ -238,6 +238,25 @@ public final class TestFixtures {
     }
 
     /**
+     * Polymorphic-Accessor {@link SourceKey} for {@link ChildField.InterfaceField} /
+     * {@link ChildField.UnionField} on a {@code @record}-backed parent with a typed hub
+     * accessor: target=hubTable (where the accessor's typed return lives),
+     * columns=hubTable.PK, path=[hop], {@link SourceKey.Wrap.Record} +
+     * {@link SourceKey.Reader.AccessorCall}, cardinality per the accessor (Single ⇒ ONE,
+     * Many ⇒ MANY).
+     */
+    public static SourceKey polymorphicAccessorParentSourceKey(
+            no.sikt.graphitron.rewrite.model.TableRef hubTable,
+            JoinStep.LiftedHop hop,
+            no.sikt.graphitron.rewrite.model.AccessorRef accessor,
+            boolean isMany) {
+        return new SourceKey(hubTable, hubTable.primaryKeyColumns(), List.of(hop),
+            new SourceKey.Wrap.Record(),
+            isMany ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
+            new SourceKey.Reader.AccessorCall(accessor));
+    }
+
+    /**
      * Service-table {@link SourceKey}: target=rt.table(), {@code parentKeyColumns} as entry
      * columns, empty path, {@code wrap} per developer's source-shape declaration, cardinality
      * from rt, {@link SourceKey.Reader.ServiceTableRecord} carrying {@code rt.table().recordClass()}.

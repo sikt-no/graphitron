@@ -1,9 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
-import no.sikt.graphitron.rewrite.LoaderRegistrationResolver;
-import no.sikt.graphitron.rewrite.SourceKeyResolver;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -34,10 +31,10 @@ class SplitLookupTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
     }
 
-    private static final BatchKey.RowKeyed PARENT_BATCH_KEY = new BatchKey.RowKeyed(java.util.List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer")));
+    private static final List<ColumnRef> PARENT_KEY_COLS = List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer"));
     private static final ReturnTypeRef.TableBoundReturnType RT_CONN = filmReturn(new FieldWrapper.Connection(true, 100));
-    private static final SourceKey SOURCE_KEY_CONN = SourceKeyResolver.resolveSplit(PARENT_BATCH_KEY, RT_CONN);
-    private static final LoaderRegistration LR_CONN = LoaderRegistrationResolver.resolve(PARENT_BATCH_KEY, RT_CONN);
+    private static final SourceKey SOURCE_KEY_CONN = TestFixtures.splitSourceKey(RT_CONN.table(), PARENT_KEY_COLS, true);
+    private static final LoaderRegistration LR_CONN = TestFixtures.loaderRegistration(RT_CONN, false, false);
 
     // Single-cardinality @splitQuery @lookupKey is rejected at classifier time in
     // FieldBuilder; the emitter-level validator no longer carries a fallback check

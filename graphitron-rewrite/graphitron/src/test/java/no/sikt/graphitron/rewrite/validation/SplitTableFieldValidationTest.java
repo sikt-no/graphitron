@@ -1,10 +1,7 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.rewrite.LoaderRegistrationResolver;
-import no.sikt.graphitron.rewrite.SourceKeyResolver;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
@@ -34,13 +31,13 @@ class SplitTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Actor", TestFixtures.tableRef("actor", "ACTOR", "Actor", List.of()), wrapper);
     }
 
-    private static final BatchKey.RowKeyed PARENT_BATCH_KEY = new BatchKey.RowKeyed(java.util.List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer")));
+    private static final List<ColumnRef> PARENT_KEY_COLS = List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer"));
     private static final ReturnTypeRef.TableBoundReturnType RT_SINGLE = actorReturn(new FieldWrapper.Single(true));
     private static final ReturnTypeRef.TableBoundReturnType RT_CONN = actorReturn(new FieldWrapper.Connection(false, 100));
-    private static final SourceKey SOURCE_KEY_SINGLE = SourceKeyResolver.resolveSplit(PARENT_BATCH_KEY, RT_SINGLE);
-    private static final SourceKey SOURCE_KEY_CONN = SourceKeyResolver.resolveSplit(PARENT_BATCH_KEY, RT_CONN);
-    private static final LoaderRegistration LR_SINGLE = LoaderRegistrationResolver.resolve(PARENT_BATCH_KEY, RT_SINGLE);
-    private static final LoaderRegistration LR_CONN = LoaderRegistrationResolver.resolve(PARENT_BATCH_KEY, RT_CONN);
+    private static final SourceKey SOURCE_KEY_SINGLE = TestFixtures.splitSourceKey(RT_SINGLE.table(), PARENT_KEY_COLS, false);
+    private static final SourceKey SOURCE_KEY_CONN = TestFixtures.splitSourceKey(RT_CONN.table(), PARENT_KEY_COLS, true);
+    private static final LoaderRegistration LR_SINGLE = TestFixtures.loaderRegistration(RT_SINGLE, false, false);
+    private static final LoaderRegistration LR_CONN = TestFixtures.loaderRegistration(RT_CONN, false, false);
 
     // Emitter-level validator messages. Kept inline (rather than read from
     // SplitRowsMethodEmitter.unsupportedReason) so a change to the production string breaks

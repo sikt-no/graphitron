@@ -3,9 +3,7 @@ package no.sikt.graphitron.rewrite.validation;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.RejectionKind;
-import no.sikt.graphitron.rewrite.SourceKeyResolver;
 import no.sikt.graphitron.rewrite.model.AccessorRef;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField.InterfaceField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -55,8 +53,7 @@ class InterfaceFieldValidationTest {
      * {@code InterfaceField} / {@code UnionField} never carry one.
      */
     private static SourceKey rowKeyedFor(TableRef table) {
-        return SourceKeyResolver.resolveRecordParentForPolymorphic(
-            new BatchKey.RowKeyed(table.primaryKeyColumns()));
+        return TestFixtures.polymorphicRowParentSourceKey(table.primaryKeyColumns());
     }
 
     /**
@@ -215,8 +212,7 @@ class InterfaceFieldValidationTest {
         var accessor = new AccessorRef(
             ClassName.bestGuess("com.example.Parent"), "occupants",
             ClassName.bestGuess("com.example.WideRecord"));
-        BatchKey.RecordParentBatchKey parentKey = new BatchKey.AccessorKeyedMany(hop, accessor);
-        SourceKey parentSourceKey = SourceKeyResolver.resolveRecordParentForPolymorphic(parentKey);
+        SourceKey parentSourceKey = TestFixtures.polymorphicAccessorParentSourceKey(wideHub, hop, accessor, true);
         var participants = List.<ParticipantRef>of(
             new ParticipantRef.TableBound("Customer", CUSTOMER, null),
             new ParticipantRef.TableBound("Staff", STAFF, null));

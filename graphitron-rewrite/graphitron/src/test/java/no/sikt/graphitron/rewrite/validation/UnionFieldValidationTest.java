@@ -1,8 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.rewrite.RejectionKind;
-import no.sikt.graphitron.rewrite.SourceKeyResolver;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -41,8 +39,7 @@ class UnionFieldValidationTest {
             new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
 
     private static SourceKey rowKeyedFor(TableRef table) {
-        return SourceKeyResolver.resolveRecordParentForPolymorphic(
-            new BatchKey.RowKeyed(table.primaryKeyColumns()));
+        return TestFixtures.polymorphicRowParentSourceKey(table.primaryKeyColumns());
     }
 
     private static GraphitronType.ResultType resultTypeFor(TableRef table) {

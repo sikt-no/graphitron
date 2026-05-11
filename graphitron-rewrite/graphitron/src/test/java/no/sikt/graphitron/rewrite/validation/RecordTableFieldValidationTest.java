@@ -2,10 +2,7 @@ package no.sikt.graphitron.rewrite.validation;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
-import no.sikt.graphitron.rewrite.LoaderRegistrationResolver;
-import no.sikt.graphitron.rewrite.SourceKeyResolver;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ChildField.RecordTableField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -33,13 +30,13 @@ class RecordTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), wrapper);
     }
 
-    private static final BatchKey.RecordParentBatchKey BATCH_KEY = new BatchKey.RowKeyed(java.util.List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer")));
+    private static final List<ColumnRef> PARENT_KEY_COLS = List.of(new ColumnRef("dummy_id", "DUMMY_ID", "java.lang.Integer"));
     private static final ReturnTypeRef.TableBoundReturnType RT_SINGLE = filmReturn(new FieldWrapper.Single(true));
     private static final ReturnTypeRef.TableBoundReturnType RT_LIST = filmReturn(new FieldWrapper.List(true, true));
-    private static final SourceKey SOURCE_KEY_SINGLE = SourceKeyResolver.resolveRecordParent(BATCH_KEY, RT_SINGLE);
-    private static final SourceKey SOURCE_KEY_LIST = SourceKeyResolver.resolveRecordParent(BATCH_KEY, RT_LIST);
-    private static final LoaderRegistration LR_SINGLE = LoaderRegistrationResolver.resolve(BATCH_KEY, RT_SINGLE);
-    private static final LoaderRegistration LR_LIST = LoaderRegistrationResolver.resolve(BATCH_KEY, RT_LIST);
+    private static final SourceKey SOURCE_KEY_SINGLE = TestFixtures.recordParentRowSourceKey(RT_SINGLE.table(), PARENT_KEY_COLS, false);
+    private static final SourceKey SOURCE_KEY_LIST = TestFixtures.recordParentRowSourceKey(RT_LIST.table(), PARENT_KEY_COLS, true);
+    private static final LoaderRegistration LR_SINGLE = TestFixtures.loaderRegistration(RT_SINGLE, false, false);
+    private static final LoaderRegistration LR_LIST = TestFixtures.loaderRegistration(RT_LIST, false, false);
 
     // Validator messages for RecordTableField. Kept inline — a change to the production string
     // breaks this test loudly and must be updated in the same commit.
