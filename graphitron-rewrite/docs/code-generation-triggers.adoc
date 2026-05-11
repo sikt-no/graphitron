@@ -238,9 +238,9 @@ The federation `_entities` field is *not* modelled as a `QueryField` permit; it 
 | Schema Pattern | `ChildField` Variant | `*Fetchers` Generates
 
 | Scalar/enum with `@field` | `PropertyField` | Column method in `wiring()`
-| Return `@table`, `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `RecordLookupTableField` (with `BatchKey.RecordParentBatchKey`) | Async DataLoader fetcher + `rows*()` method
-| Return `@table` (default; catalog FK from parent's jOOQ TableRecord) | `RecordTableField` (with `BatchKey.RecordParentBatchKey`) | Async DataLoader fetcher + `rows*()` method
-| Return `@table` with `@batchKeyLifter` (parent is `PojoResultType` or `JavaRecordType`; no catalog FK required) | `RecordTableField` / `RecordLookupTableField` (with `BatchKey.LifterRowKeyed`) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows
+| Return `@table`, `@lookupKey` (catalog FK from parent's jOOQ TableRecord) | `RecordLookupTableField` (`SourceKey.Reader.ColumnRead`) | Async DataLoader fetcher + `rows*()` method
+| Return `@table` (default; catalog FK from parent's jOOQ TableRecord) | `RecordTableField` (`SourceKey.Reader.ColumnRead`) | Async DataLoader fetcher + `rows*()` method
+| Return `@table` with `@sourceRow` (parent is `PojoResultType` or `JavaRecordType`; no catalog FK required) | `RecordTableField` / `RecordLookupTableField` (`SourceKey.Reader.SourceRowsCall`) | Async DataLoader fetcher + `rows*()` method; the developer-supplied static lifter populates the batched VALUES rows
 | Return non-table type | `RecordField` | Column method in `wiring()`
 | `errors:` slot on a service payload (one entry per `@error` mapping) | `ErrorsField` | Passthrough; graphql-java's default `PropertyDataFetcher` reads the list the carrier's try/catch wrapper or the service-method body produced
 | `@service`, return `@table` | `ServiceTableField` | Async DataLoader fetcher + `rows*()` method
@@ -307,7 +307,7 @@ All source lives under `graphitron-rewrite/graphitron/src/main/java/no/sikt/grap
 | Field hierarchy | `GraphitronField.java` | Sealed interface ; `RootField`/`ChildField`/`InputField` sub-hierarchies
 | SQL-generating marker | `SqlGeneratingField.java` | Orthogonal interface ; `returnType()`, `filters()`, `orderBy()`, `pagination()`
 | Method-backed marker | `MethodBackedField.java` | Orthogonal interface ; `method()` returning `MethodRef`
-| DataLoader marker | `BatchKeyField.java` | Orthogonal interface ; `batchKey()`, `rowsMethodName()`
+| DataLoader marker | `BatchKeyField.java` | Orthogonal interface ; `sourceKey()`, `loaderRegistration()`, `rowsMethodName()`
 | Table reference | `TableRef.java` | Resolved jOOQ table with PK columns
 | Column reference | `ColumnRef.java` | Resolved column with Java type
 | Return type | `ReturnTypeRef.java` | `TableBound` / `Result` / `Scalar` / `Polymorphic`
@@ -315,7 +315,7 @@ All source lives under `graphitron-rewrite/graphitron/src/main/java/no/sikt/grap
 | Join path | `JoinStep.java` | `FkJoin` / `ConditionJoin` / `LiftedHop`
 | WHERE filters | `WhereFilter.java` | `GeneratedConditionFilter` / `ConditionFilter` ; call-site contract
 | Service methods | `MethodRef.java` | Resolved Java method with `ParamSource` variants
-| DataLoader keys | `BatchKey.java` | Two axis sub-hierarchies: `ParentKeyed` (`RowKeyed`, `RecordKeyed`, `MappedRowKeyed`, `MappedRecordKeyed`, `TableRecordKeyed`, `MappedTableRecordKeyed`) and `RecordParentBatchKey` (`RowKeyed`, `LifterRowKeyed`, `AccessorKeyedSingle`, `AccessorKeyedMany`)
+| DataLoader keys | `SourceKey.java`, `LoaderRegistration.java` | `SourceKey` carries the source-side dispatch axis (sealed `Wrap` — `Row` / `Record` / `TableRecord` — sealed `Reader` — `ColumnRead` / `AccessorCall` / `SourceRowsCall` / `ServiceTableRecord` / `ServiceUntypedRecord` — plus a `Cardinality` enum). `LoaderRegistration` carries DataLoader identity (`Container` — `POSITIONAL_LIST` / `MAPPED_SET` — `Dispatch` — `LOAD_ONE` / `LOAD_MANY`).
 | Ordering | `OrderBySpec.java` | `Fixed` / `Argument` / `None`
 | Pagination | `PaginationSpec.java` | Relay cursor arguments
 | Argument extraction | `CallSiteExtraction.java` | Five direct strategies (`Direct` / `EnumValueOf` / `TextMapLookup` / `ContextArg` / `JooqConvert`) plus two sealed sub-groupers: `NestedInputField` (descends an input-object graph for `@condition` on `INPUT_FIELD_DEFINITION`) and `NodeIdDecodeKeys` (`SkipMismatchedElement` / `ThrowOnMismatch`; arity-N NodeId decode at the call site)

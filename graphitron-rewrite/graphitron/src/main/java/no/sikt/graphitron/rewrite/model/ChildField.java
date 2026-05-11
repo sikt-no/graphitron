@@ -391,9 +391,12 @@ public sealed interface ChildField extends GraphitronField
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
-     * @param batchKey derived from the service method's {@link MethodRef.Param.Sourced}
+     * @param sourceKey derived from the service method's {@link MethodRef.Param.Sourced}
      *     parameter; {@code null} when the method has no such parameter, which fails validation
      *     (generation runs only post-validation, so it never observes {@code null}).
+     * @param loaderRegistration paired with {@code sourceKey}; carries the DataLoader container
+     *     (positional list vs mapped set) and dispatch (load vs loadMany) axes the service
+     *     return type projects onto.
      */
     record ServiceTableField(
         String parentTypeName,
@@ -422,9 +425,12 @@ public sealed interface ChildField extends GraphitronField
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
-     * @param batchKey derived from the service method's {@link MethodRef.Param.Sourced}
+     * @param sourceKey derived from the service method's {@link MethodRef.Param.Sourced}
      *     parameter; {@code null} when the method has no such parameter, which fails validation
      *     (generation runs only post-validation, so it never observes {@code null}).
+     * @param loaderRegistration paired with {@code sourceKey}; carries the DataLoader container
+     *     (positional list vs mapped set) and dispatch (load vs loadMany) axes the service
+     *     return type projects onto.
      */
     record ServiceRecordField(
         String parentTypeName,
