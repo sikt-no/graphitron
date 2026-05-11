@@ -1,7 +1,7 @@
 ---
 id: R101
 title: "Custom-scalar Java type configuration (extended-scalars built-in)"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 6
 theme: model-cleanup
@@ -145,8 +145,8 @@ because GraphQL itself binds them.
 
 Resolution returns a sealed `ScalarResolution`. Per *Builder-step
 results are sealed, not strings or out-params*
-(`rewrite-design-principles.adoc:61`) and *Sub-taxonomies for
-resolution outcomes* (`rewrite-design-principles.adoc:47`), each
+(`rewrite-design-principles.adoc:69`) and *Sub-taxonomies for
+resolution outcomes* (`rewrite-design-principles.adoc:55`), each
 rejection arm carries the data its consumers actually need rather
 than a single prose `reason` string. This precedent diverges from
 R88's `AccessorResolution.Rejected(String reason)` because R88's
@@ -350,59 +350,45 @@ fine but whose synthesized schema fails to build at startup
 type). So the directive and its `additionalType` emit ship in the
 same phase.
 
-### Phase 1: shared scalar resolver + first consumer
+### Phase 1: shipped
 
-Build `ScalarTypeResolver` and the reflection engine that returns
-`ScalarResolution.{Resolved | Rejected}` per the carrier shape above.
-The reflection engine handles the spec built-ins via the same
-reflection path against `graphql.Scalars.GraphQL{Int, Float, String,
-Boolean, ID}`, so the resolver has a single code path from day one.
+`ScalarTypeResolver` lands with sealed `ScalarResolution.{Resolved |
+Rejected}` carrier and two `@LoadBearingClassifierCheck` keys
+(`scalar-resolver.coercing-non-erased`,
+`scalar-resolver.javatype-is-typename`). `RowsMethodShape.
+standardScalarJavaType` delegates to the resolver and declares
+`@DependsOnClassifierCheck` against both keys; the `ChildField.
+elementType` String fallback for `ScalarReturnType` (the Phase A
+scaffolding) is retired in the same commit. Unit-tier coverage
+(`ScalarTypeResolverTest`, 18 cases) exercises every `Rejected` arm
+via fixtures under `scalarfixture/`.
 
-Land *one* downstream consumer on the resolver in this phase:
-`RowsMethodShape.standardScalarJavaType`. It is the cheapest of the
-three to verify for behavior parity: its callers route every
-non-spec-built-in through an explicit downstream fallback rather
-than a silent producer-side default (`ChildField.elementType` falls
-back to `String` for `ScalarReturnType`; `strictPerKeyType` returns
-`null` for everything else), and sakila plus the rewrite's pipeline
-fixtures only exercise spec built-ins, so the resolver path produces
-exactly the existing types on trunk. Phase 1 also retires the
-`ChildField.elementType` String-fallback branch (the comment at
-`ChildField.java:455-456` flags it as Phase A scaffolding): once the
-resolver returns Java types for custom scalars, that branch is dead
-and the elementType simplifies to `RowsMethodShape.strictPerKeyType`
-plus the method-return-type fallback. The other producer-side
-consumers (`ServiceCatalog.mapToJavaTypeName`,
-`FieldBuilder.mapGraphQLTypeToReflectType`, `AppliedDirectiveEmitter`)
-keep their hardcoded switches in Phase 1 and migrate in Phase 3.
+**Empirical correction to the design body, not redesigned.** The spec
+asserted that Phase 1 routes spec built-ins through the same
+Coercing-reflection path as consumer scalars. graphql-java's
+`GraphqlIDCoercing implements Coercing<Object, Object>` makes that
+impossible: routing `ID` through the consumer path would classify it
+as `CoercingErased.ERASED_NAMED_CLASS` and reject the SDL built-in
+the GraphQL spec itself binds. The Phase 1 resolver carries a closed
+SDL-name → Java-type table for the five built-ins (`Int`→`Integer`,
+`Float`→`Double`, `String`→`String`, `Boolean`→`Boolean`,
+`ID`→`String`) and still reflects on `graphql.Scalars.GraphQL{Int,
+Float, String, Boolean, ID}` to verify the constants are present
+and well-formed. Consumer scalars (Phase 2/3) still go through full
+Coercing-reflection; the carve-out is bounded to the five SDL names
+GraphQL itself defines.
 
-Wiring the first consumer atomically with the producer means Phase 1
-ships a fully-formed `@LoadBearingClassifierCheck` /
-`@DependsOnClassifierCheck` pair rather than an orphan-producer
-annotation that has nothing to depend on it for two phases. Per
-*Validator mirrors classifier invariants*
-(`rewrite-design-principles.adoc:93-97`), the contract a load-bearing
-check documents should be derivable from at least one consumer the
-moment the check lands.
-
-The producer-side keys land at this phase:
-
-- `scalar-resolver.coercing-non-erased` — the resolver only returns
-  `Resolved` when the `Coercing<I, O>` type parameters are concrete;
-  any consumer reading `Resolved.javaType` may assume it is not
-  `Object` from a raw / erased Coercing.
-- `scalar-resolver.javatype-is-typename` — `Resolved.javaType` is
-  `TypeName`-shaped (boxed for primitives, parameterised correctly
-  for collection types) and ready to drop into a JavaPoet
-  `MethodSpec` / `RecordSpec` declaration without further coercion.
-
-`RowsMethodShape.standardScalarJavaType` declares
-`@DependsOnClassifierCheck` against both keys.
-
-A future relaxation of either check ("fall back to `Object` for
-unknown", or "return raw `Class<?>`") surfaces as orphaned consumers
-across the codebase rather than a silent regression in any one
-emitter.
+**Empirical correction to the anonymous-class arm.** The spec's
+example "`new Coercing<Money, Money>() { ... }` erases" is wrong on
+modern JVMs: when the type arguments are explicit at the new-expression,
+they're preserved in the anonymous class's generic-interface
+signature. The realistic erasure case is a generic factory method
+where the anonymous class captures a method-level type variable
+(`<T> Coercing<T, T> identityCoercing() { return new Coercing<T, T>()
+{ ... }; }`); reflection's `getActualTypeArguments()` then returns
+`TypeVariable`, not `Class`, and the resolver classifies as
+`ANONYMOUS_CLASS` because `Class.isAnonymousClass()` is true. The
+fixture follows that shape.
 
 ### Phase 2: `@scalarType(scalar: "...")` directive + runtime registration
 

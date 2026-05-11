@@ -1,0 +1,306 @@
+package no.sikt.graphitron.rewrite;
+
+import graphql.schema.Coercing;
+import graphql.schema.GraphQLScalarType;
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.rewrite.model.CoercingDeclarationKind;
+import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
+import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
+import no.sikt.graphitron.rewrite.model.ScalarResolution;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * Resolves a GraphQL scalar to its Java type + {@code GraphQLScalarType} constant via reflection.
+ * The resolver returns a sealed {@link ScalarResolution} carrying either a
+ * {@link ScalarResolution.Resolved} (with the JavaPoet {@link TypeName}, owner class, and field
+ * name) or a typed {@link ScalarResolution.Rejected} arm naming the misconfiguration.
+ *
+ * <p>Phase 1 surfaces two entry points:
+ *
+ * <ul>
+ *   <li>{@link #resolveBuiltIn(String)} for the five GraphQL spec built-ins
+ *       ({@code Int}, {@code Float}, {@code String}, {@code Boolean}, {@code ID}). The
+ *       SDL-name → Java-type binding for these is fixed by the GraphQL spec; the resolver
+ *       still reflects on {@code graphql.Scalars.GraphQL{Int, Float, String, Boolean, ID}}
+ *       to validate the constants and provide the owner / field-name pair for
+ *       {@code additionalType} registration, but the Java type comes from a closed table.
+ *       The carve-out exists because graphql-java's {@code GraphqlIDCoercing implements
+ *       Coercing<Object, Object>}: routing {@code ID} through the same Coercing-reflection
+ *       path consumer scalars use would mis-classify the built-in as erased.</li>
+ *   <li>{@link #resolveFromConstantFqn(String, String, ClassLoader)} for the consumer-named
+ *       constant path. Full reflection: looks up the {@code public static final
+ *       GraphQLScalarType} on the named class via the supplied classloader, validates the
+ *       field, and reflects on the {@code Coercing<I, O>} type parameters to recover the
+ *       input Java type. Rejection arms (class missing, field missing, accessibility,
+ *       null-at-codegen, wrong type, Coercing erased) drive per-arm LSP fix-its in a later
+ *       phase. Phase 2 wires this entry point to the {@code @scalarType(scalar: "...")}
+ *       directive; Phase 3 wires it to the extended-scalars convention layer.</li>
+ * </ul>
+ *
+ * <p>Producer of two {@link LoadBearingClassifierCheck} keys:
+ *
+ * <ul>
+ *   <li>{@code scalar-resolver.coercing-non-erased} — {@link ScalarResolution.Resolved#javaType}
+ *       is never {@code Object} from a raw / erased Coercing. For built-ins this is a closed
+ *       table; for consumer scalars this is the post-condition of
+ *       {@link #recoverInputType(Coercing)} guarded by the {@link ScalarResolution.Rejected.CoercingErased}
+ *       arm.</li>
+ *   <li>{@code scalar-resolver.javatype-is-typename} — {@link ScalarResolution.Resolved#javaType}
+ *       is a JavaPoet {@link TypeName} ready to drop into a {@code MethodSpec} / {@code RecordSpec}
+ *       declaration without further coercion.</li>
+ * </ul>
+ */
+@LoadBearingClassifierCheck(
+    key = "scalar-resolver.coercing-non-erased",
+    description = "ScalarResolution.Resolved.javaType is never Object from a raw or erased "
+        + "Coercing. Phase 1 built-ins draw from a closed SDL-name → Java-type table; Phase 2 "
+        + "consumer scalars route Object-erased Coercings into ScalarResolution.Rejected."
+        + "CoercingErased before Resolved can be constructed. Callers reading javaType may "
+        + "drop it into a TypeName-shaped slot without an Object-fallback guard.")
+@LoadBearingClassifierCheck(
+    key = "scalar-resolver.javatype-is-typename",
+    description = "ScalarResolution.Resolved.javaType is a JavaPoet TypeName (boxed for "
+        + "primitives) ready to drop into a MethodSpec / RecordSpec declaration without "
+        + "further coercion. Built-in path uses ClassName.get(java.lang.X.class) literals; "
+        + "consumer path boxes any primitive I via box(Class<?>).")
+public final class ScalarTypeResolver {
+
+    private ScalarTypeResolver() {}
+
+    private static final String SCALARS_FQN = "graphql.Scalars";
+
+    /**
+     * Closed table for the five GraphQL spec built-ins. The {@code Class<?>} entries are the
+     * canonical Java types graphql-java's argument-coercion path produces into input maps; the
+     * field-name entries name the {@code public static final GraphQLScalarType} constant on
+     * {@code graphql.Scalars}. Insertion order is preserved for diagnostic surfaces that want
+     * to render the recognised set.
+     */
+    private static final Map<String, BuiltIn> SPEC_BUILT_INS;
+    static {
+        Map<String, BuiltIn> m = new LinkedHashMap<>();
+        m.put("Int", new BuiltIn("GraphQLInt", Integer.class));
+        m.put("Float", new BuiltIn("GraphQLFloat", Double.class));
+        m.put("String", new BuiltIn("GraphQLString", String.class));
+        m.put("Boolean", new BuiltIn("GraphQLBoolean", Boolean.class));
+        m.put("ID", new BuiltIn("GraphQLID", String.class));
+        SPEC_BUILT_INS = Map.copyOf(m);
+    }
+
+    private record BuiltIn(String fieldName, Class<?> javaType) {}
+
+    /**
+     * Resolves one of the five GraphQL spec built-ins by SDL name. Returns
+     * {@link ScalarResolution.Rejected.FieldNotFound} for names not on the closed spec list
+     * (caller is expected to route those through the consumer-declared / convention paths in
+     * Phases 2 and 3).
+     */
+    public static ScalarResolution resolveBuiltIn(String scalarName) {
+        BuiltIn entry = SPEC_BUILT_INS.get(scalarName);
+        if (entry == null) {
+            return new ScalarResolution.Rejected.FieldNotFound(SCALARS_FQN, scalarName);
+        }
+        ConstantCheck check = checkConstant(
+            SCALARS_FQN, entry.fieldName(), ScalarTypeResolver.class.getClassLoader());
+        if (check.rejection() != null) {
+            return check.rejection();
+        }
+        return new ScalarResolution.Resolved(
+            ClassName.get(entry.javaType()),
+            ClassName.get("graphql", "Scalars"),
+            entry.fieldName()
+        );
+    }
+
+    /**
+     * Looks up a {@code public static final GraphQLScalarType} on {@code classFqn} via
+     * {@code loader}, validates the field, and reflects on the {@code Coercing<I, O>} type
+     * parameters to recover the input Java type. Used by Phase 2's directive-read path and
+     * Phase 3's convention layer.
+     */
+    public static ScalarResolution resolveFromConstantFqn(
+        String classFqn, String fieldName, ClassLoader loader) {
+
+        ConstantCheck check = checkConstant(classFqn, fieldName, loader);
+        if (check.rejection() != null) {
+            return check.rejection();
+        }
+        Coercing<?, ?> coercing = check.scalar().getCoercing();
+        TypeName javaType = recoverInputType(coercing);
+        if (javaType == null) {
+            return new ScalarResolution.Rejected.CoercingErased(
+                coercing.getClass().getName(),
+                describeCoercingDeclaration(coercing)
+            );
+        }
+        Class<?> owner = check.owner();
+        return new ScalarResolution.Resolved(
+            javaType,
+            ClassName.get(owner.getPackageName(), owner.getSimpleName()),
+            fieldName
+        );
+    }
+
+    /**
+     * Result of {@link #checkConstant}: either a typed rejection naming the misconfiguration,
+     * or a {@code (owner, scalar)} pair the resolver's full path consumes. The two states are
+     * disjoint: a non-null {@code rejection} pairs with a null {@code scalar}; a non-null
+     * {@code scalar} pairs with a null {@code rejection} and a non-null {@code owner}.
+     */
+    private record ConstantCheck(
+        ScalarResolution.Rejected rejection,
+        Class<?> owner,
+        GraphQLScalarType scalar
+    ) {}
+
+    /**
+     * Validates that {@code classFqn.fieldName} exists, is public-static, is non-null, and is a
+     * {@code GraphQLScalarType}.
+     */
+    private static ConstantCheck checkConstant(String classFqn, String fieldName, ClassLoader loader) {
+        Class<?> owner;
+        try {
+            owner = Class.forName(classFqn, false, loader);
+        } catch (ClassNotFoundException e) {
+            return new ConstantCheck(new ScalarResolution.Rejected.ClassNotFound(classFqn), null, null);
+        }
+        Field field;
+        try {
+            field = owner.getDeclaredField(fieldName);
+        } catch (NoSuchFieldException e) {
+            return new ConstantCheck(new ScalarResolution.Rejected.FieldNotFound(classFqn, fieldName), null, null);
+        }
+        boolean isPublic = Modifier.isPublic(field.getModifiers());
+        boolean isStatic = Modifier.isStatic(field.getModifiers());
+        if (!isPublic || !isStatic) {
+            return new ConstantCheck(
+                new ScalarResolution.Rejected.FieldNotAccessible(classFqn, fieldName, isPublic, isStatic),
+                null, null);
+        }
+        Object value;
+        try {
+            value = field.get(null);
+        } catch (IllegalAccessException e) {
+            return new ConstantCheck(
+                new ScalarResolution.Rejected.FieldNotAccessible(classFqn, fieldName, isPublic, isStatic),
+                null, null);
+        }
+        if (value == null) {
+            return new ConstantCheck(new ScalarResolution.Rejected.NullAtCodegen(classFqn, fieldName), null, null);
+        }
+        if (!(value instanceof GraphQLScalarType scalar)) {
+            return new ConstantCheck(
+                new ScalarResolution.Rejected.NotAScalarType(classFqn, fieldName, value.getClass().getName()),
+                null, null);
+        }
+        return new ConstantCheck(null, owner, scalar);
+    }
+
+    /**
+     * Returns the boxed Java type the Coercing's {@code I} parameter resolves to, or
+     * {@code null} when {@code I} resolves to {@code Object} (raw, anonymous, or named-erased).
+     * Walks the implementing type's interface list and supertype chain so a subclass like
+     * {@code class MoneyCoercing extends AbstractTypedCoercing<Money, Money>} resolves through
+     * the parent's generic declaration.
+     */
+    private static TypeName recoverInputType(Coercing<?, ?> coercing) {
+        Class<?> raw = coercing.getClass();
+        Class<?> input = findCoercingInputType(raw);
+        if (input == null || input == Object.class) return null;
+        return ClassName.get(box(input));
+    }
+
+    private static Class<?> findCoercingInputType(Class<?> startClass) {
+        // BFS over interface + supertype edges, capturing the first concrete Coercing<I, ?> binding.
+        Class<?> cls = startClass;
+        while (cls != null && cls != Object.class) {
+            for (Type iface : cls.getGenericInterfaces()) {
+                Class<?> found = inputFromInterface(iface);
+                if (found != null) return found;
+            }
+            Type sup = cls.getGenericSuperclass();
+            Class<?> superInput = inputFromInterface(sup);
+            if (superInput != null) return superInput;
+            cls = cls.getSuperclass();
+        }
+        return null;
+    }
+
+    private static Class<?> inputFromInterface(Type t) {
+        if (t instanceof ParameterizedType pt && pt.getRawType() == Coercing.class) {
+            Type[] args = pt.getActualTypeArguments();
+            if (args.length == 2 && args[0] instanceof Class<?> inputClass) {
+                return inputClass;
+            }
+        }
+        return null;
+    }
+
+    private static Class<?> box(Class<?> c) {
+        if (!c.isPrimitive()) return c;
+        if (c == int.class) return Integer.class;
+        if (c == long.class) return Long.class;
+        if (c == double.class) return Double.class;
+        if (c == float.class) return Float.class;
+        if (c == boolean.class) return Boolean.class;
+        if (c == byte.class) return Byte.class;
+        if (c == short.class) return Short.class;
+        if (c == char.class) return Character.class;
+        return c;
+    }
+
+    /**
+     * Distinguishes the three erasure shapes a {@link CoercingDeclarationKind} arm names.
+     * Order matters: anonymous-class detection beats raw/named-erased because an anonymous
+     * class with an inferred-erased parameter looks like a named class to the interface walk.
+     */
+    private static CoercingDeclarationKind describeCoercingDeclaration(Coercing<?, ?> c) {
+        Class<?> raw = c.getClass();
+        if (raw.isAnonymousClass()) return CoercingDeclarationKind.ANONYMOUS_CLASS;
+        for (Type iface : raw.getGenericInterfaces()) {
+            if (iface == Coercing.class) return CoercingDeclarationKind.RAW_TYPE;
+        }
+        return CoercingDeclarationKind.ERASED_NAMED_CLASS;
+    }
+
+    /**
+     * Verifies (without invoking the resolver) that a SDL name is one of the five GraphQL spec
+     * built-ins. Used by callers wanting to short-circuit before constructing a rejection
+     * payload (e.g., the Phase 2 directive-read path that rejects {@code @scalarType} on a
+     * spec built-in name as a {@code Rejection.InvalidSchema.DirectiveConflict}).
+     */
+    public static boolean isSpecBuiltIn(String scalarName) {
+        return SPEC_BUILT_INS.containsKey(scalarName);
+    }
+
+    /**
+     * The Java type recovered for a spec built-in, or {@code null} for non-built-ins. A
+     * convenience for callers that have already validated the SDL name is built-in and want
+     * the {@link TypeName} directly without pattern-matching on
+     * {@link ScalarResolution.Resolved}.
+     *
+     * <p>Phase 1 callers that don't yet need the {@code GraphQLScalarType} constant (the
+     * lone consumer is {@code RowsMethodShape.standardScalarJavaType}) use this entry point;
+     * Phase 2's {@code additionalType} registration switches to {@link #resolveBuiltIn(String)}
+     * to recover the owner / field-name pair.
+     */
+    @DependsOnClassifierCheck(
+        key = "scalar-resolver.javatype-is-typename",
+        reliesOn = "Returns the same TypeName the Resolved arm would carry; callers drop it "
+            + "into a MethodSpec without further coercion.")
+    @DependsOnClassifierCheck(
+        key = "scalar-resolver.coercing-non-erased",
+        reliesOn = "Returned TypeName is never an Object fallback; built-in table is a closed "
+            + "set of canonical types.")
+    public static TypeName builtInJavaType(String scalarName) {
+        BuiltIn entry = SPEC_BUILT_INS.get(scalarName);
+        return entry == null ? null : ClassName.get(entry.javaType());
+    }
+}

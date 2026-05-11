@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 
 /**
  * Pure structural derivation of the {@code @service} rows-method's outer return type and
@@ -64,18 +65,23 @@ public final class RowsMethodShape {
     }
 
     /**
-     * Java type for one of the five standard GraphQL scalars; {@code null} for custom
-     * scalars and enums (until the typed-context-value-registry surfaces a typed Java
-     * class).
+     * Java type for one of the five GraphQL spec built-ins; {@code null} for custom
+     * scalars and enums. Routed through {@link ScalarTypeResolver#builtInJavaType(String)}
+     * so the producer-side scalar Java-type mapping has one source of truth across the
+     * codebase. Phase 2's {@code @scalarType} directive and Phase 3's extended-scalars
+     * convention layer surface custom-scalar Java types through the same resolver; callers
+     * that wire those phases route their non-null branches through the resolver as well.
      */
+    @DependsOnClassifierCheck(
+        key = "scalar-resolver.javatype-is-typename",
+        reliesOn = "Returns the resolver's TypeName directly into strictPerKeyType, which feeds "
+            + "MethodSpec.returns(...) for the rows-method without coercion.")
+    @DependsOnClassifierCheck(
+        key = "scalar-resolver.coercing-non-erased",
+        reliesOn = "Non-null return is the spec-built-in canonical type from the resolver's "
+            + "closed table; never Object.")
     public static TypeName standardScalarJavaType(String graphqlScalarName) {
-        return switch (graphqlScalarName) {
-            case "String", "ID" -> ClassName.get(String.class);
-            case "Boolean"      -> ClassName.get(Boolean.class);
-            case "Int"          -> ClassName.get(Integer.class);
-            case "Float"        -> ClassName.get(Double.class);
-            default             -> null;
-        };
+        return ScalarTypeResolver.builtInJavaType(graphqlScalarName);
     }
 
     /**
