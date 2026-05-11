@@ -18,7 +18,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R42` | Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`) | Ready | [plan](column-reference-on-scalar-field.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
-| `R101` | Custom-scalar Java type configuration (extended-scalars built-in) | In Review | [plan](custom-scalar-java-types.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R74` | Row/Record return shapes for typed accessor batch keys | Spec | [plan](accessor-row-record-shapes.md) |
@@ -148,7 +147,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
 - `R129` [**Stub: ConditionJoin path in @reference on ColumnReferenceField**](column-reference-on-scalar-field-condition-join.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
-- `R101` [**Custom-scalar Java type configuration (extended-scalars built-in)**](custom-scalar-java-types.md) — In Review, architecture
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [deprecate-record-directive](deprecate-record-directive.md)
 - `R96` [**Deprecate and remove the @record directive**](deprecate-record-directive.md) — Backlog, cleanup, blocked by [emit-input-records](emit-input-records.md), [synthesize-payload-carrier](synthesize-payload-carrier.md)
 - `R23` [**Multi-parent `NestingField` sharing: `TableField` arm**](nestingfield-multiparent-tablefield.md) — Spec
