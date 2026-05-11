@@ -104,7 +104,11 @@ final class CompositeDecodeHelperRegistry {
             builder.addStatement(chain.build());
         } else {
             builder.addStatement("if (!(wire instanceof String s)) return null");
-            builder.addStatement("var r = $T.$L(s)", encoder, decodeMethod);
+            // Typed local rather than `var`: the lint guard forbids `var` in emitted sources so
+            // inferred types stay searchable. Record<N> with the column tuple's java types is the
+            // exact return shape of NodeIdEncoder.decode<TypeName>(String).
+            TypeName recordType = typedRecord(decode.outputColumnShape());
+            builder.addStatement("$T r = $T.$L(s)", recordType, encoder, decodeMethod);
             if (mode == Mode.THROW) {
                 builder.addStatement("if (r == null) throw new $T($S)", graphqlErr, MISMATCH_MESSAGE);
                 builder.addStatement("return r.valuesRow()");
@@ -123,5 +127,15 @@ final class CompositeDecodeHelperRegistry {
             typeArgs[i] = ClassName.bestGuess(columns.get(i).columnClass());
         }
         return ParameterizedTypeName.get(rowN, typeArgs);
+    }
+
+    private static TypeName typedRecord(List<ColumnRef> columns) {
+        int n = columns.size();
+        ClassName recordN = ClassName.get("org.jooq", "Record" + n);
+        TypeName[] typeArgs = new TypeName[n];
+        for (int i = 0; i < n; i++) {
+            typeArgs[i] = ClassName.bestGuess(columns.get(i).columnClass());
+        }
+        return ParameterizedTypeName.get(recordN, typeArgs);
     }
 }

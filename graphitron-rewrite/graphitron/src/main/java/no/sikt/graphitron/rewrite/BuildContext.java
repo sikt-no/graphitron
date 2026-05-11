@@ -1222,40 +1222,6 @@ class BuildContext {
             cond.override()));
     }
 
-    /**
-     * Result of inferring or extracting the {@code typeName:} argument for a bare {@code @nodeId}
-     * directive. Exactly one of {@link #typeName} and {@link #error} is non-null.
-     */
-    private record NodeIdTypeNameInference(String typeName, InputFieldResolution.Unresolved error) {}
-
-    /**
-     * Resolves the {@code typeName:} for a {@code @nodeId} directive on an input field, either
-     * by reading the explicit argument or, when absent, by looking up the {@code @table}-annotated
-     * object type that backs {@code resolvedTable}. The disambiguation rules apply only to the
-     * inference path: zero or multiple matching object types both yield a friendly diagnostic.
-     */
-    private NodeIdTypeNameInference inferNodeIdTypeName(
-            GraphQLInputObjectField field, TableRef resolvedTable, String fieldName) {
-        Optional<String> explicit = argString(field, DIR_NODE_ID, ARG_TYPE_NAME);
-        if (explicit.isPresent()) {
-            return new NodeIdTypeNameInference(explicit.get(), null);
-        }
-        var candidates = findGraphQLTypesForTable(resolvedTable.tableName());
-        if (candidates.isEmpty()) {
-            return new NodeIdTypeNameInference(null, new InputFieldResolution.Unresolved(fieldName, null,
-                "@nodeId without typeName: cannot infer node type — no @table-annotated object type"
-                + " maps to table '" + resolvedTable.tableName() + "'."
-                + " Add typeName: explicitly."));
-        }
-        if (candidates.size() > 1) {
-            return new NodeIdTypeNameInference(null, new InputFieldResolution.Unresolved(fieldName, null,
-                "@nodeId without typeName: is ambiguous — multiple object types map to table '"
-                + resolvedTable.tableName() + "': " + String.join(", ", candidates)
-                + ". Specify typeName: explicitly."));
-        }
-        return new NodeIdTypeNameInference(candidates.get(0), null);
-    }
-
     // ===== Input-field classifier (shared between TypeBuilder and FieldBuilder) =====
 
     /**
@@ -1289,19 +1255,23 @@ class BuildContext {
 
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "nodeid-fk.direct-fk-keys-match",
-        reliesOn = "The @nodeId FK-target arms construct InputField.ColumnReferenceField /"
-            + " CompositeColumnReferenceField only on NodeIdLeafResolver.Resolved.FkTarget.DirectFk."
-            + " The TranslatedFk arm routes to InputFieldResolution.Unresolved with a deferred-emission"
-            + " hint so emitter consumers (walkInputFieldConditions → implicit body params) never see"
+        reliesOn = "The @nodeId FK-target arms in inputFieldFromNodeIdResolved construct"
+            + " InputField.ColumnReferenceField / CompositeColumnReferenceField only on"
+            + " NodeIdLeafResolver.Resolved.FkTarget.DirectFk; the same-table arm constructs"
+            + " InputField.{Column,CompositeColumn}Field instead, with no joinPath. Both arity"
+            + " branches (ID! and [ID!]) share the same switch shape, so the variant choice"
+            + " stays in lockstep with FieldBuilder.classifyArgument. The TranslatedFk arm"
+            + " routes to InputFieldResolution.Unresolved with a deferred-emission hint so"
+            + " emitter consumers (walkInputFieldConditions → implicit body params) never see"
             + " a JOIN-with-translation shape they cannot bind directly.")
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "nodeid-fk.identity-carrying-lift",
-        reliesOn = "The [ID!] @nodeId @reference path on a @table input field calls"
-            + " NodeIdLeafResolver.validateLift / liftSourceColumns directly to populate the"
-            + " carrier's liftedSourceColumns slot, then surfaces lift failures as"
-            + " InputFieldResolution.Unresolved. The static helpers share the lift predicate with"
-            + " NodeIdLeafResolver.resolve, so the producer's invariant holds for both intake"
-            + " shapes (resolver-driven and direct-helper-driven).")
+        reliesOn = "The @nodeId @reference path on a @table input field (either arity) routes"
+            + " through NodeIdLeafResolver.resolve, which calls validateLift / liftSourceColumns"
+            + " internally and either returns a Resolved.FkTarget.DirectFk carrying the lifted"
+            + " tuple or a Resolved.Rejected with the lift-failure marker. Lift failures surface"
+            + " as InputFieldResolution.Unresolved at the classifier boundary; no direct call to"
+            + " the static helpers happens from this classifier any more.")
     private InputFieldResolution classifyInputFieldInternal(
             GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable,
             Set<String> expandingTypes, List<String> errors) {
@@ -1318,144 +1288,18 @@ class BuildContext {
         String columnName = hasFieldDir
             ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
-        if ("ID".equals(typeName) && !list && field.hasAppliedDirective(DIR_NODE_ID)) {
-            // Bare @nodeId (no typeName:) means "use the typeName of the @table-annotated object
-            // type that maps to this input's resolved table". The inference disambiguates against
-            // the GraphQL schema, not the SQL catalog, because the same SQL table may legitimately
-            // back several object types; we need a unique GraphQL identity to use as typeName.
-            var inferredTypeName = inferNodeIdTypeName(field, resolvedTable, name);
-            if (inferredTypeName.error() != null) return inferredTypeName.error();
-            String refTypeName = inferredTypeName.typeName();
-            // ctx.types may be null during the first type-builder pass; resolve via
-            // schema + catalog directly so this classifier works in both passes.
-            var rawGqlType = schema.getType(refTypeName);
-            if (rawGqlType == null) {
-                return new InputFieldResolution.Unresolved(name, null,
-                    "@nodeId(typeName:) type '" + refTypeName + "' does not exist in the schema"
-                    + candidateHint(refTypeName, schema.getAllTypesAsList().stream()
-                        .map(t -> t.getName()).filter(n -> !n.startsWith("__")).toList()));
-            }
-            // Must be a table-backed object type to be a NodeType
-            if (!(rawGqlType instanceof GraphQLObjectType gqlObjType)
-                    || !gqlObjType.hasAppliedDirective(DIR_TABLE)) {
-                return new InputFieldResolution.Unresolved(name, null,
-                    "@nodeId(typeName:) type '" + refTypeName
-                    + "' is not a node type (not a @table-annotated object type)");
-            }
-            String targetTableName = argString(gqlObjType, DIR_TABLE, ARG_NAME)
-                .orElse(refTypeName.toLowerCase());
-            // Prefer catalog metadata; fall back to ctx.types (when available post-first-pass)
-            // for SDL-only @node types.
-            String targetTypeId;
-            List<ColumnRef> targetKeyColumns;
-            var metaOpt = catalog.nodeIdMetadata(targetTableName);
-            if (metaOpt.isPresent()) {
-                targetTypeId = metaOpt.get().typeId();
-                targetKeyColumns = metaOpt.get().keyColumns();
-            } else if (types != null && types.get(refTypeName) instanceof NodeType nt) {
-                targetTypeId = nt.typeId();
-                targetKeyColumns = nt.nodeKeyColumns();
-            } else if (gqlObjType.hasAppliedDirective(DIR_NODE)) {
-                // First-pass / SDL-only @node: fall back to the catalog primary key, matching
-                // the same-table list branch and the cross-table FK branch below.
-                targetTypeId = argString(gqlObjType, DIR_NODE, ARG_TYPE_ID)
-                    .orElse(refTypeName);
-                targetKeyColumns = catalog.findPkColumns(targetTableName).stream()
-                    .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
-                    .toList();
-                if (targetKeyColumns.isEmpty()) {
-                    return new InputFieldResolution.Unresolved(name, null,
-                        "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
-                        + "' which has @node but no resolvable key columns (no catalog metadata, "
-                        + "no @node(keyColumns:), no primary key)");
-                }
-            } else {
-                return new InputFieldResolution.Unresolved(name, null,
-                    "@nodeId(typeName:) type '" + refTypeName
-                    + "' is not a node type (missing @node or KjerneJooqGenerator metadata)");
-            }
-            var targetTableResolution = catalog.findTable(targetTableName);
-            if (!(targetTableResolution instanceof JooqCatalog.TableResolution.Resolved targetTableResolved)) {
-                return new InputFieldResolution.Unresolved(name, null,
-                    "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
-                    + "': " + unknownTableRejection(targetTableResolution, targetTableName).message());
-            }
-            TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
-            var nodeRefPath = parsePath(field, name, resolvedTable.tableName(), targetTable.tableName());
-            if (nodeRefPath.hasError()) {
-                return new InputFieldResolution.Unresolved(name, null, nodeRefPath.errorMessage());
-            }
-            // Multi-hop validation lives on NodeIdLeafResolver: every hop must be FkJoin and
-            // every adjacent pair must satisfy the identity-carrying lift predicate. Single-hop
-            // is the trivial case (no predicate to check). Lift failures route to Unresolved.
-            for (int i = 0; i < nodeRefPath.elements().size(); i++) {
-                if (!(nodeRefPath.elements().get(i) instanceof JoinStep.FkJoin)) {
-                    return new InputFieldResolution.Unresolved(name, null,
-                        "@reference path on @nodeId leaf '" + name + "': step " + (i + 1)
-                        + " is a condition step; every step in a multi-hop @nodeId path "
-                        + NodeIdLeafResolver.CONDITION_STEP_MARKER
-                        + " (use { key: ... } at every position).");
-                }
-            }
-            String liftErr = NodeIdLeafResolver.validateLift(nodeRefPath.elements(), name);
-            if (liftErr != null) {
-                return new InputFieldResolution.Unresolved(name, null, liftErr);
-            }
-            // Empty join path = same-table case (target table == containing table). The predicate
-            // fires against the parent's own NodeType key columns; populate the slot accordingly.
-            // Non-empty = lift through the chain to the parent's own table.
-            List<ColumnRef> liftedSourceColumns = nodeRefPath.elements().isEmpty()
-                ? targetKeyColumns
-                : NodeIdLeafResolver.liftSourceColumns(nodeRefPath.elements());
-            Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
-            return buildInputNodeIdReference(
-                parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ false,
-                resolvedTable, refTypeName, targetTable.tableName(), targetTypeId,
-                targetKeyColumns, nodeRefPath.elements(), liftedSourceColumns, cond);
-        }
-        // [ID!] with @nodeId(typeName: T), optionally pinned by @reference(path: [{key: K}]):
-        // same-table → ColumnField / CompositeColumnField (filter by own primary key);
-        // FK-target → ColumnReferenceField / CompositeColumnReferenceField with single-hop
-        // joinPath. The shape decision is delegated to NodeIdLeafResolver so it stays in lockstep
-        // with argument-level @nodeId leaves in FieldBuilder.classifyArgument.
-        if ("ID".equals(typeName) && list && field.hasAppliedDirective(DIR_NODE_ID)) {
+        // ID! / [ID!] with @nodeId(typeName: T), optionally pinned by @reference(path: [{key: K}]):
+        // same-table → ColumnField / CompositeColumnField (filter by the parent's own key columns);
+        // FK-target.DirectFk → ColumnReferenceField / CompositeColumnReferenceField with joinPath;
+        // FK-target.TranslatedFk / Rejected → Unresolved. Both arities share the same resolver and
+        // the same switch shape; the only delta is the list flag baked into the carrier. The
+        // resolver also owns typeName inference for bare @nodeId, so the singular and list branches
+        // see a single sealed result rather than re-deriving the typeName independently.
+        if ("ID".equals(typeName) && field.hasAppliedDirective(DIR_NODE_ID)) {
             var resolved = nodeIdLeafResolver.resolve(field, name, resolvedTable);
-            switch (resolved) {
-                case NodeIdLeafResolver.Resolved.Rejected r ->
-                    { return new InputFieldResolution.Unresolved(name, null, r.message()); }
-                case NodeIdLeafResolver.Resolved.SameTable st -> {
-                    // Input-field filter leaves always use Skip semantics: malformed ids drop
-                    // silently to "no row matches", never throw. Argument-level lookup leaves
-                    // pick Throw at their own classify site.
-                    Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
-                    var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(st.decodeMethod());
-                    if (st.keyColumns().size() == 1) {
-                        return new InputFieldResolution.Resolved(new InputField.ColumnField(
-                            parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ true,
-                            st.keyColumns().get(0), cond, extraction));
-                    }
-                    return new InputFieldResolution.Resolved(new InputField.CompositeColumnField(
-                        parentTypeName, name, locationOf(field), typeName, nonNull, /* list= */ true,
-                        st.keyColumns(), cond, extraction));
-                }
-                case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> {
-                    Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
-                    var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(direct.decodeMethod());
-                    if (direct.keyColumns().size() == 1) {
-                        return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
-                            parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                            direct.keyColumns().get(0), direct.joinPath(),
-                            direct.liftedSourceColumns(), cond, extraction));
-                    }
-                    return new InputFieldResolution.Resolved(new InputField.CompositeColumnReferenceField(
-                        parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        direct.keyColumns(), direct.joinPath(),
-                        direct.liftedSourceColumns(), cond, extraction));
-                }
-                case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated ->
-                    { return new InputFieldResolution.Unresolved(name, null,
-                        FieldBuilder.translatedFkRejectionReason(translated.refTypeName(), resolvedTable.tableName())); }
-            }
+            return inputFieldFromNodeIdResolved(
+                resolved, parentTypeName, field, name, typeName, nonNull, list,
+                resolvedTable, errors);
         }
         if (field.hasAppliedDirective(DIR_REFERENCE)) {
             var path = parsePath(field, name, resolvedTable.tableName(), null);
@@ -1649,21 +1493,74 @@ class BuildContext {
     }
 
     /**
+     * Single switch shape over {@link NodeIdLeafResolver.Resolved} consumed by both arity branches
+     * of the input-field {@code @nodeId} classifier ({@code ID!} and {@code [ID!]}). The
+     * {@code list} flag flows through to the carrier; everything else is arity-independent. The
+     * resolver also owns typeName inference, the schema/catalog lookup, and the lift validation,
+     * so this helper is the only consumer of {@code Resolved} on the input-field side and the
+     * singular and list branches stay in lockstep with {@link FieldBuilder#classifyArgument} by
+     * construction.
+     *
+     * <p>Failure mode for the decode helper is fixed at
+     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement}: input-field
+     * filter leaves drop malformed encoded ids silently to "no row matches" rather than throwing.
+     * Argument-level lookup leaves in {@link FieldBuilder#classifyArgument} can pick
+     * {@code ThrowOnMismatch}; that arm is not reachable from here.
+     */
+    private InputFieldResolution inputFieldFromNodeIdResolved(
+            NodeIdLeafResolver.Resolved resolved, String parentTypeName,
+            GraphQLInputObjectField field, String name, String typeName,
+            boolean nonNull, boolean list, TableRef resolvedTable, List<String> errors) {
+        switch (resolved) {
+            case NodeIdLeafResolver.Resolved.Rejected r -> {
+                return new InputFieldResolution.Unresolved(name, null, r.message());
+            }
+            case NodeIdLeafResolver.Resolved.SameTable st -> {
+                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+                var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(st.decodeMethod());
+                if (st.keyColumns().size() == 1) {
+                    return new InputFieldResolution.Resolved(new InputField.ColumnField(
+                        parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                        st.keyColumns().get(0), cond, extraction));
+                }
+                return new InputFieldResolution.Resolved(new InputField.CompositeColumnField(
+                    parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                    st.keyColumns(), cond, extraction));
+            }
+            case NodeIdLeafResolver.Resolved.FkTarget.DirectFk direct -> {
+                Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+                var extraction = new no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement(direct.decodeMethod());
+                if (direct.keyColumns().size() == 1) {
+                    return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
+                        parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                        direct.keyColumns().get(0), direct.joinPath(),
+                        direct.liftedSourceColumns(), cond, extraction));
+                }
+                return new InputFieldResolution.Resolved(new InputField.CompositeColumnReferenceField(
+                    parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                    direct.keyColumns(), direct.joinPath(),
+                    direct.liftedSourceColumns(), cond, extraction));
+            }
+            case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated -> {
+                return new InputFieldResolution.Unresolved(name, null,
+                    FieldBuilder.translatedFkRejectionReason(translated.refTypeName(), resolvedTable.tableName()));
+            }
+        }
+    }
+
+    /**
      * Builds the column-shaped carrier for {@code @nodeId(typeName: T)} input fields referencing
-     * another table. Used by both the scalar bare-{@code @nodeId} branch (originally
-     * {@code id: ID! @nodeId(typeName: T)}) and the {@code [ID!] @nodeId(typeName: T)} list filter
-     * branch.
+     * another table. Consumed only by the {@code id-reference} synthesis shim (a legacy
+     * {@code ID!} column without {@code @nodeId} that maps via the qualifier-reverse-map to an
+     * FK target table). The canonical {@code @nodeId}-decorated path routes through
+     * {@link #inputFieldFromNodeIdResolved} via {@link NodeIdLeafResolver}; this helper exists
+     * because the shim produces its key columns / join path / typeId from the qualifier map
+     * rather than from a resolver call, so it cannot share the resolver's intake shape.
      *
      * <p>Routes by {@code targetKeyColumns.size()}: arity-1 to a single-column
      * {@link InputField.ColumnReferenceField} with extraction =
      * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement}; arity &gt; 1
      * to {@link InputField.CompositeColumnReferenceField} narrowed to the same extraction arm.
-     * The {@code list} flag flows through to the carrier, which steers the body emitter onto
-     * {@code ColumnPredicate.Eq} / {@code RowEq} (scalar) or {@code In} / {@code RowIn} (list).
-     *
-     * <p>Failure mode is Skip (not Throw) because {@code @nodeId} in input-object filter context
-     * surfaces a malformed id as "no row matches"; never throws. Input filters are not
-     * contract-violation surfaces.
      */
     private InputFieldResolution buildInputNodeIdReference(
             String parentTypeName, String name, graphql.language.SourceLocation location,

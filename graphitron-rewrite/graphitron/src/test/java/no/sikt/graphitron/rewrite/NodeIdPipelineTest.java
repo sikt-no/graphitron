@@ -306,7 +306,9 @@ class NodeIdPipelineTest {
             }),
 
         EXPLICIT_NODE_ID_DIRECTIVE(
-            "input `id: ID! @nodeId` on a @table input whose table is also backed by a composite-PK NodeType → CompositeColumnReferenceField with NodeIdDecodeKeys.SkipMismatchedElement",
+            "R131 four-corners: singular `id: ID! @nodeId` on a @table input whose table is the"
+                + " same as the inferred NodeType's table, composite-PK → CompositeColumnField"
+                + " (same-table filter against the parent's own PK columns; not a reference)",
             """
             type Bar @table(name: "bar") @node { id: ID! @nodeId }
             input Foo @table(name: "bar") { id: ID! @nodeId }
@@ -314,13 +316,31 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.CompositeColumnReferenceField) t.inputFields().get(0);
+                var f = (InputField.CompositeColumnField) t.inputFields().get(0);
+                assertThat(f.list()).isFalse();
                 assertThat(f.columns()).extracting(ColumnRef::sqlName)
                     .containsExactly("id_1", "id_2");
-                assertThat(f.joinPath()).isEmpty();
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
                 assertThat(f.extraction().decodeMethod().methodName()).isEqualTo("decodeBar");
+            }),
+
+        EXPLICIT_NODE_ID_DIRECTIVE_SINGLE_PK(
+            "R131 four-corners: singular `id: ID! @nodeId(typeName: \"Baz\")` on a @table input"
+                + " whose table is the same as Baz's table (baz, single-PK) → ColumnField"
+                + " (same-table arity-1 case)",
+            """
+            type Baz @table(name: "baz") @node { id: ID! @nodeId }
+            input BazSelector @table(name: "baz") { id: ID! @nodeId(typeName: "Baz") }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (GraphitronType.TableInputType) schema.type("BazSelector");
+                var f = (InputField.ColumnField) t.inputFields().get(0);
+                assertThat(f.list()).isFalse();
+                assertThat(f.column().sqlName()).isEqualTo("id");
+                var skip = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement) f.extraction();
+                assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
             }),
 
         BARE_NODE_ID_NO_OBJECT_TYPE(
@@ -390,7 +410,9 @@ class NodeIdPipelineTest {
 
     enum InputReferenceCase {
         REFERENCE_TO_NODE_TYPE(
-            "input `relatedId: ID! @nodeId(typeName: 'Baz')` on bar table → ColumnReferenceField with NodeIdDecodeKeys.SkipMismatchedElement",
+            "R131 four-corners: singular `relatedId: ID! @nodeId(typeName: 'Baz')` on bar table"
+                + " (FK bar.id_1 -> baz.id, single-PK target) → ColumnReferenceField with"
+                + " NodeIdDecodeKeys.SkipMismatchedElement",
             """
             type Baz @table(name: "baz") { id: ID! }
             input Foo @table(name: "bar") { relatedId: ID! @nodeId(typeName: "Baz") }
@@ -400,12 +422,37 @@ class NodeIdPipelineTest {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
                 var f = (InputField.ColumnReferenceField) t.inputFields().get(0);
                 assertThat(f.typeName()).isEqualTo("ID");
+                assertThat(f.list()).isFalse();
                 assertThat(f.column().sqlName()).isEqualTo("id");
                 assertThat(f.joinPath()).hasSize(1);
                 assertThat(f.extraction())
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
                 assertThat(((no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys) f.extraction())
                     .decodeMethod().methodName()).isEqualTo("decodeBaz");
+            }),
+
+        REFERENCE_TO_COMPOSITE_PK_NODE_TYPE(
+            "R131 four-corners: singular `parentId: ID! @nodeId(typeName: 'LevelA')` on"
+                + " level_b table (FK level_b.(k1,k2) -> level_a.(k1,k2), composite-PK target) →"
+                + " CompositeColumnReferenceField with joinPath length 1 and the lifted source"
+                + " columns positionally aligned with the NodeType key",
+            """
+            type LevelA implements Node @table(name: "level_a") @node(typeId: "LevelA", keyColumns: ["k1", "k2"]) { id: ID! @nodeId }
+            input LevelBFilter @table(name: "level_b") { parentId: ID! @nodeId(typeName: "LevelA") }
+            type Query { x: String }
+            """,
+            schema -> {
+                var t = (GraphitronType.TableInputType) schema.type("LevelBFilter");
+                var f = (InputField.CompositeColumnReferenceField) t.inputFields().get(0);
+                assertThat(f.list()).isFalse();
+                assertThat(f.columns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("k1", "k2");
+                assertThat(f.joinPath()).hasSize(1);
+                assertThat(f.liftedSourceColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("k1", "k2");
+                assertThat(f.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+                assertThat(f.extraction().decodeMethod().methodName()).isEqualTo("decodeLevelA");
             }),
 
         TARGET_NOT_A_NODE_TYPE(
@@ -436,7 +483,11 @@ class NodeIdPipelineTest {
             schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
 
         NODE_TARGET_NO_METADATA_PK_FALLBACK(
-            "input `id: ID! @nodeId(typeName: 'Qux')` where Qux has @node but its table has no NodeId metadata → ColumnReferenceField via catalog PK fallback (regression: pre-fix, the empty keyColumns list propagated into CompositeColumnReferenceField and tripped the arity invariant)",
+            "input `id: ID! @nodeId(typeName: 'Qux')` where Qux has @node but its table has no"
+                + " NodeId metadata → ColumnField via catalog PK fallback (post-R131: same-table"
+                + " classification; before R131 this produced a ColumnReferenceField with empty"
+                + " joinPath, which was a giveaway of the same-table case being mis-classified"
+                + " as a reference)",
             """
             type Qux implements Node @table(name: "qux") @node { id: ID! name: String }
             input Foo @table(name: "qux") { id: ID! @nodeId(typeName: "Qux") }
@@ -444,9 +495,11 @@ class NodeIdPipelineTest {
             """,
             schema -> {
                 var t = (GraphitronType.TableInputType) schema.type("Foo");
-                var f = (InputField.ColumnReferenceField) t.inputFields().get(0);
+                var f = (InputField.ColumnField) t.inputFields().get(0);
+                assertThat(f.list()).isFalse();
                 assertThat(f.column().sqlName()).isEqualTo("name");
-                assertThat(f.joinPath()).isEmpty();
+                assertThat(f.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
             });
 
         final String sdl;
@@ -886,7 +939,8 @@ class NodeIdPipelineTest {
 
     enum ArgumentSameTableNodeIdCase {
         SAME_TABLE_SCALAR_SINGLE_PK(
-            "scalar `id: ID! @nodeId(typeName: \"Baz\")` arg on a Baz-returning field → "
+            "R131 pin (FieldBuilder.classifyArgument, singular + same-table + single-PK): scalar"
+                + " `id: ID! @nodeId(typeName: \"Baz\")` arg on a Baz-returning field → "
                 + "QueryTableField with BodyParam.Eq over baz.id (R106: same-table @nodeId lifts "
                 + "to filter, not lookup)",
             """
@@ -907,6 +961,33 @@ class NodeIdPipelineTest {
                 assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
                 var skip = (CallSiteExtraction.SkipMismatchedElement) bp.extraction();
                 assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBaz");
+            }),
+
+        SAME_TABLE_SCALAR_COMPOSITE_PK(
+            "R131 pin (FieldBuilder.classifyArgument, singular + same-table + composite-PK):"
+                + " scalar `id: ID! @nodeId(typeName: \"Bar\")` arg on a Bar-returning field"
+                + " (Bar composite-PK) → QueryTableField with BodyParam.RowEq over"
+                + " bar.(id_1, id_2), confirming the same-table arm picks the column-direct"
+                + " carrier rather than a reference carrier",
+            """
+            type Bar implements Node @table(name: "bar") @node { id: ID! }
+            type Query { barById(id: ID! @nodeId(typeName: "Bar")): Bar }
+            """,
+            schema -> {
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryTableField)
+                    schema.field("Query", "barById");
+                var gcf = (no.sikt.graphitron.rewrite.model.GeneratedConditionFilter)
+                    f.filters().stream()
+                        .filter(no.sikt.graphitron.rewrite.model.GeneratedConditionFilter.class::isInstance)
+                        .findFirst().orElseThrow();
+                var bp = (no.sikt.graphitron.rewrite.model.BodyParam.RowEq) gcf.bodyParams().stream()
+                    .filter(no.sikt.graphitron.rewrite.model.BodyParam.RowEq.class::isInstance)
+                    .findFirst().orElseThrow();
+                assertThat(bp.columns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_1", "id_2");
+                assertThat(bp.extraction()).isInstanceOf(CallSiteExtraction.SkipMismatchedElement.class);
+                var skip = (CallSiteExtraction.SkipMismatchedElement) bp.extraction();
+                assertThat(skip.decodeMethod().methodName()).isEqualTo("decodeBar");
             }),
 
         SAME_TABLE_LIST_SINGLE_PK(
