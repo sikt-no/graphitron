@@ -87,14 +87,6 @@
                             <commandlineArgs>verify ${project.basedir}/../roadmap</commandlineArgs>
                         </configuration>
                     </execution>
-                    <execution>
-                        <id>verify-leaf-coverage-report</id>
-                        <phase>verify</phase>
-                        <goals><goal>java</goal></goals>
-                        <configuration>
-                            <commandlineArgs>leaf-coverage ${project.basedir}/.. --verify</commandlineArgs>
-                        </configuration>
-                    </execution>
                 </executions>
             </plugin>
         </plugins>

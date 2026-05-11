@@ -1,3 +1,8 @@
+# Paired with .github/workflows/deploy-docs.yml: that workflow chains off this
+# one via `workflow_run` matching on the literal `name:` string below
+# ("Rewrite reactor CI") and downloads the `inference-axis-coverage` artifact
+# uploaded by this run. Renaming the workflow silently disconnects the deploy;
+# update both files together.
 name: Rewrite reactor CI
 
 on:
@@ -56,10 +61,26 @@ jobs:
           psql -h localhost -p 5432 -U postgres -d rewrite_test \
             -f graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql
       - name: Build rewrite reactor
-        # The leaf-coverage profile (parent pom) is active by default — its activation
-        # is property-based negation on -Dleaf-coverage.skip, so it fires on every
-        # contributor and CI build alike and the verify-leaf-coverage-report tripwire
-        # never short-circuits on a missing-traces skip. Opt-out is -Dleaf-coverage.skip
-        # for a faster local turnaround when the report is known untouched; CI does not
-        # opt out.
+        # The leaf-coverage profile (parent pom) is active by default; its activation
+        # is property-based negation on -Dleaf-coverage.skip, so the classifier traces
+        # the regen step below reads from are produced on every CI run. Local opt-out
+        # for faster turnaround is -Dleaf-coverage.skip; CI does not opt out.
         run: mvn -f graphitron-rewrite/pom.xml verify -Plocal-db --batch-mode
+      - name: Regenerate leaf-coverage report
+        # Only on trunk pushes: PRs ship the placeholder, and the artifact is
+        # consumed by deploy-docs which itself only runs on trunk. The regen
+        # overwrites graphitron-rewrite/roadmap/inference-axis-coverage.adoc
+        # in the workspace; the upload step below captures that overwritten
+        # file. The classifier traces that `leaf-coverage` reads from are
+        # produced by the `mvn verify` above.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
+        run: |
+          mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java \
+            -Dexec.args='leaf-coverage graphitron-rewrite' --batch-mode
+      - name: Upload leaf-coverage artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
+        uses: actions/upload-artifact@v4
+        with:
+          name: inference-axis-coverage
+          path: graphitron-rewrite/roadmap/inference-axis-coverage.adoc
+          if-no-files-found: error
