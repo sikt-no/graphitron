@@ -159,6 +159,10 @@ final class ServiceDirectiveResolver {
             if (invariant != null) {
                 return new Resolved.Rejected(Rejection.invalidSchema(invariant));
             }
+            String pairMismatch = validateRootListTableBoundReturnPair(returnType, method);
+            if (pairMismatch != null) {
+                return new Resolved.Rejected(Rejection.structural("service method could not be resolved — " + pairMismatch));
+            }
         } else {
             String parentTableMismatch = validateTableRecordSourceParentTable(parentTypeName, method);
             if (parentTableMismatch != null) {
@@ -227,11 +231,14 @@ final class ServiceDirectiveResolver {
      *   <li>§1: Connection return type — root has no pagination context.</li>
      *   <li>§2: {@link ParamSource.Sources} parameter — root has no parent context to batch
      *       against.</li>
-     *   <li>§3: {@code TableBoundReturnType} + List — method must return either
-     *       {@code org.jooq.Result<XRecord>} or {@code java.util.List<XRecord>}. Single-
-     *       cardinality {@code TableBoundReturnType} is validated strictly in
-     *       {@link ServiceCatalog#reflectServiceMethod} via {@code expectedReturnType}.</li>
      * </ul>
+     *
+     * <p>The structural "return type doesn't match the field" check for the
+     * {@code TableBoundReturnType} + List arm lives separately in
+     * {@link #validateRootListTableBoundReturnPair} so its rejection wears the same
+     * {@code "service method could not be resolved — "} prefix as the catalog's strict
+     * Single-arm rejection, and so the annotation contract can name it as a distinct
+     * producer site.
      */
     private static String validateRootInvariants(ReturnTypeRef returnType, MethodRef method) {
         if (returnType.wrapper() instanceof FieldWrapper.Connection) {
@@ -240,19 +247,45 @@ final class ServiceDirectiveResolver {
         if (method.params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)) {
             return "@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters — the root has no parent context to batch against";
         }
-        if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb && returnType.wrapper().isList()) {
-            ClassName recordCls = tb.table().recordClass();
-            TypeName expectedResult = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), recordCls);
-            TypeName expectedList = ParameterizedTypeName.get(ClassName.get("java.util", "List"), recordCls);
-            TypeName actual = method.returnType();
-            if (!actual.equals(expectedResult) && !actual.equals(expectedList)) {
-                return "method '" + method.methodName() + "' in class '" + method.className()
-                    + "' must return '" + TypeNames.simple(expectedResult)
-                    + "' or '" + TypeNames.simple(expectedList)
-                    + "' to match the field's declared return type — got '" + TypeNames.simple(actual) + "'";
-            }
-        }
         return null;
+    }
+
+    /**
+     * Structural-return check for root {@code @service} fields whose resolved return type is a
+     * {@link ReturnTypeRef.TableBoundReturnType} with List cardinality. The developer's method
+     * may declare either {@code org.jooq.Result<XRecord>} or {@code java.util.List<XRecord>};
+     * graphql-java treats both identically (Result extends List), and the emitter reads
+     * {@link MethodRef#returnType()} to declare whichever shape the developer chose. Single
+     * cardinality is validated strictly inside {@link ServiceCatalog#reflectServiceMethod} via
+     * its {@code expectedReturnType} parameter and a separate
+     * {@link LoadBearingClassifierCheck} key.
+     *
+     * <p>Returns {@code null} when the resolved return type isn't List-cardinality TableBound
+     * (the looser pair only applies there) or when the method matches one of the two acceptable
+     * shapes; otherwise returns the rejection reason (caller prefixes with
+     * {@code "service method could not be resolved — "} so the wording matches the Single-arm
+     * catalog rejection a developer would see for the same field on the Single side).
+     */
+    @LoadBearingClassifierCheck(
+        key = "service-resolver-root-list-record-return-pair",
+        description = "Rejects developer @service methods at the root whose resolved return type "
+            + "is TableBoundReturnType + List unless the method's reflected return type equals "
+            + "Result<XRecord> or List<XRecord> exactly. Sibling producer to "
+            + "service-catalog-strict-service-return (which now covers only the Single arm "
+            + "and ResultReturnType paths). Lets the two root table-fetcher emitters declare "
+            + "the typed local by reading MethodRef.returnType() without a defensive cast.")
+    private static String validateRootListTableBoundReturnPair(ReturnTypeRef returnType, MethodRef method) {
+        if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) return null;
+        if (!returnType.wrapper().isList()) return null;
+        ClassName recordCls = tb.table().recordClass();
+        TypeName expectedResult = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), recordCls);
+        TypeName expectedList = ParameterizedTypeName.get(ClassName.get("java.util", "List"), recordCls);
+        TypeName actual = method.returnType();
+        if (actual.equals(expectedResult) || actual.equals(expectedList)) return null;
+        return "method '" + method.methodName() + "' in class '" + method.className()
+            + "' must return '" + TypeNames.simple(expectedResult)
+            + "' or '" + TypeNames.simple(expectedList)
+            + "' to match the field's declared return type — got '" + TypeNames.simple(actual) + "'";
     }
 
     /**
@@ -264,8 +297,8 @@ final class ServiceDirectiveResolver {
      *   <li>{@code TableBoundReturnType} + Single → {@code <schemaPackage>.tables.records.<TableName>Record}</li>
      *   <li>{@code TableBoundReturnType} + List → null (either {@code Result<XRecord>} or
      *       {@code List<XRecord>} is acceptable; the choice is validated post-reflection in
-     *       {@link #validateRootInvariants} so the emitter can declare whichever shape the
-     *       developer chose).</li>
+     *       {@link #validateRootListTableBoundReturnPair} so the emitter can declare whichever
+     *       shape the developer chose).</li>
      *   <li>{@code ResultReturnType} (with non-null fqClassName) + Single → {@code <fqClassName>}</li>
      *   <li>{@code ResultReturnType} (with non-null fqClassName) + List → {@code java.util.List<<fqClassName>>}</li>
      *   <li>{@code ResultReturnType} (null fqClassName) → null</li>

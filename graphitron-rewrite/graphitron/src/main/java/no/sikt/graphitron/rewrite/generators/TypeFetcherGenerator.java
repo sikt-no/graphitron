@@ -1042,13 +1042,17 @@ public class TypeFetcherGenerator {
         key = "service-catalog-strict-service-return",
         reliesOn = "Declares the typed XRecord (Single arm) on the fetcher and lets graphql-java's "
             + "column fetchers traverse it directly. A wider service return would force Object on "
-            + "the fetcher and lose static type safety. For the List arm the strict catalog check "
-            + "is skipped (developer may declare Result<XRecord> or List<XRecord>); the emitter "
-            + "reads MethodRef.returnType() to declare whichever shape the developer chose, with "
-            + "the looser pair validated in ServiceDirectiveResolver.validateRootInvariants §3. "
-            + "Note: the shared buildServiceFetcherCommon helper is also reached from "
-            + "buildQueryServiceRecordFetcher, whose PojoResultType / ScalarReturnType paths "
-            + "do not depend on this guarantee — annotating the helper would overclaim.")
+            + "the fetcher and lose static type safety. Note: the shared buildServiceFetcherCommon "
+            + "helper is also reached from buildQueryServiceRecordFetcher, whose PojoResultType / "
+            + "ScalarReturnType paths do not depend on this guarantee — annotating the helper "
+            + "would overclaim.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "service-resolver-root-list-record-return-pair",
+        reliesOn = "Reads MethodRef.returnType() to declare the typed local on the List arm "
+            + "(either Result<XRecord> or List<XRecord>, whichever the developer wrote) without "
+            + "a defensive cast or a wildcard. The resolver-side check rejects any other shape "
+            + "at classify time, so the emitter can rely on the captured TypeName being one of "
+            + "exactly those two.")
     private static MethodSpec buildQueryServiceTableFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryServiceTableField qstf,
                                                              String outputPackage) {
         var tableRef = qstf.returnType().table();
@@ -1114,11 +1118,16 @@ public class TypeFetcherGenerator {
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "service-catalog-strict-service-return",
-        reliesOn = "Inherits the same strictness policy as buildQueryServiceTableFetcher: typed "
-            + "XRecord (Single arm) via the catalog's strict check, and the Result<XRecord>-or-"
-            + "List<XRecord> pair (List arm) via ServiceDirectiveResolver.validateRootInvariants §3; "
-            + "mutation services share the same MethodRef strictness path through "
+        reliesOn = "Inherits the Single-arm policy from buildQueryServiceTableFetcher: typed "
+            + "XRecord local on the fetcher, fed by the catalog's strict TypeName.equals against "
+            + "the expected record class. Mutation services share the same path through "
             + "ServiceCatalog.reflectServiceMethod.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "service-resolver-root-list-record-return-pair",
+        reliesOn = "Inherits the List-arm policy from buildQueryServiceTableFetcher: reads "
+            + "MethodRef.returnType() to declare the typed local as whichever of "
+            + "Result<XRecord> / List<XRecord> the developer wrote, with the resolver-side "
+            + "pair check rejecting any other shape at classify time.")
     private static MethodSpec buildMutationServiceTableFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationServiceTableField mstf,
                                                                 String outputPackage) {
         var tableRef = mstf.returnType().table();
