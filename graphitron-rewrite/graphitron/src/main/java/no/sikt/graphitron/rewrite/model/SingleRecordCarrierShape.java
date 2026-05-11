@@ -1,29 +1,23 @@
 package no.sikt.graphitron.rewrite.model;
 
 /**
- * The resolved shape of a single-record DML carrier — a plain SDL Object whose single
- * {@code @table}-element field is the data field that carries the DML round-trip's
- * response rows. The carrier type itself has no Java backing class; graphql-java's
- * traversal walks through the data field's {@link ChildField.SingleRecordTableField}
- * fetcher (which runs the response SELECT keyed on the upstream DML's PK-only Result),
- * and from there through {@link GraphitronType.TableBackedType}'s per-field fetchers.
+ * The resolved shape of a single-record carrier — a plain SDL Object whose single data field
+ * is the field that carries the producing operation's response value. R75 Phase 1: DML
+ * mutation carriers with {@code @table}-element data ({@link DataElement.Table}); R75 Phase 2:
+ * {@code @service} mutation carriers with {@code @table}- or record-element data
+ * ({@link DataElement.Table} or {@link DataElement.Record}).
  *
- * <p>{@code dataTable} is forced to a resolved {@link TableRef} by the trigger function's
- * condition #3 ("the data field's element type is registered as
- * {@link GraphitronType.TableBackedType}"); the load-bearing
- * check {@code mutation-dml-record-field.data-table-equals-input-table} uses it as the
- * reference for the mutation classifier's table-equality admission step and for the
- * downstream consumer sites (the mutation fetcher's RETURNING PK columns and the data
- * field fetcher's response SELECT predicate).
- *
- * <p>{@code dataWrapper} is the data field's outer wrapper as authored in the SDL (single
- * or list); the data field's {@link SourceKey} cardinality is derived from the matching
- * input cardinality.
+ * <p>{@code dataElement} discriminates the element kind. {@link DataElement.Table} carries
+ * the resolved {@link TableRef} that the load-bearing classifier check
+ * {@code mutation-dml-record-field.data-table-equals-input-table} compares against the DML's
+ * input table, and that the data-field fetcher uses to build its follow-up SELECT predicate.
+ * {@link DataElement.Record} carries the backing class name that the {@code @service} mutation
+ * classifier matches against the method's reflected return type. The wrapper (single or list)
+ * lives on the {@link DataElement} arms; the data field's {@link SourceKey} cardinality (Phase 1
+ * {@link ChildField.SingleRecordTableField} only) is derived from the matching input cardinality.
  */
 public record SingleRecordCarrierShape(
     String carrierTypeName,
     String dataFieldName,
-    String dataElementName,
-    TableRef dataTable,
-    FieldWrapper dataWrapper
+    DataElement dataElement
 ) {}

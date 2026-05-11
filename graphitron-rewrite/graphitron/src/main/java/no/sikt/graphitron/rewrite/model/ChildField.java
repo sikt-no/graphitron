@@ -20,6 +20,7 @@ public sealed interface ChildField extends GraphitronField
             ChildField.ServiceRecordField,
             ChildField.RecordField,
             ChildField.ComputedField, ChildField.PropertyField,
+            ChildField.SingleRecordIdentityField,
             ChildField.ErrorsField {
 
     /**
@@ -67,6 +68,26 @@ public sealed interface ChildField extends GraphitronField
         @Override public OrderBySpec orderBy() { return new OrderBySpec.None(); }
         @Override public PaginationSpec pagination() { return null; }
     }
+
+    /**
+     * R75 / Phase 2 — the single data field on a single-record carrier whose element type is
+     * record-backed ({@link GraphitronType.PojoResultType.Backed}, {@link GraphitronType.JavaRecordType},
+     * or a jOOQ {@code Record}-backed {@link GraphitronType.ResultType}). The parent classifies as
+     * {@link MutationField.MutationServiceRecordField} returning the domain record directly
+     * (after the existing {@code @service} wrapper unwrap); this data field's value IS the source
+     * value verbatim. Fetcher emit is identity passthrough — {@code env -> env.getSource()} —
+     * with no {@link SourceKey} synthesis (no source rows to extract; the parent's value is the
+     * data field's value). Decliines {@link TableTargetField} (no table to target) and
+     * {@link BatchKeyField} (no DataLoader); the read-mechanism axis is explicit at the type-system
+     * level rather than overloading {@code ConstructorField} per the spec's "deliberate spec-time
+     * fork" reasoning.
+     */
+    record SingleRecordIdentityField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.ResultReturnType returnType
+    ) implements ChildField {}
 
     /**
      * A single-column output carrier on a table-backed parent. The column's value reaches the

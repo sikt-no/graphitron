@@ -177,6 +177,7 @@ public class TypeFetcherGenerator {
         ChildField.RecordLookupTableField.class,
         ChildField.ConstructorField.class,
         ChildField.SingleRecordTableField.class,
+        ChildField.SingleRecordIdentityField.class,
         QueryField.QueryTableInterfaceField.class,
         ChildField.TableInterfaceField.class,
         ChildField.ParticipantColumnReferenceField.class,
@@ -436,6 +437,10 @@ public class TypeFetcherGenerator {
                 // response SELECT outside the DML transaction). The wiring happens in
                 // FetcherRegistrationsEmitter.registrationEntry.
                 case ChildField.SingleRecordTableField ignored  -> { }
+                // SingleRecordIdentityField (R75 Phase 2) has no per-field fetcher method either —
+                // identity passthrough emit (env -> env.getSource()) is emitted inline by
+                // FetcherEmitter.dataFetcherValue.
+                case ChildField.SingleRecordIdentityField ignored -> { }
                 case ChildField.InterfaceField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter

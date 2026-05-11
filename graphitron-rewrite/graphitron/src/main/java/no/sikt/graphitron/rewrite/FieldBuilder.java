@@ -2405,13 +2405,24 @@ class FieldBuilder {
             no.sikt.graphitron.rewrite.model.SingleRecordCarrierShape shape,
             DmlKind kind,
             String name) {
-        if (inputTable.equals(shape.dataTable())) {
+        // R75 Phase 2: DML mutations admit only @table-element data. Record-element carriers
+        // would require a row-to-domain-record conversion step at the emitter, which the spec
+        // tracks separately. Reject here at classify time with a per-mismatch message.
+        if (!(shape.dataElement() instanceof no.sikt.graphitron.rewrite.model.DataElement.Table tableElement)) {
+            return "@mutation(typeName: " + kind + ") field '" + name
+                + "' returns single-record carrier '" + shape.carrierTypeName()
+                + "' with a record-element data field ('" + shape.dataElement().name()
+                + "'); DML mutations require an @table-element data field. Use a @service "
+                + "mutation for record-element carriers, or change the data field's element type "
+                + "to the input table's @table type";
+        }
+        if (inputTable.equals(tableElement.table())) {
             return null;
         }
         return "@mutation(typeName: " + kind + ") field '" + name
             + "' returns single-record DML carrier '" + shape.carrierTypeName()
-            + "' whose data field element type '" + shape.dataElementName()
-            + "' is bound to table '" + shape.dataTable().tableName()
+            + "' whose data field element type '" + tableElement.name()
+            + "' is bound to table '" + tableElement.table().tableName()
             + "', which does not match @table input table '" + inputTable.tableName()
             + "'; payload-returning DML mutations require the data field's table to equal the "
             + "DML's input table";

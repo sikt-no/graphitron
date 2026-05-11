@@ -228,24 +228,40 @@ public class GraphitronSchemaBuilder {
                         instanceof SingleRecordCarrierResolution.Ok ok) {
                     var shape = ok.shape();
                     var dataFieldDef = objType.getFieldDefinition(shape.dataFieldName());
-                    var pkColumns = shape.dataTable().primaryKeyColumns();
-                    var cardinality = shape.dataWrapper().isList()
-                        ? SourceKey.Cardinality.MANY
-                        : SourceKey.Cardinality.ONE;
-                    var sourceKey = new SourceKey(
-                        shape.dataTable(),
-                        pkColumns,
-                        java.util.List.of(),
-                        new SourceKey.Wrap.Record(),
-                        cardinality,
-                        new SourceKey.Reader.ResultRowWalk());
-                    ctx.fieldRegistry.classify(
-                        FieldCoordinates.coordinates(objType.getName(), shape.dataFieldName()),
-                        new ChildField.SingleRecordTableField(
-                            objType.getName(), shape.dataFieldName(), locationOf(dataFieldDef),
-                            new ReturnTypeRef.TableBoundReturnType(
-                                shape.dataElementName(), shape.dataTable(), shape.dataWrapper()),
-                            sourceKey));
+                    switch (shape.dataElement()) {
+                        case no.sikt.graphitron.rewrite.model.DataElement.Table tableElement -> {
+                            var pkColumns = tableElement.table().primaryKeyColumns();
+                            var cardinality = tableElement.wrapper().isList()
+                                ? SourceKey.Cardinality.MANY
+                                : SourceKey.Cardinality.ONE;
+                            var sourceKey = new SourceKey(
+                                tableElement.table(),
+                                pkColumns,
+                                java.util.List.of(),
+                                new SourceKey.Wrap.Record(),
+                                cardinality,
+                                new SourceKey.Reader.ResultRowWalk());
+                            ctx.fieldRegistry.classify(
+                                FieldCoordinates.coordinates(objType.getName(), shape.dataFieldName()),
+                                new ChildField.SingleRecordTableField(
+                                    objType.getName(), shape.dataFieldName(), locationOf(dataFieldDef),
+                                    new ReturnTypeRef.TableBoundReturnType(
+                                        tableElement.name(), tableElement.table(), tableElement.wrapper()),
+                                    sourceKey));
+                        }
+                        case no.sikt.graphitron.rewrite.model.DataElement.Record recordElement -> {
+                            // R75 Phase 2: record-element data on a single-record carrier classifies as
+                            // SingleRecordIdentityField. Identity passthrough emit; no SourceKey, no
+                            // SELECT — the source value (the producing operation's domain record) IS the
+                            // data field's value.
+                            ctx.fieldRegistry.classify(
+                                FieldCoordinates.coordinates(objType.getName(), shape.dataFieldName()),
+                                new ChildField.SingleRecordIdentityField(
+                                    objType.getName(), shape.dataFieldName(), locationOf(dataFieldDef),
+                                    new ReturnTypeRef.ResultReturnType(
+                                        recordElement.name(), recordElement.wrapper(), recordElement.fqClassName())));
+                        }
+                    }
                     return;
                 }
                 // Fields on plain SDL object types (no domain directive, no single-record-carrier
