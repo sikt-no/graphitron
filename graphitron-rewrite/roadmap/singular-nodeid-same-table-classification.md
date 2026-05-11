@@ -1,7 +1,7 @@
 ---
 id: R131
 title: "Singular ID! @nodeId classifier emits Reference variants on same-table case"
-status: Spec
+status: Ready
 bucket: validation
 priority: 1
 theme: nodeid
