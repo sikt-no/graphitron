@@ -269,4 +269,117 @@ class ScalarTypeResolverTest {
 
         assertThat(result).isInstanceOf(ScalarResolution.Rejected.FieldNotFound.class);
     }
+
+    // ===== Phase 3: convention layer =====
+
+    @Test
+    void hasConventionEntry_recognisesBigDecimal() {
+        assertThat(ScalarTypeResolver.hasConventionEntry("BigDecimal")).isTrue();
+        assertThat(ScalarTypeResolver.hasConventionEntry("GraphQLBigDecimal")).isTrue();
+    }
+
+    @Test
+    void hasConventionEntry_rejectsUnknownName() {
+        assertThat(ScalarTypeResolver.hasConventionEntry("NotAnExtendedScalar")).isFalse();
+    }
+
+    @Test
+    void resolveByConvention_bigDecimal_resolvesAgainstExtendedScalars() {
+        // ExtendedScalars is on the test classpath; the convention table points BigDecimal at
+        // graphql.scalars.ExtendedScalars.GraphQLBigDecimal whose Coercing's I parameter is
+        // java.math.BigDecimal. The Resolved arm carries the boxed Java type and the owner +
+        // field name for additionalType registration.
+        ScalarResolution result = ScalarTypeResolver.resolveByConvention("BigDecimal", LOADER);
+
+        assertThat(result).isInstanceOfSatisfying(ScalarResolution.Resolved.class, r -> {
+            assertThat(r.javaType()).isEqualTo(ClassName.get(java.math.BigDecimal.class));
+            assertThat(r.scalarConstantOwner())
+                .isEqualTo(ClassName.get("graphql.scalars", "ExtendedScalars"));
+            assertThat(r.scalarConstantField()).isEqualTo("GraphQLBigDecimal");
+        });
+    }
+
+    @Test
+    void resolveByConvention_aliasedName_resolvesToSameConstant() {
+        // The bare-name and GraphQL-prefixed forms target the same static field.
+        ScalarResolution bare = ScalarTypeResolver.resolveByConvention("BigDecimal", LOADER);
+        ScalarResolution prefixed = ScalarTypeResolver.resolveByConvention("GraphQLBigDecimal", LOADER);
+
+        assertThat(bare).isEqualTo(prefixed);
+    }
+
+    @Test
+    void resolveByConvention_uuid_recoversUuidJavaType() {
+        ScalarResolution result = ScalarTypeResolver.resolveByConvention("UUID", LOADER);
+
+        assertThat(result).isInstanceOfSatisfying(ScalarResolution.Resolved.class, r -> {
+            assertThat(r.javaType()).isEqualTo(ClassName.get(java.util.UUID.class));
+            assertThat(r.scalarConstantField()).isEqualTo("UUID");
+        });
+    }
+
+    @Test
+    void resolveByConvention_nameNotInTable_returnsFieldNotFoundNamingExtendedScalars() {
+        // The miss shape distinguishes "name not in table" (FieldNotFound naming ExtendedScalars)
+        // from "name in table but artifact missing" (ClassNotFound). Callers route on the arm to
+        // decide whether to suggest adding the artifact vs. adding @scalarType.
+        ScalarResolution result = ScalarTypeResolver.resolveByConvention("NotAnExtendedScalar", LOADER);
+
+        assertThat(result).isEqualTo(new ScalarResolution.Rejected.FieldNotFound(
+            "graphql.scalars.ExtendedScalars", "NotAnExtendedScalar"));
+    }
+
+    // ===== Phase 3: convention-table drift signal =====
+
+    /**
+     * Reflects on {@code graphql.scalars.ExtendedScalars}' public static fields and asserts every
+     * exposed {@link graphql.schema.GraphQLScalarType} constant is either covered by the
+     * convention table or named in the explicit-exclusion list. The intent is purely as a drift
+     * signal: when {@code extended-scalars} bumps and adds a new constant, this test fails and
+     * the maintainer decides whether to add a convention entry (typical) or extend the
+     * exclusions list (rare).
+     */
+    @Test
+    void conventionTable_coversEveryExtendedScalarsField() throws Exception {
+        Class<?> cls = Class.forName("graphql.scalars.ExtendedScalars");
+        java.util.Set<String> reflectedFqns = new java.util.LinkedHashSet<>();
+        for (java.lang.reflect.Field f : cls.getDeclaredFields()) {
+            int mods = f.getModifiers();
+            if (!java.lang.reflect.Modifier.isPublic(mods) || !java.lang.reflect.Modifier.isStatic(mods)) continue;
+            if (!graphql.schema.GraphQLScalarType.class.isAssignableFrom(f.getType())) continue;
+            reflectedFqns.add(cls.getName() + "." + f.getName());
+        }
+
+        java.util.Set<String> covered = ScalarTypeResolver.conventionTableFqns();
+        java.util.Set<String> exclusions = java.util.Set.of(
+            // Coercing<Object, Object> — graphitron's resolver treats Object as unbound. Consumers
+            // wanting JSON or unstructured Object should declare a typed wrapper and reach for
+            // @scalarType.
+            "graphql.scalars.ExtendedScalars.Object",
+            "graphql.scalars.ExtendedScalars.Json"
+        );
+
+        java.util.Set<String> uncovered = new java.util.LinkedHashSet<>(reflectedFqns);
+        uncovered.removeAll(covered);
+        uncovered.removeAll(exclusions);
+
+        assertThat(uncovered).as(
+            "ExtendedScalars exposes constants not in the convention table and not on the "
+                + "exclusion list. Either add a convention entry (SDL-name → FQN) or extend the "
+                + "exclusions list with a justification."
+        ).isEmpty();
+    }
+
+    @Test
+    void conventionTable_everyAuthoredFqnResolvesAgainstExtendedScalars() {
+        // Inverse direction: any FQN we author must actually exist on the library at the resolver's
+        // declared version. Phantom entries (typo, library rename) surface here as ClassNotFound or
+        // FieldNotFound rejections instead of being discovered by a consumer.
+        for (String name : ScalarTypeResolver.conventionTableNames()) {
+            ScalarResolution result = ScalarTypeResolver.resolveByConvention(name, LOADER);
+            assertThat(result)
+                .as("convention entry '%s' must resolve against extended-scalars on the test classpath", name)
+                .isInstanceOf(ScalarResolution.Resolved.class);
+        }
+    }
 }

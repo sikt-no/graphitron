@@ -1,7 +1,7 @@
 ---
 id: R101
 title: "Custom-scalar Java type configuration (extended-scalars built-in)"
-status: In Progress
+status: Ready
 bucket: architecture
 priority: 6
 theme: model-cleanup
@@ -439,23 +439,69 @@ retirement is observable as "Float is no longer emitted for a
 through the introspection / directive surface, whereas Int / Boolean
 / ID do).
 
-### Phase 3: convention layer + remaining-site flip
+### Phase 3: shipped
 
-Wire the built-in *name → static-field-FQN* table for
-graphql-java-extended-scalars. Flip the three remaining hardcoded
-sites (`ServiceCatalog.mapToJavaTypeName`,
-`FieldBuilder.mapGraphQLTypeToReflectType`, and the federation
-recognition path inside `AppliedDirectiveEmitter`) onto the resolver,
-each declaring `@DependsOnClassifierCheck` against the keys named
-in Phase 1.
+`ScalarTypeResolver` gains a 26-entry convention table mapping SDL scalar
+names (both bare and `GraphQL`-prefixed forms) to static-field FQNs on
+`graphql.scalars.ExtendedScalars`, plus `resolveByConvention(name, loader)`
+that delegates to `resolveFromConstantFqn` against the project-aware
+codegen classloader R124 lifted. The convention misses cleanly when the
+artifact is not on the consumer's classpath; the rejection arm
+distinguishes "name not in table" (`FieldNotFound` naming
+`ExtendedScalars`) from "name in table but artifact missing"
+(`ClassNotFound` naming the FQN).
+
+`TypeBuilder.classifyScalarType` gains two new branches: federation-
+namespace scalars (`federation__FieldSet`, `federation__Scope`,
+`federation__Policy`, `federation__ContextFieldValue`, `_FieldSet`,
+`link__Import`, `link__Purpose`) resolve via
+`resolveFederationNamespaceScalar` to `Scalars.GraphQLString`; non-spec
+non-directive scalars try the convention layer before the
+unresolved-escalation produces an `UnclassifiedType` with an
+author-error message pointing at `@scalarType(scalar:)` or
+extended-scalars as the fix. The federation set tracks federation-jvm
+v6's `definitions_fed2_12.graphqls`; bump the federation spec version
+when new scalars land.
+
+The three remaining hardcoded sites flip onto the resolver:
+`ServiceCatalog.mapToJavaTypeName` reads from `ctx.types` for the
+ScalarType binding, falling back to `ScalarTypeResolver.builtInJavaType`
+for unit-tier callers that bypass classification;
+`FieldBuilder.mapGraphQLTypeToReflectType` reads `ctx.types` and uses
+`ClassName.reflectionName()` against the codegen classloader;
+`AppliedDirectiveEmitter.emitInputType` routes the spec-built-in and
+federation-namespace cases through the resolver, preserving the
+`Scalars.GraphQLString` fallback for unrecognised custom scalars in
+directive-argument metadata positions (federation-jvm replaces those
+after base schema build). Each consumer declares
+`@DependsOnClassifierCheck` against
+`scalar-resolver.coercing-non-erased` and
+`scalar-resolver.javatype-is-typename`. After this phase the five-site
+hardcoded mapping is fully replaced.
+
+**Empirical correction to the convention table.** The spec's table
+listed `LocalDateTime`, `Duration`, `Object`, and `JSON` as resolving
+through the convention layer; none of those resolve cleanly against
+extended-scalars 22.0. `LocalDateTime` and `Duration` are not exposed
+as `public static final GraphQLScalarType` constants (no such fields on
+`ExtendedScalars`); `Object` and `Json` are exposed but declare
+`Coercing<Object, Object>`, which the resolver's erasure guard
+intentionally rejects (per the principled "Java type = Object is too
+ambiguous to drop into a generated record" stance from Phase 1). The
+shipped convention table drops the four entries; `Object` and `Json`
+appear in `ConventionTableArtifactDriftTest`'s explicit-exclusion list
+with the carve-out justification, and `LocalDateTime` / `Duration` are
+absent entirely (the drift test fires if the library exposes them
+later). The table picks up six entries the spec missed (`Locale`,
+`Currency`, `CountryCode`, `NonPositiveInt`, `NonPositiveFloat`,
+`Char`/`GraphQLChar`) so every other `ExtendedScalars` constant is
+covered.
 
 If R94 has already shipped by this phase, `InputComponent.javaType`
 joins the consumer list with the same annotations. If R94 ships
 later, R94's author adds those annotations as part of R94's input-
 record-emitter work; the keys are already on trunk and the integration
 is a one-line additional `@DependsOnClassifierCheck` per consumer.
-
-After this phase the five-site hardcoded mapping is fully replaced.
 
 ### Phase 4: housekeeping
 

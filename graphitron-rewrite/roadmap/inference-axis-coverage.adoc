@@ -10,7 +10,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | Leaf | Intent | Traces | Tier | X-cut | Fixtures | Tests | Roadmap
 | `UnclassifiedField`
 | A field that could not be classified. A schema containing unclassified fields is invalid —
-| 590
+| 593
 | pipeline
 | no
 | 1
@@ -62,7 +62,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, PassthroughPayloadPipelineTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
-| R12
+| R12, R75
 | `MutationUpsertTableField`
 | _(no javadoc)_
 | 23
@@ -70,7 +70,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, PassthroughPayloadPipelineTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
-| R12, R63
+| R12, R63, R75
 | `QueryInterfaceField`
 | A root query field returning a multi-table `GraphitronType.InterfaceType`
 | 17
@@ -221,7 +221,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, RecordParentMultiTablePolymorphicPipelineTest, test.internal.GeneratorDeterminismTest
-| R38
+| -
 | `LookupTableField`
 | _(no javadoc)_
 | 8
@@ -277,7 +277,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
-| R23, R38, R64
+| R23, R64
 | `RecordTableField`
 | _(no javadoc)_
 | 43
@@ -285,7 +285,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
-| R109, R116, R23, R38, R64, R75
+| R109, R116, R23, R64, R75
 | `ServiceRecordField`
 | A child field backed by a developer-provided service method (`@service`), where the
 | 15
@@ -293,7 +293,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
-| R12, R38, R46
+| R12, R46
 | `ServiceTableField`
 | A child field backed by a developer-provided service method (`@service`), where the
 | 5
@@ -301,7 +301,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | no
 | 0
 | GraphitronSchemaBuilderTest, generators.FetcherPipelineTest
-| R12, R38, R46
+| R12, R46
 | `SplitLookupTableField`
 | _(no javadoc)_
 | 6
@@ -309,7 +309,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
-| R23, R38, R64
+| R23, R64
 | `SplitTableField`
 | _(no javadoc)_
 | 29
@@ -317,7 +317,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, generators.FetcherPipelineTest, test.internal.GeneratorDeterminismTest
-| R23, R38, R39, R64
+| R23, R39, R64
 | `TableField`
 | _(no javadoc)_
 | 50
@@ -349,7 +349,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | yes
 | 1
 | GraphitronSchemaBuilderTest, RecordParentMultiTablePolymorphicPipelineTest, test.internal.GeneratorDeterminismTest
-| R38
+| -
 |===
 
 == InputField
@@ -422,7 +422,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R13
 | `EnumType`
 | A GraphQL enum type. Classifier records it so `schema.types()` is complete for
-| 1898
+| 1907
 | pipeline
 | yes
 | 0
@@ -438,7 +438,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R12
 | `InterfaceType`
 | An interface with no directives. Participating types may be table-bound (`ParticipantRef.TableBound`)
-| 629
+| 632
 | pipeline
 | yes
 | 1
@@ -534,7 +534,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R51, R75
 | `RootType`
 | A root operation type (Query or Mutation). Unmapped — no source context, no SQL until
-| 717
+| 720
 | pipeline
 | yes
 | 5
@@ -542,7 +542,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R85
 | `ScalarType`
 | A GraphQL scalar type whose Java type and `GraphQLScalarType` constant have been
-| 2477
+| 2493
 | pipeline
 | yes
 | 0
@@ -574,12 +574,12 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | R27, R34, R92, R97
 | `UnclassifiedType`
 | A type that could not be classified — examples include an unresolvable `@table`
-| 39
+| 42
 | pipeline
 | no
 | 0
-| GraphitronSchemaBuilderTest
-| R12, R13, R27, R34, R66, R92, R94
+| GraphitronSchemaBuilderTest, generators.schema.GraphitronSchemaClassGeneratorTest
+| R101, R12, R13, R27, R34, R66, R92, R94
 | `UnionType`
 | A union type whose member types all have `@table`
 | 57

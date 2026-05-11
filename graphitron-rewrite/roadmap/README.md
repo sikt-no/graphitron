@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R127` | Accept List<XRecord> as well as Result<XRecord> at root @service | In Review | [plan](service-root-list-record-return.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
-| `R101` | Custom-scalar Java type configuration (extended-scalars built-in) | In Progress | [plan](custom-scalar-java-types.md) |
+| `R101` | Custom-scalar Java type configuration (extended-scalars built-in) | Ready | [plan](custom-scalar-java-types.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
 | `R75` | Plain payload types for DML mutations | Spec | [plan](synthesize-payload-carrier.md) |
@@ -145,7 +145,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Backlog, stubs
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
-- `R101` [**Custom-scalar Java type configuration (extended-scalars built-in)**](custom-scalar-java-types.md) — In Progress, architecture
+- `R101` [**Custom-scalar Java type configuration (extended-scalars built-in)**](custom-scalar-java-types.md) — Ready, architecture
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [deprecate-record-directive](deprecate-record-directive.md)
 - `R96` [**Deprecate and remove the @record directive**](deprecate-record-directive.md) — Backlog, cleanup, blocked by [emit-input-records](emit-input-records.md), [synthesize-payload-carrier](synthesize-payload-carrier.md)
 - `R23` [**Multi-parent `NestingField` sharing: `TableField` arm**](nestingfield-multiparent-tablefield.md) — Spec

@@ -117,9 +117,14 @@ public final class ScalarTypeResolver {
      * scalars land and extend this set in the same commit.
      */
     private static final Set<String> FEDERATION_NAMESPACE_SCALARS = Set.of(
+        // Federation v2.x scalars (renamed to federation__X / link__X by the link-import pass).
+        // The list tracks federation-jvm v6's definitions_fed2_12.graphqls; bump the federation
+        // spec version pinned in CLAUDE.md when new scalars land and extend this set in the same
+        // commit.
         "federation__FieldSet",
         "federation__Scope",
         "federation__Policy",
+        "federation__ContextFieldValue",
         "_FieldSet",
         "link__Import",
         "link__Purpose"
@@ -356,6 +361,114 @@ public final class ScalarTypeResolver {
         String classFqn = scalarFqn.substring(0, dot);
         String fieldName = scalarFqn.substring(dot + 1);
         return resolveFromConstantFqn(classFqn, fieldName, loader);
+    }
+
+    /**
+     * Convention table: SDL scalar name → static-field FQN on the consumer's classpath.
+     * Names with and without the {@code GraphQL} prefix both map to the same constant, matching
+     * {@code graphql-java-extended-scalars}'s dual exposure (the library exposes
+     * {@code GraphQLBigDecimal} as the type-name and {@code DateTime} as the name; consumers
+     * write either form in SDL based on local idiom). The Java type for each constant is
+     * recovered from the {@code Coercing} at resolution time, not hardcoded here — the table is
+     * pure pointer.
+     */
+    private static final Map<String, String> CONVENTION_TABLE;
+    static {
+        Map<String, String> m = new LinkedHashMap<>();
+        String es = "graphql.scalars.ExtendedScalars";
+        // Numeric primitives. The library exposes both `GraphQL`-prefixed field names (Java
+        // identifier convention) and unprefixed SDL names (the `scalar.getName()` view); the
+        // convention table covers both styles so consumers writing `scalar BigDecimal` or
+        // `scalar GraphQLBigDecimal` both resolve.
+        m.put("BigDecimal",        es + ".GraphQLBigDecimal");
+        m.put("GraphQLBigDecimal", es + ".GraphQLBigDecimal");
+        m.put("BigInteger",        es + ".GraphQLBigInteger");
+        m.put("GraphQLBigInteger", es + ".GraphQLBigInteger");
+        m.put("Long",              es + ".GraphQLLong");
+        m.put("GraphQLLong",       es + ".GraphQLLong");
+        m.put("Short",             es + ".GraphQLShort");
+        m.put("GraphQLShort",      es + ".GraphQLShort");
+        m.put("Byte",              es + ".GraphQLByte");
+        m.put("GraphQLByte",       es + ".GraphQLByte");
+        m.put("Char",              es + ".GraphQLChar");
+        m.put("GraphQLChar",       es + ".GraphQLChar");
+
+        // Numeric constraint scalars (one-to-one with field names).
+        m.put("PositiveInt",       es + ".PositiveInt");
+        m.put("PositiveFloat",     es + ".PositiveFloat");
+        m.put("NegativeInt",       es + ".NegativeInt");
+        m.put("NegativeFloat",     es + ".NegativeFloat");
+        m.put("NonPositiveInt",    es + ".NonPositiveInt");
+        m.put("NonPositiveFloat",  es + ".NonPositiveFloat");
+        m.put("NonNegativeInt",    es + ".NonNegativeInt");
+        m.put("NonNegativeFloat",  es + ".NonNegativeFloat");
+
+        // Date / time / identity / locale.
+        m.put("DateTime",          es + ".DateTime");
+        m.put("Date",              es + ".Date");
+        m.put("Time",              es + ".Time");
+        m.put("LocalTime",         es + ".LocalTime");
+        m.put("UUID",              es + ".UUID");
+        m.put("Locale",            es + ".Locale");
+        m.put("Currency",          es + ".Currency");
+        m.put("CountryCode",       es + ".CountryCode");
+
+        // URL. {@code ExtendedScalars.Object} and {@code ExtendedScalars.Json} are deliberately
+        // excluded: both declare {@code Coercing<Object, Object>}, which the resolver's erasure
+        // guard treats as an unbound Java type (per graphitron's principled "Object is too
+        // ambiguous to drop into a generated record / Field<X>" stance). Consumers wanting
+        // unstructured JSON should declare a typed wrapper and use @scalarType.
+        m.put("Url",               es + ".Url");
+        CONVENTION_TABLE = Map.copyOf(m);
+    }
+
+    /**
+     * Returns {@code true} when the SDL name is recognised by the extended-scalars convention
+     * table. Recognition is independent of whether the constant is on the consumer's classpath;
+     * use {@link #resolveByConvention(String, ClassLoader)} when the answer depends on classpath
+     * presence.
+     */
+    public static boolean hasConventionEntry(String scalarName) {
+        return CONVENTION_TABLE.containsKey(scalarName);
+    }
+
+    /**
+     * Names in the convention table, in declaration order. Used by drift tests that compare the
+     * authored table against {@code ExtendedScalars}'s reflected field set.
+     */
+    public static Set<String> conventionTableNames() {
+        return CONVENTION_TABLE.keySet();
+    }
+
+    /**
+     * Static-field FQNs the convention table covers, deduplicated (both {@code BigDecimal} and
+     * {@code GraphQLBigDecimal} map to the same FQN; the returned set drops the duplicate).
+     */
+    public static Set<String> conventionTableFqns() {
+        return Set.copyOf(new java.util.LinkedHashSet<>(CONVENTION_TABLE.values()));
+    }
+
+    /**
+     * Resolves an SDL scalar through the extended-scalars convention layer. Returns
+     * {@link ScalarResolution.Resolved} when the SDL name is in the convention table
+     * <em>and</em> the named constant is on the consumer's classpath; otherwise returns a
+     * {@link ScalarResolution.Rejected} arm naming the miss.
+     *
+     * <p>The miss shape distinguishes "name not in convention table" (returns
+     * {@link ScalarResolution.Rejected.FieldNotFound} naming
+     * {@code graphql.scalars.ExtendedScalars} as the searched class) from "name in table but
+     * artifact missing on classpath" (returns {@link ScalarResolution.Rejected.ClassNotFound}
+     * naming the FQN the table points at). Callers that only care about hit-or-miss can pattern
+     * match on {@link ScalarResolution.Resolved}; callers that want to render a hint route
+     * through the rejection arm.
+     */
+    public static ScalarResolution resolveByConvention(String scalarName, ClassLoader loader) {
+        String fqn = CONVENTION_TABLE.get(scalarName);
+        if (fqn == null) {
+            return new ScalarResolution.Rejected.FieldNotFound(
+                "graphql.scalars.ExtendedScalars", scalarName);
+        }
+        return resolveFromDirectiveValue(fqn, loader);
     }
 
     /**

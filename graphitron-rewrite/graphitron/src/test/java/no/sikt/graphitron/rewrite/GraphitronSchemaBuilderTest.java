@@ -3878,15 +3878,61 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(); }
         },
 
-        UNANNOTATED_NON_SPEC_SCALAR_SKIPPED(
-            "non-spec scalar without @scalarType → not classified (Phase 2 leaves Phase 3 / convention layer to escalate)",
+        UNANNOTATED_NON_SPEC_SCALAR_ESCALATES(
+            "non-spec scalar with no @scalarType and not in convention table → UnclassifiedType",
             """
             scalar Money
             type Query { x: Money }
             """,
-            schema -> assertThat(schema.type("Money")).isNull()) {
+            schema -> {
+                var t = (UnclassifiedType) schema.type("Money");
+                assertThat(t.reason())
+                    .contains("scalar 'Money'")
+                    .contains("@scalarType")
+                    .contains("graphql-java-extended-scalars");
+            }) {
             @Override public Set<Class<?>> variants() { return Set.of(); }
-        };
+        },
+
+        CONVENTION_LAYER_RESOLVES_BIG_DECIMAL(
+            "non-spec scalar 'BigDecimal' with extended-scalars on classpath → ScalarType via convention",
+            """
+            scalar BigDecimal
+            type Query { x: BigDecimal }
+            """,
+            schema -> {
+                var t = (ScalarType) schema.type("BigDecimal");
+                assertThat(t.resolution().scalarConstantField()).isEqualTo("GraphQLBigDecimal");
+                assertThat(t.resolution().scalarConstantOwner().toString())
+                    .isEqualTo("graphql.scalars.ExtendedScalars");
+                assertThat(t.resolution().javaType().toString()).isEqualTo("java.math.BigDecimal");
+            }),
+
+        CONVENTION_LAYER_RESOLVES_UUID(
+            "non-spec scalar 'UUID' with extended-scalars on classpath → ScalarType via convention",
+            """
+            scalar UUID
+            type Query { x: UUID }
+            """,
+            schema -> {
+                var t = (ScalarType) schema.type("UUID");
+                assertThat(t.resolution().scalarConstantField()).isEqualTo("UUID");
+                assertThat(t.resolution().javaType().toString()).isEqualTo("java.util.UUID");
+            }),
+
+        DIRECTIVE_BEATS_CONVENTION(
+            "scalar named 'BigDecimal' with @scalarType wins over the convention layer",
+            """
+            scalar BigDecimal @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
+            type Query { x: BigDecimal }
+            """,
+            schema -> {
+                // Directive resolves to Money, not the convention table's GraphQLBigDecimal.
+                var t = (ScalarType) schema.type("BigDecimal");
+                assertThat(t.resolution().scalarConstantField()).isEqualTo("MONEY");
+                assertThat(t.resolution().javaType().toString())
+                    .isEqualTo("no.sikt.graphitron.rewrite.scalarfixture.Money");
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
