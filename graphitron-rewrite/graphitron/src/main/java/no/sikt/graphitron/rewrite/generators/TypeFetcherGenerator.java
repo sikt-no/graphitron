@@ -2926,7 +2926,7 @@ public class TypeFetcherGenerator {
      *
      * @param <T> the concrete field type — must implement both {@link ChildField.TableTargetField}
      *            (for {@code returnType()} and {@code name()}) and {@link BatchKeyField} (for
-     *            {@code batchKey()} and {@code rowsMethodName()}).
+     *            {@code sourceKey()}, {@code loaderRegistration()}, and {@code rowsMethodName()}).
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "accessor-rowkey-cardinality-matches-field",

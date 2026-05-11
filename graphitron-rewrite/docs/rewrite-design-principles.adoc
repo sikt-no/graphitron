@@ -20,9 +20,9 @@ Signs a model type needs more pre-resolution:
 
 When different variants of a concept carry different data, use a sealed interface ; not an enum with a shared field set. An enum forces every variant to have the same shape; a sealed record hierarchy gives each variant exactly the fields it needs.
 
-`BatchKey` illustrates the pattern: `RowKeyed` / `RecordKeyed` / `MappedRowKeyed` / `MappedRecordKeyed` carry `parentKeyColumns: List<ColumnRef>`, while `LifterLeafKeyed` carries a `JoinStep.LiftedHop` plus a `LifterRef` and `LifterPathKeyed` carries the resolved `List<JoinStep>` FK chain plus a `LifterRef`. The variants split across two sealed sub-interfaces (`ParentKeyed` for the catalog-PK arms, `RecordParentBatchKey` for the `@record`-parent arms) plus a `LifterKeyed` sub-seal of the latter so side-aware accessors live exactly where they apply. None carry fields they don't use. The compiler enforces exhaustive switches ; when a new variant is added, every switch that doesn't handle it becomes a compile error.
+`SourceKey.Reader` illustrates the pattern at its current shape: `ColumnRead` carries no payload (catalog-FK columns live on the surrounding `SourceKey`, not the reader), `AccessorCall(AccessorRef)` carries the typed instance accessor on a `@record` parent's backing class, `SourceRowsCall(LifterRef)` carries the developer-supplied `@sourceRow` static lifter, `ServiceTableRecord(ClassName)` carries the developer-declared typed jOOQ `TableRecord` subclass the `@service` method returns, and `ServiceUntypedRecord` carries no payload (untyped `Record`/scalar service return). Each variant holds exactly the data its rows-method body needs to read parent-side input; none carry fields they don't use. `SourceKey.Wrap` is a sibling sealed: `Row` / `Record` / `TableRecord(ClassName)`, where the `TableRecord` arm carries the developer-declared subclass and the other two arms carry nothing. The compiler enforces exhaustive switches ; when a new variant is added (e.g. R75's `ResultRowWalk` Reader permit for rooted-DML payload data fields), every switch that doesn't handle it becomes a compile error.
 
-When variants split on independent axes (container × key-shape × backing-class for `BatchKey`; encode-direction for `HelperRef`'s `Encode` / `Decode`; etc.), use sealed sub-interfaces per axis rather than inventing a god accessor whose meaning depends on the variant. The R1 split removed `BatchKey.keyColumns()` ; a shared accessor whose semantics differed per arm ; in favour of `ParentKeyed.parentKeyColumns()` and `LifterKeyed.parentSideColumns()` (delegated through `LiftedHop` on `LifterLeafKeyed`, through the first FK hop on `LifterPathKeyed`). The smell to watch for: a single shared accessor that means "FK source columns" in one arm and "child target columns" in another. The split pushes the per-axis meaning into the type system.
+When variants split on independent axes, use sealed sub-interfaces per axis (or separate records orthogonal to the variant axis) rather than inventing a god accessor whose meaning depends on the variant. R38 is the canonical worked example: the pre-reshape `BatchKey` taxonomy conflated three axes ; container choice (positional list vs mapped set), source-side reader contract (catalog FK, typed accessor, `@sourceRow` lifter, service record), key-shape wrap (`Row`, `Record`, typed `TableRecord`) ; into a 10-permit sealed hierarchy whose downstream dispatch sites all reconstructed the underlying axes via `instanceof BatchKey.X` chains. The reshape pulled each axis into its own first-class type: `SourceKey.Wrap` for key shape, `SourceKey.Reader` for body input contract, `SourceKey.Cardinality` (ONE / MANY) for the per-source row count, and a sibling `LoaderRegistration` record carrying `Container` (POSITIONAL_LIST / MAPPED_SET) and `Dispatch` (LOAD_ONE / LOAD_MANY) for DataLoader identity. Each dispatch site reads off whichever axis it actually cares about, instead of reconstructing the axis from a conflated permit. Net type-identity count fell from 10 to 1 + 5 = 6, and three of the dispatch axes became orthogonal at the type level rather than tangled inside one taxonomy. The smell to watch for: a single shared accessor that means "FK source columns" in one arm and "child target columns" in another, or a sealed permit name that splices two axes together (`MappedRowKeyed` was both "mapped container" and "RowN key shape" in one identity). The split pushes the per-axis meaning into the type system.
 
 == Directives carry only what the SDL author needs to say
 
@@ -34,7 +34,7 @@ The smell to watch for is an input wrapper that most callsites fill in two-of-fo
 
 == Classification belongs at the parse boundary
 
-Reading the reflection `java.lang.reflect.Type` tree is permitted only at builder-side classifiers that convert reflection output into the typed model. Today five files cross that boundary: `ServiceCatalog` (for `@service` and `@tableMethod` parameter classification, including the post-R7 `classifySourcesType` for DataLoader source parameters); `ServiceDirectiveResolver` (for `@externalField` reference methods); `SourceRowDirectiveResolver` (R110, for the developer-supplied `@sourceRow` lifter signature); `ClassAccessorResolver` (R88, for resolving an SDL output field's accessor on a `@record`-Java-backed parent against the backing class's method set); and `FieldBuilder` (for `@sourceRow` argument-mapping and accessor reflection on `@record` parents whose backing class carries typed FK accessors). Each converts raw reflection output into `MethodRef.Param`, `BatchKey`, `AccessorRef`, or `AccessorResolution` values (each carrying a `ParamSource` where applicable). Everything downstream ; validator, generator ; switches on the pre-classified values and never touches reflection types.
+Reading the reflection `java.lang.reflect.Type` tree is permitted only at builder-side classifiers that convert reflection output into the typed model. Today five files cross that boundary: `ServiceCatalog` (for `@service` and `@tableMethod` parameter classification, including the post-R7 `classifySourcesType` for DataLoader source parameters); `ServiceDirectiveResolver` (for `@externalField` reference methods); `SourceRowDirectiveResolver` (R110, for the developer-supplied `@sourceRow` lifter signature); `ClassAccessorResolver` (R88, for resolving an SDL output field's accessor on a `@record`-Java-backed parent against the backing class's method set); and `FieldBuilder` (for `@sourceRow` argument-mapping and accessor reflection on `@record` parents whose backing class carries typed FK accessors). Each converts raw reflection output into `MethodRef.Param`, `SourceKey`, `LoaderRegistration`, `AccessorRef`, or `AccessorResolution` values (each carrying a `ParamSource` where applicable). Everything downstream ; validator, generator ; switches on the pre-classified values and never touches reflection types.
 
 The boundary lives at `JooqCatalog`: it is the canonical permitted holder of raw jOOQ types (`Table<?>`, `ForeignKey<?,?>`) and the path classifier code goes through. Two other classes also import `org.jooq` directly today: `BuildContext` (`ForeignKey` for `@reference` validation messages that need to enumerate keys for the candidate hint) and `catalog/CatalogBuilder` (`ForeignKey` + `Table` for the LSP completion-data snapshot, which marshals catalog metadata into a wire format the LSP server consumes). `TypeBuilder`, `FieldBuilder`, and `ServiceCatalog` consume the classified output via `JooqCatalog` rather than holding raw types directly. If a generator needs information not yet in a taxonomy record, the fix is to add a component and extract the value in the builder ; not to reach past the taxonomy boundary.
 
@@ -54,7 +54,7 @@ This pushes classification certainty into the type system: code that receives a 
 
 == Sub-taxonomies for resolution outcomes
 
-Complex resolution outcomes get their own sealed type rather than being stored as raw strings. `BatchKey` is a sub-taxonomy of `ParamSource.Sources`, `TableRef` of `GraphitronType.TableBackedType`, `ColumnRef` of `InputField.ColumnField`. The type of a field tells you exactly what states it can be in.
+Complex resolution outcomes get their own sealed type rather than being stored as raw strings. `SourceKey.Wrap` (sealed: `Row` / `Record` / `TableRecord(ClassName)`) is the key-shape sub-taxonomy on `MethodRef.Param.Sourced` and `ParamSource.Sources`, `TableRef` of `GraphitronType.TableBackedType`, `ColumnRef` of `InputField.ColumnField`. The type of a field tells you exactly what states it can be in.
 
 Each new sub-taxonomy proposal comes with a one-line note on what distinct information it carries that a sibling cannot ; otherwise it's probably a field on an existing record. At milestone boundaries, audit which sub-taxonomies could collapse now that their forcing functions are visible.
 
@@ -110,12 +110,12 @@ The rule above flows in one direction: a classifier rejection becomes a build-ti
 
 This is a feature, not a fragility. Compile failure of the emitted source at `mvn compile -pl :graphitron-sakila-example` is the safety net: any classifier/emitter mismatch surfaces during the build, before any code reaches a consumer. Compared with defensive runtime casts (which can throw `ClassCastException` on a real request, days after the build passed) or `var`-typed locals fed into parameterised entry points (which abandon the strict-shape guarantee entirely), the load-bearing-guarantee shape is the safest expression of the contract.
 
-Nine load-bearing keys live on trunk today (find them via `LoadBearingGuaranteeAuditTest`'s scan, or grep for `@LoadBearingClassifierCheck` under `graphitron-rewrite/`). The two worked examples:
+Find the live set via `LoadBearingGuaranteeAuditTest`'s scan, or grep for `@LoadBearingClassifierCheck` under `graphitron-rewrite/`. The two worked examples:
 
 - *`@tableMethod` root fetcher* (`service-catalog-strict-tablemethod-return`). `ServiceCatalog.reflectTableMethod` rejects developer methods whose return type is wider than the generated jOOQ table class via a strict `ClassName.equals` comparison. `TypeFetcherGenerator.buildQueryTableMethodFetcher` then declares `<SpecificTable> table = Method.x(...)` with no cast, and feeds the local directly into `<SpecificTable>Type.$fields(...)` which expects exactly that type. The companion strict-`@service` return-type check (`service-catalog-strict-service-return`) in `reflectServiceMethod` follows the same pattern: typed `Result<FilmRecord>` fetcher returns instead of `Object`, structural `TypeName.equals` comparison.
 - *`ColumnField` parent table* (`column-field-requires-table-backed-parent`). The classifier produces a `ColumnField` only on a table-backed parent. `TypeFetcherGenerator`'s switch arm throws `IllegalStateException` when it sees a `ColumnField` with `parentTable == null`, treating that reachability as a classifier-invariant violation rather than emitting a defensive null-check.
 
-The remaining keys cover NodeId FK invariants (`nodeid-fk.direct-fk-keys-match`), error-channel structure (`error-type.path-message-fields`, `error-channel.mappings-constant`), declared-exception coverage (`service-method.declared-exceptions-covered`), and `@sourceRow` routing (`sourcerow-classifies-as-record-table-field`, `sourcerow-leafkey-batchkey-is-lifterleafkeyed`, `sourcerow-pathkey-batchkey-is-lifterpathkeyed`).
+The remaining keys cover NodeId FK invariants (`nodeid-fk.direct-fk-keys-match`), error-channel structure (`error-type.path-message-fields`, `error-channel.mappings-constant`), declared-exception coverage (`service-method.declared-exceptions-covered`), `@sourceRow` routing (`sourcerow-classifies-as-record-table-field`, `sourcerow-leafkey-sourcerows-singlehop`, `sourcerow-pathkey-sourcerows-fkchain`), and `SourceKey` cross-axis invariants (`source-key.source-rows-call-wraps-row`, `source-key.accessor-call-wraps-record`, `source-key.service-table-record-target-aligned-empty-path`).
 
 Rule: if you relax a classifier check that an emitter relies on, audit every emitter site that consumes the corresponding shape, in the same commit. The compile-time failure of the generated `*Fetchers` source is the safety net; the audit is the cheap upstream version of the same signal.
 
@@ -218,19 +218,19 @@ contract is how the schema author hands the framework a typed key when the catal
 === DTO-parent batching
 
 When a `@record` parent's backing class is not a jOOQ `TableRecord`, the catalog cannot supply the
-FK columns the column-keyed DataLoader path needs to batch a child `@table` field. The `@batchKeyLifter`
+FK columns the column-keyed DataLoader path needs to batch a child `@table` field. The `@sourceRow`
 directive closes that gap: the schema author supplies a static Java method that lifts a `RowN<...>`
 batch key out of the parent DTO, plus the `targetColumns` (column names on the child table) the
 key positions match. The classifier reflects on the lifter once at build time, validates the per-position
-column-class match, and produces a `BatchKey.LifterRowKeyed` carrying a `JoinStep.LiftedHop` (target
-table + slot list, single-hop by construction) and a `LifterRef` (declaring class + method name).
-The lifted slots are `JoinSlot.LifterSlot` permits, each folding source-side and target-side onto
-a single `ColumnRef` by construction (DataLoader key tuple IS target-column tuple as a type fact,
-not a prose precondition). The emitter feeds that into the existing
-`SplitRowsMethodEmitter.buildListMethod` path with no identity branching: target accessors come
-from `WithTarget.slots()`, key extraction from the lifter call. The lifter is the *single place*
-where the DTO → key mapping lives; if a schema author needs a different key, they author a new
-lifter method, not a new emitter arm.
+column-class match, and produces a `SourceKey` whose `Reader` is `SourceRowsCall(lifter)` and whose
+`Wrap` is `Row`, carrying a `JoinStep.LiftedHop` (target table + slot list, single-hop by construction)
+in the `path` and a `LifterRef` (declaring class + method name) on the reader. The lifted slots are
+`JoinSlot.LifterSlot` permits, each folding source-side and target-side onto a single `ColumnRef` by
+construction (DataLoader key tuple IS target-column tuple as a type fact, not a prose precondition).
+The emitter feeds that into the existing `SplitRowsMethodEmitter.buildListMethod` path with no
+identity branching: target accessors come from `WithTarget.slots()`, key extraction from the lifter
+call. The lifter is the *single place* where the DTO → key mapping lives; if a schema author needs
+a different key, they author a new lifter method, not a new emitter arm.
 
 === Helper-locality
 

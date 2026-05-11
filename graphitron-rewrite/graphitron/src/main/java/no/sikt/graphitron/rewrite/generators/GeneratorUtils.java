@@ -244,6 +244,14 @@ class GeneratorUtils {
         reliesOn = "Same Reader.SourceRowsCall arm covers the @reference-composed lifter shape; "
             + "SourceRowDirectiveResolver constructs the path-keyed lifter projection only on "
             + "PojoResultType / JavaRecordType with a non-null fqClassName.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "source-key.source-rows-call-wraps-row",
+        reliesOn = "Declares `$T key = Lifters.method((BackingClass) env.getSource())` where "
+            + "`$T` is sourceKey.keyElementType(). The @sourceRows lifter signature returns "
+            + "RowN<...>; the local must be typed RowN<...> for the assignment to compile. "
+            + "SourceKey's compact constructor rejects any SourceRowsCall paired with a wrap "
+            + "other than Wrap.Row, so keyElementType() is guaranteed to derive a RowN<...> "
+            + "type at this site.")
     private static CodeBlock buildLifterRowKey(
             LifterRef lifter, TypeName keyType,
             GraphitronType.ResultType resultType) {
@@ -402,6 +410,17 @@ class GeneratorUtils {
      * consistency check guarantees the {@code TableRecord} arm's class matches the parent's
      * table, so the extraction's projection target is the parent table itself.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "source-key.service-table-record-target-aligned-empty-path",
+        reliesOn = "The Wrap.TableRecord arm emits `parent.into(Tables.X)` against parentTable "
+            + "directly — no walk over sourceKey.path() is performed. The arm is reachable only "
+            + "from the @service Reader.ServiceTableRecord codepath, where the typed record class "
+            + "matches the parent's table (validateTableRecordSourceParentTable on the validator "
+            + "side, target-aligned by construction in FieldBuilder). SourceKey's compact "
+            + "constructor rejects any ServiceTableRecord with recordType matching target's "
+            + "recordClass paired with a non-empty path, so the emitter can safely project "
+            + "without first walking a join chain that would otherwise have to land on the "
+            + "parent table.")
     static CodeBlock buildKeyExtraction(SourceKey sourceKey, TableRef parentTable) {
         TypeName keyType = sourceKey.keyElementType();
         var tablesClass = parentTable.constantsClass();

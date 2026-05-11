@@ -146,6 +146,14 @@ public final class SplitRowsMethodEmitter {
             + "accessor arms; FkJoin chain on the @sourceRow + @reference arm), so the prelude "
             + "can read target accessors uniformly via WithTarget without per-accessor identity "
             + "checks.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "source-key.accessor-call-wraps-record",
+        reliesOn = "The isAccessor arm of the parent-input VALUES loop emits "
+            + "`DSL.val(k.value$L())` to extract the scalar payload off the per-key RecordN<...>. "
+            + "The value$L() accessor exists on RecordN<...> but not on RowN<...>; SourceKey's "
+            + "compact constructor rejects any AccessorCall paired with a wrap other than "
+            + "Wrap.Record, so keyElementType() is guaranteed to be a RecordN<...> type on this "
+            + "arm and the value$L() invocation type-checks against the local key variable.")
     private static PreludeBindings emitParentInputAndFkChain(
             TypeFetcherEmissionContext ctx,
             CodeBlock.Builder body,
