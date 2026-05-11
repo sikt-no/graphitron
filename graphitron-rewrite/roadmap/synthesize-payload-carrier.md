@@ -86,8 +86,10 @@ not schedule-coupled.
 - **Phase 1: the reshape — record-returning DML mutations + tight transactions.**
   Replaces Phase 1's shipped wire-format-unwrap design with the structural model
   the SDL implies: mutations with payload return types classify as record-returning
-  carriers; the data field on the payload classifies as the existing
-  `ChildField.RecordTableField`; DML emit becomes two-step (PK-only RETURNING
+  carriers; the data field on the payload classifies as a new sibling permit
+  `ChildField.RootedPayloadDataField` (introduced in the Foundation section
+  below — it does not implement `BatchKeyField`, since the rooted DML case is
+  not DataLoader-batched); DML emit becomes two-step (PK-only RETURNING
   inside `dsl.transactionResult(...)`, then a follow-up SELECT for the response
   data outside the transaction). Direct-`@table`-return DML mutations get the same
   two-step emit. `DELETE` admits only `: ID` / `: [ID!]` returns (no payload-shaped
@@ -153,10 +155,21 @@ The data field's `SourceKey` for the rooted DML payload case:
 alongside the three `source-key.*` invariants R38 ships
 (`source-rows-call-wraps-row`, `accessor-call-wraps-record`,
 `service-table-record-target-aligned-empty-path`) and is the load-bearing
-classifier check that pins the data-field's target table to the DML's
-input table. Mismatch (e.g. SDL author writing
-`Mutation.x(in: FilmInput!): ActorPayload`) is rejected at classification
-time with a per-mismatch message.
+classifier check the data-field's fetcher emit consumes when it types the
+upstream `Result` shape via `SourceKey.wrap × columns`.
+
+Table-equality between the data field's element table and the DML's input
+table is a separate concern, enforced at the mutation classifier (see
+"Mutation-field classification" below). The trigger itself is
+mutation-agnostic (it sees only the payload type), so the table-equality
+check rides on the classifier admission step, after the trigger returns
+`Ok` and the surrounding `MutationDmlRecordField` admission has the
+mutation's `tableInputArg` in hand. The retired
+`passthrough-payload.data-table-equals-dml-target` check folds into that
+admission-step rejection; mismatch (e.g. SDL author writing
+`Mutation.x(in: FilmInput!): ActorPayload`) surfaces with a clear message
+naming the SDL payload, its data field's element table, and the DML's
+input table.
 
 ### New sibling permit: `ChildField.RootedPayloadDataField`
 
@@ -343,6 +356,16 @@ branch to the existing direct-`@table` admission:
   the reason. On `NotCandidate`, fall through to the existing
   `ResultReturnType`-arm rejection (the `@record`-with-`className`
   non-payload case is unchanged).
+- *Table-equality admission check.* After `Ok` and the `DELETE` check, the
+  classifier compares the trigger's resolved data-field element table
+  against `tableInputArg.inputTable()`. Mismatch rejects with `"payload
+  '<typeName>' data field element type '<elementName>' is bound to table
+  '<dataTable>', which does not match @table input table '<inputTable>';
+  payload-returning DML mutations require the data field's table to equal
+  the DML's input table"`. This is the producer-side replacement for the
+  retired `passthrough-payload.data-table-equals-dml-target` check; the
+  validator threads the same rejection via the
+  validator-mirrors-classifier path.
 
 ### Data-field classification: `RootedPayloadDataField`
 
@@ -649,7 +672,7 @@ populator's roadmap item ships. Usable intermediate state.
 `DmlKind ∈ {INSERT, UPDATE, UPSERT}`):
 
 - Multi-field admission with scalar slots: data field classifies as
-  `RecordTableField` with the rooted `SourceKey` (per Phase 1); slot
+  `RootedPayloadDataField` with the rooted `SourceKey` (per Phase 1); slot
   fields classify as `PassthroughSlotField`; mutation carrier's `slots`
   list preserves declaration order.
 - Multi-`@table`-element rejection (compound-mutation territory).
