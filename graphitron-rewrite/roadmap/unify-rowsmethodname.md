@@ -636,6 +636,22 @@ classifier-side producers (`FieldBuilder.deriveSplitQueryBatchKey`,
     record-parent arm delete. 1553 tests green; the three pre-existing
     `MultiSchemaQueryTest` failures unchanged.
 
+16. `FieldBuilder` polymorphic record-parent producers inline the resolver
+    projection. `PolymorphicRecordParentResolution.Resolved` carries
+    `(SourceKey parentSourceKey, TableRef hubTable)` instead of
+    `(BatchKey.RecordParentBatchKey parentKey, TableRef hubTable)`;
+    `resolvePolymorphicRecordParent`'s `JooqTableRecordType` arm builds
+    `SourceKey(target=null, columns=pk, Wrap.Row, Cardinality.ONE, ColumnRead)`
+    inline (the parent IS the source — no separate target — and cardinality is
+    variant-derived rather than field-cardinality-derived);
+    `deriveBatchKeyFromHubAccessor`'s tail builds
+    `SourceKey(target=hubTable, columns=hub.PK, path=[hop], Wrap.Record, ONE|MANY,
+    AccessorCall(ref))` directly. The
+    `SourceKeyResolver.resolveRecordParentForPolymorphic` call at
+    `classifyRecordParentPolymorphicChild`'s tail deletes; the consumer reads
+    `resolved.parentSourceKey()` directly. 1553 tests green; the three
+    pre-existing `MultiSchemaQueryTest` failures unchanged.
+
 Still to land for Phase 3 completion:
 - **Producer site inlining**: `FieldBuilder` (`deriveSplitQueryBatchKey`,
   `deriveBatchKeyForResultType`, `resolveRecordParentBatchKey`,

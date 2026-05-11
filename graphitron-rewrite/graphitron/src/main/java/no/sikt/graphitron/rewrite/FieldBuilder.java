@@ -3528,25 +3528,24 @@ class FieldBuilder {
                 Rejection.structural(paths.error()));
         }
 
-        no.sikt.graphitron.rewrite.model.SourceKey parentSourceKey = SourceKeyResolver.resolveRecordParentForPolymorphic(resolved.parentKey());
         if (isInterface) {
             return new InterfaceField(parentTypeName, name, location, returnType,
-                participants, paths.paths(), parentSourceKey, parentResultType);
+                participants, paths.paths(), resolved.parentSourceKey(), parentResultType);
         }
         return new UnionField(parentTypeName, name, location, returnType,
-            participants, paths.paths(), parentSourceKey, parentResultType);
+            participants, paths.paths(), resolved.parentSourceKey(), parentResultType);
     }
 
     /**
      * Builder-internal sealed result of {@link #resolvePolymorphicRecordParent}. The classifier
-     * arm reads {@code Resolved.parentKey()} / {@code Resolved.hubTable()} when constructing the
-     * {@link InterfaceField} / {@link UnionField}; the hub is consumed at this site only (handed
-     * to {@link #resolveChildPolymorphicJoinPaths}) and never lives on the field record. See the
-     * spec section "Hub table is a classifier-internal local" for the rationale on not lifting
-     * the hub onto a slot.
+     * arm reads {@code Resolved.parentSourceKey()} / {@code Resolved.hubTable()} when
+     * constructing the {@link InterfaceField} / {@link UnionField}; the hub is consumed at this
+     * site only (handed to {@link #resolveChildPolymorphicJoinPaths}) and never lives on the
+     * field record. See the spec section "Hub table is a classifier-internal local" for the
+     * rationale on not lifting the hub onto a slot.
      */
     private sealed interface PolymorphicRecordParentResolution {
-        record Resolved(BatchKey.RecordParentBatchKey parentKey, TableRef hubTable)
+        record Resolved(SourceKey parentSourceKey, TableRef hubTable)
             implements PolymorphicRecordParentResolution {}
         record Rejected(Rejection rejection) implements PolymorphicRecordParentResolution {}
     }
@@ -3562,18 +3561,19 @@ class FieldBuilder {
         + "supported for polymorphic returns.";
 
     /**
-     * Resolves the {@link BatchKey.RecordParentBatchKey} and hub table for a polymorphic child
+     * Resolves the parent-side {@link SourceKey} and hub table for a polymorphic child
      * field on a {@code @record}-backed parent. Three reachable shapes; all four
      * {@link GraphitronType.ResultType} permits handled:
      *
      * <ul>
      *   <li>{@link GraphitronType.JooqTableRecordType} with a non-null table → {@code Resolved(
-     *       RowKeyed(parent.table().primaryKeyColumns()), parent.table())}. Empty PK or null
-     *       table is routed through {@code Rejected(structural)} — same shape as the existing
-     *       table-backed arm's {@code UnclassifiedField} path.</li>
+     *       SourceKey(Wrap.Row, parent.PK, ColumnRead, Cardinality.ONE), parent.table())}.
+     *       Empty PK or null table is routed through {@code Rejected(structural)} — same shape
+     *       as the existing table-backed arm's {@code UnclassifiedField} path.</li>
      *   <li>{@link GraphitronType.PojoResultType} / {@link GraphitronType.JavaRecordType} →
      *       delegates to {@link #deriveBatchKeyFromHubAccessor}, which discovers the hub from
-     *       the unique matching typed accessor.</li>
+     *       the unique matching typed accessor and projects to {@code AccessorCall} + the
+     *       Single / Many cardinality.</li>
      *   <li>{@link GraphitronType.JooqRecordType} → {@code Rejected(structural)} (no table
      *       reference, no hub derivation).</li>
      * </ul>
@@ -3595,8 +3595,16 @@ class FieldBuilder {
                         + "' requires a non-empty primary key on the @record-backed parent table '"
                         + jtr.table().tableName() + "'"));
                 }
-                yield new PolymorphicRecordParentResolution.Resolved(
-                    new BatchKey.RowKeyed(pkCols), jtr.table());
+                // Polymorphic Row arm: target is null because the parent IS the source; cardinality
+                // is variant-derived (each parent is one entity, not field-cardinality-derived).
+                SourceKey parentSourceKey = new SourceKey(
+                    null,
+                    pkCols,
+                    List.of(),
+                    new SourceKey.Wrap.Row(),
+                    SourceKey.Cardinality.ONE,
+                    new SourceKey.Reader.ColumnRead());
+                yield new PolymorphicRecordParentResolution.Resolved(parentSourceKey, jtr.table());
             }
             case GraphitronType.PojoResultType _, GraphitronType.JavaRecordType _ -> {
                 // Single-cardinality polymorphic on a Pojo / JavaRecord parent is currently
@@ -3702,6 +3710,12 @@ class FieldBuilder {
         }
 
         AccessorMatch only = resolvable.get(0);
+        boolean accessorIsMany = only instanceof AccessorMatch.Many;
+        java.lang.reflect.Method accessorMethod = switch (only) {
+            case AccessorMatch.Single s -> s.method();
+            case AccessorMatch.Many mm -> mm.method();
+            case AccessorMatch.CardinalityMismatch _ -> throw new IllegalStateException("filtered above");
+        };
         Class<?> elementClass = switch (only) {
             case AccessorMatch.Single s -> s.elementClass();
             case AccessorMatch.Many mm -> mm.elementClass();
@@ -3717,22 +3731,21 @@ class FieldBuilder {
             .toList();
         var hop = new JoinStep.LiftedHop(hubTable, hopSlots, fieldName + "_0");
 
-        BatchKey.RecordParentBatchKey batchKey;
-        if (only instanceof AccessorMatch.Single s) {
-            var ref = new AccessorRef(
-                ClassName.bestGuess(parentFqClassName),
-                s.method().getName(),
-                ClassName.bestGuess(s.elementClass().getName()));
-            batchKey = new BatchKey.AccessorKeyedSingle(hop, ref);
-        } else {
-            var mm = (AccessorMatch.Many) only;
-            var ref = new AccessorRef(
-                ClassName.bestGuess(parentFqClassName),
-                mm.method().getName(),
-                ClassName.bestGuess(mm.elementClass().getName()));
-            batchKey = new BatchKey.AccessorKeyedMany(hop, ref);
-        }
-        return new PolymorphicRecordParentResolution.Resolved(batchKey, hubTable);
+        // Polymorphic accessor arm: target is the hub table (where the accessor's typed return
+        // lives); cardinality follows the accessor (Single → ONE, Many → MANY for per-element
+        // walk through the parent's typed list-accessor).
+        var ref = new AccessorRef(
+            ClassName.bestGuess(parentFqClassName),
+            accessorMethod.getName(),
+            ClassName.bestGuess(elementClass.getName()));
+        SourceKey parentSourceKey = new SourceKey(
+            hubTable,
+            hubTable.primaryKeyColumns(),
+            List.of(hop),
+            new SourceKey.Wrap.Record(),
+            accessorIsMany ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
+            new SourceKey.Reader.AccessorCall(ref));
+        return new PolymorphicRecordParentResolution.Resolved(parentSourceKey, hubTable);
     }
 
     private record ReturnAxis(ServiceCatalog.ContainerKind container, Class<?> elementClass) {}
