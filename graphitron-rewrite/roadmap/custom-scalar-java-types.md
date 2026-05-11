@@ -18,18 +18,18 @@ hard-coded to the five spec built-ins (`Int`, `Float`, `String`,
 `Boolean`, `ID`) at five sites, with three different fallback
 behaviours for unknown scalars:
 
-- `ServiceCatalog.mapToJavaTypeName` (`ServiceCatalog.java:980-986`,
+- `ServiceCatalog.mapToJavaTypeName` (`ServiceCatalog.java:985-991`,
   service-method parameter-name diagnostic) — switch over the five
   names, returns `null` for anything else, and the caller silently
   skips that candidate path.
-- `FieldBuilder.mapGraphQLTypeToReflectType` (`FieldBuilder.java:3005-3011`,
+- `FieldBuilder.mapGraphQLTypeToReflectType` (`FieldBuilder.java:3048-3054`,
   fetcher-side scalar reflection) — switch over the five names,
   falls back to `Object.class` silently for everything else.
 - `RowsMethodShape.standardScalarJavaType` (`RowsMethodShape.java:71-79`,
   row-shape scalar coercion) — switch over the five names, returns
   `null` for everything else. The lone caller chain
   (`strictPerKeyType` → `ChildField.elementType` at
-  `ChildField.java:462-468`) handles the null by falling back to
+  `ChildField.java:461-468`) handles the null by falling back to
   `String` for `ScalarReturnType`, with an explicit forward-tense
   comment ("Phase A approximation, replaced when the consumer-provided
   scalar registry lands"). So this site has both a producer-side
@@ -368,7 +368,7 @@ back to `String` for `ScalarReturnType`; `strictPerKeyType` returns
 fixtures only exercise spec built-ins, so the resolver path produces
 exactly the existing types on trunk. Phase 1 also retires the
 `ChildField.elementType` String-fallback branch (the comment at
-`ChildField.java:455-457` flags it as Phase A scaffolding): once the
+`ChildField.java:455-456` flags it as Phase A scaffolding): once the
 resolver returns Java types for custom scalars, that branch is dead
 and the elementType simplifies to `RowsMethodShape.strictPerKeyType`
 plus the method-return-type fallback. The other producer-side
