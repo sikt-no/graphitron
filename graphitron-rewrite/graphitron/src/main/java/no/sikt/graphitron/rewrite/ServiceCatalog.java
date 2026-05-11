@@ -8,7 +8,6 @@ import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
@@ -251,8 +250,8 @@ class ServiceCatalog {
                 } else if (pName != null && ctxKeys.contains(pName)) {
                     params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Context()));
                 } else {
-                    Optional<BatchKey.ParentKeyed> batchKey = classifySourcesType(p.getParameterizedType(), parentPkColumns);
-                    if (batchKey.isEmpty()) {
+                    Optional<SourcesShape> sourcesShape = classifySourcesType(p.getParameterizedType(), parentPkColumns);
+                    if (sourcesShape.isEmpty()) {
                         if (pName == null) {
                             return new ServiceReflectionResult(null,
                                 Rejection.structural("parameter names not available for method '" + methodName + "' in class '" + className
@@ -267,9 +266,8 @@ class ServiceCatalog {
                         // Exception: a SOURCES-shape parameter (List<RowN>, List<RecordN>,
                         // List<TableRecord>) at root is its own diagnostic — `@service at the root
                         // does not support List<Row>/List<Record>/List<Object> batch parameters`.
-                        // Phase A's canonical-constructor invariant on BatchKey blocks the empty
-                        // RowKeyed/etc. construction, so detection happens here on the parameter
-                        // type directly rather than on the constructed BatchKey.
+                        // classifySourcesType returns empty for parentPkColumns.isEmpty(), so the
+                        // detection happens here on the parameter type directly.
                         if (parentPkColumns.isEmpty() && looksLikeSourcesShape(p.getParameterizedType())) {
                             return new ServiceReflectionResult(null,
                                 Rejection.structural("@service at the root does not support "
@@ -324,16 +322,9 @@ class ServiceCatalog {
                             Rejection.structural("parameter '" + displayName + "' in method '" + methodName
                             + "' has an unrecognized sources type: '" + typeName + "'"));
                     }
-                    BatchKey.ParentKeyed bk = batchKey.get();
-                    SourceKey.Wrap wrap = wrapFor(bk);
-                    LoaderRegistration.Container container =
-                        bk instanceof BatchKey.MappedRowKeyed
-                                || bk instanceof BatchKey.MappedRecordKeyed
-                                || bk instanceof BatchKey.MappedTableRecordKeyed
-                            ? LoaderRegistration.Container.MAPPED_SET
-                            : LoaderRegistration.Container.POSITIONAL_LIST;
+                    SourcesShape shape = sourcesShape.get();
                     params.add(new MethodRef.Param.Sourced(
-                        displayName, wrap, bk.parentKeyColumns(), container));
+                        displayName, shape.wrap(), parentPkColumns, shape.container()));
                 }
             }
             MethodRef.CallShape callShape;
@@ -702,31 +693,10 @@ class ServiceCatalog {
     }
 
     /**
-     * Classifies the element type of a {@code List<?>} or {@code Set<?>} SOURCES parameter into
-     * a {@link BatchKey} variant, or returns {@link Optional#empty()} when the type is not
-     * recognised.
-     *
-     * <p>The container axis ({@code List} vs {@code Set}) and key-shape axis (one of
-     * {@code RowN}, {@code RecordN}, or {@code X extends TableRecord}) combine into six
-     * {@link BatchKey} variants. {@code List<?>} maps to the positional variants
-     * ({@link BatchKey.RowKeyed}/{@link BatchKey.RecordKeyed}/{@link BatchKey.TableRecordKeyed});
-     * {@code Set<?>} maps to the mapped variants ({@link BatchKey.MappedRowKeyed}/
-     * {@link BatchKey.MappedRecordKeyed}/{@link BatchKey.MappedTableRecordKeyed}).
-     *
-     * <p>For all variants, {@code parentPkColumns} is used as the authoritative key column
-     * list. The column types from the parent PK are used in the generated method signature;
-     * the user's declared type args are used only to determine the arity and variant. Pass
-     * {@link List#of()} when no parent table context is available; the caller (typically
-     * {@link #buildResolved}) recognises the SOURCES shape via {@link #looksLikeSourcesShape}
-     * and produces the root-only diagnostic ({@code @service at the root does not support
-     * List<Row>/...} ) instead of constructing an empty-keyed BatchKey (rejected by the
-     * canonical-constructor invariant on every {@link BatchKey.ParentKeyed} permit).
-     */
-    /**
      * Returns true if the parameter type is a {@code List<X>} or {@code Set<X>} where {@code X}
      * is a {@code RowN}, {@code RecordN}, or concrete {@code TableRecord}. Used by the root-op
      * diagnostic to detect SOURCES-shape parameters that {@link #classifySourcesType} cannot
-     * fully classify because the parent has no PK to populate the BatchKey.
+     * fully classify because the parent has no PK to populate the source key.
      */
     private static boolean looksLikeSourcesShape(java.lang.reflect.Type paramType) {
         var split = peelContainer(paramType, java.util.EnumSet.of(ContainerKind.LIST, ContainerKind.SET));
@@ -745,7 +715,32 @@ class ServiceCatalog {
         return false;
     }
 
-    static Optional<BatchKey.ParentKeyed> classifySourcesType(java.lang.reflect.Type paramType,
+    /**
+     * Source-shape classification result for a {@code @service} Java method's
+     * {@code List<RowN<...>>} / {@code Set<RowN<...>>} / {@code List<RecordN<...>>} /
+     * {@code Set<RecordN<...>>} / {@code List<X extends TableRecord<X>>} /
+     * {@code Set<X extends TableRecord<X>>} SOURCES parameter. Carries the two axes the producer
+     * needs to construct {@link MethodRef.Param.Sourced}: the per-row shape
+     * ({@link SourceKey.Wrap}) and the container axis ({@link LoaderRegistration.Container}).
+     * The columns axis is the caller's {@code parentPkColumns} input and so is not repeated here.
+     */
+    record SourcesShape(SourceKey.Wrap wrap, LoaderRegistration.Container container) {}
+
+    /**
+     * Classifies the element type of a {@code List<?>} or {@code Set<?>} SOURCES parameter into
+     * a {@link SourcesShape}, or returns {@link Optional#empty()} when the type is not
+     * recognised or when {@code parentPkColumns} is empty (root-op case: the diagnostic is
+     * produced upstream by {@link #looksLikeSourcesShape}).
+     *
+     * <p>The container axis ({@code List} vs {@code Set}) maps onto
+     * {@link LoaderRegistration.Container#POSITIONAL_LIST} vs
+     * {@link LoaderRegistration.Container#MAPPED_SET}; the element-shape axis (one of
+     * {@code RowN}, {@code RecordN}, or {@code X extends TableRecord}) maps onto
+     * {@link SourceKey.Wrap.Row}, {@link SourceKey.Wrap.Record}, or
+     * {@link SourceKey.Wrap.TableRecord} carrying the developer's typed
+     * {@code TableRecord} subclass.
+     */
+    static Optional<SourcesShape> classifySourcesType(java.lang.reflect.Type paramType,
             List<ColumnRef> parentPkColumns) {
         if (parentPkColumns.isEmpty()) {
             return Optional.empty();
@@ -755,6 +750,9 @@ class ServiceCatalog {
             return Optional.empty();
         }
         boolean isSet = split.get().container() == ContainerKind.SET;
+        LoaderRegistration.Container container = isSet
+            ? LoaderRegistration.Container.MAPPED_SET
+            : LoaderRegistration.Container.POSITIONAL_LIST;
         java.lang.reflect.Type elementType = split.get().elementType();
 
         if (elementType instanceof java.lang.reflect.ParameterizedType ept
@@ -763,17 +761,13 @@ class ServiceCatalog {
             if (rawName.startsWith("org.jooq.Row")) {
                 String suffix = rawName.substring("org.jooq.Row".length());
                 if (suffix.matches("\\d+")) {
-                    return Optional.of(isSet
-                        ? new BatchKey.MappedRowKeyed(parentPkColumns)
-                        : new BatchKey.RowKeyed(parentPkColumns));
+                    return Optional.of(new SourcesShape(new SourceKey.Wrap.Row(), container));
                 }
             }
             if (rawName.startsWith("org.jooq.Record")) {
                 String suffix = rawName.substring("org.jooq.Record".length());
                 if (suffix.matches("\\d+")) {
-                    return Optional.of(isSet
-                        ? new BatchKey.MappedRecordKeyed(parentPkColumns)
-                        : new BatchKey.RecordKeyed(parentPkColumns));
+                    return Optional.of(new SourcesShape(new SourceKey.Wrap.Record(), container));
                 }
             }
         } else if (elementType instanceof Class<?> elementClass
@@ -781,9 +775,9 @@ class ServiceCatalog {
             @SuppressWarnings("unchecked")
             Class<? extends org.jooq.TableRecord<?>> tableRecordClass =
                 (Class<? extends org.jooq.TableRecord<?>>) elementClass;
-            return Optional.of(isSet
-                ? new BatchKey.MappedTableRecordKeyed(parentPkColumns, tableRecordClass)
-                : new BatchKey.TableRecordKeyed(parentPkColumns, tableRecordClass));
+            return Optional.of(new SourcesShape(
+                new SourceKey.Wrap.TableRecord(ClassName.get(tableRecordClass)),
+                container));
         }
 
         return Optional.empty();
@@ -1004,28 +998,6 @@ class ServiceCatalog {
             result = "java.util.List<" + result + ">";
         }
         return result;
-    }
-
-    /**
-     * Maps the developer's source-shape declaration (carried on the {@link BatchKey.ParentKeyed}
-     * permit identity until the BatchKey deletion) to the corresponding {@link SourceKey.Wrap}
-     * stored on {@link MethodRef.Param.Sourced}. {@code Row*Keyed} → {@code Wrap.Row};
-     * {@code Record*Keyed} → {@code Wrap.Record}; {@code TableRecord*Keyed} →
-     * {@code Wrap.TableRecord} carrying the developer-declared subclass via
-     * {@link ClassName#get(Class)}.
-     */
-    private static SourceKey.Wrap wrapFor(BatchKey.ParentKeyed bk) {
-        if (bk instanceof BatchKey.TableRecordKeyed trk) {
-            return new SourceKey.Wrap.TableRecord(ClassName.get(trk.elementClass()));
-        }
-        if (bk instanceof BatchKey.MappedTableRecordKeyed mtrk) {
-            return new SourceKey.Wrap.TableRecord(ClassName.get(mtrk.elementClass()));
-        }
-        if (bk instanceof BatchKey.RecordKeyed
-                || bk instanceof BatchKey.MappedRecordKeyed) {
-            return new SourceKey.Wrap.Record();
-        }
-        return new SourceKey.Wrap.Row();
     }
 
     // ===== Result container =====
