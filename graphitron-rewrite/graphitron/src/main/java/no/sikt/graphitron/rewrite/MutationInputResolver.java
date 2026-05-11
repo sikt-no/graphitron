@@ -8,6 +8,7 @@ import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
@@ -75,24 +76,6 @@ final class MutationInputResolver {
         record Ok(ArgumentRef.InputTypeArg.TableInputArg tia) implements Resolved {}
         record Rejected(Rejection rejection) implements Resolved {
             public String message() { return rejection.message(); }
-        }
-    }
-
-    /**
-     * The four DML statement kinds {@code @mutation(typeName:)} can take. Lifting the schema's
-     * raw String into an enum lets every downstream switch (kind dispatch, invariant rules,
-     * return-type validation) be exhaustive at compile time.
-     */
-    enum DmlKind {
-        INSERT, UPDATE, DELETE, UPSERT;
-
-        /** UPDATE / DELETE / UPSERT require at least one {@code @lookupKey} binding. */
-        boolean requiresLookupKey() {
-            return this != INSERT;
-        }
-        /** UPDATE / DELETE require all PK columns to be covered by {@code @lookupKey} bindings. */
-        boolean requiresPkCoverage() {
-            return this == UPDATE || this == DELETE;
         }
     }
 
