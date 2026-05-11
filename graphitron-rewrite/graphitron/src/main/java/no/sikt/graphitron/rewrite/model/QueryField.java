@@ -64,7 +64,18 @@ public sealed interface QueryField extends RootField
      * </pre>
      * where the table parameter has {@link ParamSource.Table} as its source, and subsequent
      * parameters have {@link ParamSource.Arg} or {@link ParamSource.Context}.
+     *
+     * <p>The return type is always a {@link ReturnTypeRef.TableBoundReturnType}: the
+     * directive's whole purpose is to bind a developer-authored jOOQ table method, which by
+     * construction returns a generated jOOQ table class.
+     * {@link TableMethodDirectiveResolver} rejects any other return shape as a schema error.
      */
+    @DependsOnClassifierCheck(
+        key = "tablemethod-resolver-return-is-table-bound",
+        reliesOn = "Declares returnType with the narrow ReturnTypeRef.TableBoundReturnType "
+            + "component type. The root @tableMethod emitter "
+            + "(TypeFetcherGenerator.buildQueryTableMethodFetcher) reaches .table().tableClass() "
+            + "directly without a sealed-switch or instanceof guard.")
     record QueryTableMethodTableField(
         String parentTypeName,
         String name,

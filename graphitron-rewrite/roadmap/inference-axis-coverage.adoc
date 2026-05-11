@@ -144,7 +144,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | GraphitronSchemaBuilderTest, generators.schema.GraphitronSchemaClassGeneratorTest, test.internal.GeneratorDeterminismTest
 | R39
 | `QueryTableMethodTableField`
-| A root query field using `@tableMethod`. The developer provides a pre-filtered
+| _(no javadoc)_
 | 5
 | pipeline
 | yes
@@ -351,7 +351,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
 | R39
 | `TableMethodField`
-| A child field using `@tableMethod` — the developer provides a pre-filtered
+| _(no javadoc)_
 | 5
 | pipeline
 | no

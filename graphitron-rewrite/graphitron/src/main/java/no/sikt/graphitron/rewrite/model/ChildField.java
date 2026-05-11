@@ -307,6 +307,12 @@ public sealed interface ChildField extends GraphitronField
      * generated jOOQ table class. {@link TableMethodDirectiveResolver} rejects any other return
      * shape as a schema error (R43).
      */
+    @DependsOnClassifierCheck(
+        key = "tablemethod-resolver-return-is-table-bound",
+        reliesOn = "Declares returnType with the narrow ReturnTypeRef.TableBoundReturnType "
+            + "component type. Downstream consumers reach .table() / .table().tableClass() "
+            + "without a sealed-switch or instanceof guard — the type signature is the "
+            + "load-bearing consumer of the resolver's structural rejection.")
     record TableMethodField(
         String parentTypeName,
         String name,
