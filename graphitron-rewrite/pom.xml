@@ -340,8 +340,21 @@
                  happens at read time and no reactor-shared file is needed. Modules that do not
                  classify (graphitron-javapoet, roadmap-tool, graphitron-sakila-db, etc.) still
                  receive the truncation phase but produce no records, leaving an empty file that
-                 the glob ignores. -->
+                 the glob ignores.
+
+                 Activation: property-based negation (active unless -Dleaf-coverage.skip is set)
+                 rather than activeByDefault, which Maven silently deactivates whenever any other
+                 profile (e.g. -Plocal-db) is explicitly activated. Property activation runs on
+                 its own condition and is unaffected by that rule, so the trace emission and the
+                 paired verify-leaf-coverage-report tripwire fire on every default contributor
+                 build. Opt out with `mvn ... -Dleaf-coverage.skip` for a faster local turnaround
+                 when the report is known to be untouched. -->
             <id>leaf-coverage</id>
+            <activation>
+                <property>
+                    <name>!leaf-coverage.skip</name>
+                </property>
+            </activation>
             <build>
                 <plugins>
                     <plugin>
