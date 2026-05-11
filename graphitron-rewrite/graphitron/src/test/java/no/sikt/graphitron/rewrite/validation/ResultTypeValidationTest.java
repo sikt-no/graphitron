@@ -18,7 +18,7 @@ class ResultTypeValidationTest {
     enum Case implements TypeValidatorCase {
 
         VALID("result type — always valid",
-            new PojoResultType("FilmResult", null, null),
+            new PojoResultType.NoBacking("FilmResult", null),
             List.of());
 
         private final String description;

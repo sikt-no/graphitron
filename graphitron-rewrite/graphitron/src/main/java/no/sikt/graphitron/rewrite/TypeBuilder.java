@@ -666,10 +666,10 @@ class TypeBuilder {
      */
     private GraphitronType buildResultType(GraphQLObjectType objType, String name, SourceLocation location) {
         var dir = objType.getAppliedDirective(DIR_RECORD);
-        if (dir == null) return new GraphitronType.PojoResultType(name, location, null);
+        if (dir == null) return new GraphitronType.PojoResultType.NoBacking(name, location);
         var recordArg = dir.getArgument(ARG_RECORD);
         if (recordArg == null || recordArg.getValue() == null) {
-            return new GraphitronType.PojoResultType(name, location, null);
+            return new GraphitronType.PojoResultType.NoBacking(name, location);
         }
         Map<String, Object> ref = asMap(recordArg.getValue());
         String inertness = checkArgMappingInert(ref, "record");
@@ -678,7 +678,7 @@ class TypeBuilder {
         }
         String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         if (className == null) {
-            return new GraphitronType.PojoResultType(name, location, null);
+            return new GraphitronType.PojoResultType.NoBacking(name, location);
         }
         try {
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
@@ -694,7 +694,7 @@ class TypeBuilder {
                 return new GraphitronType.JooqRecordType(name, location, className);
             }
             recordBackingClasses.put(name, cls);
-            return new GraphitronType.PojoResultType(name, location, className);
+            return new GraphitronType.PojoResultType.Backed(name, location, className);
         } catch (ClassNotFoundException e) {
             return new UnclassifiedType(name, location, Rejection.structural(
                 "record backing class '" + className + "' could not be loaded"));

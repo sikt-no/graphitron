@@ -448,8 +448,8 @@ final class SourceRowDirectiveResolver {
      * a {@code @record} shape that admits a {@code @sourceRow} (Invariant #1).
      */
     private static String parentBackingClass(GraphitronType.ResultType parentResultType) {
-        if (parentResultType instanceof GraphitronType.PojoResultType prt && prt.fqClassName() != null) {
-            return prt.fqClassName();
+        if (parentResultType instanceof GraphitronType.PojoResultType.Backed b) {
+            return b.fqClassName();
         }
         if (parentResultType instanceof GraphitronType.JavaRecordType jrt && jrt.fqClassName() != null) {
             return jrt.fqClassName();
