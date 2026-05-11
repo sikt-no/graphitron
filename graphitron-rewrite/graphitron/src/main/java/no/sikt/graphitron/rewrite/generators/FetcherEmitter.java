@@ -155,6 +155,15 @@ public final class FetcherEmitter {
                 ClassName.bestGuess(pcrf.column().columnClass()));
         }
         if (field instanceof ChildField.ColumnReferenceField crf
+                && crf.compaction() instanceof CallSiteCompaction.Direct) {
+            // Direct-compaction scalar @reference: TypeClassGenerator.$fields() projects an aliased
+            // correlated subquery; the DataFetcher reads the value out of the parent Record by
+            // alias via ColumnFetcher.
+            var columnFetcherClass = ClassName.get(outputPackage + ".util",
+                ColumnFetcherClassGenerator.CLASS_NAME);
+            return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, field.name());
+        }
+        if (field instanceof ChildField.ColumnReferenceField crf
                 && crf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys
                 && parentTable != null) {
             // Single-column rooted-at-parent NodeId reference (single-hop or correlated-subquery

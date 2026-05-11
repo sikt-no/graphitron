@@ -19,7 +19,6 @@ import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.RowsMethodBody;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.CallParam;
-import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
@@ -212,6 +211,7 @@ public class TypeFetcherGenerator {
     public static final Set<Class<? extends GraphitronField>> PROJECTED_LEAVES = Set.of(
         ChildField.TableField.class,
         ChildField.LookupTableField.class,
+        ChildField.ColumnReferenceField.class,
         ChildField.CompositeColumnField.class,
         ChildField.NestingField.class);
 
@@ -248,9 +248,11 @@ public class TypeFetcherGenerator {
             // (ChildField.TableField and ChildField.LookupTableField are in PROJECTED_LEAVES —
             // inline emission via TypeClassGenerator.$fields)
             // ChildField stubs — remaining direct permits
-            Map.entry(ChildField.ColumnReferenceField.class,
-                deferredFor(ChildField.ColumnReferenceField.class,
-                    "ColumnReferenceField not yet implemented", "column-reference-on-scalar-field")),
+            // (ChildField.ColumnReferenceField is in PROJECTED_LEAVES — inline emission via
+            // TypeClassGenerator.$fields; the NodeIdEncodeKeys and ConditionJoin shapes are
+            // rejected by GraphitronSchemaValidator.validateColumnReferenceField with deferred
+            // slugs nodeidreferencefield-join-projection-form and
+            // column-reference-on-scalar-field-condition-join respectively)
             Map.entry(ChildField.CompositeColumnReferenceField.class,
                 deferredFor(ChildField.CompositeColumnReferenceField.class,
                     "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented"
@@ -412,15 +414,11 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationDmlRecordField f    -> builder.addMethod(stub(f));
-                case ChildField.ColumnReferenceField f          -> {
-                    if (f.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
-                        // Reference-side NodeId carrier: no fetcher method. The DataFetcher value
-                        // is the runtime stub emitted by FetcherEmitter (rooted-at-parent emission
-                        // is not yet implemented).
-                    } else {
-                        builder.addMethod(stub(f));
-                    }
-                }
+                // ColumnReferenceField has no fetcher method — inline projection via
+                // TypeClassGenerator.$fields (Direct compaction) and a ColumnFetcher value emitted
+                // by FetcherEmitter. The validator rejects the NodeIdEncodeKeys and ConditionJoin
+                // shapes ahead of generation; no per-shape carve-out is needed here.
+                case ChildField.ColumnReferenceField ignored    -> { }
                 case ChildField.CompositeColumnReferenceField f -> builder.addMethod(stub(f));
                 // ChildField.TableField / LookupTableField / CompositeColumnField have no fetcher
                 // — inline projection via TypeClassGenerator.$fields plus a DataFetcher value

@@ -39,6 +39,7 @@ class TypeClassGeneratorTest {
             List.of(),
             List.of(),
             List.of(),
+            List.of(),
             DEFAULT_OUTPUT_PACKAGE);
     }
 
@@ -72,6 +73,7 @@ class TypeClassGeneratorTest {
             filmTable(),
             List.of(),
             List.of(compositeNodeIdField("Bar", "id", "Bar", List.of(idCol1, idCol2))),
+            List.of(),
             List.of(),
             List.of(),
             List.of(),

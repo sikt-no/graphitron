@@ -453,8 +453,29 @@ public class GraphitronSchemaValidator {
             Rejection.structural("Field '" + field.qualifiedName() + "': @reference path is required"),
                 field.location()
             ));
-        } else {
-            validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+            return;
+        }
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+        // Two shapes are recognised structurally but not yet emitted; surface as build-time
+        // deferred rejections rather than runtime stubs (Validator mirrors classifier invariants).
+        if (field.compaction() instanceof no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys) {
+            emitDeferredError(field,
+                (Rejection.Deferred) Rejection.deferred(
+                    "ColumnReferenceField NodeIdEncodeKeys (rooted-at-parent NodeId reference) not yet implemented"
+                    + " — requires JOIN-with-projection emission",
+                    "nodeidreferencefield-join-projection-form",
+                    no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField.class),
+                errors);
+            return;
+        }
+        if (no.sikt.graphitron.rewrite.generators.JoinPathEmitter.hasConditionJoin(field.joinPath())) {
+            emitDeferredError(field,
+                (Rejection.Deferred) Rejection.deferred(
+                    "ColumnReferenceField with @condition-method step in path not yet implemented"
+                    + " — pending classification-vocabulary item 5",
+                    "column-reference-on-scalar-field-condition-join",
+                    no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField.class),
+                errors);
         }
     }
     private void validateCompositeColumnField(no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnField field, List<ValidationError> errors) {
