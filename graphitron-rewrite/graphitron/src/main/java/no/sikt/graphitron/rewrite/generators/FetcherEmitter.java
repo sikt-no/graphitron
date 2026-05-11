@@ -208,7 +208,7 @@ public final class FetcherEmitter {
             + "PK columns. Without that equality the source.getValues call would request a "
             + "column the upstream Result does not carry.")
     @DependsOnClassifierCheck(
-        key = "source-key.result-row-walk-cardinality-matches-upstream-result",
+        key = "source-key.result-row-walk-wrap-record-empty-path",
         reliesOn = "The SingleRecordTableField permit's compact constructor requires "
             + "Reader.ResultRowWalk, and SourceKey's compact constructor pins ResultRowWalk to "
             + "Wrap.Record with empty path. The emitted source cast (Result<RecordN<...>> for "

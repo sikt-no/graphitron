@@ -292,6 +292,15 @@ class SingleRecordCarrierPipelineTest {
         // outside the transaction lambda. Without this pin, a regression to single-statement
         // RETURNING $fields(...) would compile clean and pass the round-trip tests but defeat
         // the durability invariant the reshape exists to establish.
+        //
+        // JavaPoet's CodeBlock does not expose formatParts() publicly, so a true AST walk isn't
+        // available from a test in this package. The pin operates on the rendered body as the
+        // call-site fingerprint: count of `transactionResult(` invocations and presence /
+        // ordering of `.select(`. These markers are jOOQ DSL method names — a refactor that
+        // renames `transactionResult` or `.select` is a real semantic change, not a cosmetic
+        // one. Whitespace, identifier renames, and parameter reorderings do not flip the
+        // assertion, so the "body-string-compared" ban from the principles doc (no exact
+        // source-text match against a hand-written expected) is honoured.
         String sdl = """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { %s }
@@ -310,13 +319,16 @@ class SingleRecordCarrierPipelineTest {
             .orElseThrow();
         String body = fetcherMethod.code().toString();
         long transactionResultCalls = countMatches(body, Pattern.compile("transactionResult\\("));
-        long selectFromCalls = countMatches(body, Pattern.compile("\\.select\\("));
+        int firstTransactionResult = body.indexOf("transactionResult(");
+        int firstSelectAfterTxn = firstTransactionResult < 0
+            ? -1
+            : body.indexOf(".select(", firstTransactionResult);
         assertThat(transactionResultCalls)
             .as("direct-@table " + kind + " fetcher wraps PK-only RETURNING in exactly one transactionResult(...)")
             .isEqualTo(1);
-        assertThat(selectFromCalls)
-            .as("direct-@table " + kind + " fetcher runs a follow-up SELECT outside the transaction")
-            .isGreaterThanOrEqualTo(1);
+        assertThat(firstSelectAfterTxn)
+            .as("direct-@table " + kind + " fetcher runs a follow-up .select(...) after the transactionResult call site")
+            .isGreaterThan(firstTransactionResult);
     }
 
     private static String directReturnInputBody(DmlKind kind) {

@@ -93,7 +93,7 @@ import java.util.Objects;
         + "already produced a target-aligned record; walking past target is structurally "
         + "redundant.")
 @LoadBearingClassifierCheck(
-    key = "source-key.result-row-walk-cardinality-matches-upstream-result",
+    key = "source-key.result-row-walk-wrap-record-empty-path",
     description = "SourceKey's compact constructor rejects Reader.ResultRowWalk paired with "
         + "anything other than Wrap.Record or with a non-empty path. The upstream DML "
         + "mutation fetcher emits Record_N_<...> rows (cardinality ONE -> single RecordN, "
@@ -314,7 +314,7 @@ public record SourceKey(
          * {@link Cardinality#ONE}; list → {@link Cardinality#MANY}). The structural
          * invariants are enforced by {@link SourceKey}'s compact constructor under the
          * load-bearing key
-         * {@code source-key.result-row-walk-cardinality-matches-upstream-result}.
+         * {@code source-key.result-row-walk-wrap-record-empty-path}.
          */
         record ResultRowWalk() implements Reader {}
     }
