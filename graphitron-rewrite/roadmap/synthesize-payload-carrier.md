@@ -24,16 +24,16 @@ Java payload classes earn their place only when the consumer needs to capture st
 behaviour on the carrier. The structural reading of the SDL is: the *mutation* returns a
 record-shaped wire type; the data field *inside* that wire type is the table-bound field
 that carries the rows. The model classifies them accordingly — record-returning mutation
-on top, `RecordTableField` (already in the model) for the data field — and the DML
-emitter ships the rows back through graphql-java's standard traversal without a carrier
-class on disk.
+on top, a new sibling permit `SingleRecordTableField` for the data field (alongside
+R38's DataLoader-batched `RecordTableField`) — and the DML emitter ships the rows back
+through graphql-java's standard traversal without a carrier class on disk.
 
 The reshape also lets the DML's transaction be tight. Today's emit pattern bundles
 `INSERT...RETURNING $fields(table)` into a single statement that returns full row data
 inside the DML transaction; if the surrounding code holds the transaction across
 graphql-java's traversal, read-after-write errors during the response can roll back the
 write. R75 shifts to two-statement emit: the DML returns PK columns only and commits in
-its own short transaction; the data field's `RecordTableField` fetcher runs the
+its own short transaction; the data field's `SingleRecordTableField` fetcher runs the
 follow-up `SELECT $fields(table)` outside that transaction. Read errors during traversal
 become partial-response errors, never undo writes.
 
@@ -222,8 +222,8 @@ dispatches on `RecordTableField` (one new arm in
 
 ## Phase 1 conventions
 
-A handful of decisions ride through all three phases below. Stating them
-once here so the phase bodies don't litter "we picked X over Y":
+A handful of decisions ride through both phases below. Stating them once
+here so the phase bodies don't litter "we picked X over Y":
 
 - **Single mutation-field permit, `DmlKind` discriminator.** `INSERT`,
   `UPDATE`, `UPSERT` carry identical components on the model side; per-kind
@@ -284,11 +284,12 @@ once here so the phase bodies don't litter "we picked X over Y":
 
 Phase 1 admits payload-returning DML mutations by reading the SDL
 structurally: the mutation classifies as a record-returning DML carrier;
-the data field on the payload classifies as the existing
-`ChildField.RecordTableField` with a `SourceKey` whose `reader ==
-ResultRowWalk`; DML emit becomes two-step — PK-only `RETURNING` inside a
-tight transaction, follow-up `SELECT` outside it. Direct-`@table`-return
-DML mutations get the same two-step shape per the convention above.
+the data field on the payload classifies as the new sibling permit
+`ChildField.SingleRecordTableField` (introduced in the Foundation section
+above) with a `SourceKey` whose `reader == ResultRowWalk`; DML emit
+becomes two-step — PK-only `RETURNING` inside a tight transaction,
+follow-up `SELECT` outside it. Direct-`@table`-return DML mutations get
+the same two-step shape per the convention above.
 
 ### Model: one `MutationDmlRecordField` permit
 
@@ -498,12 +499,16 @@ The following retire as part of Phase 1's implementation:
   but moves inside the trigger function alongside the other classify-time
   conditions.
 - The load-bearing classifier check
-  `passthrough-payload.data-table-equals-dml-target`. Replaced by R75's
-  contribution to R38's invariant inventory: `source-key.result-row-walk-
-  cardinality-matches-upstream-result`, which structurally pins the
-  data-field's target table to the DML's input table at `SourceKey`
-  construction. The validator threads the rejection message; no separate
-  cross-pair classifier check is needed.
+  `passthrough-payload.data-table-equals-dml-target`. Replaced at the
+  mutation-classifier admission step (see "Mutation-field classification"
+  above): after the trigger returns `Ok`, the classifier compares the
+  resolved data-element table against `tableInputArg.inputTable()` and
+  rejects on mismatch. The validator threads that rejection through the
+  validator-mirrors-classifier path. R75's new `SourceKey` invariant
+  (`source-key.result-row-walk-cardinality-matches-upstream-result`) pins
+  cardinality only — table-equality is a cross-component concern between
+  the data field's `returnType` and the mutation's `tableInputArg`, which
+  the classifier-admission step is the natural site for.
 
 ### Tests
 
