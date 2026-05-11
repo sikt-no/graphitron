@@ -31,6 +31,7 @@ a|
 * xref:orderBy.adoc[`@orderBy`]
 * xref:record.adoc[`@record`]
 * xref:reference.adoc[`@reference`]
+* xref:scalarType.adoc[`@scalarType`]
 * xref:service.adoc[`@service`]
 * xref:splitQuery.adoc[`@splitQuery`]
 * xref:table.adoc[`@table`]
@@ -40,7 +41,7 @@ a|
 == By category
 
 *Mapping* +
-xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], xref:record.adoc[`@record`]
+xref:table.adoc[`@table`], xref:field.adoc[`@field`], xref:enum.adoc[`@enum`], xref:record.adoc[`@record`], xref:scalarType.adoc[`@scalarType`]
 
 *Joining* +
 xref:reference.adoc[`@reference`], xref:sourceRow.adoc[`@sourceRow`]

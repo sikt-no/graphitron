@@ -1,0 +1,48 @@
+= @scalarType
+:description: Bind an SDL scalar to a public static GraphQLScalarType constant on the consumer's classpath.
+:!toc:
+
+Binds a custom GraphQL scalar to a `public static final GraphQLScalarType` constant on the consumer's classpath. Graphitron reflects on the constant to recover the Java type that input records, service parameters, and `Field<X>` projections bind to, and registers the constant on the synthesized schema so the consumer's `buildSchema` hook does not have to wire it.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @scalarType(scalar: String!) on SCALAR
+----
+
+== Parameters
+
+[cols="1,1,3",options="header"]
+|===
+| Name | Type | Description
+| `scalar` | `String!` | Fully-qualified Java reference of the form `package.Class.FIELD`, pointing at a `public static final GraphQLScalarType` constant. Graphitron loads the named class via the project-aware codegen classloader, reads the field, and reflects on the bound `Coercing<I, O>` to recover the Java type. Inner-class references use `$` (e.g. `pkg.Outer$Inner.FIELD`).
+|===
+
+== Canonical example
+
+[source,graphql]
+----
+scalar BigDecimal
+  @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+
+type Invoice @table(name: "invoice") {
+    amount: BigDecimal!
+}
+----
+
+The generator produces an input record with a `java.math.BigDecimal` component, a `Field<BigDecimal>` projection for SELECT paths, and registers `ExtendedScalars.GraphQLBigDecimal` via `.additionalType(...)` on the synthesized schema. Consumer code does not need to wire the scalar in its `buildSchema` hook.
+
+== Constraints
+
+* `@scalarType` is only valid on `scalar` declarations. Applying it to a spec built-in (`Int`, `Float`, `String`, `Boolean`, `ID`) raises a directive-conflict validation error: the GraphQL spec and graphql-java already bind these names.
+* The referenced class must be on the codegen classpath (`<project>/target/classes`, every reactor sibling's `target/classes`, or a declared dependency). Classes from `<plugin><dependencies>` are *not* visible.
+* The referenced field must be `public static`, non-null at code generation, and assignable to `graphql.schema.GraphQLScalarType`. Validation errors name the specific mismatch (`FieldNotFound`, `FieldNotAccessible`, `NullAtCodegen`, `NotAScalarType`).
+* The constant's `Coercing<I, O>` must declare concrete type parameters. A raw `Coercing` declaration, a `Coercing<Object, Object>` declaration, or an anonymous-class declaration whose `I` resolves to `Object` produces a `CoercingErased` rejection with a per-arm hint (extract anonymous class, declare concrete parameters, etc.).
+* When the directive is omitted on a non-spec scalar, Phase 2 (R101) leaves the scalar unclassified. Phase 3 will route names recognised by the extended-scalars convention layer through the same resolver; until then the SDL `scalar Foo` declaration without `@scalarType` is silently skipped by the additional-type loop.
+
+== See also
+
+* The graphql-java-extended-scalars project: https://github.com/graphql-java/graphql-java-extended-scalars[graphql-java-extended-scalars] for ready-made `GraphQLScalarType` constants covering `BigDecimal`, `DateTime`, `UUID`, and similar.
+
+xref:../index.adoc[← Reference index]

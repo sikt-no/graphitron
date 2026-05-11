@@ -69,7 +69,6 @@ public final class GraphitronSchemaClassGenerator {
     private static final ClassName SCHEMA_BUILDER = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
     private static final ClassName CODE_REGISTRY  = ClassName.get("graphql.schema", "GraphQLCodeRegistry");
     private static final ClassName CODE_REGISTRY_BLDR = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
-    private static final ClassName SCALARS        = ClassName.get("graphql", "Scalars");
 
     private GraphitronSchemaClassGenerator() {}
 
@@ -192,13 +191,14 @@ public final class GraphitronSchemaClassGenerator {
             body.add("\n.additionalType($T.type())", ClassName.get(schemaPackage, name + "Type"));
         }
         // Built-in GraphQL scalars aren't auto-registered on a programmatic schema; the SDL
-        // path in SchemaGenerator used to add them for us. Register the five graphql-spec
-        // scalars so every typeRef("Int") / typeRef("String") / … resolves at build time.
-        body.add("\n.additionalType($T.GraphQLInt)",     SCALARS);
-        body.add("\n.additionalType($T.GraphQLFloat)",   SCALARS);
-        body.add("\n.additionalType($T.GraphQLString)",  SCALARS);
-        body.add("\n.additionalType($T.GraphQLBoolean)", SCALARS);
-        body.add("\n.additionalType($T.GraphQLID)",      SCALARS);
+        // path in SchemaGenerator used to add them for us. The classifier resolves every SDL
+        // scalar (spec built-in or @scalarType-declared) through ScalarTypeResolver, and the
+        // resulting ScalarType variants drive the registration here. Spec built-ins surface as
+        // (graphql.Scalars, "GraphQLInt"|...); @scalarType custom scalars surface as the
+        // (owner, fieldName) the consumer pointed at.
+        for (var reg : plan.scalarRegistrations) {
+            body.add("\n.additionalType($T.$L)", reg.owner(), reg.fieldName());
+        }
         for (var dir : DirectiveDefinitionEmitter.survivors(assembled)) {
             body.add("\n.additionalDirective(").add(DirectiveDefinitionEmitter.buildDefinition(dir)).add(")");
         }
@@ -463,8 +463,17 @@ public final class GraphitronSchemaClassGenerator {
         boolean hasQuery,
         boolean hasMutation,
         boolean hasSubscription,
-        List<String> additionalTypeNames
+        List<String> additionalTypeNames,
+        List<ScalarRegistration> scalarRegistrations
     ) {}
+
+    /**
+     * One {@code .additionalType(<owner>.<fieldName>)} call against a resolved scalar's static
+     * {@code GraphQLScalarType} constant. For spec built-ins, the pair is
+     * {@code (graphql.Scalars, "GraphQLInt"|"GraphQLFloat"|...)}; for {@code @scalarType}-bound
+     * scalars, it's the owner + field the consumer named.
+     */
+    record ScalarRegistration(ClassName owner, String fieldName) {}
 
     /**
      * Enumerates the types that need registration in the emitted {@code GraphitronSchema.build()}.
@@ -472,9 +481,17 @@ public final class GraphitronSchemaClassGenerator {
      * <p>Source of truth is {@link GraphitronSchema#types()}, which contains every
      * emittable type — objects, interfaces, unions, inputs, enums, SDL-declared and synthesised
      * alike. The assembled schema is no longer consulted here.
+     *
+     * <p>Scalars classified as {@link no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType}
+     * are split out of {@code additionalTypeNames} into {@code scalarRegistrations}: the regular
+     * loop emits {@code <Name>Type.type()} for object / enum / input types, while the scalar
+     * loop emits {@code <Owner>.<FieldName>} pointing at the resolved {@code GraphQLScalarType}
+     * constant. Replaces the literal {@code .additionalType(Scalars.GraphQLInt)} ... block that
+     * lived here pre-R101.
      */
     static Plan planFor(GraphitronSchema schema, GraphQLSchema assembled) {
         var additional = new java.util.LinkedHashSet<String>();
+        var scalars = new ArrayList<ScalarRegistration>();
         boolean hasQuery = false, hasMutation = false, hasSubscription = false;
 
         for (var entry : schema.types().entrySet()) {
@@ -488,11 +505,19 @@ public final class GraphitronSchemaClassGenerator {
                 continue;
             }
             if (variant instanceof UnclassifiedType) continue;
+            if (variant instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType scalar) {
+                var resolved = scalar.resolution();
+                scalars.add(new ScalarRegistration(resolved.scalarConstantOwner(), resolved.scalarConstantField()));
+                continue;
+            }
             additional.add(name);
         }
 
         var sorted = new ArrayList<>(additional);
         sorted.sort(Comparator.naturalOrder());
-        return new Plan(hasQuery, hasMutation, hasSubscription, List.copyOf(sorted));
+        scalars.sort(Comparator
+            .comparing((ScalarRegistration r) -> r.owner().toString())
+            .thenComparing(ScalarRegistration::fieldName));
+        return new Plan(hasQuery, hasMutation, hasSubscription, List.copyOf(sorted), List.copyOf(scalars));
     }
 }

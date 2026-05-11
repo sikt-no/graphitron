@@ -205,4 +205,68 @@ class ScalarTypeResolverTest {
         assertThat(result).isEqualTo(new ScalarResolution.Rejected.CoercingErased(
             FIXTURE_PKG + ".ErasedNamedCoercing", CoercingDeclarationKind.ERASED_NAMED_CLASS));
     }
+
+    // ===== Directive value parsing (resolveFromDirectiveValue) =====
+
+    @Test
+    void resolveFromDirectiveValue_wellFormedRef_delegatesToResolveFromConstantFqn() {
+        ScalarResolution result = ScalarTypeResolver.resolveFromDirectiveValue(
+            FIXTURE_PKG + ".ScalarConstants.MONEY", LOADER);
+
+        assertThat(result).isInstanceOfSatisfying(ScalarResolution.Resolved.class, r -> {
+            assertThat(r.javaType()).isEqualTo(ClassName.get(Money.class));
+            assertThat(r.scalarConstantField()).isEqualTo("MONEY");
+        });
+    }
+
+    @Test
+    void resolveFromDirectiveValue_noDot_returnsClassNotFoundPointingAtValueAsWritten() {
+        ScalarResolution result = ScalarTypeResolver.resolveFromDirectiveValue("NoDots", LOADER);
+
+        assertThat(result).isEqualTo(new ScalarResolution.Rejected.ClassNotFound("NoDots"));
+    }
+
+    @Test
+    void resolveFromDirectiveValue_trailingDot_returnsClassNotFoundPointingAtValueAsWritten() {
+        ScalarResolution result = ScalarTypeResolver.resolveFromDirectiveValue("graphql.Scalars.", LOADER);
+
+        assertThat(result).isEqualTo(new ScalarResolution.Rejected.ClassNotFound("graphql.Scalars."));
+    }
+
+    @Test
+    void resolveFromDirectiveValue_missingClass_returnsClassNotFoundForClassPart() {
+        ScalarResolution result = ScalarTypeResolver.resolveFromDirectiveValue("does.not.exist.Class.FIELD", LOADER);
+
+        assertThat(result).isEqualTo(new ScalarResolution.Rejected.ClassNotFound("does.not.exist.Class"));
+    }
+
+    // ===== Federation-namespace recognition =====
+
+    @Test
+    void isFederationNamespaceScalar_recognisesFieldSet() {
+        assertThat(ScalarTypeResolver.isFederationNamespaceScalar("federation__FieldSet")).isTrue();
+    }
+
+    @Test
+    void isFederationNamespaceScalar_rejectsUnknownName() {
+        assertThat(ScalarTypeResolver.isFederationNamespaceScalar("federation__NoSuchThing")).isFalse();
+    }
+
+    @Test
+    void resolveFederationNamespaceScalar_returnsStringResolution() {
+        ScalarResolution result = ScalarTypeResolver.resolveFederationNamespaceScalar("federation__FieldSet");
+
+        assertThat(result).isInstanceOfSatisfying(ScalarResolution.Resolved.class, r -> {
+            assertThat(r.javaType()).isEqualTo(ClassName.get(String.class));
+            assertThat(r.scalarConstantOwner()).isEqualTo(ClassName.get("graphql", "Scalars"));
+            assertThat(r.scalarConstantField()).isEqualTo("GraphQLString");
+        });
+    }
+
+    @Test
+    void resolveFederationNamespaceScalar_unknown_returnsFieldNotFound() {
+        ScalarResolution result = ScalarTypeResolver.resolveFederationNamespaceScalar("Unknown");
+
+        assertThat(result).isInstanceOf(ScalarResolution.Rejected.FieldNotFound.class);
+    }
 }

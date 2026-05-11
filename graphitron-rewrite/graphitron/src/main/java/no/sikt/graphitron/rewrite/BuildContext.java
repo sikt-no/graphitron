@@ -45,6 +45,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -68,6 +69,7 @@ class BuildContext {
     // ===== Directive names =====
 
     static final String DIR_TABLE               = "table";
+    static final String DIR_SCALAR_TYPE         = "scalarType";
     static final String DIR_RECORD              = "record";
     static final String DIR_DISCRIMINATE        = "discriminate";
     static final String DIR_NODE                = "node";
@@ -105,6 +107,7 @@ class BuildContext {
     static final String ARG_TYPE_ID            = "typeId";
     static final String ARG_KEY_COLUMNS        = "keyColumns";
     static final String ARG_TYPE_NAME          = "typeName";
+    static final String ARG_SCALAR             = "scalar";
     static final String ARG_PATH               = "path";
     static final String ARG_KEY                = "key";
     static final String ARG_CONDITION          = "condition";
@@ -162,6 +165,20 @@ class BuildContext {
     ServiceCatalog svc;
 
     /**
+     * SDL-level scalar applied-directive map, populated by {@link GraphitronSchemaBuilder} from
+     * the {@link graphql.schema.idl.TypeDefinitionRegistry} *before* {@link TypeBuilder#buildTypes()}
+     * runs. Graphql-java's {@code SchemaGenerator} strips applied directives from spec built-in
+     * scalar redeclarations (it picks its own {@code GraphQLString} / {@code GraphQLInt} / ...
+     * instances and discards the SDL's applied directives), so a check that relies on the
+     * assembled schema cannot detect {@code @scalarType} on a built-in. Pre-reading the registry
+     * here keeps the {@code Rejection.InvalidSchema.DirectiveConflict} signal from getting lost.
+     *
+     * <p>Entry: SDL scalar type name → bare directive name set (e.g. {@code "scalarType"}). Empty
+     * for tests that don't go through the registry-aware {@code buildBundle} path.
+     */
+    private final Map<String, Set<String>> sdlScalarDirectiveNames = new LinkedHashMap<>();
+
+    /**
      * Non-fatal advisories collected during classification. Surfaced to the Maven log by
      * the plugin's validate / generate mojos; never fail the build. See {@link BuildWarning}.
      */
@@ -179,6 +196,26 @@ class BuildContext {
         this.ctx = java.util.Objects.requireNonNull(ctx, "ctx");
         this.typeNamesByTableKey = buildTypeNamesByTableKey(schema);
         this.nodeIdLeafResolver = new NodeIdLeafResolver(this);
+    }
+
+    /**
+     * Records the SDL-declared applied-directive names on a scalar type, read from the
+     * {@link graphql.schema.idl.TypeDefinitionRegistry} before {@code SchemaGenerator} strips
+     * directives off spec built-in redeclarations. See the {@link #sdlScalarDirectiveNames}
+     * field javadoc for rationale.
+     */
+    void recordSdlScalarDirectives(String scalarName, Set<String> directiveNames) {
+        if (directiveNames.isEmpty()) return;
+        sdlScalarDirectiveNames.put(scalarName, Set.copyOf(directiveNames));
+    }
+
+    /**
+     * Returns the SDL-declared applied-directive names on a scalar (whether or not graphql-java
+     * carried them onto the assembled {@link graphql.schema.GraphQLScalarType}). Empty when the
+     * scalar isn't declared in the SDL or when the pre-pass wasn't run.
+     */
+    Set<String> sdlScalarDirectiveNames(String scalarName) {
+        return sdlScalarDirectiveNames.getOrDefault(scalarName, Set.of());
     }
 
     /**
@@ -309,12 +346,18 @@ class BuildContext {
         return def != null ? def.getSourceLocation() : null;
     }
 
+    static SourceLocation locationOf(graphql.schema.GraphQLScalarType type) {
+        var def = type.getDefinition();
+        return def != null ? def.getSourceLocation() : null;
+    }
+
     /** Dispatches to the correct typed overload for any {@link GraphQLNamedType}. */
     static SourceLocation locationOf(GraphQLNamedType namedType) {
         return switch (namedType) {
             case GraphQLObjectType t    -> locationOf(t);
             case GraphQLInterfaceType t -> locationOf(t);
             case GraphQLUnionType t     -> locationOf(t);
+            case graphql.schema.GraphQLScalarType t -> locationOf(t);
             default                     -> null;
         };
     }

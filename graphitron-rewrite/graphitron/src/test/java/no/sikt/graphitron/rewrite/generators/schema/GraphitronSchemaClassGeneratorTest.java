@@ -558,6 +558,66 @@ class GraphitronSchemaClassGeneratorTest {
         assertThat(customizerIdx).isGreaterThan(0).isLessThan(buildIdx);
     }
 
+    // ===== Phase 2 of R101: scalar registration via the resolver =====
+
+    @Test
+    void scalarRegistration_specBuiltIns_emitOneAdditionalTypePerReferencedScalar() {
+        // A fixture using all five spec built-ins must produce the same five .additionalType
+        // lines the pre-R101 literal block emitted. Anchors Phase 2's "no regression for
+        // consumers using only spec built-ins" claim.
+        var body = buildBody("""
+            type Query {
+                i: Int
+                f: Float
+                s: String
+                b: Boolean
+                id: ID
+            }
+            """);
+        assertThat(body).contains(".additionalType(graphql.Scalars.GraphQLInt)");
+        assertThat(body).contains(".additionalType(graphql.Scalars.GraphQLFloat)");
+        assertThat(body).contains(".additionalType(graphql.Scalars.GraphQLString)");
+        assertThat(body).contains(".additionalType(graphql.Scalars.GraphQLBoolean)");
+        assertThat(body).contains(".additionalType(graphql.Scalars.GraphQLID)");
+    }
+
+    @Test
+    void scalarRegistration_directiveResolvesConsumerScalar_emitsAdditionalTypeForConstant() {
+        // A scalar declaring @scalarType(scalar: "...FQN.FIELD") generates an additionalType
+        // call pointing at the consumer's constant, in addition to the spec built-ins the
+        // schema references.
+        var body = buildBody("""
+            scalar Money @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
+            type Query { m: Money, s: String }
+            """);
+        assertThat(body).contains(
+            ".additionalType(no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY)");
+        // Spec built-in still emitted.
+        assertThat(body).contains(".additionalType(graphql.Scalars.GraphQLString)");
+    }
+
+    @Test
+    void scalarRegistration_unresolvedNonSpecScalar_emitsNoAdditionalType() {
+        // A scalar without @scalarType in Phase 2 is left unclassified (Phase 3's convention
+        // layer will lift these). The schema generator must not emit an additionalType for it.
+        var body = buildBody("""
+            scalar Money
+            type Query { s: String, m: Money }
+            """);
+        assertThat(body).doesNotContain(".additionalType(no.sikt.graphitron.rewrite.scalarfixture.");
+    }
+
+    @Test
+    void scalarRegistration_unreferencedSpecBuiltInIsNotEmitted() {
+        // The pre-R101 literal block hardcoded all five spec built-ins regardless of usage. The
+        // resolver-driven path only emits scalars the schema actually references. Graphql-java's
+        // implicit introspection / directive surface pulls in Int, Boolean, and ID for any
+        // schema, but Float has no implicit reference and is omitted when the SDL doesn't use it.
+        var body = buildBody("type Query { x: String }");
+        assertThat(body).contains(".additionalType(graphql.Scalars.GraphQLString)");
+        assertThat(body).doesNotContain(".additionalType(graphql.Scalars.GraphQLFloat)");
+    }
+
     private static TypeSpec generate(String sdl) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
         return GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled(), Set.of(), OUTPUT_PKG).get(0);

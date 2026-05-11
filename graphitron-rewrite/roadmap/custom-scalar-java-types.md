@@ -390,61 +390,54 @@ where the anonymous class captures a method-level type variable
 `ANONYMOUS_CLASS` because `Class.isAnonymousClass()` is true. The
 fixture follows that shape.
 
-### Phase 2: `@scalarType(scalar: "...")` directive + runtime registration
+### Phase 2: shipped
 
-Declare `directive @scalarType(scalar: String!) on SCALAR` in
-`directives.graphqls`. Per the directive-shape principle
-(`rewrite-design-principles.adoc`, *Directives carry only what the
-SDL author needs to say*), the argument is a flat `String!` rather
-than a structured `ScalarTypeReference` input wrapper: the directive
-site (`SCALAR`) already disambiguates what's being bound; only the
-underlying constant name needs to flow through. Classifier reads.
-Resolver consults directive before convention.
+`directive @scalarType(scalar: String!) on SCALAR` declared in
+`directives.graphqls`. `TypeBuilder.classifyScalarType` routes every
+SDL scalar through `ScalarTypeResolver`: spec built-ins resolve
+through the closed table from Phase 1, `@scalarType`-declared
+scalars resolve via `resolveFromDirectiveValue(...)` against the
+project-aware codegen classloader R124 lifted, and non-spec scalars
+without a directive fall through unclassified (Phase 3 will escalate
+that case once the convention layer lands). `GraphitronSchemaClassGenerator`
+iterates the model's `ScalarType` entries to emit one
+`.additionalType(<owner>.<field>)` per resolved scalar; the literal
+block at `GraphitronSchemaClassGenerator.java:197-201` is retired in
+the same commit. `ScalarTypeResolver.resolveFederationNamespaceScalar`
+pre-registers the federation-namespace names (`federation__FieldSet`,
+`federation__Scope`, `federation__Policy`, `_FieldSet`,
+`link__Import`, `link__Purpose`) as resolved to
+`Scalars.GraphQLString`; the actual flip of
+`AppliedDirectiveEmitter.java:153-156` to consult the resolver moves
+to Phase 3 alongside the other three remaining hardcoded sites.
 
-`@scalarType` on a spec built-in name produces
-`Rejection.InvalidSchema.DirectiveConflict` at directive-read time,
-*before* the resolver is invoked (per the carrier-shape note above).
-Every other failure mode produces a typed `ScalarResolution.Rejected`
-that the validator surfaces through the existing classifier
-infrastructure.
+`@scalarType` on a spec built-in name surfaces as a
+`Rejection.InvalidSchema.DirectiveConflict`. The check runs against
+the SDL-level applied-directive set captured pre-assembly: graphql-java's
+`SchemaGenerator` discards user directives from built-in scalar
+redeclarations (it picks `GraphqlIntCoercing` / `GraphqlStringCoercing`
+unchanged), so a check that read the assembled
+`GraphQLScalarType.hasAppliedDirective("scalarType")` would always
+return false. `GraphitronSchemaBuilder.recordSdlScalarDirectives`
+copies the SDL applied-directive names from
+`TypeDefinitionRegistry.scalars()` and `.scalarTypeExtensions()` onto
+`BuildContext` before `TypeBuilder.buildTypes()` runs; the classifier
+reads from there for the built-in check and from the assembled
+scalar for everything else.
 
-Same phase emits `.additionalType(<scalar-fqn>)` into the synthesized
-`GraphitronSchema` for every resolved scalar — spec built-in *and*
-custom — by routing the registration through the resolver and
-retiring the literal block at `GraphitronSchemaClassGenerator.java:197-201`.
-Leaving the literal block in place would fork source-of-truth
-between the resolver and the generator. This is a real combined load
-that the Risk section calls out: a bug in the spec-built-in path
-through the resolver regresses every existing consumer in this phase,
-not just `@scalarType` users.
-
-**Federation-namespace fallback decision.** `AppliedDirectiveEmitter`
-(`AppliedDirectiveEmitter.java:153-156`) today falls back to
-`GraphQLString` for unknown scalar names, with an explicit comment
-that this is for federation-namespace late-bound types like
-`federation__FieldSet` that the federation-jvm transform registers
-after graphitron has emitted its schema class. R101's "no silent
-fallback" rule contradicts that fallback. Phase 2 resolves it by:
-
-1. Pre-registering the federation-namespace scalars graphitron
-   knows the federation-jvm transform will inject (`federation__FieldSet`
-   for `@key` / `@requires` / `@provides`, `federation__Scope` for
-   `@requiresScopes`, etc.) as resolver-known names that bind to
-   `GraphQLString`. The hard-coded fallback becomes a hard-coded
-   recognition, with the same effective behaviour but a typed
-   `ScalarResolution.Resolved` rather than an `if (unknown) return GraphQLString`
-   silent path.
-2. Anything *outside* that pre-registered set hits the standard
-   "unresolved → `Rejection`" rule. The federation-jvm transform
-   contract documents which scalars it injects; the pre-registered
-   set comes from that contract.
-
-If a future federation extension ships a new namespaced scalar that
-graphitron doesn't yet recognise, the consumer sees a typed rejection
-naming the scalar; the fix is a one-line addition to the federation
-recognition table. This is strictly safer than the silent
-`GraphQLString` fallback (which today coerces, e.g., a
-`federation__Policy` enum value as a string with no error).
+Pipeline-tier coverage lands in `GraphitronSchemaBuilderTest.
+ScalarTypeClassificationCase` (six cases: spec built-in `String` /
+`ID`, directive-resolves-consumer-scalar happy path,
+DirectiveConflict on spec built-in, ClassNotFound rejection,
+CoercingErased rejection, unannotated non-spec scalar fall-through).
+Generator-tier coverage in `GraphitronSchemaClassGeneratorTest`:
+spec-built-ins-only fixture emits the existing five lines, a
+`@scalarType`-declared scalar adds a sixth `.additionalType(...)`,
+non-`@scalarType` non-spec scalar emits nothing, the literal-block
+retirement is observable as "Float is no longer emitted for a
+`type Query { x: String }` fixture" (Float has no implicit reference
+through the introspection / directive surface, whereas Int / Boolean
+/ ID do).
 
 ### Phase 3: convention layer + remaining-site flip
 
