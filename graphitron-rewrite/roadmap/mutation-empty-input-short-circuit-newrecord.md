@@ -1,7 +1,7 @@
 ---
 id: R134
 title: "Fix mutation empty-input short-circuit to use newRecord for single-record payloads"
-status: Ready
+status: In Review
 bucket: bugfix
 priority: 3
 depends-on: []
@@ -9,18 +9,23 @@ depends-on: []
 
 # Fix mutation empty-input short-circuit to use newRecord for single-record payloads
 
-The mutation codegen for list-input mutations emits an empty-list short-circuit that always calls `DSL.using(dsl.configuration()).newResult(<pkProjection>)` regardless of the local variable's static type. When the mutation's direct return type is a payload object (not a list) — e.g. `opprettX(input: [XInput]): XPayload!` — `dataIsList` is `false` and the local is typed as a single `Record1<...>`, but `newResult(Field...)` returns `Result<Record>`, producing a non-assignable type and a compile error in generated output. The fix is in `TypeFetcherGenerator.java` around line 2757: branch on `dataIsList` and emit `newRecord(...)` for the single-record path while keeping `newResult(...)` for the list path. (There is a separate, latent question about whether list-input + single-record-output is even coherent — the non-empty branch calls `fetchOne()` against multi-row VALUES — but that is out of scope for this item; this fixes the compile bug only.)
+## Problem
 
-## In Review → Ready (rework)
+The mutation codegen for list-input mutations emits an empty-list short-circuit that always calls `DSL.using(dsl.configuration()).newResult(<pkProjection>)` regardless of the local variable's static type. When the mutation's direct return type is a payload object (not a list), e.g. `opprettX(input: [XInput]): XPayload!`, `dataIsList` is `false` and the local is typed as a single `Record1<...>`, but `newResult(Field...)` returns `Result<Record>`. The result is a non-assignable type and a compile error in generated output that ships to consumers.
 
-Code fix and pipeline test landed at 36122dc and are sound: `TypeFetcherGenerator` branches on `dataIsList` and emits `newRecord(...)` for the single-record arm, `newResult(...)` for the list arm; the new INSERT-only regression in `SingleRecordCarrierPipelineTest` pins the `.newRecord(` shape and the `DataFetcherResult<org.jooq.Record1<...>` parameter, and asserts the list-arm `.newResult(` is absent. INSERT-only scoping is appropriate; the test notes the parameterisation to add when bulk UPDATE/UPSERT lift.
+## Fix shipped at 36122dc
 
-Rework for two housekeeping items before the next In Review pass:
+`TypeFetcherGenerator.buildMutationDmlRecordFetcher` (around line 2853 post-fix) now branches on `dataIsList`: `newResult(...)` for the projected-list arm, `newRecord(...)` for the single-record arm. The non-empty branch was already gated on `dataIsList` (`.fetch()` vs `.fetchOne()`); this aligns the empty arm with it.
 
-1. **Local build is red on `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`.** The new R134 test bumps trace counts on several leaves in `graphitron-rewrite/roadmap/inference-axis-coverage.adoc` (`UnclassifiedField` 594→595, `MutationDmlRecordField` 27→28, `SingleRecordTableField` 25→26, `ColumnField` (output) 615→616, `ColumnField` (input) 234→235, `EnumType` 1922→1925, `InterfaceType` 637→638, `PlainObjectType` 199→200, and a handful more — 12 lines drift in total) but the report was not regenerated. The `verify-leaf-coverage-report` exec goal fails the build. Regenerate with:
-   ```
-   mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -Dexec.args='leaf-coverage graphitron-rewrite'
-   ```
-   and include the regenerated `inference-axis-coverage.adoc` in the next push.
+Regression test: `SingleRecordCarrierPipelineTest#bulkInput_singlePayloadCarrier_insertEmptyShortCircuitBuildsEmptyRecordNotResult`. Uses the user-reported shape (`createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT)` with a single-record-carrier payload). Pins the empty-branch constructor call (`.newRecord(`, not `.newResult(`) and the `DataFetcherResult<org.jooq.Record1<...>>` return-type parameter. Scoped to INSERT only because bulk UPDATE/UPSERT on `MutationDmlRecordField` still throw `UnsupportedOperationException` in their respective chain builders; should be parameterised over INSERT/UPDATE/UPSERT when those land.
 
-2. **Mark the plan body to reflect what shipped.** Per `workflow.adoc` "Plan housekeeping": collapse the problem statement above to a one-line `shipped at 36122dc` note and lift the parenthetical "latent question about whether list-input + single-record-output is even coherent (non-empty branch calls `fetchOne()` against multi-row VALUES)" into a named follow-up (Backlog item or explicit out-of-scope note) so the next reviewer sees it without re-reading the original paragraph.
+## In Review → Ready → In Review (rework cycle, addressed)
+
+First In Review pass (at 36122dc) flipped back to Ready on two housekeeping misses:
+
+1. **Build red on `verify-leaf-coverage-report`.** The new R134 test added a trace and bumped counts on ~13 leaves in `graphitron-rewrite/roadmap/inference-axis-coverage.adoc`; the report was not regenerated. Addressed in the rework commit by running `mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -Dexec.args='leaf-coverage graphitron-rewrite'` and including the updated report. `mvn install -Plocal-db -P'!docs'` now passes end-to-end.
+2. **Spec body lacked a shipped-at note and a named follow-up.** Restructured into Problem / Fix shipped at <sha> / Follow-up sections per `workflow.adoc` "Plan housekeeping". The latent `fetchOne()`-against-multi-row-VALUES question (previously a parenthetical) is now lifted out as a named follow-up below.
+
+## Follow-up: list-input / single-record-output coherence
+
+Deliberately out of scope for this item, but worth filing as a separate roadmap entry: the non-empty branch of `buildMutationDmlRecordFetcher` on the bulk-input + single-record-payload arm calls `.fetchOne()` against multi-row `valuesOfRows(...)` VALUES. The compile bug is now fixed, but inserting N rows still discards N-1 returned keys at runtime, same shape as the Invariant #15 footgun the validator already rejects for `[ID!]!` and `[T!]!` returns. Extending the validator to reject bulk-input + single-payload-carrier (or lifting the emit to `.fetch()` and projecting onto the payload's list data field) is the right fix and deserves its own spec.
