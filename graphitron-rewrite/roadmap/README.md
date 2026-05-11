@@ -14,6 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
+| `R131` | Singular ID! @nodeId classifier emits Reference variants on same-table case | Spec | [plan](singular-nodeid-same-table-classification.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R42` | Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`) | In Review | [plan](column-reference-on-scalar-field.md) |
 | `R130` | Lift reference-field deferral on @mutation inputs | Spec | [plan](composite-reference-in-mutation-input.md) |
@@ -86,7 +87,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Validation
 
-- `R131` [**Singular ID! @nodeId classifier emits Reference variants on same-table case**](singular-nodeid-same-table-classification.md): Singular `id: ID! @nodeId` on a `@table`-annotated input is unconditionally classified as `ColumnReferenceField` / `CompositeColumnReferenceField`, even when the inferred NodeType target table is the parent's own table (the canonical "filter own rows by primary key" case). The list-of-IDs sibling branch already gets this right by delegating to `NodeIdLeafResolver.resolve(...)`, which distinguishes `SameTable` (→ `ColumnField` / `CompositeColumnField`) from `FkTarget.DirectFk` (→ `ColumnReferenceField` / `CompositeColumnReferenceField`). The singular branch skips that fork and emits the Reference variant unconditionally; the comment at `BuildContext.java:1428` promises lockstep with the list branch and with `FieldBuilder.classifyArgument`, but the singular paths drift.
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md): `FieldBuilder.resolveDefaultOrderSpec()` falls back to `OrderBySpec.Fixed([pk ASC])` when a list field has no `@defaultOrder` or `@orderBy` and the table has a PK. For tables without a PK, it returns `OrderBySpec.None` instead, which the generators faithfully emit as an empty `List.of()` — no `ORDER BY` clause. The result is a non-deterministic list every time the query runs.
 - `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md): `LeafCoverageReport.parseMentions` (R104) joins each sealed leaf simple-name against every roadmap `*.md` body via a `\b<simpleName>\b` regex. The match is undifferentiated: backticked code spans, code-fenced blocks, and bare prose mentions all collapse into the same `Roadmap` cell. Two consequences. First, every roadmap edit that names a leaf in any form drifts `inference-axis-coverage.adoc` and trips the `verify-leaf-coverage-report` CI gate, which is the regen-friction tax R104 deferred. Second, a reviewer reading the column has no way to sanity-check a match — `Field` against `FieldType` is excluded by `\b`, but a phrase like "the field type" cannot be told apart from a deliberate `` `Field` `` symbol reference without re-reading the source spec body.
 
@@ -114,7 +114,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R131` [**Singular ID! @nodeId classifier emits Reference variants on same-table case**](singular-nodeid-same-table-classification.md) — Backlog, validation
+- `R131` [**Singular ID! @nodeId classifier emits Reference variants on same-table case**](singular-nodeid-same-table-classification.md) — Spec, validation
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 
