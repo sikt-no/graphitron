@@ -1358,6 +1358,69 @@ class NodeIdPipelineTest {
                 assertThat(ccrf.liftedSourceColumns())
                     .extracting(c -> c.sqlName())
                     .containsExactly("k1", "k2");
+            }),
+
+        FK_TARGET_REORDERED_KEY_PERMUTATION_DIRECT_FK(
+            "R131: input-field `[ID!] @nodeId(typeName: \"ReorderedPkParent\")` on a"
+                + " reordered_fk_child-bound input where the FK references the parent PK columns"
+                + " in (pk_b, pk_c, pk_a) order but the NodeType's __NODE_KEY_COLUMNS publish"
+                + " them in PK declaration order (pk_a, pk_b, pk_c). Same set, different order →"
+                + " DirectFk (not TranslatedFk); the resolver permutes liftedSourceColumns into"
+                + " __NODE_KEY_COLUMNS order so the emitter can pair them positionally with"
+                + " decoded values (which come out of the encoder in __NODE_KEY_COLUMNS order"
+                + " too).",
+            """
+            type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node { id: ID! }
+            input ReorderedChildFilter @table(name: "reordered_fk_child") {
+                parentIds: [ID!] @nodeId(typeName: "ReorderedPkParent")
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var input = (GraphitronType.TableInputType) schema.type("ReorderedChildFilter");
+                var leaf = (no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField)
+                    input.inputFields().stream()
+                        .filter(f -> f.name().equals("parentIds"))
+                        .findFirst().orElseThrow();
+                // columns reflect the NodeType key declaration order, which the encoder/decoder
+                // round-trip in.
+                assertThat(leaf.columns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("pk_a", "pk_b", "pk_c");
+                // liftedSourceColumns are permuted into __NODE_KEY_COLUMNS order — pre-R131 (and
+                // pre-permutation R114) these would have come out in FK declaration order
+                // (fk_b, fk_c, fk_a), which the emitter would then bind position-wise against
+                // (pk_a, pk_b, pk_c)-ordered decoded values — semantically wrong.
+                assertThat(leaf.liftedSourceColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("fk_a", "fk_b", "fk_c");
+                assertThat(leaf.joinPath()).hasSize(1);
+                assertThat(leaf.extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.SkipMismatchedElement.class);
+            }),
+
+        FK_TARGET_REORDERED_KEY_PERMUTATION_DIRECT_FK_SINGULAR(
+            "R131: same shape as the list case above, but with a singular `id: ID!` carrier."
+                + " Confirms the singular branch also picks DirectFk with permuted"
+                + " liftedSourceColumns (and not TranslatedFk-rejected), matching the list"
+                + " branch's classification.",
+            """
+            type ReorderedPkParent implements Node @table(name: "reordered_pk_parent") @node { id: ID! }
+            input ReorderedChildSingleFilter @table(name: "reordered_fk_child") {
+                parentId: ID! @nodeId(typeName: "ReorderedPkParent")
+            }
+            type Query { x: String }
+            """,
+            schema -> {
+                var input = (GraphitronType.TableInputType) schema.type("ReorderedChildSingleFilter");
+                var leaf = (no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField)
+                    input.inputFields().stream()
+                        .filter(f -> f.name().equals("parentId"))
+                        .findFirst().orElseThrow();
+                assertThat(leaf.list()).isFalse();
+                assertThat(leaf.columns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("pk_a", "pk_b", "pk_c");
+                assertThat(leaf.liftedSourceColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("fk_a", "fk_b", "fk_c");
+                assertThat(leaf.joinPath()).hasSize(1);
             });
 
         final String sdl;
