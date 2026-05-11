@@ -163,19 +163,6 @@ public final class FetcherEmitter {
                 ColumnFetcherClassGenerator.CLASS_NAME);
             return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, field.name());
         }
-        if (field instanceof ChildField.ColumnReferenceField crf
-                && crf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys
-                && parentTable != null) {
-            // Single-column rooted-at-parent NodeId reference (single-hop or correlated-subquery
-            // cases via path machinery) — runtime stub until the JOIN-with-projection emission
-            // ($fields-side JOIN extension) ships. FK-mirror cases collapse to ColumnField at
-            // the classifier so they never reach this arm.
-            return CodeBlock.of(
-                "($T env) -> { throw new $T($S); }",
-                DATA_FETCHING_ENV, UnsupportedOperationException.class,
-                "Rooted-at-parent NodeId reference '" + crf.parentTypeName() + "." + crf.name()
-                    + "' requires JOIN-with-projection emission — not yet implemented.");
-        }
         if (field instanceof ChildField.CompositeColumnReferenceField ccrf && parentTable != null) {
             // Composite-key rooted-at-parent NodeId reference — same runtime stub as the
             // single-column reference above. Composite reference projection is always a NodeId

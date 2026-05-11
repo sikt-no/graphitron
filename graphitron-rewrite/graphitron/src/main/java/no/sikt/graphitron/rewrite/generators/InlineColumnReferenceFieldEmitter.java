@@ -44,6 +44,16 @@ public final class InlineColumnReferenceFieldEmitter {
      *                     selection set) but kept in the signature for symmetry with
      *                     {@link InlineTableFieldEmitter}.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "column-reference-field-no-nodeid-encode-keys",
+        reliesOn = "Throws IllegalStateException on NodeIdEncodeKeys compaction rather than "
+            + "emitting a runtime stub; the validator rejects that shape upstream, so the "
+            + "Direct-only inner SELECT below is the only emission shape this method handles.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "column-reference-field-no-condition-join-step",
+        reliesOn = "Throws IllegalStateException when any step is a JoinStep.ConditionJoin, then "
+            + "casts each remaining step to JoinStep.FkJoin without an instanceof guard. The "
+            + "validator rejects ConditionJoin-in-path upstream.")
     public static CodeBlock buildSwitchArmBody(ChildField.ColumnReferenceField crf, String parentAlias,
             String sfName, String outputPackage) {
         if (JoinPathEmitter.hasConditionJoin(crf.joinPath())) {
