@@ -2552,26 +2552,30 @@ class GraphitronSchemaBuilderTest {
 
     enum ResultTypeCase implements ClassificationCase {
         NO_CLASS(
-            "@record with no backing class → PojoResultType with null fqClassName",
+            "@record with no backing class → PojoResultType.NoBacking",
             """
             type FilmDetails @record { id: ID }
             type Query { foo: String }
             """,
             schema -> {
-                var t = (PojoResultType) schema.type("FilmDetails");
+                var t = (PojoResultType.NoBacking) schema.type("FilmDetails");
                 assertThat(t.fqClassName()).isNull();
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(PojoResultType.NoBacking.class); }
+        },
 
         POJO_CLASS(
-            "@record with plain Java class → PojoResultType with fqClassName",
+            "@record with plain Java class → PojoResultType.Backed with fqClassName",
             """
             type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) { id: ID }
             type Query { foo: String }
             """,
             schema -> {
-                var t = (PojoResultType) schema.type("FilmDetails");
+                var t = (PojoResultType.Backed) schema.type("FilmDetails");
                 assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.DummyRecord");
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(PojoResultType.Backed.class); }
+        },
 
         JAVA_RECORD_CLASS(
             "@record with Java record class → JavaRecordType with fqClassName",
@@ -2633,7 +2637,12 @@ class GraphitronSchemaBuilderTest {
             this.sdl = sdl;
             this.assertions = assertions;
         }
-        @Override public Set<Class<?>> variants() { return Set.of(PojoResultType.class); }
+        @Override public Set<Class<?>> variants() {
+            // Per-case overrides above; this default is unused since NO_CLASS and POJO_CLASS
+            // declare their own concrete sub-permit, and the JavaRecordType / JooqTableRecordType
+            // / UnclassifiedType cases override too. Kept for the case-of-last-resort.
+            return Set.of();
+        }
         @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
     }
 

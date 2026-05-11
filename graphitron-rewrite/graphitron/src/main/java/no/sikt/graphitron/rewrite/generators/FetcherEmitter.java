@@ -200,14 +200,14 @@ public final class FetcherEmitter {
                 || resultType instanceof GraphitronType.JooqRecordType) {
             return CodeBlock.of("new $T<>($T.field($S))", columnFetcherClass, DSL, columnName);
         }
-        if (resultType instanceof GraphitronType.PojoResultType prt && prt.fqClassName() == null) {
+        if (resultType instanceof GraphitronType.PojoResultType.NoBacking) {
             var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
             return CodeBlock.of("$T.fetching($S)", propertyDataFetcher, columnName);
         }
         // @record-Java-backed parent: read the pre-resolved accessor handle.
         String fqClassName = (resultType instanceof GraphitronType.JavaRecordType jrt)
             ? jrt.fqClassName()
-            : ((GraphitronType.PojoResultType) resultType).fqClassName();
+            : ((GraphitronType.PojoResultType.Backed) resultType).fqClassName();
         var backingClass = ClassName.bestGuess(fqClassName);
         return switch (accessor) {
             case AccessorResolution.GetterPrefixed gp -> methodCallExpr(backingClass, gp.method());

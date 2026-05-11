@@ -3191,7 +3191,7 @@ class FieldBuilder {
         if (joinPath.isEmpty() || !(joinPath.get(0) instanceof JoinStep.FkJoin fkJoin)) {
             return null;
         }
-        if (parentResultType instanceof GraphitronType.PojoResultType prt && prt.fqClassName() == null) {
+        if (parentResultType instanceof GraphitronType.PojoResultType.NoBacking) {
             return null;
         }
         boolean isList = tb.wrapper().isList();

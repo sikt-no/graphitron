@@ -224,7 +224,7 @@ class GeneratorUtils {
                 var backingClass = ClassName.bestGuess(jrt.fqClassName());
                 rowArgs.add("(($T) env.getSource()).$L()", backingClass, toCamelCase(col.sqlName()));
             } else {
-                var prt = (GraphitronType.PojoResultType) resultType;
+                var prt = (GraphitronType.PojoResultType.Backed) resultType;
                 var backingClass = ClassName.bestGuess(prt.fqClassName());
                 var accessorBase = toCamelCase(col.sqlName());
                 var getter = "get" + Character.toUpperCase(accessorBase.charAt(0)) + accessorBase.substring(1);
@@ -337,14 +337,14 @@ class GeneratorUtils {
     }
 
     private static ClassName backingClassOf(GraphitronType.ResultType resultType) {
-        if (resultType instanceof GraphitronType.PojoResultType prt) {
-            return ClassName.bestGuess(prt.fqClassName());
+        if (resultType instanceof GraphitronType.PojoResultType.Backed b) {
+            return ClassName.bestGuess(b.fqClassName());
         }
         if (resultType instanceof GraphitronType.JavaRecordType jrt) {
             return ClassName.bestGuess(jrt.fqClassName());
         }
         throw new IllegalStateException(
-            "Reader.SourceRowsCall must come from a PojoResultType or JavaRecordType parent; got "
+            "Reader.SourceRowsCall must come from a PojoResultType.Backed or JavaRecordType parent; got "
             + resultType.getClass().getSimpleName());
     }
 

@@ -108,13 +108,53 @@ public sealed interface GraphitronType
 
     /**
      * A {@code @record} type backed by a plain Java class (POJO), or one whose backing class
-     * was not specified in the directive ({@code fqClassName} is {@code null} in that case).
+     * was not declared in the directive.
+     *
+     * <p>R75 / Phase 1 split this from a single nullable-className record into a sealed
+     * sub-taxonomy: {@link Backed} for authored payloads with {@code @record(record: {className: ...})},
+     * {@link NoBacking} for plain SDL Objects promoted to {@code ResultType} by the
+     * {@code tryResolveSingleRecordCarrier} trigger and for {@code @record}-declared types
+     * whose {@code className} field is unset. Lifts the prior sentinel overload at the type
+     * level: every consumer learns which case it's looking at from the permit identity, not
+     * from a nullable.
+     *
+     * <p>The {@link ResultType#fqClassName()} method is preserved on the interface — {@link Backed}
+     * returns the non-null class name; {@link NoBacking} returns {@code null}. Sites that today
+     * check {@code instanceof PojoResultType && fqClassName == null/!= null} migrate to
+     * {@code instanceof PojoResultType.NoBacking} / {@code instanceof PojoResultType.Backed}.
+     * The lift of the nullable contract on the interface itself is a separate downstream cleanup.
      */
-    record PojoResultType(
-        String name,
-        SourceLocation location,
-        String fqClassName
-    ) implements ResultType {}
+    sealed interface PojoResultType extends ResultType
+        permits PojoResultType.Backed, PojoResultType.NoBacking {
+
+        /**
+         * R75 Phase 1: an authored payload carrier declared with
+         * {@code @record(record: {className: "..."})}. {@code fqClassName} is non-null.
+         */
+        record Backed(
+            String name,
+            SourceLocation location,
+            String fqClassName
+        ) implements PojoResultType {
+            public Backed {
+                java.util.Objects.requireNonNull(fqClassName, "PojoResultType.Backed requires non-null fqClassName; use NoBacking when no className is declared");
+            }
+        }
+
+        /**
+         * R75 Phase 1: an SDL Object the trigger promoted to a {@code ResultType} arm at
+         * type-classification time, or a {@code @record}-declared type whose
+         * {@code className} field is unset. Has no backing class to reflect on; the
+         * {@link #fqClassName()} accessor returns {@code null} for {@link ResultType}
+         * interface compatibility.
+         */
+        record NoBacking(
+            String name,
+            SourceLocation location
+        ) implements PojoResultType {
+            @Override public String fqClassName() { return null; }
+        }
+    }
 
     /**
      * A {@code @record} type backed by a jOOQ {@code Record<?>} (not table-bound).

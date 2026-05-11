@@ -494,7 +494,7 @@ class BuildContext {
         // Condition #1: registered as PlainObjectType, or PojoResultType without className
         // (the @record-without-className case TypeBuilder.buildResultType produces).
         boolean isCandidate = (target instanceof GraphitronType.PlainObjectType)
-            || (target instanceof GraphitronType.PojoResultType prt && prt.fqClassName() == null);
+            || target instanceof GraphitronType.PojoResultType.NoBacking;
         if (!isCandidate) {
             return new PassthroughResolution.NotCandidate();
         }
