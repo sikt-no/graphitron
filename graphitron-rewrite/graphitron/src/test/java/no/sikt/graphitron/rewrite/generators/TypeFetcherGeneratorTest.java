@@ -8,7 +8,6 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.TestFixtures;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -256,14 +255,14 @@ class TypeFetcherGeneratorTest {
 
     private static GraphitronField splitQueryField(String parentType, String name) {
         var rt = tableBoundFilm(nonNullList());
-        var bk = new BatchKey.RowKeyed(List.of(languageIdCol()));
+        var keyCols = List.of(languageIdCol());
         return new ChildField.SplitTableField(parentType, name, null,
             rt,
             List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE, List.of(),
                 FILM_TABLE, List.of(), null, name + "_0")),
             List.of(), new OrderBySpec.None(), null,
-            no.sikt.graphitron.rewrite.SourceKeyResolver.resolveSplit(bk, rt),
-            no.sikt.graphitron.rewrite.LoaderRegistrationResolver.resolve(bk, rt));
+            TestFixtures.splitSourceKey(rt.table(), keyCols, rt.wrapper().isList()),
+            TestFixtures.loaderRegistration(rt, false, false));
     }
 
     private static TypeSpec specWithSplitQuery(String parentType, String fieldName) {
@@ -331,21 +330,21 @@ class TypeFetcherGeneratorTest {
     private static GraphitronField serviceField(String parentType, String name, boolean isList) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = tableBoundFilm(returnWrapper);
+        var keyCols = List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer"));
+        var wrap = new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Row();
         var method = TestFixtures.staticServiceMethodRef(
             "no.example.FilmService", "getFilms", ClassName.get("java.util", "List"),
             List.of(
-                TestFixtures.sourced("keys",
-                    new BatchKey.RowKeyed(List.of(languageIdCol()))),
+                TestFixtures.sourced("keys", wrap, keyCols, no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.POSITIONAL_LIST),
                 new MethodRef.Param.Typed("filter", "java.lang.String", new ParamSource.Arg(new CallSiteExtraction.Direct(), no.sikt.graphitron.rewrite.PathExpr.head("filter"))),
                 new MethodRef.Param.Typed("tenantId", "java.lang.String", new ParamSource.Context())
             )
         );
-        var bk = new BatchKey.RowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")));
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
             List.of(), List.of(), new OrderBySpec.None(), null, method,
-            no.sikt.graphitron.rewrite.SourceKeyResolver.resolveServiceTable(bk, returnType),
-            no.sikt.graphitron.rewrite.LoaderRegistrationResolver.resolve(bk, returnType),
+            TestFixtures.serviceTableSourceKey(returnType, wrap, keyCols),
+            TestFixtures.loaderRegistration(returnType, false, false),
             java.util.Optional.empty());
     }
 
@@ -386,31 +385,47 @@ class TypeFetcherGeneratorTest {
 
     // ===== @service field with mapped (Set<...>) batch key =====
 
-    private static GraphitronField mappedServiceField(String parentType, String name, boolean isList, BatchKey.ParentKeyed batchKey) {
+    /**
+     * Source-shape pair the mapped-service fixtures pass through:
+     * {@code (Wrap, columns, mapped:boolean)}. Replaces the deleted {@code BatchKey.ParentKeyed}
+     * shorthand the tests previously used; {@code mappedRowKey} / {@code mappedRecordKey} below
+     * build the two shape variants the tests exercise.
+     */
+    private record ServiceSourceShape(
+            no.sikt.graphitron.rewrite.model.SourceKey.Wrap wrap,
+            List<ColumnRef> columns,
+            boolean mapped) {}
+
+    private static GraphitronField mappedServiceField(String parentType, String name, boolean isList, ServiceSourceShape shape) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = tableBoundFilm(returnWrapper);
+        var container = shape.mapped()
+            ? no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.MAPPED_SET
+            : no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.POSITIONAL_LIST;
         var method = TestFixtures.staticServiceMethodRef(
             "no.example.FilmService", "getFilms", ClassName.get("java.util", "Set"),
-            List.of(TestFixtures.sourced("keys", batchKey)));
+            List.of(TestFixtures.sourced("keys", shape.wrap(), shape.columns(), container)));
         return new ChildField.ServiceTableField(
             parentType, name, null, returnType,
             List.of(), List.of(), new OrderBySpec.None(), null, method,
-            no.sikt.graphitron.rewrite.SourceKeyResolver.resolveServiceTable(batchKey, returnType),
-            no.sikt.graphitron.rewrite.LoaderRegistrationResolver.resolve(batchKey, returnType),
+            TestFixtures.serviceTableSourceKey(returnType, shape.wrap(), shape.columns()),
+            TestFixtures.loaderRegistration(returnType, shape.mapped(), false),
             java.util.Optional.empty());
     }
 
-    private static TypeSpec specWithMappedServiceField(String parentType, String fieldName, boolean isList, BatchKey.ParentKeyed batchKey) {
+    private static TypeSpec specWithMappedServiceField(String parentType, String fieldName, boolean isList, ServiceSourceShape shape) {
         return TypeFetcherGenerator.generateTypeSpec(parentType, LANGUAGE_TABLE,
-            List.of(mappedServiceField(parentType, fieldName, isList, batchKey)));
+            List.of(mappedServiceField(parentType, fieldName, isList, shape)));
     }
 
-    private static BatchKey.MappedRowKeyed mappedRowKey() {
-        return new BatchKey.MappedRowKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")));
+    private static ServiceSourceShape mappedRowKey() {
+        return new ServiceSourceShape(new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Row(),
+            List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")), true);
     }
 
-    private static BatchKey.MappedRecordKeyed mappedRecordKey() {
-        return new BatchKey.MappedRecordKeyed(List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")));
+    private static ServiceSourceShape mappedRecordKey() {
+        return new ServiceSourceShape(new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(),
+            List.of(new ColumnRef("language_id", "LANGUAGE_ID", "java.lang.Integer")), true);
     }
 
     @Test
@@ -1365,7 +1380,7 @@ class TypeFetcherGeneratorTest {
         // recorded request, not on a method-body string scan.
         var field = scalarServiceRecordField(
             "Language", "displayName", false,
-            new BatchKey.RowKeyed(List.of(languageIdCol())),
+            rowShape(),
             ClassName.get(String.class));
         var spec = specWith(field);
         assertThat(spec.methodSpecs())
@@ -1397,32 +1412,43 @@ class TypeFetcherGeneratorTest {
     // each variant.
 
     private static no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField scalarServiceRecordField(
-            String parentType, String name, boolean isList, BatchKey.ParentKeyed batchKey, no.sikt.graphitron.javapoet.TypeName perKeyType) {
+            String parentType, String name, boolean isList, ServiceSourceShape shape, no.sikt.graphitron.javapoet.TypeName perKeyType) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ScalarReturnType("String", returnWrapper);
+        var container = shape.mapped()
+            ? no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.MAPPED_SET
+            : no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.POSITIONAL_LIST;
         var method = TestFixtures.staticServiceMethodRef(
             "no.example.Service", "getValues", perKeyType,
-            List.of(TestFixtures.sourced("keys", batchKey)));
+            List.of(TestFixtures.sourced("keys", shape.wrap(), shape.columns(), container)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
             parentType, name, null, returnType, List.of(), method,
-            no.sikt.graphitron.rewrite.SourceKeyResolver.resolveServiceRecord(batchKey, returnType, List.of()),
-            no.sikt.graphitron.rewrite.LoaderRegistrationResolver.resolve(batchKey, returnType),
+            TestFixtures.serviceRecordSourceKey(returnType, shape.wrap(), shape.columns(), List.of()),
+            TestFixtures.loaderRegistration(returnType, shape.mapped(), false),
             java.util.Optional.empty());
     }
 
     private static no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField recordBackedServiceRecordField(
-            String parentType, String name, boolean isList, BatchKey.ParentKeyed batchKey, String fqBackingClass) {
+            String parentType, String name, boolean isList, ServiceSourceShape shape, String fqBackingClass) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType(
             "FilmDetails", returnWrapper, fqBackingClass);
+        var container = shape.mapped()
+            ? no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.MAPPED_SET
+            : no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.POSITIONAL_LIST;
         var method = TestFixtures.staticServiceMethodRef(
             "no.example.Service", "getDetails", ClassName.bestGuess(fqBackingClass),
-            List.of(TestFixtures.sourced("keys", batchKey)));
+            List.of(TestFixtures.sourced("keys", shape.wrap(), shape.columns(), container)));
         return new no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField(
             parentType, name, null, returnType, List.of(), method,
-            no.sikt.graphitron.rewrite.SourceKeyResolver.resolveServiceRecord(batchKey, returnType, List.of()),
-            no.sikt.graphitron.rewrite.LoaderRegistrationResolver.resolve(batchKey, returnType),
+            TestFixtures.serviceRecordSourceKey(returnType, shape.wrap(), shape.columns(), List.of()),
+            TestFixtures.loaderRegistration(returnType, shape.mapped(), false),
             java.util.Optional.empty());
+    }
+
+    private static ServiceSourceShape rowShape() {
+        return new ServiceSourceShape(new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Row(),
+            List.of(languageIdCol()), false);
     }
 
     private static TypeSpec specWith(GraphitronField field) {
@@ -1433,7 +1459,7 @@ class TypeFetcherGeneratorTest {
     void serviceRecordField_scalar_single_loaderValueIsPerKeyType() {
         var field = scalarServiceRecordField(
             "Language", "displayName", false,
-            new BatchKey.RowKeyed(List.of(languageIdCol())),
+            rowShape(),
             ClassName.get(String.class));
         assertThat(method(specWith(field), "displayName").returnType().toString())
             .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.lang.String>>");
@@ -1443,7 +1469,7 @@ class TypeFetcherGeneratorTest {
     void serviceRecordField_scalar_list_loaderValueIsListOfPerKeyType() {
         var field = scalarServiceRecordField(
             "Language", "displayNames", true,
-            new BatchKey.RowKeyed(List.of(languageIdCol())),
+            rowShape(),
             ClassName.get(String.class));
         assertThat(method(specWith(field), "displayNames").returnType().toString())
             .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<java.lang.String>>>");
@@ -1453,7 +1479,7 @@ class TypeFetcherGeneratorTest {
     void serviceRecordField_recordBacked_single_loaderValueIsBackingClass() {
         var field = recordBackedServiceRecordField(
             "Language", "details", false,
-            new BatchKey.RowKeyed(List.of(languageIdCol())),
+            rowShape(),
             "no.example.FilmDetails");
         assertThat(method(specWith(field), "details").returnType().toString())
             .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<no.example.FilmDetails>>");
@@ -1463,7 +1489,7 @@ class TypeFetcherGeneratorTest {
     void serviceRecordField_mappedRow_list_dataFetcherCallsNewMappedDataLoaderWithSetKeys() {
         var field = scalarServiceRecordField(
             "Language", "displayNames", true,
-            new BatchKey.MappedRowKeyed(List.of(languageIdCol())),
+            new ServiceSourceShape(new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Row(), List.of(languageIdCol()), true),
             ClassName.get(String.class));
         var body = method(specWith(field), "displayNames").code().toString();
         assertThat(body).contains("newMappedDataLoader(");
@@ -1474,7 +1500,7 @@ class TypeFetcherGeneratorTest {
     void serviceRecordField_mappedRow_list_rowsMethodReturnsMapToListOfElement() {
         var field = scalarServiceRecordField(
             "Language", "displayNames", true,
-            new BatchKey.MappedRowKeyed(List.of(languageIdCol())),
+            new ServiceSourceShape(new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Row(), List.of(languageIdCol()), true),
             ClassName.get(String.class));
         // rowsMethodName follows ServiceTableField's "load<Pascal>" convention.
         var rows = method(specWith(field), "loadDisplayNames");
@@ -1486,7 +1512,7 @@ class TypeFetcherGeneratorTest {
     void serviceRecordField_positional_single_rowsMethodReturnsListOfElement() {
         var field = scalarServiceRecordField(
             "Language", "displayName", false,
-            new BatchKey.RowKeyed(List.of(languageIdCol())),
+            rowShape(),
             ClassName.get(String.class));
         // Positional + single-cardinality field: rows-method returns List<V>, ordered by input
         // key index (ServiceTableField shape parity).
@@ -1961,13 +1987,8 @@ class TypeFetcherGeneratorTest {
             List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")));
     }
 
-    private static no.sikt.graphitron.rewrite.model.BatchKey.RecordParentBatchKey filmActorParentKey() {
-        return new no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed(
-            filmActorParentTableForList().primaryKeyColumns());
-    }
-
     private static no.sikt.graphitron.rewrite.model.SourceKey filmActorParentSourceKey() {
-        return no.sikt.graphitron.rewrite.SourceKeyResolver.resolveRecordParentForPolymorphic(filmActorParentKey());
+        return TestFixtures.polymorphicRowParentSourceKey(filmActorParentTableForList().primaryKeyColumns());
     }
 
     private static no.sikt.graphitron.rewrite.model.GraphitronType.ResultType filmActorParentResultType() {
@@ -2103,9 +2124,7 @@ class TypeFetcherGeneratorTest {
             new ParticipantRef.TableBound("ProjectNote", note, null),
             new ParticipantRef.TableBound("ProjectEvent", event, null));
         var parentTable = compositePkParentTable();
-        var parentKey = (no.sikt.graphitron.rewrite.model.BatchKey.RecordParentBatchKey)
-            new no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed(parentTable.primaryKeyColumns());
-        var parentSourceKey = no.sikt.graphitron.rewrite.SourceKeyResolver.resolveRecordParentForPolymorphic(parentKey);
+        var parentSourceKey = TestFixtures.polymorphicRowParentSourceKey(parentTable.primaryKeyColumns());
         var parentResultType = (no.sikt.graphitron.rewrite.model.GraphitronType.ResultType)
             new no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType(
                 "Project", null, null, parentTable);
@@ -2381,9 +2400,7 @@ class TypeFetcherGeneratorTest {
             new ParticipantRef.TableBound("ProjectNote", note, null),
             new ParticipantRef.TableBound("ProjectEvent", event, null));
         var parentTable = compositePkParentTable();
-        var parentKey = (no.sikt.graphitron.rewrite.model.BatchKey.RecordParentBatchKey)
-            new no.sikt.graphitron.rewrite.model.BatchKey.RowKeyed(parentTable.primaryKeyColumns());
-        var parentSourceKey = no.sikt.graphitron.rewrite.SourceKeyResolver.resolveRecordParentForPolymorphic(parentKey);
+        var parentSourceKey = TestFixtures.polymorphicRowParentSourceKey(parentTable.primaryKeyColumns());
         var parentResultType = (no.sikt.graphitron.rewrite.model.GraphitronType.ResultType)
             new no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType(
                 "Project", null, null, parentTable);
