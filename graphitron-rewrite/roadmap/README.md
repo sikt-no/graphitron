@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
-| `R131` | Singular ID! @nodeId classifier emits Reference variants on same-table case | Ready | [plan](singular-nodeid-same-table-classification.md) |
+| `R131` | Singular ID! @nodeId classifier emits Reference variants on same-table case | In Review | [plan](singular-nodeid-same-table-classification.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R132` | Move leaf-coverage report verification off local builds | Spec | [plan](leaf-coverage-verify-off-local.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready | [plan](tablemethod-child-table-bound.md) |
@@ -114,7 +114,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R131` [**Singular ID! @nodeId classifier emits Reference variants on same-table case**](singular-nodeid-same-table-classification.md) — Ready, validation
+- `R131` [**Singular ID! @nodeId classifier emits Reference variants on same-table case**](singular-nodeid-same-table-classification.md) — In Review, validation
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 

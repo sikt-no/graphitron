@@ -97,10 +97,11 @@ class MutationDmlNodeIdClassificationTest {
 
         var f = (UnclassifiedField) schema.field("Mutation", "updateBar");
         // Bare @nodeId on an input infers typeName from the unique @table-matching object type
-        // (Bar), routing through the typeName branch. Post-R50 phase (e3), the composite-PK
-        // case lands on InputField.CompositeColumnReferenceField rather than the legacy
-        // NodeIdReferenceField; both variants are equally rejected by the mutation classifier.
-        assertThat(f.reason()).contains("CompositeColumnReferenceField in @mutation inputs is not yet supported");
+        // (Bar). Post-R131, the same-table composite-PK case classifies as
+        // InputField.CompositeColumnField (column-direct filter against the parent's own PK
+        // columns) rather than CompositeColumnReferenceField; the MutationInputResolver still
+        // rejects it as a deferred carrier, but with the column-direct message.
+        assertThat(f.reason()).contains("CompositeColumnField in @mutation inputs is not yet supported");
     }
 
     @Test

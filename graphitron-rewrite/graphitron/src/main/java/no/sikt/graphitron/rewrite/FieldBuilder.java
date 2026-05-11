@@ -1313,9 +1313,11 @@ class FieldBuilder {
         reliesOn = "The ColumnReferenceField / CompositeColumnReferenceField arms read the"
             + " resolver-supplied liftedSourceColumns slot directly (rf.liftedSourceColumns()"
             + " and ccrf.liftedSourceColumns()), never re-walking joinPath to compute the lift."
-            + " Carriers reaching this walker were built on DirectFk (or the equivalent"
-            + " classifyInputField path that calls NodeIdLeafResolver.liftSourceColumns), which"
-            + " only succeeds when every adjacent hop pair satisfies the lift predicate.")
+            + " Carriers reaching this walker were built on DirectFk (post-R131, all input-field"
+            + " @nodeId arms route through NodeIdLeafResolver.resolve, which only succeeds when"
+            + " every adjacent hop pair satisfies the lift predicate; the id-reference synthesis"
+            + " shim is the only remaining non-resolver intake but it produces single-hop paths"
+            + " where the lift predicate is vacuous).")
     private void walkInputFieldConditions(
             List<InputField> fields, String outerArgName, List<String> pathPrefix,
             boolean enclosingOverride, Set<String> lookupBoundNames,

@@ -37,6 +37,13 @@ type Query {
     # BodyParam.RowIn → TypeConditionsGenerator's typed `DSL.row(table.c1, table.c2).in(ids)`
     # form. Before R79 the generated source did not compile (Row vs Row<N> assignment).
     filmActorsByCompositeNodeIds(filter: FilmActorCompositeNodeIdFilter): [FilmActor!]!
+    # R131 compilation-tier guard: singular composite-PK same-table @nodeId on an `@table`
+    # input. Pre-R131 the singular branch unconditionally produced a CompositeColumnReferenceField
+    # for this shape; post-R131 the resolver routes through the same SameTable arm as the list
+    # branch and emits CompositeColumnField, which feeds compositeImplicitBodyParam → BodyParam.RowEq
+    # → typed `DSL.row(table.c1, table.c2).eq(decoded_row)`. The classifier's choice is the
+    # SDL → emitted-source loop for R131's same-table half.
+    filmActorBySingularCompositeNodeId(filter: FilmActorSingularNodeIdFilter): [FilmActor!]!
     # ConnectionSynthesis: directive-driven @asConnection on a bare list. The generator
     # synthesises QueryStoresConnectionType, QueryStoresEdgeType and wires them into
     # GraphitronSchema.build() via .additionalType(...). Hand-written Connection types
@@ -756,6 +763,19 @@ type FilmActor implements Node @table(name: "film_actor") @node {
 # generating a typed `Row2<Integer, Integer>` in the condition method.
 input FilmActorCompositeNodeIdFilter @table(name: "film_actor") {
     ids: [ID!] @nodeId(typeName: "FilmActor")
+}
+
+# R131 compilation-tier carrier (paired with `filmActorBySingularCompositeNodeId`). The
+# singular composite-PK same-table corner: `id: ID! @nodeId(typeName: "FilmActor")` on a
+# @table input whose own table is the same as FilmActor's table. Pre-R131 this would
+# mis-classify as InputField.CompositeColumnReferenceField with an empty joinPath; post-R131
+# it lands on CompositeColumnField and emits a typed `Row2<Integer, Integer>` RowEq predicate
+# over (actor_id, film_id) — single-row equality, not a JOIN/reference shape. The same shape
+# underlies the canonical `slettRegelverksamling` repro in R131's spec; mutations are
+# blocked behind R130's emitter widening, but the read-side carrier proves the classifier
+# is right end-to-end.
+input FilmActorSingularNodeIdFilter @table(name: "film_actor") {
+    id: ID! @nodeId(typeName: "FilmActor")
 }
 
 type Language @table(name: "language") {
