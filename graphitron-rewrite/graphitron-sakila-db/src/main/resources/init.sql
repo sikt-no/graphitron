@@ -349,6 +349,17 @@ INSERT INTO project_event (org_id, project_id, summary) VALUES
     (1, 101, 'Beacon-E1'), (1, 101, 'Beacon-E2'),
     (2, 100, 'Cipher-E1');
 
+-- R130 single-PK execution-tier fixture: client-supplied varchar PK (not SERIAL),
+-- letting the SDL expose `id: ID! @nodeId` as a writable INSERT column. Pairs with
+-- `Mutation.createKeyedNode` to exercise the ColumnField(NodeIdDecodeKeys) INSERT-arm
+-- shape end-to-end (one decode local lifted to preGuard, one cell read from
+-- `__insertKey_<fi>.value1()` in the values list). No seed rows — every test seeds
+-- and cleans up its own.
+CREATE TABLE keyed_node (
+    id    varchar(64) PRIMARY KEY,
+    label varchar(64) NOT NULL
+);
+
 -- ===========================
 -- nodeidfixture schema
 -- ===========================

@@ -1125,6 +1125,36 @@ input FilmDeleteInput @table(name: "film") {
     filmId: Int! @field(name: "film_id") @lookupKey
 }
 
+# R130 execution-tier fixture: composite-PK @nodeId-decoded @lookupKey on a @mutation
+# DELETE input. The headline forcing function shape — `slettRegelverksamling`-shaped
+# DELETE of a composite-PK row keyed by its opaque NodeId. Classifies as
+# InputField.CompositeColumnField; the resolver builds one InputColumnBindingGroup.DecodedRecordGroup
+# with two RecordBinding slots indexed into the decoded Record2<Integer, Integer>.
+# The emitter (TypeFetcherGenerator.buildLookupWhereSingleRow) lifts a per-row decode
+# local to postInGuard with ThrowOnMismatch null handling, then emits
+# `where(actor_id.eq(__lookupKey0.value1()).and(film_id.eq(__lookupKey0.value2())))`.
+# Bulk variant exercises buildBulkLookupRowIn's block-lambda form (one decode per row
+# inside the stream lambda).
+input DeleteFilmActorByNodeIdInput @table(name: "film_actor") {
+    id: ID! @nodeId(typeName: "FilmActor") @lookupKey
+}
+
+# R130 execution-tier fixture: single-PK @node type whose PK column (`id`) is a
+# client-supplied varchar (not SERIAL), so `id: ID! @nodeId` on an INSERT input
+# classifies as ColumnField with NodeIdDecodeKeys extraction. Drives the
+# INSERT-arm decode-local lift (TypeFetcherGenerator.buildInsertDecodeLocals) and
+# the per-cell decode-value read (buildPerCellValueList's NodeIdDecodeKeys arm).
+# The `id` PK is the carrier; `label` is a plain scalar SET-cell.
+type KeyedNode implements Node @table(name: "keyed_node") @node {
+    id:    ID!     @nodeId
+    label: String! @field(name: "label")
+}
+
+input CreateKeyedNodeInput @table(name: "keyed_node") {
+    id:    ID!     @nodeId(typeName: "KeyedNode")
+    label: String! @field(name: "label")
+}
+
 # R75 Phase 1: single-record DML carrier payload type. The SDL author authors no Java class —
 # the type promotes to PojoResultType.NoBacking at type-classification time; the data field
 # classifies as ChildField.SingleRecordTableField; the mutation classifies as
@@ -1158,6 +1188,25 @@ type Mutation {
     updateFilms(in: [FilmUpdateInput!]!): [Film!]! @mutation(typeName: UPDATE)
     upsertFilms(in: [FilmUpsertInput!]!): [Film!]! @mutation(typeName: UPSERT)
     deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE)
+
+    # R130 execution-tier surfaces. Single-row and bulk DELETE keyed by a composite-PK
+    # @nodeId-decoded carrier. The single-row form drives buildLookupWhereSingleRow's
+    # DecodedRecordGroup arm (one decode local lifted to postInGuard, N positional
+    # value<i>() reads into the WHERE predicate); the bulk form drives
+    # buildBulkLookupRowIn's block-lambda arm (one decode per row inside the stream
+    # lambda, exiting via row-tuple IN). DELETE-only because UPDATE/UPSERT against
+    # film_actor would require widening FilmActor's SDL with a writable non-PK column;
+    # the WHERE-side decode-local lift is shared across DELETE/UPDATE/UPSERT, so the
+    # headline forcing-function execution proof here covers the load-bearing emitter
+    # arm regardless of verb.
+    deleteFilmActorByNodeId(in: DeleteFilmActorByNodeIdInput!): ID @mutation(typeName: DELETE)
+    deleteFilmActorsByNodeId(in: [DeleteFilmActorByNodeIdInput!]!): [ID!]! @mutation(typeName: DELETE)
+
+    # R130 single-PK NodeId-decoded INSERT: client supplies the PK as an opaque NodeId.
+    # Drives buildInsertDecodeLocals (one decode local per NodeId-bearing carrier)
+    # and the buildPerCellValueList NodeIdDecodeKeys arm
+    # (`__insertKey_<fi>.value1()` read into the `values(...)` cell).
+    createKeyedNode(in: CreateKeyedNodeInput!): ID @mutation(typeName: INSERT)
 
     # R75 Phase 1: single-record DML carrier mutations (FilmPayload, plain SDL Object with no
     # @record/@table). The classifier admits payload-returning DML via the trigger function

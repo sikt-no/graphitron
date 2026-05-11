@@ -10,6 +10,22 @@ depends-on: []
 
 # Admit @nodeId-decoded carriers in @mutation inputs and @lookupKey bindings
 
+## Status snapshot
+
+Shipped:
+
+- **Phase 1 (model + extraction-propagation fix)** — shipped at `57d6673`.
+- **Phase 2 (classifier admission for `ColumnField(NodeIdDecodeKeys)` + `CompositeColumnField`; reference-carrier deferral; INSERT carve-out)** — shipped at `57d6673`.
+- **Phase 3 (emitter dispatch: lookup-WHERE single-row decode local lift, bulk row-IN block-lambda decode, INSERT/UPSERT column-list + per-cell value list expansion)** — shipped at `57d6673`.
+- **Phase 4 classifier + pipeline tests** (model-shape assertions on `MapGroup` / `DecodedRecordGroup` / partition slot widening; rejection-test retypes for the R131 follow-up audit pair) — shipped at `57d6673`.
+- **Phase 4 compilation-tier coverage + execution-tier proofs** — shipped at `<this commit>`:
+  - Composite-PK headline (`slettRegelverksamling`-shaped DELETE): sakila-example `DeleteFilmActorByNodeIdInput` + `Mutation.deleteFilmActorByNodeId{,s}` driving `buildLookupWhereSingleRow`'s DecodedRecordGroup arm and `buildBulkLookupRowIn`'s block-lambda arm. Execution: `DmlBulkMutationsExecutionTest.deleteFilmActorByNodeId_singleRow_deletesByDecodedComposite` + `_bulkRows_deletesAllViaRowIn` + `_wrongTypeNodeId_surfacesError`.
+  - Single-PK NodeId-decoded INSERT: new `keyed_node` table (client-supplied varchar PK), `KeyedNode` `@node` type, `CreateKeyedNodeInput`, `Mutation.createKeyedNode`. Drives `buildInsertDecodeLocals` (preGuard decode local lift) + `buildPerCellValueList`'s NodeIdDecodeKeys arm. Execution: `DmlBulkMutationsExecutionTest.createKeyedNode_singlePkNodeIdDecodedInsert_writesRow` + `_wrongTypeNodeId_surfacesError`.
+
+Deferred (acknowledged scope reduction, not rework):
+
+- **Composite-PK UPDATE / UPSERT execution-tier proofs.** The single-row decode-local lift in `buildLookupWhereSingleRow` is shared verb-agnostically across DELETE / UPDATE / UPSERT (one helper, three call sites); the DELETE round-trip exercises the load-bearing emitter arm end-to-end. Adding UPDATE / UPSERT SDL fixtures requires widening `FilmActor`'s SDL surface with a writable non-PK column (`last_update` is the natural candidate). File as a Backlog follow-on if the verb-coverage gap becomes load-bearing; classifier-tier admission is already pinned in `MutationDmlNodeIdClassificationTest.compositePkNodeIdLookupKey_{update,upsert}_admitted`.
+
 ## Problem
 
 The canonical "delete a row by its NodeId" mutation shape

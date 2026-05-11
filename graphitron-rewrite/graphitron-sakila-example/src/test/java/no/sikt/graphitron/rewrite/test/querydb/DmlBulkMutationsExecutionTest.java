@@ -573,4 +573,158 @@ class DmlBulkMutationsExecutionTest {
         assertThat((List<?>) data.get("deleteFilms")).isEmpty();
         assertThat(QUERY_COUNT.get()).isZero();
     }
+
+    // ===== R130 composite-PK @nodeId-decoded @lookupKey on DML inputs =====
+    //
+    // Headline forcing-function execution proof: composite-PK DELETE keyed by an opaque
+    // NodeId on a @table input field. The single-row path drives
+    // TypeFetcherGenerator.buildLookupWhereSingleRow's DecodedRecordGroup arm (one decode
+    // local lifted to postInGuard with ThrowOnMismatch null handling, N positional
+    // value<i>() reads into a chained .eq predicate). The bulk path drives
+    // buildBulkLookupRowIn's block-lambda form (decode call lifted inside the stream
+    // lambda body). These are the load-bearing emitter paths admitted by R130;
+    // pre-R130 the classifier rejected the shape outright.
+
+    private void seedFilmActor(int actorId, int filmId) {
+        dsl.insertInto(DSL.table("film_actor"))
+            .set(DSL.field("actor_id"), actorId)
+            .set(DSL.field("film_id"), filmId)
+            .execute();
+    }
+
+    private void cleanupFilmActor(int actorId, int filmId) {
+        dsl.deleteFrom(DSL.table("film_actor"))
+            .where(DSL.field("actor_id", Integer.class).eq(actorId))
+            .and(DSL.field("film_id", Integer.class).eq(filmId))
+            .execute();
+    }
+
+    private int countFilmActor(int actorId, int filmId) {
+        return dsl.fetchCount(
+            DSL.selectOne().from(DSL.table("film_actor"))
+                .where(DSL.field("actor_id", Integer.class).eq(actorId))
+                .and(DSL.field("film_id", Integer.class).eq(filmId)));
+    }
+
+    @Test
+    void deleteFilmActorByNodeId_singleRow_deletesByDecodedComposite() {
+        // The headline `slettRegelverksamling`-shaped proof: composite-PK DELETE keyed by
+        // a single NodeId-decoded carrier. The generated body decodes id once into a
+        // Record2<Integer, Integer> in postInGuard, throws on type mismatch, then emits
+        // `where(actor_id.eq(__lookupKey0.value1()).and(film_id.eq(__lookupKey0.value2())))`.
+        // Uses pair (1, 4) — not in the init.sql film_actor seed, so cleanup is local.
+        seedFilmActor(1, 4);
+        String nodeId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 1, 4);
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    deleteFilmActorByNodeId(in: { id: "%s" })
+                }
+                """.formatted(nodeId));
+            assertThat(data.get("deleteFilmActorByNodeId")).isNotNull();
+            assertThat(countFilmActor(1, 4)).isZero();
+        } finally {
+            cleanupFilmActor(1, 4);
+        }
+    }
+
+    @Test
+    void deleteFilmActorsByNodeId_bulkRows_deletesAllViaRowIn() {
+        // Bulk DELETE keyed by N NodeIds, each decoded inside the stream lambda. The
+        // generated body emits
+        // `DSL.row(actor_id, film_id).in(in.stream().map(row -> { ... __bulkKey0 = decode(...); ...
+        //   return DSL.row(DSL.val(__bulkKey0.value1(), ...), DSL.val(__bulkKey0.value2(), ...));
+        // }).toList())`.
+        // Uses pairs (2, 3) and (3, 4) — neither in the init.sql seed.
+        seedFilmActor(2, 3);
+        seedFilmActor(3, 4);
+        String id1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 2, 3);
+        String id2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 3, 4);
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    deleteFilmActorsByNodeId(in: [{ id: "%s" }, { id: "%s" }])
+                }
+                """.formatted(id1, id2));
+            assertThat((List<?>) data.get("deleteFilmActorsByNodeId")).hasSize(2);
+            assertThat(countFilmActor(2, 3)).isZero();
+            assertThat(countFilmActor(3, 4)).isZero();
+        } finally {
+            cleanupFilmActor(2, 3);
+            cleanupFilmActor(3, 4);
+        }
+    }
+
+    @Test
+    void createKeyedNode_singlePkNodeIdDecodedInsert_writesRow() {
+        // Single-PK INSERT keyed by a client-supplied NodeId. Drives
+        // buildInsertDecodeLocals (one preGuard decode local per NodeId-bearing
+        // carrier) plus buildPerCellValueList's NodeIdDecodeKeys arm
+        // (`__insertKey_<fi>.value1()` read into the values cell). Classifies as
+        // ColumnField with NodeIdDecodeKeys extraction; before R130 the
+        // MutationInputResolver rejected this carrier outright.
+        String rowKey = "R130-INSERT-" + UUID.randomUUID();
+        String nodeId = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("KeyedNode", rowKey);
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    createKeyedNode(in: { id: "%s", label: "first" })
+                }
+                """.formatted(nodeId));
+            assertThat(data.get("createKeyedNode")).isNotNull();
+
+            int rows = dsl.fetchCount(
+                DSL.selectOne().from(DSL.table("keyed_node"))
+                    .where(DSL.field("id", String.class).eq(rowKey)));
+            assertThat(rows).isEqualTo(1);
+            String label = dsl.select(DSL.field("label", String.class))
+                .from(DSL.table("keyed_node"))
+                .where(DSL.field("id", String.class).eq(rowKey))
+                .fetchOne().value1();
+            assertThat(label).isEqualTo("first");
+        } finally {
+            dsl.deleteFrom(DSL.table("keyed_node"))
+                .where(DSL.field("id", String.class).eq(rowKey)).execute();
+        }
+    }
+
+    @Test
+    void createKeyedNode_wrongTypeNodeId_surfacesError() {
+        // Type-mismatch on the INSERT-arm NodeId decode lift. The generated body's
+        // `if (in.containsKey("id") && __insertKey_<fi> == null) throw ...` branch
+        // surfaces a GraphqlErrorException via the fetcher's try/catch wrapper.
+        // No row is written.
+        String wrong = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        int before = dsl.fetchCount(DSL.selectOne().from(DSL.table("keyed_node")));
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                createKeyedNode(in: { id: "%s", label: "wrong" })
+            }
+            """.formatted(wrong));
+        assertThat(result.getErrors()).isNotEmpty();
+        int after = dsl.fetchCount(DSL.selectOne().from(DSL.table("keyed_node")));
+        assertThat(after).isEqualTo(before);
+    }
+
+    @Test
+    void deleteFilmActorByNodeId_wrongTypeNodeId_surfacesError() {
+        // ThrowOnMismatch contract on the lookup-key decode path: a NodeId encoded for a
+        // different type fails decode (returns null), and the per-row throw in the
+        // generated postInGuard surfaces as a GraphqlErrorException via the
+        // try/catch wrapper. The seeded row is untouched.
+        // Uses pair (3, 3) — not in the init.sql seed.
+        seedFilmActor(3, 3);
+        String wrong = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        try {
+            graphql.ExecutionResult result = executeRaw("""
+                mutation {
+                    deleteFilmActorByNodeId(in: { id: "%s" })
+                }
+                """.formatted(wrong));
+            assertThat(result.getErrors()).isNotEmpty();
+            assertThat(countFilmActor(3, 3)).isEqualTo(1);
+        } finally {
+            cleanupFilmActor(3, 3);
+        }
+    }
 }
