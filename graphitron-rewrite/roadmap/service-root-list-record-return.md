@@ -1,7 +1,7 @@
 ---
 id: R127
 title: "Accept List<XRecord> as well as Result<XRecord> at root @service"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 5
 depends-on: []
