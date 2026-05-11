@@ -64,7 +64,17 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         // appear in lift_fail_b's column list when traversed from lift_fail_c (which
         // only carries fk_b). The lift predicate fails at hop[1] and the resolver
         // rejects via LIFT_FAILURE_MARKER.
-        "lift_fail_a", new Metadata("LiftFailA", List.of("K1", "K2"))
+        "lift_fail_a", new Metadata("LiftFailA", List.of("K1", "K2")),
+        // R131 permutation fixture: reordered_pk_parent declares its PK as
+        // (pk_a, pk_b, pk_c) — the order we publish as __NODE_KEY_COLUMNS. The
+        // reordered_fk_child FK references reordered_pk_parent(pk_b, pk_c, pk_a) in a
+        // *different* order. NodeId encode/decode follows __NODE_KEY_COLUMNS; the FK's
+        // declared target order is different. The resolver's DirectFk arm permutes the
+        // lifted source columns into __NODE_KEY_COLUMNS order so the emitter's
+        // positional bind between decoded keys and liftedSourceColumns stays correct.
+        // Test surface: NodeIdPipelineTest.InputFieldFkTargetNodeIdCase
+        // .FK_TARGET_REORDERED_KEY_PERMUTATION_DIRECT_FK.
+        "reordered_pk_parent", new Metadata("ReorderedPkParent", List.of("PK_A", "PK_B", "PK_C"))
     );
 
     @Override

@@ -230,13 +230,16 @@ final class NodeIdLeafResolver {
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "nodeid-fk.direct-fk-keys-match",
-        description = "The terminal hop's target-side columns positionally match NodeType key"
-                    + " columns; emission can bind decoded keys directly against the lifted"
-                    + " source-side columns. The resolver picks Resolved.FkTarget.DirectFk only"
-                    + " when this holds; the pathological case (terminal hop's FK target ≠"
-                    + " NodeType key) is sorted to TranslatedFk and rejected at projection time."
-                    + " The projection arms for ColumnReferenceArg / CompositeColumnReferenceArg"
-                    + " / InputField.{Column,CompositeColumn}ReferenceField read"
+        description = "The terminal hop's target-side columns equal the NodeType's key columns"
+                    + " as a multiset by SQL name (any order); emission can bind decoded keys"
+                    + " directly against the lifted source-side columns. The resolver picks"
+                    + " Resolved.FkTarget.DirectFk and pre-permutes the carrier's"
+                    + " liftedSourceColumns into NodeType.keyColumns order so emitters can read"
+                    + " liftedSourceColumns positionally without an extra permutation step."
+                    + " The pathological case (the FK target columns are not the NodeType key"
+                    + " columns) is sorted to TranslatedFk and rejected at projection time. The"
+                    + " projection arms for ColumnReferenceArg / CompositeColumnReferenceArg /"
+                    + " InputField.{Column,CompositeColumn}ReferenceField read"
                     + " liftedSourceColumns straight into BodyParam.{Eq,In,RowEq,RowIn} and"
                     + " assume positional correspondence with the decoded NodeType keys.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
@@ -315,31 +318,64 @@ final class NodeIdLeafResolver {
         TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
         var firstHop = (FkJoin) joinPath.path().get(0);
         var terminalHop = (FkJoin) joinPath.path().getLast();
-        if (sameColumnsBySqlName(terminalHop.targetSideColumns(), keys.keyColumns())) {
+        // DirectFk discriminator: the terminal hop's target-side columns must equal the NodeType's
+        // key columns *as a set* (by SQL name). When equal positionally (identity permutation),
+        // the lifted tuple already aligns with the decoded NodeType keys position-by-position.
+        // When equal as a set but in different order — typical of FKs declared in a different
+        // column order from the NodeType's @node(keyColumns:) — we permute the lifted tuple to
+        // sit in @node.keyColumns order so the emitter's positional binding between decoded keys
+        // and liftedSourceColumns stays semantically correct. The genuinely-different case (FK
+        // target columns are not @node.keyColumns) still falls through to TranslatedFk.
+        int[] permutation = permutationToKeyColumns(terminalHop.targetSideColumns(), keys.keyColumns());
+        if (permutation != null) {
+            List<ColumnRef> liftedAligned = permute(joinPath.liftedSourceColumns(), permutation);
             return new Resolved.FkTarget.DirectFk(
                 refTypeName, targetTable, decodeMethod, keys.keyColumns(),
-                firstHop.sourceSideColumns(), joinPath.liftedSourceColumns(), joinPath.path());
+                firstHop.sourceSideColumns(), liftedAligned, joinPath.path());
         }
         return new Resolved.FkTarget.TranslatedFk(
             refTypeName, targetTable, decodeMethod, keys.keyColumns(), joinPath.path());
     }
 
     /**
-     * Positional match by SQL name. Two column lists agree when they have the same length and
-     * every position holds an equal {@code sqlName()}. Lifted from {@code FieldBuilder} so the
-     * predicate has a single home; both call-site projections (argument and input-field) read
-     * the resolver's variant choice rather than recomputing locally.
+     * Returns the permutation that maps target-side column positions to NodeType-keyColumns
+     * positions, or {@code null} when the two lists are not the same multiset by SQL name.
+     *
+     * <p>Concretely: {@code result[j] = i} means {@code targetSideColumns.get(i).sqlName()} equals
+     * {@code keyColumns.get(j).sqlName()} (case-insensitive). The caller uses this to align any
+     * tuple paired with {@code targetSideColumns} positionally (e.g. the lifted source-column
+     * tuple) into {@code keyColumns} order: {@code aligned[j] = original[result[j]]}.
+     *
+     * <p>When {@code result[j] == j} for every {@code j} the permutation is identity — equivalent
+     * to the strict positional match the resolver used before R131 relaxed the discriminator.
      */
-    private static boolean sameColumnsBySqlName(List<ColumnRef> a, List<ColumnRef> b) {
-        if (a.size() != b.size()) {
-            return false;
-        }
-        for (int i = 0; i < a.size(); i++) {
-            if (!a.get(i).sqlName().equalsIgnoreCase(b.get(i).sqlName())) {
-                return false;
+    private static int[] permutationToKeyColumns(List<ColumnRef> targetSideColumns,
+                                                 List<ColumnRef> keyColumns) {
+        if (targetSideColumns.size() != keyColumns.size()) return null;
+        int n = keyColumns.size();
+        int[] perm = new int[n];
+        boolean[] used = new boolean[n];
+        for (int j = 0; j < n; j++) {
+            int found = -1;
+            for (int i = 0; i < n; i++) {
+                if (!used[i] && targetSideColumns.get(i).sqlName().equalsIgnoreCase(keyColumns.get(j).sqlName())) {
+                    found = i;
+                    break;
+                }
             }
+            if (found < 0) return null;
+            used[found] = true;
+            perm[j] = found;
         }
-        return true;
+        return perm;
+    }
+
+    private static <T> List<T> permute(List<T> source, int[] permutation) {
+        var out = new ArrayList<T>(permutation.length);
+        for (int j = 0; j < permutation.length; j++) {
+            out.add(source.get(permutation[j]));
+        }
+        return List.copyOf(out);
     }
 
     // ===== Helpers =====
