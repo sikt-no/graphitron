@@ -18,7 +18,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R132` | Move leaf-coverage report verification off local builds | Spec | [plan](leaf-coverage-verify-off-local.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Spec | [plan](tablemethod-child-table-bound.md) |
-| `R42` | Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`) | In Review | [plan](column-reference-on-scalar-field.md) |
 | `R130` | Lift reference-field deferral on @mutation inputs | Spec | [plan](composite-reference-in-mutation-input.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
@@ -148,7 +147,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### model-cleanup
 
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md) — Backlog, validation
-- `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — In Review, stubs
 - `R43` [**Stub: child `@tableMethod` with table-bound return (`TableMethodField`)**](tablemethod-child-table-bound.md) — Spec, stubs
 - `R129` [**Stub: ConditionJoin path in @reference on ColumnReferenceField**](column-reference-on-scalar-field-condition-join.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
