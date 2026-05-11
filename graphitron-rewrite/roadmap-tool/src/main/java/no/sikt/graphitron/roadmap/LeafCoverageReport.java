@@ -116,7 +116,7 @@ final class LeafCoverageReport {
                 return 0;
             }
             System.err.println(msg);
-            return 1;
+            throw new BuildFailure("no leaf-coverage traces");
         }
 
         Path modelDir = root.resolve("graphitron/src/main/java/no/sikt/graphitron/rewrite/model");
@@ -150,7 +150,13 @@ final class LeafCoverageReport {
                 System.err.println("  mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java"
                     + " -Dexec.args='leaf-coverage graphitron-rewrite"
                     + (migration ? " --mode=migration" : "") + "'");
-                return 1;
+                // Throw rather than System.exit / return-non-zero: exec-maven-plugin's `java`
+                // goal runs in-process, so System.exit terminates the Maven JVM directly and
+                // the user sees an abrupt shell return with no BUILD FAILURE banner. An
+                // exception lets the plugin wrap it as MojoExecutionException and produce the
+                // normal [ERROR] / BUILD FAILURE summary; the stderr lines above stay readable
+                // in the execution's INFO block.
+                throw new BuildFailure("leaf-coverage report drift");
             }
             System.out.println("leaf-coverage report is up to date: " + outFile);
             return 0;

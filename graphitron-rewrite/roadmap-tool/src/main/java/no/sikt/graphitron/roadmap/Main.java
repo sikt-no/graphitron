@@ -139,7 +139,9 @@ public final class Main {
         if (!existing.equals(rendered)) {
             System.err.println("roadmap README.md is out of date. Regenerate with:");
             System.err.println("  mvn -pl :graphitron-roadmap-tool exec:java");
-            System.exit(1);
+            // See LeafCoverageReport.run for the rationale: exec-maven-plugin runs `java` in
+            // the Maven JVM, so System.exit kills Maven before it can print BUILD FAILURE.
+            throw new BuildFailure("roadmap README.md drift");
         }
         System.out.println("roadmap README.md is up to date.");
     }
@@ -823,7 +825,9 @@ public final class Main {
         if (!errors.isEmpty()) {
             System.err.println("roadmap front-matter validation failed:");
             for (String e : errors) System.err.println("  " + e);
-            System.exit(1);
+            // See LeafCoverageReport.run for the rationale: exec-maven-plugin runs `java` in
+            // the Maven JVM, so System.exit kills Maven before it can print BUILD FAILURE.
+            throw new BuildFailure("roadmap front-matter validation failed");
         }
     }
 
