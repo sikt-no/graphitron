@@ -1,7 +1,7 @@
 ---
 id: R43
 title: "Stub: child `@tableMethod` with table-bound return (`TableMethodField`)"
-status: Spec
+status: InReview
 bucket: stubs
 priority: 4
 theme: model-cleanup
