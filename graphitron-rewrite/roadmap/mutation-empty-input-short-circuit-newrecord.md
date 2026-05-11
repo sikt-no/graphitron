@@ -1,7 +1,7 @@
 ---
 id: R134
 title: "Fix mutation empty-input short-circuit to use newRecord for single-record payloads"
-status: Ready
+status: In Review
 bucket: bugfix
 priority: 3
 depends-on: []
@@ -15,50 +15,22 @@ The mutation codegen for list-input mutations emits an empty-list short-circuit 
 
 ## Fix shipped at 36122dc
 
-`TypeFetcherGenerator.buildMutationDmlRecordFetcher` (around line 2853 post-fix) now branches on `dataIsList`: `newResult(...)` for the projected-list arm, `newRecord(...)` for the single-record arm. The non-empty branch was already gated on `dataIsList` (`.fetch()` vs `.fetchOne()`); this aligns the empty arm with it.
+`TypeFetcherGenerator.buildMutationDmlRecordFetcher` now branches on `dataIsList`: `newResult(...)` for the projected-list arm, `newRecord(...)` for the single-record arm. The non-empty branch was already gated on `dataIsList` (`.fetch()` vs `.fetchOne()`); this aligns the empty arm with it.
 
-Regression test: `SingleRecordCarrierPipelineTest#bulkInput_singlePayloadCarrier_insertEmptyShortCircuitBuildsEmptyRecordNotResult`. Uses the user-reported shape (`createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT)` with a single-record-carrier payload). Pins the empty-branch constructor call (`.newRecord(`, not `.newResult(`) and the `DataFetcherResult<org.jooq.Record1<...>>` return-type parameter. Scoped to INSERT only because bulk UPDATE/UPSERT on `MutationDmlRecordField` still throw `UnsupportedOperationException` in their respective chain builders; should be parameterised over INSERT/UPDATE/UPSERT when those land.
+## Regression coverage shipped at <next>
 
-## In Review → Ready → In Review (rework cycle, addressed)
+Lifted to compilation tier per `rewrite-design-principles.adoc:138-140` ("compile + execute replace the body-content assertions that the 'generation-thinking' principle bans"). Sakila `schema.graphqls` now declares `createFilmsPayload(in: [FilmCreateInput!]!): FilmPayload @mutation(typeName: INSERT)` — the exact bulk-input + single-payload shape that triggered the bug. The generated `MutationFetchers.createFilmsPayload` emits `Record1<Integer> payload = DSL.using(dsl.configuration()).newRecord(Tables.FILM.FILM_ID)` and is compiled against real jOOQ classes by `mvn compile -pl :graphitron-sakila-example`. A regression to `newResult(...)` would re-emit `Result<Record>` into the `Record1<Integer>` local and fail compilation. The compilation tier owns the regression; the pipeline-tier `SingleRecordCarrierPipelineTest` addition from 36122dc was deleted in the rework.
 
-First In Review pass (at 36122dc) flipped back to Ready on two housekeeping misses:
-
-1. **Build red on `verify-leaf-coverage-report`.** The new R134 test added a trace and bumped counts on ~13 leaves in `graphitron-rewrite/roadmap/inference-axis-coverage.adoc`; the report was not regenerated. Addressed in the rework commit by running `mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -Dexec.args='leaf-coverage graphitron-rewrite'` and including the updated report. `mvn install -Plocal-db -P'!docs'` now passes end-to-end.
-2. **Spec body lacked a shipped-at note and a named follow-up.** Restructured into Problem / Fix shipped at <sha> / Follow-up sections per `workflow.adoc` "Plan housekeeping". The latent `fetchOne()`-against-multi-row-VALUES question (previously a parenthetical) is now lifted out as a named follow-up below.
+Scoped to INSERT only because bulk UPDATE/UPSERT on `MutationDmlRecordField` still throw `UnsupportedOperationException` in their respective chain builders; the fixture should be widened to cover UPDATE/UPSERT (and the matching DELETE-rejection arm if/when that surface lands) when those land.
 
 ## Follow-up: list-input / single-record-output coherence
 
 Deliberately out of scope for this item, but worth filing as a separate roadmap entry: the non-empty branch of `buildMutationDmlRecordFetcher` on the bulk-input + single-record-payload arm calls `.fetchOne()` against multi-row `valuesOfRows(...)` VALUES. The compile bug is now fixed, but inserting N rows still discards N-1 returned keys at runtime, same shape as the Invariant #15 footgun the validator already rejects for `[ID!]!` and `[T!]!` returns. Extending the validator to reject bulk-input + single-payload-carrier (or lifting the emit to `.fetch()` and projecting onto the payload's list data field) is the right fix and deserves its own spec.
 
-## In Review → Ready (second rework, independent reviewer findings)
+## Rework history
 
-Independent review of the 5ab5c55 rework flipped this back to Ready on three findings. Address before the next In Review.
+Two In Review → Ready cycles before reaching the current state:
 
-### 1. (Material) `inference-axis-coverage.adoc` regeneration conflicts with R132
-
-`graphitron-rewrite/roadmap/inference-axis-coverage.adoc` (commit 5ab5c55, +615 −16) brings the file back to a full-data leaf-coverage report, but R132 (`leaf-coverage-verify-off-local.md`, status `In Review` at 94ebb9c, committed 16:49 UTC — seven minutes before 5ab5c55 at 16:56 UTC) deliberately replaced the same file with a static placeholder and removed the `verify-leaf-coverage-report` Maven execution from `graphitron-rewrite/roadmap-tool/pom.xml`. After R132, the file is documentation that CI regenerates on trunk pushes and uploads as an artifact; the in-repo copy is openly labeled non-data. The R134 rework's stated diagnosis ("Build red on `verify-leaf-coverage-report`") was true of 36122dc on pre-R132 trunk, but stale at the time of 5ab5c55: the gate had already been dropped, so no regeneration was needed.
-
-Net trunk state today: the placeholder R132 wrote (`ea3b512`) was overwritten back to data by R134 rework. When R132's In Review → Done review runs, the file is no longer in R132's designed shape; either R132 has to re-replace it or R134 has to restore the placeholder.
-
-Fix: drop the `graphitron-rewrite/roadmap/inference-axis-coverage.adoc` hunk from the R134 rework (`git restore --source 94ebb9c -- graphitron-rewrite/roadmap/inference-axis-coverage.adoc` on a fresh feature branch, then commit). The R134 commit set should be a one-line change to `TypeFetcherGenerator.java` plus the new pipeline test plus this spec body — nothing in `roadmap/` other than the spec file itself and the regenerated `README.md`. Update the "Build red" bullet in the spec body above to reflect that the gate is gone and no regeneration is required.
-
-### 2. (Moderate) `SingleRecordCarrierPipelineTest.java:374` uses a brittle code-string assertion
-
-The new regression test asserts:
-
-```java
-assertThat(body)
-    .as("bulk arm casts in to List<Map<?,?>>")
-    .contains("java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument")
-    ...
-```
-
-This is exactly the body-content match `rewrite-design-principles.adoc:128` bans: "Code-string assertions on generated method bodies are banned at every tier; they test implementation, not behaviour, and break on every refactor." The literal `"java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument"` pins variable name `in`, the cast form, and whitespace — a rename or formatting change is a refactor with no semantic effect that breaks the test. The neighbouring `.contains(".newRecord(")` / `.doesNotContain(".newResult(")` checks are precedented (jOOQ DSL method-name presence/absence, same shape as `directReturn_dmlFetcher_emitsTwoStepShape` in this file), but the bulk-arm-cast assertion is not.
-
-Fix: drop the first `.contains(...)` line. The remaining three assertions (`.newRecord(`, `!.newResult(`, return-type structural check on line 382) are sufficient to pin the bug.
-
-### 3. (Suggestion) The principled regression test is a sakila fixture, not a pipeline-tier string assertion
-
-`rewrite-design-principles.adoc:138-140`: "Compilation against real jOOQ is a test tier... compile + execute replace the body-content assertions that the 'generation-thinking' principle bans." The sakila example today has `createFilmPayload(in: FilmCreateInput!): FilmPayload @mutation(typeName: INSERT)` (single→single, line 1171), but no bulk-input + single-payload mutation — the exact combination that triggered this bug. Adding e.g. `createFilmsPayload(in: [FilmCreateInput!]!): FilmPayload @mutation(typeName: INSERT)` to `schema.graphqls` would let the compilation tier catch a regression to the empty-arm constructor without any source-text assertion: the generated `MutationFetchers.createFilmsPayload` would fail `mvn compile -pl :graphitron-sakila-example` if `newResult(...)` were re-emitted, because `Result<Record>` is not assignable to `Record1<...>`. An execution-tier test passing an empty `in` list would then catch the runtime contract.
-
-This is a suggestion, not a blocker — the structural assertions in (2) are precedented. But if the rework lifts the test to compilation tier via a sakila fixture, the pipeline-tier `SingleRecordCarrierPipelineTest` addition can be deleted entirely.
+1. **First In Review (36122dc).** First reviewer flipped back to Ready: build was red on `verify-leaf-coverage-report` (the new pipeline-tier test bumped trace counts in `inference-axis-coverage.adoc`; the report needed regenerating). Plan body lacked shipped-at structuring per `workflow.adoc`.
+2. **Second In Review (5ab5c55).** Rework regenerated the leaf-coverage report (615 lines of data) and restructured the spec body, but the regeneration conflicted with R132 (which had landed in between and intentionally replaced the file with a placeholder + dropped the verify gate). Independent reviewer flipped back to Ready on three findings: (i) the leaf-coverage regen, (ii) a brittle code-string assertion in the pipeline test, (iii) the principled approach is to lift the regression to compilation tier via a sakila fixture rather than pipeline-tier string matching.
+3. **Third rework (current).** All three findings addressed: leaf-coverage placeholder restored from 94ebb9c; pipeline-tier `SingleRecordCarrierPipelineTest#bulkInput_singlePayloadCarrier_insertEmptyShortCircuitBuildsEmptyRecordNotResult` deleted entirely; sakila `createFilmsPayload(in: [FilmCreateInput!]!): FilmPayload` added at `schema.graphqls:1182` so the compilation tier catches a regression to `newResult(...)`. `mvn install -Plocal-db -P'!docs'` green end-to-end.
