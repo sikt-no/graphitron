@@ -301,12 +301,17 @@ public sealed interface ChildField extends GraphitronField
      * </pre>
      * where the table parameter has {@link ParamSource.Table} as its source, and subsequent
      * parameters have {@link ParamSource.Arg} or {@link ParamSource.Context}.
+     *
+     * <p>The return type is always a {@link ReturnTypeRef.TableBoundReturnType}: the directive
+     * exists to bind a developer-authored jOOQ table method, which by construction returns a
+     * generated jOOQ table class. {@link TableMethodDirectiveResolver} rejects any other return
+     * shape as a schema error (R43).
      */
     record TableMethodField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        ReturnTypeRef returnType,
+        ReturnTypeRef.TableBoundReturnType returnType,
         List<JoinStep> joinPath,
         MethodRef method,
         Optional<ErrorChannel> errorChannel

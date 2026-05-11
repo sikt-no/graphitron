@@ -2532,10 +2532,6 @@ class FieldBuilder {
                     buildMethodBackedWithChannel(tb.returnType(), tb.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new QueryField.QueryTableMethodTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch));
-                // NonTableBound is rejected inside the resolver when isRoot=true; the arm exists
-                // to satisfy switch exhaustiveness over the shared sealed Resolved type.
-                case TableMethodDirectiveResolver.Resolved.NonTableBound nb ->
-                    throw new IllegalStateException("@tableMethod root resolver returned NonTableBound; should have rejected upstream");
             };
         }
 
@@ -3867,10 +3863,6 @@ class FieldBuilder {
                     buildMethodBackedWithChannel(tb.returnType(), tb.method(),
                         parentTypeName, name, location, fieldDef,
                         ch -> new TableMethodField(parentTypeName, name, location, tb.returnType(), tableMethodPath.elements(), tb.method(), ch));
-                case TableMethodDirectiveResolver.Resolved.NonTableBound nb ->
-                    buildMethodBackedWithChannel(nb.returnType(), nb.method(),
-                        parentTypeName, name, location, fieldDef,
-                        ch -> new TableMethodField(parentTypeName, name, location, nb.returnType(), tableMethodPath.elements(), nb.method(), ch));
             };
         }
 

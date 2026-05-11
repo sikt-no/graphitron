@@ -5766,6 +5766,36 @@ class GraphitronSchemaBuilderTest {
                     .contains("must return the generated jOOQ table class");
             }),
 
+        TABLEMETHOD_AT_ROOT_WITH_SCALAR_RETURN_REJECTED(
+            "@tableMethod at root returning a scalar → UnclassifiedField (R43: directive binds a jOOQ table method, always table-typed)",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                count: Int @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilm"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Query", "count");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .isEqualTo("@tableMethod requires a @table-annotated return type");
+            }),
+
+        TABLEMETHOD_ON_CHILD_WITH_SCALAR_RETURN_REJECTED(
+            "@tableMethod on a child field returning a scalar → UnclassifiedField (R43: clear schema error, not a deferred stub)",
+            """
+            type Film @table(name: "film") {
+                title: String @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilm"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "title");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .isEqualTo("@tableMethod requires a @table-annotated return type");
+            }),
+
         SERVICE_WITH_WRONG_RETURN_TYPE_REJECTED(
             "@service at root whose method's return type does not match the field's @table-bound return → UnclassifiedField (strict service return-type)",
             """
