@@ -903,7 +903,7 @@ class ServiceCatalog {
      * ; {@code java.lang.Integer} matches a non-list {@code Int!}. Mismatches drop the
      * candidate silently; a non-matching path simply doesn't get suggested.
      */
-    private static String unambiguousReachablePath(
+    private String unambiguousReachablePath(
             String targetTypeName, Map<String, GraphQLInputType> slotTypes) {
         if (slotTypes.isEmpty()) return null;
         var matches = new ArrayList<String>(2);
@@ -922,7 +922,7 @@ class ServiceCatalog {
      * floor's {@code soleArg} placeholder already covers the head case; only paths of length ≥2
      * (slot.field, slot.f1.f2, …) are recorded.
      */
-    private static void searchSlotForMatchingPath(String currentName, GraphQLInputType currentType,
+    private void searchSlotForMatchingPath(String currentName, GraphQLInputType currentType,
             String targetTypeName, List<String> trail, Set<String> visited, List<String> matches) {
         GraphQLType walk = currentType;
         while (walk instanceof GraphQLNonNull nn) {
@@ -966,10 +966,27 @@ class ServiceCatalog {
      * Maps a {@link GraphQLInputType} to the canonical Java type name a graphql-java argument
      * extraction would produce for it, suitable for literal comparison against
      * {@link java.lang.reflect.Parameter#getParameterizedType()}'s name. Returns {@code null}
-     * for types the search can't translate confidently (custom scalars, enums, named input
-     * objects), so the caller skips that candidate rather than guessing.
+     * for types the search can't translate confidently (unclassified scalars, enums, named
+     * input objects), so the caller skips that candidate rather than guessing.
+     *
+     * <p>Phase 3: routes scalars through {@code ctx.types} so the classifier's
+     * {@link no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType} is the single source of
+     * truth for the Java type binding. Consumer scalars resolved via {@code @scalarType} or the
+     * extended-scalars convention layer produce their resolved Java type FQN instead of the
+     * previous {@code null}-fallback.
      */
-    private static String mapToJavaTypeName(GraphQLInputType t) {
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "scalar-resolver.javatype-is-typename",
+        reliesOn = "Reads ScalarType.resolution().javaType() as a JavaPoet TypeName and renders "
+            + "it via toString() for literal comparison against reflected parameter types. The "
+            + "boxed-form invariant guarantees the rendered FQN matches graphql-java's argument "
+            + "coercion output.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "scalar-resolver.coercing-non-erased",
+        reliesOn = "Returned type is never Object from an erased Coercing; Resolved arms construct "
+            + "only after the erasure guard. A null return here is now reserved for non-classified "
+            + "types (enums, named input objects) rather than custom scalars.")
+    private String mapToJavaTypeName(GraphQLInputType t) {
         GraphQLType current = t;
         int listDepth = 0;
         while (true) {
@@ -986,14 +1003,19 @@ class ServiceCatalog {
         }
         String inner;
         if (current instanceof GraphQLScalarType s) {
-            inner = switch (s.getName()) {
-                case "Int" -> "java.lang.Integer";
-                case "Float" -> "java.lang.Double";
-                case "String", "ID" -> "java.lang.String";
-                case "Boolean" -> "java.lang.Boolean";
-                default -> null;
-            };
-            if (inner == null) return null;
+            // Prefer the classified ScalarType from the model when available; fall back to the
+            // resolver's closed spec-built-in table for unit-tier callers that exercise
+            // mapToJavaTypeName without a full classified type registry (ctx.types null or empty).
+            TypeName javaType = null;
+            if (ctx.types != null
+                    && ctx.types.get(s.getName()) instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType st) {
+                javaType = st.resolution().javaType();
+            }
+            if (javaType == null) {
+                javaType = ScalarTypeResolver.builtInJavaType(s.getName());
+            }
+            if (javaType == null) return null;
+            inner = javaType.toString();
         } else {
             return null;
         }

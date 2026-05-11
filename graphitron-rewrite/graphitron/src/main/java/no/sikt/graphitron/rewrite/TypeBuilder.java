@@ -375,23 +375,26 @@ class TypeBuilder {
 
     /**
      * Classifies a {@link graphql.schema.GraphQLScalarType} via the {@link ScalarTypeResolver}.
-     * Three cases in Phase 2:
+     * Resolution order (Phase 3):
      *
      * <ul>
-     *   <li>One of the five GraphQL spec built-ins ({@code Int}, {@code Float}, {@code String},
-     *       {@code Boolean}, {@code ID}) — always resolved through the resolver's closed
-     *       built-in table. Carrying {@code @scalarType} on a spec built-in is a hard
-     *       {@link Rejection.InvalidSchema.DirectiveConflict} raised at directive-read time,
-     *       before the resolver is invoked.</li>
-     *   <li>A consumer-declared scalar carrying {@code @scalarType(scalar: "FQN.FIELD")} — the
-     *       resolver looks up the named class + field through {@link BuildContext#codegenLoader},
-     *       validates the field, and reflects on the {@code Coercing<I, O>} type parameters. A
-     *       successful resolution produces {@link GraphitronType.ScalarType}; a typed
-     *       {@link ScalarResolution.Rejected} payload becomes an {@link UnclassifiedType}.</li>
-     *   <li>Any other case (consumer scalar without {@code @scalarType}, federation-namespace
-     *       scalar in the assembled schema, etc.) — returns {@code null}. Phase 3 will extend
-     *       this to the extended-scalars convention layer; until then non-classified scalars
-     *       fall through with the same effective behaviour as before R101 shipped.</li>
+     *   <li><b>Spec built-ins</b> ({@code Int}, {@code Float}, {@code String}, {@code Boolean},
+     *       {@code ID}) resolve through the resolver's closed built-in table. {@code @scalarType}
+     *       on a spec built-in is a {@link Rejection.InvalidSchema.DirectiveConflict}.</li>
+     *   <li><b>Federation-namespace scalars</b> ({@code federation__FieldSet},
+     *       {@code federation__Scope}, etc.) resolve to {@code graphql.Scalars.GraphQLString} via
+     *       {@link ScalarTypeResolver#resolveFederationNamespaceScalar(String)}. The federation-jvm
+     *       transform replaces this binding with its own scalar definition after Graphitron's base
+     *       schema is built, so emitting {@code GraphQLString} as a placeholder is safe.</li>
+     *   <li><b>{@code @scalarType(scalar: "FQN.FIELD")}</b> on the SDL scalar: the resolver looks
+     *       up the named class + field through {@link BuildContext#codegenLoader}, validates the
+     *       field, and reflects on the {@code Coercing<I, O>} type parameters.</li>
+     *   <li><b>Extended-scalars convention layer</b>: the SDL name is matched against the
+     *       resolver's built-in convention table (e.g. {@code BigDecimal} →
+     *       {@code graphql.scalars.ExtendedScalars.GraphQLBigDecimal}). The convention only
+     *       resolves when the named constant is on the consumer's classpath.</li>
+     *   <li><b>Unresolved</b>: hard validation error with a message naming the scalar and
+     *       pointing at {@code @scalarType(scalar:)} as the fix.</li>
      * </ul>
      */
     private GraphitronType classifyScalarType(graphql.schema.GraphQLScalarType scalarType) {
@@ -423,25 +426,51 @@ class TypeBuilder {
             return new UnclassifiedType(name, location, asRejection(resolution, name));
         }
 
-        if (!hasDirective) {
-            // Phase 2: consumer scalars without @scalarType fall through unclassified, preserving
-            // pre-R101 behaviour. Phase 3 (convention layer) brings these into the resolver and
-            // escalates the unresolved case to a hard validation error.
-            return null;
+        if (ScalarTypeResolver.isFederationNamespaceScalar(name)) {
+            // Federation-namespace names (federation__FieldSet etc.) appear in the assembled
+            // schema as scalar types when the consumer @link's the federation spec. The
+            // federation-jvm transform replaces them after Graphitron's base schema is built;
+            // emitting Scalars.GraphQLString as a placeholder satisfies graphql-java's
+            // type-resolver until the replacement runs.
+            var resolution = ScalarTypeResolver.resolveFederationNamespaceScalar(name);
+            if (resolution instanceof ScalarResolution.Resolved r) {
+                return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, r, scalarType);
+            }
+            return new UnclassifiedType(name, location, asRejection(resolution, name));
         }
 
-        String scalarFqn = argString(scalarType, DIR_SCALAR_TYPE, ARG_SCALAR).orElse("");
-        if (scalarFqn.isBlank()) {
-            return new UnclassifiedType(name, location, Rejection.structural(
-                "@" + DIR_SCALAR_TYPE + " requires a non-blank scalar reference of the form "
-                    + "'fully.qualified.Class.FIELD' pointing at a public static final GraphQLScalarType."));
+        if (hasDirective) {
+            String scalarFqn = argString(scalarType, DIR_SCALAR_TYPE, ARG_SCALAR).orElse("");
+            if (scalarFqn.isBlank()) {
+                return new UnclassifiedType(name, location, Rejection.structural(
+                    "@" + DIR_SCALAR_TYPE + " requires a non-blank scalar reference of the form "
+                        + "'fully.qualified.Class.FIELD' pointing at a public static final GraphQLScalarType."));
+            }
+            var resolution = ScalarTypeResolver.resolveFromDirectiveValue(scalarFqn, ctx.codegenLoader());
+            if (resolution instanceof ScalarResolution.Resolved r) {
+                return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, r, scalarType);
+            }
+            return new UnclassifiedType(name, location, asRejection(resolution, name));
         }
 
-        var resolution = ScalarTypeResolver.resolveFromDirectiveValue(scalarFqn, ctx.codegenLoader());
-        if (resolution instanceof ScalarResolution.Resolved r) {
+        // Phase 3 convention layer: try the extended-scalars table before escalating. The table
+        // resolves when both the SDL name is recognised AND the named constant is on the
+        // consumer's classpath; the second clause produces a ClassNotFound rejection the
+        // unresolved escalation collapses into a single author-facing message.
+        var convention = ScalarTypeResolver.resolveByConvention(name, ctx.codegenLoader());
+        if (convention instanceof ScalarResolution.Resolved r) {
             return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, r, scalarType);
         }
-        return new UnclassifiedType(name, location, asRejection(resolution, name));
+
+        // Unresolved: scalar is neither a spec built-in, a federation-namespace name, an
+        // @scalarType-declared scalar, nor in the extended-scalars convention table (with the
+        // artifact on classpath). Surface as a hard validation error with the fix in the message.
+        return new UnclassifiedType(name, location, Rejection.structural(
+            "scalar '" + name + "' is not resolvable to a Java type. Add "
+                + "@" + DIR_SCALAR_TYPE + "(" + ARG_SCALAR + ": \"fully.qualified.Class.FIELD\") "
+                + "pointing at a public static final GraphQLScalarType, or add "
+                + "graphql-java-extended-scalars to the project classpath if the SDL name "
+                + "matches a convention-table entry."));
     }
 
     /**

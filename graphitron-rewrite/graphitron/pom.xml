@@ -63,6 +63,15 @@
             <artifactId>junit-jupiter-params</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Phase 3 of R101: graphql-java-extended-scalars is the canonical convention-layer
+             artifact. Carried at test scope so ScalarTypeResolverTest, the convention-table
+             drift test, and pipeline tests can exercise the resolver against real constants;
+             the runtime artifact is the consumer's choice and graphitron stays out of it. -->
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java-extended-scalars</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

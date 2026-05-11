@@ -3026,15 +3026,29 @@ class FieldBuilder {
 
     /**
      * Maps a graphql-java type (input or output) to a {@link java.lang.reflect.Type} for
-     * resolver-side assignability checks. Standard scalars map to their canonical Java types;
-     * {@code @record}-typed object types map to their backing class; everything else falls back
-     * to {@link Object} (assignability accepts any actual type, so the resolver matches by
-     * name and parameter shape only — sufficient for the user-facing-bug case which is the
-     * scalar return-type mismatch).
+     * resolver-side assignability checks. Scalars route through {@code ctx.types}'s
+     * {@link GraphitronType.ScalarType} so the classifier's resolution is the single source of
+     * truth (the {@code Object} fallback only fires for non-classified types or classes missing
+     * from the codegen classloader). {@code @record}-typed object types map to their backing
+     * class; everything else falls back to {@link Object} (assignability accepts any actual
+     * type, so the resolver matches by name and parameter shape only — sufficient for the
+     * user-facing-bug case which is the scalar return-type mismatch).
      *
      * <p>List wrappers map to {@code java.util.List} regardless of element type — generics are
      * erased to raw classes for the assignability check.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "scalar-resolver.javatype-is-typename",
+        reliesOn = "Resolves the scalar's Java type via ScalarType.resolution().javaType() and "
+            + "uses the rendered FQN as input to Class.forName for the reflect Type. The boxed-"
+            + "form invariant lets the assignability check compare against the same shape "
+            + "graphql-java produces in input maps.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "scalar-resolver.coercing-non-erased",
+        reliesOn = "Returned Class is never Object from an erased Coercing; Resolved arms construct "
+            + "only after the erasure guard. The Object fallback below now only fires for "
+            + "non-classified types or for resolved scalars whose Java class is genuinely absent "
+            + "from the codegen classloader.")
     private java.lang.reflect.Type mapGraphQLTypeToReflectType(GraphQLType t) {
         GraphQLType current = t;
         int listDepth = 0;
@@ -3044,14 +3058,14 @@ class FieldBuilder {
             break;
         }
         if (listDepth > 0) return java.util.List.class;
-        if (current instanceof GraphQLScalarType s) {
-            return switch (s.getName()) {
-                case "Int" -> Integer.class;
-                case "Float" -> Double.class;
-                case "String", "ID" -> String.class;
-                case "Boolean" -> Boolean.class;
-                default -> Object.class;
-            };
+        if (current instanceof GraphQLScalarType s && ctx.types != null) {
+            var classified = ctx.types.get(s.getName());
+            if (classified instanceof GraphitronType.ScalarType st
+                    && st.resolution().javaType() instanceof no.sikt.graphitron.javapoet.ClassName cn) {
+                try { return Class.forName(cn.reflectionName(), false, ctx.codegenLoader()); }
+                catch (ClassNotFoundException e) { return Object.class; }
+            }
+            return Object.class;
         }
         if (current instanceof GraphQLNamedType nt && ctx.types != null) {
             var classified = ctx.types.get(nt.getName());

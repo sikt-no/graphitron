@@ -14,7 +14,10 @@ import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLScalarType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry;
+import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
+import no.sikt.graphitron.rewrite.model.ScalarResolution;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -120,13 +123,21 @@ public final class AppliedDirectiveEmitter {
     /**
      * Emits a {@link CodeBlock} that reconstructs a {@link GraphQLInputType} at runtime.
      *
-     * <p>Standard scalars are emitted as {@code Scalars.GraphQL<Name>}. Custom scalars
-     * (including federation-namespaced types like {@code federation__FieldSet}) are emitted as
-     * {@code Scalars.GraphQLString} — they are String-like and may reference types only added
-     * by the federation-jvm transform, which runs after the base schema is built. Other named
-     * types (enums, input objects) use {@code GraphQLTypeReference.typeRef("<name>")} since
-     * those types are present in the base schema.
+     * <p>Spec built-ins and federation-namespace scalars both route through the
+     * {@link ScalarTypeResolver} so the recognition tables (spec built-ins, federation namespace)
+     * live in one place. Federation-namespace scalars (e.g. {@code federation__FieldSet}) resolve
+     * to {@code Scalars.GraphQLString}; the federation-jvm transform replaces them after the
+     * base schema is built. Other custom scalars not recognised by the resolver also fall back
+     * to {@code Scalars.GraphQLString} for the same applied-directive metadata reason.
+     *
+     * <p>Other named types (enums, input objects) use {@code GraphQLTypeReference.typeRef("<name>")}
+     * since those types are present in the base schema.
      */
+    @DependsOnClassifierCheck(
+        key = "scalar-resolver.javatype-is-typename",
+        reliesOn = "Reads ScalarResolution.Resolved.scalarConstantOwner / scalarConstantField to "
+            + "emit '<Owner>.<Field>' for spec built-ins and federation-namespace scalars. The "
+            + "Resolved arm guarantees both fields are populated.")
     static CodeBlock emitInputType(GraphQLInputType type) {
         if (type == null) return CodeBlock.of("$T.typeRef($S)", CN_TYPE_REF, "String");
         if (type instanceof GraphQLNonNull nn) {
@@ -144,17 +155,21 @@ public final class AppliedDirectiveEmitter {
                 .build();
         }
         if (type instanceof GraphQLScalarType scalar) {
-            return switch (scalar.getName()) {
-                case "String" -> CodeBlock.of("$T.GraphQLString", SCALARS);
-                case "Boolean" -> CodeBlock.of("$T.GraphQLBoolean", SCALARS);
-                case "Int" -> CodeBlock.of("$T.GraphQLInt", SCALARS);
-                case "Float" -> CodeBlock.of("$T.GraphQLFloat", SCALARS);
-                case "ID" -> CodeBlock.of("$T.GraphQLID", SCALARS);
-                // Custom scalars in applied directives are typically String-like (FieldSet, URL,
-                // JSON, etc.) and may be federation-namespaced types added only by the
-                // federation-jvm transform. Using GraphQLString keeps the base schema buildable.
-                default -> CodeBlock.of("$T.GraphQLString", SCALARS);
-            };
+            String name = scalar.getName();
+            if (ScalarTypeResolver.isSpecBuiltIn(name)
+                && ScalarTypeResolver.resolveBuiltIn(name) instanceof ScalarResolution.Resolved r) {
+                return CodeBlock.of("$T.$L", r.scalarConstantOwner(), r.scalarConstantField());
+            }
+            if (ScalarTypeResolver.isFederationNamespaceScalar(name)
+                && ScalarTypeResolver.resolveFederationNamespaceScalar(name) instanceof ScalarResolution.Resolved r) {
+                return CodeBlock.of("$T.$L", r.scalarConstantOwner(), r.scalarConstantField());
+            }
+            // Custom scalars not in the resolver's recognised tables: keep the existing
+            // GraphQLString placeholder. Threading consumer-resolved scalars (via @scalarType /
+            // convention) through here would require the BuildContext model and is out of Phase 3
+            // scope — directive-arg type slots are metadata for the federation transform, not
+            // runtime coercion, so the placeholder remains acceptable.
+            return CodeBlock.of("$T.GraphQLString", SCALARS);
         }
         if (type instanceof GraphQLNamedType named) {
             return CodeBlock.of("$T.typeRef($S)", CN_TYPE_REF, named.getName());
