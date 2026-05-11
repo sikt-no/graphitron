@@ -56,8 +56,10 @@ jobs:
           psql -h localhost -p 5432 -U postgres -d rewrite_test \
             -f graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql
       - name: Build rewrite reactor
-        # -Pleaf-coverage emits the per-module classifier-trace JSONL files that
-        # `roadmap-tool leaf-coverage --verify` (bound to the verify phase) reads;
-        # without it, drift in roadmap/inference-axis-coverage.adoc would silently
-        # not be caught (the verify-mode short-circuits when traces are absent).
-        run: mvn -f graphitron-rewrite/pom.xml verify -Plocal-db -Pleaf-coverage --batch-mode
+        # The leaf-coverage profile (parent pom) is active by default — its activation
+        # is property-based negation on -Dleaf-coverage.skip, so it fires on every
+        # contributor and CI build alike and the verify-leaf-coverage-report tripwire
+        # never short-circuits on a missing-traces skip. Opt-out is -Dleaf-coverage.skip
+        # for a faster local turnaround when the report is known untouched; CI does not
+        # opt out.
+        run: mvn -f graphitron-rewrite/pom.xml verify -Plocal-db --batch-mode
