@@ -160,8 +160,10 @@ R24-deferral terms:
 - **`ColumnReferenceField` / `CompositeColumnReferenceField`**: stay rejected at classify time,
   with the rejection message reframed as an R24-style deferral pointing at the future schema:
   *"@reference / FK-target @nodeId in @mutation inputs is not yet supported; tracked in R24's
-  scope when a forcing-function schema appears"*. The `Rejection.Deferred` shape carries the
-  slug pointer.
+  scope when a forcing-function schema appears"*. Implementation: construct via
+  `Rejection.deferred(summary, "nodeidreferencefield-join-projection-form")` (R24's slug). The
+  `Deferred.message()` rendering appends ` — see graphitron-rewrite/roadmap/nodeidreferencefield-join-projection-form.md`
+  so an SDL author landing this rejection gets a typed pointer at the absorbing plan.
 
 Verb-carrier admission rules (narrowed scope, no reference-carrier branches):
 
@@ -174,11 +176,17 @@ Verb-carrier admission rules (narrowed scope, no reference-carrier branches):
   table single-PK NodeId is a valid client-supplied PK on INSERT). `CompositeColumnField` ×
   INSERT is structurally valid (client supplies a composite PK) but architecturally rare and
   easy to misuse with auto-generated PKs. **R130 rejects `CompositeColumnField` × INSERT at
-  classify time via `Rejection.Deferred`** keyed to the slug of a future Backlog follow-on
-  (file separately when a forcing-function schema appears); the rejection surfaces through
-  `GraphitronSchemaValidator` on the existing `MutationInputResolver`-partition validator arm,
-  and the classifier test in Phase 4 asserts the rejection arm identity (not the message
-  text), mirroring how R24-shaped deferrals surface elsewhere.
+  classify time via `Rejection.Deferred`** with `planSlug = ""` — no roadmap item exists today
+  and the R24-style discipline says wait for a forcing-function schema before filing one.
+  Implementation: `Rejection.deferred(summary, "")` (the two-arg factory keys a
+  `StubKey.VariantClass(null)` since the rejection names a feature shape rather than a stubbed
+  leaf class, and `Deferred.message()` returns `summary` verbatim with no roadmap suffix). The
+  rejection surfaces through `GraphitronSchemaValidator` on the existing
+  `MutationInputResolver`-partition validator arm, and the classifier test in Phase 4 asserts
+  the rejection arm identity (not the message text), mirroring how R24-shaped deferrals
+  surface elsewhere. When a forcing-function schema appears, file a Backlog item and retype
+  the call to `Rejection.deferred(summary, "<new-slug>")` in the same commit that lifts the
+  rejection.
 - **PK-coverage check (`MutationInputResolver:308`+).** For INSERT / UPSERT,
   `ColumnField(NodeIdDecodeKeys)` contributes its column to the bound-set so the check passes
   when the FK / PK column is matched.
