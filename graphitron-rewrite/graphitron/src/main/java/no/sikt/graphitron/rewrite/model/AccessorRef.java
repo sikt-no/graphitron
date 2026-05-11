@@ -5,13 +5,14 @@ import no.sikt.graphitron.javapoet.ClassName;
 /**
  * A resolved reference to a typed zero-arg instance accessor on an {@code @record} parent's
  * backing class whose return type is a concrete jOOQ {@code TableRecord} (single, list, or set
- * cardinality, recorded by the surrounding {@link BatchKey} variant rather than here).
+ * cardinality, recorded by the surrounding {@link SourceKey#cardinality()} +
+ * {@link LoaderRegistration#container()} rather than here).
  *
  * <p>Built by the auto-derivation pass in {@code FieldBuilder.classifyChildFieldOnResultType}
  * when a child field on a {@code @record}-typed parent returns a {@code @table}-bound type and
  * the parent's backing class exposes a single matching accessor (name-and-shape rule documented
- * in that classifier method). Carried by {@link BatchKey.AccessorKeyedSingle} for
- * single-cardinality fields and {@link BatchKey.AccessorKeyedMany} for list / set fields.
+ * in that classifier method). Carried by {@link SourceKey.Reader.AccessorCall} for both
+ * single-cardinality and list / set fields.
  *
  * <p>Sibling of {@link LifterRef} (developer-supplied static lifter producing a
  * {@code RowN<...>}). The two records sit at the same model layer, but their semantics differ:
@@ -32,12 +33,9 @@ import no.sikt.graphitron.javapoet.ClassName;
  * has typed access to the element record without redoing reflection.
  *
  * <p>{@code AccessorRef} does not carry the container axis ({@code SINGLE} / {@code LIST} /
- * {@code SET}): the single / list-or-set split lives on the variant identity
- * ({@link BatchKey.AccessorKeyedSingle} vs {@link BatchKey.AccessorKeyedMany}); the
- * {@code List<X>} vs {@code Set<X>} split inside {@code Many} is not preserved on the model
- * because the emitter iterates any {@code Iterable}. Per the {@code rewrite-design-principles.adoc}
- * rule on narrow component types, an {@code AccessorRef} flowing through {@code Single} cannot
- * be misread as carrying a list / set marker.
+ * {@code SET}): the single / list-or-set split lives on {@link SourceKey#cardinality()}, and
+ * the {@code List<X>} vs {@code Set<X>} split for the many case is not preserved on the model
+ * because the emitter iterates any {@code Iterable}.
  */
 public record AccessorRef(
     ClassName parentBackingClass,

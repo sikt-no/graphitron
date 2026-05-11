@@ -115,7 +115,7 @@ public final class MultiTablePolymorphicEmitter {
      *
      * <ul>
      *   <li><b>List</b>: registers a {@link org.dataloader.DataLoader} keyed on the parent's
-     *       {@link BatchKey.RecordParentBatchKey} and emits a paired
+     *       {@link no.sikt.graphitron.rewrite.model.SourceKey} and emits a paired
      *       {@code rows<Field>(List<RowN<…>>, env)} batch loader that runs ONE polymorphic
      *       UNION ALL with {@code JOIN parentInput} per branch, scattering typed Records into
      *       per-parent {@code List<Record>} buckets. Same SQL shape as the connection arm minus
@@ -750,7 +750,7 @@ public final class MultiTablePolymorphicEmitter {
 
     /**
      * Batched child-connection main fetcher: registers a {@link org.dataloader.DataLoader} keyed on the
-     * parent's {@link BatchKey.RecordParentBatchKey} and delegates to a
+     * parent's {@link no.sikt.graphitron.rewrite.model.SourceKey} and delegates to a
      * {@code rows<Field>(List<RowN<PK1...PKn>>, env)} batch loader. The body shape mirrors
      * {@code TypeFetcherGenerator.buildSplitQueryDataFetcher}: build the tenant-scoped DataLoader
      * name, {@code computeIfAbsent} the loader, extract the parent PK from {@code env.getSource()}
@@ -767,14 +767,13 @@ public final class MultiTablePolymorphicEmitter {
             + "record and hands them to GeneratorUtils.buildRecordParentKeyExtraction. The hard "
             + "fail (no jOOQ-Record fallback at this site) is the form the load-bearing guarantee "
             + "takes here: navigation and drift annunciation, not guard elision. Empty key "
-            + "columns are unreachable per the type-system invariant on BatchKey.RowKeyed and its "
-            + "siblings.")
+            + "columns are unreachable per the non-empty-columns invariant on SourceKey.")
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-record-parent",
         reliesOn = "Same field.parentKey() / field.parentResultType() reads applied to fields "
             + "produced by the @record-parent producer. Per-producer key split (R105) ensures the "
             + "audit names exactly one producer per key, but the consumer behaviour is identical "
-            + "across both producers — both publish a fully-resolved RecordParentBatchKey on the "
+            + "across both producers — both publish a fully-resolved SourceKey on the "
             + "field record.")
     private static MethodSpec buildBatchedConnectionFetcher(
             TypeFetcherEmissionContext ctx,
@@ -828,7 +827,7 @@ public final class MultiTablePolymorphicEmitter {
 
     /**
      * Batched child-list main fetcher: registers a {@link org.dataloader.DataLoader} keyed on the
-     * parent's {@link BatchKey.RecordParentBatchKey} and delegates to a
+     * parent's {@link no.sikt.graphitron.rewrite.model.SourceKey} and delegates to a
      * {@code rows<Field>(List<RowN<…>>, env)} batch loader returning {@code List<List<Record>>}
      * (one bucket per parent in the batch). Same async-tail shape as the connection arm; only the
      * value type differs ({@code List<Record>} per parent vs. {@code ConnectionResult}).

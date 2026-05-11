@@ -102,8 +102,10 @@ class TestServiceStub {
 
     /**
      * Takes a {@code List<FilmRecord>} — a jOOQ {@code TableRecord} subtype. Used to verify
-     * that a {@code TableRecord} element type classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.TableRecordKeyed}
-     * (carrying the typed record class on the variant).
+     * that a {@code TableRecord} element type classifies as
+     * {@link no.sikt.graphitron.rewrite.model.SourceKey.Wrap.TableRecord} +
+     * {@link no.sikt.graphitron.rewrite.model.LoaderRegistration.Container#POSITIONAL_LIST}
+     * (carrying the typed record class on the wrap).
      */
     public static Result<FilmRecord> getFilmsWithTableRecordSources(java.util.List<FilmRecord> keys) {
         throw new UnsupportedOperationException();
@@ -119,7 +121,8 @@ class TestServiceStub {
 
     /**
      * Takes a {@code List<Record1<Integer>>} — used to verify that a {@code RecordN} element
-     * type classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.RecordKeyed}.
+     * type classifies as {@link no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record} +
+     * {@link no.sikt.graphitron.rewrite.model.LoaderRegistration.Container#POSITIONAL_LIST}.
      */
     public static Result<FilmRecord> getFilmsWithListOfRecord1Sources(java.util.List<org.jooq.Record1<Integer>> keys) {
         throw new UnsupportedOperationException();
@@ -127,8 +130,10 @@ class TestServiceStub {
 
     /**
      * Takes a {@code Set<FilmRecord>} — verifies that a {@code TableRecord} element type with
-     * a {@code Set} container classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedTableRecordKeyed}
-     * (carrying the typed record class on the variant; drives {@code newMappedDataLoader}).
+     * a {@code Set} container classifies as
+     * {@link no.sikt.graphitron.rewrite.model.SourceKey.Wrap.TableRecord} +
+     * {@link no.sikt.graphitron.rewrite.model.LoaderRegistration.Container#MAPPED_SET}
+     * (carrying the typed record class on the wrap; drives {@code newMappedDataLoader}).
      */
     public static Result<FilmRecord> getFilmsWithSetOfTableRecordSources(java.util.Set<FilmRecord> keys) {
         throw new UnsupportedOperationException();
@@ -136,7 +141,8 @@ class TestServiceStub {
 
     /**
      * Takes a {@code Set<Row1<Integer>>} — verifies that a {@code RowN} element type with a
-     * {@code Set} container classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedRowKeyed}.
+     * {@code Set} container classifies as {@link no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Row}
+     * + {@link no.sikt.graphitron.rewrite.model.LoaderRegistration.Container#MAPPED_SET}.
      */
     public static Result<FilmRecord> getFilmsWithSetOfRow1Sources(java.util.Set<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
@@ -144,7 +150,8 @@ class TestServiceStub {
 
     /**
      * Takes a {@code Set<Record1<Integer>>} — verifies that a {@code RecordN} element type with
-     * a {@code Set} container classifies as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedRecordKeyed}.
+     * a {@code Set} container classifies as {@link no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record}
+     * + {@link no.sikt.graphitron.rewrite.model.LoaderRegistration.Container#MAPPED_SET}.
      */
     public static Result<FilmRecord> getFilmsWithSetOfRecord1Sources(java.util.Set<org.jooq.Record1<Integer>> keys) {
         throw new UnsupportedOperationException();
@@ -163,8 +170,9 @@ class TestServiceStub {
      * Takes a {@code Set<FilmActorRecord>} — a composite-PK {@code TableRecord} subtype. Mirrors
      * the consumer-side regelverk_exp.graphqls case where the `@service` source uses a typed
      * record over a multi-column key. Used to verify that composite-PK typed-record sources
-     * classify as {@link no.sikt.graphitron.rewrite.model.BatchKey.MappedTableRecordKeyed}
-     * (carrying the typed record class) rather than collapsing to a {@code RowN}-keyed variant.
+     * classify as {@link no.sikt.graphitron.rewrite.model.SourceKey.Wrap.TableRecord} +
+     * {@link no.sikt.graphitron.rewrite.model.LoaderRegistration.Container#MAPPED_SET}
+     * (carrying the typed record class) rather than collapsing to a {@code Row}-shaped wrap.
      */
     public static java.util.Map<FilmActorRecord, String>
             getFilmActorsCompositeKey(java.util.Set<FilmActorRecord> keys) {

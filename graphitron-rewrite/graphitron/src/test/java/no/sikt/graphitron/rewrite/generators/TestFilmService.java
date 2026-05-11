@@ -12,7 +12,7 @@ import java.util.List;
  * <p>The {@code languageKeys} parameter uses {@code Row1<Integer>} matching the
  * {@code language_id} {@code serial} (Integer) column. Return type is the structurally-
  * required {@code List<List<Record>>} per the rows-method shape for a {@code [Film!]!} list
- * field with a {@link BatchKey.RowKeyed} (positional) batch key.
+ * field with a positional {@code Row}-shaped batch key.
  */
 public class TestFilmService {
 

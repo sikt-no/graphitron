@@ -386,10 +386,9 @@ class TypeFetcherGeneratorTest {
     // ===== @service field with mapped (Set<...>) batch key =====
 
     /**
-     * Source-shape pair the mapped-service fixtures pass through:
-     * {@code (Wrap, columns, mapped:boolean)}. Replaces the deleted {@code BatchKey.ParentKeyed}
-     * shorthand the tests previously used; {@code mappedRowKey} / {@code mappedRecordKey} below
-     * build the two shape variants the tests exercise.
+     * Source-shape triple the mapped-service fixtures pass through:
+     * {@code (Wrap, columns, mapped:boolean)}. {@code mappedRowKey} / {@code mappedRecordKey}
+     * below build the two shape variants the tests exercise.
      */
     private record ServiceSourceShape(
             no.sikt.graphitron.rewrite.model.SourceKey.Wrap wrap,
@@ -1980,9 +1979,9 @@ class TypeFetcherGeneratorTest {
     private static no.sikt.graphitron.rewrite.model.TableRef filmActorParentTableForList() {
         // Single-column PK on FilmActor that doubles as the FK source on the participants' join
         // paths (filmActorChildJoinPaths sources both FKs from last_update). After R102 the list
-        // arm constructs a BatchKey.RowKeyed over the parent PK; aligning the parent PK with the
-        // FK source columns lets the emitted JOIN parentInput predicate land on the same column
-        // the WHERE predicate used to read.
+        // arm constructs a SourceKey (Wrap.Row + ColumnRead) over the parent PK; aligning the
+        // parent PK with the FK source columns lets the emitted JOIN parentInput predicate land
+        // on the same column the WHERE predicate used to read.
         return TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor",
             List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")));
     }

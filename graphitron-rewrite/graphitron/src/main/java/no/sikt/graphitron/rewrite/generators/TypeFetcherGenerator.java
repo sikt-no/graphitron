@@ -2708,23 +2708,22 @@ public class TypeFetcherGenerator {
     /**
      * Generates a DataLoader-based async data fetcher for a {@link ChildField.ServiceTableField}.
      *
-     * <p>The data fetcher's return type is {@code CompletableFuture<V>} for all four
-     * {@link BatchKey} variants: {@code loader.load(key, env)} returns
-     * {@code CompletableFuture<V>} regardless of whether the underlying batch loader is
-     * positional ({@code List<V>}) or mapped ({@code Map<K, V>}); the DataLoader unwraps both
-     * shapes internally and fulfills each per-key promise.
+     * <p>The data fetcher's return type is {@code CompletableFuture<V>} regardless of
+     * container kind: {@code loader.load(key, env)} returns {@code CompletableFuture<V>}
+     * whether the underlying batch loader is positional ({@code List<V>}) or mapped
+     * ({@code Map<K, V>}); the DataLoader unwraps both shapes internally and fulfills each
+     * per-key promise.
      *
      * <p>List/connection: returns {@code CompletableFuture<List<Record>>}. Single: returns
      * {@code CompletableFuture<Record>}.
      *
-     * <p>Variant axis:
+     * <p>Container axis ({@link LoaderRegistration#container()}):
      * <ul>
-     *   <li>{@link BatchKey.RowKeyed}/{@link BatchKey.RecordKeyed} → {@code newDataLoader(...)}
+     *   <li>{@link LoaderRegistration.Container#POSITIONAL_LIST} → {@code newDataLoader(...)}
      *       binds to {@code BatchLoaderWithContext<K, V>}; lambda keys parameter is
      *       {@code List<KeyType>}.</li>
-     *   <li>{@link BatchKey.MappedRowKeyed}/{@link BatchKey.MappedRecordKeyed}/{@link
-     *       BatchKey.MappedTableRecordKeyed} → {@code newMappedDataLoader(...)} binds to
-     *       {@code MappedBatchLoaderWithContext<K, V>}; lambda keys parameter is
+     *   <li>{@link LoaderRegistration.Container#MAPPED_SET} → {@code newMappedDataLoader(...)}
+     *       binds to {@code MappedBatchLoaderWithContext<K, V>}; lambda keys parameter is
      *       {@code Set<KeyType>}.</li>
      * </ul>
      */
@@ -2769,12 +2768,12 @@ public class TypeFetcherGenerator {
      *
      * <p>Signature follows the batch-loader contract:
      * <ul>
-     *   <li>{@link BatchKey.RowKeyed}/{@link BatchKey.RecordKeyed}/{@link BatchKey.TableRecordKeyed}:
-     *       {@code keys} is {@code List<KeyType>}; return is {@code List<List<V>>} (list field) or
+     *   <li>{@link LoaderRegistration.Container#POSITIONAL_LIST}: {@code keys} is
+     *       {@code List<KeyType>}; return is {@code List<List<V>>} (list field) or
      *       {@code List<V>} (single).</li>
-     *   <li>{@link BatchKey.MappedRowKeyed}/{@link BatchKey.MappedRecordKeyed}/{@link
-     *       BatchKey.MappedTableRecordKeyed}: {@code keys} is {@code Set<KeyType>}; return is
-     *       {@code Map<KeyType, List<V>>} (list field) or {@code Map<KeyType, V>} (single).</li>
+     *   <li>{@link LoaderRegistration.Container#MAPPED_SET}: {@code keys} is
+     *       {@code Set<KeyType>}; return is {@code Map<KeyType, List<V>>} (list field) or
+     *       {@code Map<KeyType, V>} (single).</li>
      * </ul>
      *
      * <p>{@code V} is {@code org.jooq.Record} for {@code ServiceTableField} (caller passes
@@ -2788,9 +2787,8 @@ public class TypeFetcherGenerator {
             + "wildcard local. ServiceDirectiveResolver's child-only strict-return check "
             + "rejects developer methods whose declared return type doesn't match this exact "
             + "outer shape, so any mismatch surfaces at classify time rather than as a javac "
-            + "error on the generated source. Covers RowKeyed / RecordKeyed / MappedRowKeyed / "
-            + "MappedRecordKeyed and TableRecordKeyed / MappedTableRecordKeyed for typed jOOQ "
-            + "TableRecord sources.")
+            + "error on the generated source. Covers all (wrap, container) combinations, "
+            + "including the typed-TableRecord wrap for jOOQ TableRecord sources.")
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "service-catalog-instance-service-holder-shape",
         reliesOn = "Same guarantee as buildServiceFetcherCommon's static-vs-instance fork.")
@@ -2932,13 +2930,14 @@ public class TypeFetcherGenerator {
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "accessor-rowkey-cardinality-matches-field",
-        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces AccessorKeyedMany "
-            + "only on list fields and AccessorKeyedSingle only on single fields. The valueType "
-            + "rule below (field.emitsSingleRecordPerKey() → Record else List<Record>) folds "
-            + "the two cases that emit a per-key value of Record (LOAD_MANY's loadMany "
-            + "contract; single-cardinality LOAD_ONE). An AccessorKeyedMany on a non-list "
-            + "field would emit code expecting List<Record> from a loadMany that supplies "
-            + "Record, miscompiling generated *Fetchers.")
+        reliesOn = "FieldBuilder.deriveAccessorRecordParentSource produces Cardinality.MANY + "
+            + "Dispatch.LOAD_MANY only on list fields and Cardinality.ONE + Dispatch.LOAD_ONE "
+            + "only on single fields. The valueType rule below "
+            + "(field.emitsSingleRecordPerKey() → Record else List<Record>) folds the two cases "
+            + "that emit a per-key value of Record (LOAD_MANY's loadMany contract; "
+            + "single-cardinality LOAD_ONE). A LOAD_MANY accessor on a non-list field would "
+            + "emit code expecting List<Record> from a loadMany that supplies Record, "
+            + "miscompiling generated *Fetchers.")
     private static <T extends ChildField.TableTargetField & BatchKeyField> MethodSpec
             buildRecordBasedDataFetcher(TypeFetcherEmissionContext ctx, T field, SourceKey sourceKey,
                     GraphitronType.ResultType resultType, String outputPackage) {

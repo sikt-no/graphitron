@@ -198,10 +198,10 @@ class InterfaceFieldValidationTest {
 
     @Test
     void rejects_listArm_onAccessorKeyedManyHubArityOver21() {
-        // R105: validator reads parentKey.preludeKeyColumns().size() uniformly across the four
-        // RecordParentBatchKey permits. The accessor-keyed permit publishes the hub PK through
-        // the LiftedHop; a 22-column hub PK trips the same Row22 cap as the table-backed
-        // RowKeyed case. The error message names the parent type and the column count.
+        // R105: validator reads parentSourceKey.columns().size() uniformly across all record-
+        // parent SourceKey shapes. The accessor-call arm publishes the hub PK through the
+        // LiftedHop; a 22-column hub PK trips the same Row22 cap as the table-backed
+        // ColumnRead case. The error message names the parent type and the column count.
         var hopSlots = new java.util.ArrayList<JoinSlot.LifterSlot>();
         for (int i = 0; i < 22; i++) {
             hopSlots.add(new JoinSlot.LifterSlot(new ColumnRef("k" + i, "K" + i, "java.lang.Integer")));

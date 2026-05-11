@@ -131,11 +131,11 @@ class NestingFieldPipelineTest {
     }
 
     @Test
-    void typeClass_nestedSplitField_projectsOuterParentBatchKeyColumn() {
-        // The recursive collectBatchKeyColumns walk must surface Film.info.cast's RowKeyed
-        // BatchKey column (FILM.FILM_ID) into Film.$fields so key extraction reads a non-null
-        // FK off env.getSource() at request time. Without the recursion, the fixture compiles
-        // and runs but every batch hits a NullPointerException reading FILM_ID from a Record
+    void typeClass_nestedSplitField_projectsOuterParentSourceKeyColumn() {
+        // The recursive collectSourceKeyColumns walk must surface Film.info.cast's SourceKey
+        // column (FILM.FILM_ID) into Film.$fields so key extraction reads a non-null FK off
+        // env.getSource() at request time. Without the recursion, the fixture compiles and
+        // runs but every batch hits a NullPointerException reading FILM_ID from a Record
         // whose SELECT omitted it.
         var filmType = findType("Film", SPLIT_NESTING_SDL);
         assertThat(TypeSpecAssertions.appendsRequiredColumn(filmType, "FILM_ID")).isTrue();

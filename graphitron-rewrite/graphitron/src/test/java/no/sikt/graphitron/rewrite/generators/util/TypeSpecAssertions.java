@@ -96,7 +96,7 @@ public final class TypeSpecAssertions {
     /**
      * True when {@code type}'s {@code $fields} method unconditionally appends a jOOQ column to
      * the projection via the {@code if (!fields.contains(table.COL)) fields.add(table.COL)}
-     * idiom used for BatchKey-column projection. Caller supplies the jOOQ field's
+     * idiom used for SourceKey-column projection. Caller supplies the jOOQ field's
      * Java name (e.g. {@code "FILM_ID"}).
      */
     public static boolean appendsRequiredColumn(TypeSpec type, String columnJavaName) {

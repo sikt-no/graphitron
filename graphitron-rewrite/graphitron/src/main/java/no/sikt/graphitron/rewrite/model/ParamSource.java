@@ -18,7 +18,7 @@ import java.util.Objects;
  *   <li>{@link Context} — the parameter is a context argument; bound via
  *       {@code GraphitronContext.getContextArgument(dfe, name)}.</li>
  *   <li>{@link Sources} — the DataLoader batch-key list; element type and construction strategy
- *       are classified by the contained {@link BatchKey}.</li>
+ *       are determined by the contained {@code (wrap, columns, container)} triple.</li>
  *   <li>{@link DslContext} — the jOOQ {@code DSLContext}; injected by the framework.</li>
  *   <li>{@link Table} — the jOOQ {@code Table<?>} instance for the field's target table.</li>
  *   <li>{@link SourceTable} — the jOOQ {@code Table<?>} instance for the parent/source table;

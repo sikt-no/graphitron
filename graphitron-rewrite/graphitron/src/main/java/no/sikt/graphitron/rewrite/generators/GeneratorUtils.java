@@ -256,7 +256,7 @@ class GeneratorUtils {
 
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "accessor-rowkey-shape-resolved",
-        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces the AccessorCall + "
+        reliesOn = "FieldBuilder.deriveAccessorRecordParentSource produces the AccessorCall + "
             + "Cardinality.ONE projection only after reflection has confirmed the parent backing "
             + "class, the accessor (name, zero-arg, non-bridge, non-synthetic, non-static), and "
             + "the element class (extends TableRecord, mapped table identical to the field's "
@@ -286,7 +286,7 @@ class GeneratorUtils {
 
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "accessor-rowkey-shape-resolved",
-        reliesOn = "FieldBuilder.deriveBatchKeyFromTypedAccessor produces the AccessorCall + "
+        reliesOn = "FieldBuilder.deriveAccessorRecordParentSource produces the AccessorCall + "
             + "Cardinality.MANY projection only after reflection has confirmed the parent "
             + "backing class, the accessor (name, zero-arg, non-bridge, non-synthetic, "
             + "non-static), and the element class (extends TableRecord, mapped table identical "

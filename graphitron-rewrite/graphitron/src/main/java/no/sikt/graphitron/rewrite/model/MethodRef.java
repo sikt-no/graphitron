@@ -213,8 +213,9 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
      *       {@code DslContext}, {@code Table}, {@code SourceTable}). The Java type is captured
      *       from reflection and stored explicitly.</li>
      *   <li>{@link Sourced} — a DataLoader batch-key parameter ({@code Sources}). The Java type
-     *       is derived from the {@link BatchKey} variant so no separate {@code typeName} is
-     *       stored; {@link #typeName()} and {@link #source()} are computed on demand.</li>
+     *       is derived from the {@code (wrap, columns, container)} triple so no separate
+     *       {@code typeName} is stored; {@link #typeName()} and {@link #source()} are computed
+     *       on demand.</li>
      * </ul>
      *
      * <p>{@code name} is the parameter name from the compiled class (requires {@code -parameters}).
@@ -238,11 +239,10 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
 
         /**
          * A DataLoader batch-key parameter whose Java type is fully determined by the
-         * {@code (wrap, columns, container)} triple — the surviving axes after R38's BatchKey
-         * collapse, where {@link SourceKey.Wrap} carries the per-row shape (Row / Record /
-         * typed TableRecord), {@code columns} is the parent-side PK/FK column tuple driving
-         * the key arity and type args, and {@link LoaderRegistration.Container} carries the
-         * mapped/positional axis that was previously variant identity on {@link BatchKey}.
+         * {@code (wrap, columns, container)} triple: {@link SourceKey.Wrap} carries the per-row
+         * shape (Row / Record / typed TableRecord), {@code columns} is the parent-side PK/FK
+         * column tuple driving the key arity and type args, and
+         * {@link LoaderRegistration.Container} carries the mapped/positional axis.
          *
          * <p>{@link #typeName()} returns the derived generic list/set type
          * (e.g. {@code "java.util.List<org.jooq.Row1<java.lang.Integer>>"} for a

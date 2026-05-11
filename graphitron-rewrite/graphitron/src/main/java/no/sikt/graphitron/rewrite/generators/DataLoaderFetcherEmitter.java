@@ -57,9 +57,8 @@ public final class DataLoaderFetcherEmitter {
      * sync fetcher returns).
      *
      * @param fieldName             the GraphQL field name; becomes the fetcher method's name.
-     * @param keyType               the per-key element type (today
-     *                              {@code BatchKey.keyElementType()}; post-Phase-3 derived
-     *                              from {@code SourceKey}).
+     * @param keyType               the per-key element type, derived from
+     *                              {@code SourceKey}.
      * @param loaderValueType       the per-key value type {@code V} in
      *                              {@code DataLoader<K, V>}. For SQL-side rows methods this
      *                              is typically {@code Record} (single-cardinality / loadMany

@@ -47,9 +47,8 @@ public final class RowsMethodCall {
      * @param rowsMethodName the rows-method to delegate to. The lambda body emits
      *                       {@code rowsMethodName(keys, dfe)}; the method must already exist
      *                       on the enclosing fetcher class.
-     * @param keyType        the per-key element type (today produced by
-     *                       {@code BatchKey.keyElementType()}; post-Phase-3 by the new
-     *                       source-key shape). Drives the lambda's typed
+     * @param keyType        the per-key element type, produced by
+     *                       {@code SourceKey.keyElementType()}. Drives the lambda's typed
      *                       {@code List<K>}/{@code Set<K>} parameter.
      * @param registration   the field's {@link LoaderRegistration}; only its
      *                       {@link LoaderRegistration#container()} is consulted to pick

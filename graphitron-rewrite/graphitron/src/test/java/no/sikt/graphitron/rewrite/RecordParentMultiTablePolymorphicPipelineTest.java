@@ -18,22 +18,24 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code FieldBuilder.classifyChildFieldOnResultType}'s {@code PolymorphicReturnType} case:
  *
  * <ul>
- *   <li>{@link BatchKey.RowKeyed} on a {@link no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType}
+ *   <li>{@link SourceKey.Reader.ColumnRead} on a {@link no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType}
  *       parent (hub = parent's mapped table).</li>
- *   <li>{@link BatchKey.AccessorKeyedSingle} on a {@link no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType}
- *       parent with a single-cardinality typed accessor (hub = accessor's element-Record table).</li>
- *   <li>{@link BatchKey.AccessorKeyedMany} on a Pojo parent with a list / set typed accessor
- *       (hub = accessor's element-Record table).</li>
+ *   <li>{@link SourceKey.Reader.AccessorCall} on a {@link no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType}
+ *       parent with a single-cardinality typed accessor
+ *       ({@link SourceKey.Cardinality#ONE}, hub = accessor's element-Record table).</li>
+ *   <li>{@link SourceKey.Reader.AccessorCall} on a Pojo parent with a list / set typed accessor
+ *       ({@link SourceKey.Cardinality#MANY}, hub = accessor's element-Record table).</li>
  * </ul>
  *
  * <p>Driven through the full SDL → classifier pipeline so the new arm is exercised, not bypassed
  * (fixture-helper construction of {@code InterfaceField} / {@code UnionField} would skip the arm
- * under test). Loader-dispatch shape is read off {@code field.parentKey().dispatch()} and key
- * arity off {@code field.parentKey().preludeKeyColumns().size()}; for the accessor-keyed
- * permits the hub identity is implicit in the {@code LiftedHop}'s {@code targetTable}.
+ * under test). Loader-dispatch shape is read off
+ * {@code field.loaderRegistration().dispatch()} and key arity off
+ * {@code field.parentSourceKey().columns().size()}; for the accessor-call permits the hub
+ * identity is implicit in the {@code LiftedHop}'s {@code targetTable}.
  *
  * <p>Per the rewrite-design-principles, body-shape assertions on emitted method bodies are not
- * used; the {@code RowKeyed} variant pins TypeSpec equivalence with a table-backed parent
+ * used; the {@code ColumnRead} variant pins TypeSpec equivalence with a table-backed parent
  * fixture so any drift across the two producers fails fast.
  */
 @PipelineTier
@@ -68,10 +70,10 @@ class RecordParentMultiTablePolymorphicPipelineTest {
     @Test
     void childInterfaceField_recordParent_rowKeyed() {
         // JooqTableRecordType-backed @record parent → hub = parent's mapped table = film →
-        // BatchKey.RowKeyed off film's PK (single column, film_id). The classifier arm produced
-        // here is byte-for-byte equivalent to the table-backed branch's RowKeyed construction
-        // when the table-backed parent is the same hub; pin TypeSpec equivalence to surface any
-        // drift across the two producers.
+        // SourceKey (Wrap.Row + ColumnRead) off film's PK (single column, film_id). The
+        // classifier arm produced here is byte-for-byte equivalent to the table-backed branch's
+        // construction when the table-backed parent is the same hub; pin TypeSpec equivalence to
+        // surface any drift across the two producers.
         var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
             type FilmInfo @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
               referrers: [FilmReferrer!]!
