@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Plan |
 |---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `R134` | Fix mutation empty-input short-circuit to use newRecord for single-record payloads | In Review | [plan](mutation-empty-input-short-circuit-newrecord.md) |
+| `R134` | Fix mutation empty-input short-circuit to use newRecord for single-record payloads | Ready | [plan](mutation-empty-input-short-circuit-newrecord.md) |
 | `R132` | Move leaf-coverage report verification off local builds | In Review | [plan](leaf-coverage-verify-off-local.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready | [plan](tablemethod-child-table-bound.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
