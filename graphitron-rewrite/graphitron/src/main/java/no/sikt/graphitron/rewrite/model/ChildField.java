@@ -457,19 +457,15 @@ public sealed interface ChildField extends GraphitronField
          * <p>Defers to {@link RowsMethodShape#strictPerKeyType} for the schema-determined
          * answer (raw {@code org.jooq.Record} for {@code TableBoundReturnType}, the backing
          * class for {@code ResultReturnType} with non-null {@code fqClassName}, the standard
-         * Java type for the five standard GraphQL scalars). When the helper returns
-         * {@code null}: custom scalars and enums fall back to {@code String} (Phase A
-         * approximation, replaced when the consumer-provided scalar registry lands);
-         * everything else falls back to the reflected outer return type on
-         * {@link MethodRef#returnType()} (which throws at request time when wrong, surfacing
-         * the case to revisit).
+         * Java type for the five GraphQL spec built-ins via the
+         * {@code no.sikt.graphitron.rewrite.ScalarTypeResolver}). When the helper returns
+         * {@code null} the fallback is the reflected outer return type on
+         * {@link MethodRef#returnType()}, which throws at request time when wrong, surfacing
+         * the case to revisit.
          */
         public no.sikt.graphitron.javapoet.TypeName elementType() {
             no.sikt.graphitron.javapoet.TypeName strict = RowsMethodShape.strictPerKeyType(returnType());
             if (strict != null) return strict;
-            if (returnType() instanceof ReturnTypeRef.ScalarReturnType) {
-                return no.sikt.graphitron.javapoet.ClassName.get(String.class);
-            }
             return method().returnType();
         }
     }
