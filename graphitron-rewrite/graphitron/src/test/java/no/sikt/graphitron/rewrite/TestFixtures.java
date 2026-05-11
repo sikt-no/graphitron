@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -95,34 +94,6 @@ public final class TestFixtures {
                                                               List<MethodRef.Param> params) {
         return new MethodRef.Service(className, methodName, returnType, params, List.of(),
             new MethodRef.CallShape.InstanceWithDslHolder());
-    }
-
-    /**
-     * Transitional test adapter that constructs a {@link MethodRef.Param.Sourced} from a
-     * {@link BatchKey.ParentKeyed} permit. The fixture sites that built ergonomic
-     * {@code new BatchKey.X(cols)} values stay readable; the helper handles the projection
-     * onto the triple {@code (Wrap, columns, Container)}. Deletes when the tests migrate to
-     * the direct-triple {@code sourced(name, wrap, columns, container)} overload below
-     * (alongside the {@link BatchKey} deletion).
-     */
-    public static MethodRef.Param.Sourced sourced(String name, BatchKey.ParentKeyed bk) {
-        SourceKey.Wrap wrap;
-        if (bk instanceof BatchKey.TableRecordKeyed trk) {
-            wrap = new SourceKey.Wrap.TableRecord(ClassName.get(trk.elementClass()));
-        } else if (bk instanceof BatchKey.MappedTableRecordKeyed mtrk) {
-            wrap = new SourceKey.Wrap.TableRecord(ClassName.get(mtrk.elementClass()));
-        } else if (bk instanceof BatchKey.RecordKeyed || bk instanceof BatchKey.MappedRecordKeyed) {
-            wrap = new SourceKey.Wrap.Record();
-        } else {
-            wrap = new SourceKey.Wrap.Row();
-        }
-        LoaderRegistration.Container container =
-            (bk instanceof BatchKey.MappedRowKeyed
-                || bk instanceof BatchKey.MappedRecordKeyed
-                || bk instanceof BatchKey.MappedTableRecordKeyed)
-                ? LoaderRegistration.Container.MAPPED_SET
-                : LoaderRegistration.Container.POSITIONAL_LIST;
-        return new MethodRef.Param.Sourced(name, wrap, bk.parentKeyColumns(), container);
     }
 
     /**

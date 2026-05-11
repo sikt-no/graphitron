@@ -703,35 +703,47 @@ classifier-side producers (`FieldBuilder.deriveSplitQueryBatchKey`,
     references remain (cleaned up in step 20). 1553 tests green; the three
     pre-existing `MultiSchemaQueryTest` failures unchanged.
 
-After step 19 every production-code consumer of the `SourceKeyResolver` /
-`LoaderRegistrationResolver` is gone. `BatchKey` references in main src are
-limited to javadoc `@link` references and historical comments in
-`ChildField`, `MultiTablePolymorphicEmitter`, `TypeFetcherGenerator`,
-`SplitRowsMethodEmitter`, and the model package (`SourceKey`, `JoinStep`,
-`MethodRef`, `ParamSource`, `BatchKeyField`, `AccessorRef`, `LifterRef`,
-`LoaderRegistration`, `ConditionJoinReportable`, `ChildField`).
+20. (a) The six validation tests (`SplitTableFieldValidationTest`,
+    `SplitLookupTableFieldValidationTest`, `RecordTableFieldValidationTest`,
+    `RecordLookupTableFieldValidationTest`, `UnionFieldValidationTest`,
+    `InterfaceFieldValidationTest`) migrate off `SourceKeyResolver` /
+    `LoaderRegistrationResolver` / `new BatchKey.X(...)` and onto the new
+    `TestFixtures` helpers. `ServiceFieldValidationTest`'s
+    `serviceField(batchKey)` / `buildServiceTableField(rt, batchKey)`
+    helpers convert to the direct triple `(wrap, keyColumns, mapped)`
+    shape. `BatchKeyTest`, `SourceKeyResolverTest`,
+    `LoaderRegistrationResolverTest` (the three dedicated test files about
+    the to-delete projections) delete; classifier-side projection coverage
+    comes from the pipeline tests (`GraphitronSchemaBuilderTest` etc.).
+    (b) `TypeFetcherGeneratorTest`'s 27 `BatchKey` references migrate;
+    `ServiceCatalogTest`, `GraphitronSchemaBuilderTest`,
+    `RecordParentMultiTablePolymorphicPipelineTest` drop the unused
+    `BatchKey` import. (c) `TestFixtures.sourced(name,
+    BatchKey.ParentKeyed)` transitional adapter deletes (all callers
+    migrated). (d) `BatchKey.java`, `SourceKeyResolver.java`, and
+    `LoaderRegistrationResolver.java` delete in `main`; the two stale
+    `import no.sikt.graphitron.rewrite.model.BatchKey` declarations in
+    `TypeFetcherGenerator` and `MultiTablePolymorphicEmitter` drop. The
+    remaining `BatchKey` references in main src and tests are all in
+    javadoc / comment prose (historical context, no compile linkage); they
+    stay for now and can be scrubbed independently. 1523 tests green; the
+    three pre-existing `MultiSchemaQueryTest` failures (R83 multi-schema
+    fixture) are unchanged baseline.
 
-Still to land for Phase 3 completion:
-- **`TestFixtures` migration**: tests still use ergonomic
-  `TestFixtures.sourced(name, new BatchKey.X(cols))` and inline
-  `SourceKeyResolver.X(bk, rt)` / `LoaderRegistrationResolver.resolve(bk, rt)`
-  calls. The new direct-triple `sourced(name, wrap, columns, container)`
-  overload and the resolver-replacement helpers
-  (`splitSourceKey`, `recordParentRowSourceKey`,
-  `polymorphicRowParentSourceKey`, `serviceTableSourceKey`,
-  `serviceRecordSourceKey`, `loaderRegistration`) land in step 19; the test
-  migration to the new shapes lands in step 20.
-- **`BatchKey.java`** + `SourceKeyResolver.java` +
-  `LoaderRegistrationResolver.java` delete in step 20 once every test
-  migrates to the direct-triple form. `BatchKeyTest`,
-  `SourceKeyResolverTest`, and `LoaderRegistrationResolverTest` delete with
-  their subjects. The classifier-side projection rules get coverage on the
-  producers' end-to-end pipeline tests (`GraphitronSchemaBuilderTest` etc.)
-  rather than on the deleted projection helpers.
-- **`@link BatchKey.X` references** in main src javadoc get scrubbed in
-  step 20 alongside the deletion (replaced with `@link SourceKey` /
-  `@link LoaderRegistration` references where appropriate, dropped
-  where historical-only).
+R38 Phase 3 is **done**: `BatchKey` is gone from the production model and
+the test surface that depended on it; `SourceKeyResolver` and
+`LoaderRegistrationResolver` are deleted; the field-classifier producers
+build `SourceKey` + `LoaderRegistration` directly; the consumer surface
+(generators, validator, multi-table polymorphic emitter) reads off
+`bkf.sourceKey()` / `bkf.loaderRegistration()` uniformly. The
+`@LoadBearingClassifierCheck` keys re-shaped from BatchKey-permit identity
+to SourceKey shape; the audit framework verifies the producer-consumer
+links. Net type-identity count: down from the original 10 `BatchKey`
+permits + 4 `RecordParentBatchKey` permits + 6 `ParentKeyed` permits to
+1 `SourceKey` + 5 `Reader` sub-permits + 1 `LoaderRegistration` with
+3 enum axes; the rows-method seam routes through `RowsMethodSkeleton` +
+`RowsMethodCall.batchLoaderLambda` + `DataLoaderFetcherEmitter.build` as
+the spec sets out.
 
 Pattern conventions established during the incremental work:
 - Consumer migration always reads off `bkf.sourceKey()` /

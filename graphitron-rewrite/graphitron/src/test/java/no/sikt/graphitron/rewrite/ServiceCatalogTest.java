@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;

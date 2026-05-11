@@ -8,7 +8,6 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.generators.util.ValuesJoinRowBuilder;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
