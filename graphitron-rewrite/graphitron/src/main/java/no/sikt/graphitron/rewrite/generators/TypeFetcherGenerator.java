@@ -2850,8 +2850,13 @@ public class TypeFetcherGenerator {
                 if (i > 0) pkProjection.add(", ");
                 pkProjection.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), pkCols.get(i).javaName());
             }
-            builder.addStatement("$T payload = $T.using(dsl.configuration()).newResult($L)",
-                payloadType, DSL, pkProjection.build());
+            // Empty payload constructor: newResult(...) → Result<Record> (list payload),
+            // newRecord(...) → Record (single payload). Both arms of buildMutationDmlRecordFetcher
+            // hit this branch when tia.list() is true; without the dataIsList split the single-
+            // record arm assigns a Result to a Record1<...> local and the generated source fails
+            // to compile.
+            builder.addStatement("$T payload = $T.using(dsl.configuration()).$L($L)",
+                payloadType, DSL, dataIsList ? "newResult" : "newRecord", pkProjection.build());
             builder.addCode(returnSyncSuccess(payloadType, "payload"));
             builder.endControlFlow();
         } else {

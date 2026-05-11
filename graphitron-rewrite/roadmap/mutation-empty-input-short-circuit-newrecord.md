@@ -1,7 +1,7 @@
 ---
 id: R134
 title: "Fix mutation empty-input short-circuit to use newRecord for single-record payloads"
-status: Backlog
+status: In Review
 bucket: bugfix
 priority: 3
 depends-on: []
