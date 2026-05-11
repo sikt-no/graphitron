@@ -100,6 +100,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField f      -> validateServiceRecordField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.RecordTableField f        -> validateRecordTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField f  -> validateRecordLookupTableField(f, types, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField f  -> {} // R75 Phase 1 — narrow TableBoundReturnType component + SourceKey compact-constructor invariant pin the structural shape; admission-time checks (table-equality, DELETE rejection) live in the mutation-field classifier
             case no.sikt.graphitron.rewrite.model.ChildField.RecordField f             -> validateRecordField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ComputedField f           -> validateComputedField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.PropertyField f           -> validatePropertyField(f, errors);
