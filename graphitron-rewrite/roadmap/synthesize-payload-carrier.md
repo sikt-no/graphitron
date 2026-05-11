@@ -93,12 +93,15 @@ implementation track; it binds structurally to Phase 1 but is not schedule-coupl
   outside the transaction). Direct-`@table`-return DML mutations get the same
   two-step emit. `DELETE` admits only `: ID` / `: [ID!]` returns (no payload-shaped
   data — the row is gone before the SELECT can read it).
-- **Phase 2: `@service` mutations and `@record`-element data.** Admits
+- **Phase 2: `@service` mutations and record-element data.** Admits
   single-data-field carriers on `@service` mutations (where the consumer
-  constructs the return value directly) and admits `@record`-element data fields
-  (in addition to `@table`-element). `RecordTableField` already covers the
-  `@record`-parent / `@table`-child case at the data-field site; the work is at
-  the mutation-classifier and `@service`-resolver layer.
+  constructs the return value directly) and admits record-element data
+  fields (in addition to `@table`-element). The element-type's
+  record-backed `ResultType` classification is signal-agnostic: today the
+  signal is `@record(record: {className: ...})`; after R96 Phase 3 it is
+  `@service`-method-return-type introspection. R75 reads the model
+  classification, not the producing signal. The work is at the
+  mutation-classifier and `@service`-resolver layer.
 
 Both phases are specified in implementation-ready detail below.
 Promoting R75 from Spec → Ready means signing off on the entire body;
@@ -356,7 +359,7 @@ conditions:
    widens to "exactly one `@table`-element field plus zero or more
    non-`@table`-element slot fields".)
 3. That single field's element type is registered as `TableBackedType`.
-   (Phase 2 widens to admit `@record`-element data.)
+   (Phase 2 widens to admit record-backed `ResultType` elements.)
 4. The data field carries no graphitron-domain directive (`@service`,
    `@sourceRows`, `@reference`, `@nodeId`, `@field`, `@asConnection`,
    `@splitQuery`, `@externalField`, `@condition`, `@lookupKey`,
@@ -640,7 +643,7 @@ for both keys.
 - **Multi-field carriers (data field + non-data slots).** R128 territory.
 - **`@service` mutations returning single-record carriers.** Phase 2
   territory.
-- **`@record`-element data fields.** Phase 2 territory.
+- **Record-element data fields.** Phase 2 territory.
 - **Restructuring R12's authored-carrier emit.** Tracked separately.
 - **DELETE returning a carrier of pre-deletion data.** Rejected at classify
   time; not coming back.
@@ -649,7 +652,7 @@ for both keys.
   uses broad `ReturnTypeRef`. Aligning the existing carrier to the narrow
   shape is a sibling Backlog item.
 
-## Phase 2: @service mutations and @record-element data
+## Phase 2: @service mutations and record-element data
 
 Phase 1 covers `@mutation` (DML) single-record carrier returns with
 `@table`-element data fields. Phase 2 extends along two orthogonal axes:
@@ -659,11 +662,14 @@ Phase 1 covers `@mutation` (DML) single-record carrier returns with
   directly; graphitron registers the data-field fetcher on the carrier, and
   the existing `@service` wrapper unwrap (`Optional<T>`, `CompletableFuture<T>`,
   `Mono<T>`) handles wrapper composition.
-- **Element kind.** The data field's element type may be `@record`-mapped in addition
-  to `@table`-mapped. Service methods may return a domain record (Java record or POJO
-  bound via `@record(record: {className: ...})`); the data field's classification
-  carries the `@record` shape and graphql-java's per-field fetchers on the `@record`
-  element handle accessor reads.
+- **Element kind.** The data field's element type may be a record-backed
+  `ResultType` in addition to `TableBackedType`. Service methods may return a
+  domain record (Java record or POJO); the data field's classification carries
+  the record shape and graphql-java's per-field fetchers on the record element
+  handle accessor reads. The record-backed `ResultType` classification today
+  comes from `@record(record: {className: ...})`; after R96 Phase 3 it comes
+  from `@service`-method-return-type introspection. R75's trigger reads
+  `ResultType`, not the producing signal.
 
 ### Trigger extension
 
@@ -687,7 +693,7 @@ Phase 1 callers see `DataElement.Table`. Phase 2 introduces the `Record` arm.
 ### Mutation classification
 
 `@mutation` (DML) admits only `@table`-element data — Phase 1 unchanged.
-`@record`-element data on a DML mutation is out of scope (would require a
+Record-element data on a DML mutation is out of scope (would require a
 "DML row → domain record" conversion step at the emitter; tracked
 separately).
 
@@ -717,15 +723,39 @@ single-record `SourceKey` (`reader == ResultRowWalk`). The upstream
 the data-field fetcher reads it via `sourceKey.extractSourceRows(env)` and
 runs the response SELECT — same shape as Phase 1.
 
-For `@record`-element data: the data field classifies under whichever
-existing model shape covers "record parent → record child" cleanly. The
-mechanism is graphql-java's per-field accessor traversal of the service
-method's returned domain record; graphitron's emit is identity passthrough
-via the existing `ConstructorField` shape, no `SourceKey` synthesis needed
-(there are no source rows to extract — the parent's value is a domain
-record, not a `Result<RecordN<...>>`). Phase 2 may extend `ConstructorField`'s
-docstring to cover record-on-record use, or introduce a sibling permit if
-structural clarity demands. Implementer call.
+For record-element data on a `@service` mutation: the data field classifies
+as a new sibling permit `ChildField.SingleRecordIdentityField`. The service
+method's returned domain record IS the carrier's source value; the data
+field's value IS that source value verbatim. The fetcher emit is identity
+passthrough — `env -> env.getSource()` — with no `SourceKey` synthesis (no
+source rows to extract; the parent's value is the data field's value).
+
+```java
+record SingleRecordIdentityField(
+    String parentTypeName,
+    String name,
+    SourceLocation location,
+    ReturnTypeRef.ResultReturnType returnType
+) implements ChildField {}
+```
+
+The permit declines `TableTargetField` (no table to target — the element
+is record-backed) and `BatchKeyField` (no DataLoader); it carries the
+resolved `ResultReturnType` for the element type. Naming-wise it parallels
+`SingleRecordTableField`: same "Single" prefix signalling the
+single-parent-per-request shape, "Identity" naming the read mechanism
+(parent = value), in lieu of "Table" for the record-element case.
+
+The fetcher emit dispatches on `SingleRecordIdentityField` at the same seam
+as `SingleRecordTableField`: one new arm in `FetcherEmitter.dataFetcherValue`
+or its sibling.
+
+This is a deliberate spec-time fork rather than an implementer call.
+Overloading `ConstructorField` with an identity-accessor variant would
+compromise `ConstructorField`'s "read a property off a parent" framing
+and bake the principles doc's "god accessor whose meaning depends on the
+variant" smell into the taxonomy; a sibling permit keeps the read-mechanism
+axis explicit at the type-system level.
 
 ### Wrapper composition
 
@@ -740,7 +770,7 @@ is verified at the execution tier.
 
 ### Out of scope for Phase 2
 
-- `@record`-element data on `@mutation` (DML). Tracked separately.
+- Record-element data on `@mutation` (DML). Tracked separately.
 - Multi-field carriers on `@service` mutations. R128 territory; the
   `@service` consumer-side `DataFetcherResult.localContext` carriage lands
   there alongside the trigger's multi-field extension.
@@ -752,7 +782,10 @@ is verified at the execution tier.
 
 **Pipeline-tier** additions to `SingleRecordCarrierPipelineTest`:
 
-- `@record`-element data field admits and registers correctly.
+- Record-element data field classifies as
+  `ChildField.SingleRecordIdentityField` (the new sibling permit) carrying
+  the resolved `ResultReturnType`. The permit declines `TableTargetField`
+  and `BatchKeyField`; no `SourceKey` slot to assert.
 - `@service` mutation returning a single-record carrier admits at the
   service classifier; no `UnclassifiedField` at the mutation site.
   Parameterised over `{Table, Record}`.
@@ -763,6 +796,10 @@ is verified at the execution tier.
   the inner `T` for trigger matching. Parameterised over
   `{T, Optional, CompletableFuture, Mono, DataFetcherResult} ×
   {Table, Record}`.
+- `fetcherEmitter_singleRecordArms`: structural pin that
+  `FetcherEmitter.dataFetcherValue` dispatches `SingleRecordTableField`
+  and `SingleRecordIdentityField` as separate `instanceof` arms (no
+  overload of `ConstructorField`).
 
 **Execution-tier**
 (`graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/`):
@@ -770,8 +807,11 @@ new `SingleRecordCarrierServiceTest` parameterising over
 `(elementKind, wrapper)`:
 
 - SDL: two carrier variants — `@table`-element via the existing sakila
-  `Actor`, `@record`-element via an `ActorRecord` Java record bound
-  through `@record(record: {className: "...sakila.ActorRecord"})`.
+  `Actor`; record-element via an `ActorRecord` Java record bound via the
+  signal current at fixture-authoring time (today
+  `@record(record: {className: "...sakila.ActorRecord"})` on the SDL
+  type; post-R96 Phase 3, `@service`-method-return-type introspection
+  on the same `ActorRecord` Java class).
 - Per-wrapper drivers (`T`, `Optional<T>`, `CompletableFuture<T>`,
   `Mono<T>`) for each element kind: invoke the service mutation against
   the testcontainer, assert response shape and follow-up reads. 8 cases.
