@@ -32,9 +32,35 @@ What still ships under R43 is the actual lift. The In Review → Ready review fl
 
 Two parent shapes are in scope. The invariant across both: the table the developer's method returns is the final target, so the last hop in the resolved path must equal `field.returnType().table()`.
 
+#### Directive shape and method-signature contract (applies to both branches and to the root site)
+
+The directive flattens to a two-argument form. Today's nested input object goes away:
+
+```graphql
+# before
+language: Language @tableMethod(tableMethodReference: { className: "...", method: "..." })
+# after
+language: Language @tableMethod(className: "...", method: "...")
+```
+
+The developer's static method takes **no table parameter**: not the return-type table, not the parent table. The directive's whole point is that graphitron derives the target table; passing one in would let the developer hand graphitron a table that does not match the return type. Parent-table filtering is `@reference`'s job, not the method's. Parameters are sourced from field arguments only (composed with the existing `argMapping` rule and `contextArguments:` for context values).
+
+Concrete shape:
+
+```java
+// schema:  films(rating: Rating): [Film] @tableMethod(className: "Methods", method: "filmsByRating")
+public static Film filmsByRating(Rating rating) {
+    return DSL.select().from(FILM).where(FILM.RATING.eq(rating)).asTable("filtered_film").as(FILM);
+}
+```
+
+The method returns a derived `<Table>` parameterised by GraphQL args. Graphitron joins / filters it via `@reference` (table parent) or `SourceKey` (DTO parent) as described per-branch below.
+
+Migration. The existing root-side test stubs `TestTableMethodStub.getLanguage(Language table)` / `getFilm(Film table)` / `getActor(Actor table)` no longer match the contract and are updated alongside the directive flattening. `parseExternalRef(DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF)` at `TableMethodDirectiveResolver.java:114` is rewritten against the flat `className:` / `method:` args; `ARG_TABLE_METHOD_REF` at `BuildContext.java:100` is retired. The root emit (`TypeFetcherGenerator.buildQueryTableMethodFetcher` at `:985`) drops the `tableExpression` argument it currently passes as the first call arg; `ArgCallEmitter.buildMethodBackedCallArgs` is updated to omit the leading-table slot for `@tableMethod`. All schema-builder fixtures using the nested form switch to the flat form. The user-manual page `docs/manual/reference/directives/tableMethod.adoc` updates to the new shape.
+
 **Table-bound parent (the existing `ChildField.TableMethodField`).**
 
-- `TypeFetcherGenerator`: introduce `buildChildTableMethodFetcher(ChildField.TableMethodField, ...)` modelled on the root-site `buildQueryTableMethodFetcher` (`TypeFetcherGenerator.java:985`). The root emit is the closer cognate than the batched `ChildField.ServiceTableField` path: `TableMethodField` carries no `parentSourceKey` / `loaderRegistration` (cf. `ChildField.java:301-309`), so the emission is per-row, not a DataLoader-keyed batched call. The developer's static method is invoked the same way at child as at root, passed the return-type table alias (compare `TestTableMethodStub.getLanguage(Language table)`). The `@LoadBearingClassifierCheck`-pinned `field.returnType().table().tableClass()` lets the emitted local declare the specific generated jOOQ table class without a cast.
+- `TypeFetcherGenerator`: introduce `buildChildTableMethodFetcher(ChildField.TableMethodField, ...)` modelled on the root-site `buildQueryTableMethodFetcher` (`TypeFetcherGenerator.java:985`). The root emit is the closer cognate than the batched `ChildField.ServiceTableField` path: `TableMethodField` carries no `parentSourceKey` / `loaderRegistration` (cf. `ChildField.java:301-309`), so the emission is per-row, not a DataLoader-keyed batched call. The developer's static method is invoked the same way at child as at root, with arguments sourced from field args only (no table parameter). The `@LoadBearingClassifierCheck`-pinned `field.returnType().table().tableClass()` lets the emitted local declare the specific generated jOOQ table class without a cast.
 - The difference vs. root is the join: at child, the returned table has to be filtered by the parent row's key, and `field.joinPath()` is the resolved chain from the parent table to the returned table. The path is populated by `ctx.parsePath` (`FieldBuilder.java:3875`) from `@reference(path:)`. See the existing classification fixture `WITH_REFERENCE_PATH` in `GraphitronSchemaBuilderTest` for the populated shape.
 - Replace the `STUBBED_VARIANTS` entry for `ChildField.TableMethodField.class` with an `IMPLEMENTED_LEAVES` entry. The dispatch case in `generateChildFetcher` (`builder.addMethod(stub(f))` at `TypeFetcherGenerator.java:433`) flips to call the new emit method.
 - Join-path rule: parent-to-target join must be expressible. Two cases. (a) Exactly one FK exists between the parent table and the returned table: the classifier auto-infers that single hop, no `@reference` needed. (b) Zero or multiple candidate FKs: the schema author writes `@reference(path:)` explicitly. Reject any `@reference` whose final hop lands on a table other than `field.returnType().table()`. The auto-inference uses `JooqCatalog.findUniqueFkToTable(sourceTableSqlName, targetTableSqlName)` (the same helper `NodeIdLeafResolver` calls for single-hop FK auto-discovery at `NodeIdLeafResolver.java:495`); reuse it rather than open-coding a candidate-FK search.
@@ -71,9 +97,8 @@ Two parent shapes are in scope. The invariant across both: the table the develop
 
 These need answers from the user before implementation starts. Captured here so the next session does not invent a position.
 
-- *Method signature at child sites.* Root stubs take the return-type table as first param (`Language getLanguage(Language table)`). Is the same shape required at child, or does the child convention pass the parent table instead (or both)? The answer pins what `MethodRef.Param.Sourced` slots the resolver must allow.
 - *`@reference(condition:)` arm.* `TableMethodFieldValidationTest.WITH_CONDITION_ONLY` uses a developer-supplied `Condition` instead of an FK. Stays in R43 (third branch alongside auto-inferred FK and explicit `@reference(path:)`), or deferred to a follow-up?
 - *DTO-parent variant shape.* Recommended: a new `ChildField.RecordTableMethodField` variant (parallel to `RecordTableField` vs `TableField`), keeping the existing `TableMethodField` narrow to table-bound parents. Confirm the new-variant route over extending `TableMethodField` with `Optional<SourceKey>`.
-- *Single-commit vs split.* Ship both parent shapes (table-bound and DTO) in one cycle, or land the table-bound branch first and split the DTO branch into a new roadmap item?
+- *Single-commit vs split.* The directive flattening + method-signature rewrite + child lift (both parent shapes) is more than one commit's worth of work and is at least partly a breaking schema change. Land as one roadmap item under R43, or split (e.g. R43 = directive flattening + root-side method-signature rewrite; new follow-up = child table-bound branch; further follow-up = DTO-parent branch)?
 
 Not currently a blocker for any in-flight migration.
