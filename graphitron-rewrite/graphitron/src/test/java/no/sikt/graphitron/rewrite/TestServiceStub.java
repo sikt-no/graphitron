@@ -58,6 +58,13 @@ class TestServiceStub {
     public static Result<FilmRecord> getFilms() { throw new UnsupportedOperationException(); }
 
     /**
+     * Returns a {@link java.util.List List} of {@link FilmRecord} — used by {@code @service} on a
+     * {@code [Film!]!} return to exercise the looser pair check that accepts either
+     * {@code Result<XRecord>} or {@code List<XRecord>} at the root.
+     */
+    public static java.util.List<FilmRecord> getFilmsAsList() { throw new UnsupportedOperationException(); }
+
+    /**
      * Returns {@link FilmRecord} but takes a {@code List<Row1<Integer>>} parameter — classifies
      * as {@link no.sikt.graphitron.rewrite.model.ParamSource.Sources}. Used to verify
      * Invariants §2 fires after the strict-return-type check passes.

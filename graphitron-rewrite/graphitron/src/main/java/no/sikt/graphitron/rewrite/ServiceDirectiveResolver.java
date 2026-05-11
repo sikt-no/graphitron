@@ -227,6 +227,10 @@ final class ServiceDirectiveResolver {
      *   <li>§1: Connection return type — root has no pagination context.</li>
      *   <li>§2: {@link ParamSource.Sources} parameter — root has no parent context to batch
      *       against.</li>
+     *   <li>§3: {@code TableBoundReturnType} + List — method must return either
+     *       {@code org.jooq.Result<XRecord>} or {@code java.util.List<XRecord>}. Single-
+     *       cardinality {@code TableBoundReturnType} is validated strictly in
+     *       {@link ServiceCatalog#reflectServiceMethod} via {@code expectedReturnType}.</li>
      * </ul>
      */
     private static String validateRootInvariants(ReturnTypeRef returnType, MethodRef method) {
@@ -235,6 +239,18 @@ final class ServiceDirectiveResolver {
         }
         if (method.params().stream().anyMatch(p -> p.source() instanceof ParamSource.Sources)) {
             return "@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters — the root has no parent context to batch against";
+        }
+        if (returnType instanceof ReturnTypeRef.TableBoundReturnType tb && returnType.wrapper().isList()) {
+            ClassName recordCls = tb.table().recordClass();
+            TypeName expectedResult = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), recordCls);
+            TypeName expectedList = ParameterizedTypeName.get(ClassName.get("java.util", "List"), recordCls);
+            TypeName actual = method.returnType();
+            if (!actual.equals(expectedResult) && !actual.equals(expectedList)) {
+                return "method '" + method.methodName() + "' in class '" + method.className()
+                    + "' must return '" + TypeNames.simple(expectedResult)
+                    + "' or '" + TypeNames.simple(expectedList)
+                    + "' to match the field's declared return type — got '" + TypeNames.simple(actual) + "'";
+            }
         }
         return null;
     }
@@ -246,7 +262,10 @@ final class ServiceDirectiveResolver {
      *
      * <ul>
      *   <li>{@code TableBoundReturnType} + Single → {@code <schemaPackage>.tables.records.<TableName>Record}</li>
-     *   <li>{@code TableBoundReturnType} + List → {@code org.jooq.Result<<RecordFqcn>>}</li>
+     *   <li>{@code TableBoundReturnType} + List → null (either {@code Result<XRecord>} or
+     *       {@code List<XRecord>} is acceptable; the choice is validated post-reflection in
+     *       {@link #validateRootInvariants} so the emitter can declare whichever shape the
+     *       developer chose).</li>
      *   <li>{@code ResultReturnType} (with non-null fqClassName) + Single → {@code <fqClassName>}</li>
      *   <li>{@code ResultReturnType} (with non-null fqClassName) + List → {@code java.util.List<<fqClassName>>}</li>
      *   <li>{@code ResultReturnType} (null fqClassName) → null</li>
@@ -266,9 +285,7 @@ final class ServiceDirectiveResolver {
         return switch (returnType) {
             case ReturnTypeRef.TableBoundReturnType tb -> {
                 ClassName recordCls = tb.table().recordClass();
-                yield isList
-                    ? ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), recordCls)
-                    : recordCls;
+                yield isList ? null : recordCls;
             }
             case ReturnTypeRef.ResultReturnType r -> {
                 // ResultReturnType with a backing class is the @record-payload shape. The service

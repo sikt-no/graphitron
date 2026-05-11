@@ -1040,10 +1040,13 @@ public class TypeFetcherGenerator {
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "service-catalog-strict-service-return",
-        reliesOn = "Declares the typed Result<XRecord> (or XRecord) return on the fetcher and "
-            + "lets graphql-java's column fetchers traverse it directly. A wider service "
-            + "return would force Object on the fetcher and lose static type safety. Note: the "
-            + "shared buildServiceFetcherCommon helper is also reached from "
+        reliesOn = "Declares the typed XRecord (Single arm) on the fetcher and lets graphql-java's "
+            + "column fetchers traverse it directly. A wider service return would force Object on "
+            + "the fetcher and lose static type safety. For the List arm the strict catalog check "
+            + "is skipped (developer may declare Result<XRecord> or List<XRecord>); the emitter "
+            + "reads MethodRef.returnType() to declare whichever shape the developer chose, with "
+            + "the looser pair validated in ServiceDirectiveResolver.validateRootInvariants §3. "
+            + "Note: the shared buildServiceFetcherCommon helper is also reached from "
             + "buildQueryServiceRecordFetcher, whose PojoResultType / ScalarReturnType paths "
             + "do not depend on this guarantee — annotating the helper would overclaim.")
     private static MethodSpec buildQueryServiceTableFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryServiceTableField qstf,
@@ -1051,9 +1054,11 @@ public class TypeFetcherGenerator {
         var tableRef = qstf.returnType().table();
         var recordClass = tableRef.recordClass();
         boolean isList = qstf.returnType().wrapper().isList();
-        TypeName returnType = isList
-            ? ParameterizedTypeName.get(RESULT, recordClass)
-            : recordClass;
+        // For List cardinality, the developer's declared return type is either Result<XRecord>
+        // or List<XRecord> (validated in ServiceDirectiveResolver.validateRootInvariants §3);
+        // declare the local with whichever shape the developer chose so the generated
+        // assignment compiles. graphql-java accepts either as a list value.
+        TypeName returnType = isList ? qstf.method().returnType() : recordClass;
         return buildServiceFetcherCommon(ctx, qstf.name(), qstf.method(), qstf.parentTypeName(),
             returnType, qstf.errorChannel(), qstf.resultAssembly(), outputPackage);
     }
@@ -1109,18 +1114,18 @@ public class TypeFetcherGenerator {
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "service-catalog-strict-service-return",
-        reliesOn = "Declares the typed Result<XRecord> (or XRecord) return on the fetcher and "
-            + "lets graphql-java's column fetchers traverse it directly. Inherits the same "
-            + "service-catalog strictness as buildQueryServiceTableFetcher; mutation services "
-            + "share the same MethodRef strictness path through ServiceCatalog.reflectServiceMethod.")
+        reliesOn = "Inherits the same strictness policy as buildQueryServiceTableFetcher: typed "
+            + "XRecord (Single arm) via the catalog's strict check, and the Result<XRecord>-or-"
+            + "List<XRecord> pair (List arm) via ServiceDirectiveResolver.validateRootInvariants §3; "
+            + "mutation services share the same MethodRef strictness path through "
+            + "ServiceCatalog.reflectServiceMethod.")
     private static MethodSpec buildMutationServiceTableFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationServiceTableField mstf,
                                                                 String outputPackage) {
         var tableRef = mstf.returnType().table();
         var recordClass = tableRef.recordClass();
         boolean isList = mstf.returnType().wrapper().isList();
-        TypeName returnType = isList
-            ? ParameterizedTypeName.get(RESULT, recordClass)
-            : recordClass;
+        // See buildQueryServiceTableFetcher for the List-cardinality policy.
+        TypeName returnType = isList ? mstf.method().returnType() : recordClass;
         return buildServiceFetcherCommon(ctx, mstf.name(), mstf.method(), mstf.parentTypeName(),
             returnType, mstf.errorChannel(), mstf.resultAssembly(), outputPackage);
     }

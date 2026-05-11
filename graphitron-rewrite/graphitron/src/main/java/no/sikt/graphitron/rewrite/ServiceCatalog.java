@@ -159,8 +159,11 @@ class ServiceCatalog {
         key = "service-catalog-strict-service-return",
         description = "The strict TypeName.equals arm rejects developer @service methods whose "
             + "parameterised return type doesn't match the expected record class for the field's "
-            + "@table-bound return type. Lets the emitter declare a typed Result<XRecord> "
-            + "(or XRecord) return rather than Object.")
+            + "@table-bound return type. Lets the emitter declare a typed XRecord return rather "
+            + "than Object. Caller-side note: for the List arm of @table-bound returns the caller "
+            + "passes null and validates the wider Result<XRecord>-or-List<XRecord> pair post-"
+            + "reflection (ServiceDirectiveResolver.validateRootInvariants §3), so the emitter "
+            + "can declare whichever shape the developer chose by reading MethodRef.returnType().")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "service-catalog-instance-service-holder-shape",
         description = "The InstanceWithDslHolder arm rejects abstract / interface / no-(DSLContext)"
