@@ -294,6 +294,20 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void films_languageName_resolvesViaScalarReference() {
+        // R42 ColumnReferenceField execution-tier fixture: Direct + FK-only single-hop scalar
+        // @reference. TypeClassGenerator.$fields() projects an aliased correlated subquery
+        // (SELECT language.NAME FROM language WHERE language.LANGUAGE_ID = film.LANGUAGE_ID LIMIT 1);
+        // FetcherEmitter wires a ColumnFetcher(DSL.field("languageName")) that reads the alias
+        // off the result Record at request time. All seeded films map to language_id=1 ("English").
+        // The Sakila language.name column is char(20), so PostgreSQL pads — strip before compare.
+        Map<String, Object> data = execute("{ films { title languageName } }");
+        var films = assertThat(data).extractingByKey("films", as(list(Map.class))).hasSize(5);
+        films.extracting(f -> ((String) f.get("languageName")).strip()).containsOnly("English");
+        films.extracting(f -> f.get("title")).doesNotContainNull();
+    }
+
+    @Test
     void films_isEnglish_resolvesViaExternalFieldExpression() {
         // R48 ComputedField execution-tier fixture: @externalField(reference: ...) inlines
         // FilmExtensions.isEnglish(table) (Field<Boolean>(LANGUAGE_ID = 1)) into Film.$fields().

@@ -6,6 +6,9 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
+import no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnReferenceField;
+import no.sikt.graphitron.rewrite.model.HelperRef;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -64,17 +67,19 @@ class NestingFieldValidationTest {
                 List.of()),
             List.of("Field 'Film.tags': list cardinality on a plain-object nesting field is not supported")),
 
-        STUBBED_NESTED_LEAF_ROLLS_UP("a stubbed variant (ColumnReferenceField) at nested depth surfaces the stubbed error at the nested leaf",
+        STUBBED_NESTED_LEAF_ROLLS_UP("a stubbed variant (CompositeColumnReferenceField) at nested depth surfaces the stubbed error at the nested leaf",
             new NestingField("Film", "details", null,
                 new ReturnTypeRef.TableBoundReturnType("FilmDetails",
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     new FieldWrapper.Single(true)),
-                List.of(new ColumnReferenceField("FilmDetails", "languageName", null, "languageName",
-                    new ColumnRef("NAME", "", ""),
+                List.of(new CompositeColumnReferenceField("FilmDetails", "languageRef", null,
+                    List.of(new ColumnRef("ID_1", "", ""), new ColumnRef("ID_2", "", "")),
                     List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),
                         TestFixtures.joinTarget("language"), List.of(), null, "")),
-                    new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()))),
-            List.of(stubbedError("FilmDetails.languageName", ColumnReferenceField.class))),
+                    new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(
+                        new HelperRef.Encode(ClassName.bestGuess("com.example.NodeIds"), "encodeLanguage",
+                            List.of(new ColumnRef("ID_1", "java.lang.Integer", ""), new ColumnRef("ID_2", "java.lang.Integer", ""))))))),
+            List.of(stubbedError("FilmDetails.languageRef", CompositeColumnReferenceField.class))),
 
         STUBBED_NESTED_LEAF_INSIDE_NESTED_NESTING("stubbed variant inside a NestingField inside a NestingField → recursive walk surfaces it",
             new NestingField("Film", "details", null,
@@ -85,12 +90,14 @@ class NestingFieldValidationTest {
                     new ReturnTypeRef.TableBoundReturnType("FilmMeta",
                         TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                         new FieldWrapper.Single(true)),
-                    List.of(new ColumnReferenceField("FilmMeta", "languageName", null, "languageName",
-                        new ColumnRef("NAME", "", ""),
+                    List.of(new CompositeColumnReferenceField("FilmMeta", "languageRef", null,
+                        List.of(new ColumnRef("ID_1", "", ""), new ColumnRef("ID_2", "", "")),
                         List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),
                             TestFixtures.joinTarget("language"), List.of(), null, "")),
-                        new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()))))),
-            List.of(stubbedError("FilmMeta.languageName", ColumnReferenceField.class)));
+                        new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(
+                            new HelperRef.Encode(ClassName.bestGuess("com.example.NodeIds"), "encodeLanguage",
+                                List.of(new ColumnRef("ID_1", "java.lang.Integer", ""), new ColumnRef("ID_2", "java.lang.Integer", ""))))))))),
+            List.of(stubbedError("FilmMeta.languageRef", CompositeColumnReferenceField.class)));
 
         private final String description;
         private final GraphitronField field;

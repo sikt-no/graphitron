@@ -67,6 +67,14 @@ public class TypeClassGenerator {
             .map(f -> (ChildField.CompositeColumnField) f)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
+        var columnReferenceFields = schema.fieldsOf(typeName).stream()
+            .filter(f -> f instanceof ChildField.ColumnReferenceField)
+            .map(f -> (ChildField.ColumnReferenceField) f)
+            // Validator rejects NodeIdEncodeKeys and ConditionJoin shapes ahead of generation;
+            // only Direct + FK-only paths reach projection.
+            .filter(f -> f.compaction() instanceof no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct)
+            .sorted(Comparator.comparing(GraphitronField::name))
+            .toList();
         var tableFields = schema.fieldsOf(typeName).stream()
             .filter(f -> f instanceof ChildField.TableField)
             .map(f -> (ChildField.TableField) f)
@@ -94,7 +102,7 @@ public class TypeClassGenerator {
         var requiredProjectionColumns = collectSourceKeyColumns(schema.fieldsOf(typeName))
             .distinct()
             .toList();
-        return buildTypeSpec(typeName, type.table(), columnFields, compositeColumnFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage);
+        return buildTypeSpec(typeName, type.table(), columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage);
     }
 
     /**
@@ -111,6 +119,7 @@ public class TypeClassGenerator {
     static TypeSpec buildTypeSpec(String typeName, TableRef tableRef,
             List<ChildField.ColumnField> columnFields,
             List<ChildField.CompositeColumnField> compositeColumnFields,
+            List<ChildField.ColumnReferenceField> columnReferenceFields,
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
@@ -119,7 +128,7 @@ public class TypeClassGenerator {
             String outputPackage) {
         var builder = TypeSpec.classBuilder(typeName)
             .addModifiers(Modifier.PUBLIC)
-            .addMethod(build$FieldsMethod(tableRef, columnFields, compositeColumnFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage));
+            .addMethod(build$FieldsMethod(tableRef, columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage));
         // Helpers for inline LookupTableFields are hoisted onto this outer type class — including
         // ones nested inside NestingField sub-types, which don't get their own type class (plain
         // objects share the parent's table context). The generated switch arm calls the helper
@@ -168,6 +177,7 @@ public class TypeClassGenerator {
     private static MethodSpec build$FieldsMethod(TableRef tableRef,
             List<ChildField.ColumnField> columnFields,
             List<ChildField.CompositeColumnField> compositeColumnFields,
+            List<ChildField.ColumnReferenceField> columnReferenceFields,
             List<ChildField.TableField> tableFields,
             List<ChildField.LookupTableField> lookupTableFields,
             List<ChildField.NestingField> nestingFields,
@@ -193,6 +203,7 @@ public class TypeClassGenerator {
         var flat = new ArrayList<ChildField>();
         flat.addAll(columnFields);
         flat.addAll(compositeColumnFields);
+        flat.addAll(columnReferenceFields);
         flat.addAll(tableFields);
         flat.addAll(lookupTableFields);
         flat.addAll(nestingFields);
@@ -248,6 +259,11 @@ public class TypeClassGenerator {
                     for (var col : ccf.columns()) {
                         builder.addCode("            fields.add($L.$L);\n", tableArg, col.javaName());
                     }
+                    builder.addCode("        }\n");
+                }
+                case ChildField.ColumnReferenceField crf -> {
+                    builder.addCode("        case $S -> {\n", crf.name());
+                    builder.addCode("$L", InlineColumnReferenceFieldEmitter.buildSwitchArmBody(crf, tableArg, sf, outputPackage));
                     builder.addCode("        }\n");
                 }
                 case ChildField.TableField tf -> {

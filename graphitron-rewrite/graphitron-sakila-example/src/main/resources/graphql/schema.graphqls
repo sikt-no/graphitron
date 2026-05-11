@@ -581,6 +581,12 @@ type Film implements Node & Searchable @table(name: "film") @node {
     textRating:  String       @field(name: "TEXT_RATING")
     length:      Int          @field(name: "LENGTH")
     languageId:  Int          @field(name: "LANGUAGE_ID")
+    # R42 ColumnReferenceField fixture: Direct + FK-only single-hop scalar @reference.
+    # Projects Language.NAME via the film_language_id_fkey FK; classifier produces a
+    # ChildField.ColumnReferenceField with CallSiteCompaction.Direct, $fields emits a
+    # correlated subquery aliased "languageName", and FetcherEmitter wires a
+    # ColumnFetcher(DSL.field("languageName")) value at the registration site.
+    languageName: String @field(name: "NAME") @reference(path: [{key: "film_language_id_fkey"}])
     # R48 ComputedField fixture: @externalField with a resolved reference.
     # FilmExtensions.isEnglish returns Field<Boolean>(LANGUAGE_ID = 1); the
     # generator inlines the call into Film.$fields() aliased "isEnglish" and
