@@ -652,6 +652,26 @@ classifier-side producers (`FieldBuilder.deriveSplitQueryBatchKey`,
     `resolved.parentSourceKey()` directly. 1553 tests green; the three
     pre-existing `MultiSchemaQueryTest` failures unchanged.
 
+17. `SourceRowDirectiveResolver` inlines the resolver projections. `Resolved.Ok`
+    carries `(SourceKey, LoaderRegistration, joinPath, tbReturnType)` instead
+    of `(BatchKey.LifterKeyed, joinPath, tbReturnType)`. The leaf and path
+    derivation arms in `resolve` build `SourceKey(target=leafTable,
+    columns=expectedTuple, path=[hop]|steps, Wrap.Row, cardinality from
+    wrapper, SourceRowsCall(lifter))` + the `@sourceRow` constant
+    `LoaderRegistration(valueIsList, POSITIONAL_LIST, LOAD_ONE)` directly,
+    folding in the lifter arms of `SourceKeyResolver.resolveRecordParent` and
+    the constant `LoaderRegistrationResolver.resolve`. The consumer at
+    `FieldBuilder.classifyChildFieldOnRecordType`'s `@sourceRow` arm reads
+    `ok.sourceKey()` / `ok.loaderRegistration()` directly. Three classifier-
+    check keys re-shaped from BatchKey-permit identity to SourceKey shape:
+    `sourcerow-leafkey-batchkey-is-lifterleafkeyed` →
+    `sourcerow-leafkey-sourcerows-singlehop` (path-size invariant on
+    SourceRowsCall), `sourcerow-pathkey-batchkey-is-lifterpathkeyed` →
+    `sourcerow-pathkey-sourcerows-fkchain` (multi-step FK-chain invariant on
+    SourceRowsCall); the consumer-side `@DependsOnClassifierCheck` on
+    `GeneratorUtils.buildLifterRowKey` updates to match. 1553 tests green;
+    the three pre-existing `MultiSchemaQueryTest` failures unchanged.
+
 Still to land for Phase 3 completion:
 - **Producer site inlining**: `FieldBuilder` (`deriveSplitQueryBatchKey`,
   `deriveBatchKeyForResultType`, `resolveRecordParentBatchKey`,

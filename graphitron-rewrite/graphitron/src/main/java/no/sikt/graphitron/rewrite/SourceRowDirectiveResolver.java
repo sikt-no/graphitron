@@ -3,14 +3,15 @@ package no.sikt.graphitron.rewrite;
 import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.model.BatchKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LifterRef;
+import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.TypeNames;
 
@@ -34,7 +35,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
  * extracts a {@code RowN} value out of the parent DTO; this resolver classifies the
  * directive, reflects on the lifter method, derives the expected parent-side column tuple
  * from {@code @reference}'s first hop or the leaf target's PK, validates the arity / column-
- * class match, and produces the appropriate {@link BatchKey.LifterKeyed} permit together
+ * class match, and produces the {@link SourceKey} + {@link LoaderRegistration} pair together
  * with the {@link JoinStep} chain the rows-method emitter consumes.
  *
  * <p>Sibling of the directive / projection resolvers ({@link ServiceDirectiveResolver},
@@ -47,17 +48,14 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
  * <ul>
  *   <li>{@code sourcerow-classifies-as-record-table-field} — every successful
  *       {@code @sourceRow} resolution projects into {@code RecordTableField} or
- *       {@code RecordLookupTableField}, both of which narrow {@code batchKey()} to
- *       {@link BatchKey.RecordParentBatchKey} at the model level. The
- *       {@code SplitRowsMethodEmitter} prelude relies on this routing.</li>
- *   <li>{@code sourcerow-leafkey-batchkey-is-lifterleafkeyed} — on the no-{@code @reference}
- *       path, the produced {@link BatchKey.RecordParentBatchKey} is always
- *       {@link BatchKey.LifterLeafKeyed}.</li>
- *   <li>{@code sourcerow-pathkey-batchkey-is-lifterpathkeyed} — on the {@code @reference}-
- *       composed path, the produced {@link BatchKey.RecordParentBatchKey} is always
- *       {@link BatchKey.LifterPathKeyed}. The two checks together discharge the
- *       "{@code @sourceRow} produces a {@link BatchKey.LifterKeyed} permit, never anything
- *       else" guarantee that downstream consumers rely on for exhaustive routing.</li>
+ *       {@code RecordLookupTableField}; the produced {@link SourceKey}'s
+ *       {@link SourceKey.Reader} is always {@link SourceKey.Reader.SourceRowsCall}.</li>
+ *   <li>{@code sourcerow-leafkey-sourcerows-singlehop} — on the no-{@code @reference}
+ *       path, the produced {@link SourceKey}'s path is a single
+ *       {@link JoinStep.LiftedHop} (the leaf-PK shape).</li>
+ *   <li>{@code sourcerow-pathkey-sourcerows-fkchain} — on the {@code @reference}-composed
+ *       path, the produced {@link SourceKey}'s path is the resolved FK chain (one or more
+ *       {@link JoinStep.FkJoin}s) from the parent's lifter columns to the leaf table.</li>
  * </ul>
  *
  * <h2>Rejection messages</h2>
@@ -82,8 +80,8 @@ final class SourceRowDirectiveResolver {
      * Outcome of {@link #resolve}. Two terminal arms; the caller exhausts them with a switch.
      *
      * <ul>
-     *   <li>{@link Ok} — successful resolution, carrying the resolved
-     *       {@link BatchKey.LifterKeyed} permit, the {@link JoinStep} chain the rows-method
+     *   <li>{@link Ok} — successful resolution, carrying the resolved {@link SourceKey} +
+     *       {@link LoaderRegistration} pair, the {@link JoinStep} chain the rows-method
      *       emitter consumes, and the {@link ReturnTypeRef.TableBoundReturnType} for the
      *       field. {@code joinPath} is {@code [hop]} on the leaf-PK arm and the resolved
      *       {@link JoinStep.FkJoin} chain on the {@code @reference} arm.</li>
@@ -94,7 +92,8 @@ final class SourceRowDirectiveResolver {
      */
     sealed interface Resolved {
         record Ok(
-            BatchKey.LifterKeyed batchKey,
+            SourceKey sourceKey,
+            LoaderRegistration loaderRegistration,
             List<JoinStep> joinPath,
             ReturnTypeRef.TableBoundReturnType tbReturnType
         ) implements Resolved {}
@@ -116,22 +115,22 @@ final class SourceRowDirectiveResolver {
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "sourcerow-classifies-as-record-table-field",
         description = "A field carrying @sourceRow classifies as RecordTableField or "
-            + "RecordLookupTableField (never any other variant). The RecordParentBatchKey-typed "
-            + "call sites in GeneratorUtils.buildRecordParentKeyExtraction depend on this routing "
-            + "so the type system excludes @service-only BatchKey permits at the parameter type.")
+            + "RecordLookupTableField (never any other variant). The SourceKey-typed call sites "
+            + "in GeneratorUtils.buildRecordParentKeyExtraction depend on this routing so the "
+            + "type system excludes @service-only source paths at the parameter type.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "sourcerow-leafkey-batchkey-is-lifterleafkeyed",
-        description = "On the @sourceRow leaf-PK path (no @reference), the field's BatchKey is "
-            + "LifterLeafKeyed (and never LifterPathKeyed or any other RecordParentBatchKey "
-            + "permit). buildRecordParentKeyExtraction's exhaustive switch and the rows-method "
-            + "prelude rely on this so the type system carries the discrimination.")
+        key = "sourcerow-leafkey-sourcerows-singlehop",
+        description = "On the @sourceRow leaf-PK path (no @reference), the produced SourceKey "
+            + "has a single-element path of [JoinStep.LiftedHop] over the leaf table's PK; the "
+            + "reader is Reader.SourceRowsCall(lifter). buildRecordParentKeyExtraction's "
+            + "exhaustive switch and the rows-method prelude rely on this shape.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "sourcerow-pathkey-batchkey-is-lifterpathkeyed",
-        description = "On the @sourceRow + @reference path, the field's BatchKey is "
-            + "LifterPathKeyed with the resolved FK chain (and never LifterLeafKeyed or any "
-            + "other RecordParentBatchKey permit). buildRecordParentKeyExtraction's exhaustive "
-            + "switch and the rows-method prelude rely on this so the type system carries the "
-            + "discrimination.")
+        key = "sourcerow-pathkey-sourcerows-fkchain",
+        description = "On the @sourceRow + @reference path, the produced SourceKey has a "
+            + "multi-step path of resolved JoinStep.FkJoin entries from the parent's lifter "
+            + "columns to the leaf table; the reader is Reader.SourceRowsCall(lifter). "
+            + "buildRecordParentKeyExtraction's exhaustive switch and the rows-method prelude "
+            + "rely on this shape.")
     Resolved resolve(
             String parentTypeName,
             GraphQLFieldDefinition fieldDef,
@@ -348,8 +347,17 @@ final class SourceRowDirectiveResolver {
             }
         }
 
-        // 7. Construct the appropriate LifterKeyed permit.
+        // 7. Construct the SourceKey + LoaderRegistration pair. Wrap is always Row (the lifter
+        // contract emits a RowN<...> key), Reader is SourceRowsCall(lifter). Cardinality follows
+        // the field wrapper. LoaderRegistration is the @sourceRow constant
+        // (POSITIONAL_LIST + LOAD_ONE + valueIsList from wrapper).
         var lifterRef = new LifterRef(ClassName.get(lifterClass), lifterMethodName);
+        boolean isList = tbReturnType.wrapper().isList();
+        SourceKey.Cardinality cardinality = isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE;
+        LoaderRegistration loaderRegistration = new LoaderRegistration(
+            isList,
+            LoaderRegistration.Container.POSITIONAL_LIST,
+            LoaderRegistration.Dispatch.LOAD_ONE);
         return switch (derivation) {
             case Derivation.Leaf leaf -> {
                 String alias = fieldName + "_0";
@@ -357,12 +365,24 @@ final class SourceRowDirectiveResolver {
                     .map(JoinSlot.LifterSlot::new)
                     .toList();
                 var hop = new JoinStep.LiftedHop(leafTable, slots, alias);
-                var batchKey = new BatchKey.LifterLeafKeyed(hop, lifterRef);
-                yield new Resolved.Ok(batchKey, List.of(hop), tbReturnType);
+                SourceKey sourceKey = new SourceKey(
+                    leafTable,
+                    leaf.expectedTuple(),
+                    List.of(hop),
+                    new SourceKey.Wrap.Row(),
+                    cardinality,
+                    new SourceKey.Reader.SourceRowsCall(lifterRef));
+                yield new Resolved.Ok(sourceKey, loaderRegistration, List.of(hop), tbReturnType);
             }
             case Derivation.Path path -> {
-                var batchKey = new BatchKey.LifterPathKeyed(path.steps(), lifterRef);
-                yield new Resolved.Ok(batchKey, path.steps(), tbReturnType);
+                SourceKey sourceKey = new SourceKey(
+                    leafTable,
+                    path.expectedTuple(),
+                    path.steps(),
+                    new SourceKey.Wrap.Row(),
+                    cardinality,
+                    new SourceKey.Reader.SourceRowsCall(lifterRef));
+                yield new Resolved.Ok(sourceKey, loaderRegistration, path.steps(), tbReturnType);
             }
         };
     }

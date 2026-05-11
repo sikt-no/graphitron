@@ -232,7 +232,7 @@ class GeneratorUtils {
     }
 
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "sourcerow-leafkey-batchkey-is-lifterleafkeyed",
+        key = "sourcerow-leafkey-sourcerows-singlehop",
         reliesOn = "The exhaustive sealed switch in buildRecordParentKeyExtraction routes "
             + "Reader.SourceRowsCall (covering both leaf-PK and @reference-composed shapes) here. "
             + "SourceRowDirectiveResolver guarantees the lifter arms are reached only when the "
@@ -240,7 +240,7 @@ class GeneratorUtils {
             + "backingClassOf and the (BackingClass) env.getSource() coercion below are safe "
             + "without a null check on the backing class.")
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "sourcerow-pathkey-batchkey-is-lifterpathkeyed",
+        key = "sourcerow-pathkey-sourcerows-fkchain",
         reliesOn = "Same Reader.SourceRowsCall arm covers the @reference-composed lifter shape; "
             + "SourceRowDirectiveResolver constructs the path-keyed lifter projection only on "
             + "PojoResultType / JavaRecordType with a non-null fqClassName.")
