@@ -5,7 +5,7 @@ status: Spec
 bucket: cleanup
 priority: 6
 theme: model-cleanup
-depends-on: [emit-input-records, synthesize-payload-carrier]
+depends-on: [emit-input-records]
 ---
 
 # Deprecate @record (narrow scope; defer polymorphic-return case)

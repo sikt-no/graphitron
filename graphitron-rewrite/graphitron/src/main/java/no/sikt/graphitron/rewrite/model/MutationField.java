@@ -119,7 +119,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * R75 / Phase 1 — a record-returning DML mutation: the schema field carries
      * {@code @mutation(typeName: INSERT|UPDATE|UPSERT)}, takes a {@code @table} input, and
      * returns a payload carrier (an SDL Object the
-     * {@link no.sikt.graphitron.rewrite.BuildContext#unwrapPassthroughPayload tryResolveSingleRecordCarrier}
+     * {@link no.sikt.graphitron.rewrite.BuildContext#tryResolveSingleRecordCarrier}
      * trigger resolves to {@code Ok}). Sibling to {@link DmlTableField}: the latter covers the
      * "direct @table return" shape ({@code createFilm: Film}), this covers the "payload wrap"
      * shape ({@code createFilm: CreateFilmPayload}). The carrier's data field is classified
