@@ -112,10 +112,16 @@ each phase ships as its own implementation cycle.
 
 ## Foundation: `SourceKey` via R38
 
-R75 depends on R38, which establishes the `SourceKey` / `Reader` /
+R75 builds on R38, which established the `SourceKey` / `Reader` /
 `LoaderRegistration` vocabulary as the source-side dispatch axis for
-DataLoader-backed (and more generally, source-bearing) fields. R75's
-contribution to that taxonomy is one new `Reader` permit:
+DataLoader-backed (and more generally, source-bearing) fields. R38 Phase 3
+has shipped: `BatchKey` is gone, `BatchKeyField` permits store `sourceKey`
++ `loaderRegistration` as record components, field-classifier producers
+build the pair inline at field-construction time, and `Reader` is a sealed
+inner interface on `SourceKey` with five permits (`ColumnRead`,
+`AccessorCall`, `SourceRowsCall`, `ServiceTableRecord`,
+`ServiceUntypedRecord`). R75's contribution to that taxonomy is one new
+`Reader` permit added on the same sealed interface:
 
 ```java
 record ResultRowWalk() implements Reader {}
@@ -133,22 +139,39 @@ The data field's `SourceKey` for the rooted DML payload case:
 - `reader == ResultRowWalk` — distinguishes the rooted case from
   `ColumnRead` / `AccessorCall` / `SourceRowsCall` etc.
 - `path == empty` — target-aligned. Target is the DML's input table.
-- `wrap == RECORD` — upstream DML emit returns `Record_N_<...>` rows.
+- `wrap` is `Wrap.Record` — upstream DML emit returns `Record_N_<...>` rows.
+  (`SourceKey.Wrap` was an enum in R38's draft and flipped to a sealed
+  interface during Phase 3; the rooted DML case lands on the `Record` arm.)
 - `cardinality` matches the mutation's input cardinality (single
   `TableInputArg` → `ONE`; list → `MANY`).
-- `columns` = the input table's PK columns.
+- `columns` = the input table's PK columns
+  (`tableInputArg.inputTable().primaryKeyColumns()` via `TableRef`).
 
 `SourceKey`'s compact constructor gains one cross-axis invariant for
 `ResultRowWalk`: cardinality matches the upstream Result's row count
-(`Record_N_<...>` → `ONE`, `Result<Record_N_<...>>` → `MANY`). This
-declaration is the load-bearing classifier check that pins the data-field's
-target table to the DML's input table. Mismatch (e.g. SDL author writing
+(`Record_N_<...>` → `ONE`, `Result<Record_N_<...>>` → `MANY`). This sits
+alongside the three `source-key.*` invariants R38 ships
+(`source-rows-call-wraps-row`, `accessor-call-wraps-record`,
+`service-table-record-target-aligned-empty-path`) and is the load-bearing
+classifier check that pins the data-field's target table to the DML's
+input table. Mismatch (e.g. SDL author writing
 `Mutation.x(in: FilmInput!): ActorPayload`) is rejected at classification
 time with a per-mismatch message.
 
-R75 ships against an R38 in any phase ≥ Phase 1 — the additive `SourceKey`
-foundation is enough; R38's full migration (Phases 2 and 3) doesn't gate
-R75. R75's emit consumes `SourceKey` directly, which Phase 1 of R38 supports.
+### `RecordTableField.loaderRegistration` widening
+
+R38's `ChildField.RecordTableField` permit declares
+`LoaderRegistration loaderRegistration` as a non-null record component;
+every existing producer pairs a `SourceKey` with a `LoaderRegistration`
+because every existing arm is DataLoader-batched. R75's rooted DML payload
+case introduces the first `RecordTableField` instance with no DataLoader,
+so the component widens to nullable (or `Optional<LoaderRegistration>`,
+implementer's call) and consumers that dispatch on `loaderRegistration`
+admit a "no-loader, plain DataFetcher" arm gated on
+`sourceKey.reader() instanceof Reader.ResultRowWalk`. The widening is
+strictly additive — every existing producer continues to supply a
+`LoaderRegistration` and every existing consumer goes down the
+DataLoader-batched path as before.
 
 ## Phase 1 conventions
 
@@ -287,14 +310,20 @@ The schema-builder's per-type pass classifies the data field as
 - `joinPath`: empty — rooted; rows filter by PK directly.
 - `filters` / `orderBy` / `pagination`: empty / null. Phase 1's trigger
   forbids arguments and directives on the data field.
-- `sourceKey`: produced by R38's `SourceKeyResolver` from the upstream
-  `MutationDmlRecordField`'s `tableInputArg`:
-  - `reader = ResultRowWalk()`
-  - `path = []`
-  - `wrap = RECORD`
-  - `cardinality = ONE` if `tableInputArg` is single, else `MANY`
+- `sourceKey`: constructed inline by the `FieldBuilder` producer from the
+  upstream `MutationDmlRecordField`'s `tableInputArg` (R38 Phase 3 deleted
+  the `SourceKeyResolver` indirection; producers `new SourceKey(...)`
+  directly at field-construction time, mirroring
+  `FieldBuilder.buildServiceTableSourceKey` and siblings):
+  - `target = tableInputArg.inputTable()`
   - `columns = tableInputArg.inputTable().primaryKeyColumns()`
-- No `loaderRegistration` — rooted plain `DataFetcher`.
+  - `path = List.of()`
+  - `wrap = new SourceKey.Wrap.Record()`
+  - `cardinality = tableInputArg.wrapper().isList() ? Cardinality.MANY
+    : Cardinality.ONE`
+  - `reader = new SourceKey.Reader.ResultRowWalk()`
+- `loaderRegistration = null` — rooted plain `DataFetcher`, per the
+  widening described in the Foundation section.
 
 The mutation is invoked exactly once per request and its result is the
 singleton parent of the payload's traversal; the data field is fetched once.
@@ -407,9 +436,10 @@ from `PassthroughPayloadPipelineTest` to align with the directive rename):
   - Mutation field classifies as `MutationDmlRecordField` with the
     expected `kind` for payload returns.
   - Data field classifies as `ChildField.RecordTableField` with the
-    expected `SourceKey` shape: `reader == ResultRowWalk`, `path` empty,
-    `wrap == RECORD`, `cardinality` matching input arg, `columns ==
-    inputTable.primaryKeyColumns()`.
+    expected `SourceKey` shape: `reader instanceof Reader.ResultRowWalk`,
+    `path` empty, `wrap instanceof Wrap.Record`, `cardinality` matching
+    input arg, `columns == inputTable.primaryKeyColumns()`, and
+    `loaderRegistration == null` (the no-loader rooted arm).
 - DELETE-with-payload return rejects with the per-mismatch message.
 - Trigger rejections (multi-field, scalar element, interface element,
   graphitron-domain directives on the data field, `@table`-typed payload,
@@ -737,9 +767,10 @@ new `PayloadServiceTest` parameterising over `(elementKind, wrapper)`:
   class on disk for the payload.
 - `PayloadPipelineTest`'s admission cases pass for INSERT / UPDATE /
   UPSERT; DELETE-with-payload rejects with the per-mismatch message. The
-  data-field's `SourceKey` shape is asserted (`reader == ResultRowWalk`,
-  `path` empty, `wrap == RECORD`, `cardinality` matching input arg,
-  `columns == inputTable.primaryKeyColumns()`).
+  data-field's `SourceKey` shape is asserted (`reader instanceof
+  Reader.ResultRowWalk`, `path` empty, `wrap instanceof Wrap.Record`,
+  `cardinality` matching input arg, `columns ==
+  inputTable.primaryKeyColumns()`, `loaderRegistration == null`).
 - `PayloadDmlTest`'s execution-tier driver passes against the sakila
   testcontainer for INSERT / UPDATE / UPSERT, verifying the two-step emit
   (DML in transaction + follow-up SELECT, both halves typed via
