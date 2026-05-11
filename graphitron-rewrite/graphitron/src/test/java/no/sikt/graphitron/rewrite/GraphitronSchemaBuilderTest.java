@@ -3018,16 +3018,14 @@ class GraphitronSchemaBuilderTest {
                     .contains("@lookupKey is only supported on scalar column fields");
             }),
 
-        LOOKUP_KEY_ON_NODEID_INPUT_FIELD_REJECTED(
-            "R131: @lookupKey on a same-table singular `id: ID! @nodeId` input field (single-PK"
-                + " NodeType) → classify-time error. Pre-R131 the singular @nodeId branch"
-                + " produced a Reference variant and the EnumMappingResolver scalar-column-fields"
-                + " gate rejected the combination structurally. Post-R131 the same-table arm"
-                + " produces a ColumnField, which would otherwise pass that gate and silently"
-                + " bind the base64-encoded wire value against the raw column"
-                + " (deriveExtraction overwrites the resolver-supplied decode method). The"
-                + " explicit @nodeId guard preserves pre-R131 rejection semantics with a focused"
-                + " diagnostic.",
+        LOOKUP_KEY_ON_NODEID_INPUT_FIELD_ADMITTED(
+            "R130: @lookupKey on a same-table singular `id: ID! @nodeId` input field (single-PK"
+                + " NodeType) → admitted via the extraction-propagation path. The carrier"
+                + " classifies as InputField.ColumnField with NodeIdDecodeKeys extraction;"
+                + " buildLookupBindings reads cf.extraction() directly so the resolver-supplied"
+                + " decode method survives the binding-build (R130 fix at source for the bug"
+                + " R131's follow-up guard papered over). The MapGroup carries one MapBinding"
+                + " whose extraction is the carrier's NodeIdDecodeKeys.",
             """
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId }
             input FilmLookupKey @table(name: "film") {
@@ -3038,20 +3036,26 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) schema.field("Query", "filmByKey");
-                assertThat(f.reason())
-                    .contains("@lookupKey on an @nodeId-decoded input field is not supported");
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                    schema.field("Query", "filmByKey");
+                var mapping = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping)
+                    f.lookupMapping();
+                assertThat(mapping.args()).hasSize(1);
+                var arg = mapping.args().get(0);
+                assertThat(arg).isInstanceOf(
+                    no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.MapInput.class);
+                var mi = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.MapInput) arg;
+                assertThat(mi.bindings()).hasSize(1);
+                assertThat(mi.bindings().get(0).extraction())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.NodeIdDecodeKeys.class);
             }),
 
-        LOOKUP_KEY_ON_NODEID_INPUT_FIELD_REJECTED_COMPOSITE_PK(
-            "R131: @lookupKey on a same-table singular `id: ID! @nodeId` input field"
-                + " (composite-PK NodeType) → classify-time error with the same focused"
-                + " diagnostic as the single-PK case. Pre-R131 and post-R131 alike, composite-PK"
-                + " carriers fail the scalar-ColumnField gate (CompositeColumnField isn't an"
-                + " InputField.ColumnField), but pre-cleanup that produced the stale"
-                + " 'only supported on scalar column fields' message even though the field IS"
-                + " a scalar-shape column field. The SDL-level @nodeId guard surfaces the same"
-                + " actionable hint across single- and composite-PK arities.",
+        LOOKUP_KEY_ON_NODEID_INPUT_FIELD_ADMITTED_COMPOSITE_PK(
+            "R130: @lookupKey on a same-table singular `id: ID! @nodeId` input field"
+                + " (composite-PK NodeType) → admitted as a DecodedRecordGroup, projected to"
+                + " a LookupArg.DecodedRecord at the lookup-mapping layer. The"
+                + " per-NodeType decode runs once at the arg layer and the N record slots"
+                + " bind positionally to the target PK columns.",
             """
             type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
             input FilmActorLookupKey @table(name: "film_actor") {
@@ -3062,9 +3066,18 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) schema.field("Query", "filmActorByKey");
-                assertThat(f.reason())
-                    .contains("@lookupKey on an @nodeId-decoded input field is not supported");
+                var f = (no.sikt.graphitron.rewrite.model.QueryField.QueryLookupTableField)
+                    schema.field("Query", "filmActorByKey");
+                var mapping = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping)
+                    f.lookupMapping();
+                assertThat(mapping.args()).hasSize(1);
+                var arg = mapping.args().get(0);
+                assertThat(arg).isInstanceOf(
+                    no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord.class);
+                var dr = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.DecodedRecord) arg;
+                assertThat(dr.bindings()).hasSize(2);
+                assertThat(dr.bindings().get(0).index()).isZero();
+                assertThat(dr.bindings().get(1).index()).isOne();
             }),
 
         // ===== Phase 4: @condition on INPUT_FIELD_DEFINITION (condition emission via projectFilters) =====
@@ -5236,7 +5249,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilm");
                 assertThat(f.tableInputArg().fieldBindings()).hasSize(1);
-                assertThat(f.tableInputArg().fieldBindings().get(0).targetColumn().sqlName()).isEqualTo("film_id");
+                assertThat(f.tableInputArg().fieldBindings().get(0).targetColumns().get(0).sqlName()).isEqualTo("film_id");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
         },
@@ -5301,8 +5314,10 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationUpdateTableField) schema.field("Mutation", "updateFilmActor");
-                assertThat(f.tableInputArg().fieldBindings())
-                    .extracting(b -> b.targetColumn().sqlName())
+                assertThat(f.tableInputArg().fieldBindings().stream()
+                        .flatMap(g -> g.targetColumns().stream())
+                        .map(c -> c.sqlName())
+                        .toList())
                     .containsExactlyInAnyOrder("actor_id", "film_id");
             }),
 
@@ -5319,8 +5334,10 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilmActor");
-                assertThat(f.tableInputArg().fieldBindings())
-                    .extracting(b -> b.targetColumn().sqlName())
+                assertThat(f.tableInputArg().fieldBindings().stream()
+                        .flatMap(g -> g.targetColumns().stream())
+                        .map(c -> c.sqlName())
+                        .toList())
                     .containsExactlyInAnyOrder("actor_id", "film_id");
             }),
 

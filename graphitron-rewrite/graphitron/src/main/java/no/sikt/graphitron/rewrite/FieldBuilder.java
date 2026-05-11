@@ -43,6 +43,7 @@ import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.PayloadAssembly;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
+import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -809,7 +810,7 @@ class FieldBuilder {
         // plain-input path so lookup-key search still runs and produces a focused error.
         var resolvedType = ctx.types.get(typeName);
         if (resolvedType instanceof GraphitronType.TableInputType tit) {
-            List<InputColumnBinding.MapBinding> bindings = enumMappingResolver.buildLookupBindings(tit, arg, fieldDef, name, errors);
+            List<InputColumnBindingGroup> bindings = enumMappingResolver.buildLookupBindings(tit, arg, fieldDef, name, errors);
             return ArgumentRef.InputTypeArg.TableInputArg.of(
                 name, typeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
         }
@@ -1154,9 +1155,16 @@ class FieldBuilder {
                     // Implicit predicates are suppressed when any ancestor carries override:true.
                     boolean enclosingOverride = fieldOverride
                         || tia.argCondition().map(ArgConditionRef::override).orElse(false);
-                    var lookupBoundNames = tia.fieldBindings().stream()
-                        .map(InputColumnBinding.MapBinding::fieldName)
-                        .collect(Collectors.toUnmodifiableSet());
+                    var lookupBoundNames = new java.util.HashSet<String>();
+                    for (var g : tia.fieldBindings()) {
+                        switch (g) {
+                            case InputColumnBindingGroup.MapGroup mg -> {
+                                for (var b : mg.bindings()) lookupBoundNames.add(b.fieldName());
+                            }
+                            case InputColumnBindingGroup.DecodedRecordGroup drg ->
+                                lookupBoundNames.add(drg.sourceFieldName());
+                        }
+                    }
                     var implicitParams = new ArrayList<BodyParam>();
                     walkInputFieldConditions(tia.fields(), tia.name(), List.of(),
                         enclosingOverride, lookupBoundNames, implicitParams, argConditions);

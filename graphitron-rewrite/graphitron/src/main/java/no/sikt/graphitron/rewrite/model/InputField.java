@@ -18,7 +18,26 @@ import java.util.Optional;
 public sealed interface InputField extends GraphitronField
         permits InputField.ColumnField, InputField.ColumnReferenceField,
                 InputField.CompositeColumnField, InputField.CompositeColumnReferenceField,
-                InputField.NestingField {
+                InputField.NestingField,
+                InputField.LookupKeyField, InputField.SetField {
+
+    /**
+     * Carriers admissible as {@code @lookupKey}-bearing input fields on a {@code TableInputArg}.
+     * Sibling sealed root to {@link SetField}: both permit the R130 admitted-carrier set
+     * (post-R131 same-table carriers); reference carriers ({@link ColumnReferenceField} /
+     * {@link CompositeColumnReferenceField}) and {@link NestingField} stay outside the permits
+     * set. Re-admission of reference carriers is R24-shaped follow-on; nested-input is R128's
+     * compound-entity-mutations territory.
+     */
+    sealed interface LookupKeyField extends InputField permits ColumnField, CompositeColumnField {}
+
+    /**
+     * Carriers admissible as non-{@code @lookupKey} set-side input fields on a {@code TableInputArg}
+     * (the INSERT column-list / UPDATE SET / UPSERT INSERT-arm dispatch surface).
+     * Permits {@link ColumnField} and {@link CompositeColumnField}; same R130 admitted-carrier
+     * set as {@link LookupKeyField}.
+     */
+    sealed interface SetField extends InputField permits ColumnField, CompositeColumnField {}
 
     /**
      * A field in a {@code @table}-annotated input type, successfully resolved to a SQL column
@@ -47,7 +66,7 @@ public sealed interface InputField extends GraphitronField
         ColumnRef column,
         Optional<ArgConditionRef> condition,
         CallSiteExtraction extraction
-    ) implements InputField {}
+    ) implements InputField, LookupKeyField, SetField {}
 
     /**
      * A field in a {@code @table}-annotated input type that uses {@code @reference} to reach a
@@ -109,7 +128,7 @@ public sealed interface InputField extends GraphitronField
         List<ColumnRef> columns,
         Optional<ArgConditionRef> condition,
         CallSiteExtraction.NodeIdDecodeKeys extraction
-    ) implements InputField {
+    ) implements InputField, LookupKeyField, SetField {
 
         public CompositeColumnField {
             columns = List.copyOf(columns);

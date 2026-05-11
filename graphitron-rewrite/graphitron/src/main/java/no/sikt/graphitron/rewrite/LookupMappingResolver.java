@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
+import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -75,9 +76,25 @@ final class LookupMappingResolver {
                         cca.name(), cca.list(), nodeIdExtraction, bindings));
                 }
                 case ArgumentRef.InputTypeArg.TableInputArg tia -> {
-                    if (!tia.fieldBindings().isEmpty()) {
+                    // R130: the TIA's groups may be a mix of MapGroup (scalar @lookupKey on
+                    // ColumnField, possibly NodeIdDecodeKeys-extracted) and DecodedRecordGroup
+                    // (composite-PK @lookupKey on CompositeColumnField). MapGroups flatten into
+                    // one MapInput rooted at the outer arg name (slot order = group order, then
+                    // binding order within each group); each DecodedRecordGroup becomes its own
+                    // DecodedRecord LookupArg sharing the same outer arg name and list flag.
+                    var mapBindings = new ArrayList<InputColumnBinding.MapBinding>();
+                    for (var g : tia.fieldBindings()) {
+                        switch (g) {
+                            case InputColumnBindingGroup.MapGroup mg ->
+                                mapBindings.addAll(mg.bindings());
+                            case InputColumnBindingGroup.DecodedRecordGroup drg ->
+                                args.add(new ColumnMapping.LookupArg.DecodedRecord(
+                                    tia.name(), tia.list(), drg.extraction(), drg.bindings()));
+                        }
+                    }
+                    if (!mapBindings.isEmpty()) {
                         args.add(new ColumnMapping.LookupArg.MapInput(
-                            tia.name(), tia.list(), tia.fieldBindings()));
+                            tia.name(), tia.list(), mapBindings));
                     }
                 }
                 default -> {}
