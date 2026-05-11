@@ -247,7 +247,7 @@ Triage (Covered / Trivial gap / RC-blocker / Defer) and gap-closure live in a fo
 | GraphitronSchemaBuilderTest, test.internal.GeneratorDeterminismTest
 | R109
 | `PassthroughDataField`
-| R75: a passthrough payload's data field — the unique `@table`-element field on
+| A passthrough payload's data field — the unique `@table`-element field on
 | 31
 | pipeline
 | yes

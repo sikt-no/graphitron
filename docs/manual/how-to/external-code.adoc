@@ -113,7 +113,7 @@ The slot names are historical (each directive was named before the shape was uni
 
 == Constraints
 
-* `className:` must be a fully-qualified class name. Package-prefix short-name resolution is on the roadmap as `R47` (Backlog) but is not yet implemented; spell out the FQCN for now.
+* `className:` must be a fully-qualified class name. Package-prefix short-name resolution is not implemented; spell out the FQCN for now.
 * The carrying artifact must be on the *plugin's* classpath (the `<plugin>...<dependencies>` block), not the module's outer `<dependencies>`. The generator runs at build time and only sees what the plugin can load.
 * Reflection runs at code-generation time, not at server startup. A typo in `className:` or `method:` fails the `mvn install` that builds the consumer module, not at request time.
 * `argMapping:` is `"javaParam: graphqlArg"`, not `"graphqlArg: javaParam"`. The Java side comes first because that is what the reflected method signature reads.

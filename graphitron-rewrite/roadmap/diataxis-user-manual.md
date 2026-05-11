@@ -1,7 +1,7 @@
 ---
 id: R68
 title: "Diataxis user manual: absorb legacy README into the docs site"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 15
 theme: docs
@@ -730,6 +730,40 @@ upstream Javadoc edit plus a sibling regeneration in the fourth). No
 other phase regressed; rework is scoped to the user-facing-prose
 sweep. Once the four leaks are cleared, the next In Review handoff is
 mechanical.
+
+### Rework pass — shipped
+
+. `docs/manual/how-to/external-code.adoc:116`: "on the roadmap as
+  `R47` (Backlog)" struck; the bullet now reads "Package-prefix
+  short-name resolution is not implemented; spell out the FQCN for
+  now." The user-actionable half of the sentence stands on its own
+  without naming a roadmap item.
+. `docs/manual/how-to/multi-hop-nodeid-filter.adoc:15`: "is not what
+  R114 ships" replaced with "is not what the multi-hop `@nodeId` lift
+  covers". Scope is now described by what the feature does, not by
+  the plan that built it.
+. `docs/manual/how-to/result-types.adoc:142`: the "until R61" bullet
+  dropped in full. The historical aside named an internal validator
+  invariant number plus a roadmap ID; neither offered user value.
+. `docs/manual/_generated/supported-schema-shapes.adoc:42`: fixed at
+  source. The leading `R75:` prefix on `PassthroughDataField`'s
+  Javadoc in `graphitron-rewrite/graphitron/src/main/java/no/sikt/
+  graphitron/rewrite/model/ChildField.java:361` is gone; the
+  description now reads "A passthrough payload's data field — …".
+  Both the migration fragment (consumer-facing) and
+  `roadmap/inference-axis-coverage.adoc` (contributor-facing) are
+  regenerated and re-committed; the source class is the only place
+  the prefix lived, so no other leaf surface is affected.
+
+Sweep scoped to user-facing prose, as the rework note framed it. Build
+green: full `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` on
+Java 25 with all 312 + 25 tests passing; the five drift-protection
+verifiers (`DirectiveDocCoverageTest`, `MojoDocCoverageTest`,
+`DiagnosticsDocCoverageTest`, `DeprecationsDocCoverageTest`,
+`TutorialSmokeTest`) all green. `grep -rn 'R[0-9]\{1,3\}\b'
+docs/manual/` returns nothing outside `index-directive` (the `@index`
+directive page filename) and `planSlug:` mentions (which are a
+runtime-emitted diagnostic field name, not a roadmap reference).
 
 ## Out of scope
 

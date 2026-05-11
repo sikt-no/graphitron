@@ -39,7 +39,7 @@ Supported schema shapes are enumerated below by output sealed-leaf class. Each s
 * *LookupTableField*
 * *NestingField*
 * *ParticipantColumnReferenceField*: A scalar field on a `GraphitronType.TableInterfaceType` participant that
-* *PassthroughDataField*: R75: a passthrough payload's data field — the unique `@table`-element field on
+* *PassthroughDataField*: A passthrough payload's data field — the unique `@table`-element field on
 * *PropertyField*
 * *RecordField*
 * *RecordLookupTableField*
