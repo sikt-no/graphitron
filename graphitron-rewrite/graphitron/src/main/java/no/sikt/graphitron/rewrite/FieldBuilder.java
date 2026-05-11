@@ -561,7 +561,7 @@ class FieldBuilder {
             boolean hasSplitQuery = fieldDef.hasAppliedDirective(DIR_SPLIT_QUERY);
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             boolean isList = returnType.wrapper().isList();
-            var parentBatchKey = deriveSplitQueryBatchKey(parentTableType.table(), referencePath.elements(), isList);
+            var parentSplitSource = deriveSplitQuerySource(parentTableType.table(), referencePath.elements(), returnType);
             if (hasSplitQuery && hasLookupKey) {
                 var lookupResolved = lookupKeyResolver.resolveAtChild(returnType, true);
                 if (lookupResolved instanceof LookupKeyDirectiveResolver.Resolved.Rejected r) {
@@ -569,8 +569,8 @@ class FieldBuilder {
                 }
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                    SourceKeyResolver.resolveSplit(parentBatchKey, returnType),
-                    LoaderRegistrationResolver.resolve(parentBatchKey, returnType),
+                    parentSplitSource.sourceKey(),
+                    parentSplitSource.loaderRegistration(),
                     tfc.lookupMapping());
             }
             if (!hasSplitQuery && hasLookupKey) {
@@ -593,8 +593,8 @@ class FieldBuilder {
                 }
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                    SourceKeyResolver.resolveSplit(parentBatchKey, returnType),
-                    LoaderRegistrationResolver.resolve(parentBatchKey, returnType));
+                    parentSplitSource.sourceKey(),
+                    parentSplitSource.loaderRegistration());
             }
             if (returnType.wrapper() instanceof FieldWrapper.Connection) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.directiveConflict(
@@ -640,13 +640,12 @@ class FieldBuilder {
             if (pkCols.isEmpty()) {
                 // Validator surfaces this as a structural rejection on the parent type's PK
                 // (validateChildMultiTableParentPk); routing through UnclassifiedField here keeps
-                // the canonical-constructor invariant on BatchKey.RowKeyed unreachable.
+                // the SourceKey canonical-constructor non-empty invariant unreachable.
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef,
                     Rejection.structural("multi-table interface child field requires a non-empty "
                         + "primary key on parent type '" + parentTypeName + "'"));
             }
-            BatchKey.RecordParentBatchKey parentKey = new BatchKey.RowKeyed(pkCols);
-            no.sikt.graphitron.rewrite.model.SourceKey parentSourceKey = SourceKeyResolver.resolveRecordParentForPolymorphic(parentKey);
+            no.sikt.graphitron.rewrite.model.SourceKey parentSourceKey = buildTableBackedPolymorphicParentSourceKey(pkCols);
             GraphitronType.ResultType parentResultType =
                 new GraphitronType.JooqTableRecordType(parentTypeName, location, null, parentTableType.table());
             return new InterfaceField(parentTypeName, name, location,
@@ -666,8 +665,7 @@ class FieldBuilder {
                     Rejection.structural("multi-table union child field requires a non-empty "
                         + "primary key on parent type '" + parentTypeName + "'"));
             }
-            BatchKey.RecordParentBatchKey parentKey = new BatchKey.RowKeyed(pkCols);
-            no.sikt.graphitron.rewrite.model.SourceKey parentSourceKey = SourceKeyResolver.resolveRecordParentForPolymorphic(parentKey);
+            no.sikt.graphitron.rewrite.model.SourceKey parentSourceKey = buildTableBackedPolymorphicParentSourceKey(pkCols);
             GraphitronType.ResultType parentResultType =
                 new GraphitronType.JooqTableRecordType(parentTypeName, location, null, parentTableType.table());
             return new UnionField(parentTypeName, name, location,
@@ -3082,13 +3080,27 @@ class FieldBuilder {
     }
 
     /**
-     * Derives the {@link BatchKey} for a {@code @table}-parent {@code @splitQuery} field. Single
-     * cardinality keys by the parent's FK columns (parent-holds-FK); list cardinality keys by the
-     * parent's PK. The direction signal is cardinality alone — the {@code @splitQuery} schema
-     * contract ties Single ⇒ parent-holds-FK and List ⇒ child-holds-FK, so no table-identity
-     * comparison is needed. The caller enforces the single-hop precondition; this helper only
-     * picks the keying strategy and is safe to call with any path shape (multi-hop single
-     * cardinality falls through to parent-PK, but the classifier rejects it upstream).
+     * Builder-internal pair returned by {@link #deriveSplitQuerySource}: the
+     * {@link SourceKey} + {@link LoaderRegistration} the {@code SplitTableField} /
+     * {@code SplitLookupTableField} constructors take. Pairs the two projections so the producer
+     * computes them in one place instead of via two separate calls.
+     */
+    private record SplitQuerySource(SourceKey sourceKey, LoaderRegistration loaderRegistration) {}
+
+    /**
+     * Derives the {@link SourceKey} + {@link LoaderRegistration} for a {@code @table}-parent
+     * {@code @splitQuery} field. Single cardinality keys by the parent's FK columns
+     * (parent-holds-FK); list cardinality keys by the parent's PK. The direction signal is
+     * cardinality alone — the {@code @splitQuery} schema contract ties Single ⇒ parent-holds-FK
+     * and List ⇒ child-holds-FK, so no table-identity comparison is needed. The caller enforces
+     * the single-hop precondition; this helper only picks the keying strategy and is safe to call
+     * with any path shape (multi-hop single cardinality falls through to parent-PK, but the
+     * classifier rejects it upstream).
+     *
+     * <p>The {@link SourceKey} projection is {@link SourceKey.Wrap.Row} +
+     * {@link SourceKey.Reader.ColumnRead} (catalog-FK column read on the parent); the
+     * {@link LoaderRegistration} is {@link LoaderRegistration.Container#POSITIONAL_LIST} +
+     * {@link LoaderRegistration.Dispatch#LOAD_ONE} (the {@code @splitQuery} loader contract).
      *
      * <p>Sibling of {@link #deriveBatchKeyForResultType} — that helper is for record parents and
      * unconditionally reads {@code fk.sourceSideColumns()} because record parents never batch by
@@ -3096,14 +3108,49 @@ class FieldBuilder {
      */
     @DependsOnClassifierCheck(
         key = "fk-join.slots-oriented-source-and-target",
-        reliesOn = "Reads fk.sourceSideColumns() to populate the BatchKey.RowKeyed key tuple "
+        reliesOn = "Reads fk.sourceSideColumns() to populate the SourceKey.columns key tuple "
             + "with the parent-side columns of the FK; depends on synthesis-time slot orientation "
             + "so the same call works whether the parent or the child holds the FK constraint.")
-    private static BatchKey.RowKeyed deriveSplitQueryBatchKey(TableRef parentTable, List<JoinStep> path, boolean isList) {
-        if (!isList && !path.isEmpty() && path.get(0) instanceof JoinStep.FkJoin fk) {
-            return new BatchKey.RowKeyed(fk.sourceSideColumns());
-        }
-        return new BatchKey.RowKeyed(parentTable.primaryKeyColumns());
+    private static SplitQuerySource deriveSplitQuerySource(
+            TableRef parentTable, List<JoinStep> path, ReturnTypeRef.TableBoundReturnType returnType) {
+        boolean isList = returnType.wrapper().isList();
+        List<ColumnRef> entryColumns =
+            (!isList && !path.isEmpty() && path.get(0) instanceof JoinStep.FkJoin fk)
+                ? fk.sourceSideColumns()
+                : parentTable.primaryKeyColumns();
+        SourceKey sourceKey = new SourceKey(
+            returnType.table(),
+            entryColumns,
+            List.of(),
+            new SourceKey.Wrap.Row(),
+            isList ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE,
+            new SourceKey.Reader.ColumnRead());
+        LoaderRegistration loaderRegistration = new LoaderRegistration(
+            isList,
+            LoaderRegistration.Container.POSITIONAL_LIST,
+            LoaderRegistration.Dispatch.LOAD_ONE);
+        return new SplitQuerySource(sourceKey, loaderRegistration);
+    }
+
+    /**
+     * Builds the parent-side {@link SourceKey} for a table-backed multi-table polymorphic child
+     * field ({@link InterfaceField} / {@link UnionField} on a {@code @table} parent). The
+     * parent's identity is its PK, read directly off {@code env.getSource()} (a typed
+     * {@code TableRecord}), so the projection is {@link SourceKey.Wrap.Row} +
+     * {@link SourceKey.Reader.ColumnRead} + {@link SourceKey.Cardinality#ONE} with no traversal.
+     * Mirrors the polymorphic-Row arm of the deleted {@code SourceKeyResolver
+     * .resolveRecordParentForPolymorphic} ({@code target} stays {@code null} because the
+     * parent IS the source — no separate target table).
+     */
+    private static no.sikt.graphitron.rewrite.model.SourceKey buildTableBackedPolymorphicParentSourceKey(
+            List<ColumnRef> pkCols) {
+        return new no.sikt.graphitron.rewrite.model.SourceKey(
+            null,
+            pkCols,
+            List.of(),
+            new SourceKey.Wrap.Row(),
+            SourceKey.Cardinality.ONE,
+            new SourceKey.Reader.ColumnRead());
     }
 
     /**
