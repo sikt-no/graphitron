@@ -60,6 +60,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 ### Stubs
 
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md): Lift `ChildField.TableMethodField` out of `TypeFetcherGenerator.STUBBED_VARIANTS`. Today schemas using `@tableMethod` to return a non-table type (scalar / enum) fail validation with `[deferred]`. Carved out of the original umbrella (R37) for independent prioritisation; not currently a blocker for any in-flight migration.
+- `R129` [**Stub: ConditionJoin path in @reference on ColumnReferenceField**](column-reference-on-scalar-field-condition-join.md): When R42 lifts `ChildField.ColumnReferenceField` for `CallSiteCompaction.Direct` with FK-only `joinPath`, schemas whose `@reference` resolves through a developer-supplied `@condition` method (a `JoinStep.ConditionJoin` step in the path) remain unsupported. R42's validator emits `Rejection.Deferred` keyed to this slug for that case, so the SDL author sees a build-time error rather than a runtime stub.
 
 ### Cleanup
 
@@ -145,6 +146,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md) — Backlog, validation
 - `R42` [**Stub: `@reference` on a scalar (FK column) field (`ColumnReferenceField`)**](column-reference-on-scalar-field.md) — Spec, stubs
 - `R43` [**Stub: `@tableMethod` with scalar/enum return (`TableMethodField`)**](tablemethod-scalar-return.md) — Backlog, stubs
+- `R129` [**Stub: ConditionJoin path in @reference on ColumnReferenceField**](column-reference-on-scalar-field-condition-join.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
 - `R101` [**Custom-scalar Java type configuration (extended-scalars built-in)**](custom-scalar-java-types.md) — In Review, architecture
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [deprecate-record-directive](deprecate-record-directive.md)
