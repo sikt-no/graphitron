@@ -672,6 +672,21 @@ classifier-side producers (`FieldBuilder.deriveSplitQueryBatchKey`,
     `GeneratorUtils.buildLifterRowKey` updates to match. 1553 tests green;
     the three pre-existing `MultiSchemaQueryTest` failures unchanged.
 
+18. `ServiceCatalog.classifySourcesType` inlines the source-shape projection.
+    The method returns `Optional<SourcesShape>` (a new record carrying
+    `(SourceKey.Wrap wrap, LoaderRegistration.Container container)`) instead of
+    `Optional<BatchKey.ParentKeyed>`. The `Set` vs `List` container axis and
+    the `RowN` / `RecordN` / `TableRecord` element-shape axis project directly
+    onto the two values; the columns axis is the caller's `parentPkColumns`
+    input and so isn't repeated on the result. The producer at line 254 reads
+    `shape.wrap()` / `shape.container()` and constructs `MethodRef.Param.Sourced`
+    with the same `parentPkColumns` directly. The transitional helpers
+    `wrapFor(BatchKey.ParentKeyed)` and the inline `bk instanceof Mapped*Keyed
+    ? MAPPED_SET : POSITIONAL_LIST` switch (added in step 13 to bridge the
+    Sourced storage flip) both delete; `ServiceCatalog` no longer imports
+    `BatchKey`. 1553 tests green; the three pre-existing `MultiSchemaQueryTest`
+    failures unchanged.
+
 Still to land for Phase 3 completion:
 - **Producer site inlining**: `FieldBuilder` (`deriveSplitQueryBatchKey`,
   `deriveBatchKeyForResultType`, `resolveRecordParentBatchKey`,
