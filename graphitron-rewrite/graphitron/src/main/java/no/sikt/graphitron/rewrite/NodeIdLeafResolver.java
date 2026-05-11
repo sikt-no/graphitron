@@ -531,7 +531,7 @@ final class NodeIdLeafResolver {
      * Returns {@code null} on success; otherwise a fully formatted rejection message anchored on
      * {@link #LIFT_FAILURE_MARKER}.
      */
-    static String validateLift(List<JoinStep> path, String leafName) {
+    private static String validateLift(List<JoinStep> path, String leafName) {
         for (int i = 1; i < path.size(); i++) {
             var current = (FkJoin) path.get(i);
             var previous = (FkJoin) path.get(i - 1);
@@ -569,7 +569,7 @@ final class NodeIdLeafResolver {
      * {@code hop[i-1].targetSideColumns}. Precondition: {@link #validateLift} has returned
      * {@code null} for {@code path}.
      */
-    static List<ColumnRef> liftSourceColumns(List<JoinStep> path) {
+    private static List<ColumnRef> liftSourceColumns(List<JoinStep> path) {
         var lifted = new ArrayList<>(((FkJoin) path.getLast()).sourceSideColumns());
         for (int i = path.size() - 1; i >= 1; i--) {
             var prev = (FkJoin) path.get(i - 1);
