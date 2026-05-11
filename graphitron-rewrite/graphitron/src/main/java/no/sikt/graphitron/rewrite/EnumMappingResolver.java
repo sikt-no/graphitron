@@ -65,8 +65,12 @@ import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
  *       and emits one {@link InputColumnBinding.MapBinding} per {@code @lookupKey}-bearing
  *       scalar column field, deriving each binding's extraction via {@link #deriveExtraction}.
  *       Rejects {@code @lookupKey} on non-{@link InputField.ColumnField} entries (e.g.
- *       reference-navigating, nesting, NodeId fields) and on list-typed input fields. Cluster
- *       member because every binding's extraction routes through the enum-mapping helpers.</li>
+ *       reference-navigating, nesting fields), on list-typed input fields, and on
+ *       {@code @nodeId}-decoded {@link InputField.ColumnField} entries (post-R131 the
+ *       same-table singular {@code @nodeId} path produces a {@code ColumnField}; the
+ *       binding pipeline would otherwise re-derive a Direct extraction and drop the
+ *       decode). Cluster member because every binding's extraction routes through the
+ *       enum-mapping helpers.</li>
  * </ul>
  *
  * <p>No sealed result wrapper. Each method's signature reflects the natural shape of its
@@ -251,6 +255,20 @@ final class EnumMappingResolver {
             + "cardinality to the outer argument' diagnostic. Lets the slot pipeline assume "
             + "binding-level cardinality is scalar; only the outer LookupArg.list() drives "
             + "row-count broadcasting in the emitter.")
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "lookup-key-input-field-non-nodeid-decoded",
+        description = "Rejects @lookupKey on an @nodeId-decorated input field "
+            + "(ColumnField/CompositeColumnField with NodeIdDecodeKeys extraction). Pre-R131 "
+            + "the same-table singular @nodeId path produced a Reference variant, which the "
+            + "InputField.ColumnField gate rejected structurally; post-R131 the same-table arm "
+            + "correctly produces a ColumnField carrying NodeIdDecodeKeys, and without this "
+            + "explicit guard deriveExtraction would silently re-derive a Direct/JooqConvert "
+            + "extraction from the column's typeName/javaName, dropping the resolver-supplied "
+            + "decode method. Net effect would be a lookup binding comparing the base64-encoded "
+            + "wire value against the raw PK column. The guard preserves the pre-R131 rejection "
+            + "semantics. Argument-level @nodeId @lookupKey is unrelated and handled in "
+            + "FieldBuilder.classifyArgument (the SameTable arm reads the directive and routes "
+            + "to the N×M lookup shape via isLookupKey).")
     List<InputColumnBinding.MapBinding> buildLookupBindings(GraphitronType.TableInputType tit,
             GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String argName, List<String> errors) {
         var sdlType = ctx.schema.getType(tit.name());
@@ -272,6 +290,24 @@ final class EnumMappingResolver {
                 errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
                     + "': @lookupKey on a list-typed input field is not supported; "
                     + "move list cardinality to the outer argument");
+                continue;
+            }
+            // R131: pre-R131 the same-table singular @nodeId branch produced a Reference variant,
+            // which the @lookupKey gate above rejected ("only supported on scalar column fields").
+            // Post-R131 the same-table arm correctly produces a ColumnField carrying a
+            // NodeIdDecodeKeys extraction; deriveExtraction below would silently re-derive a Direct
+            // extraction from the column's javaName and drop the resolver-supplied decodeMethod,
+            // producing a binding that compares the base64-encoded wire value against the raw PK
+            // column. Preserve the pre-R131 rejection at this gate so the combination remains an
+            // author error rather than a silent miscompilation. Argument-side @nodeId @lookupKey
+            // is handled separately in FieldBuilder.classifyArgument (the SameTable arm reads the
+            // directive and routes to the N×M lookup shape).
+            if (cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) {
+                errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
+                    + "': @lookupKey on an @nodeId-decoded input field is not supported "
+                    + "(the encoded node id would be matched against the raw column value);"
+                    + " expose the decoded key column(s) explicitly via @field instead,"
+                    + " or move @lookupKey to the outer argument");
                 continue;
             }
             String enumClassName;
