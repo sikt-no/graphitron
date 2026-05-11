@@ -446,6 +446,20 @@ public class GraphitronSchemaValidator {
             ));
         }
     }
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "column-reference-field-no-nodeid-encode-keys",
+        description = "Rejects ChildField.ColumnReferenceField with NodeIdEncodeKeys compaction "
+            + "as Rejection.Deferred keyed to nodeidreferencefield-join-projection-form. Lets "
+            + "InlineColumnReferenceFieldEmitter and TypeClassGenerator assume Direct compaction "
+            + "post-validate without a runtime branch on compaction(), and lets FetcherEmitter "
+            + "carry only the Direct-compaction wiring arm for this variant.")
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "column-reference-field-no-condition-join-step",
+        description = "Rejects ChildField.ColumnReferenceField whose joinPath contains a "
+            + "JoinStep.ConditionJoin as Rejection.Deferred keyed to "
+            + "column-reference-on-scalar-field-condition-join. Lets "
+            + "InlineColumnReferenceFieldEmitter cast each step in joinPath to JoinStep.FkJoin "
+            + "without a defensive arm.")
     private void validateColumnReferenceField(no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField field, List<ValidationError> errors) {
         if (field.joinPath().isEmpty()) {
             errors.add(new ValidationError(

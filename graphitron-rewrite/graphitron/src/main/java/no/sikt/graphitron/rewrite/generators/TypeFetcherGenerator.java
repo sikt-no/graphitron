@@ -248,11 +248,8 @@ public class TypeFetcherGenerator {
             // (ChildField.TableField and ChildField.LookupTableField are in PROJECTED_LEAVES —
             // inline emission via TypeClassGenerator.$fields)
             // ChildField stubs — remaining direct permits
-            // (ChildField.ColumnReferenceField is in PROJECTED_LEAVES — inline emission via
-            // TypeClassGenerator.$fields; the NodeIdEncodeKeys and ConditionJoin shapes are
-            // rejected by GraphitronSchemaValidator.validateColumnReferenceField with deferred
-            // slugs nodeidreferencefield-join-projection-form and
-            // column-reference-on-scalar-field-condition-join respectively)
+            // (ChildField.ColumnReferenceField is in PROJECTED_LEAVES; per-shape deferrals carried
+            // by @LoadBearingClassifierCheck on validateColumnReferenceField.)
             Map.entry(ChildField.CompositeColumnReferenceField.class,
                 deferredFor(ChildField.CompositeColumnReferenceField.class,
                     "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented"

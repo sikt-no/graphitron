@@ -70,9 +70,6 @@ public class TypeClassGenerator {
         var columnReferenceFields = schema.fieldsOf(typeName).stream()
             .filter(f -> f instanceof ChildField.ColumnReferenceField)
             .map(f -> (ChildField.ColumnReferenceField) f)
-            // Validator rejects NodeIdEncodeKeys and ConditionJoin shapes ahead of generation;
-            // only Direct + FK-only paths reach projection.
-            .filter(f -> f.compaction() instanceof no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
         var tableFields = schema.fieldsOf(typeName).stream()
