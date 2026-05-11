@@ -46,29 +46,13 @@ in sis today. R130 lifts the two reachable carriers; the joined-reference half f
 
 ## Implicated load-bearing bug
 
-R131's follow-up chain (`fe2de55` then `beb0e92`) introduced a structural-rejection guard at
-`EnumMappingResolver:296-303` keyed `lookup-key-input-field-non-nodeid-decoded`. The guard's
-stated reason is that `deriveExtraction:179-192` would silently re-derive a `Direct` /
-`JooqConvert` extraction from the column's `typeName` and `javaName`, *dropping the
-resolver-supplied `NodeIdDecodeKeys` extraction the carrier already holds*
-(`buildLookupBindings:327` calls `deriveExtraction(cf.typeName(), cf.column(), …)`, never
-reading `cf.extraction()`). The net effect would be a binding that compares a base64-encoded
-wire value against the raw PK column. The `beb0e92` cleanup moved the guard from a post-cast
-`cf.extraction() instanceof NodeIdDecodeKeys` check to a pre-cast
-`sdlField.hasAppliedDirective(DIR_NODE_ID)` check so both single-PK and composite-PK arities
-surface the same diagnostic; the underlying re-derivation bug is unchanged.
-
-The guard works around a deeper bug: `buildLookupBindings` discards `cf.extraction()` and
-re-derives an extraction from raw column metadata. The architecturally clean fix is to make
-`buildLookupBindings` honor `cf.extraction()` when the carrier already holds a context-specific
-extraction (`NodeIdDecodeKeys`, `EnumValueOf`, …) rather than re-deriving a generic one. With that
-fix, the new guard becomes inert and retires: a `@nodeId`-decoded input field's `NodeIdDecodeKeys`
-propagates into the lookup binding, the decode helper runs once per row, the decoded value
-matches the raw column.
-
-R130 owns this fix because the bug and the carrier-admission lift are entangled: lifting the
-carrier admission without fixing the extraction propagation re-creates the silent-miscompilation
-shape R131's guard was rejecting.
+R131's follow-up chain introduced a structural-rejection guard at
+`EnumMappingResolver:296-303` keyed `lookup-key-input-field-non-nodeid-decoded`. The guard
+papers over a bug one layer up: `buildLookupBindings:327` calls
+`deriveExtraction(cf.typeName(), cf.column(), …)`, never reading `cf.extraction()` — the
+resolver-supplied `NodeIdDecodeKeys` is discarded and a generic extraction is re-derived from
+raw column metadata. R130 fixes the bug at source so the guard retires. See *Notes for the
+Spec reviewer* for the alternatives considered.
 
 ## Shape of the work
 
@@ -102,10 +86,8 @@ Three load-bearing changes follow:
   carriers do *not* enter the permits set — they stay outside R130's admitted carrier set, and
   the type system reflects that. R130's narrowed scope means narrower permits.
 
-The two-carrier bundling is the right grain because the binding-group shape, the extraction-
-propagation fix, and the partition-slot widening are shared infrastructure both carriers need;
-splitting forces a partial migration of `fieldBindings` and `lookupKeyFields` / `setFields` that
-lives in the model for the lifetime of the gap.
+The two carriers ship together because they share Phase 1's infrastructure (binding-group
+shape, extraction-propagation fix, partition-slot widening).
 
 ## Plan
 
@@ -122,19 +104,16 @@ the carrier already holds a context-specific extraction:
 - If `cf.extraction()` is `NodeIdDecodeKeys` (or any other resolver-supplied non-`Direct` arm),
   use it directly. The carrier already named the right extraction; re-deriving discards it.
 
-With this fix, the R131 follow-up guard at `EnumMappingResolver:296-303` becomes inert and
-deletes. The load-bearing key `lookup-key-input-field-non-nodeid-decoded` retires; it has zero
-`@DependsOnClassifierCheck` consumers in the codebase today (verified by grep — the producer
-declaration at `EnumMappingResolver:258` is the only site), so retirement is producer-only and
-`LoadBearingGuaranteeAuditTest` surfaces no orphan. The class-level javadoc on
+With the fix in place, the R131 follow-up guard at `EnumMappingResolver:296-303` deletes,
+the load-bearing key `lookup-key-input-field-non-nodeid-decoded` retires (producer-only;
+zero `@DependsOnClassifierCheck` consumers), and the class-level javadoc on
 `buildLookupBindings` (`EnumMappingResolver:231-244`) regenerates against the post-R130
-rejection set. The `LOOKUP_KEY_ON_NODEID_INPUT_FIELD_REJECTED` test case retypes to assert the
-post-R130 admission (the encoded id round-trips through the decode helper and matches the raw
-PK column correctly).
+rejection set.
 
-**`InputColumnBindingGroup` sealed shape.** Mirror R50's query-side
-`LookupMapping.ColumnMapping.LookupArg` (`LookupMapping.java:91-163`) on the binding-arity axis,
-with one rooting delta:
+**`InputColumnBindingGroup` sealed shape.** Sibling sealed root to R50's
+`LookupMapping.ColumnMapping.LookupArg` (`LookupMapping.java:91-163`), sharing the
+binding-arity axis but rooted at an input-field cluster rather than an outer GraphQL
+argument:
 
 ```java
 sealed interface InputColumnBindingGroup {
@@ -147,33 +126,12 @@ sealed interface InputColumnBindingGroup {
 }
 ```
 
-**Why a sibling sealed root rather than reusing `LookupArg`.** `LookupArg` carries
-`argName: String` and `list: boolean` at the root — it is rooted at the outer GraphQL argument
-and drives N-row broadcasting in `LookupValuesJoinEmitter`. `InputColumnBindingGroup` is rooted
-at an input-field cluster *inside* a `TableInputType`: the cluster's wire-format source is one
-input field (`sourceFieldName`), and list cardinality lives one level up on the enclosing
-`TableInputArg.list()`. Folding both rootings into one shared root would require either an
-`Optional<argName>` slot (with consumers branching on presence — the recurring-predicate smell)
-or an additional `Source` sub-record (`OuterArg(argName, list) | InputField(sourceFieldName)`),
-which is itself a sub-taxonomy and pulls the unrelated query-side N-row broadcasting concern
-into the mutation-input model. The two rootings live in different model layers; the sealed
-sibling shape carries the shared binding-arity invariant without entangling the rooting axis.
-
 The decode helper is reachable through `extraction.decodeMethod()` (R50's single source of
-truth on `CallSiteExtraction.NodeIdDecodeKeys`). The group carries the per-cluster invariant
-("all N `RecordBinding` slots share one decode source") in the type system rather than as a
-predicate consumers reconstruct.
-
-`buildLookupBindings` retypes its return from `List<InputColumnBinding.MapBinding>` to
-`List<InputColumnBindingGroup>`. The today-existing single-key path (`@lookupKey` on a
-`ColumnField`) builds a `MapGroup` carrying one `MapBinding` (extraction propagated per the
-fix above). The new composite path (`@lookupKey` on a `CompositeColumnField` carrying
-`NodeIdDecodeKeys`) builds one `DecodedRecordGroup` with N `RecordBinding` slots indexed
-`0..N-1` into the decoded `Record<N>`.
-
-`TableInputArg.fieldBindings` retypes from `List<InputColumnBinding.MapBinding>` to
-`List<InputColumnBindingGroup>` in lockstep. Today's call sites that build a flat list become
-one `MapGroup` wrapper; composite-PK `@lookupKey` fields produce one `DecodedRecordGroup`.
+truth on `CallSiteExtraction.NodeIdDecodeKeys`). `buildLookupBindings` retypes its return
+from `List<InputColumnBinding.MapBinding>` to `List<InputColumnBindingGroup>`: today's
+single-key `@lookupKey` paths build a `MapGroup` carrying one `MapBinding`; the new
+composite-PK path builds one `DecodedRecordGroup` with N `RecordBinding` slots indexed
+`0..N-1` into the decoded `Record<N>`. `TableInputArg.fieldBindings` retypes in lockstep.
 
 **Partition slot widening.** `TableInputArg.lookupKeyFields` and `setFields` retype from
 `List<InputField.ColumnField>` to sealed `List<LookupKeyField>` / `List<SetField>` (both
@@ -182,17 +140,9 @@ reference carriers stay outside the permits set; their re-admission is R24-shape
 work. `TableInputArg.of` (`ArgumentRef.java:251`) updates its partition derivation to dispatch
 on the sealed interface instead of `instanceof ColumnField`.
 
-Existing consumers (`buildLookupWhere` / `buildBulkLookupRowIn` at `TypeFetcherGenerator:1959` /
-`:1931`) switch on `InputColumnBindingGroup`. The `MapGroup` arm keeps today's per-slot `.eq` /
-per-slot tuple emission. The `DecodedRecordGroup` arm emits one decode invocation
-(`decode<TypeName>(in.get($S))`) and then a `DSL.row(c1, …, cN).eq(record)` predicate (or, for
-the row-in case, the analogous `.in(stream.map(decode).toList())`). The shape mirrors
-`BodyParam.RowEq` / `RowIn` from R50's query-side machinery; the difference is the binding
-source, not the predicate emission.
-
-This phase is the prerequisite for the carrier admission; ship independent of the gate lifts.
-No schema admits the new groups until Phase 2 lands; the post-R131 follow-up guard collapses
-as soon as the extraction-propagation fix is in place.
+Phase 1 is independent of Phase 2's classifier admission; no schema reaches the new groups
+until Phase 2 lands. Existing `buildLookupWhere` / `buildBulkLookupRowIn` consumers migrate
+to switch on `InputColumnBindingGroup` (see Phase 3 for the emission shape).
 
 ### Phase 2: classifier gate lift — `MutationInputResolver`
 
@@ -244,9 +194,6 @@ Producer-consumer pairing via `@LoadBearingClassifierCheck` (producer) +
   per-binding emit that builds `DSL.val(in.get(name), col.getDataType())` calls assuming the
   binding's extraction matches the carrier's wire-format intent.
 
-The R131 follow-up key `lookup-key-input-field-non-nodeid-decoded` retires in Phase 1; this
-phase does not re-pair anything against it.
-
 ### Phase 3: emitter dispatch — DML verb emitters
 
 Three walks consume the new shape: `buildLookupWhere` / `buildBulkLookupRowIn` switch on
@@ -265,33 +212,18 @@ Phase 2 (`ColumnField`, `CompositeColumnField`).
   case or `.in(stream.map(decode).toList())` for the row-IN case. Both shapes already exist as
   `BodyParam.RowEq` / `RowIn` on the query side; reuse the emission helpers where possible.
 
-**INSERT / UPSERT / UPDATE walks dispatch on carrier identity.** The INSERT column-list /
-values-list walks and the UPDATE SET-clause walk all iterate `tia.fields()` directly (the
-column-list walk includes every field; the SET walk excludes `@lookupKey`-bound fields via the
-Phase 1 `lookupKeyFields` / `setFields` partition). Each walk pattern-matches on the carrier
-identity rather than going through a flattened `ColumnWrite` intermediate:
+**INSERT / UPSERT / UPDATE walks dispatch on carrier identity.** Walks iterate `tia.fields()`
+directly (the column-list walk includes every field; the SET walk excludes `@lookupKey`-bound
+fields via the Phase 1 `lookupKeyFields` / `setFields` partition). Each walk pattern-matches
+on the carrier:
 
 - `ColumnField(Direct)`: one column write, value `DSL.val(in.get(name), col.getDataType())`.
-- `ColumnField(NodeIdDecodeKeys)`: one column write, value `decode<TypeName>(in.get(name))` and
-  then `.value(0)` of the resulting `Record<1>` passed through `DSL.val(...)`. The decode
-  invocation lifts to a local once per carrier; the column-list/values-list walks read from the
-  local.
-- `CompositeColumnField`: N column writes against the carrier's `columns` (positional). One
-  decode invocation per carrier (`decode<TypeName>(in.get(name))`) lifts to a local; N
-  `DSL.val(record.value(i), col.getDataType())` reads, one per slot, indexed `0..N-1`.
+- `ColumnField(NodeIdDecodeKeys)`: one column write, value `decode<TypeName>(in.get(name))`
+  passed through `DSL.val(...)`. Decode invocation lifts to a local once per carrier.
+- `CompositeColumnField`: one decode invocation lifts to a local; N
+  `DSL.val(record.value(i), col.getDataType())` reads against the carrier's `columns`,
+  indexed `0..N-1`.
 
-The group identity is *inherent to the carrier*: one `CompositeColumnField` is one decode
-group, one `ColumnField(NodeIdDecodeKeys)` is a single-slot decode group, one
-`ColumnField(Direct)` is a no-decode read. Flattening to a flat write-list would force the
-walks to re-group by `(sourceFieldName, extraction)` to lift the decode call once per
-group — exactly the invariant the carrier identity already encodes. The carrier-direct switch
-is three arms; abstracting the switch behind a flat `ColumnWrite` intermediate would re-encode
-the same axis a third time.
-
-The two reference carriers are not in the admitted set, so no joined-table arms are needed.
-When R24 (or a successor item) admits them, the switch grows two arms for the joined cases.
-
-Producer-consumer pairing per the two `@LoadBearingClassifierCheck` keys named in Phase 2; the
 INSERT/UPDATE-side switch sites wear `@DependsOnClassifierCheck` against
 `mutation-input.lookup-binding-decoded-record-arity-matches-carrier-columns` (the per-carrier
 column count must match the decoded record arity for the per-slot reads to line up).
@@ -326,16 +258,12 @@ Test tiers (per `rewrite-design-principles.adoc`):
   `MutationDmlNodeIdClassificationTest` (or a sibling). Adds one extraction-propagation test
   on the lookup-binding side asserting that `cf.extraction() = NodeIdDecodeKeys` flows into
   the `MapBinding`'s extraction instead of being re-derived to `JooqConvert`.
-- **Pipeline:** Phase 4 asserts on the *classified model shape* rather than on emitted body
-  strings (the "no code-string assertions on generated bodies" rule). Composite-PK lookup-key
+- **Pipeline:** assertions on classified model shape, not emitted body strings. Composite-PK
   cases assert `tia.fieldBindings()` carries one `DecodedRecordGroup` with arity matching the
-  NodeType's `keyColumns`, the carrier's `extraction` arm is `NodeIdDecodeKeys.ThrowOnMismatch`
-  (or `SkipMismatchedElement` per resolver semantics), and `bindings[i].targetColumn()`
-  positionally matches the carrier's `columns[i]`. Single-PK cases assert one `MapGroup` with
-  one `MapBinding` whose extraction is the resolver-supplied `NodeIdDecodeKeys`, not a
-  re-derived `JooqConvert`. The compilation tier (`graphitron-sakila-example` + the
-  `nodeidfixture` example module) catches row-arity / column-type drift between emitter and
-  jOOQ DSL without anyone asserting on a code string.
+  NodeType's `keyColumns` and `bindings[i].targetColumn()` positionally matches the carrier's
+  `columns[i]`. Single-PK cases assert one `MapGroup` whose `MapBinding.extraction` is the
+  resolver-supplied `NodeIdDecodeKeys`, not a re-derived `JooqConvert`. The compilation tier
+  (`graphitron-sakila-example` + `nodeidfixture`) catches row-arity / column-type drift.
 - **Execution:** Phase 4 adds PostgreSQL round-trips: composite-PK DELETE/UPDATE/UPSERT
   against `Bar` rows, and single-PK INSERT against a `Foo`-shaped row. Each test seeds the
   pre-state via direct jOOQ (or a prior mutation), builds the NodeId, runs the mutation,
@@ -383,29 +311,47 @@ validator-arm-per-leaf discipline.
 
 ## Notes for the Spec reviewer
 
-- **The R131 follow-up entanglement is the design crux.** R131's follow-up
-  (`R131 follow-up: reject @lookupKey on @nodeId-decoded input field`, `fe2de55`) added a
-  composition guard at `EnumMappingResolver:296-303` because `deriveExtraction` re-derives
-  extractions from raw column metadata, dropping the carrier's resolver-supplied extraction.
-  R130 fixes that bug at the source (`buildLookupBindings` honors `cf.extraction()`) and
-  retires the guard plus its `lookup-key-input-field-non-nodeid-decoded` load-bearing key.
-  Worth a focused reviewer pass on whether the extraction-propagation change has other
-  consumers that would surprise: the `MapBinding` extraction slot is read by the lookup-WHERE
-  emitter; the question is whether anywhere else reads it and assumes the re-derived shape.
-- **Phase 1 model shape** is a sibling sealed root to R50's query-side
-  `LookupMapping.ColumnMapping.LookupArg` (`LookupMapping.java:91-163`), sharing the
-  binding-arity axis (`MapGroup` ~ `MapInput`, `DecodedRecordGroup` ~ `DecodedRecord`) but
-  rooted at an input-field cluster (`sourceFieldName`) rather than the outer GraphQL argument
-  (`argName + list`). The two rootings live in different model layers; folding them into one
-  root would either require an Optional discriminator slot or pull query-side N-row
-  broadcasting into the mutation-input model. Decode-helper identity stays on
-  `CallSiteExtraction.NodeIdDecodeKeys.decodeMethod` (R50's single source of truth).
-- **Partition-slot widening** narrows in lockstep with admitted carriers. `LookupKeyField` /
-  `SetField` permits `ColumnField` and `CompositeColumnField` only; the two reference
-  carriers stay outside the permits set. When R24 (or successor) admits them, the permits set
-  widens.
-- **Annotation pair** is `@LoadBearingClassifierCheck` (producer) + `@DependsOnClassifierCheck`
-  (consumer); `@LoadBearingGuarantee` is principles-doc prose, not a type.
-- **The R131 follow-up rejection test retypes to an admission test.** The combination R131's
-  follow-up rejected is now valid; the rename + assertion-shape change should be visible in
-  the diff so the reviewer can verify the surface flip is intentional.
+- **The extraction-propagation fix is the design crux.** R131's follow-up guard at
+  `EnumMappingResolver:296-303` papers over a bug at `:327`: `buildLookupBindings` discards
+  `cf.extraction()` and re-derives a generic extraction from raw column metadata. R130 fixes
+  the bug at source so the guard retires. The architecturally clean shape is "the carrier
+  already named the right extraction; the consumer reads it instead of re-deriving." Worth a
+  focused reviewer pass on whether the `MapBinding.extraction` slot is read anywhere else
+  that assumes the re-derived shape — the lookup-WHERE emitter is the known consumer.
+- **`InputColumnBindingGroup` is a sibling sealed root to `LookupArg`, not a shared root.**
+  `LookupArg` carries `argName: String` and `list: boolean` — rooted at the outer GraphQL
+  argument, driving N-row broadcasting in `LookupValuesJoinEmitter`. The new group is rooted
+  at an input-field cluster inside a `TableInputType`: source is one input field
+  (`sourceFieldName`), list cardinality lives on the enclosing `TableInputArg.list()`.
+  Folding both rootings into one root would either require an `Optional<argName>` slot (the
+  recurring-predicate smell) or a `Source` sub-record pulling query-side N-row broadcasting
+  into the mutation-input model. The sealed sibling carries the shared binding-arity
+  invariant without entangling the rooting axis.
+- **Phase 3 dispatches on carrier identity, not on a flattened intermediate.** The group
+  identity is inherent to the carrier (`CompositeColumnField` is one decode group;
+  `ColumnField(NodeIdDecodeKeys)` is a single-slot group; `ColumnField(Direct)` is a
+  no-decode read). An earlier draft introduced a `ColumnWrite` sealed taxonomy that the
+  walks would consume; the architect's review noted this re-encodes the binding-arity axis a
+  third time. The carrier-direct switch is three arms in one place and no re-grouping
+  predicate; the alternative would force walks to re-group by `(sourceFieldName, extraction)`
+  to lift the decode call once per group, which is the invariant the carrier identity
+  already encodes.
+- **The two-carrier bundling is the right grain.** Phase 1's infrastructure (binding-group
+  shape, extraction-propagation fix, partition-slot widening) is shared by both admitted
+  carriers; splitting forces a partial migration of `fieldBindings` and partition slots that
+  lives in the model for the lifetime of the gap. The two reference carriers stay outside
+  the admitted set; their re-admission is R24-shaped follow-on, and Phase 1's shape is
+  general enough to absorb them when they re-admit.
+- **Retired key has zero consumers.** `lookup-key-input-field-non-nodeid-decoded` is
+  declared only at the producer site (`EnumMappingResolver:258`); a grep across the codebase
+  finds no `@DependsOnClassifierCheck` consumer, so retirement is producer-only and
+  `LoadBearingGuaranteeAuditTest` surfaces no orphan.
+- **Partition-slot permits widen in lockstep.** `LookupKeyField` / `SetField` permit
+  `ColumnField` and `CompositeColumnField` only; reference carriers stay outside the permits
+  set. When R24 (or successor) admits them, the permits widen.
+- **Annotation pair throughout** is `@LoadBearingClassifierCheck` (producer) +
+  `@DependsOnClassifierCheck` (consumer); `@LoadBearingGuarantee` is principles-doc prose,
+  not a type.
+- **Two R131 follow-up rejection tests retype to admission tests** (single-PK and
+  composite-PK). The rename + assertion-shape change should be visible in the diff so the
+  reviewer can verify the surface flip is intentional.
