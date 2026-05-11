@@ -14,7 +14,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Plan |
 |---|---|---|---|
-| `R131` | Singular ID! @nodeId classifier emits Reference variants on same-table case | In Review | [plan](singular-nodeid-same-table-classification.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R134` | Fix mutation empty-input short-circuit to use newRecord for single-record payloads | Ready | [plan](mutation-empty-input-short-circuit-newrecord.md) |
 | `R132` | Move leaf-coverage report verification off local builds | In Review | [plan](leaf-coverage-verify-off-local.md) |
@@ -117,7 +116,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### nodeid
 
-- `R131` [**Singular ID! @nodeId classifier emits Reference variants on same-table case**](singular-nodeid-same-table-classification.md) — In Review, validation
 - `R136` [**Execution-tier coverage for FK-target/NodeType-keyColumns permutation**](nodeid-fk-permutation-execution-tier.md) — Backlog, validation
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
