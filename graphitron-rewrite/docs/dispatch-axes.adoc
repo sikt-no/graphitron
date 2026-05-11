@@ -1,0 +1,118 @@
+= Dispatch axes: `SourceKey` and `LoaderRegistration`
+
+A DataLoader-backed source-side field carries five orthogonal pieces of dispatch information: the per-row key shape, the body-input contract for the rows-method, the per-source row count, the loader container kind, and the loader dispatch verb. Each is a separate type axis in the model. Consumers read off whichever axis they actually fork on; no consumer reconstructs an axis by `instanceof`-ing a conflated permit.
+
+This page is the chapter narrative for that contract. Reference detail (the per-arm record components, the per-axis enum/sealed values) lives on the source: javadoc on `SourceKey`, `SourceKey.Reader`, `SourceKey.Wrap`, and `LoaderRegistration`.
+
+== The axes
+
+Three model values carry the dispatch axes between them: a `SourceKey` per field (singular, classify-time), zero or more `SourceRow` instances per fetch (runtime, the data flowing through), and a `LoaderRegistration` per field (singular, classify-time, DataLoader identity).
+
+`SourceKey` carries four of the axes:
+
+[source,java]
+----
+record SourceKey(
+    TableRef target,                 // join target (or null for the parent-IS-source case)
+    List<ColumnRef> columns,         // entry-point columns (parent-side or target-side per path)
+    List<JoinStep> path,             // empty = target-aligned; non-empty = FK chain to target
+    Wrap wrap,                       // Row | Record | TableRecord(ClassName)
+    Cardinality cardinality,         // ONE | MANY
+    Reader reader                    // ColumnRead | AccessorCall | SourceRowsCall | …
+)
+----
+
+`LoaderRegistration` carries the remaining two:
+
+[source,java]
+----
+record LoaderRegistration(
+    boolean valueIsList,             // load(K)→V vs load(K)→List<V>
+    Container container,             // POSITIONAL_LIST | MAPPED_SET
+    Dispatch  dispatch               // LOAD_ONE | LOAD_MANY
+)
+----
+
+The two values together describe one DataLoader-backed source side. Splitting them at this seam is what makes the rooted-DML data-field case representable: when the data fetcher reads `env.getSource()` directly instead of going through a loader, the field has a `SourceKey` and no `LoaderRegistration`. If the container and dispatch axes lived on `SourceKey`, the rooted case would need a vestigial `LoaderRegistration` slot or a fork in `SourceKey`.
+
+=== `Wrap`: per-row key shape
+
+`SourceKey.Wrap` is sealed: `Row` / `Record` / `TableRecord(ClassName)`. The arm names the jOOQ type the DataLoader's per-key value reads as.
+
+[source]
+----
+Wrap
+├─ Row()                          ← RowN<...>            ; values only
+├─ Record()                       ← RecordN<...>         ; values + value1()..valueN()
+└─ TableRecord(ClassName)         ← typed jOOQ subclass  ; e.g. FilmRecord
+----
+
+The `TableRecord` arm carries the developer-declared subtype as a payload because the column-tuple arms (`Row`, `Record`) have no use for it; an enum with a nullable `recordClass` field would be the conflated alternative. `SourceKey.keyElementType()` is total over the three arms without an extra nullable field on `SourceKey` itself.
+
+=== `Reader`: body input contract
+
+`SourceKey.Reader` is sealed with five arms; each one names what the rows-method body reads to produce its output. SQL-side bodies read parent-side data; service-side bodies read the service-return shape.
+
+[source]
+----
+Reader
+├─ ColumnRead()                   ← FK columns on the parent record (catalog FK)
+├─ AccessorCall(AccessorRef)      ← typed zero-arg accessor on a @record parent
+├─ SourceRowsCall(LifterRef)      ← @sourceRow static lifter on a @record parent
+├─ ServiceTableRecord(ClassName)  ← @service returning a typed TableRecord subclass
+└─ ServiceUntypedRecord()         ← @service returning Record<> / scalar
+----
+
+Reader is the *body's input contract*, not "where the data comes from"; the body emitter reads the contract to know what code to emit, not to recover the directive that produced the field. Adding a new arm (for example, walking a `Result<RecordN>` from upstream DML when the rooted-DML data-field path lands) is a one-arm addition to this enum; every consumer's exhaustive switch breaks at compile time until the new arm is handled.
+
+=== `Cardinality`: rows per key
+
+A two-arm enum: `ONE` (one source row per key — catalog FK, accessor-single, service target-aligned) or `MANY` (list-valued source, accessor-many, list-valued service). Drives the rows-method body's per-key iteration shape and the loader's `load` vs `loadMany` choice.
+
+`Cardinality` lives on `SourceKey` rather than `LoaderRegistration` because the per-source row count is a property of the source-side data shape, not of the DataLoader's identity. The same `SourceKey.MANY` can be loaded into either container (positional or mapped); the cardinality fixes the body's iteration, the container fixes the loader's framing.
+
+=== `Container` + `Dispatch`: DataLoader identity
+
+Two independent enums on `LoaderRegistration`:
+
+* `Container`: `POSITIONAL_LIST` (the loader is built with `newDataLoader`; keys arrive as `List<K>`; returns `List<V>` indexed 1:1 with keys) or `MAPPED_SET` (built with `newMappedDataLoader`; keys arrive as `Set<K>`; returns `Map<K, V>`).
+* `Dispatch`: `LOAD_ONE` (one call to `loader.load(key)` returning one value) or `LOAD_MANY` (one call to `loader.loadMany(keys)` returning a list).
+
+The two axes are independent. The `AccessorKeyedMany` projection lands at `POSITIONAL_LIST` + `LOAD_MANY`: the loader is positional but each fetcher call uses `loadMany` because the parent record carries a list of accessor-projected keys. Conflating container and dispatch into a single axis would force a fourth synthetic combination ("positional but per-key list-valued") that nothing in the model corresponds to.
+
+== Cross-axis invariants
+
+Three pairings are structurally illegal; `SourceKey`'s compact constructor rejects them. Each is documented as a `@LoadBearingClassifierCheck` and paired with a `@DependsOnClassifierCheck` on the emit site that depends on it.
+
+[cols="1,3"]
+|===
+| Invariant | Why load-bearing
+
+| `SourceRowsCall ⇒ Wrap.Row` | The `@sourceRow` lifter contract pins output to entry-point columns shaped as `RowN<...>`. `GeneratorUtils.buildLifterRowKey` emits `$T key = Lifters.method((BackingClass) env.getSource())` where `$T` is `sourceKey.keyElementType()`; the local must be `RowN<...>` for the assignment to type-check. A `Wrap.Record` slipping through would emit a `RecordN<...>`-typed local fed by a `RowN<...>`-returning method ; the generated source wouldn't compile.
+
+| `AccessorCall ⇒ Wrap.Record` | The rows-method body's parent-input VALUES loop emits `DSL.val(k.value$L())` to extract the scalar payload off the per-key `RecordN<...>`. `value$L()` exists on `RecordN<...>` but not on `RowN<...>`. The invariant ensures `keyElementType()` is a `RecordN<...>` type and the `value$L()` invocation type-checks against the local key variable.
+
+| `ServiceTableRecord` target-aligned ⇒ empty `path` | When the service returns a typed `TableRecord` whose class matches the field's target table, walking past target via a `path` chain is structurally redundant ; the service already produced a target-aligned record. The `Wrap.TableRecord` arm in `GeneratorUtils.buildKeyExtraction` emits `parent.into(Tables.X)` directly without walking; the invariant guarantees a misaligned record never reaches this site.
+|===
+
+Each invariant is one paragraph at a single place (the compact constructor) but governs the emit shape at multiple consumers downstream. Relaxing one without auditing the consumer side surfaces as an orphaned `@DependsOnClassifierCheck` in `LoadBearingGuaranteeAuditTest`, not as a runtime surprise.
+
+== Consumer-side dispatch
+
+Each emit site reads off whichever axis it actually forks on, without re-deriving the axis from a conflated identity:
+
+* `GeneratorUtils.buildRecordParentKeyExtraction` switches over `sourceKey.reader()` to choose the parent-side extraction emit shape, then within the `AccessorCall` arm reads `sourceKey.cardinality()` to choose single-vs-list emit. Two axes, two reads ; the dispatch is exhaustive over each axis independently.
+
+* `GeneratorUtils.buildKeyExtraction` (for table-bound parents on the split-query and service paths) switches over `sourceKey.wrap()` to choose between `DSL.row(...)`, `parent.into(table.col, ...)`, and `parent.into(Tables.X)` ; one axis, one read.
+
+* `DataLoaderFetcherEmitter.build` reads `registration.container()` to pick `DataLoaderFactory.newDataLoader` vs `newMappedDataLoader`, and `registration.dispatch()` to pick `loader.load(key)` vs `loader.loadMany(keys)`. Two axes, two reads; the same `SourceKey` can be paired with either container.
+
+* `RowsMethodCall.batchLoaderLambda` reads `registration.container()` to choose `List<K>` vs `Set<K>` for the lambda's keys parameter ; one axis, one read.
+
+* `RowsMethodSkeleton.build` dispatches the body framing on the `RowsMethodBody` permit, which the caller projected from `(sourceKey.reader(), registration.container())`. The skeleton's exhaustive switch over five `RowsMethodBody` permits is the seam between body construction (per-shape) and outer-method framing (uniform across permits).
+
+The pattern: each consumer's switch is exhaustive over exactly one axis, and the compiler enforces that adding a new arm to any axis breaks every consumer whose dispatch isn't yet aware of it.
+
+== Connection to the principle
+
+This is the live worked example for xref:rewrite-design-principles.adoc#sealed-hierarchies-over-enums-for-typed-information[Sealed hierarchies over enums for typed information]. The four-axis split is the principle in action: each axis is a sealed sub-hierarchy or enum carrying exactly the information its consumers need, and the compiler enforces exhaustive switches at every dispatch site. The smell the principle warns about ; a single shared accessor whose meaning depends on the variant, or a permit name that splices two axes together ; is the alternative this model rejects by construction.
