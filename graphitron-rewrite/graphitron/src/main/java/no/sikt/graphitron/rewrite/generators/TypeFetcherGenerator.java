@@ -167,6 +167,7 @@ public class TypeFetcherGenerator {
         MutationField.MutationDeleteTableField.class,
         MutationField.MutationUpsertTableField.class,
         MutationField.MutationDmlRecordField.class,
+        MutationField.MutationBulkDmlRecordField.class,
         MutationField.MutationServiceTableField.class,
         MutationField.MutationServiceRecordField.class,
         ChildField.ServiceTableField.class,
@@ -400,6 +401,7 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationServiceTableField f -> builder.addMethod(buildMutationServiceTableFetcher(ctx, f, outputPackage));
                 case MutationField.MutationServiceRecordField f -> builder.addMethod(buildMutationServiceRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationDmlRecordField f    -> builder.addMethod(buildMutationDmlRecordFetcher(ctx, f, outputPackage));
+                case MutationField.MutationBulkDmlRecordField f -> builder.addMethod(buildMutationBulkDmlRecordFetcher(ctx, f, outputPackage));
                 // ColumnReferenceField has no fetcher method — inline projection via
                 // TypeClassGenerator.$fields (Direct compaction) and a ColumnFetcher value emitted
                 // by FetcherEmitter. The validator rejects the NodeIdEncodeKeys and ConditionJoin
@@ -2190,6 +2192,21 @@ public class TypeFetcherGenerator {
     private static LookupWhereChunk buildLookupWhereSingleRow(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        return buildLookupWhereSingleRow(tia, tablesOnly, tableRef, "in");
+    }
+
+    /**
+     * R141 extension: same lookup-WHERE construction as the no-arg overload but reading from a
+     * caller-named map local rather than the implicit {@code "in"}. Used by
+     * {@link #buildMutationBulkDmlRecordFetcher}'s per-row UPDATE arm, which iterates the bulk
+     * input list and binds each {@code Map<?, ?>} to a per-row local named {@code "row"}; the
+     * decode-locals and the WHERE predicate read off that per-row map without colliding with the
+     * outer {@code "in"} list cast.
+     */
+    private static LookupWhereChunk buildLookupWhereSingleRow(
+            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
+            String mapLocal) {
         var locals = CodeBlock.builder();
         var whereExpr = CodeBlock.builder();
         var groups = tia.fieldBindings();
@@ -2202,7 +2219,7 @@ public class TypeFetcherGenerator {
                         if (slotIndex > 0) whereExpr.add(".and(");
                         whereExpr.add("$T.$L.$L.eq(",
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
-                        appendMapBindingValueExpr(whereExpr, locals, binding, "in",
+                        appendMapBindingValueExpr(whereExpr, locals, binding, mapLocal,
                             tablesOnly, tableRef, gi);
                         whereExpr.add(")");
                         if (slotIndex > 0) whereExpr.add(")");
@@ -2211,7 +2228,7 @@ public class TypeFetcherGenerator {
                 }
                 case InputColumnBindingGroup.DecodedRecordGroup drg -> {
                     String recLocal = "__lookupKey" + gi;
-                    appendDecodeLocal(locals, recLocal, drg.extraction(), "in", drg.sourceFieldName());
+                    appendDecodeLocal(locals, recLocal, drg.extraction(), mapLocal, drg.sourceFieldName());
                     for (var binding : drg.bindings()) {
                         if (slotIndex > 0) whereExpr.add(".and(");
                         whereExpr.add("$T.$L.$L.eq($L.value$L())",
@@ -3509,6 +3526,228 @@ public class TypeFetcherGenerator {
             chain.add(".doNothing()\n");
         }
         return new DmlChainAndGuards(chain.build(), preGuard.build());
+    }
+
+    /**
+     * R141: emits the fetcher for a {@link MutationField.MutationBulkDmlRecordField} — a record-
+     * returning DML mutation with bulk {@code @table} input and a list-shaped data field on the
+     * carrier. The fetcher loops the input list, runs one DML per row inside
+     * {@code dsl.transactionResult(...)}, collects the PK records into a typed
+     * {@code Result<RecordN<...>>} in input order, and returns the accumulated Result. The
+     * downstream data field's fetcher ({@link FetcherEmitter#buildSingleRecordTableFetcherValue}
+     * with {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY}) reads that Result
+     * via {@code env.getSource()} and runs the bulk response SELECT outside the transaction.
+     *
+     * <p><b>Order preservation invariant.</b> {@code output.data[i]} corresponds to
+     * {@code input[i]} for all {@code i ∈ [0, N)}. The Java for-each loop iterates the input
+     * list in declaration order; {@code Result.add(record)} preserves insertion order;
+     * the downstream SELECT's WHERE-PK-IN does not preserve order, but the response-SELECT
+     * fetcher in {@code FetcherEmitter} reads {@code source.getValues(table.PK)} which projects
+     * PKs in input order, and graphql-java's serialiser walks the response list in the
+     * iteration order of the data field's fetcher. The deliberately-non-PK-ordered round-trip
+     * in {@code DmlBulkMutationsExecutionTest} is the runtime audit; any future single-statement
+     * emit refinement (e.g. an ordinal-preserving Postgres contract) must preserve the same
+     * input-order assertion that round-trip makes.
+     *
+     * <p>Empty-list input: short-circuits before opening the transaction, returning an empty
+     * typed {@code Result} (mirrors R134's empty-input short-circuit on the direct-{@code @table}
+     * bulk arms).
+     *
+     * <p>DELETE-with-payload-return is rejected at the compact-constructor on
+     * {@link MutationField.MutationBulkDmlRecordField}; UPSERT is deferred to R145 under R144's
+     * cardinality-safety regime, also rejected at the compact-constructor.
+     *
+     * @see MutationField.MutationBulkDmlRecordField
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "mutation-dml-record-field.data-table-equals-input-table",
+        reliesOn = "The per-row RETURNING clause projects "
+            + "tableInputArg.inputTable().primaryKeyColumns(); the data field's bulk response "
+            + "SELECT reads the same PK columns off env.getSource() (Result<RecordN<...>>). "
+            + "Without table-equality the two halves would reference different column sets, "
+            + "and jOOQ would reject the data-field WHERE predicate at runtime.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "single-record-carrier-shape.roles-exhaustively-classified",
+        reliesOn = "The fetcher emits the data-channel projection only; the closed-list "
+            + "CarrierFieldRole permits classifier rule guarantees no other field shape on the "
+            + "carrier reaches emit. R12 (error-handling-parity) attaches its own consumer "
+            + "annotations against the ErrorChannelRole permit when it lands; until then, "
+            + "shape.errorChannel() is always empty on this leaf's NoBacking carrier shape.")
+    private static MethodSpec buildMutationBulkDmlRecordFetcher(
+            TypeFetcherEmissionContext ctx, MutationField.MutationBulkDmlRecordField f, String outputPackage) {
+        var tia = f.tableInputArg();
+        var tableRef = tia.inputTable();
+        var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
+        String tableLocal = tablesOnly.tableLocalName();
+        var pkCols = tableRef.primaryKeyColumns();
+        if (pkCols.isEmpty()) {
+            throw new IllegalStateException(
+                "MutationBulkDmlRecordField '" + f.qualifiedName() + "' references table '"
+                + tableRef.tableName() + "' that has no primary key; admission requires PK columns");
+        }
+        TypeName recordRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
+            new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), pkCols);
+        var resultClass = ClassName.get("org.jooq", "Result");
+        TypeName resultType = ParameterizedTypeName.get(resultClass, recordRowType);
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+
+        var builder = MethodSpec.methodBuilder(f.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(syncResultType(resultType))
+            .addParameter(ENV, "env");
+        builder.beginControlFlow("try");
+        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+        builder.addStatement("$T<$T<?, ?>> in = ($T<$T<?, ?>>) env.getArgument($S)",
+            LIST, MAP, LIST, MAP, tia.name());
+        builder.addStatement("$T $L = $T.$L",
+            tablesOnly.jooqTableClass(), tableLocal, tablesOnly.tablesClass(), tableRef.javaFieldName());
+
+        // Empty-list short-circuit: no DML, return empty Result. Mirrors R134's empty-input
+        // short-circuit on the direct-@table bulk arms (no transaction opened, no rows touched).
+        builder.beginControlFlow("if (in.isEmpty())")
+            .addStatement("return $T.<$T>newResult().data(dsl.newResult($L)).build()",
+                DATA_FETCHER_RESULT, resultType, buildPkFieldList(pkCols, tablesOnly, tableRef))
+            .endControlFlow();
+
+        // transactionResult: per-row DML inside one transaction. The lambda binds a transactional
+        // DSLContext (txd), allocates a typed Result over the PK columns, iterates input rows
+        // in declaration order, runs one DML per row with PK RETURNING, and appends the returned
+        // RecordN to the Result. On any per-row throw (constraint violation, type mismatch, RLS
+        // denial, ...), the transaction rolls back; the outer catch arm routes the exception
+        // through ErrorRouter into the carrier's error channel (R12 wiring, currently no-op for
+        // NoBacking carriers).
+        builder.addCode(CodeBlock.builder()
+            .add("$T payload = dsl.transactionResult(tx -> {\n", resultType).indent()
+            .add("$T txd = $T.using(tx);\n", dslContextClass, DSL)
+            .add("$T acc = txd.newResult($L);\n", resultType, buildPkFieldList(pkCols, tablesOnly, tableRef))
+            .add("for ($T<?, ?> row : in) {\n", MAP).indent()
+            .add(buildBulkRecordPerRowBody(f, tia, tableRef, tablesOnly, tableLocal, pkCols, recordRowType))
+            .unindent().add("}\n")
+            .add("return acc;\n")
+            .unindent().add("});\n")
+            .build());
+
+        builder.addCode(returnSyncSuccess(resultType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(catchArm(outputPackage, f.errorChannel()));
+        builder.endControlFlow();
+        return builder.build();
+    }
+
+    /**
+     * Builds the per-row DML body for {@link #buildMutationBulkDmlRecordFetcher} — the code that
+     * runs once per input row inside the transactionResult loop. Dispatches on
+     * {@link MutationField.MutationBulkDmlRecordField#kind()}:
+     *
+     * <ul>
+     *   <li>{@code INSERT}: per-row {@code insertInto(table, cols).values(perCell).returningResult(PK).fetchOne()}.</li>
+     *   <li>{@code UPDATE}: per-row dynamic SET-map (R134 contains-key dispatch), lookup-WHERE
+     *       via {@link #buildLookupWhereSingleRow}'s {@code mapLocal="row"} overload, then
+     *       {@code update(table).set(sets).where(...).returningResult(PK).fetchOne()}.</li>
+     * </ul>
+     *
+     * <p>{@code UPDATE} no-match (zero rows updated) throws {@link IllegalStateException} to
+     * preserve the order-preservation invariant: a silent no-match would skew {@code output.data[i]}
+     * away from {@code input[i]}. Authors get a typed exception that flows through the catch arm.
+     * The {@code DELETE} / {@code UPSERT} cases are rejected at the compact-constructor and never
+     * reach this dispatch; the {@code default} arm guards against a future widening accident.
+     */
+    private static CodeBlock buildBulkRecordPerRowBody(
+            MutationField.MutationBulkDmlRecordField f,
+            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
+            String tableLocal,
+            List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols,
+            TypeName recordRowType) {
+        return switch (f.kind()) {
+            case INSERT -> buildBulkRecordPerRowInsertBody(
+                tia, tableRef, tablesOnly, tableLocal, pkCols, recordRowType);
+            case UPDATE -> buildBulkRecordPerRowUpdateBody(
+                tia, tableRef, tablesOnly, tableLocal, pkCols, recordRowType);
+            case UPSERT -> throw new IllegalStateException(
+                "MutationBulkDmlRecordField with DmlKind.UPSERT — compact-constructor should "
+                + "have rejected this; UPSERT is deferred to R145 under R144's cardinality-"
+                + "safety regime");
+            case DELETE -> throw new IllegalStateException(
+                "MutationBulkDmlRecordField with DmlKind.DELETE — compact-constructor should "
+                + "have rejected this; DELETE-with-payload-return is incorrect by construction");
+        };
+    }
+
+    private static CodeBlock buildBulkRecordPerRowInsertBody(
+            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
+            String tableLocal,
+            List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols,
+            TypeName recordRowType) {
+        var fields = tia.fields();
+        var colList = buildInsertColumnList(fields, tablesOnly, tableRef);
+        var body = CodeBlock.builder();
+        body.add(buildInsertDecodeLocals(fields, "row", "__insertKey"));
+        body.add("$T rec = txd.insertInto($L, ", recordRowType, tableLocal).add(colList).add(")\n")
+            .add("    .values(\n").indent().indent()
+            .add(buildPerCellValueList(fields, tablesOnly, tableRef, "row", "__insertKey")).unindent().unindent()
+            .add(")\n")
+            .add("    .returningResult(").add(buildPkFieldList(pkCols, tablesOnly, tableRef)).add(")\n")
+            .add("    .fetchOne();\n")
+            .add("acc.add(rec);\n");
+        return body.build();
+    }
+
+    private static CodeBlock buildBulkRecordPerRowUpdateBody(
+            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
+            String tableLocal,
+            List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols,
+            TypeName recordRowType) {
+        var fieldClass = ClassName.get("org.jooq", "Field");
+        var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
+        var body = CodeBlock.builder();
+        body.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
+        for (var sf : tia.setFields()) {
+            var cf = (InputField.ColumnField) sf;
+            body.beginControlFlow("if (row.containsKey($S))", cf.name())
+                .addStatement("sets.put($T.$L.$L, $T.val(row.get($S), $T.$L.$L.getDataType()))",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
+                    DSL, cf.name(),
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
+                .endControlFlow();
+        }
+        body.beginControlFlow("if (sets.isEmpty())")
+            .addStatement("throw new $T($S)", IllegalArgumentException.class,
+                "@mutation(typeName: UPDATE) call has no settable fields present; "
+                    + "only @lookupKey fields were provided")
+            .endControlFlow();
+        var whereChunk = buildLookupWhereSingleRow(tia, tablesOnly, tableRef, "row");
+        body.add(whereChunk.decodeLocals());
+        body.add("$T rec = txd.update($L)\n", recordRowType, tableLocal)
+            .add("    .set(sets)\n")
+            .add("    .where(").add(whereChunk.whereExpr()).add(")\n")
+            .add("    .returningResult(").add(buildPkFieldList(pkCols, tablesOnly, tableRef)).add(")\n")
+            .add("    .fetchOne();\n");
+        // UPDATE no-match preserves the order-preservation invariant by failing fast rather
+        // than skewing acc.size() against in.size() with a silent skip; the catch arm routes
+        // the exception through the carrier's error channel (R12 wiring).
+        body.beginControlFlow("if (rec == null)")
+            .addStatement("throw new $T($S + row)", IllegalStateException.class,
+                "@mutation(typeName: UPDATE) bulk row matched zero rows; @lookupKey filter "
+                    + "found no target for input row: ")
+            .endControlFlow();
+        body.add("acc.add(rec);\n");
+        return body.build();
+    }
+
+    /** Builds the comma-separated list of PK column references for a {@code returningResult(...)} call. */
+    private static CodeBlock buildPkFieldList(
+            List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        var b = CodeBlock.builder();
+        for (int i = 0; i < pkCols.size(); i++) {
+            if (i > 0) b.add(", ");
+            b.add("$T.$L.$L",
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), pkCols.get(i).javaName());
+        }
+        return b.build();
     }
 
     private static MethodSpec stub(GraphitronField field) {

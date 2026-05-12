@@ -18,6 +18,7 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
+import no.sikt.graphitron.rewrite.model.CarrierFieldRole;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.DataElement;
@@ -491,6 +492,15 @@ class BuildContext {
      * pre-promotion shape ({@link GraphitronType.PlainObjectType}) so the promoter itself can
      * use it.
      */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "single-record-carrier-shape.roles-exhaustively-classified",
+        description = "Every emitted SingleRecordCarrierShape.roles list is exhaustively classified "
+            + "into CarrierFieldRole permits — a carrier field that resolves to no permit causes "
+            + "the walk to return Rejected with a descriptive reason naming the offending field, "
+            + "rather than producing an Ok shape with the unknown field tolerated. Emitters and "
+            + "registration sites dispatch over the closed permit set via sealed switches; a new "
+            + "permit landing without a corresponding consumer dispatch fails build-time "
+            + "CarrierFieldRoleCoverageTest.")
     SingleRecordCarrierResolution tryResolveSingleRecordCarrier(String typeName) {
         GraphitronType target = types.get(typeName);
         // Condition #1: registered as PlainObjectType (pre-promotion), or
@@ -506,22 +516,83 @@ class BuildContext {
         }
 
         var fields = objType.getFieldDefinitions();
-        // Condition #2: exactly one field (Phase 1 scope; R128 admits multi-field).
-        if (fields.size() != 1) {
+        if (fields.isEmpty()) {
             return new SingleRecordCarrierResolution.Rejected(
-                "single-record carrier '" + typeName + "' declares " + fields.size()
-                + " fields; Phase 1 admits exactly one data field");
+                "single-record carrier '" + typeName
+                + "' declares no fields; require exactly one DataChannel field");
         }
 
-        GraphQLFieldDefinition dataField = fields.get(0);
+        // R141: walk every carrier field and classify each into a CarrierFieldRole permit. Today
+        // the walk produces DataChannel permits only; CarrierFieldRole.ErrorChannelRole exists in
+        // the type system but the walk does not classify it (R12, error-handling-parity, lands the
+        // ErrorChannelRole producer in the same commit it lands the consumer-side annotations).
+        // Any field that does not classify into a DataChannel today rejects the carrier with the
+        // descriptive "no CarrierFieldRole permit" message that names the offending field and the
+        // extension point ("file a roadmap item"); future Backlog items
+        // (payload-carrier-affected-row-count, payload-carrier-client-mutation-id) add new permits
+        // and tighten this walk.
+        var roles = new ArrayList<CarrierFieldRole>(fields.size());
+        for (var field : fields) {
+            var rolesResult = classifyCarrierField(field);
+            switch (rolesResult) {
+                case CarrierFieldClassification.Role r -> roles.add(r.role());
+                case CarrierFieldClassification.NoPermit np -> {
+                    return new SingleRecordCarrierResolution.Rejected(np.reason());
+                }
+                case CarrierFieldClassification.HardReject hr -> {
+                    return new SingleRecordCarrierResolution.Rejected(hr.reason());
+                }
+            }
+        }
+
+        // The compact-constructor invariants on SingleRecordCarrierShape enforce exactly-one
+        // DataChannel, at-most-one ErrorChannelRole, distinct field names. The walk surfaces the
+        // multi-DataChannel case as a graceful rejection (two carrier fields that both look like
+        // @table-element data) rather than letting the compact-constructor's IllegalArgumentException
+        // propagate.
+        long dataChannelCount = roles.stream().filter(r -> r instanceof CarrierFieldRole.DataChannel).count();
+        if (dataChannelCount > 1) {
+            return new SingleRecordCarrierResolution.Rejected(
+                "single-record carrier '" + typeName + "' declares " + dataChannelCount
+                + " DataChannel-shaped fields; require exactly one (a future Backlog item may "
+                + "admit multi-data carriers behind a new CarrierFieldRole permit)");
+        }
+        return new SingleRecordCarrierResolution.Ok(new SingleRecordCarrierShape(typeName, roles));
+    }
+
+    /**
+     * Per-field carrier classifier outcome. Three arms:
+     *
+     * <ul>
+     *   <li>{@link CarrierFieldClassification.Role} — the field classifies into a
+     *       {@link CarrierFieldRole} permit; carrier resolution accumulates it.</li>
+     *   <li>{@link CarrierFieldClassification.NoPermit} — the field's shape matches no
+     *       admitted permit today; the unified walk returns
+     *       {@link SingleRecordCarrierResolution.Rejected} with the offending field named and
+     *       the {@code CarrierFieldRole} extension point pointed at.</li>
+     *   <li>{@link CarrierFieldClassification.HardReject} — the field could be a
+     *       {@link CarrierFieldRole.DataChannel} by SDL shape but fails a structural
+     *       precondition (forbidden directive, non-admissible element type); reuses the
+     *       legacy carrier-rejection language so authors moving from Phase 1 see the same
+     *       diagnostic surface.</li>
+     * </ul>
+     */
+    private sealed interface CarrierFieldClassification {
+        record Role(CarrierFieldRole role) implements CarrierFieldClassification {}
+        record NoPermit(String reason) implements CarrierFieldClassification {}
+        record HardReject(String reason) implements CarrierFieldClassification {}
+    }
+
+    private CarrierFieldClassification classifyCarrierField(GraphQLFieldDefinition dataField) {
         String dataFieldName = dataField.getName();
         String dataElementName = baseTypeName(dataField);
 
-        // Condition #3: the data field's element type is registered as TableBackedType (Phase 1)
-        // or a record-backed ResultType with a non-null backing class (Phase 2). Plain SDL
-        // Objects promoted to PojoResultType.NoBacking have no class to match against a
-        // @service method's reflected return type, so they're rejected as elements (only
-        // admissible as the carrier itself).
+        // The data field's element type is registered as TableBackedType (Phase 1 carrier) or a
+        // record-backed ResultType with a non-null backing class (Phase 2 @service carrier).
+        // Plain SDL Objects promoted to PojoResultType.NoBacking have no class to match against
+        // a @service method's reflected return type, so they're rejected as elements (only
+        // admissible as the carrier itself). Anything else (Int, String, an interface/union the
+        // carrier walk does not know how to project) lands as no-permit-match.
         GraphitronType elementType = types.get(dataElementName);
         FieldWrapper dataWrapper = buildWrapper(dataField);
         DataElement dataElement;
@@ -530,20 +601,23 @@ class BuildContext {
         } else if (elementType instanceof ResultType rt && rt.fqClassName() != null) {
             dataElement = new DataElement.Record(dataElementName, rt.fqClassName(), dataWrapper);
         } else {
-            return new SingleRecordCarrierResolution.Rejected(
-                "single-record carrier field '" + dataFieldName + "' element type '"
-                + dataElementName + "' is not admissible; require @table-mapped or @record-backed "
-                + "with a backing class");
+            return new CarrierFieldClassification.NoPermit(
+                "carrier field '" + dataFieldName + "' (element '" + dataElementName
+                + "') resolves to no CarrierFieldRole permit; only DataChannel (one @table data "
+                + "field paired to the input @table) and ErrorChannelRole (R12 errors-shaped "
+                + "field) are admitted today. Adding support for '" + dataFieldName
+                + "' requires a new CarrierFieldRole permit; file a roadmap item for the field "
+                + "shape.");
         }
 
-        // Condition #4: the data field carries no graphitron-domain directive. Directives like
-        // @service, @sourceRow, @reference, @nodeId, @field, @asConnection, @splitQuery, and
-        // @externalField signal a different fetcher contract than SingleRecordTableField's
-        // ResultRowWalk emit; routing the data field through here would fight the field's
-        // intended classification. Pure-metadata directives (@deprecated, user-defined custom
-        // directives without execution semantics) are not on the list and pass through
-        // silently. Authors who need graphitron-domain behaviour on the data field can opt
-        // back in with @record(record: {className: ...}) explicitly.
+        // The data field carries no graphitron-domain directive. Directives like @service,
+        // @sourceRow, @reference, @nodeId, @field, @asConnection, @splitQuery, and @externalField
+        // signal a different fetcher contract than SingleRecordTableField's ResultRowWalk emit;
+        // routing the data field through here would fight the field's intended classification.
+        // Pure-metadata directives (@deprecated, user-defined custom directives without execution
+        // semantics) are not on the list and pass through silently. Authors who need
+        // graphitron-domain behaviour on the data field can opt back in with
+        // @record(record: {className: ...}) explicitly.
         Set<String> forbidden = Set.of(
             DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_NODE_ID, DIR_FIELD,
             DIR_AS_CONNECTION, DIR_SPLIT_QUERY, DIR_EXTERNAL_FIELD, DIR_CONDITION,
@@ -551,15 +625,15 @@ class BuildContext {
             DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
         for (var applied : dataField.getAppliedDirectives()) {
             if (forbidden.contains(applied.getName())) {
-                return new SingleRecordCarrierResolution.Rejected(
+                return new CarrierFieldClassification.HardReject(
                     "single-record carrier field '" + dataFieldName + "' carries '@"
                     + applied.getName() + "'; Phase 1 admits @table-element data fields without "
                     + "graphitron-domain field-level directives");
             }
         }
 
-        return new SingleRecordCarrierResolution.Ok(new SingleRecordCarrierShape(
-            typeName, dataFieldName, dataElement));
+        return new CarrierFieldClassification.Role(
+            new CarrierFieldRole.DataChannel(dataFieldName, dataElement));
     }
 
     // ===== Error-message helpers =====

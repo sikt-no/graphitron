@@ -5131,11 +5131,13 @@ class GraphitronSchemaBuilderTest {
         },
 
         MUTATION_DML_RECORD_FIELD(
-            "R75 / Phase 1: @mutation(typeName: INSERT) returning a single-record DML carrier "
-                + "(plain SDL Object wrapping one @table-element data field) → MutationDmlRecordField",
+            "R75 / Phase 1: @mutation(typeName: INSERT) with single @table input and a single-"
+                + "record DML carrier (plain SDL Object wrapping one @table-element data field) "
+                + "→ MutationDmlRecordField. R141 pairs the input cardinality to the data field's "
+                + "wrapper, so this row's single + single shape stays on the original sealed leaf.",
             """
             type Film @table(name: "film") { title: String }
-            type FilmPayload { films: [Film!] }
+            type FilmPayload { film: Film }
             input FilmCreateInput @table(name: "film") { title: String }
             type Query { x: String }
             type Mutation {
@@ -5144,6 +5146,31 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> assertThat(schema.field("Mutation", "createFilm")).isInstanceOf(MutationField.MutationDmlRecordField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationDmlRecordField.class); }
+        },
+
+        MUTATION_BULK_DML_RECORD_FIELD(
+            "R141: @mutation(typeName: INSERT) with bulk @table input and a single-record DML "
+                + "carrier whose data field is list-shaped → MutationBulkDmlRecordField. The "
+                + "carrier classifier routes the bulk-input + list-data-field cell to the new "
+                + "sealed leaf; the emitter batches per-row DML in input order and runs one "
+                + "follow-up response SELECT keyed by the PKs collected in input order.",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] }
+            input FilmCreateInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                createFilmsPayload(in: [FilmCreateInput!]!): FilmsPayload @mutation(typeName: INSERT)
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationBulkDmlRecordField)
+                    schema.field("Mutation", "createFilmsPayload");
+                assertThat(f.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.INSERT);
+                assertThat(f.tableInputArg().list()).isTrue();
+                assertThat(f.returnType().returnTypeName()).isEqualTo("FilmsPayload");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationBulkDmlRecordField.class); }
         },
 
         SERVICE_MUTATION_FIELD_NAME_OVERRIDE_TEXT_ENUM(
@@ -5657,7 +5684,11 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_INSERT_LIST_PLAIN_PAYLOAD_REJECTED(
-            "DML INSERT with listed input + plain SDL Object payload return → UnclassifiedField (Invariant #15, R75 carrier-arm)",
+            "DML INSERT with listed input + plain SDL Object payload return + singleton-shaped "
+                + "data field → UnclassifiedField (R138's lifted Invariant #15). R141 routes the "
+                + "complementary cell (bulk input + list-shaped data field) to "
+                + "MutationBulkDmlRecordField; this row covers the unchanged singleton-arm "
+                + "rejection.",
             """
             type Film @table(name: "film") { title: String }
             type FilmPayload { film: Film }
@@ -5670,6 +5701,48 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.reason())
                     .contains("must return a list")
                     .contains("Invariant #15");
+            }),
+
+        DML_INSERT_SINGLE_LIST_DATA_REJECTED(
+            "R141: DML INSERT with single @table input + list-shaped data field on the carrier "
+                + "→ UnclassifiedField (Invariant #16). Complementary cell of the bulk-input + "
+                + "list-data-field admit; surfacing the cardinality mismatch as a typed rejection "
+                + "rather than letting the per-row DML emit a list against single input.",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilmPayload(in: FilmInput!): FilmsPayload @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilmPayload");
+                assertThat(f.reason())
+                    .contains("single @table input cannot")
+                    .contains("list-shaped data field")
+                    .contains("Invariant #16");
+            }),
+
+        DML_INSERT_LIST_PAYLOAD_NO_CARRIER_FIELD_ROLE_REJECTED(
+            "R141: DML INSERT with bulk @table input + carrier carrying a sibling field that "
+                + "resolves to no CarrierFieldRole permit → UnclassifiedField. The carrier walk "
+                + "rejects with a descriptive reason naming the offending field and the "
+                + "extension point (file a roadmap item for a new CarrierFieldRole permit).",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] affectedRowCount: Int }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                createFilmsPayload(in: [FilmInput!]!): FilmsPayload @mutation(typeName: INSERT)
+            }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilmsPayload");
+                assertThat(f.reason())
+                    .contains("affectedRowCount")
+                    .contains("CarrierFieldRole permit")
+                    .contains("file a roadmap item");
             }),
 
         DML_NON_ID_RETURN_REJECTED(

@@ -226,42 +226,7 @@ public class GraphitronSchemaBuilder {
                 // Rejected fall through.
                 if (ctx.tryResolveSingleRecordCarrier(objType.getName())
                         instanceof SingleRecordCarrierResolution.Ok ok) {
-                    var shape = ok.shape();
-                    var dataFieldDef = objType.getFieldDefinition(shape.dataFieldName());
-                    switch (shape.dataElement()) {
-                        case no.sikt.graphitron.rewrite.model.DataElement.Table tableElement -> {
-                            var pkColumns = tableElement.table().primaryKeyColumns();
-                            var cardinality = tableElement.wrapper().isList()
-                                ? SourceKey.Cardinality.MANY
-                                : SourceKey.Cardinality.ONE;
-                            var sourceKey = new SourceKey(
-                                tableElement.table(),
-                                pkColumns,
-                                java.util.List.of(),
-                                new SourceKey.Wrap.Record(),
-                                cardinality,
-                                new SourceKey.Reader.ResultRowWalk());
-                            ctx.fieldRegistry.classify(
-                                FieldCoordinates.coordinates(objType.getName(), shape.dataFieldName()),
-                                new ChildField.SingleRecordTableField(
-                                    objType.getName(), shape.dataFieldName(), locationOf(dataFieldDef),
-                                    new ReturnTypeRef.TableBoundReturnType(
-                                        tableElement.name(), tableElement.table(), tableElement.wrapper()),
-                                    sourceKey));
-                        }
-                        case no.sikt.graphitron.rewrite.model.DataElement.Record recordElement -> {
-                            // R75 Phase 2: record-element data on a single-record carrier classifies as
-                            // SingleRecordIdentityField. Identity passthrough emit; no SourceKey, no
-                            // SELECT — the source value (the producing operation's domain record) IS the
-                            // data field's value.
-                            ctx.fieldRegistry.classify(
-                                FieldCoordinates.coordinates(objType.getName(), shape.dataFieldName()),
-                                new ChildField.SingleRecordIdentityField(
-                                    objType.getName(), shape.dataFieldName(), locationOf(dataFieldDef),
-                                    new ReturnTypeRef.ResultReturnType(
-                                        recordElement.name(), recordElement.wrapper(), recordElement.fqClassName())));
-                        }
-                    }
+                    registerCarrierDataField(ctx, objType, ok.shape());
                     return;
                 }
                 // Fields on plain SDL object types (no domain directive, no single-record-carrier
@@ -286,6 +251,76 @@ public class GraphitronSchemaBuilder {
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings());
         return new BuildResult(model, rebuiltAssembled);
+    }
+
+    /**
+     * Registers the carrier's {@link no.sikt.graphitron.rewrite.model.CarrierFieldRole.DataChannel}
+     * with the field registry. R75 Phase 1 admits {@link no.sikt.graphitron.rewrite.model.DataElement.Table}
+     * (a follow-up SELECT against the carrier's table) as
+     * {@link ChildField.SingleRecordTableField}; R75 Phase 2 admits
+     * {@link no.sikt.graphitron.rewrite.model.DataElement.Record} (identity passthrough of the
+     * producing operation's domain record) as {@link ChildField.SingleRecordIdentityField}. The
+     * cardinality of the resulting {@link SourceKey} is read from the data field's wrapper, so
+     * the R141 list-shaped carrier ({@code films: [Film!]}) registers as
+     * {@link SourceKey.Cardinality#MANY} and the singleton case ({@code film: Film}) stays
+     * {@link SourceKey.Cardinality#ONE}.
+     *
+     * <p>The {@link no.sikt.graphitron.rewrite.model.CarrierFieldRole.ErrorChannelRole} permit, if
+     * present on the shape, is not registered here (R12, error-handling-parity, lands the
+     * carrier-side error-channel registration when it ships); the {@code roles} iteration
+     * focuses on the data channel today.
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "single-record-carrier-shape.roles-exhaustively-classified",
+        reliesOn = "registerCarrierDataField walks shape.roles via a sealed switch over "
+            + "CarrierFieldRole permits; the exhaustive classification guarantee lets the "
+            + "data-channel arm read the resolved DataElement directly without checking for "
+            + "an unclassified-field tolerated state.")
+    private static void registerCarrierDataField(
+            BuildContext ctx, GraphQLObjectType objType,
+            no.sikt.graphitron.rewrite.model.SingleRecordCarrierShape shape) {
+        for (var role : shape.roles()) {
+            switch (role) {
+                case no.sikt.graphitron.rewrite.model.CarrierFieldRole.DataChannel dc -> {
+                    var dataFieldDef = objType.getFieldDefinition(dc.fieldName());
+                    switch (dc.element()) {
+                        case no.sikt.graphitron.rewrite.model.DataElement.Table tableElement -> {
+                            var pkColumns = tableElement.table().primaryKeyColumns();
+                            var cardinality = tableElement.wrapper().isList()
+                                ? SourceKey.Cardinality.MANY
+                                : SourceKey.Cardinality.ONE;
+                            var sourceKey = new SourceKey(
+                                tableElement.table(),
+                                pkColumns,
+                                java.util.List.of(),
+                                new SourceKey.Wrap.Record(),
+                                cardinality,
+                                new SourceKey.Reader.ResultRowWalk());
+                            ctx.fieldRegistry.classify(
+                                FieldCoordinates.coordinates(objType.getName(), dc.fieldName()),
+                                new ChildField.SingleRecordTableField(
+                                    objType.getName(), dc.fieldName(), locationOf(dataFieldDef),
+                                    new ReturnTypeRef.TableBoundReturnType(
+                                        tableElement.name(), tableElement.table(), tableElement.wrapper()),
+                                    sourceKey));
+                        }
+                        case no.sikt.graphitron.rewrite.model.DataElement.Record recordElement -> {
+                            ctx.fieldRegistry.classify(
+                                FieldCoordinates.coordinates(objType.getName(), dc.fieldName()),
+                                new ChildField.SingleRecordIdentityField(
+                                    objType.getName(), dc.fieldName(), locationOf(dataFieldDef),
+                                    new ReturnTypeRef.ResultReturnType(
+                                        recordElement.name(), recordElement.wrapper(), recordElement.fqClassName())));
+                        }
+                    }
+                }
+                case no.sikt.graphitron.rewrite.model.CarrierFieldRole.ErrorChannelRole ignored -> {
+                    // R12 (error-handling-parity) lands the carrier-side error-channel
+                    // registration when it ships. R141 reserves the permit in the type system
+                    // without producing it from the walk; no registration runs here today.
+                }
+            }
+        }
     }
 
     /**

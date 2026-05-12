@@ -1,7 +1,7 @@
 ---
 id: R141
 title: Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field
-status: In Progress
+status: In Review
 bucket: feature
 priority: 2
 theme: mutations-errors
@@ -10,6 +10,24 @@ last-updated: 2026-05-12
 ---
 
 # Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field
+
+## Implementation notes (In Review)
+
+R141 lift as implemented:
+
+- `CarrierFieldRole` sealed interface lives at `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/CarrierFieldRole.java` with permits `DataChannel` and `ErrorChannelRole`. The walk classifies only the `DataChannel` permit today; the `ErrorChannelRole` permit is reserved in the type system for R12 (`error-handling-parity`) to land the producer side when it ships. The carrier-side `resolveErrorChannel` call at `FieldBuilder.java` was dead code for `NoBacking` carriers (returns `NO_CHANNEL` when `fqClassName == null`), so removing it here is observationally a no-op until R12 lands.
+- `SingleRecordCarrierShape` refactored to `(carrierTypeName, List<CarrierFieldRole> roles)` with compact-constructor invariants enforced (exactly-one `DataChannel`, at-most-one `ErrorChannelRole`, distinct field names) and helper accessors `data()` / `errorChannel()`.
+- `BuildContext.tryResolveSingleRecordCarrier` rewritten as the unified per-field walk; any carrier field that does not classify into a `CarrierFieldRole` permit causes the walk to return `Rejected` with the descriptive "no CarrierFieldRole permit; file a roadmap item" message that names the offending field.
+- `MutationField.MutationBulkDmlRecordField` sealed leaf added with compact-constructor rejections for `DELETE`, `UPSERT`, and `tableInputArg.list() == false`. `FieldBuilder.classifyMutationField` surfaces UPSERT as a deferred-to-R145 author-facing rejection (rather than letting the compact-constructor throw) until R144's upstream refusal lands.
+- `MutationInputResolver.validateReturnType` lifts Invariant #15 into a cardinality-dispatch on the carrier's `DataChannel` wrapper: bulk-input + list-data-field admits, single-input + list-data-field rejects with Invariant #16, bulk-input + singleton-data-field falls through to R138's lifted Invariant #15, single-input + singleton-data-field stays the R75 Phase 1 admit.
+- `TypeFetcherGenerator.buildMutationBulkDmlRecordFetcher` emits the per-row DML loop inside `dsl.transactionResult(...)`, accumulating PKs into a `Result<RecordN<...>>` in input order. The downstream data-field fetcher (`FetcherEmitter.buildSingleRecordTableFetcherValue` with `Cardinality.MANY`) reads that Result and runs the bulk response SELECT.
+- New load-bearing classifier check `single-record-carrier-shape.roles-exhaustively-classified` (producer on `BuildContext.tryResolveSingleRecordCarrier`, consumers on `GraphitronSchemaBuilder.registerCarrierDataField` and `TypeFetcherGenerator.buildMutationBulkDmlRecordFetcher`); `LoadBearingGuaranteeAuditTest` picks the pairing up automatically.
+- `CarrierFieldRoleCoverageTest` scans every consumer source file for an explicit dispatch arm against every `CarrierFieldRole` permit.
+- Three classifier-tier truth-table rows in `GraphitronSchemaBuilderTest`: `MUTATION_BULK_DML_RECORD_FIELD` (admit), `DML_INSERT_SINGLE_LIST_DATA_REJECTED` (Invariant #16), `DML_INSERT_LIST_PAYLOAD_NO_CARRIER_FIELD_ROLE_REJECTED` (no-permit-match). The existing `MUTATION_DML_RECORD_FIELD` row was retargeted to the single-input + single-data-field shape; `DML_INSERT_LIST_PLAIN_PAYLOAD_REJECTED` was repointed at the singleton-data-field arm (the original list-data-field shape now admits under R141).
+- Three execution-tier round-trips in `DmlBulkMutationsExecutionTest`: `bulkInsertWithThreeRowsInNonPkOrderPreservesInputOrderInResponse`, `bulkInsertWithSingleRowExercisesBulkLeafPath`, `bulkUpdateWithThreeRowsInNonPkOrderPreservesInputOrderInResponse`. The order-preservation invariant is the load-bearing runtime audit. The Sakila fixture grew `FilmsPayload { films: [Film!] }` + `createFilmsPayload` / `updateFilmsPayload` mutations.
+- `SingleRecordCarrierPipelineTest` updated: the previously-admitted single-input + list-data-field shape now routes through Invariant #16 (or admits as `MutationBulkDmlRecordField` when paired with bulk input); rejection-text assertions follow the new "no CarrierFieldRole permit" diagnostic surface.
+
+R141 deliberately ships `ErrorChannelRole` as a type-system reservation rather than a fully-resolved permit producer. The carrier-side error-channel resolution (full `ErrorChannel` binding from a payload class's canonical constructor) is forward-looking work R12 lands. Once R12 ships, `BuildContext.tryResolveSingleRecordCarrier` gains the `ErrorChannelRole` classifier rule, and the consumers (`GraphitronSchemaBuilder.registerCarrierDataField`'s `ErrorChannelRole` arm, `FieldBuilder.classifyMutationField`'s `shape.errorChannel().map(...)` reader, the catch-arm builder) pick up the producer-side annotations R12 lands alongside.
 
 ## Target shape
 

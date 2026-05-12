@@ -205,6 +205,33 @@ final class MutationInputResolver {
         if (perArm != null) {
             return perArm;
         }
+        // R141: cardinality dispatch on the carrier's data-channel wrapper. A single-record carrier
+        // (Payload type, not list-wrapped) whose data field is list-shaped pairs with bulk input
+        // (admitted as MutationBulkDmlRecordField) and rejects single input (new Invariant #16).
+        // The singleton-data-field case (data field is single-shaped) still rejects bulk input via
+        // R138's lifted Invariant #15 below. UPSERT under R144's cardinality-safety regime is
+        // refused upstream at resolveInput; if we ever reach this check with kind == UPSERT and
+        // bulk input, the refusal there will fire before this point.
+        if (returnType instanceof ReturnTypeRef.ResultReturnType r && ctx != null) {
+            var resolution = ctx.tryResolveSingleRecordCarrier(r.returnTypeName());
+            if (resolution instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok ok) {
+                var data = ok.shape().data();
+                boolean dataFieldIsList = data.element().wrapper().isList();
+                if (listInput && dataFieldIsList) {
+                    // R141 admitted arm: bulk input + list-shaped @table-element data field.
+                    // Classifier will route this to MutationBulkDmlRecordField; the response-SELECT
+                    // joins on the input table's PK and the emitter batches per-row DML in input
+                    // order to satisfy the order-preservation invariant.
+                    return null;
+                }
+                if (!listInput && dataFieldIsList) {
+                    return "@mutation(typeName: " + kind + ") with a single @table input "
+                        + "cannot return a list-shaped data field on the carrier ('"
+                        + ok.shape().carrierTypeName() + "." + data.fieldName()
+                        + "'); list-shaped output requires bulk input (Invariant #16)";
+                }
+            }
+        }
         if (listInput && !returnType.wrapper().isList()) {
             return "@mutation(typeName: " + kind + ") with a listed @table input "
                 + "must return a list (found '" + returnType.returnTypeName() + "', "

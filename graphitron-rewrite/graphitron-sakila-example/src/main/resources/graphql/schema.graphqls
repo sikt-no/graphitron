@@ -1188,6 +1188,17 @@ type FilmPayload {
     film: Film
 }
 
+# R141: bulk-input single-payload carrier wrapping a list-shaped @table data field. The SDL
+# author authors no Java class — the type promotes to PojoResultType.NoBacking at
+# type-classification time; the data field classifies as ChildField.SingleRecordTableField
+# with SourceKey.Cardinality.MANY (the data field's wrapper is list-shaped); the mutation
+# classifies as MutationField.MutationBulkDmlRecordField with batched per-row DML inside one
+# transaction. The data field's @table (film) must equal the input @table (film), enforced by
+# the load-bearing classifier check mutation-dml-record-field.data-table-equals-input-table.
+type FilmsPayload {
+    films: [Film!]
+}
+
 type Mutation {
     # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$fields>).fetchOne(r -> r)`.
@@ -1243,6 +1254,17 @@ type Mutation {
     createFilmPayload(in: FilmCreateInput!): FilmPayload @mutation(typeName: INSERT)
     updateFilmPayload(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE)
     upsertFilmPayload(in: FilmUpsertInput!): FilmPayload @mutation(typeName: UPSERT)
+
+    # R141: bulk-input single-carrier list-data-field DML mutations. The classifier routes the
+    # bulk-input + list-shaped @table-element data field case to MutationBulkDmlRecordField; the
+    # emitter batches per-row DML inside one dsl.transactionResult(...), collects PKs in input
+    # order, and lets the data field's SingleRecordTableField fetcher (Cardinality.MANY) run the
+    # follow-up response SELECT against those PKs outside the transaction. The order-preservation
+    # invariant (output.data[i] corresponds to input[i]) is exercised by
+    # DmlBulkMutationsExecutionTest's deliberately-non-PK-ordered round-trip. UPSERT is deferred
+    # to R145 under R144's cardinality-safety regime.
+    createFilmsPayload(in: [FilmCreateInput!]!): FilmsPayload @mutation(typeName: INSERT)
+    updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE)
 
     # R12 fixture (error-handling-parity.md): mutation-side @error end-to-end. The
     # @service-backed mutation classifies as MutationServiceRecordField (same shape that
