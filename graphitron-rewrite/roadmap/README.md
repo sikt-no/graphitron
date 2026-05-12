@@ -15,11 +15,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Plan |
 |---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
+| `R143` | Surface a date column on the rendered roadmap table | Spec | [plan](roadmap-item-date-column.md) |
+| `R140` | Publish leaf-coverage report from CI <sub>blocked by: [leaf-coverage-verify-off-local](leaf-coverage-verify-off-local.md)</sub> | Ready | [plan](leaf-coverage-artifact-publish-chain.md) |
 | `R132` | Move leaf-coverage report verification off local builds | In Review | [plan](leaf-coverage-verify-off-local.md) |
-| `R140` | Publish leaf-coverage report from CI <sub>blocked by: [leaf-coverage-verify-off-local](leaf-coverage-verify-off-local.md)</sub> | In Review | [plan](leaf-coverage-artifact-publish-chain.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready | [plan](tablemethod-child-table-bound.md) |
+| `R142` | LSP hovers, arg-completion, and arg validation against the schema snapshot <sub>blocked by: [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md)</sub> | Spec | [plan](lsp-user-directive-hovers-and-args.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
-| `R142` | LSP hovers, arg-completion, and arg validation against the schema snapshot <sub>blocked by: [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md)</sub> | Ready | [plan](lsp-user-directive-hovers-and-args.md) |
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
@@ -67,7 +68,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Cleanup
 
-- `R143` [**Surface a date column on the rendered roadmap table**](roadmap-item-date-column.md): The rolled-up `graphitron-rewrite/roadmap/README.md` table (`Main.java`) shows ID, Item, Status, Plan, but no time dimension; a reader scanning Active cannot tell which Spec items have been sitting unsigned-off for weeks vs days, and there is no signal in the Backlog table that distinguishes recently-filed items from ones parked years ago. Adding a date column gives triage that signal without requiring readers to drop into `git log` per item.
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md): The `leaf-coverage` profile in `graphitron-rewrite/pom.xml` is activated by negation (`<name>!leaf-coverage.skip</name>`), so every default contributor `mvn verify` truncates `target/leaf-coverage.jsonl` in `process-test-resources` and threads a `graphitron.classification.trace` system property into every surefire/failsafe. The traces are only consumed by `roadmap-tool leaf-coverage`, which after R132 runs only in the CI regeneration step. Every other build pays the antrun-truncate cost and writes JSONL nobody reads.
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md): `@externalField` lifted to `IMPLEMENTED_LEAVES` end-to-end in `computed-field-with-reference` (R48, shipped; see [`changelog.md`](changelog.md)). The directive's name is the surviving historical artefact: it predates the `ChildField.ComputedField` model variant and reads as "field resolved by external code" rather than the narrower behaviour the lift settled on (a `Field<X>` returned by a static method, inlined into the SELECT projection at the alias). A clearer name ships in this plan; the old name stays accepted for one consumer-migration window.
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md): Two parallel shims survive in the classifier so legacy SDL keeps building. Both should retire on the same gate (sis migration to canonical SDL); their wire shape is independent but the user-visible migration is one piece of work, so the two retirements ship together. _(blocked by [sis-rewrite-migration](sis-rewrite-migration.md))_
@@ -167,7 +167,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### structural-refactor
 
 - `R132` [**Move leaf-coverage report verification off local builds**](leaf-coverage-verify-off-local.md) — In Review, cleanup
-- `R140` [**Publish leaf-coverage report from CI**](leaf-coverage-artifact-publish-chain.md) — In Review, cleanup, blocked by [leaf-coverage-verify-off-local](leaf-coverage-verify-off-local.md)
+- `R140` [**Publish leaf-coverage report from CI**](leaf-coverage-artifact-publish-chain.md) — Ready, cleanup, blocked by [leaf-coverage-verify-off-local](leaf-coverage-verify-off-local.md)
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
@@ -204,7 +204,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### lsp
 
-- `R142` [**LSP hovers, arg-completion, and arg validation against the schema snapshot**](lsp-user-directive-hovers-and-args.md) — Ready, architecture, blocked by [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md)
+- `R142` [**LSP hovers, arg-completion, and arg validation against the schema snapshot**](lsp-user-directive-hovers-and-args.md) — Spec, architecture, blocked by [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md)
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
 - `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
