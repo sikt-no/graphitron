@@ -351,11 +351,13 @@
                  rather than activeByDefault, which Maven silently deactivates whenever any other
                  profile (e.g. -Plocal-db) is explicitly activated. Property activation runs on
                  its own condition and is unaffected by that rule, so the trace emission fires
-                 on every default contributor and CI build. The traces feed the leaf-coverage
-                 report regenerated and published from CI (.github/workflows/rewrite-build.yml
-                 uploads inference-axis-coverage.adoc; deploy-docs picks it up); no local verify
-                 gate reads them. Opt out with `mvn ... -Dleaf-coverage.skip` for a faster local
-                 turnaround when the traces are not needed. -->
+                 on every default contributor and CI build. R132 dropped the local verify gate
+                 that previously read the traces; the CI regen + publish chain that will read
+                 them is filed as R140. Until R140 lands, the traces are produced and discarded
+                 on CI; the only consumer is the manual `roadmap-tool leaf-coverage` regen
+                 documented in graphitron-rewrite/roadmap/inference-axis-coverage.adoc. Opt out
+                 with `mvn ... -Dleaf-coverage.skip` for a faster local turnaround when the
+                 traces are not needed. -->
             <id>leaf-coverage</id>
             <activation>
                 <property>
