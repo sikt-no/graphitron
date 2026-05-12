@@ -1,7 +1,7 @@
 ---
 id: R143
 title: "Surface a date column on the rendered roadmap table"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 3
 depends-on: []
