@@ -1,7 +1,7 @@
 = Inference-axis coverage report
 :description: Placeholder. The live data is not currently published; this file in the git tree is a non-data stub.
 
-This file is the placeholder version of the leaf-coverage report. The committed copy and the rendered doc-site page both intentionally carry no data: R132 dropped the local `mvn verify` gate that previously forced every roadmap edit to re-commit a regenerated report, and the CI publish chain that would replace it (regenerate on every trunk merge, upload as an artifact, pick it up from the deploy workflow) is deferred to R140 because the `workflow_run` listener has to live on the repo's default branch and the rewrite workflow files do not yet live there.
+This file is the placeholder version of the leaf-coverage report. The committed copy intentionally carries no data: R132 dropped the local `mvn verify` gate that previously forced every roadmap edit to re-commit a regenerated report. The rendered doc site at https://sikt-no.github.io/graphitron/roadmap/inference-axis-coverage.html shows the live report, regenerated on every successful trunk push by the `rewrite-build.yml` reactor (R140 wired up the build → regenerate → render → deploy chain inside the same workflow run). The file stays in git so local doc builds and PR-preview renders find a file at the expected path; CI overwrites it on the runner before the docs-render step.
 
 To regenerate the report locally for inspection (overwrites this file in your working copy; do not commit the result):
 

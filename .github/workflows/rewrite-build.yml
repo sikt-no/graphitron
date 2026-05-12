@@ -61,3 +61,63 @@ jobs:
         # are emitted on every CI run. Local opt-out for faster turnaround is
         # -Dleaf-coverage.skip; CI does not opt out.
         run: mvn -f graphitron-rewrite/pom.xml verify -Plocal-db --batch-mode
+      - name: Regenerate leaf-coverage report
+        # Trunk-push only. PRs and main pushes skip; the artifact only feeds the
+        # downstream docs-build/docs-deploy jobs, which are themselves trunk-gated.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
+        run: |
+          mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q \
+            -Dexec.args='leaf-coverage graphitron-rewrite'
+      - name: Upload leaf-coverage artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
+        uses: actions/upload-artifact@v4
+        with:
+          name: inference-axis-coverage
+          path: graphitron-rewrite/roadmap/inference-axis-coverage.adoc
+          if-no-files-found: error
+
+  docs-build:
+    # Renders the docs site against the freshly-regenerated leaf-coverage report
+    # produced by the `build` job. Trunk-push only; PRs use preview-docs.yml.
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+      - name: Download leaf-coverage artifact
+        # Lands at graphitron-rewrite/roadmap/inference-axis-coverage.adoc and
+        # overwrites the committed placeholder in this checkout.
+        uses: actions/download-artifact@v4
+        with:
+          name: inference-axis-coverage
+          path: graphitron-rewrite/roadmap/
+      - name: Build docs site
+        run: mvn -f graphitron-rewrite/pom.xml -pl :graphitron-docs -am package -DskipTests
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/target/generated-docs
+
+  docs-deploy:
+    needs: docs-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
