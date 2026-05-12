@@ -300,6 +300,16 @@ Implementation note for the reviewer: the existing two-arg `Diagnostics.compute(
 
 Phase 2 ships as its own roadmap item once phase 1 lands. The split exists because the structural plumbing is the conservative landing: it changes one diagnostic arm and a setter, no new completion / hover surface. Phase 2's user-visible surface is bigger and is best scoped against an in-tree phase 1 (so reviewers can see the snapshot's actual shape, not the spec's projection of it).
 
+#### Phase 2 prep notes (from phase 1 implementation)
+
+Three observations from shipping phase 1, recorded so the phase-2 spec author does not have to rediscover them:
+
+1. *`Diagnostics.compute` parameter-list pressure.* Phase 1 grew the static signature to four parameters (`LspVocabulary, WorkspaceFile, CompletionData, LspSchemaSnapshot`). Phase 2 adds at least one more consumer arm in the same call path; if it adds a parameter again, decide between a `Diagnostics.Request` (or `Diagnostics.Context`) record that bundles the four into one, and accepting a five-parameter list. The shape choice is a phase 2 design call, not a refactor; pick it up-front.
+
+2. *Cross-module audit gap is mechanical, not theoretical.* Phase 1 placed two find-usages-only `@DependsOnClassifierCheck` markers on the LSP side (`Diagnostics.compute`, `Workspace.resolveDirective`); phase 2 adds at least two more (`Hovers`, the unknown-arg arm). Without widening `LoadBearingGuaranteeAuditTest`'s scan to include `graphitron-lsp/target/classes/`, the count grows to ~4 orphan-by-design markers. Phase 2 is the natural moment to either close the gap (move/duplicate the audit into a test surface that sees both modules) or accept the documentation-only intent permanently and rename the markers if "load-bearing" is misleading. The "Future evolution" entry above tracks the underlying issue.
+
+3. *`DevMojo` bootstrap shape.* The phase 1 implementation added a small `DevMojo.InitialOutput` record (catalog + snapshot, with `unavailable()` fallback on first-build failure) because the existing constructor took only a catalog and the snapshot arrived via a separate setter. Phase 2's producer-side projections (if any) land cleaner if the workspace constructor takes a single "initial state" value instead of a catalog plus a follow-up `setCatalogAndSnapshot`. Defer until a second producer-side projection actually needs the seam; mentioned here so it surfaces in the phase 2 review, not after the fact.
+
 ---
 
 ## Settled design notes
