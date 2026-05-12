@@ -16,11 +16,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R143` | Surface a date column on the rendered roadmap table | Spec | [plan](roadmap-item-date-column.md) |
-| `R140` | Publish leaf-coverage report from CI <sub>blocked by: [leaf-coverage-verify-off-local](leaf-coverage-verify-off-local.md)</sub> | Ready | [plan](leaf-coverage-artifact-publish-chain.md) |
 | `R132` | Move leaf-coverage report verification off local builds | In Review | [plan](leaf-coverage-verify-off-local.md) |
+| `R140` | Publish leaf-coverage report from CI <sub>blocked by: [leaf-coverage-verify-off-local](leaf-coverage-verify-off-local.md)</sub> | In Review | [plan](leaf-coverage-artifact-publish-chain.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready | [plan](tablemethod-child-table-bound.md) |
-| `R142` | LSP hovers, arg-completion, and arg validation against the schema snapshot <sub>blocked by: [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md)</sub> | Spec | [plan](lsp-user-directive-hovers-and-args.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
+| `R142` | LSP hovers, arg-completion, and arg validation against the schema snapshot <sub>blocked by: [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md)</sub> | Ready | [plan](lsp-user-directive-hovers-and-args.md) |
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
@@ -167,7 +167,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### structural-refactor
 
 - `R132` [**Move leaf-coverage report verification off local builds**](leaf-coverage-verify-off-local.md) — In Review, cleanup
-- `R140` [**Publish leaf-coverage report from CI**](leaf-coverage-artifact-publish-chain.md) — Ready, cleanup, blocked by [leaf-coverage-verify-off-local](leaf-coverage-verify-off-local.md)
+- `R140` [**Publish leaf-coverage report from CI**](leaf-coverage-artifact-publish-chain.md) — In Review, cleanup, blocked by [leaf-coverage-verify-off-local](leaf-coverage-verify-off-local.md)
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
@@ -204,7 +204,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### lsp
 
-- `R142` [**LSP hovers, arg-completion, and arg validation against the schema snapshot**](lsp-user-directive-hovers-and-args.md) — Spec, architecture, blocked by [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md)
+- `R142` [**LSP hovers, arg-completion, and arg validation against the schema snapshot**](lsp-user-directive-hovers-and-args.md) — Ready, architecture, blocked by [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md)
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
 - `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
