@@ -97,6 +97,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Other
 
+- `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md): <One-paragraph problem statement: what is missing or broken, and why it matters. Replace this and add a plan body when the item moves to Spec.> <sub>updated 2026-05-12</sub>
 - `R118` [**Graphitron MCP server: knowledge-base tools for AI agents**](graphitron-mcp-server.md): The first non-build consumer of the knowledge base R117 frames. AI agents working in a graphitron-generated codebase ask cross-cutting questions ("what classification produced the fetcher at `Film.actors`? which roadmap items mention it? which capability does it exemplify? which test exercises it?") that span the SDL, the codegen output, the runtime trace, and the roadmap. Today they grep across half a dozen file trees and reconstruct relationships from prose; the KB already holds these joins as natural-keyed tables, so the MCP server's job is to expose the joins as tools and let the agent ask SQL or call typed lookups. This item delivers the server, not the schema (which is R117's programme); the server queries whatever's in the KB and grows naturally as dimensions land. _(blocked by [knowledge-base-programme](knowledge-base-programme.md))_
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md): The `@experimental_constructType(selection: "...")` directive is declared in `directives.graphqls` and stripped from the emitted schema by `SchemaDirectiveRegistry`, but no classifier, model carrier, or emitter exists for it yet.
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md): R18 Phase 5 originally folded three JavaParser-driven capabilities in alongside `@service` / `@condition` / `@record` autocomplete:
@@ -205,6 +206,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### lsp
 
+- `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md) — Backlog, bug
 - `R147` [**Surface GraphitronSchemaValidator errors and warnings as LSP diagnostics**](lsp-surface-validator-errors.md) — In Review, feature
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
