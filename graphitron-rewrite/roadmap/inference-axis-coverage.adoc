@@ -1,7 +1,7 @@
 = Inference-axis coverage report
 :description: Placeholder. The live data is not currently published; this file in the git tree is a non-data stub.
 
-This file is the placeholder version of the leaf-coverage report. The committed copy and the rendered doc-site page both intentionally carry no data: R132 dropped the local `mvn verify` gate that previously forced every roadmap edit to re-commit a regenerated report, and the CI publish chain that would replace it (regenerate on every trunk merge, upload as an artifact, pick it up from the deploy workflow) is deferred to a follow-up roadmap item because the `workflow_run` listener has to live on the repo's default branch and the rewrite workflow files do not yet.
+This file is the placeholder version of the leaf-coverage report. The committed copy and the rendered doc-site page both intentionally carry no data: R132 dropped the local `mvn verify` gate that previously forced every roadmap edit to re-commit a regenerated report, and the CI publish chain that would replace it (regenerate on every trunk merge, upload as an artifact, pick it up from the deploy workflow) is deferred to R140 because the `workflow_run` listener has to live on the repo's default branch and the rewrite workflow files do not yet live there.
 
 To regenerate the report locally for inspection (overwrites this file in your working copy; do not commit the result):
 
