@@ -17,8 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R141` | Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | [plan](bulk-input-single-carrier-list-data-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R143` | Surface a date column on the rendered roadmap table | Spec | [plan](roadmap-item-date-column.md) |
-| `R132` | Move leaf-coverage report verification off local builds | In Review | [plan](leaf-coverage-verify-off-local.md) |
-| `R140` | Publish leaf-coverage report from CI <sub>blocked by: [leaf-coverage-verify-off-local](leaf-coverage-verify-off-local.md)</sub> | In Review | [plan](leaf-coverage-artifact-publish-chain.md) |
+| `R140` | Publish leaf-coverage report from CI | In Review | [plan](leaf-coverage-artifact-publish-chain.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready | [plan](tablemethod-child-table-bound.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
 | `R142` | LSP hovers, arg-completion, and arg validation against the schema snapshot <sub>blocked by: [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md)</sub> | Ready | [plan](lsp-user-directive-hovers-and-args.md) |
@@ -166,8 +165,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R132` [**Move leaf-coverage report verification off local builds**](leaf-coverage-verify-off-local.md) — In Review, cleanup
-- `R140` [**Publish leaf-coverage report from CI**](leaf-coverage-artifact-publish-chain.md) — In Review, cleanup, blocked by [leaf-coverage-verify-off-local](leaf-coverage-verify-off-local.md)
+- `R140` [**Publish leaf-coverage report from CI**](leaf-coverage-artifact-publish-chain.md) — In Review, cleanup
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
