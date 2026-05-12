@@ -1,7 +1,7 @@
 ---
 id: R139
 title: "Dev-pipeline to LSP schema-snapshot side-channel; first client unknown-directive validator"
-status: Ready
+status: In Review
 bucket: architecture
 theme: lsp
 depends-on: []
@@ -288,9 +288,11 @@ Two independent landings.
 
 ### Phase 1: snapshot plumbing plus unknown-directive client
 
-Everything described above. The snapshot ships with `Built.directives()` carrying full `DirectiveShape` (args + descriptions) so phase 2's hover and arg-validation surfaces consume the same projection without a version migration. Only the unknown-directive arm reads it in phase 1; only the `Built.Current` arm triggers a warn, with the four other variants (`Unavailable`, `Built.Previous`, `Built.Current+User`, and the bundled-shadows-snapshot case) silencing or routing through the existing bundled path. Pipeline tests for the five new cases under `DiagnosticsTest`. Compilation-tier sakila fixture demonstrates end-to-end pickup.
+*Status: shipped.* `LspSchemaSnapshot` lives at `graphitron/.../catalog/LspSchemaSnapshot.java` (sealed over `Unavailable | Built.{Current, Previous}`) with sibling projections `DirectiveShape`, `InputValueShape`, `TypeShape`. The producer is `CatalogBuilder.buildSnapshot(TypeDefinitionRegistry)` (annotated `@LoadBearingClassifierCheck` for the `snapshot-built-implies-clean-parse` and `snapshot-directive-roundtrip-faithful` keys). `GraphQLRewriteGenerator` exposes `buildOutput()` returning a `BuildOutput(CompletionData catalog, LspSchemaSnapshot.Built.Current snapshot)` pair from the same parsed registry. `Workspace` carries a `volatile LspSchemaSnapshot snapshot` field plus `setCatalogAndSnapshot` (success), `demoteSnapshot` (failure → `Built.Previous`), and the `resolveDirective(String)` wrapper that delegates to the sealed `DirectiveResolution.resolve(LspVocabulary, LspSchemaSnapshot, String)` at `graphitron-lsp/.../state/DirectiveResolution.java`. `DevMojo.regenerate` swaps the pair atomically on success and demotes on catch; the initial-startup path populates the snapshot if the first build succeeds. `Diagnostics.compute`'s two overloads grew an `LspSchemaSnapshot` parameter, with the unknown-directive arm reading through `DirectiveResolution.resolve` and switching exhaustively on the snapshot variant for the freshness-aware silence policy (warns only under `Built.Current + Unknown`).
 
-Acceptance: user schemas carrying federation directives, `@auth`-style guards, or any other user-declared directive produce no LSP warnings when the build pipeline has run; the typo case (`@tabel`) still warns in the `Built.Current` state; the `Unavailable` and `Built.Previous` states silence everything to avoid punishing the user for what we cannot reliably see.
+Test coverage shipped: unit-tier `LspSchemaSnapshotTest` (lookup case sensitivity, unmodifiable defensive copy) and `CatalogBuilderSnapshotTest` (directive round-trip, list/non-null wrapping, no bundled-name filter, description round-trip); pipeline-tier additions to `DiagnosticsTest` (`unknownDirectiveSilencedByUnavailableSnapshot`, `unknownDirectiveSilencedByStaleSnapshot`, `userDeclaredDirectiveSilencedBySnapshot`, `userDeclaredDirectiveShadowedByBundledStillValidates`, plus the existing `unknownDirectiveProducesWarning` updated to pass `Built.Current(List.of())`); compilation-tier sakila fixture declares `directive @auth(role: String!) on FIELD_DEFINITION` and applies it on `Query.customers`.
+
+Implementation note for the reviewer: the existing two-arg `Diagnostics.compute(file, catalog)` overload was replaced (not shimmed), so every test callsite gained an explicit third argument. The bulk pass used `LspSchemaSnapshot.unavailable()` for tests that don't exercise the unknown-directive arm; the new arm-specific tests use the appropriate variant. The `@DependsOnClassifierCheck` markers on the LSP-side consumers (`Diagnostics`, `Workspace.resolveDirective`) are find-usages-only as the spec called out: the audit's current scan only crosses `graphitron/target/classes/`, not `graphitron-lsp/target/classes/`, so the producer-side annotations are the load-bearing pair and the consumer markers document the contract.
 
 ### Phase 2: hovers, completion, arg validation against the snapshot
 

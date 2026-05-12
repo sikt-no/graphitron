@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp.state;
 
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
@@ -38,6 +39,7 @@ public final class Workspace {
     private final List<String> toRecalculate = new ArrayList<>();
     private final LspVocabulary vocabulary;
     private volatile CompletionData catalog;
+    private volatile LspSchemaSnapshot snapshot = LspSchemaSnapshot.unavailable();
 
     public Workspace() {
         this(CompletionData.empty(), LspVocabulary.load());
@@ -118,6 +120,18 @@ public final class Workspace {
     }
 
     /**
+     * Projection of the parsed user schema's directive surface, swapped on
+     * every successful generator pass through
+     * {@link #setCatalogAndSnapshot}. Stays {@link LspSchemaSnapshot.Unavailable}
+     * until the first build succeeds; demotes to
+     * {@link LspSchemaSnapshot.Built.Previous} on subsequent parse
+     * failures so consumers can distinguish fresh-vs-stale info.
+     */
+    public LspSchemaSnapshot snapshot() {
+        return snapshot;
+    }
+
+    /**
      * The LSP's directive vocabulary, parsed once at startup from the
      * bundled {@code directives.graphqls} and immutable thereafter. The
      * registry is shape, not state; there is no setter.
@@ -126,9 +140,54 @@ public final class Workspace {
         return vocabulary;
     }
 
+    /**
+     * Classpath-change path: the consumer's compiled {@code .class} files
+     * moved, so the jOOQ-driven catalog needs refreshing, but the
+     * schema-derived snapshot is unaffected. Keeps the snapshot ref where
+     * it was.
+     */
     public void setCatalog(CompletionData catalog) {
         this.catalog = catalog;
         markAllForRecalculation();
+    }
+
+    /**
+     * Success-path swap: catalog and snapshot move together atomically (from
+     * the perspective of consumers that hold the workspace through both
+     * volatile reads), one recalculation. The producer ships only
+     * {@link LspSchemaSnapshot.Built.Current}; freshness demotion happens
+     * through {@link #demoteSnapshot()} when a later parse fails.
+     */
+    public void setCatalogAndSnapshot(CompletionData catalog, LspSchemaSnapshot.Built snapshot) {
+        this.catalog = catalog;
+        this.snapshot = snapshot;
+        markAllForRecalculation();
+    }
+
+    /**
+     * Failure path: the latest parse threw, but a prior parse had succeeded.
+     * Demote {@link LspSchemaSnapshot.Built.Current} to
+     * {@link LspSchemaSnapshot.Built.Previous} so consumers see "stale"
+     * rather than "fresh". No-op on {@link LspSchemaSnapshot.Unavailable}
+     * (no prior success to demote) and on {@link LspSchemaSnapshot.Built.Previous}
+     * (already stale).
+     */
+    public void demoteSnapshot() {
+        var current = this.snapshot;
+        if (current instanceof LspSchemaSnapshot.Built.Current c) {
+            this.snapshot = new LspSchemaSnapshot.Built.Previous(c.directives());
+            markAllForRecalculation();
+        }
+    }
+
+    /**
+     * Convenience wrapper around
+     * {@link DirectiveResolution#resolve(LspVocabulary, LspSchemaSnapshot, String)}
+     * for request callbacks that already hold a {@link Workspace}. Reads the
+     * snapshot ref through the volatile field.
+     */
+    public DirectiveResolution resolveDirective(String name) {
+        return DirectiveResolution.resolve(vocabulary, snapshot, name);
     }
 
     /**
