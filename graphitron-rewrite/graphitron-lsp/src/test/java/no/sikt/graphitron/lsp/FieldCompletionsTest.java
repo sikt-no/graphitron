@@ -111,6 +111,31 @@ class FieldCompletionsTest {
             .contains("FILM_ID", "TITLE");
     }
 
+    /**
+     * R100 — {@code @node(keyColumns:)} reuses
+     * {@link no.sikt.graphitron.lsp.parsing.Behavior.CatalogColumnBinding}
+     * via an overlay-delta entry. The candidate set is the columns of the
+     * enclosing type's {@code @table}; cursor inside a list-element string
+     * literal completes the same way a flat string-valued column slot does.
+     */
+    @Test
+    void nodeKeyColumnsCompletionInsideListLiteralReturnsTableColumns() {
+        String source = """
+            type Foo implements Node @table(name: "FILM") @node(keyColumns: [""]) {
+                id: ID
+            }
+            """;
+        // Cursor inside the empty quoted element of the list.
+        int line = 0;
+        int col = source.split("\n")[line].indexOf("[\"") + 2;
+        Point cursor = new Point(line, col);
+
+        var items = run(filmCatalog(), source, cursor);
+
+        assertThat(items).extracting(c -> c.getLabel())
+            .containsExactly("FILM_ID", "TITLE", "LANGUAGE_ID");
+    }
+
     private static List<org.eclipse.lsp4j.CompletionItem> run(
         CompletionData data, String source, Point cursor
     ) {

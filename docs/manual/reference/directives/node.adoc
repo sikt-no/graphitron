@@ -95,6 +95,10 @@ The `typeId: "C"` keeps existing IDs valid even if `Person` is later renamed to 
 * `keyColumns` ordering matters and is part of the ID's wire format; reordering breaks already-issued IDs.
 * `typeId` collisions across types are rejected at startup. If two types share a `typeId` (whether explicit or defaulted), `Query.node(id:)` cannot dispatch unambiguously.
 
+== Editor support
+
+The graphitron LSP completes `keyColumns:` element values against the columns of the type's `@table`-backed jOOQ class (the same column set xref:field.adoc[`@field(name:)`] completes against), flags typos per-element, and hovers each element to surface its GraphQL type. Cursor inside the empty list literal offers every column; once you start typing, the editor narrows to the matching prefix.
+
 == See also
 
 * xref:nodeId.adoc[`@nodeId`] is the field-level counterpart that encodes and decodes the ID.

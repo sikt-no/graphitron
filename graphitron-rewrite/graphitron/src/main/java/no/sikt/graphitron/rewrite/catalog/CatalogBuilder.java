@@ -1,11 +1,17 @@
 package no.sikt.graphitron.rewrite.catalog;
 
+import graphql.language.ArrayValue;
 import graphql.language.Description;
 import graphql.language.InputValueDefinition;
 import graphql.language.ListType;
 import graphql.language.NonNullType;
+import graphql.language.NullValue;
+import graphql.language.StringValue;
 import graphql.language.Type;
 import graphql.language.TypeName;
+import graphql.schema.GraphQLAppliedDirective;
+import graphql.schema.GraphQLAppliedDirectiveArgument;
+import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -18,7 +24,9 @@ import org.jooq.Table;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -123,8 +131,70 @@ public final class CatalogBuilder {
             buildTables(jooq, jooqSourceRoot, jooqPkgPath),
             buildScalars(assembled),
             buildExternalReferences(ctx),
-            ctx.namedReferences()
+            ctx.namedReferences(),
+            buildNodeMetadata(assembled)
         );
+    }
+
+    /**
+     * Walks every {@code GraphQLObjectType} in {@code assembled} and records
+     * pre-deduction values from each one's {@code @node} directive. Presence
+     * in the returned map is the predicate the LSP's {@code @nodeId(typeName:)}
+     * arms read; missing axes (the author omitted {@code typeId:} or
+     * {@code keyColumns:}) stay null and are not back-filled with classifier
+     * deductions. The LSP intentionally operates on author-supplied data only;
+     * cases where {@code typeId} or {@code keyColumns} are deduced by the
+     * classifier (containing-type / unique-table / PK inference) are invisible
+     * to in-editor feedback by design.
+     */
+    private static Map<String, CompletionData.NodeMetadata> buildNodeMetadata(GraphQLSchema assembled) {
+        var out = new LinkedHashMap<String, CompletionData.NodeMetadata>();
+        for (var type : assembled.getAllTypesAsList()) {
+            if (!(type instanceof GraphQLObjectType obj)) continue;
+            GraphQLAppliedDirective node = obj.getAppliedDirective("node");
+            if (node == null) continue;
+            out.put(obj.getName(), new CompletionData.NodeMetadata(
+                readStringArg(node, "typeId"),
+                readStringListArg(node, "keyColumns")
+            ));
+        }
+        return Map.copyOf(out);
+    }
+
+    private static String readStringArg(GraphQLAppliedDirective directive, String argName) {
+        GraphQLAppliedDirectiveArgument arg = directive.getArgument(argName);
+        if (arg == null) return null;
+        Object value = arg.getValue();
+        if (value instanceof StringValue sv) return sv.getValue();
+        if (value instanceof String s) return s;
+        return null;
+    }
+
+    private static List<String> readStringListArg(GraphQLAppliedDirective directive, String argName) {
+        GraphQLAppliedDirectiveArgument arg = directive.getArgument(argName);
+        if (arg == null) return null;
+        Object value = arg.getValue();
+        if (value instanceof ArrayValue av) {
+            var list = new ArrayList<String>(av.getValues().size());
+            for (var v : av.getValues()) {
+                if (v instanceof NullValue) {
+                    list.add(null);
+                } else if (v instanceof StringValue sv) {
+                    list.add(sv.getValue());
+                }
+            }
+            return List.copyOf(list);
+        }
+        if (value instanceof List<?> list) {
+            var out = new ArrayList<String>(list.size());
+            for (var v : list) {
+                out.add(v == null ? null : v.toString());
+            }
+            return List.copyOf(out);
+        }
+        if (value instanceof StringValue sv) return List.of(sv.getValue());
+        if (value instanceof String s) return List.of(s);
+        return null;
     }
 
     /**

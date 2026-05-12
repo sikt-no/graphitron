@@ -142,4 +142,63 @@ class CatalogBuilderTest {
 
         assertThat(data.externalReferences()).isEmpty();
     }
+
+    @Test
+    void nodeMetadata_capturesAuthorSuppliedTypeIdAndKeyColumns() {
+        var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
+        var bundle = TestSchemaHelper.buildBundle("""
+            type Film implements Node @table(name: "film") @node(typeId: "F", keyColumns: ["FILM_ID"]) {
+              id: ID! @nodeId
+              title: String
+            }
+            type Query { x: Int }
+            """);
+
+        var data = CatalogBuilder.build(jooq, bundle.assembled(),
+            no.sikt.graphitron.common.configuration.TestConfiguration.testContext());
+
+        assertThat(data.nodeMetadata()).containsKey("Film");
+        var meta = data.nodeMetadata().get("Film");
+        assertThat(meta.typeId()).isEqualTo("F");
+        assertThat(meta.keyColumns()).containsExactly("FILM_ID");
+    }
+
+    @Test
+    void nodeMetadata_omittedAxesStayNullToCapturePreDeductionState() {
+        // Author wrote @node with no typeId, no keyColumns. The LSP catalog
+        // captures pre-deduction state, so both axes stay null even though the
+        // classifier will fill them in at build time.
+        var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
+        var bundle = TestSchemaHelper.buildBundle("""
+            type Film implements Node @table(name: "film") @node {
+              id: ID! @nodeId
+            }
+            type Query { x: Int }
+            """);
+
+        var data = CatalogBuilder.build(jooq, bundle.assembled(),
+            no.sikt.graphitron.common.configuration.TestConfiguration.testContext());
+
+        var meta = data.nodeMetadata().get("Film");
+        assertThat(meta).isNotNull();
+        assertThat(meta.typeId()).isNull();
+        assertThat(meta.keyColumns()).isNull();
+    }
+
+    @Test
+    void nodeMetadata_omitsTypesWithoutNodeDirective() {
+        // Plain @table types are not nodes and don't get a NodeMetadata entry.
+        var jooq = new JooqCatalog(DEFAULT_JOOQ_PACKAGE);
+        var bundle = TestSchemaHelper.buildBundle("""
+            type Film @table(name: "film") {
+              title: String
+            }
+            type Query { x: Int }
+            """);
+
+        var data = CatalogBuilder.build(jooq, bundle.assembled(),
+            no.sikt.graphitron.common.configuration.TestConfiguration.testContext());
+
+        assertThat(data.nodeMetadata()).doesNotContainKey("Film");
+    }
 }

@@ -152,7 +152,50 @@ public final class Hovers {
             case Behavior.CatalogFkBinding ignored -> fkHover(file, catalog, rangeNode);
             case Behavior.ArgMappingBinding ignored -> Optional.empty();
             case Behavior.ScalarTypeBinding ignored -> Optional.empty();
+            case Behavior.NodeTypeBinding ignored -> nodeTypeHover(file, catalog, rangeNode);
         };
+    }
+
+    private static Optional<Hover> nodeTypeHover(
+        WorkspaceFile file, CompletionData catalog, Node valueNode
+    ) {
+        String typeName = Nodes.unquote(Nodes.text(valueNode, file.source()));
+        if (typeName.isEmpty()) return Optional.empty();
+        var meta = catalog.nodeMetadata().get(typeName);
+        if (meta == null) return Optional.empty();
+        return Optional.of(hover(file, valueNode, formatNodeType(typeName, meta, catalog)));
+    }
+
+    private static String formatNodeType(
+        String typeName, CompletionData.NodeMetadata meta, CompletionData catalog
+    ) {
+        var sb = new StringBuilder();
+        sb.append("**Node** `").append(typeName).append("`");
+        if (meta.typeId() != null) {
+            sb.append("\n\nTypeId: `").append(meta.typeId()).append("`");
+        }
+        if (meta.keyColumns() != null && !meta.keyColumns().isEmpty()) {
+            sb.append("\n\nKey columns:");
+            for (String columnName : meta.keyColumns()) {
+                sb.append("\n- `").append(columnName).append("`");
+                String graphqlType = columnGraphqlType(catalog, columnName);
+                if (graphqlType != null) {
+                    sb.append(" — `").append(graphqlType).append("`");
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    private static String columnGraphqlType(CompletionData catalog, String columnName) {
+        for (var table : catalog.tables()) {
+            for (var column : table.columns()) {
+                if (column.name().equalsIgnoreCase(columnName)) {
+                    return column.graphqlType();
+                }
+            }
+        }
+        return null;
     }
 
     private static Optional<Hover> classNameHover(
@@ -230,8 +273,12 @@ public final class Hovers {
     /**
      * Returns the value node carrying the cursor — for a flat directive
      * arg the arg's value, for a nested object field the field's value
-     * child. Used as the hover range so the editor highlights the right
-     * span when surfacing the popup.
+     * child, for a list element the element under the cursor. Used as
+     * the hover range so the editor highlights the right span when
+     * surfacing the popup; mirrors the
+     * {@link LspVocabulary#leafCoordinates}-side contract that scalar
+     * leaves never carry an enclosing {@code list_value} as their
+     * value node.
      */
     private static Node valueNodeFor(Directives.Directive directive, Point pos) {
         for (var arg : directive.arguments()) {
@@ -240,10 +287,43 @@ public final class Hovers {
             if (nested != null) {
                 Node valueNode = childOfKind(nested, "value");
                 if (valueNode != null && Nodes.contains(valueNode, pos)) {
-                    return valueNode;
+                    Node element = listElementContaining(valueNode, pos);
+                    return element != null ? element : valueNode;
                 }
             }
-            if (Nodes.contains(arg.value(), pos)) return arg.value();
+            if (Nodes.contains(arg.value(), pos)) {
+                Node element = listElementContaining(arg.value(), pos);
+                return element != null ? element : arg.value();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * If {@code node} is or contains a {@code list_value}, returns the
+     * non-punctuation child element the cursor sits inside. Returns null
+     * when {@code node} is not list-shaped (so callers fall through to
+     * the arg / object-field value).
+     */
+    private static Node listElementContaining(Node node, Point pos) {
+        Node listValue = findListValue(node);
+        if (listValue == null) return null;
+        for (int i = 0; i < listValue.getChildCount(); i++) {
+            Node child = listValue.getChild(i).orElse(null);
+            if (child == null) continue;
+            String type = child.getType();
+            if ("[".equals(type) || "]".equals(type) || ",".equals(type) || "comma".equals(type)) continue;
+            if (Nodes.contains(child, pos)) return child;
+        }
+        return null;
+    }
+
+    private static Node findListValue(Node node) {
+        if (node == null) return null;
+        if ("list_value".equals(node.getType())) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            Node child = node.getChild(i).orElse(null);
+            if (child != null && "list_value".equals(child.getType())) return child;
         }
         return null;
     }

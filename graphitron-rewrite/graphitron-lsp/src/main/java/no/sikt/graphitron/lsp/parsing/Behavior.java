@@ -49,4 +49,14 @@ public sealed interface Behavior {
      * external-reference scan.
      */
     record ScalarTypeBinding() implements Behavior {}
+
+    /**
+     * {@code @nodeId(typeName:)} binding: completes against the set of
+     * GraphQL types that carry {@code @node} (read from
+     * {@code CompletionData.nodeMetadata()}), and validates that the
+     * named type is one of them. Sibling-by-keyset to
+     * {@link CatalogColumnBinding} and {@link CatalogTableBinding}:
+     * same dispatch shape, different keyset.
+     */
+    record NodeTypeBinding() implements Behavior {}
 }

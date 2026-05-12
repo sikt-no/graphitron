@@ -239,7 +239,8 @@ public record LspVocabulary(
             String argName = Nodes.text(arg.key(), source);
             var argDef = findInputValue(dirDef.get().getInputValueDefinitions(), argName);
             if (argDef.isEmpty()) continue;
-            out.add(new Leaf(new SchemaCoordinate.DirectiveArg(directiveName, argName), arg.value()));
+            var argCoord = new SchemaCoordinate.DirectiveArg(directiveName, argName);
+            emitLeaf(argCoord, arg.value(), out);
             String argType = unwrapToInputTypeName(argDef.get().getType());
             if (argType != null) {
                 descendLeaves(arg.value(), argType, source, out);
@@ -255,7 +256,8 @@ public record LspVocabulary(
             Node valueNode = childOfKind(node, "value");
             if (nameNode != null && valueNode != null) {
                 String fieldName = Nodes.text(nameNode, source);
-                out.add(new Leaf(new SchemaCoordinate.InputField(currentType, fieldName), valueNode));
+                var fieldCoord = new SchemaCoordinate.InputField(currentType, fieldName);
+                emitLeaf(fieldCoord, valueNode, out);
                 var inputType = registry.getTypeOrNull(currentType, InputObjectTypeDefinition.class);
                 if (inputType != null) {
                     var fieldDef = findInputValue(inputType.getInputValueDefinitions(), fieldName);
@@ -276,9 +278,51 @@ public record LspVocabulary(
     }
 
     /**
+     * Emits one {@link Leaf} for {@code valueNode} under {@code coord}.
+     * For a {@code list_value} wrapper the leaf is fanned out into one per
+     * element, all keyed on the same outer coordinate. The contract this
+     * pins: {@link Leaf#valueNode()} is the scalar value node, never an
+     * enclosing {@code list_value}. Consumers ({@code Diagnostics},
+     * {@code Hovers}) treat the leaf's value as a single scalar, so a
+     * list-shaped value must decompose at emit time or the consumers
+     * would read the whole list as one mangled token.
+     */
+    private static void emitLeaf(SchemaCoordinate coord, Node valueNode, List<Leaf> out) {
+        Node listValue = listValueOf(valueNode);
+        if (listValue == null) {
+            out.add(new Leaf(coord, valueNode));
+            return;
+        }
+        for (int i = 0; i < listValue.getChildCount(); i++) {
+            Node child = listValue.getChild(i).orElse(null);
+            if (child == null) continue;
+            String type = child.getType();
+            // Skip syntactic tokens ('[', ']', ',') and stray newlines.
+            if ("[".equals(type) || "]".equals(type) || ",".equals(type) || "comma".equals(type)) continue;
+            // Nested lists are transparently fanned out so any future
+            // list-of-list directive arg falls in for free.
+            emitLeaf(coord, child, out);
+        }
+    }
+
+    /** Returns the {@code list_value} reached from {@code node} via at most one wrapper, else null. */
+    private static Node listValueOf(Node node) {
+        if (node == null) return null;
+        if ("list_value".equals(node.getType())) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            Node child = node.getChild(i).orElse(null);
+            if (child != null && "list_value".equals(child.getType())) return child;
+        }
+        return null;
+    }
+
+    /**
      * Coordinate-bearing leaf inside a directive: the coordinate that
      * keys the leaf's behavior plus the tree-sitter node carrying the
-     * leaf's value (a string literal, a list_value, etc.).
+     * leaf's value. {@code valueNode} is always a scalar value node
+     * (string literal, int literal, object literal, etc.), never an
+     * enclosing {@code list_value}; list-shaped directive args fan out
+     * into one {@code Leaf} per element at emit time.
      */
     public record Leaf(SchemaCoordinate coord, Node valueNode) {}
 
@@ -667,6 +711,10 @@ public record LspVocabulary(
                 new Behavior.CatalogTableBinding());
             out.put(new SchemaCoordinate.DirectiveArg("scalarType", "scalar"),
                 new Behavior.ScalarTypeBinding());
+            out.put(new SchemaCoordinate.DirectiveArg("node", "keyColumns"),
+                new Behavior.CatalogColumnBinding());
+            out.put(new SchemaCoordinate.DirectiveArg("nodeId", "typeName"),
+                new Behavior.NodeTypeBinding());
             return out;
         }
     }
