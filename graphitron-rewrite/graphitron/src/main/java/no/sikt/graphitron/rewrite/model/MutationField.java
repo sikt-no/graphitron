@@ -184,11 +184,16 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p><b>Order preservation invariant.</b> {@code output.data[i]} corresponds to
      * {@code input[i]} for all {@code i ∈ [0, N)}. The emitter satisfies the invariant via
      * batched per-row DML inside one transaction (N+1 statements), collecting PKs in input
-     * order and iterating a PK-keyed map of the response-SELECT in that order to build the
-     * response. The runtime audit is {@code DmlBulkMutationsExecutionTest}'s N=3 deliberately-
-     * non-PK-ordered round-trip. Any future single-statement emit refinement (e.g. an
-     * ordinal-preserving Postgres contract) must preserve the same input-order assertion the
-     * round-trip test makes. The {@code @see} pointer between this record and
+     * order into a {@code Result<RecordN<PK>>}. The downstream data-field fetcher
+     * ({@link no.sikt.graphitron.rewrite.generators.FetcherEmitter}'s
+     * {@code buildSingleRecordTableFetcherValue} {@code Cardinality.MANY} arm) then builds a
+     * PK-keyed map of the response-SELECT result and iterates {@code source.getValues(PK)}
+     * (the input-ordered PK list) to project rows in input order. Input order is therefore
+     * a property of the emitted Java code, not of the SQL planner's choice of scan strategy
+     * for {@code WHERE pk IN (...)}. The runtime audit is {@code DmlBulkMutationsExecutionTest}'s
+     * N=3 deliberately-non-PK-ordered round-trip. Any future single-statement emit refinement
+     * (e.g. an ordinal-preserving Postgres contract) must preserve the same input-order
+     * assertion the round-trip test makes. The {@code @see} pointer between this record and
      * {@link no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator}'s
      * {@code buildMutationBulkDmlRecordFetcher} is the find-usages anchor; the invariant is
      * not encoded as a load-bearing classifier check because the contract is a runtime claim
