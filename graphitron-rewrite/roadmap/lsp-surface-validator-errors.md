@@ -48,7 +48,9 @@ var report = ValidationReport.from(errors, warnings);  // computes sourceUris
 return new BuildOutput(new BuildArtifacts(catalog, snapshot), report);
 ```
 
-Pre-existing redundancy footnote: `DevMojo.regenerate` calls `runGeneratorPass(ctx, "regenerate")` (which runs the full pipeline including the validator) *and* `buildOutput()` (which will now also run the validator). Both build the same `GraphitronSchema` from the same parse. Eliminating the double build is out of scope for this item; a follow-up can route the watch loop through a shared schema build once this seam stabilises. Filed mentally; not blocking.
+`buildCatalog()` (the public method that today exists only to extract `buildOutput().catalog()`) drops in this item: every call site routes through `buildOutput()` (see Implementation § below), so the narrow accessor has no callers left.
+
+Pre-existing redundancy footnote: `DevMojo.regenerate` calls `runGeneratorPass(ctx, "regenerate")` (which runs the full pipeline including the validator) *and* `buildOutput()` (which will now also run the validator). Both build the same `GraphitronSchema` from the same parse. This double-build is unrelated to R147's classpath-watcher unification; eliminating it requires routing the watch loop's pipeline pass and its LSP-state refresh through a single schema build, which is a separate refactor. Filed mentally; not blocking.
 
 ### Workspace: new volatile field
 
@@ -67,7 +69,7 @@ public void setBuildOutput(BuildArtifacts artifacts, ValidationReport report) {
 }
 ```
 
-The setter takes the two records `BuildOutput` produces so callers do not destructure the pair: `DevMojo.regenerate`'s call becomes `workspace.setBuildOutput(output.artifacts(), output.report())`. The classpath-watcher path (`rebuildCatalog`) does not re-validate; it keeps a narrower `setCatalog(CompletionData)` overload that updates only the catalog and leaves `snapshot` / `validationReport` intact.
+The setter takes the two records `BuildOutput` produces so callers do not destructure the pair: `DevMojo.regenerate`'s call becomes `workspace.setBuildOutput(output.artifacts(), output.report())`. There is no narrower overload. Both write triggers (`regenerate` on schema save, `rebuildCatalog` on classpath change) route through `setBuildOutput` and pay the same validator walk; classpath-induced rejections (the canonical case: unresolved `@service` class after a Java rename) surface in the editor on the next `mvn compile` without waiting for a schema save. The previous `setCatalog(CompletionData)` overload is dropped.
 
 `demoteSnapshot()` does not touch the validation report. The R139 rationale ("don't punish the user for what we cannot reliably see") suggests silencing the report under `Built.Previous` at *read* time, not erasing it at *write* time. Two states diverge cleanly: a snapshot demoted because a fresh parse failed still has the previous build's validator output sitting there, ready to re-publish if the user reverts; erasing it would flap.
 
@@ -122,13 +124,28 @@ End-of-line for the range width: matches gcc/AsciiDoctor and most compiler conve
 
 The "no usable location" gate is broader than a strict null check: `loc == null || loc.getLine() <= 0` covers both `null` and the `(0, 0)` form some `SourceLocation`s carry for programmatically attributed nodes. Routing both through the same handling (see "Schema-wide errors" below) prevents `loc.getLine() - 1 = -1` from reaching the wire.
 
-File matching: `Path.of(sourceName).toUri().toString()` canonicalises to a `file://` URI. The LSP already uses URIs as the keys on `Workspace`; canonical equality holds because `RewriteSchemaLoader` populates `SourceLocation.sourceName` with the absolute path via `MultiSourceReader.trackData(true)`. The cached `Set<String> sourceUris` on `ValidationReport` lets `Diagnostics.compute` short-circuit when the open file has no entries (most files most of the time).
+File matching: a single static helper on `ValidationReport` produces the canonical `file://` URI form, and both the producer (`ValidationReport.from` building the `sourceUris` set) and the consumer (`Diagnostics.validatorDiagnostics` filtering by open-file URI) call it. One method, one canonical form:
 
-The loader → diagnostics contract is the kind of cross-module invariant the project marks with paired classifier-check annotations. `RewriteSchemaLoader` (producer of `SourceLocation.sourceName` as an absolute path) gets a `@LoadBearingClassifierCheck(key = "source-location.absolute-path-source-name", ...)`; `Diagnostics.validatorDiagnostics` (consumer via the `Path.of(sourceName).toUri()` canonicalisation) gets the matching `@DependsOnClassifierCheck` with the same key. A future change to the loader that returns relative paths surfaces as an orphan key rather than diagnostics that silently stop matching open buffers.
+```java
+public static String canonicalUri(String sourceName) {
+    return Path.of(sourceName).toUri().toString();
+}
+```
+
+Centralising the helper closes the silent-drift hole where producer and consumer canonicalise independently and diverge on (say) URL-encoding of spaces. The cached `Set<String> sourceUris` on `ValidationReport` lets `Diagnostics.compute` short-circuit when the open file has no entries (most files most of the time).
+
+Canonical equality between the LSP's open-file URI (whatever the client sent, normalised by lsp4j) and `canonicalUri(sourceName)` holds because `RewriteSchemaLoader` populates `SourceLocation.sourceName` with the absolute path via `MultiSourceReader.trackData(true)`, and lsp4j's URI normalisation for absolute file paths matches `Path.toUri()`. Symlink divergence is an out-of-scope corner case for v1; the helper makes it a future single-site change.
+
+The cross-module invariants the project marks with paired classifier-check annotations:
+
+- `source-location.absolute-path-source-name` — `RewriteSchemaLoader` (`@LoadBearingClassifierCheck`) produces absolute paths; `ValidationReport.canonicalUri` (`@DependsOnClassifierCheck`) reads them.
+- `validation-report.canonical-uri` — `ValidationReport.canonicalUri` (`@LoadBearingClassifierCheck`) defines the canonical form; `Diagnostics.validatorDiagnostics` (`@DependsOnClassifierCheck`) consumes it for the open-file filter.
+
+A future change to either invariant surfaces as an orphan key rather than diagnostics that silently stop matching open buffers.
 
 ### Schema-wide errors (no usable location)
 
-A `ValidationError` whose `location` is null or `(0, 0)` cannot be pinned to a buffer. v1 drops them in the LSP path, with the rationale logged in code (`validatorDiagnostics` calls `LOGGER.debug` with the dropped count per recalculate). Three considerations drive this:
+A `ValidationError` whose `location` is null or `(0, 0)` cannot be pinned to a buffer. v1 drops them silently in the LSP path. Three considerations drive this:
 
 - Every `ValidationError` instance in the current rule set carries `field.location()` or `type.location()`; the no-location path fires zero times today.
 - Adding an LSP surface (`window/showMessage` notifications, or a synthetic schema-root URI) before there is a concrete producer is the kind of speculative scope the project declines: "land what's needed, not what's projected".
@@ -146,6 +163,27 @@ The framing is freshness tiers, not duplicated work. The LSP-side checks are the
 
 A follow-up item could decide whether to retire the buffer-instant tier for the cases the validator covers, once usage shows whether developers actually save often enough to make the build-tier signal sufficient. That is a different question than "remove duplicate diagnostics"; the duplication is architectural, not accidental. Filed-mentally; not blocking.
 
+## Implementation
+
+File-by-file diff sites this item touches:
+
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/ValidationReport.java` — new record (errors, warnings, sourceUris) with `from(...)` factory and `canonicalUri(String)` static helper. `@LoadBearingClassifierCheck(key = "validation-report.canonical-uri")` annotation on `canonicalUri`.
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphQLRewriteGenerator.java` — restructure the existing `BuildOutput` record to `(BuildArtifacts, ValidationReport)`, add new `BuildArtifacts(CompletionData, LspSchemaSnapshot.Built.Current)` record, extend `buildOutput()` to run validator + collect warnings + construct `ValidationReport.from(...)`, drop `buildCatalog()` (now unused).
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/RewriteSchemaLoader.java` — add `@LoadBearingClassifierCheck(key = "source-location.absolute-path-source-name", ...)` annotation documenting that `SourceLocation.sourceName` is populated as an absolute path via `MultiSourceReader.trackData(true)`.
+- `graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/state/Workspace.java` — new `volatile ValidationReport validationReport` field, `validationReport()` accessor, new `setBuildOutput(BuildArtifacts, ValidationReport)` setter, drop `setCatalog(CompletionData)` and `setCatalogAndSnapshot(CompletionData, LspSchemaSnapshot.Built)` overloads.
+- `graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/diagnostics/Diagnostics.java` — new `validatorDiagnostics(file, report, snapshot)` step appended in `compute(...)`; freshness-aware silence under `Unavailable` / `Built.Previous`; `@DependsOnClassifierCheck` annotations for both classifier-check keys.
+- `graphitron-rewrite/graphitron-maven-plugin/src/main/java/no/sikt/graphitron/rewrite/maven/DevMojo.java` — four call-site migrations:
+  - `:106` (startup `setCatalogAndSnapshot` call) → `setBuildOutput(initial.artifacts(), initial.report())`.
+  - `:201-202` (`regenerate` body) → `setBuildOutput(output.artifacts(), output.report())`.
+  - `:217-225` (`rebuildCatalog` body) → re-route through `new GraphQLRewriteGenerator(ctx).buildOutput()` + `setBuildOutput`, mirroring `regenerate`'s parse-failure handling (`demoteSnapshot` + `markAllForRecalculation`). This is the classpath-watcher unification.
+  - `:245-253` (`buildOutputQuietly` + `InitialOutput` record) → extend `InitialOutput` to `(BuildArtifacts, ValidationReport)`; fallback path uses `ValidationReport.empty()`.
+
+Migration-only test sites:
+
+- `graphitron-rewrite/graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/CatalogRefreshTest.java:62` — migrate from `workspace.setCatalog(newCatalog)` to `workspace.setBuildOutput(...)`.
+
+New test files / sections enumerated in the Tests § below.
+
 ## User documentation (first-client check)
 
 `graphitron-rewrite/docs/getting-started.adoc:366-374` currently reads:
@@ -157,7 +195,7 @@ A follow-up item could decide whether to retire the buffer-instant tier for the 
 
 Bullet 2 and bullet 3 currently sit at different abstraction levels. After this item, validation errors are *also* delivered as LSP diagnostics to the connected editor. The replacement reads:
 
-> . Validation failures land in two places: the console gets the grouped per-file tree, and the LSP delivers the same errors as editor diagnostics on the open buffer. The loop keeps running so a typo does not kill the session; the editor's red squiggle and the console's tree are the same `(file, location, message)` triple.
+> . Validation failures land in two places: the console gets the grouped per-file tree, and the LSP delivers the same errors as editor diagnostics on the open buffer. The loop keeps running so a typo does not kill the session; the editor's squiggle and the console's tree carry the same `(file, location, message)` triple. The editor softens deferred-variant rejections from error to warning (the schema is valid, the generator just has not shipped the path yet); everything else uses the same severity as the build log.
 
 `getting-started.adoc:390` (the `* *LSP server*` bullet under "How this is wired") currently lists `diagnostics, hover, completion, and go-to-definition`. The diagnostics surface widens; no list-edit needed, the bullet is generic enough. The contributor-facing paragraph at line 393 names the `GraphitronSchema` as the data the LSP serves off; this widens to "the GraphitronSchema *and the validator's report on it*". One-sentence amendment.
 
@@ -170,11 +208,11 @@ If those edits do not read simply, the design is wrong. They do: the new bullet 
   - `StaleSnapshotSilencesValidatorTest`: pins the freshness gate — `Built.Previous` and `Unavailable` produce zero validator diagnostics regardless of report content.
   - `NoUsableLocationDropTest`: pins the `loc == null || loc.getLine() <= 0` gate produces zero diagnostics on the wire.
   - `EmptyReportClearsPreviousDiagnosticsTest`: drives two successive `setBuildOutput` calls — first with errors, second with an empty report — and asserts the second `PublishDiagnosticsParams` carries an empty `diagnostics` list for the affected URI (the wire-level "clear" signal).
-- **Severity exhaustiveness pin**: a meta-test in the LSP module (`DriftDetectionTest` is the existing home) asserts that the severity-mapping switch matches every permit of `Rejection` reachable from a `ValidationError`. Adding a `Rejection` permit without updating the LSP severity switch fails the build.
-- **`WorkspaceTest`**: new test for `setBuildOutput(BuildArtifacts, ValidationReport)` swapping all three refs atomically and triggering `markAllForRecalculation`; matching test for the `setCatalog(CompletionData)` narrow overload leaving `snapshot` / `validationReport` intact.
+- **`RejectionSeverityCoverageTest`** (new class next to `DiagnosticsTest`): meta-test asserting the severity-mapping switch covers every permit of `Rejection` reachable from a `ValidationError`. Walks the sealed hierarchy reflectively (`Rejection.class.getPermittedSubclasses()`) and checks each maps to a non-null `DiagnosticSeverity`. The exhaustive switch in the production code already makes "missing permit" a compile error; this test pins the runtime invariant against a `default` branch sneaking in via refactor.
+- **`WorkspaceTest`**: new test for `setBuildOutput(BuildArtifacts, ValidationReport)` swapping all three refs atomically and triggering `markAllForRecalculation`. (No narrow-overload test: `setCatalog(CompletionData)` is dropped.)
 - **End-to-end LSP test** (one file under `graphitron-lsp/src/test/...`): drive a schema with a known validator-only rejection (e.g. pagination-without-ordering), call `setBuildOutput` with the validator's output, and assert the published `PublishDiagnosticsParams` carries the expected diagnostic.
 - **`GraphQLRewriteGeneratorTest`** (if one exists, else inline in an existing generator test): assert `buildOutput()` populates `BuildOutput.report().errors()` and `.warnings()` from the validator and the schema's warning list.
-- **Classifier-check key coverage**: the existing `@DependsOnClassifierCheck` orphan-detection test (mentioned in `Diagnostics.java:81`'s pattern) sees the new `source-location.absolute-path-source-name` key; the matching `@LoadBearingClassifierCheck` on `RewriteSchemaLoader` keeps it from being orphaned.
+- **Classifier-check key coverage**: the existing `@DependsOnClassifierCheck` orphan-detection test (mentioned in `Diagnostics.java:81`'s pattern) sees the two new keys (`source-location.absolute-path-source-name` and `validation-report.canonical-uri`); the matching `@LoadBearingClassifierCheck` annotations on `RewriteSchemaLoader` and `ValidationReport.canonicalUri` keep both pairs balanced.
 
 No changes to `WatchErrorFormatter` or its tests: that path stays exactly as it is, the validator's output is shared between the two consumers.
 
