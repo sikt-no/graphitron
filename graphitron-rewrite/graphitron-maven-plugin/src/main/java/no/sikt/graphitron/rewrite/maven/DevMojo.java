@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
@@ -88,18 +89,22 @@ public class DevMojo extends AbstractRewriteMojo {
         // on the next reflection attempt. Each file-change callback (regenerate / rebuildCatalog)
         // opens its own scope and is the right place to reach for a live loader.
         var initialCtxHolder = new AtomicReference<RewriteContext>();
-        var initialCatalogHolder = new AtomicReference<CompletionData>();
+        var initialHolder = new AtomicReference<InitialOutput>();
         withCodegenScope(ctx -> {
             initialCtxHolder.set(ctx);
             if (!skipInitial) {
                 getLog().info(banner("initial run"));
                 runGeneratorPass(ctx, "initial run");
             }
-            initialCatalogHolder.set(buildCatalogQuietly(ctx));
+            initialHolder.set(buildOutputQuietly(ctx));
         });
         var initialCtx = initialCtxHolder.get();
+        var initial = initialHolder.get();
 
-        var workspace = new Workspace(initialCatalogHolder.get(), LspVocabulary.load());
+        var workspace = new Workspace(initial.catalog(), LspVocabulary.load());
+        if (initial.snapshot() instanceof LspSchemaSnapshot.Built built) {
+            workspace.setCatalogAndSnapshot(initial.catalog(), built);
+        }
         bindServer(workspace);
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
         startClasspathWatcher(initialCtx, workspace);
@@ -186,18 +191,25 @@ public class DevMojo extends AbstractRewriteMojo {
                             + root + ": " + e.getMessage());
                     }
                 }
-                // The schema may have changed which scalars are declared,
-                // so refresh the catalog from the freshly-parsed bundle.
+                // The schema may have changed which scalars are declared
+                // or which directives the user has authored, so refresh
+                // both projections (catalog + snapshot) from the freshly
+                // parsed bundle, atomically. On parse failure, demote the
+                // snapshot to Built.Previous so consumers see "stale"
+                // rather than punishing the user for the broken parse.
                 try {
-                    workspace.setCatalog(new GraphQLRewriteGenerator(ctx).buildCatalog());
+                    var output = new GraphQLRewriteGenerator(ctx).buildOutput();
+                    workspace.setCatalogAndSnapshot(output.catalog(), output.snapshot());
                 } catch (RuntimeException e) {
                     getLog().warn("graphitron:dev: catalog refresh after save failed; "
                         + "keeping previous: " + e.getMessage());
+                    workspace.demoteSnapshot();
                     workspace.markAllForRecalculation();
                 }
             });
         } catch (MojoExecutionException e) {
             getLog().error("graphitron:dev: failed to rebuild context", e);
+            workspace.demoteSnapshot();
             workspace.markAllForRecalculation();
         }
     }
@@ -224,20 +236,24 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
-     * Initial catalog at dev-goal startup. A schema parse / classification
-     * failure is surfaced as a warning and an empty catalog: the LSP must
-     * still come up so the developer can fix the schema, and the schema
-     * watcher will re-build on the next save.
+     * Initial catalog + snapshot pair at dev-goal startup. A schema parse /
+     * classification failure is surfaced as a warning and an empty catalog
+     * plus {@link LspSchemaSnapshot.Unavailable}: the LSP must still come
+     * up so the developer can fix the schema, and the schema watcher will
+     * re-build on the next save.
      */
-    private CompletionData buildCatalogQuietly(RewriteContext ctx) {
+    private InitialOutput buildOutputQuietly(RewriteContext ctx) {
         try {
-            return new GraphQLRewriteGenerator(ctx).buildCatalog();
+            var output = new GraphQLRewriteGenerator(ctx).buildOutput();
+            return new InitialOutput(output.catalog(), output.snapshot());
         } catch (RuntimeException e) {
             getLog().warn("graphitron:dev: initial catalog build failed; "
                 + "starting with empty catalog: " + e.getMessage());
-            return CompletionData.empty();
+            return new InitialOutput(CompletionData.empty(), LspSchemaSnapshot.unavailable());
         }
     }
+
+    private record InitialOutput(CompletionData catalog, LspSchemaSnapshot snapshot) {}
 
     private boolean runGeneratorPass(RewriteContext ctx, String label) {
         try {

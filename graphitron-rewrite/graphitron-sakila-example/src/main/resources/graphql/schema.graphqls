@@ -1,7 +1,14 @@
 interface Node { id: ID! }
 
+# R139 compile-tier fixture: a user-declared directive whose application
+# pulls the build pipeline through the same path the LSP's snapshot
+# producer relies on. R139 itself emits no generated code; this fixture
+# is the regression guard for the input contract (user directives parse
+# without error and survive multi-file aggregation + classification).
+directive @auth(role: String!) on FIELD_DEFINITION
+
 type Query {
-    customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]!
+    customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]! @auth(role: "admin")
     films(
         rating: MpaaRating @field(name: "RATING"),
         textRating: TextRating @field(name: "TEXT_RATING"),

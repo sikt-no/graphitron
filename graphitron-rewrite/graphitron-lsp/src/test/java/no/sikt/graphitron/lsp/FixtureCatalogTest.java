@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.RewriteContext;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
 import io.github.treesitter.jtreesitter.Parser;
@@ -110,7 +111,7 @@ class FixtureCatalogTest {
                 x: Int @field(name: "FILM_ID")
             }
             """);
-        assertThat(Diagnostics.compute(file, catalog())).isEmpty();
+        assertThat(Diagnostics.compute(file, catalog(), LspSchemaSnapshot.unavailable())).isEmpty();
     }
 
     @Test
@@ -120,7 +121,7 @@ class FixtureCatalogTest {
                 x: Int @field(name: "film_id")
             }
             """);
-        var diags = Diagnostics.compute(file, catalog());
+        var diags = Diagnostics.compute(file, catalog(), LspSchemaSnapshot.unavailable());
         assertThat(diags).isEmpty();
     }
 
@@ -131,7 +132,7 @@ class FixtureCatalogTest {
                 x: Int @field(name: "NO_SUCH_COL")
             }
             """);
-        var diags = Diagnostics.compute(file, catalog());
+        var diags = Diagnostics.compute(file, catalog(), LspSchemaSnapshot.unavailable());
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("NO_SUCH_COL");
     }
@@ -152,7 +153,7 @@ class FixtureCatalogTest {
                 x: Int @reference(path: [{key: "%s"}])
             }
             """, fkKey));
-        assertThat(Diagnostics.compute(file, data)).isEmpty();
+        assertThat(Diagnostics.compute(file, data, LspSchemaSnapshot.unavailable())).isEmpty();
     }
 
     // ---- Helpers ----

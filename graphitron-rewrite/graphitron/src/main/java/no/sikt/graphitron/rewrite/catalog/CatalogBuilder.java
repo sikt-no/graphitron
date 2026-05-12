@@ -1,9 +1,17 @@
 package no.sikt.graphitron.rewrite.catalog;
 
+import graphql.language.Description;
+import graphql.language.InputValueDefinition;
+import graphql.language.ListType;
+import graphql.language.NonNullType;
+import graphql.language.Type;
+import graphql.language.TypeName;
 import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLSchema;
+import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import org.jooq.ForeignKey;
 import org.jooq.Table;
 
@@ -37,6 +45,76 @@ import java.util.Optional;
 public final class CatalogBuilder {
 
     private CatalogBuilder() {}
+
+    /**
+     * Projects the post-merge {@link TypeDefinitionRegistry}'s directive
+     * definitions into the {@link LspSchemaSnapshot.Built.Current} shape the
+     * LSP consumes through the snapshot side-channel. Pre-conditions: the
+     * registry parsed cleanly (callers in {@code GraphQLRewriteGenerator}
+     * throw before reaching this method on parse failure) and reflects the
+     * full multi-file {@code extend type} merge plus the bundled-directives
+     * overlay. No bundled-directive filter is applied; the LSP's
+     * {@code DirectiveResolution} encodes bundled-shadows-snapshot
+     * precedence so redundant entries are observationally invisible.
+     */
+    @LoadBearingClassifierCheck(
+        key = "snapshot-built-implies-clean-parse",
+        description = "Only invoked on a clean post-merge registry; parse failures throw upstream "
+            + "in GraphQLRewriteGenerator before reaching this site, so a Built.Current snapshot "
+            + "never reflects a partial parse."
+    )
+    @LoadBearingClassifierCheck(
+        key = "snapshot-directive-roundtrip-faithful",
+        description = "Every DirectiveDefinition in the input registry produces exactly one "
+            + "DirectiveShape with the same name; the LSP's unknown-directive arm and phase-2 "
+            + "arg/hover consumers rely on round-trip faithfulness."
+    )
+    public static LspSchemaSnapshot.Built.Current buildSnapshot(TypeDefinitionRegistry registry) {
+        var directives = new ArrayList<DirectiveShape>();
+        for (var def : registry.getDirectiveDefinitions().values()) {
+            directives.add(new DirectiveShape(
+                def.getName(),
+                projectInputValues(def.getInputValueDefinitions()),
+                descriptionOf(def.getDescription())
+            ));
+        }
+        return new LspSchemaSnapshot.Built.Current(directives);
+    }
+
+    private static List<InputValueShape> projectInputValues(List<InputValueDefinition> defs) {
+        var shapes = new ArrayList<InputValueShape>();
+        for (var def : defs) {
+            shapes.add(new InputValueShape(
+                def.getName(),
+                projectType(def.getType()),
+                descriptionOf(def.getDescription())
+            ));
+        }
+        return shapes;
+    }
+
+    private static TypeShape projectType(Type<?> type) {
+        return projectType(type, false);
+    }
+
+    private static TypeShape projectType(Type<?> type, boolean nonNull) {
+        if (type instanceof NonNullType nn) {
+            return projectType(nn.getType(), true);
+        }
+        if (type instanceof ListType lt) {
+            return new TypeShape.List(projectType(lt.getType(), false), nonNull);
+        }
+        if (type instanceof TypeName tn) {
+            return new TypeShape.Named(tn.getName(), nonNull);
+        }
+        throw new IllegalStateException("Unexpected graphql-java type node: " + type.getClass());
+    }
+
+    private static Optional<String> descriptionOf(Description description) {
+        if (description == null) return Optional.empty();
+        var content = description.getContent();
+        return content == null || content.isEmpty() ? Optional.empty() : Optional.of(content);
+    }
 
     public static CompletionData build(JooqCatalog jooq, GraphQLSchema assembled, RewriteContext ctx) {
         Path jooqSourceRoot = ctx.basedir().resolve("target/generated-sources/jooq");

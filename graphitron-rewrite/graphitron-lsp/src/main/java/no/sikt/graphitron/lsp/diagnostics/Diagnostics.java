@@ -11,9 +11,11 @@ import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
+import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Range;
@@ -69,12 +71,20 @@ public final class Diagnostics {
         "skip", "include", "deprecated", "specifiedBy", "oneOf"
     );
 
-    public static List<Diagnostic> compute(WorkspaceFile file, CompletionData catalog) {
-        return compute(LspVocabulary.load(), file, catalog);
+    public static List<Diagnostic> compute(
+        WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot
+    ) {
+        return compute(LspVocabulary.load(), file, catalog, snapshot);
     }
 
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "snapshot-built-implies-clean-parse",
+        reliesOn = "warns under Built.Current + Unknown only; silences under Unavailable and "
+            + "Built.Previous on the conservative principle 'do not punish the user for what we "
+            + "cannot reliably see'."
+    )
     public static List<Diagnostic> compute(
-        LspVocabulary vocabulary, WorkspaceFile file, CompletionData catalog
+        LspVocabulary vocabulary, WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot
     ) {
         var out = new ArrayList<Diagnostic>();
         var directives = Directives.findAll(file.tree().getRootNode());
@@ -83,23 +93,37 @@ public final class Diagnostics {
             if (SPEC_BUILTIN_DIRECTIVES.contains(directiveName)) {
                 continue;
             }
-            var dirDef = vocabulary.registry().getDirectiveDefinition(directiveName);
-            if (dirDef.isEmpty()) {
-                out.add(diagnostic(file, directive.nameNode(), DiagnosticSeverity.Warning,
-                    "Unknown directive '@" + directiveName
-                        + "'. Not declared in the bundled directives.graphqls."));
+            var resolution = DirectiveResolution.resolve(vocabulary, snapshot, directiveName);
+            if (resolution instanceof DirectiveResolution.Bundled bundled) {
+                var dirDef = bundled.def();
+                validateUnknownArgs(directive, dirDef, vocabulary, file, out);
+                validateRequiredArgs(directive, dirDef, file, out);
+                var leaves = vocabulary.leafCoordinates(directive, file.source());
+                for (var leaf : leaves) {
+                    dispatch(directive, leaf, vocabulary, file, catalog, out);
+                }
+                // The legacy `name:` arm fires once per ExternalCodeReference
+                // object whose `className:` is empty/missing. Driven by leaves,
+                // since every ECR-name slot is an InputField coordinate.
+                validateLegacyNameLeaves(vocabulary, directive, leaves, file, catalog, out);
                 continue;
             }
-            validateUnknownArgs(directive, dirDef.get(), vocabulary, file, out);
-            validateRequiredArgs(directive, dirDef.get(), file, out);
-            var leaves = vocabulary.leafCoordinates(directive, file.source());
-            for (var leaf : leaves) {
-                dispatch(directive, leaf, vocabulary, file, catalog, out);
+            // Freshness-aware silence policy: only Built.Current warns, and
+            // only when the snapshot does not declare the directive either.
+            // Unavailable (pre-build) and Built.Previous (stale after parse
+            // failure) silence the warn arm to avoid punishing the user
+            // for what we cannot reliably see.
+            switch (snapshot) {
+                case LspSchemaSnapshot.Unavailable ignored -> { /* pre-build silence */ }
+                case LspSchemaSnapshot.Built.Previous ignored -> { /* stale-snapshot silence */ }
+                case LspSchemaSnapshot.Built.Current ignored -> {
+                    if (resolution instanceof DirectiveResolution.Unknown) {
+                        out.add(diagnostic(file, directive.nameNode(), DiagnosticSeverity.Warning,
+                            "Unknown directive '@" + directiveName
+                                + "'. Not declared in any directive definition reachable from the parsed schema."));
+                    }
+                }
             }
-            // The legacy `name:` arm fires once per ExternalCodeReference
-            // object whose `className:` is empty/missing. Driven by leaves,
-            // since every ECR-name slot is an InputField coordinate.
-            validateLegacyNameLeaves(vocabulary, directive, leaves, file, catalog, out);
         }
         return out;
     }

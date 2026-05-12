@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator;
@@ -88,10 +89,31 @@ public class GraphQLRewriteGenerator {
      * watcher trigger; the result swaps into {@code Workspace} atomically.
      */
     public CompletionData buildCatalog() {
-        var bundle = GraphitronSchemaBuilder.buildBundle(loadAttributedRegistry(), ctx);
-        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        return CatalogBuilder.build(jooq, bundle.assembled(), ctx);
+        return buildOutput().catalog();
     }
+
+    /**
+     * Pair the LSP needs on every successful regenerate: the
+     * {@link CompletionData} catalog (jOOQ + classpath references + scalars)
+     * and the {@link LspSchemaSnapshot.Built.Current} projection of the
+     * parsed user schema's directive surface. Same parse, two projections;
+     * the dev goal swaps both atomically through
+     * {@code Workspace.setCatalogAndSnapshot}.
+     */
+    public BuildOutput buildOutput() {
+        var attributed = loadAttributedRegistry();
+        var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
+        var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
+        var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
+        var snapshot = CatalogBuilder.buildSnapshot(attributed.registry());
+        return new BuildOutput(catalog, snapshot);
+    }
+
+    /**
+     * Catalog plus directive-projection snapshot, both derived from the
+     * same parsed registry. See {@link #buildOutput()}.
+     */
+    public record BuildOutput(CompletionData catalog, LspSchemaSnapshot.Built.Current snapshot) {}
 
     /**
      * Runs schema loading, attribution, classification, and validation without writing any output.

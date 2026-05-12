@@ -10,6 +10,7 @@ import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.junit.jupiter.api.Test;
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
@@ -73,7 +74,7 @@ class DirectiveShapeSmokeTest {
         assertThat(methodItems).extracting(i -> i.getLabel()).contains("filmsByService");
 
         // Diagnostics: this schema is internally consistent; no errors.
-        var diags = Diagnostics.compute(new WorkspaceFile(1, source), data);
+        var diags = Diagnostics.compute(new WorkspaceFile(1, source), data, LspSchemaSnapshot.unavailable());
         assertThat(diags).isEmpty();
     }
 
@@ -93,7 +94,7 @@ class DirectiveShapeSmokeTest {
             "filmsByService"
         );
 
-        var diags = Diagnostics.compute(new WorkspaceFile(1, source), data);
+        var diags = Diagnostics.compute(new WorkspaceFile(1, source), data, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("NotInClasspath");
@@ -116,7 +117,7 @@ class DirectiveShapeSmokeTest {
             "outerOverrideMethod"
         );
 
-        var diags = Diagnostics.compute(new WorkspaceFile(1, source), data);
+        var diags = Diagnostics.compute(new WorkspaceFile(1, source), data, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("ghostMethod");
