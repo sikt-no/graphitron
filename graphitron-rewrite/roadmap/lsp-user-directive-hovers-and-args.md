@@ -1,7 +1,7 @@
 ---
 id: R142
 title: "LSP hovers, arg-completion, and arg validation against the schema snapshot"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 5
 theme: lsp
