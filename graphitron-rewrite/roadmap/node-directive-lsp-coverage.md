@@ -1,7 +1,7 @@
 ---
 id: R100
 title: LSP validation and completions for @node and @nodeId directives
-status: Ready
+status: In Progress
 bucket: feature
 theme: lsp
 depends-on: []
