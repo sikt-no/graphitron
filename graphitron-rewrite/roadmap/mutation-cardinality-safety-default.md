@@ -399,6 +399,15 @@ Phase 3 — new test coverage.
   the cardinality story (ON CONFLICT requires a unique constraint by
   definition; `@multiRow` interacts differently; `@value`-partition extends
   naturally).
+- **Sibling of R141** (`bulk-input-single-carrier-list-data-field.md`, Spec).
+  R141 admits a bulk-input DML carrier with a list-shaped data field
+  (`MutationBulkDmlRecordField`), originally scoped to `{INSERT, UPDATE,
+  UPSERT}`. R141's Spec body has been narrowed to `{INSERT, UPDATE}` to
+  share R144's UPSERT carve-out: R141's compact-constructor now rejects
+  `DmlKind.UPSERT` alongside DELETE, deferring the UPSERT arm to R145.
+  R141 and R144 are peers in `mutations-errors`; neither blocks the other.
+  Test-fixture migration on any UPDATE coverage that touches the legacy
+  `@lookupKey` shape is owned by whichever of R141 / R144 lands second.
 - **Independent from R98** (`multi-source-input-validation.md`). R98 is about
   validation surfaces (CHECK + Jakarta + directives → one rendered schema);
   R144 is about cardinality safety on the DML-WHERE side. Shared theme, no
