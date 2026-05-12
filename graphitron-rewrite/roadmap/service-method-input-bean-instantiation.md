@@ -1,7 +1,7 @@
 ---
 id: R150
-title: "Instantiate service-layer input beans at the @service fetcher boundary"
-status: Backlog
+title: Instantiate service-layer input beans at the @service fetcher boundary
+status: Spec
 bucket: feature
 priority: 1
 theme: mutations-errors
