@@ -41,7 +41,7 @@ class SingleRecordCarrierPipelineTest {
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE", "UPSERT"})
     void carrier_listDataField_classifiesAsMutationDmlRecordField(DmlKind kind) {
-        var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
+        var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload { films: [Film!] }"));
 
         var mutField = schema.field("Mutation", mutationName(kind));
         assertThat(mutField).isInstanceOf(MutationField.MutationDmlRecordField.class);
@@ -55,7 +55,7 @@ class SingleRecordCarrierPipelineTest {
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE", "UPSERT"})
     void carrier_listDataField_dataFieldClassifiesAsSingleRecordTableField(DmlKind kind) {
-        var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
+        var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload { films: [Film!] }"));
 
         var dataField = schema.field("FilmPayload", "films");
         assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
@@ -88,7 +88,7 @@ class SingleRecordCarrierPipelineTest {
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE", "UPSERT"})
     void carrier_atRecordWithNullClassName_classifiesAsMutationDmlRecordField(DmlKind kind) {
-        var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload @record { films: [Film!] }"));
+        var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload @record { films: [Film!] }"));
         assertThat(schema.field("Mutation", mutationName(kind)))
             .isInstanceOf(MutationField.MutationDmlRecordField.class);
     }
@@ -97,7 +97,7 @@ class SingleRecordCarrierPipelineTest {
 
     @Test
     void carrier_withDelete_rejectsAtClassifier() {
-        var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.DELETE, "type FilmPayload { films: [Film!] }"));
+        var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.DELETE, "type FilmPayload { films: [Film!] }"));
         var mutField = schema.field("Mutation", mutationName(DmlKind.DELETE));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();

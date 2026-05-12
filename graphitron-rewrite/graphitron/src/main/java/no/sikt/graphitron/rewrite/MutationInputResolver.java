@@ -135,31 +135,24 @@ final class MutationInputResolver {
 
     /**
      * Validates Invariant #14 — DML {@code @mutation} return type must be {@code ID},
-     * {@code [ID]}, {@code T}, or {@code [T]} (where {@code T} is a {@code @table} type) —
-     * and Invariant #15 — when the {@code @table} input is list-shaped
-     * ({@code in: [FilmInput!]!}), the return type must also be list-shaped on the
-     * {@link ReturnTypeRef.ScalarReturnType ID} and
-     * {@link ReturnTypeRef.TableBoundReturnType T} arms. Single-cardinality returns paired
-     * with bulk inputs would silently drop all-but-the-last-row data per jOOQ's
-     * "return last row" default; rejecting at classify time keeps that footgun from
-     * reaching authors.
+     * {@code [ID]}, {@code T}, {@code [T]}, or a single {@code @record} payload (where
+     * {@code T} is a {@code @table} type) — and Invariant #15 — when the {@code @table}
+     * input is list-shaped ({@code in: [FilmInput!]!}), the return type must also be
+     * list-shaped. The cardinality check is sealed-root-uniform across all three admitted
+     * return-type arms ({@link ReturnTypeRef.ScalarReturnType ID},
+     * {@link ReturnTypeRef.TableBoundReturnType T}, and
+     * {@link ReturnTypeRef.ResultReturnType Payload}): for every arm the DML emit path
+     * ends in {@code valuesOfRows(...).returningResult(...).fetchOne()}, whose jOOQ
+     * contract throws {@code TooManyRowsException} on any input with &gt;1 row. Rejecting
+     * at classify time keeps that footgun from reaching authors.
      *
      * <p>Returns a non-null rejection reason on violation; {@code null} when the return type
-     * is acceptable. The {@link ReturnTypeRef.ResultReturnType Payload} arm is excluded from
-     * #15 so bulk-input + single-payload routes through the deferred Payload+list rejection in
-     * {@link FieldBuilder#buildDmlField} (a separate "not yet supported" category), and
-     * bulk-input + list-payload still falls under #14's existing arm.
+     * is acceptable.
      */
     static String validateReturnType(ReturnTypeRef returnType, DmlKind kind, boolean listInput, BuildContext ctx) {
-        return switch (returnType) {
+        String perArm = switch (returnType) {
             case ReturnTypeRef.ScalarReturnType s -> {
                 if ("ID".equals(s.returnTypeName())) {
-                    if (listInput && !s.wrapper().isList()) {
-                        yield "@mutation(typeName: " + kind + ") with a listed @table input "
-                            + "must return a list (found '" + s.returnTypeName() + "', "
-                            + "single-cardinality); use [ID!]! to avoid silent drop of "
-                            + "all-but-last-row data (Invariant #15)";
-                    }
                     yield null;
                 }
                 // R75 Phase 1: candidates whose carrier types failed to promote land here as a
@@ -179,12 +172,6 @@ final class MutationInputResolver {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + tb.returnTypeName() + "' (Connection) is not yet supported; use ID or a @table type";
                 }
-                if (listInput && !tb.wrapper().isList()) {
-                    yield "@mutation(typeName: " + kind + ") with a listed @table input "
-                        + "must return a list (found '" + tb.returnTypeName() + "', "
-                        + "single-cardinality); use [" + tb.returnTypeName() + "!]! to avoid "
-                        + "silent drop of all-but-last-row data (Invariant #15)";
-                }
                 yield null;
             }
             case ReturnTypeRef.ResultReturnType r -> {
@@ -192,8 +179,7 @@ final class MutationInputResolver {
                 // constructor with one row-slot parameter (typed as the DML's table record) plus
                 // optional defaulted slots and an optional errors slot. The shape check runs in
                 // FieldBuilder.resolveDmlPayloadAssembly during construction; this validator only
-                // screens for the wrapper shape (single, not list/connection). Bulk-input +
-                // single-Payload combinations route to the deferred rejection in buildDmlField.
+                // screens for the wrapper shape (single, not list/connection).
                 if (r.wrapper().isList()) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + r.returnTypeName() + "' (list of @record) is not yet supported; "
@@ -216,6 +202,17 @@ final class MutationInputResolver {
                 "@mutation(typeName: " + kind + ") return type '"
                     + p.returnTypeName() + "' (interface/union) is not yet supported; use ID or a @table type";
         };
+        if (perArm != null) {
+            return perArm;
+        }
+        if (listInput && !returnType.wrapper().isList()) {
+            return "@mutation(typeName: " + kind + ") with a listed @table input "
+                + "must return a list (found '" + returnType.returnTypeName() + "', "
+                + "single-cardinality); the emit path runs valuesOfRows(...).fetchOne(), "
+                + "which throws TooManyRowsException on every call with >1 input row "
+                + "(Invariant #15)";
+        }
+        return null;
     }
 
     /**

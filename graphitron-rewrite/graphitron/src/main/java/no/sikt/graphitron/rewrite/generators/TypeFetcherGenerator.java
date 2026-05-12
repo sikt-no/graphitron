@@ -3266,11 +3266,10 @@ public class TypeFetcherGenerator {
      * R75 Phase 1: emits the fetcher for a {@link MutationField.MutationDmlRecordField} — the
      * record-returning DML mutation. Body is two-step: the DML chain (per-kind) runs inside
      * {@code dsl.transactionResult(tx -> DSL.using(tx)....)}, projects the input table's PK
-     * columns via {@code .returningResult(PK1, PK2, ...)}, and returns either a single
-     * {@code RecordN<...>} ({@code .fetchOne()}, when the data field is single-cardinality) or a
-     * {@code Result<RecordN<...>>} ({@code .fetch()}, when the data field is list). The
-     * transaction commits when {@code transactionResult} returns; the materialised key Result
-     * outlives it, and the response SELECT happens later in the data field's
+     * columns via {@code .returningResult(PK1, PK2, ...)}, and returns a single
+     * {@code RecordN<...>} via {@code .fetchOne()}. The transaction commits when
+     * {@code transactionResult} returns; the materialised key Record outlives it, and the
+     * response SELECT happens later in the data field's
      * {@link ChildField.SingleRecordTableField} fetcher — outside the transaction, so read
      * errors during traversal cannot undo the DML.
      *
@@ -3278,7 +3277,9 @@ public class TypeFetcherGenerator {
      * ({@link #buildPerCellValueList}, {@link #buildLookupWhere}) so the SET / WHERE /
      * ON CONFLICT logic stays in lock-step with the direct-{@code @table} fetcher. DELETE is
      * not handled here because the mutation classifier rejects DELETE-with-carrier; the row
-     * is gone before the response SELECT can read it.
+     * is gone before the response SELECT can read it. Bulk-input + single-payload combinations
+     * are rejected upstream by {@code MutationInputResolver.validateReturnType} (Invariant
+     * #15); only single-cardinality input + single-cardinality payload reaches this fetcher.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "mutation-dml-record-field.data-table-equals-input-table",
@@ -3299,12 +3300,8 @@ public class TypeFetcherGenerator {
                 "MutationDmlRecordField '" + f.qualifiedName() + "' references table '"
                 + tableRef.tableName() + "' that has no primary key; admission requires PK columns");
         }
-        boolean dataIsList = f.returnType().wrapper().isList();
-        var rowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
+        TypeName payloadType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
             new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), pkCols);
-        TypeName payloadType = dataIsList
-            ? ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), rowType)
-            : rowType;
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
         var builder = MethodSpec.methodBuilder(f.name())
@@ -3313,30 +3310,7 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
         builder.beginControlFlow("try");
         builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
-        if (tia.list()) {
-            builder.addStatement("$T<$T<?, ?>> in = ($T<$T<?, ?>>) env.getArgument($S)",
-                ClassName.get(java.util.List.class), MAP,
-                ClassName.get(java.util.List.class), MAP, tia.name());
-            // Empty-list short-circuit. jOOQ rejects empty VALUES on every verb; emit a typed
-            // empty Result so the data field's response SELECT sees an empty source.
-            builder.beginControlFlow("if (in.isEmpty())");
-            var pkProjection = CodeBlock.builder();
-            for (int i = 0; i < pkCols.size(); i++) {
-                if (i > 0) pkProjection.add(", ");
-                pkProjection.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), pkCols.get(i).javaName());
-            }
-            // Empty payload constructor: newResult(...) → Result<Record> (list payload),
-            // newRecord(...) → Record (single payload). Both arms of buildMutationDmlRecordFetcher
-            // hit this branch when tia.list() is true; without the dataIsList split the single-
-            // record arm assigns a Result to a Record1<...> local and the generated source fails
-            // to compile.
-            builder.addStatement("$T payload = $T.using(dsl.configuration()).$L($L)",
-                payloadType, DSL, dataIsList ? "newResult" : "newRecord", pkProjection.build());
-            builder.addCode(returnSyncSuccess(payloadType, "payload"));
-            builder.endControlFlow();
-        } else {
-            builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, tia.name());
-        }
+        builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, tia.name());
         builder.addStatement("$T $L = $T.$L",
             tablesOnly.jooqTableClass(), tableLocal, tablesOnly.tablesClass(), tableRef.javaFieldName());
 
@@ -3354,7 +3328,7 @@ public class TypeFetcherGenerator {
             dmlEmit.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), pkCols.get(i).javaName());
         }
         dmlEmit.add(")\n")
-            .add(dataIsList ? ".fetch());\n" : ".fetchOne());\n").unindent();
+            .add(".fetchOne());\n").unindent();
         builder.addCode(dmlEmit.build());
 
         builder.addCode(returnSyncSuccess(payloadType, "payload"));
