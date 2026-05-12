@@ -19,7 +19,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R108` | Per-variant projection on polymorphic fields | In Review | 2026-05-12 | [plan](polymorphic-per-variant-projection.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready |  | [plan](tablemethod-child-table-bound.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
-| `R147` | Surface GraphitronSchemaValidator errors and warnings as LSP diagnostics | In Review | 2026-05-12 | [plan](lsp-surface-validator-errors.md) |
 | `R144` | Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with @multiRow | Spec |  | [plan](mutation-cardinality-safety-default.md) |
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
@@ -209,7 +208,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md) — Backlog, bug
 - `R149` [**End-to-end LSP publish-diagnostics test and buildOutput report-population test for R147**](r147-followup-end-to-end-publish-diagnostics-tests.md) — Backlog, test
-- `R147` [**Surface GraphitronSchemaValidator errors and warnings as LSP diagnostics**](lsp-surface-validator-errors.md) — In Review, feature
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
 - `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
