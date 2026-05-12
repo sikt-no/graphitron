@@ -117,6 +117,8 @@ public record SingleRecordCarrierShape(
 
 **Walk consolidation.** `BuildContext.tryResolveSingleRecordCarrier` becomes the single carrier walk: it iterates the carrier type's fields, classifies each into a `CarrierFieldRole` permit (or fails on the first unclassifiable field), and produces the closed-list shape. `FieldBuilder.resolveErrorChannel(returnType)` (the parallel walk at `FieldBuilder.java:2670`) is removed; its callers read `shape.errorChannel().map(role -> role.binding())` from the unified resolution instead. The carrier classifier's surface contract narrows from "two independent walks, one ad-hoc combine site" to "one walk, one result, exhaustive over permits".
 
+**Load-bearing check on the unified walk.** The exhaustive-classification guarantee is anchored as a load-bearing classifier check key `single-record-carrier-shape.roles-exhaustively-classified`. The producer-side `@LoadBearingClassifierCheck` annotation lives on `tryResolveSingleRecordCarrier`, with description "every carrier field resolves to exactly one `CarrierFieldRole` permit or the walk returns `Rejected`; the resulting `SingleRecordCarrierShape.roles` contains no field-name duplicates and no untyped slots". The consumer-side `@DependsOnClassifierCheck` annotation lives on every emitter that reads `shape.data()` or `shape.errorChannel()` (the data-channel projection and the catch-arm builder today). `LoadBearingGuaranteeAuditTest` enforces the pairing; `CarrierFieldRoleCoverageTest` (below) is the build-time sealed-coverage audit that catches a new permit landing without a corresponding consumer dispatch.
+
 **R12 surface stays.** R12's `ErrorChannel` record (`graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ErrorChannel.java`) is unchanged. The `Optional<ErrorChannel> errorChannel` slot on `MutationDmlRecordField` (`MutationField.java:148`) and on the new `MutationBulkDmlRecordField` keeps its current external shape; only the production site moves. R12's plan body (`error-handling-parity.md`) describes the carrier-side resolver in §2c; R141 coordinates the relocation with R12's eventual shape — concretely, R12's planned `resolveErrorChannel` walk is reframed in R12's plan body as "the `ErrorChannelRole` permit's classifier rule inside the unified carrier walk", same predicate body, different home.
 
 **Sealed-coverage discipline.** A new `CarrierFieldRoleCoverageTest` (sibling to `GeneratorCoverageTest` at `graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/GeneratorCoverageTest.java:43`) asserts that every emitter consuming a `SingleRecordCarrierShape` dispatches over every `CarrierFieldRole` permit, so that adding a permit in a future Backlog item is caught at build time if any consumer fails to handle it. The data-channel projection and the error-channel catch-arm wiring are the two consumers today; both already pattern-match the role they need.
@@ -141,11 +143,26 @@ A new sealed leaf `MutationField.MutationBulkDmlRecordField`, sibling to `Mutati
  * {@code DmlKind.UPSERT} and the parameterised emitter gains the UPSERT branch.
  *
  * <p><b>Order preservation invariant.</b> {@code output.data[i]} corresponds to
- * {@code input[i]} for all {@code i ∈ [0, N)}. The emitter satisfies this via batched
- * per-row DML inside one transaction (N+1 statements), collecting PKs in input order and
- * iterating a PK-keyed map of the response-SELECT in that order to build the response. Any
- * future single-statement emit refinement (e.g. an ordinal-preserving Postgres contract)
- * must preserve this contract; the leaf's documented invariant is the type-system anchor.
+ * {@code input[i]} for all {@code i ∈ [0, N)}. Anchored as the load-bearing
+ * classifier check {@code mutation-bulk-dml-record-field.input-order-preserving-emit}
+ * (producer-side here, consumer-side on {@code buildMutationBulkDmlRecordFetcher}),
+ * with {@code DmlBulkMutationsExecutionTest} as the runtime audit. The emitter
+ * satisfies the invariant via batched per-row DML inside one transaction (N+1
+ * statements), collecting PKs in input order and iterating a PK-keyed map of the
+ * response-SELECT in that order to build the response. Any future single-statement
+ * emit refinement (e.g. an ordinal-preserving Postgres contract) must preserve
+ * this contract; the check key plus the consumer-side annotation on whatever
+ * emitter replaces the loop are the navigable anchor.
+ *
+ * <p><b>Per-kind emit variation.</b> INSERT and UPDATE differ on the per-row
+ * statement and the WHERE/SET clauses (see "Mutation-kind coverage" below);
+ * future UPSERT lifts at R145 add a third shape with ON CONFLICT semantics. The
+ * components of this record are the same across kinds today, but the emit
+ * shapes are not; the principles-aligned target is sealed-on-kind permits
+ * mirroring {@code DmlTableField}, tracked at
+ * {@code dml-record-carrier-sealed-on-kind} as the joint lift over both record-
+ * carrier leaves. Until that lift lands, the {@link DmlKind} enum field encodes
+ * the per-emit-shape dispatch and the parameterised emitter switches on it.
  *
  * <p><b>DELETE rejection.</b> Mirrors {@link MutationDmlRecordField}: DELETE-with-payload-return
  * is incorrect by construction (the row is gone before the response SELECT can read it).
@@ -229,6 +246,8 @@ Cost: N+1 statements per mutation (N DML round-trips + 1 read-back SELECT), all 
 
 This is a deliberate cost trade-off: correctness invariant first, throughput optimisation later if profiled.
 
+**Load-bearing check.** The order-preservation contract is anchored as a load-bearing classifier check key `mutation-bulk-dml-record-field.input-order-preserving-emit`. The producer-side `@LoadBearingClassifierCheck` annotation lives on `MutationBulkDmlRecordField` (the leaf records the invariant in code, paired with the Javadoc paragraph above), with description "emitter must iterate response builds in input order; PK-keyed map indexed by the input-order-collected PK list is the canonical mechanism". The consumer-side `@DependsOnClassifierCheck` annotation lives on `buildMutationBulkDmlRecordFetcher` (or its parameterised entry point) so that any future emitter refinement is forced to either preserve the invariant or rewire the contract explicitly. This pairing does not enforce order preservation at build time — the runtime audit is `DmlBulkMutationsExecutionTest`'s N=3 deliberately-non-PK-ordered round-trip — but it does make the contract navigable, audit-trackable, and surfaced by `LoadBearingGuaranteeAuditTest` rather than buried in prose.
+
 ## Response-SELECT (data channel)
 
 After the DML batch, run one `SELECT <projectedColumns> FROM <table> WHERE <pkColumn> IN (?, ?, ..., ?)` against the PKs collected from the DML batch. Project into the data field's element type via the existing single-carrier read-back machinery (the `SingleRecordCarrierShape.DataElement.Table` projection path R75 Phase 1 introduced); the only difference is the loop iterates `pkList` (built from the DML batch) instead of a single `pk`.
@@ -246,6 +265,8 @@ The `Optional<ErrorChannel> errorChannel` slot on `MutationDmlRecordField` (`Mut
 **R12 coordination.** R12 is `Ready` (not yet shipped). R141's relocation of the production site requires a corresponding adjustment in R12's plan body — concretely, R12's §2c "carrier-side `resolveErrorChannel` walk" is reframed as "the `ErrorChannelRole` permit's classifier rule inside the unified carrier walk", and R12's planned standalone `resolveErrorChannel` method ceases to exist as a separate entry point. The classifier check that R12 ships as load-bearing (R12's `error-channel.payload-class-canonical-constructor-shape` or equivalent) remains attached to the predicate body, which now lives at the role-permit classification site. R12's emitter-side consumers (the catch-arm builder) are unaffected.
 
 This is a coordination point, not a temporal blocker: if R141 lands first against R12's `Ready` plan body, R12's spec adjusts to consume the role permit when R12 lands; if R12 lands first, R12 ships the standalone walk and R141 inlines the predicate body into the unified walk and removes the standalone call site as part of R141's commits. The acceptance criterion in either ordering is the same: one carrier walk, the `Optional<ErrorChannel>` slot populated from `shape.errorChannel()`, no parallel production sites.
+
+**Consumer-side annotation discipline.** R141 lands the consumer-side `@DependsOnClassifierCheck` annotations on every emitter that reads `shape.errorChannel()` (the catch-arm builder) and on every emitter that constructs `new ErrorChannel(...)`-shaped values from the unified walk's `ErrorChannelRole` permit. The annotation keys against R12's planned producer keys for the `ErrorChannelRole` classifier rule (canonically the predicate body that produces a well-formed `ErrorChannel`: `error-channel.payload-class-canonical-constructor-shape`, `error-channel.errors-slot-positionally-resolved`, `error-channel.mappings-constant-deduped`; the final key names are R12's to set when it publishes producers). `LoadBearingGuaranteeAuditTest` then fails loudly if R12 ships without declaring the matching producer-side annotations, which is the intended global review event the load-bearing-check infrastructure is engineered to surface. The consumer-side annotations are R141's contractual record of what R141's emitters trust about the role permit; the producer-side declarations are R12's contractual record of what R12's classifier guarantees. Either side landing without the other surfaces as an audit failure.
 
 **Semantics**: atomic-transaction, flat-error-list. If any row in the batched DML throws (constraint violation, type mismatch, RLS denial, etc.), the catch arm rolls back the entire transaction, maps the exception through `errorChannel`'s configured `ErrorRouter`, and emits a payload with the data channel empty (`[]`) and the error channel populated with the mapped error type(s). Partial application is **not** in scope: R12's flat error model and the transaction-rollback contract are load-bearing.
 
@@ -359,11 +380,12 @@ R141 lands **after R138** (which has shipped). R138's lifted Invariant #15 predi
 
 ## Tests
 
-- **L3 (classifier)**: three `GraphitronSchemaBuilderTest` truth-table rows as specified above (`DML_INSERT_LIST_PLAIN_PAYLOAD_LIST_DATA_ADMITTED`, `DML_INSERT_SINGLE_LIST_DATA_REJECTED`, `DML_INSERT_LIST_PAYLOAD_NO_CARRIER_FIELD_ROLE_REJECTED`). Load-bearing assertions: the admitted row resolves to `MutationBulkDmlRecordField` with `tia.list() == true`, `kind == INSERT`, and `shape.roles()` containing exactly one `DataChannel`; the Invariant #16 row surfaces the cardinality-mismatch reason and family name; the no-permit-match row surfaces a reason naming the offending field and the `CarrierFieldRole` permit extension point.
-- **L4 (execution)**: one `DmlBulkMutationsExecutionTest` test with N=3 inputs in deliberately-non-PK-order, asserting input-ordered output and all-N presence; one N=1 sanity test against the same bulk leaf path.
-- **L4 sealed-coverage**: `GeneratorCoverageTest` (at `graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/GeneratorCoverageTest.java`, line 43, asserts coverage over `MutationField.class`) picks up the new leaf automatically. `VariantCoverageTest` covers the model-side variant enumeration on the same axis. R141 adds **one new sealed-coverage test**, `CarrierFieldRoleCoverageTest`, that asserts every emitter consuming a `SingleRecordCarrierShape` dispatches over every `CarrierFieldRole` permit (the data-channel projection and the error-channel catch-arm wiring today; future permit additions caught at build time).
+- **L3 (classifier).** R141 adds three `GraphitronSchemaBuilderTest` truth-table rows: `DML_INSERT_LIST_PLAIN_PAYLOAD_LIST_DATA_ADMITTED` (admit), `DML_INSERT_SINGLE_LIST_DATA_REJECTED` (Invariant #16 rejection), and `DML_INSERT_LIST_PAYLOAD_NO_CARRIER_FIELD_ROLE_REJECTED` (no-permit-match rejection). Load-bearing assertions: the admitted row resolves to `MutationBulkDmlRecordField` with `tia.list() == true`, `kind == INSERT`, and `shape.roles()` containing exactly one `DataChannel`; the Invariant #16 row surfaces the cardinality-mismatch reason and family name; the no-permit-match row surfaces a reason naming the offending field and the `CarrierFieldRole` permit extension point.
+- **L4 (execution).** R141 adds one `DmlBulkMutationsExecutionTest` test with N=3 inputs in deliberately-non-PK-order, asserting input-ordered output and all-N presence; plus an N=1 sanity test against the same bulk leaf path.
+- **L4 sealed-coverage.** `GeneratorCoverageTest` (`graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/GeneratorCoverageTest.java:43`, asserts coverage over `MutationField.class`) picks up the new leaf automatically; `VariantCoverageTest` covers the model-side variant enumeration on the same axis. R141 adds one new sealed-coverage test, `CarrierFieldRoleCoverageTest`, asserting that every emitter consuming a `SingleRecordCarrierShape` dispatches over every `CarrierFieldRole` permit (data-channel projection and error-channel catch-arm wiring today; future permit additions caught at build time).
+- **Load-bearing-check audit.** R141 adds two new producer/consumer pairings to `LoadBearingGuaranteeAuditTest`: `single-record-carrier-shape.roles-exhaustively-classified` (producer at `tryResolveSingleRecordCarrier`, consumers on `shape.data()` / `shape.errorChannel()` reads) and `mutation-bulk-dml-record-field.input-order-preserving-emit` (producer on `MutationBulkDmlRecordField`, consumer on `buildMutationBulkDmlRecordFetcher`). The R12-paired error-channel keys land their consumer-side annotations in R141; the producer-side annotations land with R12, and the audit test fails loudly if either side ships without the other.
 
-No new classifier-check pairings are introduced — `mutation-dml-record-field.data-table-equals-input-table` (or its R141-extended key) inherits its existing producer/consumer pair. The compact-constructor invariants (DELETE-rejection, list-input-required on the new leaf; exactly-one-`DataChannel` and distinct-field-names on the lifted shape) replace would-be classifier checks; the type system carries them.
+The `mutation-dml-record-field.data-table-equals-input-table` key (or its R141-extended key covering both record-carrier leaves) inherits its existing producer/consumer pair. The compact-constructor invariants (DELETE-rejection, UPSERT-deferral, list-input-required on the new leaf; exactly-one-`DataChannel` and distinct-field-names on the lifted shape) replace would-be classifier checks; the type system carries them.
 
 ## Acceptance criteria
 
@@ -375,11 +397,13 @@ No new classifier-check pairings are introduced — `mutation-dml-record-field.d
 - The same-`@table` invariant on the data field's element type is enforced for the new leaf (via extension of `mutation-dml-record-field.data-table-equals-input-table` or a sibling key with the same predicate body).
 - `TypeFetcherGenerator` has a `buildMutationBulkDmlRecordFetcher` (parameterised on `DmlKind`) that emits per-row DML inside `dsl.transactionResult(...)`, collects PKs in input order, runs one follow-up response-SELECT, and maps results back via a PK-keyed map iterated in input order.
 - The error-channel slot is populated from the unified resolution (`shape.errorChannel()`) on both `MutationDmlRecordField` and the new `MutationBulkDmlRecordField`; the catch arm follows R12's existing shape unchanged.
-- The classifier-tier truth-table carries `DML_INSERT_LIST_PLAIN_PAYLOAD_LIST_DATA_ADMITTED` (admitted), `DML_INSERT_SINGLE_LIST_DATA_REJECTED` (Invariant #16), and `DML_INSERT_LIST_PAYLOAD_NO_CARRIER_FIELD_ROLE_REJECTED` (no-permit-match).
-- The execution-tier test `DmlBulkMutationsExecutionTest` carries one N=3 round-trip asserting input-order preservation against deliberately-non-PK-ordered inputs, and one N=1 sanity test.
+- R141 adds three classifier-tier truth-table rows in `GraphitronSchemaBuilderTest`: `DML_INSERT_LIST_PLAIN_PAYLOAD_LIST_DATA_ADMITTED` (admit), `DML_INSERT_SINGLE_LIST_DATA_REJECTED` (Invariant #16), `DML_INSERT_LIST_PAYLOAD_NO_CARRIER_FIELD_ROLE_REJECTED` (no-permit-match).
+- R141 adds one N=3 round-trip and one N=1 sanity test in `DmlBulkMutationsExecutionTest`; the N=3 test asserts input-order preservation against deliberately-non-PK-ordered inputs.
 - A field on the carrier that resolves to no `CarrierFieldRole` permit causes the **mutation field** to classify as `UnclassifiedField` and fail validation; the carrier itself does not resolve. (No tolerated-`UnclassifiedField` steady state on payload carriers.)
-- A `CarrierFieldRoleCoverageTest` asserts that every emitter consuming a `SingleRecordCarrierShape` dispatches over every `CarrierFieldRole` permit; adding a permit in a future Backlog item fails the build if any consumer is left unhandled.
-- `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes end-to-end with the new sealed type, the lifted shape, the new sealed leaf, the new truth-table rows, the new sealed-coverage test, and the new execution test.
+- R141 adds a new sealed-coverage test `CarrierFieldRoleCoverageTest` asserting that every emitter consuming a `SingleRecordCarrierShape` dispatches over every `CarrierFieldRole` permit; adding a permit in a future Backlog item fails the build if any consumer is left unhandled.
+- R141 adds two new load-bearing classifier check keys: `single-record-carrier-shape.roles-exhaustively-classified` (producer `@LoadBearingClassifierCheck` on `tryResolveSingleRecordCarrier`; consumer `@DependsOnClassifierCheck` on every emitter reading `shape.data()` or `shape.errorChannel()`) and `mutation-bulk-dml-record-field.input-order-preserving-emit` (producer on `MutationBulkDmlRecordField`; consumer on `buildMutationBulkDmlRecordFetcher`). Both pairings register with `LoadBearingGuaranteeAuditTest`.
+- R141 adds consumer-side `@DependsOnClassifierCheck` annotations on every emitter that reads an `ErrorChannelRole` permit (catch-arm builder and friends), keyed against R12's planned producer-side `error-channel.*` classifier checks for the `ErrorChannelRole` rule. Producer-side annotations land with R12; `LoadBearingGuaranteeAuditTest` fails loudly if R12 ships without honoring the consumer-side declarations, which is the intended cross-item coordination signal.
+- `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes end-to-end with the new sealed type, the lifted shape, the new sealed leaf, the new truth-table rows, the new sealed-coverage test, the new load-bearing-check pairings, and the new execution test.
 
 ## Out of scope
 
