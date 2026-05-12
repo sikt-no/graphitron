@@ -12,6 +12,7 @@ import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
@@ -111,7 +112,7 @@ class FixtureCatalogTest {
                 x: Int @field(name: "FILM_ID")
             }
             """);
-        assertThat(Diagnostics.compute(file, catalog(), LspSchemaSnapshot.unavailable())).isEmpty();
+        assertThat(Diagnostics.compute("", file, catalog(), LspSchemaSnapshot.unavailable(), ValidationReport.empty())).isEmpty();
     }
 
     @Test
@@ -121,7 +122,7 @@ class FixtureCatalogTest {
                 x: Int @field(name: "film_id")
             }
             """);
-        var diags = Diagnostics.compute(file, catalog(), LspSchemaSnapshot.unavailable());
+        var diags = Diagnostics.compute("", file, catalog(), LspSchemaSnapshot.unavailable(), ValidationReport.empty());
         assertThat(diags).isEmpty();
     }
 
@@ -132,7 +133,7 @@ class FixtureCatalogTest {
                 x: Int @field(name: "NO_SUCH_COL")
             }
             """);
-        var diags = Diagnostics.compute(file, catalog(), LspSchemaSnapshot.unavailable());
+        var diags = Diagnostics.compute("", file, catalog(), LspSchemaSnapshot.unavailable(), ValidationReport.empty());
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("NO_SUCH_COL");
     }
@@ -153,7 +154,7 @@ class FixtureCatalogTest {
                 x: Int @reference(path: [{key: "%s"}])
             }
             """, fkKey));
-        assertThat(Diagnostics.compute(file, data, LspSchemaSnapshot.unavailable())).isEmpty();
+        assertThat(Diagnostics.compute("", file, data, LspSchemaSnapshot.unavailable(), ValidationReport.empty())).isEmpty();
     }
 
     // ---- Helpers ----

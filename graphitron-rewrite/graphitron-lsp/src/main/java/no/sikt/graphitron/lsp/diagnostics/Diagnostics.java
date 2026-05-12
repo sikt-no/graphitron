@@ -86,17 +86,6 @@ public final class Diagnostics {
         return compute(LspVocabulary.load(), uri, file, catalog, snapshot, report);
     }
 
-    /**
-     * Test-friendly convenience that omits the URI and validator report. The validator-diagnostics
-     * step short-circuits on an empty {@link ValidationReport#sourceUris} set so this overload
-     * fires only the SDL-only directive walks the pre-R147 callers expected.
-     */
-    public static List<Diagnostic> compute(
-        WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot
-    ) {
-        return compute("", file, catalog, snapshot, ValidationReport.empty());
-    }
-
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "snapshot-built-implies-clean-parse",
         reliesOn = "warns under Built.Current + Unknown only; silences under Unavailable and "
@@ -180,9 +169,17 @@ public final class Diagnostics {
      *
      * <p>{@code ValidationError} with a null or {@code (0, 0)} location is dropped silently in
      * v1: every error in the current rule set carries a usable location, and a console / watch
-     * formatter already covers any future no-location producer. The hook for a {@code window/showMessage}
-     * surface lives here when the first such producer lands. Warnings without location are dropped
-     * for the same reason.
+     * formatter already covers any future no-location producer. Warnings without location are
+     * dropped for the same reason.
+     *
+     * <p>The hook for a schema-wide surface lives here: when the first real producer of a
+     * no-location error lands, it ships in the same commit as an LSP
+     * {@code window/showMessage} notification of {@link org.eclipse.lsp4j.MessageType#Error}
+     * (or {@code Warning} for {@link BuildWarning}), rate-limited to at most one per recalculate
+     * cycle so a burst of schema-wide errors does not flood the client. The notification carries
+     * the error message verbatim and no file URI; the contract is "show this to the developer
+     * somewhere visible" rather than "highlight this position". Until that producer lands the
+     * console / watch-mode formatter path is the sole surface for schema-wide errors.
      */
     private static List<Diagnostic> validatorDiagnostics(
         String uri, WorkspaceFile file, LspSchemaSnapshot snapshot, ValidationReport report

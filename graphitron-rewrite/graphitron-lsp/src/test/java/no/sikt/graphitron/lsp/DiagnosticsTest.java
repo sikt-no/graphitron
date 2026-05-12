@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -27,7 +28,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("MISSING").contains("table");
@@ -42,7 +43,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -55,7 +56,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("TYPO").contains("column");
@@ -69,7 +70,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -82,7 +83,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -97,7 +98,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("MISSING");
@@ -111,7 +112,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("NOPE").contains("foreign key");
@@ -125,7 +126,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -141,7 +142,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -154,7 +155,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("GHOST");
@@ -170,7 +171,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -183,7 +184,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         var d = diags.get(0);
         // The reported range should sit on line 0 of the source.
@@ -201,7 +202,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealService"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.RealService"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing").contains("class");
@@ -215,7 +216,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealCondition"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.RealCondition"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -229,7 +230,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealRecord"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.RealRecord"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -243,7 +244,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealService"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.RealService"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -256,7 +257,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, classWithListMethod(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, classWithListMethod(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("ghost").contains("FilmService");
@@ -270,7 +271,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, classWithListMethod(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, classWithListMethod(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -309,7 +310,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalog, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalog, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
@@ -333,7 +334,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalog, LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalog, LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -346,7 +347,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealService"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.RealService"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing").contains("class");
@@ -358,7 +359,7 @@ class DiagnosticsTest {
             enum Foo @enum(enumReference: {className: "com.example.Missing"}) { A B }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealEnum"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.RealEnum"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -372,7 +373,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealTableMethod"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.RealTableMethod"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -391,7 +392,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealLifter"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.RealLifter"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -405,7 +406,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealCondition"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.RealCondition"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("Missing");
@@ -419,7 +420,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.RealService"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.RealService"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -432,7 +433,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, classWithListMethod(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, classWithListMethod(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("ghost");
@@ -448,7 +449,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());  // empty externalReferences
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());  // empty externalReferences
 
         assertThat(diags).isEmpty();
     }
@@ -469,7 +470,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+        var diags = compute(file, catalogWithNamedReferences(
             Map.of("FilmService", "com.example.FilmService"), "com.example.FilmService"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
@@ -483,7 +484,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+        var diags = compute(file, catalogWithNamedReferences(
             Map.of("FilmService", "com.example.FilmService"), "com.example.FilmService"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
@@ -503,7 +504,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+        var diags = compute(file, catalogWithNamedReferences(
             Map.of(), "com.example.RealService"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
@@ -516,7 +517,7 @@ class DiagnosticsTest {
             enum Foo @enum(enumReference: {name: "Ghost"}) { A B }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+        var diags = compute(file, catalogWithNamedReferences(
             Map.of(), "com.example.RealEnum"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
@@ -531,7 +532,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+        var diags = compute(file, catalogWithNamedReferences(
             Map.of(), "com.example.RealTableMethod"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
@@ -546,7 +547,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+        var diags = compute(file, catalogWithNamedReferences(
             Map.of(), "com.example.RealRecord"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
@@ -561,7 +562,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+        var diags = compute(file, catalogWithNamedReferences(
             Map.of(), "com.example.RealCondition"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
@@ -576,7 +577,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithNamedReferences(
+        var diags = compute(file, catalogWithNamedReferences(
             Map.of(), "com.example.RealCondition"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
@@ -595,7 +596,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(),
+        var diags = compute(file, filmCatalog(),
             new LspSchemaSnapshot.Built.Current(List.of()));
 
         assertThat(diags).hasSize(1);
@@ -615,7 +616,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -634,7 +635,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(),
+        var diags = compute(file, filmCatalog(),
             new LspSchemaSnapshot.Built.Previous(List.of()));
 
         assertThat(diags).isEmpty();
@@ -659,7 +660,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(),
+        var diags = compute(file, filmCatalog(),
             new LspSchemaSnapshot.Built.Current(List.of(keyShape)));
 
         assertThat(diags).isEmpty();
@@ -684,7 +685,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(),
+        var diags = compute(file, filmCatalog(),
             new LspSchemaSnapshot.Built.Current(List.of(shadowTable)));
 
         assertThat(diags).hasSize(1);
@@ -704,7 +705,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -717,7 +718,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         // No required-arg miss because @table(name:) is optional.
         assertThat(diags).hasSize(1);
@@ -734,7 +735,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -751,7 +752,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -767,7 +768,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -780,7 +781,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "NoDotsHere")
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
@@ -795,7 +796,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "com.example.Scalars.")
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("fully.qualified.Class.FIELD");
@@ -807,7 +808,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "com.example.Missing.MONEY")
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
@@ -822,7 +823,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "com.example.Scalars.MONEY")
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -835,7 +836,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "")
             """);
 
-        var diags = Diagnostics.compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, catalogWithKnownClass("com.example.Scalars"), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -849,7 +850,7 @@ class DiagnosticsTest {
             scalar Money @scalarType(scalar: "com.example.Missing.MONEY")
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());  // empty externalReferences
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());  // empty externalReferences
 
         assertThat(diags).isEmpty();
     }
@@ -868,7 +869,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(),
+        var diags = compute(file, filmCatalog(),
             new LspSchemaSnapshot.Built.Current(List.of(authShape())));
 
         assertThat(diags).hasSize(2);
@@ -886,7 +887,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(),
+        var diags = compute(file, filmCatalog(),
             new LspSchemaSnapshot.Built.Current(List.of(authShape())));
 
         assertThat(diags).hasSize(1);
@@ -903,7 +904,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(),
+        var diags = compute(file, filmCatalog(),
             new LspSchemaSnapshot.Built.Current(List.of(authShape())));
 
         assertThat(diags).isEmpty();
@@ -919,7 +920,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
 
         assertThat(diags).isEmpty();
     }
@@ -933,7 +934,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(),
+        var diags = compute(file, filmCatalog(),
             new LspSchemaSnapshot.Built.Previous(List.of(authShape())));
 
         assertThat(diags).isEmpty();
@@ -957,7 +958,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = Diagnostics.compute(file, filmCatalog(),
+        var diags = compute(file, filmCatalog(),
             new LspSchemaSnapshot.Built.Current(List.of(shadowTable)));
 
         assertThat(diags).hasSize(1);
@@ -1004,6 +1005,19 @@ class DiagnosticsTest {
 
     private static WorkspaceFile file(String source) {
         return new WorkspaceFile(1, source);
+    }
+
+    /**
+     * Test-only forwarder that omits the URI and validator report. Every test in this class
+     * exercises the SDL-only directive walks; the validator slice is covered by
+     * {@link ValidatorDiagnosticsTest}. Threading an empty URI and {@link ValidationReport#empty()}
+     * here keeps the call sites focused on the directive arm under test without committing
+     * production callers to a backward-compat overload.
+     */
+    private static List<org.eclipse.lsp4j.Diagnostic> compute(
+        WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot
+    ) {
+        return Diagnostics.compute("", file, catalog, snapshot, ValidationReport.empty());
     }
 
     private static CompletionData filmCatalog() {
