@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -96,6 +98,7 @@ public final class Main {
             case "verify" -> runVerify(dir);
             case "next-id" -> runNextId(dir);
             case "create" -> runCreate(dir, sliceArgs(args, 2));
+            case "status" -> runStatus(dir, sliceArgs(args, 2));
             case "render-adoc" -> runRenderAdoc(dir, sliceArgs(args, 2));
             default -> usage();
         }
@@ -108,6 +111,7 @@ public final class Main {
         System.err.println("  next-id     <roadmap-dir>");
         System.err.println("  create      <roadmap-dir> <slug> --title \"<title>\""
             + " [--bucket <bucket>] [--priority <n>] [--theme <theme>]");
+        System.err.println("  status      <roadmap-dir> <R<n>-or-slug> <new-state>");
         System.err.println("  render-adoc <roadmap-dir> <output-dir>");
         System.err.println("  directive-support <legacy-directives.graphqls>"
             + " <rewrite-directives.graphqls> <fixture-dir>[:<fixture-dir>...]");
@@ -245,6 +249,7 @@ public final class Main {
         String id = nextId(items, counter);
         int allocated = Integer.parseInt(id.substring(1));
 
+        String today = LocalDate.now().toString();
         StringBuilder fm = new StringBuilder();
         fm.append("---\n");
         fm.append("id: ").append(id).append('\n');
@@ -254,6 +259,8 @@ public final class Main {
         if (opts.containsKey("priority")) fm.append("priority: ").append(opts.get("priority")).append('\n');
         if (opts.containsKey("theme")) fm.append("theme: ").append(opts.get("theme")).append('\n');
         fm.append("depends-on: []\n");
+        fm.append("created: ").append(today).append('\n');
+        fm.append("last-updated: ").append(today).append('\n');
         fm.append("---\n\n");
         fm.append("# ").append(title).append("\n\n");
         fm.append("<One-paragraph problem statement: what is missing or broken, and why it matters."
@@ -265,6 +272,133 @@ public final class Main {
 
         // Refresh the rolled-up README so the new item shows up immediately.
         runGenerate(dir);
+    }
+
+    /**
+     * Valid {@code Ready ← In Progress ← …} transitions accepted by the
+     * {@code status} subcommand. {@code Done} and {@code Discarded} are
+     * file-deletion transitions per {@code workflow.adoc} and remain manual.
+     * The reviewer-rule guard ("reviewer ≠ last committer" /
+     * "reviewer ≠ implementer") is the human/agent gate that happens before
+     * the call; the tool performs the mechanical edit unconditionally.
+     */
+    private static final Set<String> TARGET_STATES = Set.of(
+        "Backlog", "Spec", "Ready", "In Progress", "In Review");
+
+    private static final Map<String, Set<String>> ALLOWED_TRANSITIONS = Map.of(
+        "Backlog", Set.of("Spec"),
+        "Spec", Set.of("Spec", "Ready"),
+        "Ready", Set.of("In Progress"),
+        "In Progress", Set.of("In Review"),
+        "In Review", Set.of("Ready")
+    );
+
+    private static void runStatus(Path dir, List<String> rest) throws IOException {
+        if (rest.size() < 2) {
+            System.err.println("status: usage: status <roadmap-dir> <R<n>-or-slug> <new-state>");
+            System.exit(64);
+        }
+        String idOrSlug = rest.get(0);
+        String newState = rest.get(1);
+
+        Path target = resolveItemFile(dir, idOrSlug);
+        if (target == null) {
+            System.err.println("status: no roadmap item matches '" + idOrSlug + "' in " + dir);
+            System.exit(1);
+        }
+
+        String previousState;
+        try {
+            previousState = applyStatusTransition(target, newState);
+        } catch (IllegalArgumentException e) {
+            System.err.println("status: " + e.getMessage());
+            System.exit(1);
+            return; // unreachable
+        }
+        System.out.println("status: " + target.getFileName() + ": "
+            + previousState + " -> " + newState);
+
+        // Refresh the rolled-up README so the new state shows up immediately.
+        runGenerate(dir);
+    }
+
+    /**
+     * Validates and applies a status transition to a single roadmap item file.
+     * Writes the new {@code status:} value and a fresh {@code last-updated:
+     * <today>}, leaves {@code created:} strictly untouched, and returns the
+     * previous {@code status:} value (or {@code "Backlog"} if absent).
+     *
+     * <p>Throws {@link IllegalArgumentException} if {@code newState} is not in
+     * {@link #TARGET_STATES} (which excludes {@code Done} and {@code Discarded}:
+     * those are file-deletion transitions per {@code workflow.adoc} and remain
+     * manual) or if the transition from the file's current status is not in
+     * {@link #ALLOWED_TRANSITIONS}. The reviewer-rule guard is not enforced
+     * here; the caller (the skill) is responsible for that gate.
+     */
+    static String applyStatusTransition(Path target, String newState) throws IOException {
+        if (!TARGET_STATES.contains(newState)) {
+            throw new IllegalArgumentException("'" + newState
+                + "' is not an accepted target state. Accepted: " + TARGET_STATES
+                + ". Done and Discarded are file-deletion transitions per workflow.adoc"
+                + " and remain manual.");
+        }
+
+        ParsedFile parsed = parseFrontMatter(Files.readString(target));
+        String currentState = (String) parsed.frontMatter().getOrDefault("status", "Backlog");
+        Set<String> allowed = ALLOWED_TRANSITIONS.getOrDefault(currentState, Set.of());
+        if (!allowed.contains(newState)) {
+            throw new IllegalArgumentException("cannot transition '" + currentState
+                + "' -> '" + newState + "'. Allowed from '" + currentState + "': " + allowed + ".");
+        }
+
+        Map<String, Object> fm = new LinkedHashMap<>(parsed.frontMatter());
+        fm.put("status", newState);
+        fm.put("last-updated", LocalDate.now().toString());
+        // created: strictly untouched. Never invented, never overwritten.
+
+        StringBuilder out = new StringBuilder("---\n");
+        for (Map.Entry<String, Object> e : fm.entrySet()) {
+            Object v = e.getValue();
+            if (v instanceof java.util.Date d) {
+                v = d.toInstant().atZone(java.time.ZoneOffset.UTC).toLocalDate().toString();
+            }
+            out.append(e.getKey()).append(": ").append(v).append('\n');
+        }
+        out.append("---\n");
+        String body = parsed.body();
+        if (!body.isEmpty()) {
+            if (!body.startsWith("\n")) out.append('\n');
+            out.append(body);
+        }
+        Files.writeString(target, out.toString());
+        return currentState;
+    }
+
+    /**
+     * Resolves an item reference to its file path. Accepts either a slug
+     * (matched by filename) or an {@code R<n>} ID (matched by greping
+     * front-matter). Returns {@code null} if no item matches.
+     */
+    static Path resolveItemFile(Path dir, String idOrSlug) throws IOException {
+        Path bySlug = dir.resolve(idOrSlug + ".md");
+        if (Files.exists(bySlug)) return bySlug;
+        if (!ID_PATTERN.matcher(idOrSlug).matches()) return null;
+        try (Stream<Path> s = Files.list(dir)) {
+            return s
+                .filter(p -> p.getFileName().toString().endsWith(".md"))
+                .filter(p -> !p.getFileName().toString().equals("README.md"))
+                .filter(p -> !p.getFileName().toString().equals("changelog.md"))
+                .filter(p -> {
+                    try {
+                        ParsedFile pf = parseFrontMatter(Files.readString(p));
+                        return idOrSlug.equals(pf.frontMatter().get("id"));
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                })
+                .findFirst()
+                .orElse(null);
+        }
     }
 
     /**
@@ -353,9 +487,9 @@ public final class Main {
         if (active.isEmpty()) {
             sb.append("_(none)_\n\n");
         } else {
-            sb.append("[cols=\"1,4,1,1\", options=\"header\"]\n");
+            sb.append("[cols=\"1,4,1,1,1\", options=\"header\"]\n");
             sb.append("|===\n");
-            sb.append("| ID | Item | Status | Plan\n");
+            sb.append("| ID | Item | Status | Updated | Plan\n");
             for (Item i : active) {
                 String status = i.status() + (i.deferred() ? " (deferred)" : "");
                 sb.append("| `").append(i.id()).append("`\n");
@@ -364,6 +498,7 @@ public final class Main {
                     sb.append(" +\n_blocked by: ").append(linkAdocSlugs(i.dependsOn(), ChangelogContext.STANDALONE)).append("_");
                 }
                 sb.append("\n| ").append(status).append("\n");
+                sb.append("| ").append(renderUpdatedCellAdoc(i)).append("\n");
                 sb.append("| xref:plans/").append(i.slug()).append(".adoc[plan]\n");
             }
             sb.append("|===\n\n");
@@ -436,10 +571,41 @@ public final class Main {
         if (!description.isEmpty()) {
             sb.append(": ").append(escapeAdocInline(description));
         }
+        String dateAnnotation = renderBacklogDateAnnotationAdoc(i);
+        if (!dateAnnotation.isEmpty()) {
+            sb.append(" ").append(dateAnnotation);
+        }
         if (!i.dependsOn().isEmpty()) {
             sb.append(" _(blocked by ").append(linkAdocSlugs(i.dependsOn(), ChangelogContext.STANDALONE)).append(")_");
         }
         sb.append("\n");
+    }
+
+    /**
+     * AsciiDoc "Updated" cell: {@code last-updated:} on the main line; if
+     * {@code created:} differs, append a line-break and a small-text
+     * {@code created Y-M-D} annotation underneath. Empty cell when
+     * {@code last-updated:} is absent.
+     */
+    private static String renderUpdatedCellAdoc(Item i) {
+        if (i.lastUpdated() == null) return "";
+        if (i.created() != null && !i.created().equals(i.lastUpdated())) {
+            return i.lastUpdated() + " +\n[small]#created " + i.created() + "#";
+        }
+        return i.lastUpdated().toString();
+    }
+
+    /**
+     * AsciiDoc backlog date annotation: same shape as the markdown version,
+     * rendered as italic prose: {@code _(updated Y-M-D)_} or {@code _(updated
+     * Y-M-D, created Y-M-D)_}. Empty when {@code last-updated:} is absent.
+     */
+    private static String renderBacklogDateAnnotationAdoc(Item i) {
+        if (i.lastUpdated() == null) return "";
+        if (i.created() != null && !i.created().equals(i.lastUpdated())) {
+            return "_(updated " + i.lastUpdated() + ", created " + i.created() + ")_";
+        }
+        return "_(updated " + i.lastUpdated() + ")_";
     }
 
     /** Cross-cutting view by {@code theme:}. */
@@ -528,6 +694,8 @@ public final class Main {
         if (!i.dependsOn().isEmpty()) {
             sb.append("| Blocked by | ").append(linkAdocSlugs(i.dependsOn(), ChangelogContext.PLAN)).append("\n");
         }
+        if (i.created() != null) sb.append("| Created | ").append(i.created()).append("\n");
+        if (i.lastUpdated() != null) sb.append("| Updated | ").append(i.lastUpdated()).append("\n");
         sb.append("|===\n\n");
 
         sb.append(mdBodyToAdoc(i.body(), ChangelogContext.PLAN));
@@ -875,7 +1043,10 @@ public final class Main {
         sb.append("`theme:` (cross-cutting tag, see the *By theme* index), `depends-on:` ");
         sb.append("(slugs of items that must ship first), `deferred:` (boolean; moves the item to ");
         sb.append("the **Deferred** sub-section of Backlog so the active list stays actionable), ");
-        sb.append("and `notes:` (short inline annotation, shown on deferred items as the parking reason). ");
+        sb.append("`notes:` (short inline annotation, shown on deferred items as the parking reason), ");
+        sb.append("and `created:` / `last-updated:` (ISO `YYYY-MM-DD`, stamped by the `create` and ");
+        sb.append("`status` subcommands of `graphitron-roadmap-tool`; pre-R143 items render ");
+        sb.append("`last-updated:` only once they next transition, and `created:` is never backfilled). ");
         sb.append("When a dep ships, the dep file is deleted; ");
         sb.append("the author closing it is responsible for removing the slug from any dependents' ");
         sb.append("`depends-on:` list. The validator fails the build on a stale slug.\n\n");
@@ -906,7 +1077,7 @@ public final class Main {
             sb.append("_(none)_\n");
             return;
         }
-        sb.append("| ID | Item | Status | Plan |\n|---|---|---|---|\n");
+        sb.append("| ID | Item | Status | Updated | Plan |\n|---|---|---|---|---|\n");
         for (Item i : active) {
             String status = i.status() + (i.deferred() ? " (deferred)" : "");
             String item = i.title();
@@ -918,9 +1089,24 @@ public final class Main {
             }
             sb.append("| `").append(i.id()).append("` | ")
               .append(item).append(" | ")
-              .append(status).append(" | [plan](")
+              .append(status).append(" | ")
+              .append(renderUpdatedCellMd(i)).append(" | [plan](")
               .append(i.slug()).append(".md) |\n");
         }
+    }
+
+    /**
+     * Markdown "Updated" cell: {@code last-updated:} on the main line; if
+     * {@code created:} differs, append ` <sub>created YYYY-MM-DD</sub>` on the
+     * same cell. Both dates absent (pre-R143 item that has not transitioned)
+     * renders an empty cell.
+     */
+    private static String renderUpdatedCellMd(Item i) {
+        if (i.lastUpdated() == null) return "";
+        if (i.created() != null && !i.created().equals(i.lastUpdated())) {
+            return i.lastUpdated() + " <sub>created " + i.created() + "</sub>";
+        }
+        return i.lastUpdated().toString();
     }
 
     private static void renderBacklog(StringBuilder sb, List<Item> items) {
@@ -1050,10 +1236,28 @@ public final class Main {
         if (!description.isEmpty()) {
             sb.append(": ").append(description);
         }
+        String dateAnnotation = renderBacklogDateAnnotationMd(i);
+        if (!dateAnnotation.isEmpty()) {
+            sb.append(" ").append(dateAnnotation);
+        }
         if (!i.dependsOn().isEmpty()) {
             sb.append(" _(blocked by ").append(linkSlugs(i.dependsOn())).append(")_");
         }
         sb.append("\n");
+    }
+
+    /**
+     * Markdown backlog date annotation: {@code <sub>updated Y-M-D</sub>} on its
+     * own when {@code created:} matches or is absent; {@code <sub>updated Y-M-D,
+     * created Y-M-D</sub>} when the two differ. Empty when {@code last-updated:}
+     * is absent.
+     */
+    private static String renderBacklogDateAnnotationMd(Item i) {
+        if (i.lastUpdated() == null) return "";
+        if (i.created() != null && !i.created().equals(i.lastUpdated())) {
+            return "<sub>updated " + i.lastUpdated() + ", created " + i.created() + "</sub>";
+        }
+        return "<sub>updated " + i.lastUpdated() + "</sub>";
     }
 
     private static void appendDeferredLine(StringBuilder sb, Item i) {
@@ -1094,7 +1298,8 @@ public final class Main {
 
     record Item(String slug, String id, String title, String status, String bucket,
                 Integer priority, boolean deferred, String notes,
-                String theme, List<String> dependsOn, String body) {
+                String theme, List<String> dependsOn,
+                LocalDate created, LocalDate lastUpdated, String body) {
 
         static Item from(String slug, Map<String, Object> fm, String body) {
             String id = (String) fm.get("id");
@@ -1106,8 +1311,25 @@ public final class Main {
             String notes = (String) fm.get("notes");
             String theme = (String) fm.get("theme");
             List<String> dependsOn = parseSlugList(fm.get("depends-on"));
+            LocalDate created = parseDate(slug, "created", fm.get("created"));
+            LocalDate lastUpdated = parseDate(slug, "last-updated", fm.get("last-updated"));
             return new Item(slug, id, title, status, bucket, priority, deferred, notes,
-                theme, dependsOn, body);
+                theme, dependsOn, created, lastUpdated, body);
+        }
+
+        // SnakeYAML auto-parses ISO dates as java.util.Date; bare strings stay String.
+        // Accept either shape and reject anything else by failing the parse loudly.
+        private static LocalDate parseDate(String slug, String key, Object raw) {
+            if (raw == null) return null;
+            if (raw instanceof java.util.Date d) {
+                return d.toInstant().atZone(java.time.ZoneOffset.UTC).toLocalDate();
+            }
+            try {
+                return LocalDate.parse(raw.toString());
+            } catch (DateTimeParseException e) {
+                throw new IllegalArgumentException(slug + ": " + key + ": '" + raw
+                    + "' is not a valid YYYY-MM-DD date.");
+            }
         }
 
         @SuppressWarnings("unchecked")

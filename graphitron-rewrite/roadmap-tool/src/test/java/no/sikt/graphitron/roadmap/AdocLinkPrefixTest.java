@@ -39,6 +39,7 @@ class AdocLinkPrefixTest {
     private static Main.Item item(String slug, List<String> dependsOn) {
         return new Main.Item(
             slug, "R" + Math.abs(slug.hashCode() % 1000), slug,
-            "In Progress", null, null, false, null, null, dependsOn, "");
+            "In Progress", null, null, false, null, null, dependsOn,
+            null, null, "");
     }
 }
