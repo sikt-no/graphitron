@@ -159,7 +159,7 @@ Warnings with no usable location are silenced the same way and for the same reas
 
 `Diagnostics.compute` today emits its own SDL-only diagnostics for the cases it can detect cheaply: unknown catalog table, unknown column, unknown FK, unknown class, unknown method. The validator emits an `UnclassifiedField` / `UnclassifiedType` for the same root cause once the build runs. v1 does not dedupe: both fire, both visible, distinguished by `Diagnostic.source`.
 
-The framing is freshness tiers, not duplicated work. The LSP-side checks are the *buffer-instant* tier (analogous to R139's tree-sitter parse: every keystroke, no build needed); the validator output is the *build-pipeline* tier (every save, after classification). Both fire because they cover different freshness regimes, and a developer who has not yet hit save sees only the buffer-instant tier; one who has, sees both. The R139 `externalReferences().isEmpty()` gate is the precedent for tolerating temporary divergence on the cheap path so the expensive path can converge later.
+The framing is freshness tiers, not duplicated work. The LSP-side checks are the *buffer-instant* tier (analogous to R139's tree-sitter parse: every keystroke, no build needed); the validator output is the *build-pipeline* tier (every build trigger — schema save or classpath rebuild — after classification). Both fire because they cover different freshness regimes, and a developer who has not yet hit either trigger sees only the buffer-instant tier; one who has, sees both. The R139 `externalReferences().isEmpty()` gate is the precedent for tolerating temporary divergence on the cheap path so the expensive path can converge later.
 
 A follow-up item could decide whether to retire the buffer-instant tier for the cases the validator covers, once usage shows whether developers actually save often enough to make the build-tier signal sufficient. That is a different question than "remove duplicate diagnostics"; the duplication is architectural, not accidental. Filed-mentally; not blocking.
 
@@ -197,9 +197,15 @@ Bullet 2 and bullet 3 currently sit at different abstraction levels. After this 
 
 > . Validation failures land in two places: the console gets the grouped per-file tree, and the LSP delivers the same errors as editor diagnostics on the open buffer. The loop keeps running so a typo does not kill the session; the editor's squiggle and the console's tree carry the same `(file, location, message)` triple. The editor softens deferred-variant rejections from error to warning (the schema is valid, the generator just has not shipped the path yet); everything else uses the same severity as the build log.
 
+`getting-started.adoc:376-379` (the classpath-watcher paragraph that explains how `mvn compile` in another terminal picks up new jOOQ tables) gets one trailing sentence:
+
+> The same trigger also refreshes validation: rename a Java class that an `@service` directive points at, then `mvn compile` the consumer, and the editor surfaces the unresolved-class error without waiting for a schema save.
+
+This is where the unification's headline UX improvement lands in the user model: the classpath trigger now covers validation, not just catalog completion. The bullet list at line 366-374 covers the schema-save trigger; this paragraph covers the classpath trigger; together they tell the full story.
+
 `getting-started.adoc:390` (the `* *LSP server*` bullet under "How this is wired") currently lists `diagnostics, hover, completion, and go-to-definition`. The diagnostics surface widens; no list-edit needed, the bullet is generic enough. The contributor-facing paragraph at line 393 names the `GraphitronSchema` as the data the LSP serves off; this widens to "the GraphitronSchema *and the validator's report on it*". One-sentence amendment.
 
-If those edits do not read simply, the design is wrong. They do: the new bullet 2 names the parity directly and the redundancy is the point ("same triple").
+If those edits do not read simply, the design is wrong. They do: the new save-bullet names the parity directly, the classpath-paragraph sentence names the canonical example, and the contributor paragraph closes the loop.
 
 ## Tests
 
