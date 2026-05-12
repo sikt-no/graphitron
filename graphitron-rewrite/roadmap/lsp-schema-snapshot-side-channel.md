@@ -296,9 +296,7 @@ Implementation note for the reviewer: the existing two-arg `Diagnostics.compute(
 
 ### Phase 2: hovers, completion, arg validation against the snapshot
 
-`Hovers` extends to read snapshot directive descriptions via `Workspace.resolveDirective(...)`. `Diagnostics`' unknown-arg and required-arg validators (`Diagnostics.java:113-181`) consult snapshot directive shapes when the bundled SDL does not declare the directive. `ArgNameCompletions` surfaces user-directive arg names alongside bundled ones.
-
-Phase 2 ships as its own roadmap item once phase 1 lands. The split exists because the structural plumbing is the conservative landing: it changes one diagnostic arm and a setter, no new completion / hover surface. Phase 2's user-visible surface is bigger and is best scoped against an in-tree phase 1 (so reviewers can see the snapshot's actual shape, not the spec's projection of it).
+Phase 2 ships as its own roadmap item once phase 1 lands — see *R142: LSP hovers, arg-completion, and arg validation against the schema snapshot* (`lsp-user-directive-hovers-and-args.md`) for the active spec. The split exists because the structural plumbing is the conservative landing: it changes one diagnostic arm and a setter, no new completion / hover surface. Phase 2's user-visible surface is bigger and is best scoped against an in-tree phase 1 (so reviewers can see the snapshot's actual shape, not the spec's projection of it).
 
 #### Phase 2 prep notes (from phase 1 implementation)
 

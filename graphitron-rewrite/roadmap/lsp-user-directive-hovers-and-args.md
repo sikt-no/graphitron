@@ -63,7 +63,7 @@ public static Optional<Hover> compute(LspVocabulary vocabulary, WorkspaceFile fi
 
 The hover-resolution path branches twice:
 
-1. *Cursor on the directive's name* (`@auth` token itself). Today this is a no-op because `vocabulary.coordinateAt` returns no coordinate for the directive-name token: the bundled vocabulary has no `SchemaCoordinate.Directive` shape, only arg coordinates. Phase 2 adds a directive-name hover path that runs *before* the coordinate lookup: if the cursor sits on the directive's name node, resolve through `DirectiveResolution.resolve` and produce a hover from `Bundled.def().getDescription()` or `User.shape().description()`. The bundled path lights up free hovers on the seventeen graphitron directives in `directives.graphqls` (a small phase 2 side-benefit per R139's *Hovers covers SDL docstrings automatically* design note); the user path is the headline.
+1. *Cursor on the directive's name* (`@auth` token itself). Today this is a no-op because `vocabulary.coordinateAt` returns no coordinate for the directive-name token: the bundled vocabulary has no `SchemaCoordinate.Directive` shape, only arg coordinates. Phase 2 adds a directive-name hover path that runs *before* the coordinate lookup: if the cursor sits on the directive's name node, resolve through `DirectiveResolution.resolve` and produce a hover from `Bundled.def().getDescription()` or `User.shape().description()`. The bundled path lights up free hovers on the seventeen graphitron directives in `directives.graphqls` (a small phase 2 side-benefit, matching the SDL-docstring fallback already documented in `Hovers.java`'s class javadoc); the user path is the headline.
 
 2. *Cursor on a known coordinate* (today: `@auth(role: <here>)` — `role` is the arg name node, not a value). The existing `richerHover` switch is keyed on `Behavior` arms, so it lights up only for coordinates the overlay has. Phase 2 adds a `User`-arm fallback to `docstringHover` that reads the arg's description from the snapshot's `DirectiveShape.args[i].description()` when the bundled vocabulary returns no description. The shape uses the same sealed-switch pattern: try the bundled `descriptionOf(coord)` path first; on miss, walk the user snapshot.
 
@@ -99,7 +99,7 @@ Two new package-private helpers next to the bundled equivalents. Each mirrors th
 
 * `validateRequiredArgsAgainstSnapshot` walks `shape.args()` and flags any whose `type()` is non-null (`InputValueShape.type() instanceof TypeShape.<X> x && x.nonNull()`) and not present in the user's call. The non-null check is one method call, since `TypeShape` is sealed and both permits expose `nonNull()`.
 
-The freshness gate applies the same way as R139's unknown-directive arm. The full table replaces the one R139 left at `lsp-schema-snapshot-side-channel.md:222-231`:
+The freshness gate applies the same way as R139's unknown-directive arm. The arg-validation table parallels R139's unknown-directive table (`lsp-schema-snapshot-side-channel.md:222-229`); both arms gate on the snapshot variant identically, with R139's arm warning on `Built.Current + Unknown` and phase 2's arm warning on `Built.Current + User + arg-shape miss`:
 
 | Snapshot variant     | Bundled has the name | Snapshot has the name | Arg-validation outcome                                              |
 |----------------------|----------------------|-----------------------|---------------------------------------------------------------------|
