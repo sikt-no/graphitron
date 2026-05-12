@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R141` | Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | [plan](bulk-input-single-carrier-list-data-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `R143` | Surface a date column on the rendered roadmap table | Spec | [plan](roadmap-item-date-column.md) |
+| `R143` | Surface a date column on the rendered roadmap table | Ready | [plan](roadmap-item-date-column.md) |
 | `R140` | Publish leaf-coverage report from CI | In Review | [plan](leaf-coverage-artifact-publish-chain.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready | [plan](tablemethod-child-table-bound.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
