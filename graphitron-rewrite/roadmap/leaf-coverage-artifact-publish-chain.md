@@ -1,7 +1,7 @@
 ---
 id: R140
 title: "Publish leaf-coverage report from CI"
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 3
 theme: structural-refactor
