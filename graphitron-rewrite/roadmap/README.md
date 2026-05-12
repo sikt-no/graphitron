@@ -6,37 +6,36 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 **First time contributing?** Read in this order: [Workflow](../docs/workflow.adoc), [Rewrite Design Principles](../docs/rewrite-design-principles.adoc), [Code Generation Triggers](../docs/code-generation-triggers.adoc). Then read an Active plan to see the shape, and pick a Backlog item or take a Ready item from Active.
 
-**Front-matter dimensions.** Each item carries `id:` (monotonic `R<n>`, never reused), `status:`, `bucket:`, `priority:`, `theme:` (cross-cutting tag, see the *By theme* index), `depends-on:` (slugs of items that must ship first), `deferred:` (boolean; moves the item to the **Deferred** sub-section of Backlog so the active list stays actionable), `notes:` (short inline annotation, shown on deferred items as the parking reason), and `created:` / `last-updated:` (ISO `YYYY-MM-DD`, stamped by the `create` and `status` subcommands of `graphitron-roadmap-tool`; pre-R143 items render `last-updated:` only once they next transition, and `created:` is never backfilled). When a dep ships, the dep file is deleted; the author closing it is responsible for removing the slug from any dependents' `depends-on:` list. The validator fails the build on a stale slug.
+**Front-matter dimensions.** Each item carries `id:` (monotonic `R<n>`, never reused), `status:`, `bucket:`, `priority:`, `theme:` (cross-cutting tag, see the *By theme* index), `depends-on:` (slugs of items that must ship first), `deferred:` (boolean; moves the item to the **Deferred** sub-section of Backlog so the active list stays actionable), and `notes:` (short inline annotation, shown on deferred items as the parking reason). When a dep ships, the dep file is deleted; the author closing it is responsible for removing the slug from any dependents' `depends-on:` list. The validator fails the build on a stale slug.
 
 ---
 
 ## Active
 
-| ID | Item | Status | Updated | Plan |
-|---|---|---|---|---|
-| `R141` | Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec |  | [plan](bulk-input-single-carrier-list-data-field.md) |
-| `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R140` | Publish leaf-coverage report from CI | In Review |  | [plan](leaf-coverage-artifact-publish-chain.md) |
-| `R143` | Surface a date column on the rendered roadmap table | In Review |  | [plan](roadmap-item-date-column.md) |
-| `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready |  | [plan](tablemethod-child-table-bound.md) |
-| `R147` | Surface GraphitronSchemaValidator errors and warnings as LSP diagnostics | Spec |  | [plan](lsp-surface-validator-errors.md) |
-| `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
-| `R144` | Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with @multiRow | Spec |  | [plan](mutation-cardinality-safety-default.md) |
-| `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
-| `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
-| `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec |  | [plan](emit-input-records.md) |
-| `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
-| `R74` | Row/Record return shapes for typed accessor batch keys | Spec |  | [plan](accessor-row-record-shapes.md) |
-| `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
-| `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Ready |  | [plan](error-handling-parity.md) |
-| `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
-| `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
-| `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
-| `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress |  | [plan](docs-site-asciidoc.md) |
-| `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
-| `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
-| `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R139` | Dev-pipeline to LSP schema-snapshot side-channel; first client unknown-directive validator | In Review |  | [plan](lsp-schema-snapshot-side-channel.md) |
+| ID | Item | Status | Plan |
+|---|---|---|---|
+| `R141` | Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | [plan](bulk-input-single-carrier-list-data-field.md) |
+| `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
+| `R143` | Surface a date column on the rendered roadmap table | In Review | [plan](roadmap-item-date-column.md) |
+| `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready | [plan](tablemethod-child-table-bound.md) |
+| `R147` | Surface GraphitronSchemaValidator errors and warnings as LSP diagnostics | Spec | [plan](lsp-surface-validator-errors.md) |
+| `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
+| `R144` | Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with @multiRow | Spec | [plan](mutation-cardinality-safety-default.md) |
+| `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec | [plan](deprecate-record-directive.md) |
+| `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec | [plan](nestingfield-multiparent-tablefield.md) |
+| `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec | [plan](emit-input-records.md) |
+| `R13` | Faceted search on `@asConnection` | Spec | [plan](faceted-search.md) |
+| `R74` | Row/Record return shapes for typed accessor batch keys | Spec | [plan](accessor-row-record-shapes.md) |
+| `R63` | Type UPSERT dialect requirement on the model | Spec | [plan](dml-dialect-requirement-on-model.md) |
+| `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Ready | [plan](error-handling-parity.md) |
+| `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | [plan](catalog-check-constraint-validation.md) |
+| `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
+| `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | [plan](retire-maven-plugin.md) |
+| `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
+| `R115` | Enumerate the capabilities graphitron delivers | Spec | [plan](capability-catalog.md) |
+| `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | [plan](list-valued-external-field-multiset.md) |
+| `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | [plan](operation-driven-test-corpus.md) |
+| `R139` | Dev-pipeline to LSP schema-snapshot side-channel; first client unknown-directive validator | In Review | [plan](lsp-schema-snapshot-side-channel.md) |
 
 ---
 
@@ -171,7 +170,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R140` [**Publish leaf-coverage report from CI**](leaf-coverage-artifact-publish-chain.md) — In Review, cleanup
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md) — Backlog, feature
