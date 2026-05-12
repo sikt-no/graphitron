@@ -54,6 +54,8 @@ public final class Hovers {
         var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
         if (directiveOpt.isEmpty()) return Optional.empty();
         var directive = directiveOpt.get();
+        String directiveName = Nodes.text(directive.nameNode(), file.source());
+        var resolution = DirectiveResolution.resolve(vocabulary, snapshot, directiveName);
 
         // Directive-name hover comes first. coordinateAt is leaf-oriented
         // (arg coordinates, not directive coordinates), so a cursor on the
@@ -62,7 +64,7 @@ public final class Hovers {
         // directive's description (bundled SDL or user snapshot) before
         // the coordinate path runs.
         if (Nodes.contains(directive.nameNode(), pos)) {
-            return directiveNameHover(vocabulary, snapshot, directive, file);
+            return directiveNameHover(resolution, directive, file);
         }
 
         var coordOpt = vocabulary.coordinateAt(directive, pos, file.source());
@@ -78,22 +80,19 @@ public final class Hovers {
             if (bundled.isPresent()) return bundled;
         }
 
-        // No bundled coordinate or no bundled description: fall through to
-        // the user-snapshot's directive shape. Phase 2 surfaces arg-name
-        // hovers from the snapshot for user-declared directives (e.g.
-        // hovering on `role:` of `@auth(role: ...)` when the bundled
-        // overlay has no `@auth`). The arg-name path uses the key node
-        // for the hover range, so the absence of a value-bearing range
-        // node is not a blocker.
-        return userArgHover(snapshot, directive, pos, file);
+        // User-arm fallback: only on User resolution. Gating here preserves
+        // bundled-shadows-snapshot precedence (R139 settled design note 4):
+        // for bundled directives, a missing bundled arg description stays
+        // empty rather than leaking through to a shadow snapshot entry.
+        if (resolution instanceof DirectiveResolution.User user) {
+            return userArgHover(user.shape(), directive, pos, file);
+        }
+        return Optional.empty();
     }
 
     private static Optional<Hover> directiveNameHover(
-        LspVocabulary vocabulary, LspSchemaSnapshot snapshot,
-        Directives.Directive directive, WorkspaceFile file
+        DirectiveResolution resolution, Directives.Directive directive, WorkspaceFile file
     ) {
-        String name = Nodes.text(directive.nameNode(), file.source());
-        var resolution = DirectiveResolution.resolve(vocabulary, snapshot, name);
         return switch (resolution) {
             case DirectiveResolution.Bundled bundled ->
                 bundledDescription(bundled.def().getDescription())
@@ -114,20 +113,15 @@ public final class Hovers {
     }
 
     /**
-     * Looks up the arg under the cursor against the user snapshot's
-     * directive shape and produces a hover from the arg's description.
-     * Only fires when the directive is user-declared (Bundled args route
-     * through the existing coordinate path); the snapshot's freshness
-     * variant does not matter — hovers prefer stale info over silence.
+     * Arg-name docstring fallback for a user-declared directive. Walks the
+     * user-typed arg list, matches the cursor against an arg-key node, and
+     * surfaces the snapshot's {@link DirectiveShape}-side
+     * {@code InputValueShape.description()} when present. Freshness-agnostic
+     * by design — hovers prefer stale info over silence.
      */
     private static Optional<Hover> userArgHover(
-        LspSchemaSnapshot snapshot, Directives.Directive directive, Point pos, WorkspaceFile file
+        DirectiveShape shape, Directives.Directive directive, Point pos, WorkspaceFile file
     ) {
-        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
-        String directiveName = Nodes.text(directive.nameNode(), file.source());
-        var shapeOpt = built.directive(directiveName);
-        if (shapeOpt.isEmpty()) return Optional.empty();
-        DirectiveShape shape = shapeOpt.get();
         for (var arg : directive.arguments()) {
             if (!arg.contains(pos)) continue;
             if (!Nodes.contains(arg.key(), pos)) continue;

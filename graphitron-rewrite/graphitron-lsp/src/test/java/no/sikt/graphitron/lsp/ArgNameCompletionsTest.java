@@ -183,6 +183,39 @@ class ArgNameCompletionsTest {
     }
 
     @Test
+    void bundledDirectiveShadowedBySnapshot_routesThroughBundledPath() {
+        // R139 settled design note 4: bundled shadows snapshot. The user
+        // accidentally redeclares @table with a different arg set, and
+        // typing `@table(<cursor>)` must offer the bundled args, not the
+        // shadow's. Pins the precedence on the completion side, symmetric
+        // with the Hovers and Diagnostics shadow guards.
+        var shadow = new no.sikt.graphitron.rewrite.catalog.DirectiveShape(
+            "table",
+            java.util.List.of(new no.sikt.graphitron.rewrite.catalog.InputValueShape(
+                "extraArg",
+                new no.sikt.graphitron.rewrite.catalog.TypeShape.Named("String", true),
+                java.util.Optional.empty())),
+            java.util.Optional.empty());
+        String source = """
+            type Foo @table(name: "film", ) {
+                bar: Int
+            }
+            """;
+        var lines = source.split("\n");
+        int line = 0;
+        int col = lines[line].indexOf(", ") + 2;
+
+        var items = runWithSnapshot(source, new Point(line, col),
+            new LspSchemaSnapshot.Built.Current(java.util.List.of(shadow)));
+
+        // Bundled @table args are `name` (no `extraArg`); the shadow's
+        // `extraArg` must not appear.
+        assertThat(items).extracting(i -> i.getLabel())
+            .contains("name")
+            .doesNotContain("extraArg");
+    }
+
+    @Test
     void userDirectiveUnderPreviousSnapshot_emitsArgs() {
         // Stale snapshot: completions still fire. Suggestion beats silence
         // even when the snapshot is post-parse-failure.
