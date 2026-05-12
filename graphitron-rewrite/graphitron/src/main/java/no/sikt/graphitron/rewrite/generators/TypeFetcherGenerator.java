@@ -3540,14 +3540,16 @@ public class TypeFetcherGenerator {
      *
      * <p><b>Order preservation invariant.</b> {@code output.data[i]} corresponds to
      * {@code input[i]} for all {@code i ∈ [0, N)}. The Java for-each loop iterates the input
-     * list in declaration order; {@code Result.add(record)} preserves insertion order;
-     * the downstream SELECT's WHERE-PK-IN does not preserve order, but the response-SELECT
-     * fetcher in {@code FetcherEmitter} reads {@code source.getValues(table.PK)} which projects
-     * PKs in input order, and graphql-java's serialiser walks the response list in the
-     * iteration order of the data field's fetcher. The deliberately-non-PK-ordered round-trip
-     * in {@code DmlBulkMutationsExecutionTest} is the runtime audit; any future single-statement
-     * emit refinement (e.g. an ordinal-preserving Postgres contract) must preserve the same
-     * input-order assertion that round-trip makes.
+     * list in declaration order; {@code Result.add(record)} preserves insertion order; the
+     * upstream {@code Result<RecordN<PK>>} therefore lands at the data-field fetcher with
+     * PKs in input order. The downstream SELECT's {@code WHERE pk IN (...)} does not preserve
+     * order, but {@link FetcherEmitter}'s {@code buildSingleRecordTableFetcherValue}
+     * {@code Cardinality.MANY} arm re-keys the SELECT result into a PK-indexed map and walks
+     * {@code source.getValues(PK)} to project rows in input order — input order is a property
+     * of the emitted Java, not of the SQL planner's choice. The deliberately-non-PK-ordered
+     * round-trip in {@code DmlBulkMutationsExecutionTest} is the runtime audit; any future
+     * single-statement emit refinement (e.g. an ordinal-preserving Postgres contract) must
+     * preserve the same input-order assertion that round-trip makes.
      *
      * <p>Empty-list input: short-circuits before opening the transaction, returning an empty
      * typed {@code Result} (mirrors R134's empty-input short-circuit on the direct-{@code @table}

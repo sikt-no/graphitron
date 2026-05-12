@@ -194,10 +194,10 @@ public final class FetcherEmitter {
     }
 
     /**
-     * R75 Phase 1: data-fetcher value for a {@link ChildField.SingleRecordTableField}. Reads
-     * {@code env.getSource()} typed by {@code SourceKey.wrap × columns} and runs the response
-     * SELECT keyed by the PK columns. The upstream value is whatever the mutation's two-step
-     * fetcher returned: a single {@code RecordN<...>} when the input was single
+     * R75 Phase 1 / R141: data-fetcher value for a {@link ChildField.SingleRecordTableField}.
+     * Reads {@code env.getSource()} typed by {@code SourceKey.wrap × columns} and runs the
+     * response SELECT keyed by the PK columns. The upstream value is whatever the mutation's
+     * two-step fetcher returned: a single {@code RecordN<...>} when the input was single
      * ({@code Cardinality.ONE}) or a {@code Result<RecordN<...>>} when the input was bulk
      * ({@code Cardinality.MANY}).
      *
@@ -206,6 +206,18 @@ public final class FetcherEmitter {
      * in(...))}. The {@code mutation-dml-record-field.data-table-equals-input-table} load-
      * bearing key pins that the data field's table equals the input table, so the PK columns
      * here are exactly what the upstream RETURNING projected.
+     *
+     * <p><b>Order preservation (R141, {@code Cardinality.MANY} arm).</b> The bulk arm builds
+     * a PK-keyed map of the SELECT result, then iterates {@code source.getValues(PK)} (the
+     * upstream Result's PK list, which the mutation fetcher accumulated in input order) to
+     * project rows in input order. This makes {@code output.data[i] = input[i]} a property
+     * of the emitted Java code, not of any Postgres scan-order accident. The keying scheme is
+     * the PK value for single-PK tables and {@code List.of(pk1, pk2, ...)} for composite-PK
+     * tables, matching the WHERE-clause shape above. UPDATE no-match rows (the upstream
+     * fetcher already rejects these with {@code IllegalStateException}) and INSERT
+     * RETURNING-skipped rows (none, structurally) would surface here as {@code null} map
+     * lookups, which the loop skips; the upstream contract is that every PK in {@code source}
+     * resolves, so a skipped slot is a programming error, not a data condition.
      */
     @DependsOnClassifierCheck(
         key = "mutation-dml-record-field.data-table-equals-input-table",
@@ -244,10 +256,20 @@ public final class FetcherEmitter {
         }
         body.add("    $T dsl = (($T) env.getGraphQlContext().get($T.class)).getDslContext(env);\n",
             dslContextClass, graphitronContextClass, graphitronContextClass);
-        body.add("    return dsl.select($T.$$fields(env.getSelectionSet(), $T.$L, env))\n",
-            typeClass, table.constantsClass(), table.javaFieldName());
-        body.add("        .from($T.$L)\n", table.constantsClass(), table.javaFieldName());
         if (many) {
+            var orgJooqRecord = ClassName.get("org.jooq", "Record");
+            var javaUtilMap = ClassName.get("java.util", "Map");
+            var javaUtilHashMap = ClassName.get("java.util", "HashMap");
+            var javaUtilList = ClassName.get("java.util", "List");
+            var javaUtilArrayList = ClassName.get("java.util", "ArrayList");
+            var keyType = pkColumns.size() == 1
+                ? ClassName.bestGuess(pkColumns.get(0).columnClass())
+                : ParameterizedTypeName.get(javaUtilList, WildcardTypeName.subtypeOf(Object.class));
+            var orgJooqResult = ClassName.get("org.jooq", "Result");
+            var resultOfRecord = ParameterizedTypeName.get(orgJooqResult, orgJooqRecord);
+            body.add("    $T __fetched = dsl.select($T.$$fields(env.getSelectionSet(), $T.$L, env))\n",
+                resultOfRecord, typeClass, table.constantsClass(), table.javaFieldName());
+            body.add("        .from($T.$L)\n", table.constantsClass(), table.javaFieldName());
             body.add("        .where(");
             if (pkColumns.size() == 1) {
                 var col = pkColumns.get(0);
@@ -271,7 +293,56 @@ public final class FetcherEmitter {
             }
             body.add(")\n");
             body.add("        .fetch();\n");
+            // R141: PK-keyed-map indirection. The SELECT returns rows in Postgres's scan order
+            // (no SQL ordering guarantee); re-key by PK then walk source's input-ordered PK
+            // list to project in input order. See class-Javadoc above for the contract.
+            body.add("    $T<$T, $T> __byPk = new $T<>(__fetched.size());\n",
+                javaUtilMap, keyType, orgJooqRecord, javaUtilHashMap);
+            body.add("    for ($T __r : __fetched) __byPk.put(",
+                orgJooqRecord);
+            if (pkColumns.size() == 1) {
+                var col = pkColumns.get(0);
+                body.add("__r.get($T.$L.$L)",
+                    table.constantsClass(), table.javaFieldName(), col.javaName());
+            } else {
+                body.add("$T.of(", javaUtilList);
+                for (int i = 0; i < pkColumns.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkColumns.get(i);
+                    body.add("__r.get($T.$L.$L)",
+                        table.constantsClass(), table.javaFieldName(), col.javaName());
+                }
+                body.add(")");
+            }
+            body.add(", __r);\n");
+            body.add("    $T<$T> __ordered = new $T<>(source.size());\n",
+                javaUtilList, orgJooqRecord, javaUtilArrayList);
+            body.add("    for ($T __src : source) {\n",
+                rowType);
+            body.add("        $T __key = ", keyType);
+            if (pkColumns.size() == 1) {
+                var col = pkColumns.get(0);
+                body.add("__src.get($T.$L.$L)",
+                    table.constantsClass(), table.javaFieldName(), col.javaName());
+            } else {
+                body.add("$T.of(", javaUtilList);
+                for (int i = 0; i < pkColumns.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkColumns.get(i);
+                    body.add("__src.get($T.$L.$L)",
+                        table.constantsClass(), table.javaFieldName(), col.javaName());
+                }
+                body.add(")");
+            }
+            body.add(";\n");
+            body.add("        $T __match = __byPk.get(__key);\n", orgJooqRecord);
+            body.add("        if (__match != null) __ordered.add(__match);\n");
+            body.add("    }\n");
+            body.add("    return __ordered;\n");
         } else {
+            body.add("    return dsl.select($T.$$fields(env.getSelectionSet(), $T.$L, env))\n",
+                typeClass, table.constantsClass(), table.javaFieldName());
+            body.add("        .from($T.$L)\n", table.constantsClass(), table.javaFieldName());
             body.add("        .where(");
             if (pkColumns.size() == 1) {
                 var col = pkColumns.get(0);

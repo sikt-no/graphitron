@@ -1,7 +1,7 @@
 ---
 id: R141
 title: Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field
-status: Ready
+status: In Review
 bucket: feature
 priority: 2
 theme: mutations-errors
@@ -11,25 +11,24 @@ last-updated: 2026-05-12
 
 # Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field
 
-## Review feedback (In Review → Ready, rework)
+## Review feedback (cycle 1: addressed in rework)
 
-Reviewer found one load-bearing gap on the rework cycle; the rest of R141 lands cleanly and these items don't require revisiting. The implementation diff at `d58d46c` (build green, all spec-named tests pass) is the baseline this section is asking the next pass to correct.
+Reviewer found one load-bearing gap on the first In Review cycle; rework shipped option (1), the spec's PK-keyed-map indirection. Build green, both order-preservation execution tests still pass, and input order is now a property of the emitted Java rather than a Postgres scan-order accident.
 
-**Order-preservation contract: spec promised PK-keyed-map indirection; implementation relies on Postgres incidental behaviour.** This is the load-bearing item.
+**Fix landed:** `FetcherEmitter.buildSingleRecordTableFetcherValue` `Cardinality.MANY` arm now captures the SELECT result into `Result<Record> __fetched`, builds `Map<PK, Record> __byPk` keyed on the PK columns, then iterates `source` (the input-ordered upstream `Result<RecordN<PK>>`) to project rows into a `List<Record> __ordered` in input order. Returned as the data field's value; graphql-java walks the list in input order because the list itself is now in input order. Verified in the generated `FilmsPayloadType.java:40-57`.
 
-- Spec § "Order preservation: invariant and emit strategy" (line 270) and § "Response-SELECT (data channel)" (line 282) together promised: after the per-row DML accumulates PKs in input order, the response-SELECT result is **keyed back into a PK-indexed map, then iterated by the PK list in input order to build the response**. That step is the bulletproof half of the spec's design — the half that satisfies the order-preservation invariant under *any* SQL planner choice. Spec § "Why single-statement … doesn't satisfy this" (line 262) names "it works on my machine" reliance on Postgres ordering as the failure mode the design exists to prevent.
-- Implementation: the per-row DML inside `TypeFetcherGenerator.buildMutationBulkDmlRecordFetcher` (`TypeFetcherGenerator.java:3580-3625`) correctly accumulates PKs in input order into `Result<RecordN<...>>`. But the data-field response-SELECT is the existing `Cardinality.MANY` path in `FetcherEmitter.buildSingleRecordTableFetcherValue` (`FetcherEmitter.java:224-300`), which emits `dsl.select(...).from(table).where(PK.in(source.getValues(PK))).fetch()` with no `ORDER BY` and no PK-keyed-map re-iteration step. Verified in the generated `FilmsPayloadType.java:35-43`.
-- Javadoc claim is incorrect. The order-preservation paragraph on `MutationBulkDmlRecordField` (`MutationField.java:170-182`) and the matching paragraph on `buildMutationBulkDmlRecordFetcher` (`TypeFetcherGenerator.java:3545-3565`) both argue order is preserved because "graphql-java's serialiser walks the response list in the iteration order of the data field's fetcher." That iteration order is whatever Postgres returned, **not** input order. The Javadoc as written is misleading about *why* order holds today.
-- Why the test still passes: empirically verified that Postgres heap-update-on-`UPDATE` plus default scan strategy returns rows in update order (the test inserts three rows, then `UPDATE`s them in input order; the new tuples land at the heap tail in update order; the response `SELECT WHERE pk IN (...)` does a seqscan/index scan that returns them in heap-tail order = input order). The execution test passes today, but it passes because of a Postgres-specific implementation detail, not because the SQL guarantees input order. A planner-strategy switch, a parallel scan, an autovacuum-driven tuple-relocation, or a larger N could break it silently.
-- Fix the next pass should land — pick one:
-  1. **Spec's design.** In `buildSingleRecordTableFetcherValue`'s `Cardinality.MANY` arm (or in a new bulk-specific helper), build a `Map<PK, Record> resultByPk = fetched.intoMap(PK)` after the SELECT, then iterate `source.getValues(PK)` (the input-ordered PK list) and project `resultByPk.get(pk)` to build the response list. This is what spec line 270 mandates.
-  2. **Explicit SQL ORDER BY.** Emit an `ORDER BY array_position(<input-pk-list>, <pk>)` clause that pins the row order to the input-pk-list. The clause is Postgres-specific but is a documented SQL contract rather than a planner-emergent behaviour.
-  3. **Honest Javadoc + filed Backlog item.** If the implementer prefers to ship the current incidental behaviour for now, the Javadoc on `MutationBulkDmlRecordField` and `buildMutationBulkDmlRecordFetcher` must be rewritten to honestly describe the mechanism: "order preservation today relies on Postgres returning rows in heap-update order under a seq/index scan against the PK; the `DmlBulkMutationsExecutionTest` round-trip is the only audit." File a Backlog item (`bulk-dml-order-preservation-deterministic-sql`) to lift to option (1) or (2) so the contract becomes SQL-guaranteed rather than planner-emergent. The Backlog item should reference R141's commits and this review section.
+**Single-PK + composite-PK both covered.** The keying scheme is `__r.get(table.PK)` for single-PK tables and `List.of(__r.get(pk1), __r.get(pk2), ...)` for composite-PK tables, mirroring the existing WHERE-clause shape (where composite PKs already use jOOQ `DSL.row(...)`).
 
-The reviewer's recommendation is option (1) — the spec mandated it and the work is local to one method. Option (3) is acceptable only if the implementer has a load-bearing reason not to add the indirection step now; file the follow-up Backlog item before re-handing to In Review.
+**Javadocs corrected.** The order-preservation paragraphs on `MutationField.MutationBulkDmlRecordField` and `TypeFetcherGenerator.buildMutationBulkDmlRecordFetcher` now describe the actual mechanism (per-row DML accumulates PKs in input order into `Result<RecordN<PK>>` → data-field fetcher re-keys SELECT into a PK-indexed map and walks `source.getValues(PK)` to project in input order), and explicitly call out that input order is a property of the emitted Java rather than the SQL planner's choice of scan strategy.
 
-**Non-blocking notes from this review pass (already tracked, no action needed):**
-- `resolveErrorChannel` shared predicate-body helper extraction is deferred to R12 — defensible per "don't add abstractions without a second consumer". In Review notes capture this.
+**Originally-reviewed cycle-1 findings retained as the audit trail:**
+
+- Spec § "Order preservation: invariant and emit strategy" (line 270) and § "Response-SELECT (data channel)" (line 282) together promised the PK-keyed-map indirection step.
+- The original implementation diff `d58d46c` emitted the per-row DML correctly (collecting PKs in input order) but reused `FetcherEmitter.buildSingleRecordTableFetcherValue`'s existing `Cardinality.MANY` SELECT path, which had no ORDER BY and no re-keying. The Javadoc on `MutationBulkDmlRecordField` and `buildMutationBulkDmlRecordFetcher` argued that "graphql-java's serialiser walks the response list in the iteration order of the data field's fetcher" — true mechanically, but the data field's fetcher iterated in Postgres' SELECT return order, not input order.
+- Empirically verified that Postgres heap-update-on-`UPDATE` plus default scan strategy returns rows in update order, which happened to match input order for the test's specific data layout. That coincidence was the only reason the test passed; a planner-strategy switch, a parallel scan, an autovacuum-driven tuple-relocation, or a larger N could have broken it silently.
+
+**Non-blocking notes from the cycle-1 review (already tracked, no action needed):**
+- `resolveErrorChannel` shared predicate-body helper extraction is deferred to R12 — defensible per "don't add abstractions without a second consumer". Original In Review notes capture this.
 - `CarrierFieldRoleCoverageTest` grep-on-source-name limitation is tracked at R151.
 - Consumer-side `@DependsOnClassifierCheck` annotations are present on the two emitter-stage readers (`GraphitronSchemaBuilder.registerCarrierDataField`, `TypeFetcherGenerator.buildMutationBulkDmlRecordFetcher`). The classifier-stage readers (`FieldBuilder.classifyMutationField`, `MutationInputResolver.validateReturnType`) are not annotated; spec wording ("every emitter reading `shape.data()` or `shape.errorChannel()`") supports the implementer's narrower reading.
 
