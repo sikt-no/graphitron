@@ -180,7 +180,7 @@ File-by-file diff sites this item touches:
 
 Migration-only test sites:
 
-- `graphitron-rewrite/graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/CatalogRefreshTest.java:62` — migrate from `workspace.setCatalog(newCatalog)` to `workspace.setBuildOutput(...)`.
+- `graphitron-rewrite/graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/WorkspaceTest.java:164` (the `setCatalogEnqueuesAllOpenFiles` test at line 157) — migrate from `ws.setCatalog(CompletionData.empty())` to `ws.setBuildOutput(...)`, and rename the test in line with the new setter.
 
 New test files / sections enumerated in the Tests § below.
 
