@@ -108,59 +108,65 @@ The `Built` arm carries an implicit contract: the registry parse completed witho
 | `snapshot-built-implies-clean-parse`             | `CatalogBuilder.buildSnapshot` (returns `Unavailable` on any parse error, never partial `Built`) | `Diagnostics`' unknown-directive arm (silences on `Unavailable`, warns on `Built` + name-not-found) |
 | `snapshot-directive-roundtrip-faithful`          | `CatalogBuilder.buildSnapshot` (every `DirectiveDefinition` in the registry produces exactly one `DirectiveShape` with the same name, args, description) | `Workspace.resolveDirective` (returns the snapshot's shape when bundled SDL lacks the name) |
 
-`LoadBearingGuaranteeAuditTest` covers both keys automatically once the annotations land. A future relaxation (admitting a partial parse, say, to surface "the schema doesn't parse but here's what we got") surfaces as an orphaned consumer site rather than as silent false negatives in IDE diagnostics.
+The producer-side annotation is enforced by `LoadBearingGuaranteeAuditTest` (`LoadBearingGuaranteeAuditTest.java:44-46` scans `target/classes/no/sikt/graphitron/rewrite/`): the audit walks the `graphitron` module's compiled output, so the `@LoadBearingClassifierCheck` on `CatalogBuilder.buildSnapshot` is in scope and a duplicate or removed producer surfaces. The consumer sites in this pair live in `graphitron-lsp` (`Diagnostics`' unknown-directive arm and `Workspace.resolveDirective` under `no.sikt.graphitron.lsp.*`); the audit's current scan does not cross into that module's classes, so the `@DependsOnClassifierCheck` markers are placed for find-usages navigation, not auto-enforced as orphan-checks today.
+
+Consumer-side enforcement rides on the pipeline-tier tests below: `userDeclaredDirectiveSilencedBySnapshot` pins the `Built + User` arm and `unknownDirectiveSilencedByUnavailableSnapshot` pins the `Unavailable` arm, so a relaxation that admits a partial parse (or a consumer arm removed entirely) breaks one of those tests rather than the audit. Widening the audit's scan to include `graphitron-lsp/target/classes/no/sikt/graphitron/lsp/` would close the gap, but requires moving (or duplicating) the audit into a test surface where both modules' compiled classes are on the classpath at test-run time, which is its own design decision and out of scope here. The follow-on item is tracked under "Future evolution" below.
 
 ### The boundary: snapshot lives on the catalog side, not in `LspVocabulary`
 
 `LspVocabulary` is the parsed bundled SDL plus the hand-coded overlay; it is immutable per session and ships with the LSP jar. R139 keeps it that way. Composing the snapshot into the vocabulary's `TypeDefinitionRegistry` would mix two lifecycles (immutable session-lifetime vs. volatile build-driven) on one record, and the structural-invariant check in `LspVocabulary`'s constructor (every overlay coordinate resolves against the registry) only makes sense against the bundled SDL: user directives must not be allowed to satisfy graphitron-overlay coordinates.
 
-Consumers that want the union of bundled + snapshot directives call a single new accessor on `Workspace`:
+Consumers that want the union of bundled + snapshot directives go through a single resolution function. The sealed result type and its static entrypoint:
 
 ```java
 public sealed interface DirectiveResolution {
     record Bundled(DirectiveDefinition def) implements DirectiveResolution {}
     record User(DirectiveShape shape) implements DirectiveResolution {}
     record Unknown() implements DirectiveResolution {}
-}
 
-public DirectiveResolution resolveDirective(String name) {
-    var bundled = vocabulary.registry().getDirectiveDefinition(name);
-    if (bundled.isPresent()) return new DirectiveResolution.Bundled(bundled.get());
-    return switch (snapshot) {
-        case LspSchemaSnapshot.Unavailable u -> new DirectiveResolution.Unknown();
-        case LspSchemaSnapshot.Built b -> b.directive(name)
-            .<DirectiveResolution>map(DirectiveResolution.User::new)
-            .orElseGet(DirectiveResolution.Unknown::new);
-    };
+    static DirectiveResolution resolve(
+            LspVocabulary vocabulary, LspSchemaSnapshot snapshot, String name) {
+        var bundled = vocabulary.registry().getDirectiveDefinition(name);
+        if (bundled.isPresent()) return new Bundled(bundled.get());
+        return switch (snapshot) {
+            case LspSchemaSnapshot.Unavailable u -> new Unknown();
+            case LspSchemaSnapshot.Built b -> b.directive(name)
+                .<DirectiveResolution>map(User::new)
+                .orElseGet(Unknown::new);
+        };
+    }
 }
 ```
 
-`resolveDirective` is the *only* path callers use to query the union; the bundled-vs-snapshot precedence (bundled shadows snapshot) is encoded once on the workspace, not duplicated at every site. Phase 2's hover and arg-validation arms switch on the same sealed result. The unknown-directive arm in `Diagnostics` becomes a one-liner over `DirectiveResolution.Unknown`; see the next section.
+`Workspace` exposes `resolveDirective(String)` as a convenience wrapper that calls `DirectiveResolution.resolve(vocabulary, snapshot, name)` with the workspace's own vocabulary and the current `snapshot` volatile read. The wrapper exists for phase 2's hover / completion / arg-validation handlers, which run from request callbacks that naturally hold a `Workspace`. `Diagnostics.compute` is a `static` method invoked from a non-Workspace context (the existing two-overload at `Diagnostics.java:72-78`), so the unknown-directive arm calls the static `DirectiveResolution.resolve(...)` directly against the `LspSchemaSnapshot` and `LspVocabulary` already in scope.
+
+The static entrypoint is the *only* path that encodes the bundled-vs-snapshot precedence (bundled shadows snapshot); the workspace wrapper and the diagnostic arm both delegate to it. Phase 2's hover and arg-validation arms switch on the same sealed result through `Workspace.resolveDirective`. The unknown-directive arm in `Diagnostics` becomes a one-liner over `DirectiveResolution.Unknown`; see the next section.
 
 The collision case (bundled shadows snapshot) covers the user accidentally declaring `directive @table(name: String)` in their own SDL: graphitron's overlay binds the directive's `name:` slot to a `CatalogTableBinding`, and the LSP must use graphitron's shape, not the user's. The collision is also a candidate for a separate diagnostic (warn the user that their directive shadows a graphitron one), but that is out of scope here.
 
-Pre-build snapshot state collapses to `Unavailable` end-to-end: `resolveDirective` returns `Unknown` for *every* unbundled name when the snapshot is `Unavailable`, which would re-introduce the false-positive problem if the unknown-directive arm warned on `Unknown` blindly. The arm instead checks the snapshot variant directly for the silence-on-`Unavailable` policy, and only treats `Built + Unknown` as a typo. The next section pins this.
+Pre-build snapshot state collapses to `Unavailable` end-to-end: `DirectiveResolution.resolve` returns `Unknown` for *every* unbundled name when the snapshot is `Unavailable`, which would re-introduce the false-positive problem if the unknown-directive arm warned on `Unknown` blindly. The arm instead checks the snapshot variant directly for the silence-on-`Unavailable` policy, and only treats `Built + Unknown` as a typo. The next section pins this.
 
 ---
 
 ## First client: the unknown-directive arm in `Diagnostics`
 
-The change at `Diagnostics.java:86-92`:
+`Diagnostics.compute`'s static shape grows an `LspSchemaSnapshot` parameter alongside `CompletionData`: the existing two-overload at `Diagnostics.java:72-78` becomes `compute(WorkspaceFile, CompletionData, LspSchemaSnapshot)` plus the vocabulary-explicit `compute(LspVocabulary, WorkspaceFile, CompletionData, LspSchemaSnapshot)`. The unknown-directive arm reads through `DirectiveResolution.resolve` and inspects `snapshot` directly for the silence policy:
 
 ```java
-if (workspace.resolveDirective(directiveName) instanceof DirectiveResolution.Bundled bundled) {
+var resolution = DirectiveResolution.resolve(vocabulary, snapshot, directiveName);
+if (resolution instanceof DirectiveResolution.Bundled bundled) {
     // existing arg / required / leaf-coordinate validation path
     validateAgainst(bundled.def(), ...);
     continue;
 }
-if (workspace.snapshot() instanceof LspSchemaSnapshot.Unavailable) continue;  // pre-build silence
-if (workspace.resolveDirective(directiveName) instanceof DirectiveResolution.User) continue;
+if (snapshot instanceof LspSchemaSnapshot.Unavailable) continue;  // pre-build silence
+if (resolution instanceof DirectiveResolution.User) continue;
 out.add(diagnostic(file, directive.nameNode(), DiagnosticSeverity.Warning,
     "Unknown directive '@" + directiveName + "'. Not declared in any "
     + "directive definition reachable from the parsed schema."));
 ```
 
-The two `resolveDirective` calls collapse to one in the implementation (read once, switch on the result); the two-call shape above is for spec clarity. The arm reads the snapshot variant directly only for the silence policy, which is the one place "what state is the build in" is the decision rather than "what does the workspace know about this name".
+The arm reads the snapshot variant directly only for the silence policy, which is the one place "what state is the build in" is the decision rather than "what does the union resolver know about this name". `resolution` is computed once and switched on twice; the pattern reads as two independent checks for spec clarity, but the implementation is a single `switch` expression.
 
 Observable behaviours:
 
@@ -194,7 +200,7 @@ The file-by-file diff:
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphQLRewriteGenerator.java`: surface the `TypeDefinitionRegistry` to the catalog builder (it is already parsed; the diff is to keep the reference past the existing call site rather than discard it).
 - `graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/state/Workspace.java`: add `volatile LspSchemaSnapshot snapshot` field defaulting to `LspSchemaSnapshot.unavailable()`, `setSnapshot(...)` setter mirroring `setCatalog`, `snapshot()` accessor mirroring `catalog()`, plus the `resolveDirective(String)` union accessor that returns the sealed `DirectiveResolution` shape.
 - `graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/state/DirectiveResolution.java`: the sealed result type for `resolveDirective`, with `Bundled` / `User` / `Unknown` permits as described in the Boundary section.
-- `graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/diagnostics/Diagnostics.java`: the unknown-directive arm reads through `workspace.resolveDirective(name)` and checks `workspace.snapshot() instanceof LspSchemaSnapshot.Unavailable` for the pre-build silence policy, as described above. `Diagnostics.compute`'s static shape extends to take the workspace (or its two volatile reads) rather than just `CompletionData`; the test-only callsite gets a free `LspSchemaSnapshot.unavailable()` argument when the test does not care.
+- `graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/diagnostics/Diagnostics.java`: the unknown-directive arm reads through `DirectiveResolution.resolve(vocabulary, snapshot, name)` and checks `snapshot instanceof LspSchemaSnapshot.Unavailable` for the pre-build silence policy, as described above. `Diagnostics.compute`'s two overloads grow an `LspSchemaSnapshot` parameter after the existing `CompletionData`: `compute(WorkspaceFile, CompletionData, LspSchemaSnapshot)` and `compute(LspVocabulary, WorkspaceFile, CompletionData, LspSchemaSnapshot)`. Existing test callsites pass `LspSchemaSnapshot.unavailable()` when they do not care; the four new directive-arm cases pass `Built(...)` or `unavailable()` per the table above.
 - `graphitron-rewrite/graphitron-maven-plugin/src/main/java/no/sikt/graphitron/rewrite/maven/DevMojo.java`: the `regenerate` and `rebuildCatalog` methods at `:176-211` push both projections in lockstep. Either expose a combined `buildBoth(...)` on `GraphQLRewriteGenerator` or call `setSnapshot` immediately after `setCatalog`; the inline-pair shape is the smaller diff and matches how the two volatile refs read independently downstream.
 
 The change is purely additive in the legacy-comparison sense: `LspVocabulary`, `CompletionData`, and the existing `Workspace.setCatalog` paths stay; the new path joins them. No deprecation, no shim.
@@ -217,7 +223,7 @@ Four tiers, structurally identical to the pattern in R92's spec body.
 
 ### Compilation-tier
 
-- `graphitron-sakila-example` adds a fixture `schema.graphqls` carrying one user-declared directive (e.g. `directive @auth(role: String!) on FIELD_DEFINITION` plus a single field application). The `mvn compile -pl :graphitron-sakila-example -Plocal-db` pass exercises that the snapshot includes the user directive end-to-end; the fixture asserts the build does not regress in the presence of user-authored directive declarations the bundled SDL knows nothing about.
+- `graphitron-sakila-example` adds a fixture `schema.graphqls` carrying one user-declared directive (e.g. `directive @auth(role: String!) on FIELD_DEFINITION` plus a single field application). R139 emits no new generated code, so the compile-tier signal here is *not* "the generated source compiles" (the primary use of the tier per `rewrite-design-principles.adoc:136-142`); it is the upstream precondition: the existing build pipeline accepts user-declared directives without error, which is the input contract `CatalogBuilder.buildSnapshot` relies on. The richer end-to-end shape coverage lives in `CatalogBuilderSnapshotTest` at the unit tier (registry → `Built`'s directive list, registry-with-parse-error → `Unavailable`); the compile-tier fixture is a regression guard for the input contract, not a behavioural check on R139's surface.
 
 ### Execution-tier
 
@@ -264,6 +270,7 @@ These were called out during the design conversation; each is resolved here so t
 ## Future evolution (out of scope)
 
 - *Hover and completion on user directives* (phase 2 above). The plumbing R139 ships is sufficient; the follow-on item is purely additive in `Hovers` / `ArgNameCompletions` / `Diagnostics`' unknown-arg arm.
+- *Widen `LoadBearingGuaranteeAuditTest`'s scan to cross the graphitron / graphitron-lsp module boundary.* Today the audit walks the `graphitron` module's `target/classes` only (`LoadBearingGuaranteeAuditTest.java:44-46`); the snapshot's producer is in scope but its LSP-side consumers are not, so the `@DependsOnClassifierCheck` markers on `Diagnostics` and `Workspace.resolveDirective` are find-usages-only, not orphan-enforced. The right home for a cross-module audit is debatable (graphitron-lsp's test surface sees both modules' classes because of the existing dependency; alternatively a new test-only aggregator module), and the call has more to do with the audit's design than with R139's payload. Deferred until a second cross-module load-bearing pair lands.
 - *Shadow-warning for user directives that redeclare bundled names.* A separate diagnostic on the bundled-vs-snapshot collision case. Cheap once the snapshot ships; deferred because it is a distinct user-visible behaviour, not a consequence of the plumbing.
 - *Add a `declaredTypeNames` set to the `Built` arm.* Useful for type-name completion against user-declared types (including synthesised ones like `FilmConnection`, error-handler input shapes that the build pipeline produces). The build pipeline knows them; the snapshot can carry them. Deferred until phase 2 lands a type-name-completion consumer in the same commit. The seal makes additive widening cheap: a new field on `Built`, not a new permit, not a snapshot-version migration.
 - *Lift the snapshot into `LspVocabulary` after a second consumer lands.* If three or more consumers all want the bundled-plus-snapshot union, the indirection through `Workspace.resolveDirective` starts to feel like the wrong seam. Revisit then; until then, the two lifecycles' separation is the load-bearing constraint.
