@@ -1,12 +1,18 @@
 package no.sikt.graphitron.lsp;
 
+import io.github.treesitter.jtreesitter.Parser;
+import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.parsing.Behavior;
+import no.sikt.graphitron.lsp.parsing.Directives;
+import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary.DeprecationInfo;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary.LspStartupException;
+import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -148,5 +154,62 @@ class LspVocabularyTest {
             .isEmpty();
         assertThat(vocab.deprecationOf(new SchemaCoordinate.Directive("demo")))
             .isEmpty();
+    }
+
+    /**
+     * R100 list-fanout pin: a directive arg whose AST value is a
+     * {@code list_value} fans out to one {@link LspVocabulary.Leaf} per
+     * scalar element. The leaf's {@code valueNode} is always the scalar
+     * element node, never the enclosing list; consumers downstream
+     * ({@code Diagnostics.validateCatalogColumn},
+     * {@code Hovers.richerHover}) treat the leaf value as a single
+     * scalar, so the contract has to hold at emit time.
+     */
+    @Test
+    void leafCoordinates_listValueFansOutOneLeafPerElement() {
+        String source = """
+            type Foo implements Node @table(name: "film") @node(keyColumns: ["a", "b"]) {
+                id: ID
+            }
+            """;
+
+        var leaves = leavesForDirective(source, "@node");
+
+        var nodeArgLeaves = leaves.stream()
+            .filter(l -> l.coord() instanceof SchemaCoordinate.DirectiveArg da
+                && da.directive().equals("node")
+                && da.arg().equals("keyColumns"))
+            .toList();
+        assertThat(nodeArgLeaves).hasSize(2);
+        var bytes = source.getBytes(StandardCharsets.UTF_8);
+        assertThat(nodeArgLeaves)
+            .extracting(l -> Nodes.unquote(Nodes.text(l.valueNode(), bytes)))
+            .containsExactly("a", "b");
+        // The leaves carry the scalar element node, not the enclosing list_value.
+        assertThat(nodeArgLeaves)
+            .allMatch(l -> !"list_value".equals(l.valueNode().getType()));
+    }
+
+    private static java.util.List<LspVocabulary.Leaf> leavesForDirective(
+        String source, String directiveTokenStart
+    ) {
+        var parser = new Parser();
+        parser.setLanguage(GraphqlLanguage.get());
+        var tree = parser.parse(source).orElseThrow();
+        int idx = source.indexOf(directiveTokenStart);
+        if (idx < 0) throw new AssertionError("missing " + directiveTokenStart);
+        var pos = pointAt(source, idx + directiveTokenStart.length() - 1);
+        var directive = Directives.findContaining(tree.getRootNode(), pos)
+            .orElseThrow(() -> new AssertionError("no directive at " + pos));
+        return LspVocabulary.load()
+            .leafCoordinates(directive, source.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static Point pointAt(String source, int offset) {
+        int line = 0, col = 0;
+        for (int i = 0; i < offset; i++) {
+            if (source.charAt(i) == '\n') { line++; col = 0; } else col++;
+        }
+        return new Point(line, col);
     }
 }

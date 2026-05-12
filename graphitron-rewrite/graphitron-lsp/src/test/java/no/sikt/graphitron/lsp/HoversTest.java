@@ -389,6 +389,61 @@ class HoversTest {
         assertThat(md).doesNotContain("**Table** `film`");
     }
 
+    // R100 — @node(keyColumns:) and @nodeId(typeName:) hover.
+
+    @Test
+    void nodeKeyColumnsHover_insideListElement_showsColumnMetadata() {
+        // Cursor inside the second element of the list. The rangeNode
+        // should be the element, not the enclosing list_value;
+        // valueNodeFor descends into list_value to honour
+        // "Leaf.valueNode is the scalar value node" universally.
+        var file = file("""
+            type Foo implements Node @table(name: "film") @node(keyColumns: ["film_id", "title"]) {
+                id: ID
+            }
+            """);
+        var pos = pointAt(file, 0, "title");
+
+        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var md = hover.getContents().getRight().getValue();
+
+        assertThat(md).contains("**Column** `title`");
+        assertThat(md).contains("on `film`");
+    }
+
+    @Test
+    void nodeIdTypeNameHover_resolvesTypeIdAndKeyColumns() {
+        var file = file("""
+            type Query {
+                x(id: ID @nodeId(typeName: "Film")): Int
+            }
+            """);
+        var pos = pointAt(file, 1, "Film");
+
+        var hover = Hovers.compute(file, nodeCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var md = hover.getContents().getRight().getValue();
+
+        assertThat(md).contains("**Node** `Film`");
+        assertThat(md).contains("TypeId: `Film`");
+        assertThat(md).contains("`film_id`");
+    }
+
+    private static CompletionData nodeCatalog() {
+        var film = new CompletionData.Table(
+            "film", "Movies",
+            CompletionData.SourceLocation.UNKNOWN,
+            List.of(CompletionData.Column.of("film_id", "Integer", false, "")),
+            List.of()
+        );
+        return new CompletionData(
+            List.of(film),
+            List.of(),
+            List.of(),
+            java.util.Map.of(),
+            java.util.Map.of("Film", new CompletionData.NodeMetadata("Film", List.of("film_id")))
+        );
+    }
+
     private static String lineSource(WorkspaceFile file, int line) {
         String source = new String(file.source(), java.nio.charset.StandardCharsets.UTF_8);
         return source.split("\n")[line];

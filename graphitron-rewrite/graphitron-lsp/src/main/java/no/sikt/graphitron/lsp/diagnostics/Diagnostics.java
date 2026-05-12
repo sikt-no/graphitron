@@ -391,7 +391,33 @@ public final class Diagnostics {
             case Behavior.ArgMappingBinding ignored -> { /* sibling roadmap item */ }
             case Behavior.ScalarTypeBinding ignored ->
                 validateScalarType(leaf.valueNode(), file, catalog, out);
+            case Behavior.NodeTypeBinding ignored ->
+                validateNodeType(leaf.valueNode(), file, catalog, out);
         }
+    }
+
+    /**
+     * Validates {@code @nodeId(typeName: "X")}: the named type must exist in the
+     * catalog and must carry {@code @node}. Mirrors the two classifier rejections
+     * that {@link no.sikt.graphitron.rewrite.FieldBuilder} produces for the same
+     * coordinate: {@code Rejection.unknownTypeName} when no such type exists,
+     * {@code Rejection.structural} when the type exists without {@code @node}.
+     */
+    private static void validateNodeType(
+        Node valueNode, WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+    ) {
+        String typeName = Nodes.unquote(Nodes.text(valueNode, file.source()));
+        if (typeName.isEmpty()) return;
+        if (catalog.nodeMetadata().containsKey(typeName)) return;
+        if (catalog.nodeMetadata().isEmpty()) {
+            // No @node-bearing types known to the catalog yet (pre-build state,
+            // or a schema that uses @nodeId only for its argument-resolution
+            // side effect). Defer to the build-tier rejection.
+            return;
+        }
+        out.add(diagnostic(file, valueNode,
+            "Unknown @node type '" + typeName + "' on @nodeId(typeName:). The type must be "
+            + "declared in the schema and carry the @node directive."));
     }
 
     /**

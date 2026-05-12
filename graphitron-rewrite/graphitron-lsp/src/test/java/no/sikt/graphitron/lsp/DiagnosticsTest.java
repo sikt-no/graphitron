@@ -966,6 +966,101 @@ class DiagnosticsTest {
             .contains("'neme'").contains("Unknown argument").contains("@table");
     }
 
+    // R100 — @node(keyColumns:) and @nodeId(typeName:) diagnostics.
+
+    @Test
+    void nodeKeyColumns_unknownElement_producesError() {
+        // One valid element, one typo'd element. Exactly one diagnostic,
+        // on the typo'd element node — the leaf walk fans the list out
+        // into per-element leaves and CatalogColumnBinding dispatches on
+        // each independently.
+        var file = file("""
+            type Foo implements Node @table(name: "film") @node(keyColumns: ["TITLE", "GHOST"]) {
+                id: ID
+            }
+            """);
+
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("GHOST").contains("column");
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
+    }
+
+    @Test
+    void nodeKeyColumns_allValid_producesNoError() {
+        var file = file("""
+            type Foo implements Node @table(name: "film") @node(keyColumns: ["FILM_ID", "TITLE"]) {
+                id: ID
+            }
+            """);
+
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void nodeIdTypeName_unknownType_producesError() {
+        var file = file("""
+            type Query {
+                x(id: ID @nodeId(typeName: "Ghost")): Int
+            }
+            """);
+
+        var diags = compute(file, nodeCatalog(), LspSchemaSnapshot.unavailable());
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("Ghost").contains("@node");
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
+    }
+
+    @Test
+    void nodeIdTypeName_knownNodeType_producesNoError() {
+        var file = file("""
+            type Query {
+                x(id: ID @nodeId(typeName: "Film")): Int
+            }
+            """);
+
+        var diags = compute(file, nodeCatalog(), LspSchemaSnapshot.unavailable());
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void nodeIdTypeName_emptyNodeMetadata_suppressesUnknownTypeDiagnostic() {
+        // Pre-build state: no @node types known. Defer to the build-tier
+        // rejection rather than yelp at every @nodeId site.
+        var file = file("""
+            type Query {
+                x(id: ID @nodeId(typeName: "Ghost")): Int
+            }
+            """);
+
+        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+
+        assertThat(diags).isEmpty();
+    }
+
+    private static CompletionData nodeCatalog() {
+        var film = new CompletionData.Table(
+            "film", "", CompletionData.SourceLocation.UNKNOWN,
+            List.of(
+                CompletionData.Column.of("FILM_ID", "Integer", false, ""),
+                CompletionData.Column.of("TITLE", "String", false, "")
+            ),
+            List.of()
+        );
+        return new CompletionData(
+            List.of(film),
+            List.of(),
+            List.of(),
+            Map.of(),
+            Map.of("Film", new CompletionData.NodeMetadata("Film", List.of("FILM_ID")))
+        );
+    }
+
     private static no.sikt.graphitron.rewrite.catalog.DirectiveShape authShape() {
         return new no.sikt.graphitron.rewrite.catalog.DirectiveShape(
             "auth",

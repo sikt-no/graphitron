@@ -84,6 +84,10 @@ On the decode side the rewrite verifies the ID's embedded `typeId` against the d
 * Decode-time ID/typeId mismatch fails the request with a GraphQL error; same with malformed base64.
 * `@nodeId` is a binding directive, not a projection. The slot's GraphQL type must be `ID!`, `ID`, `[ID!]`, or `[ID!]!` (lists are valid for batch decode).
 
+== Editor support
+
+The graphitron LSP completes `typeName:` against the set of types that declare xref:node.adoc[`@node`] in the schema; typing into the empty quoted value offers every node-bearing type, and a value that does not resolve to one surfaces as an error inline. Hover on a resolved `typeName:` shows the type's `typeId` and key-column list, pulling each column's GraphQL type from xref:field.adoc[`@field`] / xref:table.adoc[`@table`] metadata.
+
 == See also
 
 * xref:node.adoc[`@node`] configures the owning type (`typeId`, `keyColumns`).

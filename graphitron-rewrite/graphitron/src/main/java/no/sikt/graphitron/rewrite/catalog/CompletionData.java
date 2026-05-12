@@ -17,8 +17,22 @@ public record CompletionData(
     List<Table> tables,
     List<TypeData> types,
     List<ExternalReference> externalReferences,
-    Map<String, String> namedReferences
+    Map<String, String> namedReferences,
+    Map<String, NodeMetadata> nodeMetadata
 ) {
+
+    /**
+     * Backwards-compatible 4-arg constructor that defaults
+     * {@code nodeMetadata} to empty (no {@code @node}-bearing types).
+     */
+    public CompletionData(
+        List<Table> tables,
+        List<TypeData> types,
+        List<ExternalReference> externalReferences,
+        Map<String, String> namedReferences
+    ) {
+        this(tables, types, externalReferences, namedReferences, Map.of());
+    }
 
     /**
      * Backwards-compatible 3-arg constructor for tests and callers that
@@ -30,11 +44,11 @@ public record CompletionData(
         List<TypeData> types,
         List<ExternalReference> externalReferences
     ) {
-        this(tables, types, externalReferences, Map.of());
+        this(tables, types, externalReferences, Map.of(), Map.of());
     }
 
     public static CompletionData empty() {
-        return new CompletionData(List.of(), List.of(), List.of(), Map.of());
+        return new CompletionData(List.of(), List.of(), List.of(), Map.of(), Map.of());
     }
 
     public Optional<Table> getTable(String name) {
@@ -156,4 +170,26 @@ public record CompletionData(
 
         public static final SourceLocation UNKNOWN = new SourceLocation("", 0, 0);
     }
+
+    /**
+     * Per-{@code @node}-type, author-supplied values. An entry exists in
+     * {@link CompletionData#nodeMetadata()} for every GraphQL type whose
+     * SDL carries {@code @node}, regardless of which axes the author
+     * filled in. Presence in the map is the predicate the LSP's
+     * {@code @nodeId(typeName:)} completion and validation arms read.
+     *
+     * <p>Pre-deduction: both axes are nullable to capture what the schema
+     * author actually wrote. Cases where {@code typeId} or {@code keyColumns}
+     * are deduced by the classifier (containing-type / unique-table / PK
+     * inference) are invisible to in-editor feedback by design.
+     *
+     * @param typeId     value of {@code @node(typeId:)} if the author
+     *                   declared it, else {@code null}
+     * @param keyColumns values of {@code @node(keyColumns:)} if the author
+     *                   declared the arg, else {@code null}; the column
+     *                   names are author-supplied strings (jOOQ Java
+     *                   constants or SQL column names; the classifier
+     *                   resolves them)
+     */
+    public record NodeMetadata(String typeId, List<String> keyColumns) {}
 }
