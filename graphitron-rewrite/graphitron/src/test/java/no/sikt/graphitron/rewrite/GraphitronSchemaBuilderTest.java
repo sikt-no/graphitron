@@ -6303,6 +6303,26 @@ class GraphitronSchemaBuilderTest {
                 assertThat(((UnclassifiedField) f).reason())
                     .contains("argMapping entry 'missing: input'")
                     .contains("references Java parameter 'missing'");
+            }),
+
+        SERVICE_MAP_PARAM_FOR_INPUT_OBJECT_REJECTED(
+            "R150: @service with Map<String, Object> Java param paired with an input-object SDL slot → UnclassifiedField; Map is a permanent anti-pattern at the service boundary, not a v1 deferral",
+            """
+            input TestInputBean { title: String }
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithMapInput(input: TestInputBean): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithMapInput"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "runWithMapInput");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("input")
+                    .contains("java.util.Map")
+                    .contains("anti-pattern");
             });
 
         final String sdl;
