@@ -248,11 +248,10 @@ final class InputBeanResolver {
         var bindings = new ArrayList<CallSiteExtraction.FieldBinding>();
         // For records, iterate the canonical-constructor parameter order; bindings must match.
         // For JavaBeans, iterating the SDL order is sufficient (setters are applied independently).
-        Iterable<? extends FieldKey> order = beanClass.isRecord()
+        List<String> sdlFieldNames = beanClass.isRecord()
             ? recordOrder(beanClass)
             : sdlOrder(iot);
-        for (var key : order) {
-            String sdlFieldName = key.sdlFieldName();
+        for (String sdlFieldName : sdlFieldNames) {
             JavaMember member = javaMembersBySdlName.get(sdlFieldName);
             if (member == null) {
                 // SDL has a field with no matching Java member — for records, this is a fatal
@@ -320,23 +319,18 @@ final class InputBeanResolver {
      */
     private record JavaMember(String javaName, String elementTypeName, boolean list) {}
 
-    private sealed interface FieldKey {
-        String sdlFieldName();
-        record FromSdl(String sdlFieldName) implements FieldKey {}
-    }
-
-    private Iterable<FieldKey> recordOrder(Class<?> beanClass) {
-        var out = new ArrayList<FieldKey>();
+    private static List<String> recordOrder(Class<?> beanClass) {
+        var out = new ArrayList<String>();
         for (var rc : beanClass.getRecordComponents()) {
-            out.add(new FieldKey.FromSdl(rc.getName()));
+            out.add(rc.getName());
         }
         return out;
     }
 
-    private Iterable<FieldKey> sdlOrder(GraphQLInputObjectType iot) {
-        var out = new ArrayList<FieldKey>();
+    private static List<String> sdlOrder(GraphQLInputObjectType iot) {
+        var out = new ArrayList<String>();
         for (var f : iot.getFieldDefinitions()) {
-            out.add(new FieldKey.FromSdl(f.getName()));
+            out.add(f.getName());
         }
         return out;
     }
@@ -412,17 +406,34 @@ final class InputBeanResolver {
         return !jdkOrJooq;
     }
 
+    /**
+     * Loads a class from the codegen classloader. Returns {@code null} when the type can't be
+     * resolved; never swallows {@code Error}s beyond {@link LinkageError} (an unloadable type the
+     * caller treats the same as a missing one).
+     *
+     * <p>Handles two name-shape concerns:
+     * <ul>
+     *   <li>Strips generic parameters: {@code List<Foo>} → {@code List}.</li>
+     *   <li>Translates nested-class dots to {@code $} on retry. {@link java.lang.reflect.Type#getTypeName()}
+     *       emits {@code com.example.Outer.Inner}, but {@link Class#forName(String, boolean, ClassLoader)}
+     *       needs {@code com.example.Outer$Inner}. The retry walks the trailing dots one at a
+     *       time, so multi-nested classes ({@code Outer.Mid.Inner}) also resolve.</li>
+     * </ul>
+     */
     private Class<?> tryLoad(String typeName) {
-        // Strip generic params if any (we want the raw class).
         int lt = typeName.indexOf('<');
         String raw = lt < 0 ? typeName : typeName.substring(0, lt);
-        try {
-            return Class.forName(raw, false, ctx.codegenLoader());
-        } catch (ClassNotFoundException e) {
-            return null;
-        } catch (Throwable t) {
-            // Some malformed type names (arrays, primitives) — treat as unloadable.
-            return null;
+        String candidate = raw;
+        while (true) {
+            try {
+                return Class.forName(candidate, false, ctx.codegenLoader());
+            } catch (ClassNotFoundException e) {
+                int lastDot = candidate.lastIndexOf('.');
+                if (lastDot < 0) return null;
+                candidate = candidate.substring(0, lastDot) + '$' + candidate.substring(lastDot + 1);
+            } catch (LinkageError e) {
+                return null;
+            }
         }
     }
 

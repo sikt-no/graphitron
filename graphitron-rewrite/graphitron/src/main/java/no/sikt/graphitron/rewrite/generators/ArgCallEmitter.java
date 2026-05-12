@@ -299,13 +299,13 @@ public final class ArgCallEmitter {
      * class. The helper itself is emitted separately by
      * {@link InputBeanInstantiationEmitter#buildSingularHelper} (and plural variant); this method
      * only emits the call expression. The helper name follows the
-     * {@code create<TypeName>} / {@code create<TypeName>s} convention from R150.
+     * {@code create<TypeName>} / {@code create<TypeName>List} convention from R150.
      */
     private static CodeBlock buildInputBeanCallExtraction(CallSiteExtraction.InputBean ib,
             String argName, boolean list) {
         String simpleName = ib.beanClass().simpleName();
         String helperName = list
-            ? "create" + simpleName + "s"
+            ? "create" + simpleName + "List"
             : "create" + simpleName;
         return CodeBlock.of("$L(env.getArgument($S))", helperName, argName);
     }

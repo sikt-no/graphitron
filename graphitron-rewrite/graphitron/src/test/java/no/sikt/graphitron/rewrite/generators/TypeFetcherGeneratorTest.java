@@ -2501,7 +2501,7 @@ class TypeFetcherGeneratorTest {
             List.of(new CallSiteExtraction.FieldBinding(
                 "title", "title", new CallSiteExtraction.Direct(), false, "java.lang.String")));
         var spec = InputBeanInstantiationEmitter.buildPluralHelper(ib, ClassName.get("com.example", "FooFetchers"));
-        assertThat(spec.name()).isEqualTo("createFoos");
+        assertThat(spec.name()).isEqualTo("createFooList");
         assertThat(spec.returnType().toString()).isEqualTo("java.util.List<com.example.Foo>");
         assertThat(spec.parameters()).hasSize(1);
         assertThat(spec.parameters().get(0).type().toString()).isEqualTo("java.lang.Object");

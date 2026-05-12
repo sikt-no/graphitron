@@ -26,7 +26,7 @@ import java.util.Map;
  * <p>Helper signatures (R150 spec):
  * <pre>
  *   private static Bean createBean(Map&lt;String, Object&gt; raw);
- *   private static List&lt;Bean&gt; createBeans(Object raw);
+ *   private static List&lt;Bean&gt; createBeanList(Object raw);
  * </pre>
  *
  * <p>Cycle-prevention: the helpers reference only JDK types and the consumer's bean class. They
@@ -84,15 +84,19 @@ final class InputBeanInstantiationEmitter {
     }
 
     /**
-     * Emits {@code private static List<Bean> createBeans(Object raw)}: null in → null out,
+     * Emits {@code private static List<Bean> createBeanList(Object raw)}: null in → null out,
      * otherwise downcast the {@code Object} to {@code List<Map<String, Object>>}, reject null
      * elements (a non-null SDL element type forbids them), and map each element through the
-     * singular helper.
+     * singular helper. The {@code List} suffix is used unconditionally — appending a literal
+     * {@code "s"} produces ugly names ({@code createDetailss}) for types already ending in
+     * {@code s}, and consumers commonly use such names.
      */
     static MethodSpec buildPluralHelper(CallSiteExtraction.InputBean ib, ClassName enclosingClass) {
         ClassName bean = ib.beanClass();
         TypeName listOfBean = ParameterizedTypeName.get(LIST, bean);
-        var b = MethodSpec.methodBuilder("create" + bean.simpleName() + "s")
+        String pluralName = "create" + bean.simpleName() + "List";
+        String singularName = "create" + bean.simpleName();
+        var b = MethodSpec.methodBuilder(pluralName)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(listOfBean)
             .addParameter(Object.class, "raw")
@@ -104,10 +108,10 @@ final class InputBeanInstantiationEmitter {
                 + "  $T<$T, $T> m = ($T<$T, $T>) e;\n"
                 + "  return $L(m);\n"
                 + "}).toList()",
-                bean.simpleName() + "s",
+                pluralName,
                 MAP_STRING_OBJECT_RAW, ClassName.get(String.class), ClassName.get(Object.class),
                 MAP_STRING_OBJECT_RAW, ClassName.get(String.class), ClassName.get(Object.class),
-                "create" + bean.simpleName());
+                singularName);
         return b.build();
     }
 
@@ -160,7 +164,7 @@ final class InputBeanInstantiationEmitter {
     private static CodeBlock nestedBeanExpr(CallSiteExtraction.FieldBinding fb,
                                              CallSiteExtraction.InputBean nested, String sdl) {
         String singular = "create" + nested.beanClass().simpleName();
-        String plural = singular + "s";
+        String plural = singular + "List";
         if (fb.list()) {
             return CodeBlock.of("$L(raw.get($S))", plural, sdl);
         }
