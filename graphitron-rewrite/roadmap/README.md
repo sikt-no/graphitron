@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R150` | Instantiate service-layer input beans at the @service fetcher boundary | Spec | 2026-05-12 | [plan](service-method-input-bean-instantiation.md) |
+| `R150` | Instantiate service-layer input beans at the @service fetcher boundary | Ready | 2026-05-12 | [plan](service-method-input-bean-instantiation.md) |
 | `R141` | Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | 2026-05-12 | [plan](bulk-input-single-carrier-list-data-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R108` | Per-variant projection on polymorphic fields | In Review | 2026-05-12 | [plan](polymorphic-per-variant-projection.md) |
@@ -139,7 +139,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R150` [**Instantiate service-layer input beans at the @service fetcher boundary**](service-method-input-bean-instantiation.md) — Spec, feature
+- `R150` [**Instantiate service-layer input beans at the @service fetcher boundary**](service-method-input-bean-instantiation.md) — Ready, feature
 - `R141` [**Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field**](bulk-input-single-carrier-list-data-field.md) — Spec, feature, blocked by [error-handling-parity](error-handling-parity.md)
 - `R144` [**Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with @multiRow**](mutation-cardinality-safety-default.md) — Spec, architecture
 - `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture
