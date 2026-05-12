@@ -144,7 +144,8 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             var pos = Positions.resolve(file.source(),
                 params.getPosition().getLine(),
                 params.getPosition().getCharacter()).tsPoint();
-            return Hovers.compute(workspace.vocabulary(), file, workspace.catalog(), pos).orElse(null);
+            return Hovers.compute(workspace.vocabulary(), file, workspace.catalog(),
+                workspace.snapshot(), pos).orElse(null);
         });
     }
 
@@ -184,7 +185,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
         // Arg-name fallback last: catalog-aware providers above return
         // value completions for known coordinates; this provider fires
         // when the cursor is at an arg-name slot rather than a value slot.
-        var argNameItems = ArgNameCompletions.generate(vocab, directive, pos, source);
+        var argNameItems = ArgNameCompletions.generate(vocab, workspace.snapshot(), directive, pos, source);
         if (!argNameItems.isEmpty()) return argNameItems;
         return List.of();
     }

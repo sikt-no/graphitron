@@ -6,6 +6,7 @@ import no.sikt.graphitron.lsp.completions.ArgNameCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -118,13 +119,117 @@ class ArgNameCompletionsTest {
         assertThat(items).isEmpty();
     }
 
+    // ---- R142 phase 2: user-declared directives via the snapshot. ----
+
+    @Test
+    void userDirectiveTopLevelArgCompletion_emitsSnapshotArgs() {
+        // @auth(role: "x", <cursor>) on a snapshot carrying @auth(role:, scope:).
+        // Same fixture shape as `cursorAfterCommaCompletesRemainingArgNames`:
+        // tree-sitter claims the outer parens once one well-formed arg is
+        // present. Cursor between comma and `)` falls outside any arg, so
+        // top-level completion lists the directive's args.
+        String source = """
+            type Query {
+                customers: [String!]! @auth(role: "x", )
+            }
+            """;
+        var lines = source.split("\n");
+        int line = 1;
+        int col = lines[line].indexOf(", ") + 2;
+
+        var items = runWithSnapshot(source, new Point(line, col),
+            new LspSchemaSnapshot.Built.Current(java.util.List.of(authShapeWithScope())));
+
+        assertThat(items).extracting(i -> i.getLabel())
+            .containsExactlyInAnyOrder("role", "scope");
+    }
+
+    @Test
+    void userDirectiveNestedArgCompletion_returnsEmpty() {
+        // Cursor inside an arg-value object literal on a user-declared
+        // directive: phase 2 explicitly deferred nested completion until
+        // the snapshot ships input-object shapes. Returns empty.
+        String source = """
+            type Query {
+                customers: [String!]! @auth(role: { })
+            }
+            """;
+        var lines = source.split("\n");
+        int line = 1;
+        int col = lines[line].indexOf("{ }") + 2;
+
+        var items = runWithSnapshot(source, new Point(line, col),
+            new LspSchemaSnapshot.Built.Current(java.util.List.of(authShapeWithScope())));
+
+        assertThat(items).isEmpty();
+    }
+
+    @Test
+    void userDirectiveUnderUnavailableSnapshot_returnsEmpty() {
+        // Pre-build state: no snapshot to consult. Returns empty,
+        // preserving the pre-phase-2 behaviour on unknown directives.
+        String source = """
+            type Query {
+                customers: [String!]! @auth(role: "x", )
+            }
+            """;
+        var lines = source.split("\n");
+        int line = 1;
+        int col = lines[line].indexOf(", ") + 2;
+
+        var items = runWithSnapshot(source, new Point(line, col), LspSchemaSnapshot.unavailable());
+
+        assertThat(items).isEmpty();
+    }
+
+    @Test
+    void userDirectiveUnderPreviousSnapshot_emitsArgs() {
+        // Stale snapshot: completions still fire. Suggestion beats silence
+        // even when the snapshot is post-parse-failure.
+        String source = """
+            type Query {
+                customers: [String!]! @auth(role: "x", )
+            }
+            """;
+        var lines = source.split("\n");
+        int line = 1;
+        int col = lines[line].indexOf(", ") + 2;
+
+        var items = runWithSnapshot(source, new Point(line, col),
+            new LspSchemaSnapshot.Built.Previous(java.util.List.of(authShapeWithScope())));
+
+        assertThat(items).extracting(i -> i.getLabel())
+            .containsExactlyInAnyOrder("role", "scope");
+    }
+
+    private static no.sikt.graphitron.rewrite.catalog.DirectiveShape authShapeWithScope() {
+        return new no.sikt.graphitron.rewrite.catalog.DirectiveShape(
+            "auth",
+            java.util.List.of(
+                new no.sikt.graphitron.rewrite.catalog.InputValueShape(
+                    "role",
+                    new no.sikt.graphitron.rewrite.catalog.TypeShape.Named("String", true),
+                    java.util.Optional.empty()),
+                new no.sikt.graphitron.rewrite.catalog.InputValueShape(
+                    "scope",
+                    new no.sikt.graphitron.rewrite.catalog.TypeShape.Named("String", false),
+                    java.util.Optional.empty())),
+            java.util.Optional.empty());
+    }
+
     private static java.util.List<org.eclipse.lsp4j.CompletionItem> run(String source, Point cursor) {
+        return runWithSnapshot(source, cursor, LspSchemaSnapshot.unavailable());
+    }
+
+    private static java.util.List<org.eclipse.lsp4j.CompletionItem> runWithSnapshot(
+        String source, Point cursor, LspSchemaSnapshot snapshot
+    ) {
         var parser = new Parser();
         parser.setLanguage(GraphqlLanguage.get());
         var bytes = source.getBytes(StandardCharsets.UTF_8);
         var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor " + cursor));
-        return ArgNameCompletions.generate(VOCAB, directive, cursor, bytes);
+        return ArgNameCompletions.generate(VOCAB, snapshot, directive, cursor, bytes);
     }
 }

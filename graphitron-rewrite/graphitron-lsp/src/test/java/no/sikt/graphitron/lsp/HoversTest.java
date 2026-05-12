@@ -3,6 +3,10 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.lsp.hover.Hovers;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
+import no.sikt.graphitron.rewrite.catalog.InputValueShape;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.TypeShape;
 import org.eclipse.lsp4j.MarkupKind;
 import org.junit.jupiter.api.Test;
 import io.github.treesitter.jtreesitter.Point;
@@ -28,7 +32,7 @@ class HoversTest {
         // Cursor inside the "film" string value.
         var pos = pointAt(file, 0, "film");
 
-        var hover = Hovers.compute(file, filmCatalog(), pos).orElseThrow();
+        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
 
         var md = hover.getContents().getRight().getValue();
         assertThat(md).contains("**Table** `film`");
@@ -46,7 +50,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 0, "GHOST");
 
-        assertThat(Hovers.compute(file, filmCatalog(), pos)).isEmpty();
+        assertThat(Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
     }
 
     @Test
@@ -58,7 +62,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "title");
 
-        var hover = Hovers.compute(file, filmCatalog(), pos).orElseThrow();
+        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Column** `title`");
@@ -76,7 +80,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "FILM__FILM_LANGUAGE_ID_FKEY");
 
-        var hover = Hovers.compute(file, filmCatalog(), pos).orElseThrow();
+        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Foreign key** `FILM__FILM_LANGUAGE_ID_FKEY`");
@@ -92,26 +96,31 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "language");
 
-        var hover = Hovers.compute(file, filmCatalog(), pos).orElseThrow();
+        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Table** `language`");
     }
 
     @Test
-    void cursorOnDirectiveNameReturnsEmpty() {
+    void cursorOnBundledDirectiveNameSurfacesDocstring() {
+        // R142 phase 2: cursor on a bundled directive's name token (the
+        // @table identifier itself, not its arguments) surfaces the
+        // directive's SDL docstring. The bundled SDL ships descriptions
+        // on every directive, so the hover now lights up free for all
+        // seventeen built-in directives.
         var file = file("""
             type Foo @table(name: "film") {
                 bar: Int
             }
             """);
-        // Cursor on the directive name token, not on its argument.
         int line = 0;
-        int col = file.tree().getRootNode().getType().equals("source_file")
-            ? "type Foo @t".length() : 0;
+        int col = "type Foo @t".length();
         var pos = new Point(line, col);
 
-        assertThat(Hovers.compute(file, filmCatalog(), pos)).isEmpty();
+        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)
+            .orElseThrow();
+        assertThat(hover.getContents().getRight().getValue()).isNotBlank();
     }
 
     @Test
@@ -123,7 +132,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "GHOST");
 
-        assertThat(Hovers.compute(file, filmCatalog(), pos)).isEmpty();
+        assertThat(Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
     }
 
     private static Point pointAt(WorkspaceFile file, int line, String token) {
@@ -146,7 +155,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "FilmService");
 
-        var hover = Hovers.compute(file, classCatalog("com.example.FilmService"), pos).orElseThrow();
+        var hover = Hovers.compute(file, classCatalog("com.example.FilmService"), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
 
         var md = hover.getContents().getRight().getValue();
         assertThat(md).contains("**Class** `com.example.FilmService`");
@@ -161,7 +170,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 0, "FooDto");
 
-        var hover = Hovers.compute(file, classCatalog("com.example.FooDto"), pos).orElseThrow();
+        var hover = Hovers.compute(file, classCatalog("com.example.FooDto"), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
 
         var md = hover.getContents().getRight().getValue();
         assertThat(md).contains("**Class** `com.example.FooDto`");
@@ -181,7 +190,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "Missing");
 
-        var hover = Hovers.compute(file, classCatalog("com.example.Other"), pos).orElseThrow();
+        var hover = Hovers.compute(file, classCatalog("com.example.Other"), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
         // The SDL docstring on ExternalCodeReference.className is non-empty
         // and references either "klassen" (Norwegian) or className itself.
@@ -197,7 +206,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "list");
 
-        var hover = Hovers.compute(file, classWithMethodCatalog(), pos).orElseThrow();
+        var hover = Hovers.compute(file, classWithMethodCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
 
         var md = hover.getContents().getRight().getValue();
         assertThat(md).contains("**Method** `list`");
@@ -226,7 +235,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "list");
 
-        var hover = Hovers.compute(file, catalog, pos).orElseThrow();
+        var hover = Hovers.compute(file, catalog, LspSchemaSnapshot.unavailable(), pos).orElseThrow();
 
         var md = hover.getContents().getRight().getValue();
         assertThat(md).contains("List list(int arg0)");
@@ -245,8 +254,129 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "missing");
 
-        var hover = Hovers.compute(file, classWithMethodCatalog(), pos).orElseThrow();
+        var hover = Hovers.compute(file, classWithMethodCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(hover.getContents().getRight().getValue()).isNotBlank();
+    }
+
+    // ---- R142 phase 2: user-declared directives via the snapshot. ----
+
+    @Test
+    void userDeclaredDirectiveNameHover_returnsSnapshotDescription() {
+        // Cursor on the @auth identifier itself. The bundled overlay has no
+        // @auth, so resolution falls through to the snapshot's directive
+        // shape and the directive's description renders as the hover body.
+        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(authShape()));
+        var file = file("""
+            type Query {
+                customers: [String!]! @auth(role: "admin")
+            }
+            """);
+        int line = 1;
+        int col = lineSource(file, line).indexOf("@auth") + 2;
+        var pos = new Point(line, col);
+
+        var hover = Hovers.compute(file, emptyCatalog(), snapshot, pos).orElseThrow();
+        assertThat(hover.getContents().getRight().getValue())
+            .contains("guards access");
+    }
+
+    @Test
+    void userDeclaredDirectiveArgHover_returnsSnapshotArgDescription() {
+        // Cursor on the `role:` arg-name token of a user-declared directive.
+        // Bundled has no coordinate for @auth's role; falls through to the
+        // user snapshot's InputValueShape description.
+        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(authShape()));
+        var file = file("""
+            type Query {
+                customers: [String!]! @auth(role: "admin")
+            }
+            """);
+        int line = 1;
+        int col = lineSource(file, line).indexOf("role:") + 1;
+        var pos = new Point(line, col);
+
+        var hover = Hovers.compute(file, emptyCatalog(), snapshot, pos).orElseThrow();
+        assertThat(hover.getContents().getRight().getValue())
+            .contains("required role name");
+    }
+
+    @Test
+    void userDirectiveHoverUnderUnavailableSnapshot_returnsEmpty() {
+        // Pre-build state. No snapshot to consult, so the user directive
+        // name resolves to Unknown and the hover surface is empty.
+        var file = file("""
+            type Query {
+                customers: [String!]! @auth(role: "admin")
+            }
+            """);
+        int line = 1;
+        int col = lineSource(file, line).indexOf("@auth") + 2;
+        var pos = new Point(line, col);
+
+        assertThat(Hovers.compute(file, emptyCatalog(), LspSchemaSnapshot.unavailable(), pos))
+            .isEmpty();
+    }
+
+    @Test
+    void userDirectiveHoverUnderPreviousSnapshot_stillReturnsContent() {
+        // Stale-prefers-over-silence: hovers fire even on Built.Previous,
+        // since an old description beats nothing while the user is mid-edit.
+        var snapshot = new LspSchemaSnapshot.Built.Previous(List.of(authShape()));
+        var file = file("""
+            type Query {
+                customers: [String!]! @auth(role: "admin")
+            }
+            """);
+        int line = 1;
+        int col = lineSource(file, line).indexOf("@auth") + 2;
+        var pos = new Point(line, col);
+
+        var hover = Hovers.compute(file, emptyCatalog(), snapshot, pos).orElseThrow();
+        assertThat(hover.getContents().getRight().getValue())
+            .contains("guards access");
+    }
+
+    @Test
+    void bundledDirectiveNameHover_returnsBundledDescription() {
+        // Pins the bundled side-benefit explicitly: hovering on @table's
+        // own name token surfaces directives.graphqls's description for
+        // the directive, not the table-binding catalog content (that
+        // requires the cursor on the name: arg's value).
+        var file = file("""
+            type Foo @table(name: "film") {
+                bar: Int
+            }
+            """);
+        int line = 0;
+        int col = lineSource(file, line).indexOf("@table") + 2;
+        var pos = new Point(line, col);
+
+        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)
+            .orElseThrow();
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md).isNotBlank();
+        // The bundled description, not the catalog-table renderer's output.
+        assertThat(md).doesNotContain("**Table** `film`");
+    }
+
+    private static String lineSource(WorkspaceFile file, int line) {
+        String source = new String(file.source(), java.nio.charset.StandardCharsets.UTF_8);
+        return source.split("\n")[line];
+    }
+
+    private static DirectiveShape authShape() {
+        return new DirectiveShape(
+            "auth",
+            List.of(new InputValueShape(
+                "role",
+                new TypeShape.Named("String", true),
+                java.util.Optional.of("The required role name."))),
+            java.util.Optional.of("Restricts access to callers who hold the named role; guards access at the field level.")
+        );
+    }
+
+    private static CompletionData emptyCatalog() {
+        return new CompletionData(List.of(), List.of(), List.of());
     }
 
     private static CompletionData classWithMethodCatalog() {
