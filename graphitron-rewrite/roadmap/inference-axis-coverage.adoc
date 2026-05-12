@@ -1,9 +1,7 @@
 = Inference-axis coverage report
-:description: Placeholder. The live data renders only in CI; this file in the git tree is a non-data stub.
+:description: Placeholder. The live data is not currently published; this file in the git tree is a non-data stub.
 
-This page is regenerated on every successful push to `claude/graphitron-rewrite` by the `Rewrite reactor CI` workflow, uploaded as a build artifact, and rendered onto the public doc site by the deploy workflow. The version that lives in the repository is a placeholder so local doc builds and PR previews still resolve the include; do not read data from it.
-
-For the current report, see the rendered page on https://graphitron.sikt.no[graphitron.sikt.no].
+This file is the placeholder version of the leaf-coverage report. The committed copy and the rendered doc-site page both intentionally carry no data: R132 dropped the local `mvn verify` gate that previously forced every roadmap edit to re-commit a regenerated report, and the CI publish chain that would replace it (regenerate on every trunk merge, upload as an artifact, pick it up from the deploy workflow) is deferred to a follow-up roadmap item because the `workflow_run` listener has to live on the repo's default branch and the rewrite workflow files do not yet.
 
 To regenerate the report locally for inspection (overwrites this file in your working copy; do not commit the result):
 
@@ -13,4 +11,4 @@ mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java \
   -Dexec.args='leaf-coverage graphitron-rewrite' -Pleaf-coverage
 ----
 
-The `-Pleaf-coverage` flag is the opt-in profile that lands with R133; until that ships, a bare `mvn verify` from the rewrite root is enough to populate the traces the regen reads from.
+The `-Pleaf-coverage` flag is a no-op today (the profile is active by default) and becomes load-bearing once the opt-in flip (R133) ships; leaving it on the command line keeps the instruction current across both.
