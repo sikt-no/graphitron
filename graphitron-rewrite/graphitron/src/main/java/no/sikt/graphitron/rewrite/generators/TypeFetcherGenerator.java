@@ -823,6 +823,17 @@ public class TypeFetcherGenerator {
      * <p>The discriminator column is always included first, unconditionally, so the TypeResolver
      * can route each returned row to the correct concrete type even when the GraphQL selection set
      * does not explicitly request it.
+     *
+     * <p>The per-participant {@code $fields} call here passes {@code env.getSelectionSet()}
+     * unfiltered — the shared-name over-selection that R108 closes at the multi-table Stage-2 site
+     * is also present in shape here, but the {@code LinkedHashSet} above deduplicates field
+     * references so shared columns collapse to one SELECT entry. Every fixture currently exercising
+     * this path falls in the deduped shape (shared GraphQL field name backed by the same column on
+     * the one underlying table). The shape that breaks the dedup — two participants of the same
+     * {@code TableInterfaceType} declaring a shared GraphQL field name backed by <em>different</em>
+     * columns on the same table — is not exercised by any fixture today. When a future fixture
+     * lands the unmasked shape, fold in {@code PolymorphicSelectionSet.restrictTo} here; the helper
+     * from R108 is reusable as-is.
      */
     private static CodeBlock buildInterfaceFieldsList(
             List<ParticipantRef> participants, String discriminatorColumn,

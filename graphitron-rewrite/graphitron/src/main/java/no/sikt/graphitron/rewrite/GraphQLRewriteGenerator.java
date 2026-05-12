@@ -34,6 +34,7 @@ import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.PolymorphicSelectionSetClassGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -183,6 +184,7 @@ public class GraphQLRewriteGenerator {
         write(EntityFetcherDispatchClassGenerator.generate(schema, outputPackage),                "util",       emittedThisRun);
         write(ConnectionResultClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
         write(ConnectionHelperClassGenerator.generate(outputPackage),                             "util",       emittedThisRun);
+        write(PolymorphicSelectionSetClassGenerator.generate(),                                   "util",       emittedThisRun);
         write(OrderByResultClassGenerator.generate(),                                             "util",       emittedThisRun);
         write(GraphitronContextInterfaceGenerator.generate(),                                     "schema",     emittedThisRun);
         write(ConstraintViolationsClassGenerator.generate(),                                      "schema",     emittedThisRun);

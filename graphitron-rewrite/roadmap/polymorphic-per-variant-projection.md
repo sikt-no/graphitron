@@ -1,7 +1,7 @@
 ---
 id: R108
 title: Per-variant projection on polymorphic fields
-status: Ready
+status: In Review
 bucket: architecture
 priority: 3
 theme: interface-union
@@ -447,3 +447,68 @@ Four tiers.
   `"staff"."first_name"`; this is the behavioural proof that the pin
   underwrites.
 - `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` green.
+
+---
+
+## Implementation notes (In Review)
+
+Shipped as planned. Five-file delta:
+
+- New `PolymorphicSelectionSetClassGenerator` under `generators/util/`,
+  registered in `GraphQLRewriteGenerator.write(...)` immediately after
+  `ConnectionHelperClassGenerator`. Emits `<outputPackage>.util.PolymorphicSelectionSet`
+  with a single public static `restrictTo(DataFetchingFieldSelectionSet, String)`
+  factory and a private static `Filtered` inner class that delegates every
+  `DataFetchingFieldSelectionSet` method to the source, materially overriding only
+  `getFieldsGroupedByResultKey()` to filter by `SelectedField.getObjectTypeNames()`.
+- `MultiTablePolymorphicEmitter.buildPerTypenameSelect` (line 1223): the
+  single `$T.$$fields(env.getSelectionSet(), $L, env)` emit became
+  `$T.$$fields($T.restrictTo(env.getSelectionSet(), $S), $L, env)`,
+  resolving the helper `ClassName` against the per-emit `outputPackage + ".util"`.
+- `TypeFetcherGenerator.buildInterfaceFieldsList`: javadoc cross-reference
+  added per the Same-table-dispatch carve-out; no code change at the
+  single-table emit site.
+- `TypeFetcherGeneratorTest.queryInterfaceField_perTypenameHelpersExist_andCallParticipantFields`:
+  updated to match the new wrapped emit shape.
+
+Test additions (five new test files plus extensions to two existing ones):
+
+- `PolymorphicProjectionFilterPinTest` (unit, `graphitron/`): two assertions.
+  First, `countAcrossGenerators` over the generators package counts the
+  JavaPoet emit-string shape `$T.restrictTo(env.getSelectionSet()` — expected
+  1, in `MultiTablePolymorphicEmitter.java`. Second, single-file scan over
+  `MultiTablePolymorphicEmitter.java` for direct `$$fields(env.getSelectionSet()`
+  — expected 0. Pin pattern uses `$T` as the JavaPoet placeholder so prose
+  mentions of the qualified class name in javadoc / comments do not contribute.
+- `PolymorphicSelectionSetClassEmitTest` (pipeline, `graphitron/`): structural
+  pin of the emitted helper class — single public final class named
+  `PolymorphicSelectionSet`, a public static `restrictTo` factory with the
+  right signature, a private no-arg constructor, and a private static final
+  `Filtered` nested type that implements `DataFetchingFieldSelectionSet`.
+  Method bodies are exercised at the compilation tier (sakila-example).
+- `PolymorphicNestingFilterTest` (pipeline, `graphitron/`): emits the
+  Stage-2 helpers for a polymorphic fixture and counts
+  `PolymorphicSelectionSet` references per method — exactly one per
+  helper, encoding the "no further filter needed at depth" claim as a
+  structural symbol count rather than a body-string assertion.
+- `RecordParentMultiTablePolymorphicPipelineTest.unionParticipants_sharedFieldNameBackedByDifferentColumns_classifiesAndGeneratesStage2Helpers`:
+  asymmetric-fragment fixture (Inventory + Content both expose `filmId`
+  backed by `film_id` on different tables) drives the full SDL → classify
+  → emit pipeline and asserts both per-typename helpers exist on
+  `FilmFetchers`.
+- `PolymorphicProjectionQueryTest` (execution, `graphitron-sakila-example/`):
+  three SQL-capture tests over `Address.occupants`. Asymmetric-Customer
+  query asserts the Staff Stage-2 SELECT does not contain
+  `"staff"."first_name"`; asymmetric-Staff query pins the inverse; the
+  symmetric query keeps both. SELECTs are picked by the per-typename
+  `"customerinput"` / `"staffinput"` VALUES alias to ignore Stage-1's
+  narrow UNION ALL and any unrelated SELECT.
+- `GraphQLQueryTest.addressOccupants_asymmetricFragment_responsePayloadDropsInactiveBranch`:
+  behavioural pin alongside the SQL-shape proof — the Staff entry in the
+  response map omits `firstName` when no Staff fragment requested it,
+  while the Customer entry resolves it.
+
+Same-table interface site at `TypeFetcherGenerator.buildInterfaceFieldsList`
+is intentionally untouched (per spec Out of scope); the javadoc cross-
+reference notes that R108's `restrictTo` is reusable as-is when a fixture
+exercises the break-the-dedup shape.

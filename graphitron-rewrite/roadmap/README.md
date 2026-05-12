@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R141` | Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Ready | 2026-05-12 | [plan](bulk-input-single-carrier-list-data-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R108` | Per-variant projection on polymorphic fields | Ready | 2026-05-12 | [plan](polymorphic-per-variant-projection.md) |
+| `R108` | Per-variant projection on polymorphic fields | In Review | 2026-05-12 | [plan](polymorphic-per-variant-projection.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready |  | [plan](tablemethod-child-table-bound.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
 | `R147` | Surface GraphitronSchemaValidator errors and warnings as LSP diagnostics | In Review | 2026-05-12 | [plan](lsp-surface-validator-errors.md) |
@@ -117,7 +117,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R108` [**Per-variant projection on polymorphic fields**](polymorphic-per-variant-projection.md) — Ready, architecture
+- `R108` [**Per-variant projection on polymorphic fields**](polymorphic-per-variant-projection.md) — In Review, architecture
 
 ### nodeid
 

@@ -245,4 +245,55 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             .contains("@sourceRow is not yet supported for polymorphic returns");
     }
 
+    // ===== R108: asymmetric-fragment fixture =====
+
+    @Test
+    void unionParticipants_sharedFieldNameBackedByDifferentColumns_classifiesAndGeneratesStage2Helpers() {
+        // R108 asymmetric-fragment fixture: union participants Inventory and Content both expose
+        // a `filmId` field, backed by their respective `film_id` columns on different tables.
+        // The classifier produces a JooqTableRecordType-backed @record parent with a single-PK
+        // hub on film; the generator emits Stage-2 per-typename helpers
+        // (selectInventoryForReferrers, selectContentForReferrers) that each thread
+        // env.getSelectionSet() through PolymorphicSelectionSet.restrictTo with their own
+        // typename. The pin in PolymorphicProjectionFilterPinTest counts the source-level
+        // emit; this pipeline-tier test confirms the full SDL → classify → emit path
+        // produces both helpers from an asymmetric-fragment fixture.
+        String asymmetricParticipants = """
+            type Inventory @table(name: "inventory") {
+              inventoryId: Int! @field(name: "inventory_id")
+              filmId: Int! @field(name: "film_id")
+            }
+            type Content @table(name: "content") {
+              contentId: Int! @field(name: "content_id")
+              filmId: Int @field(name: "film_id")
+            }
+            union FilmReferrer = Inventory | Content
+            """;
+        var schema = TestSchemaHelper.buildSchema(asymmetricParticipants + """
+            type Film @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+              referrers: [FilmReferrer!]!
+            }
+            type Query { film: Film }
+            """);
+
+        // Classifier: the asymmetric fixture produces a UnionField with both participants
+        // routed to a single-PK hub on film.
+        var field = (ChildField.UnionField) schema.field("Film", "referrers");
+        assertThat(field.participantJoinPaths().keySet())
+            .containsExactlyInAnyOrder("Inventory", "Content");
+
+        // Emit: each per-typename Stage-2 helper exists. The R108 PolymorphicSelectionSet wrap
+        // is asserted at the source-emitter level by PolymorphicProjectionFilterPinTest; here
+        // we pin that the full classify → generate pipeline yields both helpers for the
+        // asymmetric fixture so the wrap reaches both branches.
+        var filmFetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals("FilmFetchers"))
+            .findFirst().orElseThrow();
+        var helperNames = filmFetchers.methodSpecs().stream()
+            .map(no.sikt.graphitron.javapoet.MethodSpec::name)
+            .toList();
+        assertThat(helperNames)
+            .contains("selectInventoryForReferrers", "selectContentForReferrers");
+    }
+
 }

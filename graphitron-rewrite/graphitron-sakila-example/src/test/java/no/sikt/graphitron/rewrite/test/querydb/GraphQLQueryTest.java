@@ -3183,6 +3183,41 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void addressOccupants_asymmetricFragment_responsePayloadDropsInactiveBranch() {
+        // R108 behavioural pin: an asymmetric inline fragment over the union projects firstName
+        // only on Customer. Pre-R108 the wire payload was already correct (graphql-java drops
+        // the unselected field at serialisation), but the rendered SQL over-selected
+        // staff.first_name. R108's wrapper restricts the per-typename selection at the SQL
+        // layer; this test pins the response shape alongside the SQL-layer proof in
+        // PolymorphicProjectionQueryTest. A future regression that inverts the bug
+        // (under-selecting active branches) would fail loudly here as a null firstName on
+        // active Customer rows.
+        Map<String, Object> data = execute("""
+            { customerById(customer_id: ["3"], store_id: "2") {
+                address {
+                    addressId
+                    occupants {
+                        __typename
+                        ... on Customer { firstName }
+                    }
+                }
+            } }
+            """);
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customerById");
+        var address = (Map<String, Object>) customers.get(0).get("address");
+        var occupants = (List<Map<String, Object>>) address.get("occupants");
+        var byType = occupants.stream()
+            .collect(java.util.stream.Collectors.groupingBy(o -> (String) o.get("__typename")));
+        assertThat((String) byType.get("Customer").get(0).get("firstName")).isEqualTo("Linda");
+        // Staff branch must still resolve (the union member exists in the result), but its
+        // firstName key is absent from the projected map because no Staff fragment requested it.
+        assertThat(byType.get("Staff").get(0))
+            .doesNotContainKey("firstName")
+            .containsKey("__typename");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void addressOccupants_perBranchWhereScopesToAddress() {
         // Two independent address parents must each scope their UNION ALL branches to their
         // own address_id. Mary (address 1, all-customer occupants) and Linda (address 3,
