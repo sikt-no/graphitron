@@ -65,10 +65,25 @@ final class InputBeanResolver {
     }
 
     /**
-     * Walks the method's {@link ParamSource.Arg} parameters; for each with
-     * {@link CallSiteExtraction.Direct}, attempts bean detection. On success, swaps the extraction
-     * to {@link CallSiteExtraction.InputBean}. On structural mismatch (bean Java type vs scalar
-     * SDL arg, or bean class with no compatible constructor), returns {@link Result.Failed}.
+     * Walks the method's {@link ParamSource.Arg} parameters and rewrites every Direct extraction
+     * whose SDL arg is an input-object into a typed {@link CallSiteExtraction.InputBean}. The rule
+     * is invariant-driven: {@link CallSiteExtraction.Direct} is reserved for scalar/enum SDL args
+     * (where {@code env.getArgument(name)} returns a value whose Java type the consumer already
+     * declared correctly). An input-object SDL arg always returns a {@code Map<String, Object>}
+     * from graphql-java, and only the InputBean path can populate the consumer's typed parameter
+     * without an unchecked cast that fails at first field access.
+     *
+     * <p>Rejections (returned as {@link Result.Failed}, never silent fallbacks):
+     * <ul>
+     *   <li>SDL is input-object but the Java element type can't be loaded.</li>
+     *   <li>SDL is input-object but the Java element type is in the JDK / {@code org.jooq.*} / is
+     *       an enum, primitive, array — i.e. not a populatable consumer bean. {@code
+     *       Map<String, Object>} hits this case and is rejected loudly; the pre-R150 silent
+     *       passthrough was the source of the {@code ClassCastException}s R150 exists to fix.</li>
+     *   <li>SDL list-shape and Java list-shape disagree.</li>
+     *   <li>The bean class has no record / public no-arg-ctor construction strategy.</li>
+     *   <li>For records, the SDL input type omits a record component.</li>
+     * </ul>
      */
     Result enrich(MethodRef.Service method, GraphQLFieldDefinition fieldDef) {
         var argTypes = fieldDef.getArguments().stream()
@@ -96,29 +111,48 @@ final class InputBeanResolver {
                 continue;
             }
             GraphQLInputType sdlType = argTypes.get(arg.graphqlArgName());
-            // Determine the Java element type (peeled List/Set) and the list-shape flag.
+            SdlElement sdl = peelSdlListNonNull(sdlType);
             JavaElement elt = peelJavaListSet(p.typeName());
-            // Bean detection requires the Java element type to load successfully and be a viable
-            // bean candidate. If it isn't, leave the param alone — this isn't a bean-shaped param.
             Class<?> elementClass = tryLoad(elt.elementTypeName());
-            if (elementClass == null || !looksLikeBeanCandidate(elementClass)) {
+            // Direct is reserved for scalar/enum SDL args. If the SDL side isn't input-object,
+            // the existing Direct extraction is correct provided the Java side is scalar-shaped
+            // too. A bean-shaped Java parameter against a scalar SDL slot is the symmetric
+            // runtime-cast hazard (graphql-java hands the consumer a String, the call site
+            // unchecked-casts to the bean type, ClassCastException at first field access).
+            if (!(sdl.elementType() instanceof GraphQLInputObjectType iot)) {
+                if (elementClass != null && looksLikeBeanCandidate(elementClass)) {
+                    String sdlDesc = sdlType == null ? "(no SDL arg)" : GraphQLTypeUtil.simplePrint(sdlType);
+                    return new Result.Failed(Rejection.structural(
+                        "parameter '" + p.name() + "' on method '" + method.methodName()
+                        + "' in class '" + method.className() + "' has Java type '"
+                        + elementClass.getName() + "' (a consumer-authored class) but the GraphQL"
+                        + " argument '" + arg.graphqlArgName() + "' has type '" + sdlDesc
+                        + "' which is not an input-object type — change the Java parameter to a"
+                        + " scalar/enum, or change the GraphQL argument to an input object"));
+                }
                 newParams.add(p);
                 continue;
             }
-            // Peel SDL wrappers (NonNull / List). If the SDL side is missing or not an input
-            // object, the developer's Java bean param cannot be populated; reject structurally.
-            SdlElement sdl = peelSdlListNonNull(sdlType);
-            if (!(sdl.elementType() instanceof GraphQLInputObjectType iot)) {
-                String sdlDesc = sdlType == null ? "(no SDL arg)" : GraphQLTypeUtil.simplePrint(sdlType);
+            // SDL says input-object → the Java parameter MUST be a populatable bean. Anything
+            // else (Map, JDK type, builder-only class) is the unsafe pattern Direct used to
+            // permit and is now rejected loudly.
+            if (elementClass == null) {
                 return new Result.Failed(Rejection.structural(
                     "parameter '" + p.name() + "' on method '" + method.methodName()
-                    + "' in class '" + method.className() + "' has Java type '"
-                    + elementClass.getName() + "' (a consumer-authored class) but the GraphQL"
-                    + " argument '" + arg.graphqlArgName() + "' has type '" + sdlDesc
-                    + "' which is not an input-object type — change the Java parameter to a"
-                    + " scalar/enum, or change the GraphQL argument to an input object"));
+                    + "' in class '" + method.className() + "' has Java element type '"
+                    + elt.elementTypeName() + "' which is not loadable, but the GraphQL argument '"
+                    + arg.graphqlArgName() + "' is an input-object — declare a consumer-authored"
+                    + " bean class (record or class with a public no-arg constructor) for the parameter"));
             }
-            // Java list-shape and SDL list-shape must agree (List<Bean> ↔ [Input], Bean ↔ Input).
+            if (!looksLikeBeanCandidate(elementClass)) {
+                return new Result.Failed(Rejection.structural(
+                    "parameter '" + p.name() + "' on method '" + method.methodName()
+                    + "' in class '" + method.className() + "' has Java element type '"
+                    + elementClass.getName() + "' (JDK / jOOQ / enum / array) but the GraphQL"
+                    + " argument '" + arg.graphqlArgName() + "' has input-object type '"
+                    + GraphQLTypeUtil.simplePrint(sdlType) + "' — replace the parameter type with a"
+                    + " consumer-authored bean class mirroring the input-object"));
+            }
             if (elt.list() != sdl.list()) {
                 return new Result.Failed(Rejection.structural(
                     "parameter '" + p.name() + "' on method '" + method.methodName()
@@ -128,7 +162,6 @@ final class InputBeanResolver {
                     + (sdl.list() ? "list-shaped" : "scalar")
                     + " — match the cardinalities"));
             }
-            // Build the bean shape; collect any nested rejection along the way.
             var built = buildInputBean(elementClass, iot, p.name(), method.methodName(), method.className());
             if (built instanceof Built.Fail f) {
                 return new Result.Failed(f.rejection());
@@ -318,14 +351,13 @@ final class InputBeanResolver {
     }
 
     /**
-     * A "looks like a populatable consumer bean" predicate. True when {@code cls} is a non-enum
-     * class outside the {@code java.*}/{@code javax.*}/{@code jakarta.*}/{@code org.jooq.*}
-     * package roots, AND the class is either a record or a concrete class with a public no-arg
-     * constructor. The constructor check is part of candidate detection (not the structural
-     * rejection path) so consumer types lacking a viable ctor fall through to the legacy
-     * {@link CallSiteExtraction.Direct} arm — same runtime behaviour as before R150. Bean shapes
-     * the helper cannot populate were never instantiable to begin with; promoting them just to
-     * reject loud would regress existing usages that depend on the legacy passthrough.
+     * Detects "this is a consumer-authored class the developer expects to receive populated" —
+     * i.e. anything outside the JDK / {@code org.jooq.*} that isn't a primitive, array, or enum.
+     * Detection is deliberately permissive: once a candidate is paired with an input-object SDL
+     * slot, the strict shape check in {@link #checkJavaBeanShape} runs, and a class lacking a
+     * viable construction strategy is rejected loudly. Silent fallback to {@link
+     * CallSiteExtraction.Direct} would re-introduce the runtime {@code ClassCastException} R150
+     * exists to eliminate.
      */
     private boolean looksLikeBeanCandidate(Class<?> cls) {
         if (cls.isPrimitive() || cls.isArray() || cls.isEnum()) return false;
@@ -335,13 +367,7 @@ final class InputBeanResolver {
             || pkg.equals("javax") || pkg.startsWith("javax.")
             || pkg.equals("jakarta") || pkg.startsWith("jakarta.")
             || pkg.equals("org.jooq") || pkg.startsWith("org.jooq.");
-        if (jdkOrJooq) return false;
-        if (cls.isRecord()) return true;
-        int mods = cls.getModifiers();
-        if (Modifier.isAbstract(mods) || cls.isInterface()) return false;
-        return Arrays.stream(cls.getDeclaredConstructors())
-            .filter(c -> Modifier.isPublic(c.getModifiers()))
-            .anyMatch(c -> c.getParameterCount() == 0);
+        return !jdkOrJooq;
     }
 
     private Class<?> tryLoad(String typeName) {
