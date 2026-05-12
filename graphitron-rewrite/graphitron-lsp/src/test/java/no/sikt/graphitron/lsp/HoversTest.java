@@ -337,6 +337,36 @@ class HoversTest {
     }
 
     @Test
+    void bundledDirectiveArgHover_ignoresSnapshotShadow() {
+        // R139 settled design note 4: bundled shadows snapshot. Cursor on
+        // an arg-name that lives only in the snapshot's shadow @table
+        // (not in the bundled @table) must NOT surface the shadow's arg
+        // description — doing so would make the LSP appear to "know" an
+        // arg that the build pipeline will reject. Hover stays empty;
+        // the snapshot-driven arg-typo diagnostic on the Diagnostics side
+        // already covers user feedback.
+        var shadow = new DirectiveShape(
+            "table",
+            List.of(new InputValueShape(
+                "extraArg",
+                new TypeShape.Named("String", false),
+                java.util.Optional.of("shadow description — must not leak through to hover."))),
+            java.util.Optional.empty());
+        var file = file("""
+            type Foo @table(extraArg: "x", name: "film") {
+                bar: Int
+            }
+            """);
+        int line = 0;
+        int col = lineSource(file, line).indexOf("extraArg:") + 1;
+        var pos = new Point(line, col);
+
+        assertThat(Hovers.compute(file, filmCatalog(),
+            new LspSchemaSnapshot.Built.Current(List.of(shadow)), pos))
+            .isEmpty();
+    }
+
+    @Test
     void bundledDirectiveNameHover_returnsBundledDescription() {
         // Pins the bundled side-benefit explicitly: hovering on @table's
         // own name token surfaces directives.graphqls's description for
