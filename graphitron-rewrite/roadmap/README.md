@@ -67,6 +67,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Cleanup
 
+- `R143` [**Surface a date column on the rendered roadmap table**](roadmap-item-date-column.md): The rolled-up `graphitron-rewrite/roadmap/README.md` table (`Main.java`) shows ID, Item, Status, Plan, but no time dimension; a reader scanning Active cannot tell which Spec items have been sitting unsigned-off for weeks vs days, and there is no signal in the Backlog table that distinguishes recently-filed items from ones parked years ago. Adding a date column gives triage that signal without requiring readers to drop into `git log` per item.
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md): The `leaf-coverage` profile in `graphitron-rewrite/pom.xml` is activated by negation (`<name>!leaf-coverage.skip</name>`), so every default contributor `mvn verify` truncates `target/leaf-coverage.jsonl` in `process-test-resources` and threads a `graphitron.classification.trace` system property into every surefire/failsafe. The traces are only consumed by `roadmap-tool leaf-coverage`, which after R132 runs only in the CI regeneration step. Every other build pays the antrun-truncate cost and writes JSONL nobody reads.
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md): `@externalField` lifted to `IMPLEMENTED_LEAVES` end-to-end in `computed-field-with-reference` (R48, shipped; see [`changelog.md`](changelog.md)). The directive's name is the surviving historical artefact: it predates the `ChildField.ComputedField` model variant and reads as "field resolved by external code" rather than the narrower behaviour the lift settled on (a `Field<X>` returned by a static method, inlined into the SELECT projection at the alias). A clearer name ships in this plan; the old name stays accepted for one consumer-migration window.
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md): Two parallel shims survive in the classifier so legacy SDL keeps building. Both should retire on the same gate (sis migration to canonical SDL); their wire shape is independent but the user-visible migration is one piece of work, so the two retirements ship together. _(blocked by [sis-rewrite-migration](sis-rewrite-migration.md))_
@@ -218,6 +219,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
+- `R143` [**Surface a date column on the rendered roadmap table**](roadmap-item-date-column.md)
 
 
 ---
