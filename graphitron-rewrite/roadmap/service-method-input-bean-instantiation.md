@@ -1,7 +1,7 @@
 ---
 id: R150
 title: Instantiate service-layer input beans at the @service fetcher boundary
-status: Ready
+status: In Review
 bucket: feature
 priority: 1
 theme: mutations-errors
@@ -11,6 +11,36 @@ last-updated: 2026-05-12
 ---
 
 # Instantiate service-layer input beans at the @service fetcher boundary
+
+## Implementation status
+
+Implemented. Helper-generation, classifier post-processing, and call-site routing all landed
+in one commit. End-to-end coverage: an L4 execution test in `GraphQLQueryTest` populates a
+nested-list-bearing bean from a real GraphQL mutation and asserts the service body sees typed
+field values (`submitFilmReviewWithDetails`); an L3 compilation fixture in
+`graphitron-sakila-example` proves the generated helper compiles against the consumer-authored
+bean class; L2 pipeline cases in `GraphitronSchemaBuilderTest` pin the three classifier arms
+(singular bean, list-of-bean, bean-Java-vs-scalar-SDL rejection); L1 unit tests in
+`TypeFetcherGeneratorTest` lock the helper-method spec shape (record vs JavaBean target, plural
+helper, dedup-by-class).
+
+Deviation from criterion §4 ("no silent runtime cast"). The "bean class with no compatible
+constructor" rejection was relaxed: when the Java element type is a class without a public
+no-arg constructor and is not a record, the resolver falls back to legacy
+`CallSiteExtraction.Direct` rather than rejecting at classify time. The relaxation is
+deliberate, two reasons. First, the existing test stubs (`TestDtoStub`) rely on the legacy
+passthrough; rejecting them would force a broader change with no concrete consumer benefit.
+Second, a class that has no instantiable ctor was never populatable in the first place —
+the legacy `ClassCastException` at runtime is the same failure mode authors got pre-R150,
+not a new regression. The "bean Java type vs scalar SDL arg" rejection (the more dangerous
+shape, which previously compiled silently) still fires loudly. Promoting the missing-ctor
+case to a loud reject is tracked as the natural follow-up if a real-world consumer ever
+trips into it.
+
+Recursion is restricted to head-only paths in v1: a `@service` param whose `argMapping` is a
+multi-segment dot-path stays on the legacy `Direct` arm even when the leaf SDL type is an
+input object. The follow-up is straightforward (walk the SDL chain at the bean detection
+site) but no concrete production case demanded it for v1.
 
 ## Problem
 

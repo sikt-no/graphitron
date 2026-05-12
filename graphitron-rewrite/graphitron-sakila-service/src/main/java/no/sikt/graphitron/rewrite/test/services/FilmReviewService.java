@@ -35,4 +35,18 @@ public final class FilmReviewService {
         }
         return new FilmReviewPayload(rating * 10000 + filmId, java.util.List.of());
     }
+
+    /**
+     * R150 fixture: takes a consumer-authored input bean. The fetcher generator emits a
+     * {@code createFilmReviewDetails(Map<String, Object>)} helper that walks the SDL field map
+     * and instantiates this record positionally. The body delegates to {@link #submit} for the
+     * actual review logic; the new surface is the bean instantiation seam, not the service
+     * behaviour.
+     */
+    public static FilmReviewPayload submitWithDetails(FilmReviewDetails details) {
+        if (details == null) {
+            throw new FilmReviewBadRatingException("details required");
+        }
+        return submit(details.filmId(), details.rating());
+    }
 }

@@ -92,12 +92,15 @@ final class ServiceDirectiveResolver {
     private final ServiceCatalog svc;
     private final FieldBuilder fb;
     private final EnumMappingResolver enumMapping;
+    private final InputBeanResolver inputBeans;
 
-    ServiceDirectiveResolver(BuildContext ctx, ServiceCatalog svc, FieldBuilder fb, EnumMappingResolver enumMapping) {
+    ServiceDirectiveResolver(BuildContext ctx, ServiceCatalog svc, FieldBuilder fb,
+                              EnumMappingResolver enumMapping, InputBeanResolver inputBeans) {
         this.ctx = ctx;
         this.svc = svc;
         this.fb = fb;
         this.enumMapping = enumMapping;
+        this.inputBeans = inputBeans;
     }
 
     /**
@@ -152,7 +155,12 @@ final class ServiceDirectiveResolver {
         if (result.failed()) {
             return new Resolved.Rejected(result.rejection().prefixedWith("service method could not be resolved — "));
         }
-        MethodRef method = enumMapping.enrichArgExtractions((MethodRef.Service) result.ref(), fieldDef);
+        MethodRef enumEnriched = enumMapping.enrichArgExtractions((MethodRef.Service) result.ref(), fieldDef);
+        var beanResult = inputBeans.enrich((MethodRef.Service) enumEnriched, fieldDef);
+        if (beanResult instanceof InputBeanResolver.Result.Failed f) {
+            return new Resolved.Rejected(f.rejection().prefixedWith("service method could not be resolved — "));
+        }
+        MethodRef method = ((InputBeanResolver.Result.Ok) beanResult).method();
 
         if (isRoot) {
             String invariant = validateRootInvariants(returnType, method);

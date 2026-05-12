@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import no.sikt.graphitron.javapoet.ClassName;
+
 import java.util.List;
 import java.util.Map;
 
@@ -27,7 +29,7 @@ public sealed interface CallSiteExtraction
         permits CallSiteExtraction.Direct, CallSiteExtraction.EnumValueOf,
                 CallSiteExtraction.TextMapLookup, CallSiteExtraction.ContextArg,
                 CallSiteExtraction.JooqConvert, CallSiteExtraction.NestedInputField,
-                CallSiteExtraction.NodeIdDecodeKeys {
+                CallSiteExtraction.NodeIdDecodeKeys, CallSiteExtraction.InputBean {
 
     /** Pass the argument directly: {@code env.getArgument("name")}. */
     record Direct() implements CallSiteExtraction {}
@@ -171,4 +173,88 @@ public sealed interface CallSiteExtraction
      * {@code @nodeId} on a top-level scalar / list argument bound to a lookup or mutation key.
      */
     record ThrowOnMismatch(HelperRef.Decode decodeMethod) implements NodeIdDecodeKeys {}
+
+    /**
+     * Instantiate a consumer-authored Java bean class from a GraphQL input-object Map. Used by
+     * {@code @service} methods whose Java parameter (or list element type) is a class mirroring
+     * an SDL {@code input} type living in the service package.
+     *
+     * <p>The call site emits {@code create<TypeName>(env.getArgument("name"))} for a singular bean
+     * parameter and {@code create<TypeName>s(env.getArgument("name"))} for a {@code List<Bean>}
+     * parameter. The emitted helper(s) live on the enclosing {@code *Fetchers} class; helpers are
+     * deduplicated per bean class. The helper itself walks the Map field-by-field, populating a
+     * fresh instance — either via the record canonical constructor (when {@code target} is
+     * {@link Target#RECORD}) or no-arg constructor + JavaBean setters
+     * (when {@code target} is {@link Target#JAVA_BEAN}).
+     *
+     * <p>{@code fields} is the per-SDL-field binding, in SDL declaration order. For record targets
+     * this order is also the canonical-constructor argument order: the bindings must match the
+     * record's component order. For JavaBean targets the order is irrelevant (each binding is
+     * applied via its named setter independently).
+     *
+     * <p>Cycle-prevention invariant (R94): the helper references only JDK types and service-layer
+     * types. {@code beanClass} is a consumer-authored type, never a graphitron-emitted record.
+     */
+    record InputBean(ClassName beanClass, Target target, List<FieldBinding> fields)
+            implements CallSiteExtraction {
+        public InputBean {
+            if (beanClass == null) {
+                throw new IllegalArgumentException("InputBean beanClass must be non-null");
+            }
+            if (target == null) {
+                throw new IllegalArgumentException("InputBean target must be non-null");
+            }
+            if (fields == null || fields.isEmpty()) {
+                throw new IllegalArgumentException("InputBean fields must be non-empty");
+            }
+            fields = List.copyOf(fields);
+        }
+
+        /** Constructor shape the helper uses to instantiate the bean. */
+        public enum Target {
+            /** Java record — populate positionally via the canonical constructor. */
+            RECORD,
+            /** Plain class with a public no-arg constructor and JavaBean setters. */
+            JAVA_BEAN
+        }
+    }
+
+    /**
+     * One field on an {@link InputBean}. {@code sdlFieldName} is the GraphQL input field name and
+     * is the {@code Map} key the helper reads from. {@code javaFieldName} is the corresponding
+     * member name on the consumer-authored bean: for a record target this is the canonical
+     * component name; for a JavaBean target this is the property name (the setter is named
+     * {@code set<Capitalised javaFieldName>}).
+     *
+     * <p>{@code leaf} is the per-field transform. {@link Direct} populates from the raw Map value
+     * (typed via Java cast). {@link EnumValueOf} routes through the corresponding enum's
+     * {@code valueOf}. {@link InputBean} recurses into a nested bean instantiation. Other arms are
+     * not yet supported on the leaf — the validator rejects them at classify time.
+     *
+     * <p>{@code list} indicates whether the field is list-shaped (Java type {@code List<X>} on the
+     * bean). When {@code true} with a non-{@link Direct} leaf, the helper streams the inner list
+     * through the leaf transform.
+     *
+     * <p>{@code javaElementTypeName} is the fully qualified name of the leaf scalar/enum Java type
+     * (or the bean class name for nested {@link InputBean} leaves), used to emit casts. For lists
+     * it is the element type, not the wrapping {@code List}.
+     */
+    record FieldBinding(String sdlFieldName, String javaFieldName,
+                        CallSiteExtraction leaf, boolean list,
+                        String javaElementTypeName) {
+        public FieldBinding {
+            if (sdlFieldName == null || sdlFieldName.isEmpty()) {
+                throw new IllegalArgumentException("FieldBinding sdlFieldName must be non-empty");
+            }
+            if (javaFieldName == null || javaFieldName.isEmpty()) {
+                throw new IllegalArgumentException("FieldBinding javaFieldName must be non-empty");
+            }
+            if (leaf == null) {
+                throw new IllegalArgumentException("FieldBinding leaf must be non-null");
+            }
+            if (javaElementTypeName == null || javaElementTypeName.isEmpty()) {
+                throw new IllegalArgumentException("FieldBinding javaElementTypeName must be non-empty");
+            }
+        }
+    }
 }

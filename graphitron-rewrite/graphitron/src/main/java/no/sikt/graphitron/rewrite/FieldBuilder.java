@@ -161,7 +161,8 @@ class FieldBuilder {
         this.ctx = ctx;
         this.svc = svc;
         this.enumMappingResolver = new EnumMappingResolver(ctx);
-        this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this, enumMappingResolver);
+        this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this, enumMappingResolver,
+            new InputBeanResolver(ctx));
         this.tableMethodResolver = new TableMethodDirectiveResolver(ctx, svc, this, enumMappingResolver);
         this.externalFieldResolver = new ExternalFieldDirectiveResolver(ctx, svc, this);
         this.lookupKeyResolver = new LookupKeyDirectiveResolver();
@@ -1104,6 +1105,7 @@ class FieldBuilder {
             case CallSiteExtraction.ContextArg ignored -> column.columnClass();
             case CallSiteExtraction.NestedInputField ignored -> column.columnClass();
             case CallSiteExtraction.NodeIdDecodeKeys ignored -> column.columnClass();
+            case CallSiteExtraction.InputBean ignored -> column.columnClass();
         };
     }
 

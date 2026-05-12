@@ -894,6 +894,22 @@ input FilmConditionInput @table(name: "film") {
 # argres Phase 4: plain input (no @table). Used on Film and Language queries,
 # creating a conflict so it stays PojoInputType. Call-site classification resolves
 # filmId for Film (condition wired) but not for Language (field skipped, no filter).
+# R150: input-bean fixture. Java-side this maps to FilmReviewDetails (record) carrying scalar
+# fields plus a nested list of FilmReviewTag beans. The generator emits one
+# createFilmReviewDetails(Map<String, Object>) and one createFilmReviewTag(Map<String, Object>)
+# helper on the enclosing *Fetchers class.
+input FilmReviewDetailsInput {
+    filmId: Int!
+    rating: Int!
+    comment: String
+    tags: [FilmReviewTagInput!]
+}
+
+input FilmReviewTagInput {
+    name: String!
+    weight: Int
+}
+
 input PlainFilmIdInput {
     filmId: ID! @field(name: "film_id")
         @condition(condition: {
@@ -1237,6 +1253,19 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "submit"
+        })
+
+    # R150 compilation-tier fixture: @service taking a consumer-authored input bean. The
+    # FilmReviewDetails record lives in the service package; the fetcher generator emits a
+    # createFilmReviewDetails(Map<String, Object>) helper on FilmReviewServiceFetchers (record-
+    # canonical-ctor instantiation), a createFilmReviewTag helper for the nested list element,
+    # and routes env.getArgument("details") through the singular helper before the service
+    # call. Compile-tier coverage; the runtime payload reuses submit() so no execute-tier
+    # change is needed alongside this fixture.
+    submitFilmReviewWithDetails(details: FilmReviewDetailsInput!): FilmReviewPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "submitWithDetails"
         })
 
     # R75 Phase 2 compilation-tier fixture: @service Mutation returning a single-record

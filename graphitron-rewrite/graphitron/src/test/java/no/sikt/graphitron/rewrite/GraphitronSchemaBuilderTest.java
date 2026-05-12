@@ -5204,6 +5204,93 @@ class GraphitronSchemaBuilderTest {
                     .isEqualTo("dryRun");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
+        },
+
+        // ===== R150 input-bean classification =====
+
+        SERVICE_MUTATION_FIELD_INPUT_BEAN_SINGULAR(
+            "R150: @service taking a single consumer-authored record bean → ParamSource.Arg with InputBean extraction",
+            """
+            enum TestInputBeanEnum { LOW HIGH }
+            input TestInputNested { key: String, value: String }
+            input TestInputBean { title: String, rating: TestInputBeanEnum, nested: [TestInputNested!] }
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithInputBean(input: TestInputBean): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithInputBean"})
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithInputBean");
+                var p0 = f.method().params().get(0);
+                assertThat(p0.source()).isInstanceOf(no.sikt.graphitron.rewrite.model.ParamSource.Arg.class);
+                var extraction = ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p0.source()).extraction();
+                assertThat(extraction).isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean.class);
+                var ib = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean) extraction;
+                assertThat(ib.beanClass().simpleName()).isEqualTo("TestInputBean");
+                assertThat(ib.target())
+                    .isEqualTo(no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean.Target.RECORD);
+                // Bindings cover all three SDL fields, in record component order.
+                assertThat(ib.fields()).extracting(no.sikt.graphitron.rewrite.model.CallSiteExtraction.FieldBinding::sdlFieldName)
+                    .containsExactly("title", "rating", "nested");
+                // Enum leaf — EnumValueOf for the rating field.
+                assertThat(ib.fields().get(1).leaf())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.EnumValueOf.class);
+                // Nested-bean leaf — recursive InputBean for the nested list.
+                assertThat(ib.fields().get(2).leaf())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean.class);
+                assertThat(ib.fields().get(2).list()).isTrue();
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
+        },
+
+        SERVICE_MUTATION_FIELD_INPUT_BEAN_LIST(
+            "R150: @service taking List<RecordBean> resolves the same InputBean extraction; helper-name choice is the emitter's job",
+            """
+            enum TestInputBeanEnum { LOW HIGH }
+            input TestInputNested { key: String, value: String }
+            input TestInputBean { title: String, rating: TestInputBeanEnum, nested: [TestInputNested!] }
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithInputBeans(inputs: [TestInputBean!]!): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithInputBeans"})
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithInputBeans");
+                var p0 = f.method().params().get(0);
+                assertThat(p0.typeName()).startsWith("java.util.List<");
+                var extraction = ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p0.source()).extraction();
+                assertThat(extraction).isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean.class);
+                assertThat(((no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean) extraction)
+                    .beanClass().simpleName()).isEqualTo("TestInputBean");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
+        },
+
+        SERVICE_MUTATION_FIELD_INPUT_BEAN_SCALAR_SDL_REJECTED(
+            "R150: @service with Java bean param vs scalar SDL arg → UnclassifiedField with structural rejection naming the param",
+            """
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithInputBean(input: String): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithInputBean"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "runWithInputBean");
+                assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+                var u = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) f;
+                assertThat(u.reason())
+                    .contains("input")
+                    .contains("not an input-object type");
+            }) {
+            @Override public Set<Class<?>> variants() {
+                return Set.of(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+            }
         };
 
         final String sdl;
