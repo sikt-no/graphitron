@@ -2410,10 +2410,11 @@ class FieldBuilder {
         // R75 Phase 2: DML mutations admit only @table-element data. Record-element carriers
         // would require a row-to-domain-record conversion step at the emitter, which the spec
         // tracks separately. Reject here at classify time with a per-mismatch message.
-        if (!(shape.dataElement() instanceof no.sikt.graphitron.rewrite.model.DataElement.Table tableElement)) {
+        var dataElement = shape.data().element();
+        if (!(dataElement instanceof no.sikt.graphitron.rewrite.model.DataElement.Table tableElement)) {
             return "@mutation(typeName: " + kind + ") field '" + name
                 + "' returns single-record carrier '" + shape.carrierTypeName()
-                + "' with a record-element data field ('" + shape.dataElement().name()
+                + "' with a record-element data field ('" + dataElement.name()
                 + "'); DML mutations require an @table-element data field. Use a @service "
                 + "mutation for record-element carriers, or change the data field's element type "
                 + "to the input table's @table type";
@@ -2649,12 +2650,20 @@ class FieldBuilder {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(returnTypeError));
                 }
 
-                // R75 Phase 1: payload-returning DML mutations classify as MutationDmlRecordField.
-                // Trigger admits when the return type is a single-record DML carrier; the data
-                // field's element table must equal the input @table (the load-bearing
+                // R75 Phase 1 / R141: payload-returning DML mutations classify as a record-carrier
+                // leaf. The carrier walk produces a SingleRecordCarrierShape whose roles list is
+                // exhaustively classified into CarrierFieldRole permits (today: DataChannel only,
+                // ErrorChannelRole reserved for R12). The data field's element table must equal the
+                // input @table (the load-bearing
                 // mutation-dml-record-field.data-table-equals-input-table check); DELETE-with-
-                // carrier is rejected at classify time (the row is gone before the response
-                // SELECT can read it).
+                // carrier is rejected at classify time (the row is gone before the response SELECT
+                // can read it). Cardinality dispatch on the data field's wrapper picks the leaf:
+                //   - data field is list-shaped → MutationBulkDmlRecordField (R141; bulk input).
+                //   - data field is single-shaped → MutationDmlRecordField (R75 Phase 1; single input).
+                // The bulk-input + singleton-data-field cell is rejected upstream by Invariant #15
+                // (R138); the single-input + list-data-field cell is rejected upstream by
+                // Invariant #16 (R141). Both rejections fire inside validateReturnType above and
+                // produce UnclassifiedField before reaching this branch.
                 if (returnType instanceof ReturnTypeRef.ResultReturnType rrt
                         && ctx.tryResolveSingleRecordCarrier(rawReturn)
                             instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok ok) {
@@ -2668,12 +2677,33 @@ class FieldBuilder {
                     if (mismatch != null) {
                         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(mismatch));
                     }
-                    Optional<ErrorChannel> dmlChannel;
-                    switch (resolveErrorChannel(returnType)) {
-                        case ErrorChannelResult.NoChannel ignored -> dmlChannel = Optional.empty();
-                        case ErrorChannelResult.Channel c          -> dmlChannel = Optional.of(c.channel());
-                        case ErrorChannelResult.Reject r ->
-                            { return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(r.reason())); }
+                    // R141 carrier-shape lift: the error channel binding lives on the shape's
+                    // ErrorChannelRole permit (if present) rather than being resolved by a separate
+                    // call here. R12 (error-handling-parity) lands the ErrorChannelRole producer
+                    // side of the unified walk; until R12 ships, shape.errorChannel() is always
+                    // empty for NoBacking carriers (today's only DML-carrier shape), so this
+                    // resolves to Optional.empty() with no behaviour change.
+                    Optional<ErrorChannel> dmlChannel = ok.shape().errorChannel()
+                        .map(no.sikt.graphitron.rewrite.model.CarrierFieldRole.ErrorChannelRole::binding);
+                    boolean dataFieldIsList = ok.shape().data().element().wrapper().isList();
+                    if (tia.list() && dataFieldIsList) {
+                        // R141: bulk input + list-shaped @table-element data field on the carrier.
+                        // UPSERT is refused at classify time pending R145 (mutation-cardinality-
+                        // safety-upsert), which designs the bulk-UPSERT cardinality story. R144's
+                        // upstream refusal at MutationInputResolver would catch this once R144
+                        // lands; until then R141 surfaces the deferral here so authors get a
+                        // classify-time message rather than a runtime compact-constructor throw.
+                        if (kind == DmlKind.UPSERT) {
+                            return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                                "@mutation(typeName: UPSERT) with bulk @table input and a list-"
+                                + "shaped data field on the carrier is deferred to R145 "
+                                + "(mutation-cardinality-safety-upsert); use INSERT or UPDATE, or "
+                                + "use a single-record carrier with single @table input"));
+                        }
+                        // The compact-constructor on MutationBulkDmlRecordField re-validates the
+                        // kind / tableInputArg.list() invariants; both already hold here.
+                        return new MutationField.MutationBulkDmlRecordField(
+                            parentTypeName, name, location, rrt, tia, kind, dmlChannel);
                     }
                     return new MutationField.MutationDmlRecordField(
                         parentTypeName, name, location, rrt, tia, kind, dmlChannel);

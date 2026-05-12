@@ -38,24 +38,43 @@ class SingleRecordCarrierPipelineTest {
 
     // ===== Trigger admission, parameterised over DmlKind (INSERT / UPDATE / UPSERT) =====
 
+    // R141 retired the single-input + list-data-field admission as a Phase 1 case: the
+    // cardinality dispatch in validateReturnType now routes that cell to Invariant #16 and the
+    // bulk-input + list-data-field cell to the new MutationBulkDmlRecordField leaf. R141's
+    // GraphitronSchemaBuilderTest truth-table holds the admitted-arm coverage for the new leaf;
+    // this fixture file keeps single-data-field admission for MutationDmlRecordField only.
+
     @ParameterizedTest
-    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE", "UPSERT"})
-    void carrier_listDataField_classifiesAsMutationDmlRecordField(DmlKind kind) {
-        var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload { films: [Film!] }"));
+    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
+    void carrier_bulkInput_listDataField_classifiesAsMutationBulkDmlRecordField(DmlKind kind) {
+        // UPSERT is deferred to R145 (mutation-cardinality-safety-upsert); the classifier surfaces
+        // a deferred-to-R145 rejection rather than constructing the leaf, so the parameterised
+        // case excludes UPSERT.
+        var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
 
         var mutField = schema.field("Mutation", mutationName(kind));
-        assertThat(mutField).isInstanceOf(MutationField.MutationDmlRecordField.class);
-        var dmlField = (MutationField.MutationDmlRecordField) mutField;
+        assertThat(mutField).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
+        var dmlField = (MutationField.MutationBulkDmlRecordField) mutField;
         assertThat(dmlField.kind()).isEqualTo(kind);
         assertThat(dmlField.returnType()).isInstanceOf(ReturnTypeRef.ResultReturnType.class);
         assertThat(dmlField.returnType().returnTypeName()).isEqualTo("FilmPayload");
         assertThat(dmlField.tableInputArg().inputTable().tableName()).isEqualTo("film");
+        assertThat(dmlField.tableInputArg().list()).isTrue();
+    }
+
+    @Test
+    void carrier_bulkInput_listDataField_upsertDeferredToR145() {
+        var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.UPSERT, "type FilmPayload { films: [Film!] }"));
+        var mutField = schema.field("Mutation", mutationName(DmlKind.UPSERT));
+        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
+        var reason = ((UnclassifiedField) mutField).rejection().message();
+        assertThat(reason).contains("UPSERT", "R145", "deferred");
     }
 
     @ParameterizedTest
-    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE", "UPSERT"})
-    void carrier_listDataField_dataFieldClassifiesAsSingleRecordTableField(DmlKind kind) {
-        var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload { films: [Film!] }"));
+    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
+    void carrier_bulkInput_listDataField_dataFieldClassifiesAsSingleRecordTableField(DmlKind kind) {
+        var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
 
         var dataField = schema.field("FilmPayload", "films");
         assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
@@ -88,7 +107,7 @@ class SingleRecordCarrierPipelineTest {
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE", "UPSERT"})
     void carrier_atRecordWithNullClassName_classifiesAsMutationDmlRecordField(DmlKind kind) {
-        var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload @record { films: [Film!] }"));
+        var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload @record { film: Film }"));
         assertThat(schema.field("Mutation", mutationName(kind)))
             .isInstanceOf(MutationField.MutationDmlRecordField.class);
     }
@@ -97,7 +116,7 @@ class SingleRecordCarrierPipelineTest {
 
     @Test
     void carrier_withDelete_rejectsAtClassifier() {
-        var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.DELETE, "type FilmPayload { films: [Film!] }"));
+        var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.DELETE, "type FilmPayload { film: Film }"));
         var mutField = schema.field("Mutation", mutationName(DmlKind.DELETE));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
@@ -105,47 +124,53 @@ class SingleRecordCarrierPipelineTest {
             "DELETE", "is not supported", "use ID or [ID!]");
     }
 
-    // ===== Trigger rejection (DmlKind-agnostic, one INSERT fixture per case) =====
+    // ===== Carrier-walk rejection (R141: no CarrierFieldRole permit match) =====
 
     @Test
     void carrier_withMultipleDataFields_returnsRejected() {
+        // R141: two @table-element list-shaped data fields is two DataChannels — the walk
+        // rejects with "declares N DataChannel-shaped fields; require exactly one".
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
-            "type FilmPayload { films: [Film!] extras: [String!] }"));
+            "type FilmPayload { films: [Film!] alsoFilms: [Film!] }"));
 
         var mutField = schema.field("Mutation", mutationName(DmlKind.INSERT));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains("declares 2 fields", "Phase 1 admits exactly one data field");
+        assertThat(reason).contains("2 DataChannel-shaped fields", "require exactly one");
     }
 
     @Test
     void carrier_withScalarField_returnsRejected() {
+        // R141: a scalar (String) on the carrier resolves to no CarrierFieldRole permit; the
+        // walk rejects naming the offending field and pointing at the extension point.
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
-            "type FilmPayload { description: String }"));
+            "type FilmPayload { films: [Film!] description: String }"));
 
         var mutField = schema.field("Mutation", mutationName(DmlKind.INSERT));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains("element type 'String' is not admissible");
+        assertThat(reason).contains("description", "no CarrierFieldRole permit", "file a roadmap item");
     }
 
     @Test
     void carrier_withInterfaceField_returnsRejected() {
+        // R141: an interface-typed field on the carrier resolves to no CarrierFieldRole permit
+        // (the SDL polymorphic union/interface shape is reserved for R12's ErrorChannelRole and
+        // requires @error members; an arbitrary interface doesn't match). The walk names the
+        // offending field.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             interface Searchable { id: ID! }
-            type FilmPayload { hits: [Searchable!] }
+            type FilmPayload { films: [Film!] hits: [Searchable!] }
             input FilmInput @table(name: "film") { title: String }
             type Query { x: String }
-            type Mutation { createFilm(in: FilmInput!): FilmPayload @mutation(typeName: INSERT) }
+            type Mutation { createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
             """);
 
         var mutField = schema.field("Mutation", "createFilm");
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains(
-            "element type 'Searchable' is not admissible",
-            "require @table-mapped or @record-backed");
+        assertThat(reason).contains("hits", "no CarrierFieldRole permit", "file a roadmap item");
     }
 
     @Test
@@ -191,7 +216,7 @@ class SingleRecordCarrierPipelineTest {
             input FilmInput @table(name: "film") { title: String }
             type FilmPayload { films: [Film!] @field(name: "films_alias") }
             type Query { x: String }
-            type Mutation { createFilm(in: FilmInput!): FilmPayload @mutation(typeName: INSERT) }
+            type Mutation { createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
             """);
 
         var mutField = schema.field("Mutation", "createFilm");
@@ -202,18 +227,20 @@ class SingleRecordCarrierPipelineTest {
 
     @Test
     void carrier_dataFieldCarriesAtDeprecated_admits() {
+        // R141: bulk-input + list-data-field admits as MutationBulkDmlRecordField; @deprecated
+        // on the data field is pure SDL metadata, not on the carrier's forbidden-directive list.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
             type FilmPayload { films: [Film!] @deprecated(reason: "use createFilms instead") }
             type Query { x: String }
-            type Mutation { createFilm(in: FilmInput!): FilmPayload @mutation(typeName: INSERT) }
+            type Mutation { createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
             """);
 
         var dataField = schema.field("FilmPayload", "films");
         assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
         var mutField = schema.field("Mutation", "createFilm");
-        assertThat(mutField).isInstanceOf(MutationField.MutationDmlRecordField.class);
+        assertThat(mutField).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
     }
 
     // ===== Carrier promotion: plain SDL Object becomes PojoResultType.NoBacking =====
@@ -262,13 +289,15 @@ class SingleRecordCarrierPipelineTest {
     void carrier_dataTableMismatchesInputTable_rejectsAtClassifier(DmlKind kind) {
         // The data field's @table is `actor`, but the mutation's input @table is `film` —
         // the load-bearing mutation-dml-record-field.data-table-equals-input-table check rejects.
+        // Uses bulk input + list data field so the carrier admits its shape and the mismatch
+        // check fires; the equivalent single-data-field shape would not fire Invariant #16.
         String sdl = """
             type Film @table(name: "film") { title: String }
             type Actor @table(name: "actor") { firstName: String }
             type ActorPayload { actors: [Actor!] }
             input FilmInput @table(name: "film") { %s }
             type Query { x: String }
-            type Mutation { %s(in: FilmInput!): ActorPayload @mutation(typeName: %s) }
+            type Mutation { %s(in: [FilmInput!]!): ActorPayload @mutation(typeName: %s) }
             """.formatted(inputBody(kind), mutationName(kind), kind.name());
 
         var schema = TestSchemaHelper.buildSchema(sdl);

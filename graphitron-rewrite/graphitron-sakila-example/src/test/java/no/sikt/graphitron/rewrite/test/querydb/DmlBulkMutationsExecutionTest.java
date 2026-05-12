@@ -574,6 +574,110 @@ class DmlBulkMutationsExecutionTest {
         assertThat(QUERY_COUNT.get()).isZero();
     }
 
+    // ===== R141 bulk-input single-payload-carrier list-data-field DML mutations =====
+    //
+    // createFilmsPayload / updateFilmsPayload return FilmsPayload { films: [Film!] } — a single
+    // carrier wrapping a list-shaped @table-element data field. The classifier routes the
+    // bulk-input + list-data-field cell to MutationBulkDmlRecordField; the emitter batches
+    // per-row DML inside one dsl.transactionResult(...), collects PKs in input order, and lets
+    // the data field's SingleRecordTableField fetcher (Cardinality.MANY) run the follow-up
+    // response SELECT against those PKs outside the transaction. The order-preservation
+    // invariant (output.data[i] corresponds to input[i]) is the load-bearing assertion the
+    // non-PK-ordered round-trip pins; any future single-statement emit refinement must preserve
+    // the same assertion.
+
+    @Test
+    void bulkInsertWithThreeRowsInNonPkOrderPreservesInputOrderInResponse() {
+        // N=3 inputs whose titles deliberately sort 'c', 'a', 'b' (input order) while the
+        // generated film_id sequence sorts ascending. The data field's response SELECT runs
+        // WHERE film_id IN (PKs in input order); the source.getValues(PK) projection iterates
+        // the upstream Result in insertion order, which the per-row fetcher loop guarantees
+        // matches the input list. Asserts the rendered list is in input order, not PK order.
+        String m1 = randomMarker("R141-INSERT-c");
+        String m2 = randomMarker("R141-INSERT-a");
+        String m3 = randomMarker("R141-INSERT-b");
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    createFilmsPayload(in: [
+                        { title: "%s", languageId: 1 },
+                        { title: "%s", languageId: 1 },
+                        { title: "%s", languageId: 1 }
+                    ]) { films { title } }
+                }
+                """.formatted(m1, m2, m3));
+            Map<String, Object> payload = (Map<String, Object>) data.get("createFilmsPayload");
+            List<Map<String, Object>> films = (List<Map<String, Object>>) payload.get("films");
+            assertThat(films).hasSize(3);
+            assertThat(films).extracting(r -> r.get("title")).containsExactly(m1, m2, m3);
+        } finally {
+            dsl.deleteFrom(DSL.table("film"))
+                .where(DSL.field("title").in(m1, m2, m3)).execute();
+        }
+    }
+
+    @Test
+    void bulkInsertWithSingleRowExercisesBulkLeafPath() {
+        // N=1 sanity test confirming the bulk leaf admits and emits correctly when the input
+        // list has exactly one element. The classifier admits MutationBulkDmlRecordField for
+        // any tia.list() == true && N >= 1, and the emitter's transactionResult lambda iterates
+        // [single element] producing a Result of size 1.
+        String marker = randomMarker("R141-INSERT-1");
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    createFilmsPayload(in: [{ title: "%s", languageId: 1 }]) {
+                        films { title }
+                    }
+                }
+                """.formatted(marker));
+            Map<String, Object> payload = (Map<String, Object>) data.get("createFilmsPayload");
+            List<Map<String, Object>> films = (List<Map<String, Object>>) payload.get("films");
+            assertThat(films).hasSize(1);
+            assertThat(films.get(0).get("title")).isEqualTo(marker);
+        } finally {
+            dsl.deleteFrom(DSL.table("film")).where(DSL.field("title").eq(marker)).execute();
+        }
+    }
+
+    @Test
+    void bulkUpdateWithThreeRowsInNonPkOrderPreservesInputOrderInResponse() {
+        // UPDATE variant of the order-preservation test, exercising the per-row UPDATE emit
+        // path. Filter columns are sourced via tableInputArg.fieldBindings() (the
+        // polarity-agnostic surface R141 reads, ahead of R144's polarity flip). Three inputs
+        // whose filmIds are deliberately not in ascending order; assert the response list is
+        // in input order.
+        String mA = randomMarker("R141-UPDATE-A");
+        String mB = randomMarker("R141-UPDATE-B");
+        String mC = randomMarker("R141-UPDATE-C");
+        Integer idA = insertFilm(mA);
+        Integer idB = insertFilm(mB);
+        Integer idC = insertFilm(mC);
+        String newA = randomMarker("R141-UPDATED-A");
+        String newB = randomMarker("R141-UPDATED-B");
+        String newC = randomMarker("R141-UPDATED-C");
+        // Input order: C, A, B (deliberately not ascending PK order: idA < idB < idC).
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    updateFilmsPayload(in: [
+                        { filmId: %d, title: "%s" },
+                        { filmId: %d, title: "%s" },
+                        { filmId: %d, title: "%s" }
+                    ]) { films { filmId title } }
+                }
+                """.formatted(idC, newC, idA, newA, idB, newB));
+            Map<String, Object> payload = (Map<String, Object>) data.get("updateFilmsPayload");
+            List<Map<String, Object>> films = (List<Map<String, Object>>) payload.get("films");
+            assertThat(films).hasSize(3);
+            assertThat(films).extracting(r -> r.get("title")).containsExactly(newC, newA, newB);
+        } finally {
+            deleteFilmById(idA);
+            deleteFilmById(idB);
+            deleteFilmById(idC);
+        }
+    }
+
     // ===== R130 composite-PK @nodeId-decoded @lookupKey on DML inputs =====
     //
     // Headline forcing-function execution proof: composite-PK DELETE keyed by an opaque
