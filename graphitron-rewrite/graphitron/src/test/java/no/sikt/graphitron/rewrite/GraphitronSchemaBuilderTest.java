@@ -6323,6 +6323,44 @@ class GraphitronSchemaBuilderTest {
                     .contains("input")
                     .contains("java.util.Map")
                     .contains("anti-pattern");
+            }),
+
+        SERVICE_RECURSIVE_BEAN_REJECTED(
+            "R150: @service with a self-referential record bean → UnclassifiedField; the walker would otherwise infinite-loop on the cyclic shape",
+            """
+            input TestInputRecursive { name: String, children: [TestInputRecursive!] }
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithRecursiveBean(input: TestInputRecursive): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithRecursiveBean"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "runWithRecursiveBean");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("TestInputRecursive")
+                    .contains("recursive");
+            }),
+
+        SERVICE_NON_PUBLIC_BEAN_REJECTED(
+            "R150: @service with a package-private record bean → UnclassifiedField; generated fetchers live in a different package",
+            """
+            input TestInputPackagePrivate { title: String }
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithPackagePrivateBean(input: TestInputPackagePrivate): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithPackagePrivateBean"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Mutation", "runWithPackagePrivateBean");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("TestInputPackagePrivate")
+                    .contains("not public");
             });
 
         final String sdl;
