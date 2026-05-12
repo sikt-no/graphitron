@@ -1,7 +1,7 @@
 ---
 id: R139
 title: "Dev-pipeline to LSP schema-snapshot side-channel; first client unknown-directive validator"
-status: Spec
+status: Ready
 bucket: architecture
 theme: lsp
 depends-on: []
