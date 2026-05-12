@@ -44,7 +44,16 @@ mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q \
 
 ### status `<R<n>-or-slug>` `<new-state>`
 
-Resolve to a file (grep `^id: R<n>$` if the user gave an ID), flip `status:` in the front-matter, then run the guards and regenerate. Valid transitions (see `graphitron-rewrite/docs/workflow.adoc`):
+Use the tool's `status` subcommand. It resolves the slug or ID, validates the transition against the state table below, atomically writes the new `status:` value plus a fresh `last-updated: <today>` (leaving `created:` strictly untouched, never invented), and regenerates the README. Then run the reviewer-rule guards.
+
+```bash
+mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q \
+  -Dexec.args='status graphitron-rewrite/roadmap <R<n>-or-slug> <new-state>'
+```
+
+Accepted target states: `Backlog`, `Spec`, `Ready`, `In Progress`, `In Review`. `Done` and `Discarded` are file-deletion transitions per `graphitron-rewrite/docs/workflow.adoc` and remain manual; the subcommand rejects them.
+
+Valid transitions (see `graphitron-rewrite/docs/workflow.adoc`):
 
 | From          | To           | Guard                                                       |
 |---------------|--------------|-------------------------------------------------------------|
@@ -56,11 +65,11 @@ Resolve to a file (grep `^id: R<n>$` if the user gave an ID), flip `status:` in 
 | In Review     | Ready        | rework; reviewer ≠ implementer                              |
 | In Review     | Done         | approve; reviewer ≠ implementer; **delete the item file**   |
 
-For guarded transitions, run `git log -1 --pretty='%an <%ae>' graphitron-rewrite/roadmap/<slug>.md` and tell the user who last touched the file. If the current Claude session would be the same party, surface that and stop — a different party (typically the human user, or an independent agent session) must perform the flip.
+For guarded transitions, run `git log -1 --pretty='%an <%ae>' graphitron-rewrite/roadmap/<slug>.md` and tell the user who last touched the file. If the current Claude session would be the same party, surface that and stop — a different party (typically the human user, or an independent agent session) must perform the flip. The reviewer-rule guard is the skill's responsibility; the tool performs the mechanical edit unconditionally once invoked.
 
 For `In Review → Done`, delete the file rather than editing it; if the milestone is worth preserving, append a one-line entry to `graphitron-rewrite/roadmap/changelog.md` capturing the landing commit SHA and the `R<n>` ID.
 
-After any successful change, regenerate.
+The `status` subcommand regenerates the README as part of its run; no separate regenerate step needed.
 
 ### regenerate
 
