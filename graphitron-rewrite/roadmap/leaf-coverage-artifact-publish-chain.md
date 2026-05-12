@@ -5,7 +5,7 @@ status: In Review
 bucket: cleanup
 priority: 3
 theme: structural-refactor
-depends-on: [leaf-coverage-verify-off-local]
+depends-on: []
 ---
 
 # Publish leaf-coverage report from CI
