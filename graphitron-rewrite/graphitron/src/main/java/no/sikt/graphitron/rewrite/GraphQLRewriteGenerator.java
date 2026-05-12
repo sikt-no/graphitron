@@ -80,25 +80,21 @@ public class GraphQLRewriteGenerator {
     }
 
     /**
-     * Loads the schema and assembles a {@link CompletionData} snapshot for
-     * the LSP. Skips validation deliberately: a half-edited buffer with
-     * validation errors should still expose tables and scalars so the
-     * editor can autocomplete its way out of the typo.
+     * Triple the LSP needs on every successful regenerate: the
+     * {@link CompletionData} catalog (jOOQ + classpath references + scalars),
+     * the {@link LspSchemaSnapshot.Built.Current} projection of the parsed
+     * user schema's directive surface, and the {@link ValidationReport}
+     * carrying every {@link ValidationError} and {@link BuildWarning} the
+     * validator produces on the same {@code bundle.model()}. Same parse,
+     * three projections; the dev goal swaps all of them atomically through
+     * {@code Workspace.setBuildOutput}.
      *
-     * <p>The dev goal calls this once at startup and on every classpath
-     * watcher trigger; the result swaps into {@code Workspace} atomically.
-     */
-    public CompletionData buildCatalog() {
-        return buildOutput().catalog();
-    }
-
-    /**
-     * Pair the LSP needs on every successful regenerate: the
-     * {@link CompletionData} catalog (jOOQ + classpath references + scalars)
-     * and the {@link LspSchemaSnapshot.Built.Current} projection of the
-     * parsed user schema's directive surface. Same parse, two projections;
-     * the dev goal swaps both atomically through
-     * {@code Workspace.setCatalogAndSnapshot}.
+     * <p>The validator runs but never throws on its output: a half-edited
+     * buffer with validation errors should still expose tables and scalars
+     * so the editor can autocomplete its way out of the typo. The build-time
+     * pipeline ({@link #validate()}, {@link #generate()}) is the surface
+     * that fails the build on validator errors; this method packages them
+     * for the LSP instead.
      */
     public BuildOutput buildOutput() {
         var attributed = loadAttributedRegistry();
@@ -106,14 +102,23 @@ public class GraphQLRewriteGenerator {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
         var snapshot = CatalogBuilder.buildSnapshot(attributed.registry());
-        return new BuildOutput(catalog, snapshot);
+        var errors = new GraphitronSchemaValidator().validate(bundle.model());
+        var warnings = bundle.model().warnings();
+        var report = ValidationReport.from(errors, warnings);
+        return new BuildOutput(new BuildArtifacts(catalog, snapshot), report);
     }
 
     /**
-     * Catalog plus directive-projection snapshot, both derived from the
-     * same parsed registry. See {@link #buildOutput()}.
+     * Splits the build output along the two lifecycle steps {@link #buildOutput()} spans:
+     * classification produces {@link BuildArtifacts} (catalog + snapshot); the validator
+     * pass over the same classified model produces {@link ValidationReport}.
      */
-    public record BuildOutput(CompletionData catalog, LspSchemaSnapshot.Built.Current snapshot) {}
+    public record BuildOutput(BuildArtifacts artifacts, ValidationReport report) {}
+
+    /**
+     * Classification-stage products: catalog plus directive-projection snapshot.
+     */
+    public record BuildArtifacts(CompletionData catalog, LspSchemaSnapshot.Built.Current snapshot) {}
 
     /**
      * Runs schema loading, attribution, classification, and validation without writing any output.

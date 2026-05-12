@@ -4,6 +4,7 @@ import graphql.language.DirectiveDefinition;
 import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.NonNullType;
+import graphql.language.SourceLocation;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -13,12 +14,17 @@ import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
+import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
+import no.sikt.graphitron.rewrite.ValidationError;
+import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import io.github.treesitter.jtreesitter.Node;
 
@@ -49,6 +55,7 @@ public final class Diagnostics {
     private Diagnostics() {}
 
     private static final String SOURCE = "graphitron-lsp";
+    private static final String VALIDATOR_SOURCE = "graphitron-validator";
 
     /**
      * Directives whose {@code method} field is meaningful and should be
@@ -73,9 +80,21 @@ public final class Diagnostics {
     );
 
     public static List<Diagnostic> compute(
+        String uri, WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot,
+        ValidationReport report
+    ) {
+        return compute(LspVocabulary.load(), uri, file, catalog, snapshot, report);
+    }
+
+    /**
+     * Test-friendly convenience that omits the URI and validator report. The validator-diagnostics
+     * step short-circuits on an empty {@link ValidationReport#sourceUris} set so this overload
+     * fires only the SDL-only directive walks the pre-R147 callers expected.
+     */
+    public static List<Diagnostic> compute(
         WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot
     ) {
-        return compute(LspVocabulary.load(), file, catalog, snapshot);
+        return compute("", file, catalog, snapshot, ValidationReport.empty());
     }
 
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
@@ -84,8 +103,21 @@ public final class Diagnostics {
             + "Built.Previous on the conservative principle 'do not punish the user for what we "
             + "cannot reliably see'."
     )
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "validation-report.canonical-uri",
+        reliesOn = "filters validator errors and warnings against the open file via "
+            + "ValidationReport.canonicalUri so producer and consumer share one canonical "
+            + "file:// URI form."
+    )
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "source-location.absolute-path-source-name",
+        reliesOn = "treats SourceLocation.sourceName as a path that resolves to the same "
+            + "canonical URI the LSP client opened; Maven callers populate it as absolute via "
+            + "MultiSourceReader.trackData(true)."
+    )
     public static List<Diagnostic> compute(
-        LspVocabulary vocabulary, WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot
+        LspVocabulary vocabulary, String uri, WorkspaceFile file, CompletionData catalog,
+        LspSchemaSnapshot snapshot, ValidationReport report
     ) {
         var out = new ArrayList<Diagnostic>();
         var directives = Directives.findAll(file.tree().getRootNode());
@@ -134,7 +166,84 @@ public final class Diagnostics {
                 }
             }
         }
+        out.addAll(validatorDiagnostics(uri, file, snapshot, report));
         return out;
+    }
+
+    /**
+     * Maps {@link ValidationReport} entries for {@code uri} into LSP diagnostics. Silent under
+     * {@link LspSchemaSnapshot.Unavailable} (no build yet) and {@link LspSchemaSnapshot.Built.Previous}
+     * (stale snapshot after a parse failure), mirroring the R139 freshness-aware silence policy:
+     * the validator's last output may not reflect the buffer the user is editing, and a stale
+     * red squiggle the developer cannot fix by rewriting their schema is the noise we are trying
+     * to avoid. Short-circuits when the open file has no entries in {@link ValidationReport#sourceUris}.
+     *
+     * <p>{@code ValidationError} with a null or {@code (0, 0)} location is dropped silently in
+     * v1: every error in the current rule set carries a usable location, and a console / watch
+     * formatter already covers any future no-location producer. The hook for a {@code window/showMessage}
+     * surface lives here when the first such producer lands. Warnings without location are dropped
+     * for the same reason.
+     */
+    private static List<Diagnostic> validatorDiagnostics(
+        String uri, WorkspaceFile file, LspSchemaSnapshot snapshot, ValidationReport report
+    ) {
+        return switch (snapshot) {
+            case LspSchemaSnapshot.Unavailable ignored -> List.of();
+            case LspSchemaSnapshot.Built.Previous ignored -> List.of();
+            case LspSchemaSnapshot.Built.Current ignored -> validatorDiagnosticsForCurrent(uri, report);
+        };
+    }
+
+    private static List<Diagnostic> validatorDiagnosticsForCurrent(String uri, ValidationReport report) {
+        if (!report.sourceUris().contains(uri)) {
+            return List.of();
+        }
+        var out = new ArrayList<Diagnostic>();
+        for (ValidationError error : report.errors()) {
+            var loc = error.location();
+            if (!matchesOpenFile(uri, loc)) continue;
+            out.add(validatorDiagnostic(loc, severityOf(error.rejection()), error.message()));
+        }
+        for (BuildWarning warning : report.warnings()) {
+            var loc = warning.location();
+            if (!matchesOpenFile(uri, loc)) continue;
+            out.add(validatorDiagnostic(loc, DiagnosticSeverity.Warning, warning.message()));
+        }
+        return out;
+    }
+
+    private static boolean matchesOpenFile(String uri, SourceLocation loc) {
+        if (loc == null || loc.getLine() <= 0) return false;
+        String sourceName = loc.getSourceName();
+        if (sourceName == null || sourceName.isEmpty()) return false;
+        return uri.equals(ValidationReport.canonicalUri(sourceName));
+    }
+
+    private static DiagnosticSeverity severityOf(Rejection rejection) {
+        return switch (rejection) {
+            case Rejection.AuthorError ignored -> DiagnosticSeverity.Error;
+            case Rejection.InvalidSchema ignored -> DiagnosticSeverity.Error;
+            case Rejection.Deferred ignored -> DiagnosticSeverity.Warning;
+        };
+    }
+
+    /**
+     * Builds an LSP diagnostic for a validator error or warning. {@code SourceLocation.getLine()}
+     * and {@code getColumn()} are 1-based; LSP {@code Position} is 0-based. End column is
+     * {@link Integer#MAX_VALUE} — gcc/AsciiDoctor convention, clamped by the LSP client to the
+     * actual line end. A zero-width range at column 1 (the common case for type-level errors that
+     * point at the type's declaration) is too subtle to find in editors; column-to-EOL hits the
+     * right balance.
+     */
+    private static Diagnostic validatorDiagnostic(
+        SourceLocation loc, DiagnosticSeverity severity, String message
+    ) {
+        var start = new Position(loc.getLine() - 1, Math.max(0, loc.getColumn() - 1));
+        var end = new Position(loc.getLine() - 1, Integer.MAX_VALUE);
+        var d = new Diagnostic(new Range(start, end), message);
+        d.setSeverity(severity);
+        d.setSource(VALIDATOR_SOURCE);
+        return d;
     }
 
     /**

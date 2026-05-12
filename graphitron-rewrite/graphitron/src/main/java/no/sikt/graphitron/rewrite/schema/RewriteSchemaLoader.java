@@ -7,6 +7,7 @@ import graphql.parser.ParserEnvironment;
 import graphql.parser.ParserOptions;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -60,6 +61,13 @@ public final class RewriteSchemaLoader {
         }
     }
 
+    @LoadBearingClassifierCheck(
+        key = "source-location.absolute-path-source-name",
+        description = "Populates SourceLocation.sourceName with the caller-supplied schema path "
+            + "via MultiSourceReader.trackData(true). Maven callers (SchemaInputExpander) "
+            + "normalise inputs to absolute paths; ValidationReport.canonicalUri reads "
+            + "SourceLocation.sourceName and produces a canonical file:// URI under that "
+            + "assumption.")
     public static TypeDefinitionRegistry load(Collection<String> userSchemaPaths) {
         var builder = MultiSourceReader.newMultiSourceReader();
         addDirectivesSource(builder);

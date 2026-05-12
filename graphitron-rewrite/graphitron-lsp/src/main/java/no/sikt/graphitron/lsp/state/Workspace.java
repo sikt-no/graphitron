@@ -1,5 +1,7 @@
 package no.sikt.graphitron.lsp.state;
 
+import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
+import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -40,6 +42,7 @@ public final class Workspace {
     private final LspVocabulary vocabulary;
     private volatile CompletionData catalog;
     private volatile LspSchemaSnapshot snapshot = LspSchemaSnapshot.unavailable();
+    private volatile ValidationReport validationReport = ValidationReport.empty();
 
     public Workspace() {
         this(CompletionData.empty(), LspVocabulary.load());
@@ -121,14 +124,25 @@ public final class Workspace {
 
     /**
      * Projection of the parsed user schema's directive surface, swapped on
-     * every successful generator pass through
-     * {@link #setCatalogAndSnapshot}. Stays {@link LspSchemaSnapshot.Unavailable}
-     * until the first build succeeds; demotes to
-     * {@link LspSchemaSnapshot.Built.Previous} on subsequent parse
-     * failures so consumers can distinguish fresh-vs-stale info.
+     * every successful generator pass through {@link #setBuildOutput}. Stays
+     * {@link LspSchemaSnapshot.Unavailable} until the first build succeeds;
+     * demotes to {@link LspSchemaSnapshot.Built.Previous} on subsequent
+     * parse failures so consumers can distinguish fresh-vs-stale info.
      */
     public LspSchemaSnapshot snapshot() {
         return snapshot;
+    }
+
+    /**
+     * Validator output paired with the catalog and snapshot, swapped on
+     * every successful generator pass through {@link #setBuildOutput}. Stays
+     * {@link ValidationReport#empty()} until the first build completes;
+     * unaffected by {@link #demoteSnapshot()} so a stale-snapshot state
+     * still has the last good validator output sitting there ready to
+     * re-publish on revert.
+     */
+    public ValidationReport validationReport() {
+        return validationReport;
     }
 
     /**
@@ -141,26 +155,21 @@ public final class Workspace {
     }
 
     /**
-     * Classpath-change path: the consumer's compiled {@code .class} files
-     * moved, so the jOOQ-driven catalog needs refreshing, but the
-     * schema-derived snapshot is unaffected. Keeps the snapshot ref where
-     * it was.
-     */
-    public void setCatalog(CompletionData catalog) {
-        this.catalog = catalog;
-        markAllForRecalculation();
-    }
-
-    /**
-     * Success-path swap: catalog and snapshot move together atomically (from
-     * the perspective of consumers that hold the workspace through both
-     * volatile reads), one recalculation. The producer ships only
+     * Success-path swap: catalog, snapshot, and validator report move
+     * together atomically (from the perspective of consumers that hold the
+     * workspace through three volatile reads), one recalculation. Used by
+     * both the schema-save trigger (where the validator runs against the
+     * freshly parsed user schema) and the classpath trigger (where the
+     * validator's classpath-dependent rejections — unresolved {@code @service}
+     * class, etc. — surface on the next {@code mvn compile} without waiting
+     * for a schema save). The producer ships only
      * {@link LspSchemaSnapshot.Built.Current}; freshness demotion happens
      * through {@link #demoteSnapshot()} when a later parse fails.
      */
-    public void setCatalogAndSnapshot(CompletionData catalog, LspSchemaSnapshot.Built snapshot) {
-        this.catalog = catalog;
-        this.snapshot = snapshot;
+    public void setBuildOutput(GraphQLRewriteGenerator.BuildArtifacts artifacts, ValidationReport report) {
+        this.catalog = artifacts.catalog();
+        this.snapshot = artifacts.snapshot();
+        this.validationReport = report;
         markAllForRecalculation();
     }
 

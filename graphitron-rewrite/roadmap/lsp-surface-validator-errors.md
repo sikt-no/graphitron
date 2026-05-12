@@ -1,7 +1,7 @@
 ---
 id: R147
 title: Surface GraphitronSchemaValidator errors and warnings as LSP diagnostics
-status: Ready
+status: In Review
 bucket: feature
 priority: 5
 theme: lsp
