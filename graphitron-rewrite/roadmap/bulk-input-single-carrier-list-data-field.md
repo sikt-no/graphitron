@@ -5,7 +5,7 @@ status: Backlog
 bucket: feature
 priority: 2
 theme: mutations-errors
-depends-on: [mutation-bulk-input-single-payload-key-loss]
+depends-on: []
 ---
 
 # Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field
