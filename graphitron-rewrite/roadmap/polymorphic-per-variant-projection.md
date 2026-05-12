@@ -169,6 +169,13 @@ keeps the diff localised. The helper's class-level javadoc names this
 trade-off so the next reader does not interpret the wrapper as a
 template for further proxies over wire-format types.
 
+The wrapper sits at the same wire-boundary tier as
+`ConnectionHelper.encodeCursor` / `decodeCursor`, which the
+rewrite-design-principles' *Wire-format encoding is a boundary concern,
+never a model concern* names as the canonical place these adapters
+live; the breach is in interface shape (delegating proxy vs. typed
+record), not in tier or layering.
+
 A pipeline-tier test (`PolymorphicSelectionSetClassEmitTest`) pins the
 emitted helper's source through the existing emit-and-compile path so
 the shape is checked at codegen time, not deferred to a runtime trip.
@@ -215,11 +222,18 @@ Stage-2's synthetic projections — `__typename` literal
 (`:1250-1251`), `__sort__` cursor column (`:1233-1245`) — are added
 *after* the `$fields` call and are independent of the selection set.
 `requiredProjectionColumns` (Split* SourceKey columns,
-`TypeClassGenerator.java:214-217`) are added inside `$fields` and remain
-unconditional by design: they're load-bearing for fetcher key extraction
-and must land regardless of variant. The filter changes which
-selection-driven fields enter the SELECT; it does not touch any of the
-above.
+`TypeClassGenerator.java:214-217`) are appended inside `$fields`
+*outside* the selection-switch loop: the
+`for (ColumnRef col : requiredProjectionColumns)` block runs after
+`emitSelectionSwitch` returns and is unconditional by design. The
+wrapper only restricts what the inner `emitSelectionSwitch` sees from
+`sel.getFieldsGroupedByResultKey()`; the required-columns loop reads
+from classifier output, not from the selection set. The columns are
+load-bearing for fetcher key extraction and must land regardless of
+variant; the structural separation (outside the switch, not a fallback
+inside it) is what keeps that invariant robust under R108. The filter
+changes which selection-driven fields enter the SELECT; it does not
+touch any of the above.
 
 ### Nested polymorphic dispatch
 
@@ -252,15 +266,28 @@ expected enumeration.
 The R108 pin (`PolymorphicProjectionFilterPinTest`, new, in the same
 package):
 
-- Counts occurrences of `PolymorphicSelectionSet.restrictTo` across
-  `src/main/java/no/sikt/graphitron/rewrite/generators/*.java` (excluding
-  the test target itself and any future helper that legitimately
-  delegates through it). Expected count: 1 (the single Stage-2 site in
-  `MultiTablePolymorphicEmitter.java`).
-- Counts occurrences of `env.getSelectionSet()` passed *directly* as the
-  first argument to `$$fields(` in the same set of files. Expected count:
-  0 after the fix. A regression that reverts to the unfiltered shape
-  re-introduces a match, the count rises, the pin trips.
+- Folder-wide scan via `countAcrossGenerators` over
+  `src/main/java/no/sikt/graphitron/rewrite/generators/*.java`: counts
+  occurrences of `PolymorphicSelectionSet.restrictTo`. Expected count:
+  1 (the single Stage-2 site in `MultiTablePolymorphicEmitter.java`).
+  `countAcrossGenerators` uses `Files.list` (non-recursive), so the
+  new `generators/util/PolymorphicSelectionSetClassGenerator.java` is
+  outside the scan and does not contribute to the count.
+- Single-file scan over `MultiTablePolymorphicEmitter.java`: counts
+  occurrences of `env.getSelectionSet()` passed *directly* as the first
+  argument to `$$fields(`. Expected count: 0 after the fix. A regression
+  that reverts the Stage-2 site to the unfiltered shape re-introduces a
+  match, the count rises, the pin trips. Scoping the second pin to this
+  one file (rather than reusing the folder-wide `countAcrossGenerators`
+  helper) is deliberate: the same `env.getSelectionSet()` direct-arg
+  shape appears in ~12 non-polymorphic emit sites across the package
+  (`FetcherEmitter`, `SplitRowsMethodEmitter`, and several
+  `TypeFetcherGenerator` sites) that are correct as-is per the
+  "Filter at the call site, not inside `$fields`" reasoning above, plus
+  the same-table interface emit site at `TypeFetcherGenerator.java:841-842`
+  that R108 intentionally leaves alone (see Same-table dispatch above).
+  A folder-wide count would couple the pin to those unrelated correct
+  sites; a single-file scope pins exactly the Stage-2 invariant.
 
 The pin lives in the same place as `UnifiedEmissionPinsTest` and uses
 the same `countAcrossGenerators` helper. The actual behavioural
@@ -314,12 +341,17 @@ Four tiers.
   `JavaFile.toJavaFileObject()` + `javac` + APT, per the rewrite test
   rules (no code-string assertions on emitted bodies).
 - `PolymorphicProjectionFilterPinTest` (new, unit-tier per the
-  `UnifiedEmissionPinsTest` precedent): regex-scans the generator
-  source files for `PolymorphicSelectionSet.restrictTo` occurrences
-  (expected count: 1, in `MultiTablePolymorphicEmitter.java`) and for
-  unfiltered `env.getSelectionSet()` arguments to `$$fields(` (expected
-  count: 0). Reuses the `countAcrossGenerators` helper from the
-  existing pin test. This is the guarantee marker.
+  `UnifiedEmissionPinsTest` precedent, marked `@UnitTier`). Two
+  assertions. First, a folder-wide scan via `countAcrossGenerators` for
+  `PolymorphicSelectionSet.restrictTo` occurrences (expected count: 1,
+  in `MultiTablePolymorphicEmitter.java`). Second, a single-file regex
+  over `MultiTablePolymorphicEmitter.java` for `env.getSelectionSet()`
+  passed directly as the first argument to `$$fields(` (expected count:
+  0). The single-file scope on the second assertion is deliberate; see
+  Design → Guarantee marker for the rationale (folder-wide would couple
+  the pin to ~12 non-polymorphic emit sites that are correct as-is, plus
+  the same-table interface site that R108 leaves alone). This is the
+  guarantee marker.
 - `PolymorphicNestingFilterTest` (new): a pipeline-tier test classifying
   a fixture where a participant's only selected fields are nested under
   a fragment specific to a sibling type, asserting that the emitted
