@@ -16,6 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|
 | `R141` | Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | [plan](bulk-input-single-carrier-list-data-field.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
+| `R108` | Per-variant projection on polymorphic fields | Spec | [plan](polymorphic-per-variant-projection.md) |
 | `R143` | Surface a date column on the rendered roadmap table | In Review | [plan](roadmap-item-date-column.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready | [plan](tablemethod-child-table-bound.md) |
 | `R147` | Surface GraphitronSchemaValidator errors and warnings as LSP diagnostics | Spec | [plan](lsp-surface-validator-errors.md) |
@@ -43,7 +44,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Architecture
 
-- `R108` [**Per-variant projection on polymorphic fields**](polymorphic-per-variant-projection.md): Stage-2 of the multi-table polymorphic dispatcher over-selects when the GraphQL query carries asymmetric inline fragments on a union/interface. A query like
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md): When a GraphQL input field is wired (via `@field(name:)` or implicit name match) to a jOOQ-generated column whose `DataType` carries a `defaulted()` expression, surface that default in the schema so clients can see it and so omitted values get a typed, server-known default rather than silently relying on the database. The current generator path already emits `DSL.defaultValue(dataType)` when an input key is absent at insert/update time (`TypeFetcherGenerator.java:1456`, `:1496`, `:1508`, `:1769`), so the runtime story is correct — the gap is purely on the *contract* side: the SDL says nothing about which input fields have a database-supplied default, and clients that introspect the schema have to read the migrations to find out.
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md): R40 shipped the simple direct-FK case for argument-level FK-target `@nodeId`: when the FK source columns positionally match the target NodeType's keyColumns, projectFilters emits `BodyParam.In` / `Eq` / `RowIn` / `RowEq` against `joinPath[0].sourceColumns()` directly, no JOIN required.
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md): R50 named the lookup-vs-query split as a documentation-level distinction without lifting it into the model. The distinction is real and structurally consequential: lookups carry a derived VALUES table with an `idx` column to preserve per-input-row identity, queries fold predicates into a WHERE with no input-row identity to track. Today the split is encoded only by variant identity (`LookupMapping` vs everything else) and routing decisions taken in individual generators.
@@ -116,7 +116,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### interface-union
 
-- `R108` [**Per-variant projection on polymorphic fields**](polymorphic-per-variant-projection.md) — Backlog, architecture
+- `R108` [**Per-variant projection on polymorphic fields**](polymorphic-per-variant-projection.md) — Spec, architecture
 
 ### nodeid
 

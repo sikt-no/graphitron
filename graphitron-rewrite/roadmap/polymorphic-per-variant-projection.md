@@ -1,7 +1,7 @@
 ---
 id: R108
 title: "Per-variant projection on polymorphic fields"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 3
 theme: interface-union
@@ -10,115 +10,407 @@ depends-on: []
 
 # Per-variant projection on polymorphic fields
 
-Stage-2 of the multi-table polymorphic dispatcher over-selects when the
-GraphQL query carries asymmetric inline fragments on a union/interface.
-A query like
+> Stage-2 of the multi-table polymorphic dispatcher over-selects when the
+> GraphQL query carries asymmetric inline fragments on a union or interface.
+> Each per-typename SELECT today receives the parent's flattened
+> `DataFetchingFieldSelectionSet`, and the generated `$fields` walks every
+> entry in `getFieldsGroupedByResultKey()` without inspecting which type
+> condition each `SelectedField` belongs to. When two participant types
+> share a GraphQL field name, the inactive branch projects its own
+> same-named column. R108 filters the selection set per participant at the
+> emit site so each Stage-2 SELECT projects only columns actually selected
+> for that variant.
 
-```graphql
-{ customers { address { occupants {
-    __typename
-    ... on Customer { firstName }
-} } } }
-```
+The single-table interface emitter (`buildInterfaceFieldsList`) uses the
+same `$fields(env.getSelectionSet(), table, env)` shape, but its
+over-selection is masked by the deduping `LinkedHashSet` in every shape
+currently in fixtures. It is *not* folded in here; see "Same-table
+dispatch" below.
 
-renders two SELECTs — one against `customer`, one against `staff` — and
-**both** project `first_name` even though the staff branch was never
-asked for it. The bug is observable in the rendered SQL today; it does
-not corrupt response payloads (graphql-java drops unselected fields at
-serialisation), but it costs a column read per non-selected branch and
-breaks the "selection set drives projection" contract.
+---
+
+## Motivation
+
+The "selection set drives projection" contract underpins how
+graphitron-rewrite reasons about SELECT shape: every emitted projection
+either appears because a `SelectedField` was requested, or because a
+load-bearing `requiredProjectionColumns` rule injects it
+(`TypeClassGenerator.java:214-217`). The contract is what lets the
+rewrite-design-principles claim that "the SQL graphitron renders is
+exactly what the client asked for, plus what graphitron must add to make
+the response well-formed". Stage-2 polymorphic SELECT violates that
+contract today.
+
+The violation is not a payload bug. `graphql-java` drops any
+SELECT-projected column that the executing fragment did not request before
+serialising the response, so wire output stays correct. The cost is a
+per-branch wasted column read (one extra column per shared name per
+inactive participant per row in the result set) and a quiet hole in the
+"projection mirrors selection" invariant that pipeline-tier tests on the
+emitter are meant to pin. The next refactor that asserts "every column in
+the SELECT corresponds to a `SelectedField` matching this participant"
+will fail spuriously today, because it's not true today.
+
+The bug is observable in the rendered SQL. Stage-1 narrow SELECTs are
+intentionally minimal (`__typename` + PK, no selection-set consultation),
+so they are not affected.
+
+---
 
 ## Where the bug lives
 
-`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/MultiTablePolymorphicEmitter.java:1211`
-emits the per-typename Stage-2 helper as
+The bug lives at the Stage-2 per-typename helper:
+`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/MultiTablePolymorphicEmitter.java:1223`
 
 ```java
-fields = new ArrayList<>(Customer.$fields(env.getSelectionSet(), t, env));
+b.addStatement("$T fields = new $T($T.$$fields(env.getSelectionSet(), $L, env))",
+    arrayListOfField, arrayListOfField, typeClass, tableLocal);
 ```
 
-`env.getSelectionSet()` here is the parent's selection set (the one on
-the `occupants` field), which graphql-java exposes as a flat
-`getFieldsGroupedByResultKey()` containing every `SelectedField` from
-every inline fragment. The generated `$fields` body
-(`TypeClassGenerator.emitSelectionSwitch`,
-`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeClassGenerator.java:236-238`)
-loops that map and `switch (sf.getName())` — there is no fragment- or
-type-condition awareness. When `Customer` and `Staff` share a field
-*name* (e.g. `firstName`), `Staff.$fields` matches the Customer-fragment
-`firstName` entry and projects `staff.first_name`.
+`env.getSelectionSet()` is the parent field's flattened selection set.
+Each participant type's generated `$fields` then walks every entry of
+`getFieldsGroupedByResultKey()`.
 
-`SelectedField.getObjectTypeNames()` already carries the per-fragment
-type-condition information graphql-java parsed out of the document.
-The fix is to consume it.
+The generated `$fields` body
+(`TypeClassGenerator.java:235-294`) loops the flattened selection map and
+runs `switch (sf.getName())` with no awareness of which fragment each
+`SelectedField` came from. `SelectedField.getObjectTypeNames()` already
+carries that information; `$fields` simply does not consult it.
+
+---
 
 ## Why existing tests don't catch it
 
 `GraphQLQueryTest.addressOccupants_perBranchWhereScopesToAddress`
-(`graphitron-rewrite/graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/GraphQLQueryTest.java:3037`)
-queries `... on Customer { firstName } ... on Staff { firstName }` —
-both branches request the field, so the over-selection is invisible.
-There is no test today that exercises the asymmetric case.
+(`graphitron-rewrite/graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/GraphQLQueryTest.java:3186`)
+queries `... on Customer { firstName } ... on Staff { firstName }`. Both
+branches request the field, so the over-selection is invisible: the
+inactive branch was going to select `first_name` anyway. The asymmetric
+case has no coverage today.
 
-## Proposed shape (sketch — to be firmed up at Spec stage)
+---
 
-Two reasonable knobs, both leaning on
-`SelectedField.getObjectTypeNames()`:
+## Design
 
-1. **Filter at the call site.** In `buildPerTypenameSelect`, build a
-   filtered view of the selection set restricted to selected fields
-   whose `getObjectTypeNames()` contains the participant's type name,
-   and pass it into `$fields`. Cheapest if `$fields` keeps its current
-   signature; requires either a thin wrapper around
-   `DataFetchingFieldSelectionSet` or a new `$fields` overload that
-   takes a pre-filtered `Set<String>` of permitted result-keys.
-2. **Push the filter into `$fields`.** Add a `String concreteTypeName`
-   parameter; the generated loop checks
-   `sf.getObjectTypeNames().contains(concreteTypeName)` before the
-   switch. Cleaner contract, but every `$fields` call site changes —
-   non-polymorphic callers would pass the type's own name, which is
-   redundant but harmless.
+### Filter at the call site, not inside `$fields`
 
-Option (1) keeps the blast radius inside the polymorphic emitter, which
-matches the principle "every type with polymorphic dispatch already
-goes through `MultiTablePolymorphicEmitter` — non-polymorphic
-projection should not pay tax for a polymorphic-only correctness fix".
-Final shape decided at Spec.
+The Backlog body sketched two routes; the Spec settles on **call-site
+filter**. Reasoning:
 
-## Test coverage to add
+- The bug is polymorphic-only. Non-polymorphic projection passes
+  `env.getSelectionSet()` to `<Type>.$fields` and is correct as it stands.
+  Threading a `String concreteTypeName` parameter through every
+  `$fields` signature pushes the per-variant concern onto every caller,
+  including the dozens of single-table, single-type callers that have no
+  variance to filter. Per *Generation-thinking* and the project's
+  preference for narrow seams, the filter belongs at the point of
+  variance — the Stage-2 emit site — not in the shared
+  `$fields` contract.
+- All Stage-2 dispatches funnel through `buildPerTypenameSelect`. One
+  emit site, one helper invocation.
+- Keeping `$fields`'s signature stable means R108 lands as a localized
+  diff on one emitter method plus one new runtime helper class. No
+  ripple across the generators package.
 
-- **Pipeline-tier**: extend `MultiTablePolymorphicEmitter`'s pipeline
-  test (or add one) asserting that the generated Stage-2 body for
-  `Customer` does not project `Staff`-only columns when the SDL has
-  shared field names — and vice versa.
-- **Execution-tier**: a `PolymorphicProjectionQueryTest` (sibling to
-  the existing `CompositeKeyLookupQueryTest` SQL-shape tier) that
-  captures the rendered SQL via `ExecuteListener` and asserts the
-  asymmetric-fragment query renders `select … from "staff"` *without*
-  `"staff"."first_name"`. Graphql-java drops the field at serialisation
-  today; only the SQL string is load-bearing for the regression.
-- **Behavioural** (`GraphQLQueryTest`): one test naming the asymmetric
-  case so the response payload contract is locked alongside the
-  projection.
+### The helper: a delegating `DataFetchingFieldSelectionSet` view
+
+A new emitted runtime helper, generated by a new
+`PolymorphicSelectionSetClassGenerator` under
+`generators/util/`, mirrors the existing `ConnectionHelper` pattern: the
+class is hand-described in Java once, emitted into
+`<outputPackage>.util.PolymorphicSelectionSet`, and referenced by the
+emit sites by `ClassName`. The same compile path through
+`graphitron-sakila-example` then exercises it.
+
+Shape:
+
+```java
+package <outputPackage>.util;
+
+public final class PolymorphicSelectionSet {
+
+    private PolymorphicSelectionSet() {}
+
+    /**
+     * Returns a view of {@code source} whose {@link
+     * DataFetchingFieldSelectionSet#getFieldsGroupedByResultKey} retains
+     * only entries whose {@code SelectedField.getObjectTypeNames()}
+     * contains {@code concreteTypeName}. All other methods delegate to
+     * {@code source} unchanged.
+     */
+    public static DataFetchingFieldSelectionSet restrictTo(
+            DataFetchingFieldSelectionSet source, String concreteTypeName) {
+        // delegating wrapper; see Implementation sites for the methods
+        // that materially override versus delegate.
+    }
+}
+```
+
+`$fields` today only reads `getFieldsGroupedByResultKey()` from the
+selection set (`TypeClassGenerator.java:243`). The wrapper materially
+overrides exactly that method. Every other
+`DataFetchingFieldSelectionSet` method delegates to `source` so future
+read shapes (e.g. a nested `$fields` recursion that calls
+`sf.getSelectionSet()` and re-enters projection) keep working without a
+parallel implementation.
+
+This shape is a deliberate, localised wire-boundary adapter, and a small
+breach of the project's general preference for narrow typed components
+over opaque proxies of third-party interfaces. The justification, named
+explicitly so a future reader does not need to re-derive it: `$fields`'s
+nested-projection recursion reads `sf.getSelectionSet()`, which only
+exists on the `DataFetchingFieldSelectionSet` interface; a bare
+`Map<String, List<SelectedField>>` argument would not survive the
+recursion contract. Returning `DataFetchingFieldSelectionSet` is the
+minimum-disruption shape; the alternative (an emitted typed record with
+its own filtered-map accessor, plus a widened `$fields` signature
+accepting either shape) breaks the "signature unchanged" constraint that
+keeps the diff localised. The helper's class-level javadoc names this
+trade-off so the next reader does not interpret the wrapper as a
+template for further proxies over wire-format types.
+
+A pipeline-tier test (`PolymorphicSelectionSetClassEmitTest`) pins the
+emitted helper's source through the existing emit-and-compile path so
+the shape is checked at codegen time, not deferred to a runtime trip.
+
+### Emit site
+
+The Stage-2 call site changes to thread `concreteTypeName` through the
+helper:
+
+```java
+// MultiTablePolymorphicEmitter.buildPerTypenameSelect
+var polymorphicSelectionSet = ClassName.get(outputPackage + ".util", "PolymorphicSelectionSet");
+b.addStatement("$T fields = new $T($T.$$fields($T.restrictTo(env.getSelectionSet(), $S), $L, env))",
+    arrayListOfField, arrayListOfField, typeClass,
+    polymorphicSelectionSet, participant.typeName(), tableLocal);
+```
+
+The `ClassName` is resolved at the emit site against the per-emit
+`outputPackage`, matching the existing `ConnectionHelper` pattern
+(`generators/SplitRowsMethodEmitter.java:745-747`).
+
+### Same-table dispatch
+
+The Backlog left this open: "Confirm during Spec; if shared, fold in.
+If not, leave a one-line note." The single-table emit site at
+`TypeFetcherGenerator.java:841-842` uses the same shape, but its
+over-selection is masked by the deduping `LinkedHashSet` in every
+fixture currently exercising it. The shape that breaks the dedup —
+two participants of the same `TableInterfaceType` declaring a shared
+GraphQL field name backed by *different* columns on the same table —
+is not exercised by any fixture today and has no failing test. R108
+therefore leaves the single-table call site untouched, with a one-line
+javadoc cross-reference at `buildInterfaceFieldsList` pointing back to
+this item. A future Backlog item that lands a fixture exercising the
+break-the-dedup shape can fold the wrap in then; the `restrictTo`
+helper from R108 is reusable as-is at that point. Pulling the fix in
+now without a failing test would be speculative scope per the project's
+"don't fix what isn't broken" posture.
+
+### Cursor and required-projection columns are untouched
+
+Stage-2's synthetic projections — `__typename` literal
+(`MultiTablePolymorphicEmitter.java:1225`), `idx` column
+(`:1250-1251`), `__sort__` cursor column (`:1233-1245`) — are added
+*after* the `$fields` call and are independent of the selection set.
+`requiredProjectionColumns` (Split* SourceKey columns,
+`TypeClassGenerator.java:214-217`) are added inside `$fields` and remain
+unconditional by design: they're load-bearing for fetcher key extraction
+and must land regardless of variant. The filter changes which
+selection-driven fields enter the SELECT; it does not touch any of the
+above.
+
+### Nested polymorphic dispatch
+
+A `NestingField` inside a polymorphic participant recurses through
+`emitSelectionSwitch` (`TypeClassGenerator.java:276-280`) using
+`sf.getSelectionSet()` of the parent-level entry. Because the
+outer-level filter has already restricted the grouped map to entries
+matching this participant, the nested recursion sees only the active
+fragment's nested selection. No further filter is needed at depth; the
+restriction is per-call, not per-depth. `PolymorphicNestingFilterTest`
+(new, pipeline-tier; see Tests below) pins this by classifying a fixture
+where a participant's only selected fields are nested under a fragment
+specific to a sibling type, and asserting the emitted Stage-2 SELECT
+produces no field-specific projections for that participant.
+
+### Guarantee marker
+
+The Backlog acceptance asks for "a `@LoadBearingClassifierCheck` (or
+equivalent guarantee marker) on the call site so a future refactor can't
+silently revert to passing the parent selection set". The marker is
+*not* a classifier guarantee here (no classifier rejection is being
+relied on), and the rewrite's design principles ban code-string
+assertions on *emitted* method bodies at every tier. The equivalent
+that fits both constraints is the precedent set by `UnifiedEmissionPinsTest`
+(`graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/UnifiedEmissionPinsTest.java`):
+a regex scan over the **generator source files** (not over emitted
+bodies) that counts call sites and asserts the count matches the
+expected enumeration.
+
+The R108 pin (`PolymorphicProjectionFilterPinTest`, new, in the same
+package):
+
+- Counts occurrences of `PolymorphicSelectionSet.restrictTo` across
+  `src/main/java/no/sikt/graphitron/rewrite/generators/*.java` (excluding
+  the test target itself and any future helper that legitimately
+  delegates through it). Expected count: 1 (the single Stage-2 site in
+  `MultiTablePolymorphicEmitter.java`).
+- Counts occurrences of `env.getSelectionSet()` passed *directly* as the
+  first argument to `$$fields(` in the same set of files. Expected count:
+  0 after the fix. A regression that reverts to the unfiltered shape
+  re-introduces a match, the count rises, the pin trips.
+
+The pin lives in the same place as `UnifiedEmissionPinsTest` and uses
+the same `countAcrossGenerators` helper. The actual behavioural
+guarantee — that the rendered SQL no longer over-selects — lives in the
+execution-tier SQL-capture test (`PolymorphicProjectionQueryTest`,
+below), per *Pipeline tests are the primary behavioural tier*. The pin
+is the cheap CI signal; the execution-tier test is the proof.
+
+---
+
+## Implementation sites
+
+A three-file delta:
+
+- New file
+  `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/util/PolymorphicSelectionSetClassGenerator.java`:
+  emits `<outputPackage>.util.PolymorphicSelectionSet` with the
+  `restrictTo` static method. Modeled on
+  `ConnectionHelperClassGenerator`. Class-level javadoc names the
+  wire-boundary-adapter trade-off described in the Design section.
+- `MultiTablePolymorphicEmitter.java`: change the single statement at
+  line 1223 to wrap the selection set through `restrictTo`. The
+  surrounding `buildPerTypenameSelect` is otherwise unchanged. The
+  helper's `ClassName` is resolved inline against `outputPackage + ".util"`,
+  matching the existing `ConnectionHelper` reference pattern in
+  `SplitRowsMethodEmitter.java:745-747`.
+- `GraphQLRewriteGenerator.java` (or wherever generators are registered):
+  register the new `PolymorphicSelectionSetClassGenerator` in the
+  generator list so the helper class is emitted into every consumer's
+  `<outputPackage>.util` package alongside `ConnectionHelper`.
+- `TypeFetcherGenerator.java`: no code change. One-line javadoc cross-
+  reference added at `buildInterfaceFieldsList` noting that the
+  single-table emit site shares the unfiltered-selection-set shape with
+  the pre-R108 Stage-2 path, that the deduping `LinkedHashSet` masks
+  the over-selection in all currently-exercised fixtures, and that a
+  future Backlog item can reuse `PolymorphicSelectionSet.restrictTo` here
+  when a fixture exercises the unmasked shape.
+
+---
+
+## Tests
+
+Four tiers.
+
+### Pipeline-tier (primary)
+
+- `PolymorphicSelectionSetClassEmitTest` (new): the emitted
+  `PolymorphicSelectionSet` class compiles, and the generated
+  `restrictTo` method has the expected signature. Shape-pin via
+  `TypeSpec` equivalence against a known-good fixture or
+  `JavaFile.toJavaFileObject()` + `javac` + APT, per the rewrite test
+  rules (no code-string assertions on emitted bodies).
+- `PolymorphicProjectionFilterPinTest` (new, unit-tier per the
+  `UnifiedEmissionPinsTest` precedent): regex-scans the generator
+  source files for `PolymorphicSelectionSet.restrictTo` occurrences
+  (expected count: 1, in `MultiTablePolymorphicEmitter.java`) and for
+  unfiltered `env.getSelectionSet()` arguments to `$$fields(` (expected
+  count: 0). Reuses the `countAcrossGenerators` helper from the
+  existing pin test. This is the guarantee marker.
+- `PolymorphicNestingFilterTest` (new): a pipeline-tier test classifying
+  a fixture where a participant's only selected fields are nested under
+  a fragment specific to a sibling type, asserting that the emitted
+  Stage-2 SELECT for that participant produces no field-specific
+  projections beyond the unconditional `__typename` / cursor / idx
+  scaffolding. Pins the "no further filter needed at depth" claim from
+  the Design section.
+- Extend `RecordParentMultiTablePolymorphicPipelineTest` (existing,
+  `graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/RecordParentMultiTablePolymorphicPipelineTest.java`)
+  with an asymmetric-fragment fixture: a union whose participants share
+  a GraphQL field name backed by different columns on different tables,
+  exercised through the full classifier pipeline, with a TypeSpec
+  equivalence assertion that pins the per-typename SELECT body shape.
+
+### Compilation-tier
+
+- The existing `graphitron-sakila-example` compile already covers
+  `PolymorphicSelectionSet`'s import resolution and the cross-class
+  reference from `*Fetchers` to the helper. No new compilation test
+  needed; the helper landing in `<outputPackage>.util` is exercised the
+  same way `ConnectionHelper` is.
+
+### Execution-tier (the proof)
+
+- `PolymorphicProjectionQueryTest` (new, sibling to
+  `CompositeKeyLookupQueryTest`): mirrors the SQL-capture
+  `ExecuteListener` pattern at
+  `CompositeKeyLookupQueryTest.java:59-66`. Queries:
+
+  ```graphql
+  { customers(first: 1) { address { occupants {
+      __typename
+      ... on Customer { firstName }
+  } } } }
+  ```
+
+  Asserts that the rendered SQL log contains a SELECT against `"staff"`
+  but that SELECT does *not* contain `"staff"."first_name"`, and the
+  SELECT against `"customer"` *does* contain `"customer"."first_name"`.
+  A second test inverts the asymmetry (`... on Staff { firstName }`)
+  to pin both directions. A third test re-asserts the existing
+  symmetric case still projects both, so the filter is precise rather
+  than overzealous.
+
+### Behavioural
+
+- One `GraphQLQueryTest` test naming the asymmetric case to lock the
+  response payload contract alongside the SQL shape. The response is
+  already correct today (graphql-java drops the unselected field at
+  serialisation); the test pins it so any future regression that
+  inverts the bug (under-selecting active branches) fails loudly at the
+  payload level as well as the SQL level.
+
+---
 
 ## Out of scope
 
-- Same-table polymorphic dispatch (single-table interface) — that path
-  goes through a different emitter and per-variant projection is
-  already structurally sound there. Confirm during Spec; if shared, fold
-  in. If not, leave a one-line note on the same-table path's emitter
-  pointing back here.
-- The `__typename`-only and PK-only Stage-1 narrow SELECT — Stage 1
-  intentionally does not consult the selection set; this item is
-  Stage-2 only.
-- DataLoader-batched connection arms vs inline arms — the projection
-  call site is shared between them, so the fix lands once.
+- The Stage-1 narrow SELECT (`__typename` + PK only). Stage-1
+  intentionally does not consult the selection set; nothing to filter.
+- DataLoader-batched vs inline arms. The projection call site is
+  shared between them via `buildPerTypenameSelect`, so the fix lands
+  once.
+- The `getObjectTypeNames()` semantics for fields declared on the
+  interface/union itself rather than inside an inline fragment.
+  graphql-java populates `getObjectTypeNames()` with every concrete type
+  the field could resolve to, including interface-level fields that
+  apply to every participant, so those naturally pass the filter for
+  every variant. Confirmed against graphql-java 25's contract; no
+  additional handling.
+- A `@LoadBearingEmitterInvariant` annotation as a parallel to
+  `@LoadBearingClassifierCheck`. The generator-source pin (per
+  `UnifiedEmissionPinsTest`) is the established equivalent in the
+  codebase; introducing a new annotation shape is out of scope.
+- The same-table interface emit site at
+  `TypeFetcherGenerator.java:841-842`. See "Same-table dispatch" under
+  Design for the reasoning; future Backlog item folds the wrap in when
+  a fixture exercises the break-the-dedup shape.
+
+---
 
 ## Acceptance
 
 - Asymmetric-fragment query renders one column per branch matching the
-  selection set (no shared-name leakage).
-- New `@LoadBearingClassifierCheck` (or equivalent guarantee marker) on
-  the call site so a future refactor can't silently revert to passing
-  the parent selection set.
+  per-fragment selection set, with no shared-name leakage between
+  inactive branches and active ones.
+- `PolymorphicProjectionFilterPinTest` pins the Stage-2 emit site
+  against passing the unfiltered parent selection set; a refactor that
+  reverts to `env.getSelectionSet()` re-introduces an unfiltered match
+  in the generator source, trips the pin, and fails the build.
+- `PolymorphicProjectionQueryTest` asserts the rendered SQL for the
+  asymmetric Stage-2 SELECT against `"staff"` does not contain
+  `"staff"."first_name"`; this is the behavioural proof that the pin
+  underwrites.
 - `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` green.
