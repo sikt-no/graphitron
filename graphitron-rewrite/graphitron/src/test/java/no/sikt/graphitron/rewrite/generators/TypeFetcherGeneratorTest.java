@@ -1612,15 +1612,21 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryInterfaceField_perTypenameHelpersExist_andCallParticipantFields() {
-        // Stage 2 invokes <Type>.$fields(env.getSelectionSet(), t, env) for the typed projection.
+        // Stage 2 invokes <Type>.$fields(PolymorphicSelectionSet.restrictTo(env.getSelectionSet(),
+        // "<Type>"), t, env) for the typed projection — R108 wraps the parent selection set so
+        // each per-typename SELECT projects only columns actually selected for that variant.
         // Selection-set narrowing works at full strength only with $fields, not asterisk().
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
             DEFAULT_OUTPUT_PACKAGE);
         var film = method(spec, "selectFilmForSearch");
         var actor = method(spec, "selectActorForSearch");
-        assertThat(film.code().toString()).contains("Film.$fields(env.getSelectionSet(), t, env)");
-        assertThat(actor.code().toString()).contains("Actor.$fields(env.getSelectionSet(), t, env)");
+        assertThat(film.code().toString())
+            .contains(".Film.$fields(")
+            .contains(".PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), \"Film\"), t, env)");
+        assertThat(actor.code().toString())
+            .contains(".Actor.$fields(")
+            .contains(".PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), \"Actor\"), t, env)");
     }
 
     @Test

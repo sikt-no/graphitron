@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
+import no.sikt.graphitron.rewrite.generators.util.PolymorphicSelectionSetClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ValuesJoinRowBuilder;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -1218,10 +1219,17 @@ public final class MultiTablePolymorphicEmitter {
 
         // Field projection: <TypeName>.$fields(...) plus the synthetic __typename literal so
         // the schema-class TypeResolver routes each row back to its concrete GraphQL type.
+        // The parent's flattened DataFetchingFieldSelectionSet is restricted to this
+        // participant's SelectedFields via PolymorphicSelectionSet.restrictTo, so the per-typename
+        // SELECT projects only columns actually requested for this variant. Unfiltered selection
+        // set would over-select shared-name fields from inactive branches (R108).
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var arrayListOfField = ParameterizedTypeName.get(ARRAY_LIST, fieldWildcard);
-        b.addStatement("$T fields = new $T($T.$$fields(env.getSelectionSet(), $L, env))",
-            arrayListOfField, arrayListOfField, typeClass, tableLocal);
+        var polymorphicSelectionSet = ClassName.get(
+            outputPackage + ".util", PolymorphicSelectionSetClassGenerator.CLASS_NAME);
+        b.addStatement("$T fields = new $T($T.$$fields($T.restrictTo(env.getSelectionSet(), $S), $L, env))",
+            arrayListOfField, arrayListOfField, typeClass,
+            polymorphicSelectionSet, participant.typeName(), tableLocal);
         b.addStatement("fields.add($T.inline($S).as($S))", DSL, participant.typeName(), TYPENAME_COLUMN);
 
         // Connection mode: project the synthetic {@code __sort__} alias
