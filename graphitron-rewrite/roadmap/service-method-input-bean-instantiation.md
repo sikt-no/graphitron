@@ -27,11 +27,13 @@ Model invariant (SDL-driven): `CallSiteExtraction.Direct` is reserved for GraphQ
 arguments, including custom scalars wired via `@scalarType`. graphql-java's scalar coercion
 delivers the consumer's declared Java type, so the generator emits `env.getArgument(name)`
 unchanged regardless of the Java side. GraphQL input-object SDL arguments are classified as
-`InputBean` or rejected loudly at generation time — a `Map<String, Object>` Java parameter
-paired with an input-object SDL slot is the dangerous pre-R150 silent-cast pattern and is now
-a hard rejection. `Map<K, V>` as an `@service` parameter for an input-object SDL slot is
-explicitly deferred; the rejection message names the parameter and tells the consumer to
-declare a typed bean.
+`InputBean` or rejected loudly at generation time.
+
+`Map<K, V>` as an `@service` parameter type for an input-object SDL slot is a **permanent
+rejection**, not a v1 deferral. Map at the service boundary is the untyped-blob anti-pattern:
+every legitimate "open-ended" case routes through a custom scalar declared with `@scalarType`
+(the Map then lives at the scalar's Java binding, classified as Direct), and every typed case
+deserves a record or bean. The rejection message points to both alternatives by name.
 
 jOOQ TableRecords as `@service` arg parameters are not a deliberately-implemented path in v1.
 A generated record (e.g. `FilmRecord`) lives outside `org.jooq.*` and is currently routed

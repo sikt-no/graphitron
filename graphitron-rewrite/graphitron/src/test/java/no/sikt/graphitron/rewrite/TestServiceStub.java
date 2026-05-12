@@ -302,4 +302,14 @@ class TestServiceStub {
     public static String getThrowingSqlAndInterrupted() throws java.sql.SQLException, InterruptedException {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * Takes a raw {@code Map<String, Object>} for what the SDL declares as an input-object slot.
+     * R150 rejects this shape as an anti-pattern at generation time: the only safe outcome for an
+     * input-object SDL arg is a populated typed bean. Legitimate open-ended-JSON use cases route
+     * through {@code @scalarType} on a custom scalar instead.
+     */
+    public static String runWithMapInput(java.util.Map<String, Object> input) {
+        throw new UnsupportedOperationException();
+    }
 }

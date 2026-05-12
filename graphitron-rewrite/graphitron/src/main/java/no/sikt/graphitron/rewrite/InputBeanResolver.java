@@ -121,10 +121,11 @@ final class InputBeanResolver {
                 newParams.add(p);
                 continue;
             }
-            // SDL says input-object → the Java parameter MUST be a populatable bean. Anything
-            // else (Map, JDK type, builder-only class) is the unsafe pattern Direct used to
-            // permit and is now rejected loudly. Map<K,V> support is explicitly deferred; the
-            // rejection message names the parameter and tells the consumer to declare a typed bean.
+            // SDL says input-object → the Java parameter MUST be a populatable bean. Map / JDK /
+            // jOOQ / enum / array shapes are rejected loudly. Map<K, V> is a permanent rejection
+            // (anti-pattern at the service boundary, not a v1 deferral): consumers wanting
+            // open-ended-JSON semantics declare a custom scalar with `@scalarType` and a Map-typed
+            // Java binding — that lives in Direct, not InputBean.
             JavaElement elt = peelJavaListSet(p.typeName());
             Class<?> elementClass = tryLoad(elt.elementTypeName());
             if (elementClass == null) {
@@ -134,6 +135,17 @@ final class InputBeanResolver {
                     + elt.elementTypeName() + "' which is not loadable, but the GraphQL argument '"
                     + arg.graphqlArgName() + "' is an input-object — declare a consumer-authored"
                     + " bean class (record or class with a public no-arg constructor) for the parameter"));
+            }
+            if (Map.class.isAssignableFrom(elementClass)) {
+                return new Result.Failed(Rejection.structural(
+                    "parameter '" + p.name() + "' on method '" + method.methodName()
+                    + "' in class '" + method.className() + "' has Java type 'java.util.Map' for"
+                    + " the GraphQL input-object argument '" + arg.graphqlArgName() + "' (type '"
+                    + GraphQLTypeUtil.simplePrint(sdlType) + "') — Map<K, V> at the service"
+                    + " boundary is a permanent anti-pattern in graphitron; replace the parameter"
+                    + " with a typed bean (record or class with a public no-arg constructor"
+                    + " mirroring the input-object fields), or — for open-ended-JSON semantics —"
+                    + " declare a custom scalar via `@scalarType` and bind its Java type instead"));
             }
             if (!looksLikeBeanCandidate(elementClass)) {
                 return new Result.Failed(Rejection.structural(
