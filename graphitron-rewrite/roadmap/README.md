@@ -17,7 +17,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
 | `R140` | Publish leaf-coverage report from CI <sub>blocked by: [leaf-coverage-verify-off-local](leaf-coverage-verify-off-local.md)</sub> | Spec | [plan](leaf-coverage-artifact-publish-chain.md) |
 | `R132` | Move leaf-coverage report verification off local builds | In Review | [plan](leaf-coverage-verify-off-local.md) |
-| `R138` | Reject bulk-input + single-record-payload mutations (extend Invariant #15 to the Payload arm) | In Review | [plan](mutation-bulk-input-single-payload-key-loss.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready | [plan](tablemethod-child-table-bound.md) |
 | `R142` | LSP hovers, arg-completion, and arg validation against the schema snapshot <sub>blocked by: [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md)</sub> | Spec | [plan](lsp-user-directive-hovers-and-args.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
@@ -96,7 +95,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Other
 
-- `R141` [**Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field**](bulk-input-single-carrier-list-data-field.md): The shape _(blocked by [mutation-bulk-input-single-payload-key-loss](mutation-bulk-input-single-payload-key-loss.md))_
+- `R141` [**Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field**](bulk-input-single-carrier-list-data-field.md): The shape
 - `R118` [**Graphitron MCP server: knowledge-base tools for AI agents**](graphitron-mcp-server.md): The first non-build consumer of the knowledge base R117 frames. AI agents working in a graphitron-generated codebase ask cross-cutting questions ("what classification produced the fetcher at `Film.actors`? which roadmap items mention it? which capability does it exemplify? which test exercises it?") that span the SDL, the codegen output, the runtime trace, and the roadmap. Today they grep across half a dozen file trees and reconstruct relationships from prose; the KB already holds these joins as natural-keyed tables, so the MCP server's job is to expose the joins as tools and let the agent ask SQL or call typed lookups. This item delivers the server, not the schema (which is R117's programme); the server queries whatever's in the KB and grows naturally as dimensions land. _(blocked by [knowledge-base-programme](knowledge-base-programme.md))_
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md): The `@experimental_constructType(selection: "...")` directive is declared in `directives.graphqls` and stripped from the emitted schema by `SchemaDirectiveRegistry`, but no classifier, model carrier, or emitter exists for it yet.
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md): R18 Phase 5 originally folded three JavaParser-driven capabilities in alongside `@service` / `@condition` / `@record` autocomplete:
@@ -137,8 +136,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R141` [**Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field**](bulk-input-single-carrier-list-data-field.md) — Backlog, feature, blocked by [mutation-bulk-input-single-payload-key-loss](mutation-bulk-input-single-payload-key-loss.md)
-- `R138` [**Reject bulk-input + single-record-payload mutations (extend Invariant #15 to the Payload arm)**](mutation-bulk-input-single-payload-key-loss.md) — In Review, validation
+- `R141` [**Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field**](bulk-input-single-carrier-list-data-field.md) — Backlog, feature
 - `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Ready, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
