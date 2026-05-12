@@ -1,6 +1,9 @@
 package no.sikt.graphitron.lsp;
 
+import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
+import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -155,15 +158,40 @@ class WorkspaceTest {
     }
 
     @Test
-    void setCatalogEnqueuesAllOpenFiles() {
+    void setBuildOutputEnqueuesAllOpenFiles() {
         var ws = new Workspace();
         ws.didOpen("file:///a.graphqls", 1, "type A { x: Int }\n");
         ws.didOpen("file:///b.graphqls", 1, "type B { y: Int }\n");
         ws.drainRecalculate();
 
-        ws.setCatalog(CompletionData.empty());
+        ws.setBuildOutput(
+            new GraphQLRewriteGenerator.BuildArtifacts(
+                CompletionData.empty(),
+                new LspSchemaSnapshot.Built.Current(List.of())),
+            ValidationReport.empty());
 
         assertThat(ws.drainRecalculate())
             .containsExactlyInAnyOrder("file:///a.graphqls", "file:///b.graphqls");
+    }
+
+    @Test
+    void setBuildOutputSwapsCatalogSnapshotAndReportAtomically() {
+        var ws = new Workspace();
+        assertThat(ws.catalog().tables()).isEmpty();
+        assertThat(ws.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
+        assertThat(ws.validationReport().isEmpty()).isTrue();
+
+        var catalog = CompletionData.empty();
+        var snapshot = new LspSchemaSnapshot.Built.Current(List.of());
+        var report = ValidationReport.from(java.util.List.of(),
+            java.util.List.of(new no.sikt.graphitron.rewrite.BuildWarning(
+                "shadowed directive",
+                new graphql.language.SourceLocation(5, 3, "/x.graphqls"))));
+
+        ws.setBuildOutput(new GraphQLRewriteGenerator.BuildArtifacts(catalog, snapshot), report);
+
+        assertThat(ws.catalog()).isSameAs(catalog);
+        assertThat(ws.snapshot()).isSameAs(snapshot);
+        assertThat(ws.validationReport()).isSameAs(report);
     }
 }

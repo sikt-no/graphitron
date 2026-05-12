@@ -369,14 +369,24 @@ What the loop does on each schema save:
   rendered content actually changed are written; the IDE recompiles only
   those classes (same three-clause contract pinned by
   `IdempotentWriterTest` and `GeneratorDeterminismTest`).
-. Validation failures are logged to the console with grouped per-file
-  trees; the loop keeps running so a typo does not kill the session.
+. Validation failures land in two places: the console gets the grouped
+  per-file tree, and the LSP delivers the same errors as editor
+  diagnostics on the open buffer. The loop keeps running so a typo does
+  not kill the session; the editor's squiggle and the console's tree
+  carry the same `(file, location, message)` triple. The editor softens
+  deferred-variant rejections from error to warning (the schema is
+  valid, the generator just has not shipped the path yet); everything
+  else uses the same severity as the build log.
 . Open editor buffers see refreshed diagnostics on the next request.
 
 The dev goal also watches the consumer's compiled jOOQ output
 (`target/classes/<jooqPackage>/`) for `.class` changes. Running
 `mvn compile` in another terminal after a jOOQ schema change picks up
 new tables and columns automatically; no `dev`-session restart needed.
+The same trigger also refreshes validation: rename a Java class that an
+`@service` directive points at, then `mvn compile` the consumer, and
+the editor surfaces the unresolved-class error without waiting for a
+schema save.
 
 Stop the loop with Ctrl+C (a JVM shutdown hook closes the LSP socket,
 the watch service, and the debounce executor cleanly).
@@ -387,7 +397,7 @@ This subsection is contributor-level material; consumers can skip it. It explain
 
 The `dev` goal runs four cooperating components in one JVM:
 
-* *LSP server* binds the TCP port (default `8487`) and speaks LSP to whatever editor or agent connects. It serves diagnostics, hover, completion, and go-to-definition off the most recent classified `GraphitronSchema`. State is in-memory only; no LSP cache lives on disk.
+* *LSP server* binds the TCP port (default `8487`) and speaks LSP to whatever editor or agent connects. It serves diagnostics, hover, completion, and go-to-definition off the most recent classified `GraphitronSchema` and the validator's report on it. State is in-memory only; no LSP cache lives on disk.
 * *Schema watcher* is a `WatchService` over the consumer's `.graphqls` source roots. On a save, it debounces same-file events that arrive in clusters (some editors emit several `MODIFY` events per save) and signals the generator dispatch.
 * *Classpath watcher* is a `WatchService` over the consumer's compiled jOOQ output (`target/classes/<jooqPackage>/`). When `mvn compile` in another terminal lands new `.class` files for jOOQ tables and columns, the watcher signals the generator dispatch the same way a schema save does. This is what lets a jOOQ schema regen pick up automatically without a `dev`-session restart.
 * *Generator dispatch* is the lifecycle thread that consumes wake-up events from either watcher, loads the (possibly-updated) classpath, runs the generator over the (possibly-updated) `.graphqls` sources, and feeds the resulting `GraphitronSchema` and emit results to the LSP server's in-memory state and to disk via the idempotent writer.

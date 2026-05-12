@@ -1,7 +1,10 @@
 package no.sikt.graphitron.rewrite.maven.dev;
 
 import no.sikt.graphitron.lsp.state.Workspace;
+import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
+import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import no.sikt.graphitron.rewrite.maven.watch.SchemaWatcher;
 import org.junit.jupiter.api.AfterEach;
@@ -59,7 +62,11 @@ class CatalogRefreshTest {
         );
 
         Runnable rebuilder = () -> {
-            workspace.setCatalog(newCatalog);
+            workspace.setBuildOutput(
+                new GraphQLRewriteGenerator.BuildArtifacts(
+                    newCatalog,
+                    new LspSchemaSnapshot.Built.Current(List.of())),
+                ValidationReport.empty());
             fired.countDown();
         };
 

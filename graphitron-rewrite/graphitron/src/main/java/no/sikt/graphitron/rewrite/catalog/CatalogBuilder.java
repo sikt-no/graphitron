@@ -30,7 +30,7 @@ import java.util.Optional;
  *
  * <p>Designed to run hot: a single pass over the jOOQ catalog plus a single
  * pass over the assembled schema's type list. The dev goal calls
- * {@link no.sikt.graphitron.rewrite.GraphQLRewriteGenerator#buildCatalog()}
+ * {@link no.sikt.graphitron.rewrite.GraphQLRewriteGenerator#buildOutput()}
  * on every classpath-watcher trigger; this class is the workhorse behind
  * that call.
  *
