@@ -31,6 +31,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R8` | Docs as an index into classification tests | Ready (deferred) | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress | [plan](retire-maven-plugin.md) |
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress | [plan](docs-site-asciidoc.md) |
+| `R139` | Dev-pipeline to LSP schema-snapshot side-channel; first client unknown-directive validator | Spec | [plan](lsp-schema-snapshot-side-channel.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | [plan](list-valued-external-field-multiset.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | [plan](operation-driven-test-corpus.md) |
@@ -205,6 +206,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
 - `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
+- `R139` [**Dev-pipeline to LSP schema-snapshot side-channel; first client unknown-directive validator**](lsp-schema-snapshot-side-channel.md) — Spec, architecture
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
 - `R100` [**LSP validation and completions for @node and @nodeId directives**](node-directive-lsp-coverage.md) — Backlog, feature
 
