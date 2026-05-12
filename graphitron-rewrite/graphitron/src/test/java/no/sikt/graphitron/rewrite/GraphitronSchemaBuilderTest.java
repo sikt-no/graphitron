@@ -5139,10 +5139,10 @@ class GraphitronSchemaBuilderTest {
             input FilmCreateInput @table(name: "film") { title: String }
             type Query { x: String }
             type Mutation {
-                createFilms(in: [FilmCreateInput!]!): FilmPayload @mutation(typeName: INSERT)
+                createFilm(in: FilmCreateInput!): FilmPayload @mutation(typeName: INSERT)
             }
             """,
-            schema -> assertThat(schema.field("Mutation", "createFilms")).isInstanceOf(MutationField.MutationDmlRecordField.class)) {
+            schema -> assertThat(schema.field("Mutation", "createFilm")).isInstanceOf(MutationField.MutationDmlRecordField.class)) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationDmlRecordField.class); }
         },
 
@@ -5551,8 +5551,8 @@ class GraphitronSchemaBuilderTest {
                     .contains("Invariant #15");
             }),
 
-        DML_INSERT_LIST_PAYLOAD_DEFERRED(
-            "DML INSERT with listed input + @record payload return → UnclassifiedField (deferred, R75)",
+        DML_INSERT_LIST_PAYLOAD_REJECTED(
+            "DML INSERT with listed input + @record payload return → UnclassifiedField (Invariant #15)",
             """
             type Film @table(name: "film") { title: String }
             type FilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
@@ -5564,7 +5564,25 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "createFilms");
-                assertThat(f.reason()).contains("list @record payload returns are not yet supported");
+                assertThat(f.reason())
+                    .contains("must return a list")
+                    .contains("Invariant #15");
+            }),
+
+        DML_INSERT_LIST_PLAIN_PAYLOAD_REJECTED(
+            "DML INSERT with listed input + plain SDL Object payload return → UnclassifiedField (Invariant #15, R75 carrier-arm)",
+            """
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { film: Film }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilmsPayload(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilmsPayload");
+                assertThat(f.reason())
+                    .contains("must return a list")
+                    .contains("Invariant #15");
             }),
 
         DML_NON_ID_RETURN_REJECTED(

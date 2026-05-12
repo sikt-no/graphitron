@@ -2346,7 +2346,6 @@ class FieldBuilder {
     private GraphitronField buildDmlField(
             ReturnTypeRef returnType, String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef, String dmlTableSqlName,
-            boolean listInput,
             java.util.function.BiFunction<DmlReturnExpression, Optional<ErrorChannel>, GraphitronField> builder,
             Optional<HelperRef.Encode> encodeReturn) {
         // Channel and DML payload assembly are independent under the source-direct contract:
@@ -2368,13 +2367,6 @@ class FieldBuilder {
             case DmlPayloadAssemblyResult.Reject r -> {
                 return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(r.reason()));
             }
-        }
-        // Bulk-input + Payload return is deferred under the synthesize-payload-carrier slug.
-        // Kept out of MutationInputResolver.validateReturnType so that function stays purely
-        // structural (Invariants #14 + #15); this is "not yet supported", a distinct category.
-        if (listInput && returnType instanceof ReturnTypeRef.ResultReturnType) {
-            return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef,
-                Rejection.deferred("list @record payload returns are not yet supported", "synthesize-payload-carrier"));
         }
         DmlReturnExpression returnExpression = buildDmlReturnExpression(returnType, encodeReturn, assembly);
         return builder.apply(returnExpression, channel);
@@ -2700,18 +2692,17 @@ class FieldBuilder {
 
                 Optional<HelperRef.Encode> enc = encodeReturn;
                 String dmlTableSqlName = tia.inputTable().tableName();
-                boolean listInput = tia.list();
                 return switch (kind) {
-                    case INSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName, listInput,
+                    case INSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
                         (rex, ch) -> new MutationField.MutationInsertTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
-                    case UPDATE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName, listInput,
+                    case UPDATE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
                         (rex, ch) -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
-                    case DELETE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName, listInput,
+                    case DELETE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
                         (rex, ch) -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
-                    case UPSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName, listInput,
+                    case UPSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
                         (rex, ch) -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
                 };

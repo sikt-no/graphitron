@@ -1,7 +1,7 @@
 ---
 id: R138
 title: "Reject bulk-input + single-record-payload mutations (extend Invariant #15 to the Payload arm)"
-status: Ready
+status: In Review
 bucket: validation
 priority: 3
 theme: mutations-errors
