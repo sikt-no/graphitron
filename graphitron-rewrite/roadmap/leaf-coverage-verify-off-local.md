@@ -18,6 +18,12 @@ The single CI-derived guarantee being downgraded here: the verify gate today ass
 
 Out of scope: changing the mention join itself (R107), changing what the report contains, the `leaf-coverage` profile's default activation (R133), auto-committing the regenerated report back to trunk, and PR-preview rendering.
 
+## Outcome
+
+Steps 1, 2, and 6 of the Implementation plan below shipped under R132 — the local `mvn verify` gate is gone, the committed `inference-axis-coverage.adoc` is now a clearly-labeled placeholder, and the regen one-liner is future-correct for R133. The contributor-facing target ("`mvn verify` never fails because of leaf-coverage drift") holds. Steps 3, 4, and 5 — the CI regen, the artifact upload, and the `workflow_run`-chained deploy — are deferred to R140: `workflow_run` listeners only fire when the listener file lives on the repo's default branch, which here is `main`, and the rewrite workflow files do not yet live there. The Spec→Ready review missed this constraint; R140 carries the gap as its own item rather than smuggling a partial fix in.
+
+Under R132 alone, the doc-site page for this report is the placeholder; the "live site reflects the latest successful trunk run" guarantee from the framing above does not yet hold. R140 restores it.
+
 ## Implementation
 
 1. **Drop the verify gate.** Remove the `verify-leaf-coverage-report` `<execution>` block from `graphitron-rewrite/roadmap-tool/pom.xml`. Keep the `--verify` flag handling in `no.sikt.graphitron.roadmap.Main` and `LeafCoverageReport` — it remains callable as a CLI assertion primitive (e.g. for R107 self-tests), just unbound from any Maven phase.
