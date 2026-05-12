@@ -128,11 +128,17 @@ A new sealed leaf `MutationField.MutationBulkDmlRecordField`, sibling to `Mutati
 ```java
 /**
  * Bulk-input DML carrier with a list-shaped @table data field. The classifier admits exactly
- * (tableInputArg.list() == true, dataField.wrapper().isList() == true, kind ∈ {INSERT, UPDATE, UPSERT})
+ * (tableInputArg.list() == true, dataField.wrapper().isList() == true, kind ∈ {INSERT, UPDATE})
  * and pairs the input cardinality to the data field's element type via the existing
  * load-bearing classifier check
  * {@code mutation-dml-record-field.data-table-equals-input-table}
  * (R141 extends this key to cover the new leaf).
+ *
+ * <p>UPSERT is structurally compatible with this leaf but is refused upstream by
+ * {@code MutationInputResolver} under R144's cardinality-safety regime. R145
+ * ({@code mutation-cardinality-safety-upsert}) lifts the refusal with a designed
+ * cardinality story; at that point this leaf's compact-constructor relaxes to admit
+ * {@code DmlKind.UPSERT} and the parameterised emitter gains the UPSERT branch.
  *
  * <p><b>Order preservation invariant.</b> {@code output.data[i]} corresponds to
  * {@code input[i]} for all {@code i ∈ [0, N)}. The emitter satisfies this via batched
@@ -152,7 +158,7 @@ record MutationBulkDmlRecordField(
     SourceLocation location,
     ReturnTypeRef.ResultReturnType returnType,        // carrier wrapper is single (non-null or nullable)
     ArgumentRef.InputTypeArg.TableInputArg tableInputArg,  // .list() == true (invariant)
-    DmlKind kind,                                     // INSERT / UPDATE / UPSERT; DELETE rejected
+    DmlKind kind,                                     // INSERT / UPDATE; DELETE rejected, UPSERT deferred to R145
     Optional<ErrorChannel> errorChannel               // R12 slot, unchanged
 ) implements MutationField {
     public MutationBulkDmlRecordField {
@@ -161,6 +167,13 @@ record MutationBulkDmlRecordField(
                 "MutationBulkDmlRecordField cannot carry DmlKind.DELETE — "
                 + "DELETE-with-payload-return is rejected at classify time "
                 + "(returning pre-deletion state is incorrect by construction).");
+        }
+        if (kind == DmlKind.UPSERT) {
+            throw new IllegalArgumentException(
+                "MutationBulkDmlRecordField cannot carry DmlKind.UPSERT under R144's "
+                + "cardinality-safety regime — UPSERT is refused at the upstream "
+                + "MutationInputResolver and lifts via R145 "
+                + "(mutation-cardinality-safety-upsert).");
         }
         if (!tableInputArg.list()) {
             throw new IllegalArgumentException(
@@ -186,7 +199,7 @@ In `FieldBuilder` carrier-resolution (the R75 Phase 1 path at `FieldBuilder.java
 | `false` | `false` | `MutationDmlRecordField` (R75 Phase 1, existing) |
 | `false` | `true`  | rejected — single input, list data field has nothing to fill it from |
 | `true`  | `false` | rejected via R138's lifted Invariant #15 |
-| `true`  | `true`  | **`MutationBulkDmlRecordField` (R141, new)** |
+| `true`  | `true`  | **`MutationBulkDmlRecordField` (R141, new) — for kind ∈ {INSERT, UPDATE}; UPSERT refused upstream by R144** |
 
 The single-input + list-data-field rejection is a fresh rule (not currently covered by R138 or R75). It is **a new predicate, not an extension of R138's lifted Invariant #15**: R138's predicate is `listInput && !returnType.wrapper().isList()` (the carrier-wrapper arm); R141's new rejection predicate is `!listInput && carrier.dataField.wrapper().isList()` (the data-field cardinality arm). The two predicates together complete the input-cardinality / data-field-cardinality 2×2 matrix and warrant **a new Invariant family** in the same spirit. Name it Invariant #16 ("carrier data-field cardinality matches input cardinality") and surface the rejection message as: `"@mutation(typeName: <kind>) with a single @table input cannot return a list-shaped data field on the carrier ('<carrierName>.<dataField>'); list-shaped output requires bulk input (Invariant #16)"`.
 
@@ -242,13 +255,12 @@ The error-channel field on the carrier classifies via R12's existing machinery; 
 
 ## Mutation-kind coverage
 
-INSERT, UPDATE, UPSERT all admitted. DELETE rejected at classify time via the compact-constructor (same reasoning as `MutationDmlRecordField`: returning pre-deletion state is incorrect by construction; the row is gone before the response SELECT can read it). Three emit shapes, one shared response-SELECT:
+INSERT and UPDATE admitted in R141's initial landing. DELETE rejected at classify time via the compact-constructor (same reasoning as `MutationDmlRecordField`: returning pre-deletion state is incorrect by construction; the row is gone before the response SELECT can read it). UPSERT deferred to R145: R144's cardinality-safety regime refuses every `@mutation(typeName: UPSERT)` field at `MutationInputResolver` before carrier-resolution reaches this leaf, so the leaf cannot meaningfully admit UPSERT under R144. R145 (`mutation-cardinality-safety-upsert`) designs the UPSERT cardinality story and, when it lands, lifts both the upstream refusal *and* the compact-constructor rejection here. Two emit shapes, one shared response-SELECT:
 
 - **INSERT**: per-row `dsl.insertInto(table, cols).values(vals).returningResult(pkCols).fetchOne()` inside a loop. PKs flow into the response-SELECT.
-- **UPDATE**: per-row `dsl.update(table).set(cols).where(buildLookupWhere(tia, row)).returningResult(pkCols).fetchOne()`. Reuses the existing `@lookupKey`-driven WHERE builder from `MutationUpdateTableField`.
-- **UPSERT**: per-row `dsl.insertInto(table, cols).values(vals).onConflict(<lookupKeys>).doUpdate().set(<nonLookup>).returningResult(pkCols).fetchOne()`. Empty-SET case emits `.doNothing()` (mirrors `MutationUpsertTableField`). Oracle-dialect runtime guard (jOOQ translates to `MERGE INTO` with semantics drift) carries over from the existing UPSERT machinery.
+- **UPDATE**: per-row `dsl.update(table).set(cols).where(buildLookupWhere(tia, row)).returningResult(pkCols).fetchOne()`. Reuses the existing lookup-WHERE builder from `MutationUpdateTableField`; the filter-column source is unchanged across R144's polarity flip (the builder reads `InputColumnBindingGroup` rows from `tableInputArg.fieldBindings()`, which R144 populates from the default-filter walk rather than the legacy `@lookupKey` gate).
 
-Three emitters in `TypeFetcherGenerator` — `buildMutationBulkDmlRecordInsertFetcher`, `...UpdateFetcher`, `...UpsertFetcher` — or one parameterised emitter dispatching on `DmlKind`. The parameterised shape is the natural choice (mirrors the R22 `buildDmlFetcher` skeleton at `TypeFetcherGenerator.java`); the three kind-specific helpers differ only in the per-row statement and the WHERE/SET clauses.
+Two emitters in `TypeFetcherGenerator` — `buildMutationBulkDmlRecordInsertFetcher`, `...UpdateFetcher` — or one parameterised emitter dispatching on `DmlKind`. The parameterised shape is the natural choice (mirrors the R22 `buildDmlFetcher` skeleton at `TypeFetcherGenerator.java`); the two kind-specific helpers differ only in the per-row statement and the WHERE/SET clauses. R145 adds the UPSERT branch (`...UpsertFetcher` or the third arm of the parameterised emitter) when it lifts the deferral; the existing INSERT and UPDATE arms are unaffected.
 
 ## Classifier-tier truth-table coverage
 
@@ -273,7 +285,7 @@ DML_INSERT_LIST_PLAIN_PAYLOAD_LIST_DATA_ADMITTED(
     }),
 ```
 
-One admitted row covers the mechanism — same one-row-per-mechanism precedent as R138. UPDATE / UPSERT admitted-rows are not added; the kind-switch shares the same classifier path and execution-tier coverage exercises the per-kind emit differences.
+One admitted row covers the mechanism — same one-row-per-mechanism precedent as R138. A UPDATE admitted-row is not added; the kind-switch shares the same classifier path and execution-tier coverage exercises the per-kind emit differences. UPSERT does not get an admitted row in R141's truth-table because R144 refuses UPSERT upstream; R145 adds the admitted UPSERT row when it lifts the deferral.
 
 The second row covers the new Invariant #16 rejection (single input + list data field):
 
@@ -376,6 +388,7 @@ No new classifier-check pairings are introduced — `mutation-dml-record-field.d
 - Single-statement order-preserving emit (the N+1 statement count is acceptable for mutation N; revisit only if profiling shows real cost; the leaf's documented order-preservation invariant is the type-system anchor any future emit refinement must satisfy).
 - Cross-table read-back (data field's `@table` must match input's `@table`; the cross-table case is a separate plan if it surfaces).
 - DELETE-with-list-data-field-payload (no read-back to surface; rejected at the compact-constructor).
+- **UPSERT** admission (deferred to R145, `mutation-cardinality-safety-upsert`). R144 (`mutation-cardinality-safety-default`) refuses every `@mutation(typeName: UPSERT)` field at the upstream `MutationInputResolver` under the cardinality-safety regime; carrier-resolution never reaches this leaf for UPSERT. R141's compact-constructor independently rejects `DmlKind.UPSERT` to make the deferral type-system-enforced rather than a comment. R145 simultaneously lifts the upstream refusal and the compact-constructor rejection here, and adds the UPSERT branch to the parameterised emitter; R141's INSERT and UPDATE arms are unaffected by either landing.
 - Bulk `@service` carrier with list-shaped data field (the R75 Phase 2 `@service` carrier path is the symmetric `@service` counterpart; if a real schema surfaces a need, file `bulk-input-single-carrier-list-data-field-service` as the sibling item — R141's design does not generalise to `@service` because the emit strategy is different, but the carrier-resolution shape is symmetric and could share an interface).
 - Refactor of both `MutationDmlRecordField` and `MutationBulkDmlRecordField` to sealed-on-kind permits (mirroring `DmlTableField`'s `MutationInsertTableField` / `MutationUpdateTableField` / `MutationUpsertTableField` shape); file `dml-record-carrier-sealed-on-kind` as the follow-up. R141 mirrors `MutationDmlRecordField`'s current `DmlKind kind` enum field for intra-pair consistency.
 - Refactor of both record-carrier leaves under a `DmlRecordCarrierField` sealed sub-taxonomy under `MutationField`; file `dml-record-carrier-sub-taxonomy` as the follow-up. R141 leaves both leaves as flat siblings of `MutationField`. The two refactor items are independent and can land in either order.
@@ -389,3 +402,5 @@ No new classifier-check pairings are introduced — `mutation-dml-record-field.d
 - **Defers** `dml-record-carrier-sealed-on-kind` (sealed-on-kind refactor for both record-carrier leaves, mirroring `DmlTableField`).
 - **Defers** `dml-record-carrier-sub-taxonomy` (sealed `DmlRecordCarrierField` sub-taxonomy under `MutationField`).
 - **Defers** `bulk-input-single-carrier-list-data-field-service` (the symmetric `@service` carrier path, if needed; the carrier-resolution shape is symmetric but the emit strategy is `@service`-specific).
+- **Sibling of** [`mutation-cardinality-safety-default.md`](mutation-cardinality-safety-default.md) (R144, Spec). R144 inverts the cardinality-safety polarity for DELETE / UPDATE input fields (default filter, `@multiRow` opt-out, `@value` for UPDATE assignment partition) and refuses UPSERT under the new regime pending R145. R141 and R144 are peers in the `mutations-errors` theme; they don't block each other to ship (R141's INSERT / UPDATE arms land regardless of R144's order), and they share a single UPSERT carve-out deferred to R145. R141 narrows its admitted-kinds matrix to `{INSERT, UPDATE}` to coordinate the shared deferral; whichever of R141 / R144 lands second carries the test-fixture migration sweep for any UPDATE coverage that touched the legacy `@lookupKey` shape.
+- **Shares deferral with** [`mutation-cardinality-safety-upsert.md`](mutation-cardinality-safety-upsert.md) (R145, Backlog). R145 designs the UPSERT cardinality story and, when it ships, simultaneously lifts R144's upstream UPSERT refusal and R141's compact-constructor UPSERT rejection. R141's parameterised emitter dispatch gains the UPSERT arm at that point. R145's plan body should reference R141 as one of the leaves whose admission widens at landing.
