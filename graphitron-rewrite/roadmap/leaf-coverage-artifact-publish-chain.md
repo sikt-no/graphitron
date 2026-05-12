@@ -1,45 +1,85 @@
 ---
 id: R140
-title: "Publish leaf-coverage report from CI once rewrite workflows are on main"
-status: Backlog
+title: "Publish leaf-coverage report from CI"
+status: Spec
 bucket: cleanup
 priority: 3
 theme: structural-refactor
 depends-on: [leaf-coverage-verify-off-local]
 ---
 
-# Publish leaf-coverage report from CI once rewrite workflows are on main
+# Publish leaf-coverage report from CI
 
-R132 shipped the local-friction half of its plan (verify-gate drop, placeholder `inference-axis-coverage.adoc`) but deferred the CI publish chain. The deferred half is: regenerate the report on every successful reactor run, upload it as a build artifact, and have `deploy-docs.yml` download the artifact before the AsciiDoctor render so the live doc site reflects the latest trunk classification snapshot. R132's spec laid out the mechanism (steps 3–5 of its Implementation section); this item resurrects those steps once the structural prerequisite is met.
+R132 shipped the local-friction half of its plan: the `verify-leaf-coverage-report` gate is gone and the committed `graphitron-rewrite/roadmap/inference-axis-coverage.adoc` is a labelled placeholder. The CI publish chain that would replace the gate (regenerate the real report on every successful trunk run, render it into the doc site, deploy to GitHub Pages) is still missing. The live doc site currently shows the placeholder. R140 lands the publish chain so the site reflects the latest successful trunk build.
 
-The prerequisite missed in R132's Spec→Ready review: `workflow_run` event listeners only fire when the listener workflow file lives on the repo's default branch. This repo's default branch is `main`, which currently carries only the legacy `maven-build.yml` and `maven-publish.yml` workflows — `rewrite-build.yml` and `deploy-docs.yml` live only on `claude/graphitron-rewrite`. With deploy-docs.yml absent from `main`, a `workflow_run` trigger on it never fires, breaking the publish chain entirely. The `on: push` trigger R132 reverted to does not have this restriction because push events fire workflows defined in the branch being pushed.
+R132's original sketch chained two workflow files via `workflow_run`: `rewrite-build.yml` regenerates the report and uploads it as an artifact; `deploy-docs.yml` listens for the reactor's completion via `workflow_run`, downloads the artifact, and renders + deploys the site. The Spec→Ready review missed that `workflow_run` listeners only fire when the listener workflow file lives on the repo's default branch. This repo's default branch is `main`, and `main` only carries the legacy `maven-build.yml` and `maven-publish.yml` workflows. With `deploy-docs.yml` absent from `main`, a `workflow_run` trigger on it never fires.
 
-R140 is gated on whether the rewrite workflow files are present on `main`. There are two paths to that gate, and the implementer should pick one in the Spec body rather than now:
+R140 sidesteps that constraint by folding the deploy work into `rewrite-build.yml` as downstream jobs in the same workflow run. Push triggers use the workflow file from the branch being pushed, regardless of what `main` contains, so the default-branch constraint never applies. `deploy-docs.yml` is deleted; one workflow file owns the build → regenerate → render → deploy chain end-to-end.
 
-1. **Mirror the two workflow files to `main`.** A one-shot cherry-pick (or equivalent) of the current `rewrite-build.yml` and `deploy-docs.yml` onto `main`. Cheap; needs maintainer authorization because pushing to `main` is normally out of bounds for AI work (CLAUDE.md). The mirrored files would then drift if the rewrite versions evolve, so this is best paired with a single update-`main` step at R140 implementation time and a note that future workflow edits also have to land on `main`.
-2. **Wait for the rewrite-to-main merge.** If/when graphitron-rewrite is promoted to the production trunk and `main` adopts these workflow files as part of that promotion, R140 implementation is unblocked without a separate `main` push.
+The structural alternatives we considered and rejected:
 
-Once the prerequisite is met, the implementation is mechanical and follows R132's steps 3–5 verbatim (with the actions/checkout `ref` pin added during R132 self-review).
+- **Mirror `rewrite-build.yml` and `deploy-docs.yml` to `main`** so the `workflow_run` constraint clears. Cheapest path technically, but the `main` push needs maintainer authorization (CLAUDE.md scopes AI work to the rewrite branch), and the copies on `main` and `claude/graphitron-rewrite` will drift the moment anyone edits the rewrite copies. The mitigation (a CI diff check, or a written convention that workflow edits land on both branches) trades the original problem for a smaller-but-permanent one.
+- **Wait for the rewrite-to-`main` promotion** so `main` picks up the workflow files naturally. Zero work, but unbounded timeline; the live site stays placeholder-only in the meantime.
 
-## Implementation sketch
+## Design
 
-1. **Add the regen + upload steps to `rewrite-build.yml`** (lifted from R132 step 3): trunk-guarded `mvn exec:java` followed by `actions/upload-artifact@v4` with `name: inference-axis-coverage`, `path: graphitron-rewrite/roadmap/inference-axis-coverage.adoc`, `if-no-files-found: error`.
+One workflow, `rewrite-build.yml`, with four jobs:
 
-2. **Replace `deploy-docs.yml`'s `on: push` trigger with `on: workflow_run`** chained to `Rewrite reactor CI` on `claude/graphitron-rewrite`. Add the conditional checkout ref (`github.event.workflow_run.head_sha` for the `workflow_run` path; `github.ref` for `workflow_dispatch`) and the `actions/download-artifact@v4` step. Add `actions: read` to permissions so the download can read another workflow's artifacts.
+1. `build` (existing). Runs `mvn verify -Plocal-db` against the Postgres service, exactly as today. After verify succeeds, an additional step regenerates the leaf-coverage report and uploads it as a workflow artifact. Both new steps are gated `if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'` so PRs and `main` pushes are unaffected. The regen reads the `target/leaf-coverage.jsonl` traces the verify run produced; running inside the same job keeps that workspace state implicit.
 
-3. **Restore the cross-reference HTML comments** at the top of both files describing the `name:`-string coupling (the only guardrail against silent disconnection on a workflow rename).
+2. `docs-build` (new). Gated on the same push-to-trunk condition. `needs: build`. Sets up JDK 25, checks out the repo, downloads the `inference-axis-coverage` artifact into `graphitron-rewrite/roadmap/` (overwriting the placeholder), runs `mvn -f graphitron-rewrite/pom.xml -pl :graphitron-docs -am package -DskipTests`, uploads the result as a `actions/upload-pages-artifact@v3` Pages artifact. The docs build does not need Postgres — it only renders AsciiDoc — so the Postgres service runs only in the `build` job.
 
-4. **Update the placeholder's prose** in `inference-axis-coverage.adoc` to drop the "publish chain deferred to R140" language and point at the live doc site again.
+3. `docs-deploy` (new). `needs: docs-build`, same push-to-trunk gate. Carries `permissions: pages: write, id-token: write`, the `pages` concurrency group with `cancel-in-progress: false`, and the `github-pages` environment. Runs `actions/deploy-pages@v4`.
 
-## Failure modes carried over from R132
+All three new jobs share the push-to-trunk `if:` condition. PRs run only `build`; nothing about the rewrite-branch deploy chain leaks into PR runs or `main` pushes.
 
-The failure modes R132 enumerated (reactor renamed, artifact upload fails, download race, PR skip) all still apply once the chain is reassembled; the mitigations don't change.
+`deploy-docs.yml` is deleted in the same commit that adds the jobs. `preview-docs.yml` (PR docs preview) is independent of the deploy chain and unchanged.
 
-## New failure mode introduced by the prerequisite
+### Downsides this design accepts
 
-- **`main` carries a stale copy of the workflow files.** If R140 takes path (1), the `main` copies drift the moment a later item edits `rewrite-build.yml` or `deploy-docs.yml`. The `workflow_run` trigger keeps firing against whatever `main` has, so the listener can diverge silently from the source. Mitigation options for R140 to evaluate: a CI step that diff-checks the two copies, or a settled policy that the rewrite trunk's copies are the source and `main`'s copies are cherry-picks updated by maintainer convention.
+- **The docs build and deploy run on every successful trunk push,** including pushes that touch no docs files. Today's `deploy-docs.yml` `paths:` filter narrows this to docs-relevant pushes. That filter cannot move to a job-level `if:` inside the build workflow without computing a "did docs change?" boolean via a third-party action; the spec accepts the extra CI minutes rather than add that machinery. The framing target from R132 ("the live site reflects the latest successful trunk run") is consistent with deploying on every successful trunk run.
+- **A deploy-step flake marks the whole CI run red.** Today, GitHub Pages outages affect `deploy-docs.yml` independently of `rewrite-build.yml`. After R140, a flaky deploy job lands on the same workflow run as the build job's green checkmark. The build/deploy distinction is still readable in the per-job status, but the top-level run status mixes them. Acceptable; not worth adding `continue-on-error: true` (which would hide real deploy failures too).
+- **`rewrite-build.yml` grows from one job to four,** mixing "did the code build" with "did the docs ship". Readability cost is real; the file goes from ~60 lines to roughly twice that. Mitigated by job naming and the push-to-trunk gates being on every deploy job (the build job is obviously the one that's not gated).
+
+## Implementation
+
+1. **Edit `.github/workflows/rewrite-build.yml`.**
+   - Add two steps at the end of the existing `build` job (both gated `if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'`):
+     - "Regenerate leaf-coverage report": `mvn -f graphitron-rewrite/pom.xml -pl roadmap-tool exec:java -q -Dexec.args='leaf-coverage graphitron-rewrite'`. Overwrites `graphitron-rewrite/roadmap/inference-axis-coverage.adoc` in the workspace with the freshly-regenerated report. The Maven cache already holds roadmap-tool's dependencies from the `verify` step; the regen is a sub-second exec invocation.
+     - "Upload leaf-coverage artifact": `actions/upload-artifact@v4` with `name: inference-axis-coverage`, `path: graphitron-rewrite/roadmap/inference-axis-coverage.adoc`, `if-no-files-found: error`. The error mode is intentional: a missing file at this point is a regen-failure bug, not a routine condition.
+   - Add a `docs-build` job: `needs: build`, push-to-trunk `if:`, checkout + JDK 25 setup, `actions/download-artifact@v4` with `name: inference-axis-coverage` and `path: graphitron-rewrite/roadmap/` (the path is the directory, not the filename, so the download lands at the expected location and overwrites the committed placeholder), `mvn -f graphitron-rewrite/pom.xml -pl :graphitron-docs -am package -DskipTests`, `actions/upload-pages-artifact@v3` with `path: docs/target/generated-docs`.
+   - Add a `docs-deploy` job: `needs: docs-build`, push-to-trunk `if:`, `permissions: pages: write, id-token: write`, `concurrency: { group: pages, cancel-in-progress: false }`, `environment: { name: github-pages, url: ${{ steps.deployment.outputs.page_url }} }`, single step `actions/deploy-pages@v4` with `id: deployment`.
+
+2. **Delete `.github/workflows/deploy-docs.yml`.** Its content is fully absorbed into `rewrite-build.yml` (with the trigger conversion: `on: push` filtered by `paths:` becomes the per-job push-to-trunk `if:` without a paths filter, by design). The `workflow_dispatch` trigger today's `deploy-docs.yml` carries does not survive the consolidation. If a manual re-deploy is needed before R140 ships its replacement mechanism, the operator can re-run the most recent successful trunk workflow run via the GitHub Actions UI (which replays all jobs including deploy); that is sufficient for the cases `workflow_dispatch` previously served.
+
+3. **Update `graphitron-rewrite/roadmap/inference-axis-coverage.adoc`.** Replace the "publish chain deferred to R140" paragraph with prose explaining that the placeholder in git is intentionally non-data and the rendered doc site shows the latest CI-regenerated report. Keep the regen one-liner so contributors can inspect the report locally. The placeholder still lives in git (so local doc builds and PR-render checks find a file at the expected path); CI overwrites it on the runner before the docs-render step.
+
+## Tests
+
+- **Smoke-test the regen step on a feature branch run.** Push a no-op commit to a `wip/` branch with the workflow changes; the per-job push-to-trunk gate keeps the new jobs from firing on that branch, so the verify is "build still passes and PRs are unaffected". Cannot reach the deploy path without pushing to trunk.
+- **Trunk-push verification.** Once the workflow changes land on `claude/graphitron-rewrite`, the next trunk push exercises the full chain: `build` succeeds, `regen` overwrites the placeholder, `docs-build` consumes the artifact, `docs-deploy` publishes. Verification is "the live `graphitron.sikt.no/roadmap/inference-axis-coverage.html` page shows data, not the placeholder text". This is end-to-end and only observable post-merge; the spec accepts that no pre-merge test exercises the deploy path.
+- **Job-isolation check.** Confirm via the Actions UI that PR runs against `claude/graphitron-rewrite` execute only the `build` job (no `docs-build`, no `docs-deploy`). Same check for pushes to `main` — only `build` runs.
+
+## Failure modes
+
+The R132 sketch carried four failure modes for the `workflow_run` chain. Path 3 retains the analogous ones and drops two that were specific to `workflow_run`:
+
+- **Reactor renamed (kept, weaker).** The `name:` field on `rewrite-build.yml` is no longer load-bearing for the deploy chain (no other workflow listens for it). It still appears in branch protection rules and Actions UI lookups; renaming it is fine for the deploy chain but may break unrelated automation.
+- **Artifact upload fails (kept).** `if-no-files-found: error` on the upload step ensures a missing report fails the `build` job; `docs-build` then never starts. Loud failure, no silent placeholder publish.
+- **Pages deploy flake (mitigated by acceptance, not by config).** GitHub Pages outages mark the workflow run red. Re-run the failed jobs to recover.
+- **PR skip (no longer a concern).** Under `workflow_run`, PRs that skipped the reactor would not deploy — fine, but the conditional was non-obvious. Under path 3 the push-to-trunk `if:` is explicit at the job level; PRs never reach the deploy jobs.
+
+A new failure mode specific to path 3:
+
+- **Docs build or deploy fails on a trunk push that should not have triggered a deploy.** Today's `paths:` filter narrows deploys to docs-relevant pushes; path 3 deploys on every successful trunk push. A docs-render bug introduced in a non-docs PR (e.g. an AsciiDoctor extension changes behaviour) now fails the deploy on the next trunk merge instead of the next docs-touching merge. Net effect: regression surfaces earlier, against the actual change rather than against a later unrelated docs commit. Acceptable.
+
+## Follow-up to flag at promotion time
+
+When `claude/graphitron-rewrite` is promoted to `main`, the `workflow_run` constraint disappears and path 1 (split files, `workflow_run` chain) becomes available again. The path 3 → path 1 migration is mechanical CI work — extract the deploy jobs into a new `deploy-docs.yml`, switch trigger to `workflow_run`, swap intra-workflow artifact passing for cross-workflow download with `run-id`, re-add the `paths:` filter. Whether to do that migration is a decision for the promotion-time reviewer; this spec does not queue work for it, but the option exists and the cost is small. Flagging it here so the option is visible rather than forgotten by inertia.
 
 ## Out of scope
 
-- Whether to promote graphitron-rewrite to `main` outright (that's a much larger structural decision).
-- Re-introducing a local verify gate on the report. R132's framing argued against, and R140 inherits that posture.
+- Re-introducing a local verify gate on the report. R132's framing argued against; R140 inherits that posture.
+- Changing what the report contains, the mention-join classification (R107), or the `leaf-coverage` profile's default activation (R133).
+- Auto-committing the regenerated report back to trunk.
+- PR-preview rendering of the report (separate workflow, separate concern).
