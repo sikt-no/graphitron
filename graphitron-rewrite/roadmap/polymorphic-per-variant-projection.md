@@ -1,11 +1,12 @@
 ---
 id: R108
-title: "Per-variant projection on polymorphic fields"
-status: Spec
+title: Per-variant projection on polymorphic fields
+status: Ready
 bucket: architecture
 priority: 3
 theme: interface-union
 depends-on: []
+last-updated: 2026-05-12
 ---
 
 # Per-variant projection on polymorphic fields
