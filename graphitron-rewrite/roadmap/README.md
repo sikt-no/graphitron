@@ -95,6 +95,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Other
 
+- `R141` [**Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field**](bulk-input-single-carrier-list-data-field.md): The shape _(blocked by [mutation-bulk-input-single-payload-key-loss](mutation-bulk-input-single-payload-key-loss.md))_
 - `R118` [**Graphitron MCP server: knowledge-base tools for AI agents**](graphitron-mcp-server.md): The first non-build consumer of the knowledge base R117 frames. AI agents working in a graphitron-generated codebase ask cross-cutting questions ("what classification produced the fetcher at `Film.actors`? which roadmap items mention it? which capability does it exemplify? which test exercises it?") that span the SDL, the codegen output, the runtime trace, and the roadmap. Today they grep across half a dozen file trees and reconstruct relationships from prose; the KB already holds these joins as natural-keyed tables, so the MCP server's job is to expose the joins as tools and let the agent ask SQL or call typed lookups. This item delivers the server, not the schema (which is R117's programme); the server queries whatever's in the KB and grows naturally as dimensions land. _(blocked by [knowledge-base-programme](knowledge-base-programme.md))_
 - `R69` [**Implement @experimental_constructType**](experimental-construct-type.md): The `@experimental_constructType(selection: "...")` directive is declared in `directives.graphqls` and stripped from the emitted schema by `SchemaDirectiveRegistry`, but no classifier, model carrier, or emitter exists for it yet.
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md): R18 Phase 5 originally folded three JavaParser-driven capabilities in alongside `@service` / `@condition` / `@record` autocomplete:
@@ -135,6 +136,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
+- `R141` [**Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field**](bulk-input-single-carrier-list-data-field.md) — Backlog, feature, blocked by [mutation-bulk-input-single-payload-key-loss](mutation-bulk-input-single-payload-key-loss.md)
 - `R138` [**Reject bulk-input + single-record-payload mutations (extend Invariant #15 to the Payload arm)**](mutation-bulk-input-single-payload-key-loss.md) — In Review, validation
 - `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Ready, architecture
