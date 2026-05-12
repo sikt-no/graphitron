@@ -15,6 +15,7 @@ import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -108,19 +109,27 @@ public final class Diagnostics {
                 validateLegacyNameLeaves(vocabulary, directive, leaves, file, catalog, out);
                 continue;
             }
-            // Freshness-aware silence policy: only Built.Current warns, and
-            // only when the snapshot does not declare the directive either.
+            // Freshness-aware silence policy: only Built.Current warns.
             // Unavailable (pre-build) and Built.Previous (stale after parse
-            // failure) silence the warn arm to avoid punishing the user
-            // for what we cannot reliably see.
+            // failure) silence the warn arms to avoid punishing the user
+            // for what we cannot reliably see. The two warn arms split on
+            // the snapshot's view of the directive name: Unknown -> the
+            // R139 unknown-directive arm, User -> phase 2's arg validation
+            // against the snapshot's directive shape.
             switch (snapshot) {
                 case LspSchemaSnapshot.Unavailable ignored -> { /* pre-build silence */ }
                 case LspSchemaSnapshot.Built.Previous ignored -> { /* stale-snapshot silence */ }
                 case LspSchemaSnapshot.Built.Current ignored -> {
-                    if (resolution instanceof DirectiveResolution.Unknown) {
-                        out.add(diagnostic(file, directive.nameNode(), DiagnosticSeverity.Warning,
-                            "Unknown directive '@" + directiveName
-                                + "'. Not declared in any directive definition reachable from the parsed schema."));
+                    switch (resolution) {
+                        case DirectiveResolution.Bundled ignoredBundled -> { /* handled above */ }
+                        case DirectiveResolution.User user -> {
+                            validateUnknownArgsAgainstSnapshot(directive, user.shape(), file, out);
+                            validateRequiredArgsAgainstSnapshot(directive, user.shape(), file, out);
+                        }
+                        case DirectiveResolution.Unknown ignoredUnknown ->
+                            out.add(diagnostic(file, directive.nameNode(), DiagnosticSeverity.Warning,
+                                "Unknown directive '@" + directiveName
+                                    + "'. Not declared in any directive definition reachable from the parsed schema."));
                     }
                 }
             }
@@ -201,6 +210,50 @@ public final class Diagnostics {
             if (presentNames.contains(argDef.getName())) continue;
             out.add(diagnostic(file, directive.nameNode(), DiagnosticSeverity.Warning,
                 "Missing required argument '" + argDef.getName() + "' on @" + dirDef.getName() + "."));
+        }
+    }
+
+    /**
+     * Snapshot-driven counterpart to {@link #validateUnknownArgs}. Walks
+     * every top-level arg the user wrote on a user-declared directive and
+     * warns on any name not declared in the snapshot's projection of that
+     * directive. Nested validation (`@foo(x: {misspelled: ...})`) is out
+     * of scope until the snapshot carries input-object shapes.
+     */
+    private static void validateUnknownArgsAgainstSnapshot(
+        Directives.Directive directive, DirectiveShape shape,
+        WorkspaceFile file, List<Diagnostic> out
+    ) {
+        for (var arg : directive.arguments()) {
+            String argName = Nodes.text(arg.key(), file.source());
+            boolean known = shape.args().stream().anyMatch(a -> a.name().equals(argName));
+            if (!known) {
+                out.add(diagnostic(file, arg.key(), DiagnosticSeverity.Warning,
+                    "Unknown argument '" + argName + "' on @" + shape.name() + "."));
+            }
+        }
+    }
+
+    /**
+     * Snapshot-driven counterpart to {@link #validateRequiredArgs}. Warns
+     * when an arg whose declared type is non-null is missing from the
+     * user's call. {@link TypeShape#nonNull()} lives on the sealed
+     * interface so the non-null check is one method call regardless of
+     * named-vs-list shape.
+     */
+    private static void validateRequiredArgsAgainstSnapshot(
+        Directives.Directive directive, DirectiveShape shape,
+        WorkspaceFile file, List<Diagnostic> out
+    ) {
+        var presentNames = new LinkedHashSet<String>();
+        for (var arg : directive.arguments()) {
+            presentNames.add(Nodes.text(arg.key(), file.source()));
+        }
+        for (var argShape : shape.args()) {
+            if (!argShape.type().nonNull()) continue;
+            if (presentNames.contains(argShape.name())) continue;
+            out.add(diagnostic(file, directive.nameNode(), DiagnosticSeverity.Warning,
+                "Missing required argument '" + argShape.name() + "' on @" + shape.name() + "."));
         }
     }
 

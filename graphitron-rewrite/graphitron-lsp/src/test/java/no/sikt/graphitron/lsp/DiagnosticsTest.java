@@ -854,6 +854,127 @@ class DiagnosticsTest {
         assertThat(diags).isEmpty();
     }
 
+    // ---- R142 phase 2: arg validation on user-declared directives. ----
+
+    @Test
+    void userDirectiveUnknownTopLevelArg_warns() {
+        // @auth(rle: "admin") against a snapshot that declares @auth(role: String!).
+        // Warns on `rle`. The typo also leaves `role` absent, so the
+        // required-arg arm fires a second warning — parallel to the bundled
+        // path's behaviour on the same shape.
+        var file = file("""
+            type Query {
+                customers: [String!]! @auth(rle: "admin")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog(),
+            new LspSchemaSnapshot.Built.Current(List.of(authShape())));
+
+        assertThat(diags).hasSize(2);
+        assertThat(diags).extracting(d -> d.getMessage())
+            .anyMatch(m -> m.contains("'rle'") && m.contains("Unknown argument") && m.contains("@auth"))
+            .anyMatch(m -> m.contains("Missing required argument") && m.contains("'role'"));
+        assertThat(diags).allMatch(d -> d.getSeverity() == DiagnosticSeverity.Warning);
+    }
+
+    @Test
+    void userDirectiveMissingRequiredArg_warns() {
+        var file = file("""
+            type Query {
+                customers: [String!]! @auth
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog(),
+            new LspSchemaSnapshot.Built.Current(List.of(authShape())));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage())
+            .contains("Missing required argument").contains("'role'").contains("@auth");
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+    }
+
+    @Test
+    void userDirectivePresentRequiredArg_silent() {
+        var file = file("""
+            type Query {
+                customers: [String!]! @auth(role: "admin")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog(),
+            new LspSchemaSnapshot.Built.Current(List.of(authShape())));
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void userDirectiveUnknownArgUnderUnavailableSnapshot_silent() {
+        // Pre-build state: no snapshot to consult. The typo is silenced
+        // even though it would warn under Built.Current.
+        var file = file("""
+            type Query {
+                customers: [String!]! @auth(rle: "admin")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void userDirectiveUnknownArgUnderPreviousSnapshot_silent() {
+        // Stale-snapshot silence — same R139 trade applied to phase 2.
+        var file = file("""
+            type Query {
+                customers: [String!]! @auth(rle: "admin")
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog(),
+            new LspSchemaSnapshot.Built.Previous(List.of(authShape())));
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void bundledArgValidationStillFires_evenWhenSnapshotShadows() {
+        // Snapshot carries a different-shape @table; bundled-precedence
+        // means bundled arg validation still runs. The shadow's args do
+        // not leak into the bundled path.
+        var shadowTable = new no.sikt.graphitron.rewrite.catalog.DirectiveShape(
+            "table",
+            List.of(new no.sikt.graphitron.rewrite.catalog.InputValueShape(
+                "differentArg",
+                new no.sikt.graphitron.rewrite.catalog.TypeShape.Named("String", true),
+                java.util.Optional.empty())),
+            java.util.Optional.empty());
+        var file = file("""
+            type Foo @table(neme: "film") {
+                bar: Int
+            }
+            """);
+
+        var diags = Diagnostics.compute(file, filmCatalog(),
+            new LspSchemaSnapshot.Built.Current(List.of(shadowTable)));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage())
+            .contains("'neme'").contains("Unknown argument").contains("@table");
+    }
+
+    private static no.sikt.graphitron.rewrite.catalog.DirectiveShape authShape() {
+        return new no.sikt.graphitron.rewrite.catalog.DirectiveShape(
+            "auth",
+            List.of(new no.sikt.graphitron.rewrite.catalog.InputValueShape(
+                "role",
+                new no.sikt.graphitron.rewrite.catalog.TypeShape.Named("String", true),
+                java.util.Optional.empty())),
+            java.util.Optional.empty());
+    }
+
     private static CompletionData catalogWithKnownClass(String fqn) {
         // The class diagnostic now also validates the sibling `method:` slot
         // when the class resolves; include the method names referenced by

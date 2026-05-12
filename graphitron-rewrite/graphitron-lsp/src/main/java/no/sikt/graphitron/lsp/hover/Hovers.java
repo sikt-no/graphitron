@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.hover;
 
+import graphql.language.Description;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -7,8 +8,11 @@ import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.parsing.SchemaCoordinate;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
+import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
@@ -35,29 +39,107 @@ public final class Hovers {
 
     private Hovers() {}
 
-    public static Optional<Hover> compute(WorkspaceFile file, CompletionData catalog, Point pos) {
+    public static Optional<Hover> compute(
+        WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot, Point pos
+    ) {
         // The bundled vocabulary is the only one in scope today; the
         // workspace's vocabulary is wired through GraphitronTextDocumentService.
-        return compute(LspVocabulary.load(), file, catalog, pos);
+        return compute(LspVocabulary.load(), file, catalog, snapshot, pos);
     }
 
     public static Optional<Hover> compute(
-        LspVocabulary vocabulary, WorkspaceFile file, CompletionData catalog, Point pos
+        LspVocabulary vocabulary, WorkspaceFile file, CompletionData catalog,
+        LspSchemaSnapshot snapshot, Point pos
     ) {
         var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
         if (directiveOpt.isEmpty()) return Optional.empty();
         var directive = directiveOpt.get();
-        var coordOpt = vocabulary.coordinateAt(directive, pos, file.source());
-        if (coordOpt.isEmpty()) return Optional.empty();
-        var coord = coordOpt.get();
-        var rangeNode = valueNodeFor(directive, pos);
-        if (rangeNode == null) return Optional.empty();
 
-        var richer = richerHover(vocabulary, coord, directive, file, catalog, pos, rangeNode);
-        if (richer.isPresent()) return richer;
-        // Fallback: SDL docstring on the coordinate. Empty if the parsed
-        // definition has no description (rare in directives.graphqls).
-        return docstringHover(vocabulary, coord, file, rangeNode);
+        // Directive-name hover comes first. coordinateAt is leaf-oriented
+        // (arg coordinates, not directive coordinates), so a cursor on the
+        // directive's name token falls through coordinateAt to no-coord
+        // today. Resolve through DirectiveResolution and surface the
+        // directive's description (bundled SDL or user snapshot) before
+        // the coordinate path runs.
+        if (Nodes.contains(directive.nameNode(), pos)) {
+            return directiveNameHover(vocabulary, snapshot, directive, file);
+        }
+
+        var coordOpt = vocabulary.coordinateAt(directive, pos, file.source());
+        var rangeNode = valueNodeFor(directive, pos);
+
+        if (coordOpt.isPresent() && rangeNode != null) {
+            var coord = coordOpt.get();
+            var richer = richerHover(vocabulary, coord, directive, file, catalog, pos, rangeNode);
+            if (richer.isPresent()) return richer;
+            // SDL docstring on the coordinate. Empty if the parsed
+            // definition has no description (rare in directives.graphqls).
+            var bundled = docstringHover(vocabulary, coord, file, rangeNode);
+            if (bundled.isPresent()) return bundled;
+        }
+
+        // No bundled coordinate or no bundled description: fall through to
+        // the user-snapshot's directive shape. Phase 2 surfaces arg-name
+        // hovers from the snapshot for user-declared directives (e.g.
+        // hovering on `role:` of `@auth(role: ...)` when the bundled
+        // overlay has no `@auth`). The arg-name path uses the key node
+        // for the hover range, so the absence of a value-bearing range
+        // node is not a blocker.
+        return userArgHover(snapshot, directive, pos, file);
+    }
+
+    private static Optional<Hover> directiveNameHover(
+        LspVocabulary vocabulary, LspSchemaSnapshot snapshot,
+        Directives.Directive directive, WorkspaceFile file
+    ) {
+        String name = Nodes.text(directive.nameNode(), file.source());
+        var resolution = DirectiveResolution.resolve(vocabulary, snapshot, name);
+        return switch (resolution) {
+            case DirectiveResolution.Bundled bundled ->
+                bundledDescription(bundled.def().getDescription())
+                    .map(text -> hover(file, directive.nameNode(), text));
+            case DirectiveResolution.User user ->
+                user.shape().description()
+                    .filter(d -> !d.isBlank())
+                    .map(text -> hover(file, directive.nameNode(), text));
+            case DirectiveResolution.Unknown ignored -> Optional.empty();
+        };
+    }
+
+    private static Optional<String> bundledDescription(Description description) {
+        if (description == null) return Optional.empty();
+        String text = description.getContent();
+        if (text == null || text.isBlank()) return Optional.empty();
+        return Optional.of(text);
+    }
+
+    /**
+     * Looks up the arg under the cursor against the user snapshot's
+     * directive shape and produces a hover from the arg's description.
+     * Only fires when the directive is user-declared (Bundled args route
+     * through the existing coordinate path); the snapshot's freshness
+     * variant does not matter — hovers prefer stale info over silence.
+     */
+    private static Optional<Hover> userArgHover(
+        LspSchemaSnapshot snapshot, Directives.Directive directive, Point pos, WorkspaceFile file
+    ) {
+        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
+        String directiveName = Nodes.text(directive.nameNode(), file.source());
+        var shapeOpt = built.directive(directiveName);
+        if (shapeOpt.isEmpty()) return Optional.empty();
+        DirectiveShape shape = shapeOpt.get();
+        for (var arg : directive.arguments()) {
+            if (!arg.contains(pos)) continue;
+            if (!Nodes.contains(arg.key(), pos)) continue;
+            String argName = Nodes.text(arg.key(), file.source());
+            for (var argShape : shape.args()) {
+                if (!argShape.name().equals(argName)) continue;
+                return argShape.description()
+                    .filter(d -> !d.isBlank())
+                    .map(text -> hover(file, arg.key(), text));
+            }
+        }
+        return Optional.empty();
     }
 
     private static Optional<Hover> richerHover(

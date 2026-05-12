@@ -133,7 +133,8 @@ class DirectiveShapeSmokeTest {
         var data = catalogWith("com.example.FooDto", null);
         Point cursor = pointInside(source, "com.example");
 
-        var hover = Hovers.compute(new WorkspaceFile(1, source), data, cursor).orElseThrow();
+        var hover = Hovers.compute(new WorkspaceFile(1, source), data,
+            LspSchemaSnapshot.unavailable(), cursor).orElseThrow();
 
         assertThat(hover.getContents().getRight().getValue())
             .contains("com.example.FooDto");

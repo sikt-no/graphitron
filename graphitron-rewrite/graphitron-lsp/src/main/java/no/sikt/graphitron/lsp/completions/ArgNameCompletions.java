@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.completions;
 
+import graphql.language.DirectiveDefinition;
 import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputValueDefinition;
 import io.github.treesitter.jtreesitter.Node;
@@ -7,6 +8,10 @@ import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
+import no.sikt.graphitron.lsp.state.DirectiveResolution;
+import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
+import no.sikt.graphitron.rewrite.catalog.InputValueShape;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 
@@ -38,13 +43,13 @@ public final class ArgNameCompletions {
 
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
+        LspSchemaSnapshot snapshot,
         Directives.Directive directive,
         Point pos,
         byte[] source
     ) {
         String directiveName = Nodes.text(directive.nameNode(), source);
-        var dirDef = vocabulary.registry().getDirectiveDefinition(directiveName);
-        if (dirDef.isEmpty()) return List.of();
+        var resolution = DirectiveResolution.resolve(vocabulary, snapshot, directiveName);
 
         Directives.Argument enclosing = null;
         for (var arg : directive.arguments()) {
@@ -54,10 +59,50 @@ public final class ArgNameCompletions {
             }
         }
 
+        return switch (resolution) {
+            case DirectiveResolution.Bundled bundled ->
+                bundledGenerate(bundled.def(), vocabulary, enclosing, pos, source);
+            case DirectiveResolution.User user ->
+                userGenerate(user.shape(), enclosing);
+            case DirectiveResolution.Unknown ignored -> List.of();
+        };
+    }
+
+    /**
+     * Top-level arg-name completion for a user-declared directive. Phase 2
+     * does not descend into nested object literals (the snapshot does not
+     * carry input-object shapes yet); when the cursor sits inside an
+     * argument value, return empty. Completion is freshness-agnostic:
+     * stale suggestions beat silence for an editor surface.
+     */
+    private static List<CompletionItem> userGenerate(
+        DirectiveShape shape, Directives.Argument enclosing
+    ) {
+        if (enclosing != null) return List.of();
+        return userToCompletionItems(shape.args());
+    }
+
+    private static List<CompletionItem> userToCompletionItems(List<InputValueShape> args) {
+        var items = new ArrayList<CompletionItem>();
+        for (var arg : args) {
+            var item = new CompletionItem(arg.name());
+            item.setKind(CompletionItemKind.Field);
+            items.add(item);
+        }
+        return items;
+    }
+
+    private static List<CompletionItem> bundledGenerate(
+        DirectiveDefinition dirDef,
+        LspVocabulary vocabulary,
+        Directives.Argument enclosing,
+        Point pos,
+        byte[] source
+    ) {
         if (enclosing == null) {
             // Cursor inside the directive's parens but not on any argument:
             // top-level arg-name completion.
-            return toCompletionItems(dirDef.get().getInputValueDefinitions());
+            return toCompletionItems(dirDef.getInputValueDefinitions());
         }
 
         // Cursor is inside an argument value. If it's inside a nested
@@ -65,7 +110,7 @@ public final class ArgNameCompletions {
         // we're at a nested-arg-name slot; otherwise no arg-name
         // completion applies.
         String argName = Nodes.text(enclosing.key(), source);
-        var argDef = LspVocabulary.findInputValue(dirDef.get().getInputValueDefinitions(), argName);
+        var argDef = LspVocabulary.findInputValue(dirDef.getInputValueDefinitions(), argName);
         if (argDef.isEmpty()) return List.of();
         String currentType = LspVocabulary.unwrapToInputTypeName(argDef.get().getType());
         if (currentType == null) return List.of();
