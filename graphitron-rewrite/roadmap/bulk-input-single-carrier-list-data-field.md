@@ -1,11 +1,12 @@
 ---
 id: R141
-title: "Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field"
-status: Spec
+title: Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field
+status: Ready
 bucket: feature
 priority: 2
 theme: mutations-errors
 depends-on: [error-handling-parity]
+last-updated: 2026-05-12
 ---
 
 # Admit bulk-input mutations with a single payload carrier wrapping a list-shaped data field
