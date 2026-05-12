@@ -289,7 +289,38 @@ public final class ArgCallEmitter {
                 buildNodeIdDecodeExtraction(
                     CodeBlock.of("env.getArgument($S)", param.name()),
                     nidk, param.typeName(), param.list(), registry);
+            case CallSiteExtraction.InputBean ib ->
+                buildInputBeanCallExtraction(ib, param.name(), isListShaped(param));
         };
+    }
+
+    /**
+     * Emits the call to the per-bean helper method generated on the enclosing {@code *Fetchers}
+     * class. The helper itself is emitted separately by
+     * {@link InputBeanInstantiationEmitter#buildSingularHelper} (and plural variant); this method
+     * only emits the call expression. The helper name follows the
+     * {@code create<TypeName>} / {@code create<TypeName>s} convention from R150.
+     */
+    private static CodeBlock buildInputBeanCallExtraction(CallSiteExtraction.InputBean ib,
+            String argName, boolean list) {
+        String simpleName = ib.beanClass().simpleName();
+        String helperName = list
+            ? "create" + simpleName + "s"
+            : "create" + simpleName;
+        return CodeBlock.of("$L(env.getArgument($S))", helperName, argName);
+    }
+
+    /**
+     * Returns true when the param's Java type is a {@code List<...>} or {@code Set<...>}. Used by
+     * the {@link CallSiteExtraction.InputBean} arm to pick between the singular and plural helper.
+     * {@link CallParam#list()} would also work, but the only caller that constructs a CallParam
+     * for service params ({@link #emitArgExpression}) hardcodes {@code list=false}. Inspecting
+     * the type name is more direct and keeps the InputBean arm self-contained.
+     */
+    private static boolean isListShaped(CallParam param) {
+        if (param.list()) return true;
+        String t = param.typeName();
+        return t.startsWith("java.util.List<") || t.startsWith("java.util.Set<");
     }
 
     /**

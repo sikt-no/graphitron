@@ -2474,4 +2474,71 @@ class TypeFetcherGeneratorTest {
                 + ".and(stage1_ProjectEvent.PROJECT_ID.eq(parentInput.field(\"project_id\", java.lang.Integer.class)))");
     }
 
+    // ===== R150 InputBean helper emission =====
+
+    @Test
+    void inputBeanInstantiationEmitter_singularHelper_signatureAndBody() {
+        var bean = ClassName.get("com.example", "Foo");
+        var ib = new CallSiteExtraction.InputBean(bean,
+            CallSiteExtraction.InputBean.Target.RECORD,
+            List.of(new CallSiteExtraction.FieldBinding(
+                "title", "title", new CallSiteExtraction.Direct(), false, "java.lang.String")));
+        var spec = InputBeanInstantiationEmitter.buildSingularHelper(ib);
+        assertThat(spec.name()).isEqualTo("createFoo");
+        assertThat(spec.returnType().toString()).isEqualTo("com.example.Foo");
+        assertThat(spec.parameters()).hasSize(1);
+        assertThat(spec.parameters().get(0).type().toString()).isEqualTo("java.util.Map<java.lang.String, java.lang.Object>");
+        var body = spec.code().toString();
+        assertThat(body).contains("if (raw == null) return null");
+        assertThat(body).contains("new com.example.Foo(title)");
+    }
+
+    @Test
+    void inputBeanInstantiationEmitter_pluralHelper_signatureAndBody() {
+        var bean = ClassName.get("com.example", "Foo");
+        var ib = new CallSiteExtraction.InputBean(bean,
+            CallSiteExtraction.InputBean.Target.RECORD,
+            List.of(new CallSiteExtraction.FieldBinding(
+                "title", "title", new CallSiteExtraction.Direct(), false, "java.lang.String")));
+        var spec = InputBeanInstantiationEmitter.buildPluralHelper(ib, ClassName.get("com.example", "FooFetchers"));
+        assertThat(spec.name()).isEqualTo("createFoos");
+        assertThat(spec.returnType().toString()).isEqualTo("java.util.List<com.example.Foo>");
+        assertThat(spec.parameters()).hasSize(1);
+        assertThat(spec.parameters().get(0).type().toString()).isEqualTo("java.lang.Object");
+        var body = spec.code().toString();
+        assertThat(body).contains("if (raw == null) return null");
+        assertThat(body).contains("createFoo(m)");
+    }
+
+    @Test
+    void inputBeanInstantiationEmitter_javaBean_usesNoArgPlusSetters() {
+        var bean = ClassName.get("com.example", "Foo");
+        var ib = new CallSiteExtraction.InputBean(bean,
+            CallSiteExtraction.InputBean.Target.JAVA_BEAN,
+            List.of(new CallSiteExtraction.FieldBinding(
+                "title", "title", new CallSiteExtraction.Direct(), false, "java.lang.String")));
+        var body = InputBeanInstantiationEmitter.buildSingularHelper(ib).code().toString();
+        assertThat(body).contains("com.example.Foo bean = new com.example.Foo()");
+        assertThat(body).contains("bean.setTitle(title)");
+        assertThat(body).contains("return bean");
+    }
+
+    @Test
+    void inputBeanInstantiationEmitter_collectTransitively_dedupNestedBeans() {
+        var inner = new CallSiteExtraction.InputBean(
+            ClassName.get("com.example", "Inner"),
+            CallSiteExtraction.InputBean.Target.RECORD,
+            List.of(new CallSiteExtraction.FieldBinding(
+                "k", "k", new CallSiteExtraction.Direct(), false, "java.lang.String")));
+        var outer = new CallSiteExtraction.InputBean(
+            ClassName.get("com.example", "Outer"),
+            CallSiteExtraction.InputBean.Target.RECORD,
+            List.of(new CallSiteExtraction.FieldBinding(
+                "nested", "nested", inner, true, "com.example.Inner")));
+        var out = new java.util.LinkedHashMap<ClassName, CallSiteExtraction.InputBean>();
+        InputBeanInstantiationEmitter.collectTransitively(outer, out);
+        // A repeat call must not duplicate either entry.
+        InputBeanInstantiationEmitter.collectTransitively(outer, out);
+        assertThat(out.keySet()).extracting(ClassName::simpleName).containsExactly("Outer", "Inner");
+    }
 }

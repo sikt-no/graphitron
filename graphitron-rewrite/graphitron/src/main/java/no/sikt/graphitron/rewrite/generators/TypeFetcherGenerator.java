@@ -509,6 +509,25 @@ public class TypeFetcherGenerator {
             .values()
             .forEach(tl -> builder.addField(TypeConditionsGenerator.buildTextEnumMapField(tl)));
 
+        // Emit per-bean instantiation helpers (createBean / createBeans) for any InputBean
+        // extraction on method-backed fields. Dedup by bean class — nested beans are collected
+        // transitively so a single bean class always emits exactly one pair of helpers per
+        // *Fetchers class, regardless of how many distinct service methods reach it.
+        var beanHelpers = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
+            CallSiteExtraction.InputBean>();
+        fields.stream()
+            .filter(f -> f instanceof MethodBackedField)
+            .map(f -> (MethodBackedField) f)
+            .flatMap(f -> f.method().callParams().stream())
+            .filter(p -> p.extraction() instanceof CallSiteExtraction.InputBean)
+            .map(p -> (CallSiteExtraction.InputBean) p.extraction())
+            .forEach(ib -> InputBeanInstantiationEmitter.collectTransitively(ib, beanHelpers));
+        for (var ib : beanHelpers.values()) {
+            builder.addMethod(InputBeanInstantiationEmitter.buildSingularHelper(ib));
+            builder.addMethod(InputBeanInstantiationEmitter.buildPluralHelper(ib,
+                no.sikt.graphitron.javapoet.ClassName.bestGuess(outputPackage + "." + className)));
+        }
+
         // Emit orderBy helper methods for fields with a dynamic @orderBy argument. Covers
         // QueryTableField (root connection + list fetchers) and SplitTableField+Connection
         // (per-parent paginated rows method).

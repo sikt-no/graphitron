@@ -4169,4 +4169,30 @@ class GraphQLQueryTest {
         payload.containsEntry("reviewId", 50042);
         payload.extractingByKey("errors", as(LIST)).isEmpty();
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitFilmReviewWithDetails_routesThroughInstantiatedInputBean() {
+        // R150 execution-tier proof: GraphQL mutation hands an input-object map to the fetcher,
+        // which routes it through createFilmReviewDetails (record canonical-ctor instantiation
+        // + recursive createFilmReviewTags for the nested list). The service body reads the
+        // typed bean's scalar fields and computes reviewId = rating * 10000 + filmId; if the
+        // helper failed to populate, the body would NullPointerException on autoboxing. The
+        // nested-list helper is exercised by passing two tags; the service ignores them, but
+        // exercising the recursive helper at runtime pins the createFilmReviewTags emit path.
+        Map<String, Object> data = execute("""
+            mutation {
+                submitFilmReviewWithDetails(details: {
+                    filmId: 42, rating: 5, comment: "ok",
+                    tags: [{ name: "good", weight: 1 }, { name: "fast", weight: 2 }]
+                }) {
+                    reviewId
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitFilmReviewWithDetails", as(MAP));
+        payload.containsEntry("reviewId", 50042);
+        payload.extractingByKey("errors", as(LIST)).isEmpty();
+    }
 }

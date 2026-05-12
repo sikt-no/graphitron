@@ -207,6 +207,26 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    // ===== R150 service-input-bean fixtures =====
+
+    /**
+     * Takes a single {@link TestInputBean}. Used by the R150 classifier test to verify that a
+     * scalar bean-typed parameter paired with an SDL input-object argument resolves to
+     * {@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean}.
+     */
+    public static String runWithInputBean(TestInputBean input) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Takes a {@code List<TestInputBean>}. Used by the R150 classifier test to verify that the
+     * plural arg shape resolves to a single InputBean extraction (the list-shape is read from
+     * the Java type at emit time).
+     */
+    public static String runWithInputBeans(java.util.List<TestInputBean> inputs) {
+        throw new UnsupportedOperationException();
+    }
+
     // ===== ErrorChannel carrier-classifier fixtures (R12 §2c) =====
 
     /**
