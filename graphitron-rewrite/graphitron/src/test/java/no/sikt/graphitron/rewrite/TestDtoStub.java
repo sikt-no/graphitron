@@ -12,4 +12,4 @@ package no.sikt.graphitron.rewrite;
  *       generation time rather than silently producing a {@code ClassCastException} at runtime.</li>
  * </ul>
  */
-record TestDtoStub(String id) {}
+public record TestDtoStub(String id) {}

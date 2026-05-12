@@ -312,4 +312,20 @@ class TestServiceStub {
     public static String runWithMapInput(java.util.Map<String, Object> input) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * Takes a self-referential record bean. R150 rejects recursive shapes at generation time
+     * (the walker would otherwise infinite-loop).
+     */
+    public static String runWithRecursiveBean(TestInputRecursive input) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Takes a package-private record bean. R150 rejects non-public bean classes at generation
+     * time because the generated fetcher lives in a different package and can't reach them.
+     */
+    public static String runWithPackagePrivateBean(TestInputPackagePrivate input) {
+        throw new UnsupportedOperationException();
+    }
 }

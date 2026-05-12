@@ -18,9 +18,11 @@ import no.sikt.graphitron.rewrite.model.Rejection;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -30,21 +32,23 @@ import java.util.stream.Collectors;
  * {@link MethodRef.Service} produced by {@link ServiceCatalog#reflectServiceMethod}.
  *
  * <p>Sibling to {@link EnumMappingResolver#enrichArgExtractions}, with the same pattern: walk the
- * method's parameters, rewrite the {@code CallSiteExtraction.Direct} arms that the catalog could
- * not classify in isolation (no SDL access at reflection time) into a richer extraction that
- * carries the bean instantiation plan. See R150
+ * method's parameters and rewrite the {@code CallSiteExtraction.Direct} arms that the catalog
+ * could not classify in isolation (no SDL access at reflection time) into a richer extraction
+ * that carries the bean instantiation plan. See R150
  * ({@code roadmap/service-method-input-bean-instantiation.md}) for the design contract.
  *
- * <p>Detection is structural: a Java parameter whose type (or element type, for {@code List<X>} /
- * {@code Set<X>}) resolves to a non-enum, consumer-authored class is paired against the SDL slot
- * type. When the SDL side is a {@code GraphQLInputObjectType}, an {@link CallSiteExtraction.InputBean}
- * is produced; when the SDL side is anything else the param is rejected structurally (the catch
- * is the missed "scalar SDL arg vs bean Java param" mismatch that surfaces today only as a runtime
- * {@code ClassCastException} inside the service body).
+ * <p>Classification rule (SDL-driven): {@link CallSiteExtraction.Direct} is reserved for GraphQL
+ * scalar SDL arguments, including custom scalars wired via {@code @scalarType}. graphql-java's
+ * scalar coercion delivers the consumer's declared Java type for those slots. GraphQL
+ * input-object SDL arguments are classified as {@link CallSiteExtraction.InputBean} or rejected
+ * loudly at generation time. {@code Map<K, V>} as a Java type for an input-object SDL slot is a
+ * permanent rejection, not a v1 deferral.
  *
  * <p>Bean shape supported: Java {@code record} (canonical constructor) or plain class with a
- * public no-arg constructor and JavaBean-style setters. Anything else (builders, immutable
- * value classes without a no-arg constructor, abstract bean classes) is rejected structurally.
+ * public no-arg constructor and JavaBean-style setters. The bean class itself must be
+ * {@code public} — generated fetchers live in a separate {@code .generated.fetchers} package and
+ * cannot reach package-private types. Anything else (builders, immutable value classes without a
+ * no-arg constructor, abstract bean classes, recursive shapes) is rejected structurally.
  */
 final class InputBeanResolver {
 
@@ -66,23 +70,29 @@ final class InputBeanResolver {
 
     /**
      * Walks the method's {@link ParamSource.Arg} parameters and rewrites every Direct extraction
-     * whose SDL arg is an input-object into a typed {@link CallSiteExtraction.InputBean}. The rule
-     * is invariant-driven: {@link CallSiteExtraction.Direct} is reserved for scalar/enum SDL args
-     * (where {@code env.getArgument(name)} returns a value whose Java type the consumer already
-     * declared correctly). An input-object SDL arg always returns a {@code Map<String, Object>}
-     * from graphql-java, and only the InputBean path can populate the consumer's typed parameter
-     * without an unchecked cast that fails at first field access.
+     * whose SDL arg is an input-object into a typed {@link CallSiteExtraction.InputBean}. Scalar
+     * SDL args (including custom scalars wired via {@code @scalarType}) keep the Direct
+     * extraction: graphql-java coerces the wire value to the declared Java type at runtime, and
+     * the generator trusts that wiring. An input-object SDL arg always returns a
+     * {@code Map<String, Object>} from graphql-java, and only the InputBean path can populate the
+     * consumer's typed parameter without an unchecked cast that fails at first field access.
      *
      * <p>Rejections (returned as {@link Result.Failed}, never silent fallbacks):
      * <ul>
      *   <li>SDL is input-object but the Java element type can't be loaded.</li>
-     *   <li>SDL is input-object but the Java element type is in the JDK / {@code org.jooq.*} / is
-     *       an enum, primitive, array — i.e. not a populatable consumer bean. {@code
-     *       Map<String, Object>} hits this case and is rejected loudly; the pre-R150 silent
-     *       passthrough was the source of the {@code ClassCastException}s R150 exists to fix.</li>
+     *   <li>SDL is input-object but the Java type is {@code java.util.Map} — a dedicated arm with
+     *       a sharper message: Map at the service boundary is a permanent anti-pattern; use a
+     *       typed bean, or declare a custom scalar via {@code @scalarType} for open-ended JSON.</li>
+     *   <li>SDL is input-object but the Java element type is in the JDK / {@code org.jooq.*}, or
+     *       is an enum / primitive / array — i.e. not a populatable consumer bean.</li>
      *   <li>SDL list-shape and Java list-shape disagree.</li>
+     *   <li>The bean class is not {@code public} (generated fetchers live in a different package
+     *       and cannot reach package-private classes).</li>
      *   <li>The bean class has no record / public no-arg-ctor construction strategy.</li>
      *   <li>For records, the SDL input type omits a record component.</li>
+     *   <li>The bean shape is recursive (the same class appears nested inside itself, directly or
+     *       transitively). Recursive shapes are not supported in v1 — the helper would emit
+     *       mutually-recursive method calls with no terminating leaf.</li>
      * </ul>
      */
     Result enrich(MethodRef.Service method, GraphQLFieldDefinition fieldDef) {
@@ -165,7 +175,8 @@ final class InputBeanResolver {
                     + (sdl.list() ? "list-shaped" : "scalar")
                     + " — match the cardinalities"));
             }
-            var built = buildInputBean(elementClass, iot, p.name(), method.methodName(), method.className());
+            var built = buildInputBean(elementClass, iot, p.name(), method.methodName(),
+                method.className(), new HashSet<>());
             if (built instanceof Built.Fail f) {
                 return new Result.Failed(f.rejection());
             }
@@ -188,10 +199,37 @@ final class InputBeanResolver {
      * an SDL {@link GraphQLInputObjectType}. Walks the SDL fields in declaration order, locating
      * the Java member on the bean and computing each leaf's transform. Records/JavaBeans are
      * supported; everything else is rejected. Nested input-object fields recurse into a nested
-     * {@code InputBean} leaf.
+     * {@code InputBean} leaf. The {@code visited} set carries the in-flight chain of bean classes
+     * so a self-referential or mutually-recursive shape fails as a structural rejection rather
+     * than a {@code StackOverflowError}.
      */
     private Built buildInputBean(Class<?> beanClass, GraphQLInputObjectType iot,
-                                  String paramName, String methodName, String className) {
+                                  String paramName, String methodName, String className,
+                                  Set<Class<?>> visited) {
+        if (!visited.add(beanClass)) {
+            return new Built.Fail(Rejection.structural(
+                "parameter '" + paramName + "' on method '" + methodName + "' in class '"
+                + className + "': bean class '" + beanClass.getName() + "' is recursive — input-object"
+                + " shapes that reference themselves (directly or via another bean) are not supported"
+                + " by the input-bean instantiation path"));
+        }
+        try {
+            return buildInputBeanBody(beanClass, iot, paramName, methodName, className, visited);
+        } finally {
+            visited.remove(beanClass);
+        }
+    }
+
+    private Built buildInputBeanBody(Class<?> beanClass, GraphQLInputObjectType iot,
+                                      String paramName, String methodName, String className,
+                                      Set<Class<?>> visited) {
+        if (!Modifier.isPublic(beanClass.getModifiers())) {
+            return new Built.Fail(Rejection.structural(
+                "parameter '" + paramName + "' on method '" + methodName + "' in class '"
+                + className + "': bean class '" + beanClass.getName() + "' is not public; the"
+                + " generated fetcher lives in a different package and needs public access to"
+                + " construct the bean — mark the class public"));
+        }
         CallSiteExtraction.InputBean.Target target;
         Map<String, JavaMember> javaMembersBySdlName;
         if (beanClass.isRecord()) {
@@ -247,7 +285,8 @@ final class InputBeanResolver {
                         + " type but the Java member type '" + javaElementTypeName
                         + "' is not a viable bean class"));
                 }
-                Built nested = buildInputBean(nestedClass, nestedIot, paramName, methodName, className);
+                Built nested = buildInputBean(nestedClass, nestedIot, paramName, methodName,
+                    className, visited);
                 if (nested instanceof Built.Fail f) {
                     return f;
                 }
