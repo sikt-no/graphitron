@@ -389,25 +389,41 @@ Phase 3 — new test coverage.
   position on the filter field. R130's INSERT carve-out and its
   reference-carrier deferral (keyed to R24's
   `nodeidreferencefield-join-projection-form`) stay exactly as they are.
-- **R146 (`mutation-cardinality-safety-unique-index`)**, filed alongside this
-  Spec. Unique-index coverage as an alternative to PK. R144's PK-only is the
-  conservative cut; R146 generalises to PK-or-unique-index, requires
-  `JooqCatalog` unique-index exposure and emitter awareness of which key is
-  matched.
-- **R145 (`mutation-cardinality-safety-upsert`)**, filed alongside this Spec.
-  Cardinality safety for UPSERT. UPSERT is refused under R144; R145 designs
-  the cardinality story (ON CONFLICT requires a unique constraint by
-  definition; `@multiRow` interacts differently; `@value`-partition extends
-  naturally).
-- **Sibling of R141** (`bulk-input-single-carrier-list-data-field.md`, Spec).
-  R141 admits a bulk-input DML carrier with a list-shaped data field
-  (`MutationBulkDmlRecordField`), originally scoped to `{INSERT, UPDATE,
-  UPSERT}`. R141's Spec body has been narrowed to `{INSERT, UPDATE}` to
-  share R144's UPSERT carve-out: R141's compact-constructor now rejects
-  `DmlKind.UPSERT` alongside DELETE, deferring the UPSERT arm to R145.
-  R141 and R144 are peers in `mutations-errors`; neither blocks the other.
-  Test-fixture migration on any UPDATE coverage that touches the legacy
-  `@lookupKey` shape is owned by whichever of R141 / R144 lands second.
+- **Follows R141** (`bulk-input-single-carrier-list-data-field`, shipped;
+  see `changelog.md`). R141 landed the bulk-input DML carrier
+  (`MutationBulkDmlRecordField`) scoped to `{INSERT, UPDATE}`, with a
+  compact-constructor rejection on `DmlKind.UPSERT` deferring the bulk
+  UPSERT path to R145 in coordination with this Spec's upstream UPSERT
+  refusal. Two implications for R144's implementation:
+  - R144's `@multiRow` semantics apply to both `MutationDmlRecordField`
+    (singleton) and `MutationBulkDmlRecordField` (bulk) without
+    additional code. The WHERE-coverage check fires on
+    `MutationInputResolver.resolveInput`, which both carriers feed
+    through identically. R141's per-row emit loop reuses the same
+    lookup-WHERE builder; the filter-column source is
+    `tableInputArg.fieldBindings()` regardless of carrier shape.
+  - R141 added `createFilmsPayload` and `updateFilmsPayload` fixtures
+    in `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`,
+    and three execution tests in `DmlBulkMutationsExecutionTest`
+    (`bulkInsertWithThreeRowsInNonPkOrderPreservesInputOrderInResponse`,
+    `bulkInsertWithSingleRowExercisesBulkLeafPath`,
+    `bulkUpdateWithThreeRowsInNonPkOrderPreservesInputOrderInResponse`).
+    R141 shipped against the pre-R144 regime, so any `@lookupKey`-using
+    input field on these fixtures migrates with the rest of R144's
+    Phase 2 sweep. Add these fixtures to the migration enumeration.
+- **R145 (`mutation-cardinality-safety-upsert`)**, Backlog. Cardinality
+  safety for UPSERT. UPSERT is refused under R144; R145 designs the
+  cardinality story (ON CONFLICT requires a unique constraint by
+  definition; `@multiRow` interacts differently; `@value`-partition
+  extends naturally). R145's landing lifts UPSERT rejections at two
+  sites in one pass: R144's upstream `MutationInputResolver`
+  refusal *and* R141's compact-constructor rejection on
+  `MutationBulkDmlRecordField`.
+- **R146 (`mutation-cardinality-safety-unique-index`)**, Backlog. Filed
+  alongside this Spec. Unique-index coverage as an alternative to PK.
+  R144's PK-only is the conservative cut; R146 generalises to
+  PK-or-unique-index, requires `JooqCatalog` unique-index exposure
+  and emitter awareness of which key is matched.
 - **Independent from R98** (`multi-source-input-validation.md`). R98 is about
   validation surfaces (CHECK + Jakarta + directives → one rendered schema);
   R144 is about cardinality safety on the DML-WHERE side. Shared theme, no

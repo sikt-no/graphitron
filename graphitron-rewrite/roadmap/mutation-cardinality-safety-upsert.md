@@ -21,9 +21,10 @@ UPSERT-specific safety story, lifts R144's classify-time rejection, and
 restores UPSERT-generation. Existing UPSERT fixtures in `sakila-example` and
 `GraphitronSchemaBuilderTest` migrate as part of this work.
 
-R145 also lifts R141's compact-constructor UPSERT rejection on
-`MutationBulkDmlRecordField` (bulk-input + list-data-field DML carriers)
-and adds the UPSERT branch to R141's parameterised emitter dispatch. R141
-narrowed its admitted-kinds matrix to `{INSERT, UPDATE}` to share R144's
-UPSERT carve-out; R145's landing reopens UPSERT on both the direct-DML
-arm (`MutationUpsertTableField`) and R141's bulk-carrier arm in one pass.
+R145 also lifts R141's bulk-carrier UPSERT rejection (`MutationBulkDmlRecordField`
+rejects `DmlKind.UPSERT` at classify time, with a compact-constructor backstop;
+see R141's shipped entry in `changelog.md`) and adds the UPSERT branch to R141's
+parameterised emitter dispatch. R141 narrowed its admitted-kinds matrix to
+`{INSERT, UPDATE}` to share R144's UPSERT carve-out before it shipped; R145's
+landing reopens UPSERT on both the direct-DML arm (`MutationUpsertTableField`)
+and R141's bulk-carrier arm in one pass.
