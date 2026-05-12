@@ -1,6 +1,6 @@
 ---
 id: R138
-title: "Reject or lift bulk-input + single-record-payload mutations that drop N-1 returned keys"
+title: "Reject bulk-input + single-record-payload mutations (extend Invariant #15 to the Payload arm)"
 status: Spec
 bucket: validation
 priority: 3
@@ -8,9 +8,9 @@ theme: mutations-errors
 depends-on: []
 ---
 
-# Reject or lift bulk-input + single-record-payload mutations that drop N-1 returned keys
+# Reject bulk-input + single-record-payload mutations (extend Invariant #15 to the Payload arm)
 
-Surfaced in R134 (`mutation-empty-input-short-circuit-newrecord`, shipped at `36122dc` + `7fadbda`). R134 fixed the empty-input arm of the same shape; this item closes the non-empty arm, where the generated code commits N rows but the GraphQL response carries only the last row's PK. The bug is silent: no exception, no log line, no schema reject — the response simply lies about scope.
+Surfaced in R134 (`mutation-empty-input-short-circuit-newrecord`, shipped at `36122dc` + `7fadbda`). R134 fixed the empty-input arm of the same shape; this item closes the non-empty arm, where the classifier admits a field whose only emit path throws `TooManyRowsException` at runtime for any input with >1 row. The classifier/emitter incoherence is the bug: a field that classifies cleanly has no runtime path that satisfies its declared return contract.
 
 ## Symptom
 
@@ -34,14 +34,16 @@ Record1<Integer> payload = dsl.transactionResult(tx -> DSL.using(tx)
     .fetchOne());
 ```
 
-N rows commit to the DB. jOOQ's `.fetchOne()` keeps the last `RETURNING` row and discards the rest. The downstream data field's response SELECT (`SingleRecordTableField`) projects the single PK in `payload`, so the response carries `film` = the last input row and silently drops the other N-1.
+jOOQ's `ResultQuery.fetchOne()` contract (3.20.x): "Execute and return at most one record; if the query returned more than one record, an exception is thrown." For any `in` with >1 row, the `RETURNING` clause yields N records and `.fetchOne()` throws `org.jooq.exception.TooManyRowsException`. The throw propagates out of the `transactionResult` lambda, jOOQ rolls back the transaction, and the catch arm at `TypeFetcherGenerator.java:3361-3363` routes the exception through the configured error channel (or surfaces it as a graphql-java field error if no channel is set). Zero rows commit; the mutation observably fails.
+
+The original Backlog body framed this as "silently drops N-1 returned PK records". That framing is inaccurate against jOOQ 3.20's contract: there is no silent path, only a thrown-and-rolled-back path. The bug shape is identical either way (the classifier admits a shape whose emit cannot honour the declared return), but the argument for classify-time rejection is *stronger* once stated honestly: this is not "data is dropped", it is "no admitted (input, output) pair satisfies the field's contract; every call with >1 input row throws".
 
 ## Why the existing guards miss it
 
-- **`MutationInputResolver.validateReturnType`** (Invariants #14 + #15, at `graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java:153-219`) rejects `listInput + single-cardinality` on the `ScalarReturnType (ID)` and `TableBoundReturnType (T)` arms with "Invariant #15 / silent drop of all-but-last-row data". The `ResultReturnType` arm explicitly excludes #15 with a comment at lines 148-150 routing the case to "the deferred Payload+list rejection in `FieldBuilder#buildDmlField`".
+- **`MutationInputResolver.validateReturnType`** (Invariants #14 + #15, at `graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java:153-219`) rejects `listInput + single-cardinality` on the `ScalarReturnType (ID)` and `TableBoundReturnType (T)` arms with an "Invariant #15 / must return a list" message. The existing message text on those two arms uses a "silent drop of all-but-last-row data" framing inherited from a pre-R134 mental model; the actual runtime failure on `[ID!]! → ID` / `[T!]! → T` is the same `TooManyRowsException` shape as the one this item closes for `[T!]! → Payload`. The message-text cleanup is folded into the validator change below. The `ResultReturnType` arm explicitly excludes #15 with a comment at lines 148-150 routing the case to "the deferred Payload+list rejection in `FieldBuilder#buildDmlField`".
 - **`FieldBuilder.buildDmlField`** (`graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java:2375`) rejects `listInput && returnType instanceof ResultReturnType` as `Rejection.deferred(..., "synthesize-payload-carrier")`. But R75 Phase 1 introduced a single-record-carrier classification path at `FieldBuilder.java:2664-2685` that constructs a `MutationDmlRecordField` and returns **before** the deferred-rejection check fires. When the carrier trigger resolves `SingleRecordCarrierResolution.Ok` (plain SDL Object with a `@table`-element data field — exactly `FilmPayload { film: Film }`), the guard is bypassed.
 
-The existing `DML_INSERT_LIST_PAYLOAD_DEFERRED` test fixture in `GraphitronSchemaBuilderTest.java:5554` covers the `@record`-carrier variant (which has `fqClassName` set and does not go through R75's `NoBacking` promotion). The plain-SDL variant — the exact `createFilmsPayload(in: [FilmCreateInput!]!): FilmPayload` shape declared at `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls:1183` for R134's compilation-tier regression — has no rejection coverage and no execution-tier coverage, and it generates code that drops data.
+The existing `DML_INSERT_LIST_PAYLOAD_DEFERRED` test fixture in `GraphitronSchemaBuilderTest.java:5554` covers the `@record`-carrier variant (which has `fqClassName` set and does not go through R75's `NoBacking` promotion). The plain-SDL variant — the exact `createFilmsPayload(in: [FilmCreateInput!]!): FilmPayload` shape declared at `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls:1183` for R134's compilation-tier regression — has no rejection coverage, and its emit path throws `TooManyRowsException` on every call with >1 input row.
 
 The comment exclusion at `MutationInputResolver.java:148-150` became a stale invariant claim when R75 Phase 1 added the bypass path. This item repairs that claim at the validator layer.
 
@@ -63,13 +65,18 @@ A sibling Backlog item should be filed for (b) under a slug like `bulk-input-sin
 
 In `MutationInputResolver.validateReturnType`:
 
-- Lift the `listInput && !returnType.wrapper().isList()` predicate to apply over every admitted return-type arm. Cleanest encoding: factor the per-arm shape acceptance (Invariant #14 + payload-list + polymorphic-not-supported) into one helper, run it first, and apply the cardinality check uniformly after on the admitted arms. The redirect message generalises to "use a list-shaped return type to avoid silent drop of all-but-last-row data (Invariant #15)"; the author's own return-type name appears in the message so the redirect remains obvious.
-- Implementer's choice: keep the cardinality check mirrored per-arm (three near-identical `if` blocks, one new on `ResultReturnType`) if preserving the per-arm "use [Film!]!" specificity is judged worth the duplication. Either encoding satisfies the principle; the lifted form mirrors the predicate's sealed-root uniformity, the per-arm form keeps the existing message strings exact. Recommended: lift.
-- Delete the comment exclusion at `MutationInputResolver.java:148-150` ("The Payload arm is excluded from #15 ..."). The new code structure removes the exclusion; the doc claim is stale post-R75 and confuses any reader who reaches the line.
+- Lift the `listInput && !returnType.wrapper().isList()` predicate above the per-arm shape switch. The predicate is sealed-root-uniform over `ReturnTypeRef`; lifting encodes that uniformity in the type system and removes the per-arm duplication that would otherwise distribute the same check across three near-identical `if` blocks (one new on `ResultReturnType`, plus the existing two). Concrete shape: factor the per-arm shape-acceptance switch (Invariant #14 + payload-list + polymorphic-not-supported) into one helper, run it first; on its admitted outcomes, apply the lifted cardinality check.
+- Update the rejection message text on all three admitted arms (`ScalarReturnType (ID)`, `TableBoundReturnType`, `ResultReturnType`) to match the actual runtime mechanism. The existing wording at lines 158-161 and 182-186 ("use [...] to avoid silent drop of all-but-last-row data") inherits a pre-R134 mental model that does not match jOOQ 3.20's `fetchOne()` contract; the failure is `TooManyRowsException` thrown inside `transactionResult`, not silent drop. Replacement template: `"@mutation(typeName: <kind>) with a listed @table input must return a list (found '<name>', single-cardinality); the emit path runs valuesOfRows(...).fetchOne(), which throws TooManyRowsException on every call with >1 input row (Invariant #15)"`. The lifted predicate produces a single message construction site, so the sweep is a one-touch edit.
+- Delete the comment exclusion at `MutationInputResolver.java:148-150` ("The Payload arm is excluded from #15 ..."). The lifted predicate removes the exclusion; the doc claim is stale post-R75 and confuses any reader who reaches the line. Update the Javadoc at lines 136-152 to describe the uniform cardinality check across all three admitted arms.
 
-### Schema fixture removal
+### Schema fixture removal and dead-branch deletion
 
-- Drop the `createFilmsPayload(in: [FilmCreateInput!]!): FilmPayload @mutation(typeName: INSERT)` declaration at `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls:1183` (and the surrounding R134 explanatory comment block). The compilation-tier coverage that this field anchored (R134's `newRecord(...)` regression pin) is no longer reachable through this shape, because the validator now rejects it. Move the `newRecord(...)` regression coverage onto `createFilmPayload` (the single-input + single-payload variant at line 1171), whose empty-list short-circuit is unaffected by R134's fix because it never enters the bulk arm at all — but the `dataIsList = false` arm still exercises the `newRecord(...)` empty constructor when the `tia.list()` branch is not taken. Verify by reading the generated source for `createFilmPayload` in the sakila-example target; if the `newRecord(...)` path isn't exercised by the single-input variant, leave the fixture in place with the validator-rejection assertion-flip, or fold the regression onto a new dedicated `*Payload` field that does exercise it.
+Invariant #15 now guarantees that `tia.list() && !dataIsList` is unclassifiable, which makes one fork in the emitter unreachable. Both the schema fixture and the dead fork must go in the same change to keep the classifier and emitter in lock-step.
+
+- Drop the `createFilmsPayload(in: [FilmCreateInput!]!): FilmPayload @mutation(typeName: INSERT)` declaration at `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls:1183` and the surrounding R134 explanatory comment block. Post-R138 the validator rejects the shape, so the schema example cannot carry it.
+- Collapse the `dataIsList ? "newResult" : "newRecord"` fork at `TypeFetcherGenerator.java:3334` to an unconditional `newResult(...)`. The empty-list short-circuit is gated on `if (tia.list())` at line 3316, so it is only emitted for bulk-input fields; combined with Invariant #15's new coverage, every reachable call site has `tia.list() == true && dataIsList == true`. The `newRecord(...)` branch becomes dead code.
+- Update the surrounding comment at `TypeFetcherGenerator.java:3328-3332` (which references both branches and explains the R134 split) to describe the post-R138 invariant: the bulk arm always produces a list payload because Invariant #15 makes single-cardinality unreachable here.
+- The R134 changelog entry stays accurate as history (it describes a transitional state); no edit needed there. The R134 compilation-tier regression that the `createFilmsPayload` fixture pinned has no surviving anchor because the entire shape it pinned is now unreachable; that is the principled outcome, not a coverage gap.
 
 ### Classifier-tier rejection coverage
 
@@ -97,61 +104,24 @@ The fixture's diagnostic value is the contrast with `DML_INSERT_LIST_PAYLOAD_DEF
 
 ## Tests
 
-- **L3 (classifier).** `GraphitronSchemaBuilderTest.DML_INSERT_LIST_PLAIN_PAYLOAD_REJECTED` row above. UPDATE and UPSERT variants share the same input + return shape; sibling rows for those two kinds are worth adding for completeness, but a single INSERT row demonstrates the validator change is correct. Implementer's call on whether to enumerate all three kinds.
-- **L6 (execution), pre-fix only.** Add a pin-the-bug test in `SingleRecordCarrierDmlTest` (or a sibling file) that exercises the current broken behaviour against PostgreSQL:
+- **L3 (classifier).** One `GraphitronSchemaBuilderTest.DML_INSERT_LIST_PLAIN_PAYLOAD_REJECTED` row, as shown above. Invariant #15 is one mechanism; the existing `DML_INSERT_LIST_SINGLE_T_REJECTED` and `DML_INSERT_LIST_SINGLE_ID_REJECTED` precedents both cover INSERT only, on the same one-row-per-mechanism rule. UPDATE / UPSERT siblings are not added here.
 
-  ```java
-  @Test
-  void createFilmsPayload_silentlyDropsAllButLastRow_R138_PRE_FIX() {
-      // Documents the R138 bug: bulk-input + single-record-payload mutation classifies
-      // successfully (MutationDmlRecordField with tia.list()=true, dataIsList=false).
-      // The emitted body runs valuesOfRows(...).returningResult(...).fetchOne(), which
-      // jOOQ resolves to "last row only" — N-1 rows commit to the DB but only the
-      // last row's PK flows back into the response payload's film data field.
-      String m1 = randomMarker("R138-A");
-      String m2 = randomMarker("R138-B");
-      String m3 = randomMarker("R138-C");
-      try {
-          Map<String, Object> data = execute("""
-              mutation {
-                  createFilmsPayload(in: [
-                      { title: "%s", languageId: 1 },
-                      { title: "%s", languageId: 1 },
-                      { title: "%s", languageId: 1 }
-                  ]) { film { title } }
-              }
-              """.formatted(m1, m2, m3));
+No execution-tier test. The failure mode (`TooManyRowsException` thrown inside `transactionResult`, transaction rolled back, GraphQL error surfaced) is below the noise floor for behavioural-tier coverage: an execution test asserting "throws an exception" carries no signal beyond what the classifier-tier rejection already pins. The classifier-tier truth-table row is the load-bearing test for this fix.
 
-          long dbCount = dsl.fetchCount(DSL.table("film"),
-              DSL.field("title", String.class).in(m1, m2, m3));
-          assertThat(dbCount)
-              .as("all three rows commit to the DB")
-              .isEqualTo(3);
+### Verifying the fix against a fresh checkout
 
-          Map<String, Object> payload = (Map<String, Object>) data.get("createFilmsPayload");
-          Map<String, Object> row = (Map<String, Object>) payload.get("film");
-          assertThat(row.get("title"))
-              .as("but only the last row's PK flowed to the response; m1 and m2 are dropped")
-              .isEqualTo(m3);
-      } finally {
-          dsl.deleteFrom(DSL.table("film"))
-              .where(DSL.field("title").in(m1, m2, m3)).execute();
-      }
-  }
-  ```
-
-  This test asserts on row counts at the GraphQL/DB boundary, no generated-source body strings. It exists *only* to demonstrate the hole; once the implementation lands, the schema field is removed and the test is deleted in the same commit. The replacement is the classifier truth-table row above.
-
-  The test could also be filed as a pre-implementation reproducer commit on the `claude/r138-execution-fix-bBLh4` branch ahead of the validator change, so a fresh reviewer can run it against `main`, observe the silent drop, then re-run after the rejection lands and observe the schema-validation rejection. Implementer's call on whether to land the pre-fix test in a separate commit or fold it into the implementation commit's `git revert`-able history.
+For a reviewer who wants ground-truth evidence the bug exists pre-fix: temporarily re-add the `createFilmsPayload(in: [FilmInput!]!): FilmPayload` declaration to a fixture schema, run a multi-row INSERT through the generated fetcher against a live PostgreSQL, and observe the `TooManyRowsException`. No part of that observation belongs in the repo's test suite post-fix; the classifier rejection is the durable assertion.
 
 ## Acceptance criteria
 
-- `MutationInputResolver.validateReturnType` rejects `listInput && !returnType.wrapper().isList()` for every admitted return-type arm, including `ResultReturnType`. The Invariant #15 rejection message contains the strings `"must return a list"` and `"Invariant #15"` consistent with the existing `[ID!]!` / `[T!]!` rejections.
-- The comment exclusion at `MutationInputResolver.java:148-150` is deleted; the corresponding doc claim in `validateReturnType`'s Javadoc (lines 136-152) is updated to reflect uniform #15 coverage across the three admitted arms (`ScalarReturnType(ID)`, `TableBoundReturnType`, `ResultReturnType`).
-- `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls` no longer declares `createFilmsPayload(in: [FilmCreateInput!]!): FilmPayload`. The R134 `newRecord(...)` compilation-tier regression coverage is verified to still hold via the single-input `createFilmPayload` field (or another dedicated fixture) — `mvn install -Plocal-db` passes and the generated source for `createFilmPayload` exercises the `dataIsList = false` empty-arm `newRecord(...)` path.
-- `GraphitronSchemaBuilderTest` carries a `DML_INSERT_LIST_PLAIN_PAYLOAD_REJECTED` row covering the plain-SDL payload variant; the row's assertion message names the validator-tier rejection (`"Invariant #15"`), not the deferred-guard message used by `DML_INSERT_LIST_PAYLOAD_DEFERRED`.
-- No execution-tier test asserts the dropped-rows behaviour after the fix lands. If a pre-fix pin-the-bug test was added, it is deleted in the same commit as the validator change.
-- `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes end-to-end with the schema fixture removed and the new classifier-tier coverage in place.
+- `MutationInputResolver.validateReturnType` rejects `listInput && !returnType.wrapper().isList()` for every admitted return-type arm (`ScalarReturnType(ID)`, `TableBoundReturnType`, `ResultReturnType`) via one lifted predicate above the arm switch, not three per-arm duplications.
+- The rejection message contains `"Invariant #15"` and names `TooManyRowsException` as the runtime failure (replacing the pre-R138 "silent drop of all-but-last-row data" wording on all three arms).
+- The comment exclusion at `MutationInputResolver.java:148-150` is deleted. `validateReturnType`'s Javadoc (lines 136-152) is updated to describe uniform #15 coverage across the three admitted arms.
+- The `dataIsList ? "newResult" : "newRecord"` fork at `TypeFetcherGenerator.java:3334` collapses to an unconditional `newResult(...)`. The surrounding comment at lines 3328-3332 is rewritten to describe the post-R138 invariant (the bulk arm always produces a list payload).
+- `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls` no longer declares `createFilmsPayload(in: [FilmCreateInput!]!): FilmPayload` (and its R134 comment block is removed).
+- `GraphitronSchemaBuilderTest` carries a `DML_INSERT_LIST_PLAIN_PAYLOAD_REJECTED` row covering the plain-SDL payload variant; the assertion contains `"Invariant #15"`. UPDATE / UPSERT sibling rows are not added; one INSERT row covers the mechanism, consistent with the existing `_SINGLE_T_` / `_SINGLE_ID_` precedents.
+- No execution-tier test is added or retained. The classifier-tier truth-table row is the load-bearing assertion for this fix.
+- `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes end-to-end with the schema fixture removed, the dead emit branch deleted, and the new classifier-tier coverage in place.
 
 ## Roadmap entries (siblings / dependencies)
 

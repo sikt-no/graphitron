@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Plan |
 |---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready | [plan](history-squash.md) |
-| `R138` | Reject or lift bulk-input + single-record-payload mutations that drop N-1 returned keys | Spec | [plan](mutation-bulk-input-single-payload-key-loss.md) |
+| `R138` | Reject bulk-input + single-record-payload mutations (extend Invariant #15 to the Payload arm) | Spec | [plan](mutation-bulk-input-single-payload-key-loss.md) |
 | `R132` | Move leaf-coverage report verification off local builds | In Review | [plan](leaf-coverage-verify-off-local.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | Ready | [plan](tablemethod-child-table-bound.md) |
 | `R45` | Typed context-value registry for `@service` | Spec | [plan](typed-context-value-registry.md) |
@@ -134,7 +134,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R138` [**Reject or lift bulk-input + single-record-payload mutations that drop N-1 returned keys**](mutation-bulk-input-single-payload-key-loss.md) — Spec, validation
+- `R138` [**Reject bulk-input + single-record-payload mutations (extend Invariant #15 to the Payload arm)**](mutation-bulk-input-single-payload-key-loss.md) — Spec, validation
 - `R130` [**Admit @nodeId-decoded carriers in @mutation inputs and @lookupKey bindings**](composite-reference-in-mutation-input.md) — In Review, architecture
 - `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Ready, architecture
