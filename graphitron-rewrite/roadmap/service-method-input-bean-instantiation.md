@@ -19,16 +19,25 @@ in one commit. End-to-end coverage: an L4 execution test in `GraphQLQueryTest` p
 nested-list-bearing bean from a real GraphQL mutation and asserts the service body sees typed
 field values (`submitFilmReviewWithDetails`); an L3 compilation fixture in
 `graphitron-sakila-example` proves the generated helper compiles against the consumer-authored
-bean class; L2 pipeline cases in `GraphitronSchemaBuilderTest` pin the three classifier arms
-(singular bean, list-of-bean, bean-Java-vs-scalar-SDL rejection); L1 unit tests in
-`TypeFetcherGeneratorTest` lock the helper-method spec shape (record vs JavaBean target, plural
-helper, dedup-by-class).
+bean class; L2 pipeline cases in `GraphitronSchemaBuilderTest` pin the two classifier arms
+(singular bean, list-of-bean); L1 unit tests in `TypeFetcherGeneratorTest` lock the
+helper-method spec shape (record vs JavaBean target, plural helper, dedup-by-class).
 
-Model invariant: `CallSiteExtraction.Direct` is reserved for scalar/enum SDL arguments. Any
-`@service` parameter whose SDL arg is an input-object is classified as `InputBean` or rejected
-loudly at generation time. A `Map<String, Object>` Java parameter paired with an input-object
-SDL slot is the dangerous pre-R150 silent-cast pattern and is now a hard rejection — there is
-no "raw passthrough" escape hatch, because the only safe outcome is a populated bean.
+Model invariant (SDL-driven): `CallSiteExtraction.Direct` is reserved for GraphQL scalar SDL
+arguments, including custom scalars wired via `@scalarType`. graphql-java's scalar coercion
+delivers the consumer's declared Java type, so the generator emits `env.getArgument(name)`
+unchanged regardless of the Java side. GraphQL input-object SDL arguments are classified as
+`InputBean` or rejected loudly at generation time — a `Map<String, Object>` Java parameter
+paired with an input-object SDL slot is the dangerous pre-R150 silent-cast pattern and is now
+a hard rejection. `Map<K, V>` as an `@service` parameter for an input-object SDL slot is
+explicitly deferred; the rejection message names the parameter and tells the consumer to
+declare a typed bean.
+
+jOOQ TableRecords as `@service` arg parameters are not a deliberately-implemented path in v1.
+A generated record (e.g. `FilmRecord`) lives outside `org.jooq.*` and is currently routed
+through the JavaBean target via reflected setters — that compiles for flat shapes but is not
+the idiomatic `record.from(map)` jOOQ path and is not exercised by tests. A dedicated arm is
+tracked as the natural follow-up.
 
 Recursion is restricted to head-only paths in v1: a `@service` param whose `argMapping` is a
 multi-segment dot-path stays on the legacy `Direct` arm even when the leaf SDL type is an

@@ -112,30 +112,21 @@ final class InputBeanResolver {
             }
             GraphQLInputType sdlType = argTypes.get(arg.graphqlArgName());
             SdlElement sdl = peelSdlListNonNull(sdlType);
-            JavaElement elt = peelJavaListSet(p.typeName());
-            Class<?> elementClass = tryLoad(elt.elementTypeName());
-            // Direct is reserved for scalar/enum SDL args. If the SDL side isn't input-object,
-            // the existing Direct extraction is correct provided the Java side is scalar-shaped
-            // too. A bean-shaped Java parameter against a scalar SDL slot is the symmetric
-            // runtime-cast hazard (graphql-java hands the consumer a String, the call site
-            // unchecked-casts to the bean type, ClassCastException at first field access).
+            // Direct is reserved for GraphQL scalar SDL args (including custom scalars wired via
+            // `@scalarType`). graphql-java coerces the incoming value to the Java type the
+            // consumer declared for that scalar — the generator trusts that wiring and emits
+            // `env.getArgument(name)` unchanged. Only GraphQL input-object SDL args trigger the
+            // InputBean classification; anything else stays on the existing Direct extraction.
             if (!(sdl.elementType() instanceof GraphQLInputObjectType iot)) {
-                if (elementClass != null && looksLikeBeanCandidate(elementClass)) {
-                    String sdlDesc = sdlType == null ? "(no SDL arg)" : GraphQLTypeUtil.simplePrint(sdlType);
-                    return new Result.Failed(Rejection.structural(
-                        "parameter '" + p.name() + "' on method '" + method.methodName()
-                        + "' in class '" + method.className() + "' has Java type '"
-                        + elementClass.getName() + "' (a consumer-authored class) but the GraphQL"
-                        + " argument '" + arg.graphqlArgName() + "' has type '" + sdlDesc
-                        + "' which is not an input-object type — change the Java parameter to a"
-                        + " scalar/enum, or change the GraphQL argument to an input object"));
-                }
                 newParams.add(p);
                 continue;
             }
             // SDL says input-object → the Java parameter MUST be a populatable bean. Anything
             // else (Map, JDK type, builder-only class) is the unsafe pattern Direct used to
-            // permit and is now rejected loudly.
+            // permit and is now rejected loudly. Map<K,V> support is explicitly deferred; the
+            // rejection message names the parameter and tells the consumer to declare a typed bean.
+            JavaElement elt = peelJavaListSet(p.typeName());
+            Class<?> elementClass = tryLoad(elt.elementTypeName());
             if (elementClass == null) {
                 return new Result.Failed(Rejection.structural(
                     "parameter '" + p.name() + "' on method '" + method.methodName()

@@ -5295,29 +5295,6 @@ class GraphitronSchemaBuilderTest {
                     .beanClass().simpleName()).isEqualTo("TestInputBean");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
-        },
-
-        SERVICE_MUTATION_FIELD_INPUT_BEAN_SCALAR_SDL_REJECTED(
-            "R150: @service with Java bean param vs scalar SDL arg → UnclassifiedField with structural rejection naming the param",
-            """
-            type FilmDetails @record { title: String }
-            type Query { x: String }
-            type Mutation {
-                runWithInputBean(input: String): FilmDetails
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithInputBean"})
-            }
-            """,
-            schema -> {
-                var f = schema.field("Mutation", "runWithInputBean");
-                assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
-                var u = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) f;
-                assertThat(u.reason())
-                    .contains("input")
-                    .contains("not an input-object type");
-            }) {
-            @Override public Set<Class<?>> variants() {
-                return Set.of(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
-            }
         };
 
         final String sdl;
