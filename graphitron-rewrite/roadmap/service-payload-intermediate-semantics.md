@@ -14,7 +14,13 @@ last-updated: 2026-05-13
 
 ## What this item does
 
-Extends `@field(name:)` to accept R84-style path expressions rooted at sigil-named upstream values. Introduces two active sigils, `$source` (the upstream value at this field's site) and `$errors` (the error-channel slot), plus a reserved-future sigil `$context` (consumer item not yet filed). The bare-name form keeps its current meaning (column on the bound jOOQ record, or accessor on the structural Java analogue when the parent has no bound record); sigil-prefixed forms become the explicit override when convention can't tie-break.
+Extends `@field(name:)` to accept R84-style path expressions rooted at sigil-named upstream values. The bare-name form preserves its current behaviour: depth-N inference against the default upstream (which this item names `$source`). Bare-name `"a.b.c"` and sigil-prefixed `"$source.a.b.c"` resolve identically; same rules, same diagnostics, same emitted code. The sigil grammar adds three narrow affordances bare-name structurally cannot express:
+
+- `$source` alone, with no step, binding to the whole upstream value. Today this is reachable only by accident when type-match fallback catches it; the sigil gives the schema author a way to name it.
+- `$errors` and `$errors.X`, for error-channel routing. R12 owns the runtime population of the slot; this item pins the source-side reference.
+- Reserved `$context`, the grammar slot for the future consumer item (path-form `contextArguments` unified with today's list-form shorthand). Parser accepts it; classifier rejects with "reserved, not yet implemented" until the consumer item lands.
+
+That is the whole schema-author-visible payoff for this item. The motivating gap (the OpprettRegelverksamlingPayload reproducer, R158) is resolved by today's inference being made contractual and the new `$source` spelling letting the author write the binding explicitly when they want to; no new structural admission rule is needed.
 
 This is the output-side dual of R84's input-side `argMapping` path expressions and reuses the same `PathExpr.{Head | Step}` machinery and `selection.parseEntries` syntax extraction. R69 (`@experimental_constructType`) and R97 (`argMapping` grouping) are the two other open consumers of the same parser; this item pins the sigil grammar so all three converge on a shared mental model: paths over named upstream roots, walked by typed step chains, list-aware via `liftsList`.
 
@@ -51,17 +57,19 @@ Both modes share one property: the developer's Java type tree and the SDL type t
 
 ## The mechanism
 
-A carrier-payload field carrying `@field(name: "<path>")` declares where its value comes from. The path is rooted at a sigil and walked through the upstream Java value using R84's `PathExpr` machinery. When `@field(name:)` is omitted, graphitron falls back to inference (see below).
+A carrier-payload field carrying `@field(name: "<path>")` declares where its value comes from. The path is rooted at a sigil (`$source`, `$errors`, reserved `$context`) and walked through the upstream Java value using R84's `PathExpr` machinery. Bare-name forms are implicit `$source`-rooted paths; when `@field(name:)` is omitted entirely, graphitron infers a bare-name path from the SDL field name and falls back to type-match when name-match fails (see below).
 
 ### Sigil grammar
 
 | Sigil       | Status   | Binds to                                                                                          |
 |-------------|----------|---------------------------------------------------------------------------------------------------|
-| `$source`   | Active   | The upstream value at this field's site. For a carrier-payload field on a `@service`-backed producer, this is the producer's reflected return value. For a child field on a `@table`-backed parent, this is the bound jOOQ record (so bare-name and `$source.x` are equivalent at that site). |
+| `$source`   | Active   | The upstream value at this field's site. For a carrier-payload field on a `@service`-backed producer, the producer's reflected return value. For a child field on a `@table`-backed parent, the bound jOOQ record. At every site with a well-defined `$source`, bare-name `"X"` and sigil-prefixed `"$source.X"` are equivalent paths. |
 | `$errors`   | Active   | The error-channel slot. R12 owns the slot's runtime population; this item pins the source-side reference. |
 | `$context`  | Reserved | Future binding to `GraphitronContext` values, symmetric to today's `contextArguments` list-form. Parser accepts the sigil but the classifier emits a typed rejection ("`$context` is reserved; not yet implemented") until the consumer item lands. Reserving it now keeps the grammar stable across the eventual rollout. |
 
-Bare names continue to mean what they mean today: column on the bound jOOQ record at sites that have one, accessor on the structural Java analogue otherwise. A bare name is a shorthand for `$source.<name>` whenever `$source` is well-defined at the site.
+Bare names continue to mean what they mean today: depth-N inference against `$source`. A bare path `"a.b.c"` is the same path as `"$source.a.b.c"`. The sigil form is the explicit spelling of what bare-name infers; it is not a different resolver, does not bypass inference rules, and does not produce different diagnostics. The net-new sigil affordances are narrow and listed above.
+
+At sites where `$source` is not defined (Query roots, sites whose upstream cannot be classified), `$source`-prefixed paths surface a typed rejection ("`$source` is not defined at this site"); bare-name continues to follow whatever site-specific rule applies today.
 
 R84's existing `input` root on `argMapping` is unchanged; it sits on the input side of the dual and is not affected by this item.
 
@@ -79,15 +87,17 @@ A path-leaf type mismatch surfaces at classify time: SDL field declares `@nodeId
 
 Path walk reuses R84's `PathExpr.{Head | Step}` chain. The head fixes the sigil-named root's Java type; each step resolves to an accessor on the prior step's type. List-shaped intermediates lift element-wise per `liftsList`, matching R84's flat-path-with-intermediate-list semantics. The structural rules from R84's `Result.PathRejected` (walk-through scalar/enum/union/interface, unknown segment with closest-match hint) carry over verbatim; the Spec re-uses the rejection carrier rather than introducing a parallel one.
 
-### Inference rules (`@field(name:)` omitted)
+### Inference rules
 
-When a carrier-payload field has no `@field(name:)`, graphitron runs the existing inference rules with the order and behaviour made contractual:
+The same inference rules apply to bare-name and to `$source`-prefixed forms. (At a `$source`-prefixed form's leaf step, "inference" is just step resolution; the framing below uses "inference" for the bare-name case because that's where it matters most.)
 
-1. **Name-match.** A top-level accessor on `$source` whose name matches the SDL field's name resolves to a path `$source.<name>`. Existing R94 Layer 2 by-name convention applied here.
-2. **Type-match fallback.** When no name-match exists, graphitron searches `$source`'s top-level accessors for one whose Java type matches the SDL field's element type structurally (the (3) rule below). If exactly one match exists, it resolves; if zero or two-or-more match, inference fails.
-3. **Inference failure.** Surfaces as a typed `Rejection` naming the SDL field, the candidate `$source` accessors, and a concrete `@field(name: "$source.<candidate>")` example the user can paste. The user-facing message and LSP suggestion is the load-bearing surface for "how do I influence graphitron's choice." This is the path the OpprettRegelverksamlingPayload case follows today, invisibly; making it loud is the user-facing payoff.
+When a carrier-payload field has no `@field(name:)`, or has `@field(name: "X")` with a single bare segment, graphitron runs the existing inference rules with the order and behaviour made contractual:
 
-The OpprettRegelverksamlingPayload schema works under the rules above without changes: the single `regelverksamling: [Regelverksamling!]` field type-matches the service's `List<RegelverksamlingRecord>` return (rule 2), since `RegelverksamlingRecord` is the bound record class for `Regelverksamling`. The schema author can make the binding explicit by writing `regelverksamling: [Regelverksamling!] @field(name: "$source")` (the whole producer return is the source for this field). Both forms classify to the same path.
+1. **Name-match.** A top-level accessor on `$source` whose name matches the SDL field's name (for the omitted-directive case) or the named segment (for the explicit case) resolves to a path `$source.<name>`. Existing R94 Layer 2 by-name convention applied here.
+2. **Type-match fallback.** When the omitted-directive case finds no name-match, graphitron searches `$source`'s top-level accessors for one whose Java type matches the SDL field's element type structurally (the type-at-path rule below). If exactly one match exists, it resolves; if zero or two-or-more match, inference fails. (The fallback applies only when the directive is omitted; an explicit `@field(name: "X")` whose segment doesn't name-match an accessor rejects without searching by type.)
+3. **Inference failure.** Surfaces as a typed `Rejection` naming the SDL field, the candidate `$source` accessors, and a concrete `@field(name: "$source.<candidate>")` example the user can paste. The user-facing message and LSP suggestion is the load-bearing surface for "how do I influence graphitron's choice."
+
+The OpprettRegelverksamlingPayload schema works under the rules above without changes: the single `regelverksamling: [Regelverksamling!]` field type-matches the service's `List<RegelverksamlingRecord>` return (rule 2), since `RegelverksamlingRecord` is the bound record class for `Regelverksamling`. The new affordance R159 unlocks for this case is the spelling `regelverksamling: [Regelverksamling!] @field(name: "$source")`, which names the whole producer return as the source. The schema author can use it where they want the binding visible; bare-name keeps working unchanged.
 
 ### Type-at-path matching
 
@@ -100,7 +110,7 @@ The two rules share one classifier check; they differ only on the relationship o
 
 ## What this replaces
 
-R159's prior draft picked interpretation (A) "virtual wrapper, identity passthrough" with a structural admission predicate ("exactly one data-channel field of compatible element shape") as the only intent-communication mechanism. This rewrite supersedes that draft: explicit paths are the intent-communication mechanism, and the structural predicate's job is taken over by the inference rules above. The "exactly one data-channel field" constraint disappears (multiple data fields with distinct paths are admissible); the `CarrierFieldRole` partition collapses into "every carrier field's source is a path; the `$errors` sigil names the error-channel slot directly rather than through a permit role."
+R159's prior draft picked interpretation (A) "virtual wrapper, identity passthrough" with a structural admission predicate ("exactly one data-channel field of compatible element shape") as the only intent-communication mechanism. This rewrite supersedes that draft: today's inference rules, made contractual and given an explicit spelling for the root-value case, are the mechanism. The "exactly one data-channel field" constraint disappears (multiple data fields with distinct paths are admissible); the `CarrierFieldRole` partition collapses into "every carrier field's source is a path (often inferred); the `$errors` sigil names the error-channel slot directly rather than through a permit role." The net-new schema-author surface beyond today's behaviour is narrow: `$source` alone, `$errors`, reserved `$context`.
 
 ## Rejection messaging
 
@@ -116,7 +126,7 @@ Schema authors who hit a failure case need typed, actionable messages naming the
 
 - **R158** (`SourceKey.Reader` sub-taxonomy for `@service`-backed producers) is the consumer-side mechanism for this item's admission predicate. Once R159 lands, R158's reader-variant work pins to "path resolved by this item's classifier" rather than to "structural-admission predicate verdict." R158 stays blocked on this item.
 - **R84** (`argMapping` path expressions) is the precedent and the syntactic-machinery source. This item reuses `PathExpr.{Head | Step}`, `selection.parseEntries`, `ArgBindingMap.of`-style step chains, list-aware traversal, and `Result.PathRejected`. The Spec should pin the exact module-boundary for reuse (likely: lift the path parser to a shared location consumed by both `argMapping` and `@field(name:)` classifiers).
-- **R69** (`@experimental_constructType`) becomes the second consumer of the same path mechanism. R69's current Spec body uses a comma-separated `graphqlField: SQL_COLUMN` mini-language; alignment moves R69's sub-fields to per-field `@field(name:)` paths with `$source` rooting at the bound jOOQ record (today's `@field(name: "FILM_ID")` is the trivial path under this model). R69's Spec body should be updated when this item ships; cross-reference noted at both sites.
+- **R69** (`@experimental_constructType`) becomes the second consumer of the same path mechanism. R69's current Spec body uses a comma-separated `graphqlField: SQL_COLUMN` mini-language; alignment moves R69's sub-fields to per-field `@field(name:)` paths with `$source` rooting at the bound jOOQ record. Today's `@field(name: "FILM_ID")` syntax already works under R159's bare-name rules and resolves identically to `@field(name: "$source.FILM_ID")`; the R69 migration is a documentation refresh and a directive-shape simplification, not a syntax break for existing schemas. R69's Spec body should be updated when this item ships; cross-reference noted at both sites.
 - **R97** (`argMapping` grouping) is the input-side sibling extension and stays on its own track; the grouping syntax does not need to change. R97's path expressions stay rooted at `input` (R84's existing root); this item's `$source` is the output-side root. Both grammars share `PathExpr` and the `liftsList` model.
 - **R96** (deprecate `@record`) owns the directive-removal story for `@record` on payload types. This item does not carry a defensive `@record`-on-payload rejection; R96's Phase 3 narrows the directive scope and any cleanup belongs there.
 - **R12** (typed errors) owns the runtime population of the `$errors` slot. This item only pins the source-side reference; the catch-arm wiring, error-shape contract, and partition rules for non-data fields stay with R12.
@@ -139,10 +149,10 @@ Apollo's `@connect(selection: ...)` mapping language is the closest external pre
 ## Spec must address
 
 - The exact module-boundary for `PathExpr` reuse: lift the parser to a shared location (e.g. `selection/` or a new `path/` package) consumed by both `argMapping` and `@field(name:)` classifiers, or keep R84's home and parameterise the root-binding step.
-- The classifier-check keys this item introduces: one for the name-match rule, one for the type-match fallback rule, one for the type-at-path matching rule, one for the reserved-`$context` rejection. Each is load-bearing and gets a `@LoadBearingClassifierCheck` key.
-- The migration plan for R158's existing `source-key.result-row-walk-wrap-record-empty-path` key: under this item the DML path no longer needs structural-admission heuristics, but the key itself is consumer-side and may stay scoped to the DML variant of `SourceKey.Reader` once R158 lands.
+- The classifier-check keys this item introduces: one for the name-match rule, one for the type-match fallback rule, one for the type-at-path matching rule, one for the reserved-`$context` rejection, one for the "`$source` not defined at this site" rejection. Each is load-bearing and gets a `@LoadBearingClassifierCheck` key.
+- Pinning the set of sites where `$source` is defined (carrier-payload field, child field of a `@table`-backed parent, child field of a `@record`-backed parent, others) and the set where it is not (Query roots, unbacked interfaces). The Spec should enumerate exhaustively; the Spec-must-address list above on `Path walk` and the new "$source not defined" rejection both consume this enumeration.
+- Whether `@field(name: "X")` (explicit, single bare segment) runs strict name-match on `$source` or inherits the omitted-directive's type-match fallback. Recommended: strict name-match (the asymmetry above) on the grounds that an explicit name should not silently bind to a differently-named accessor; the Spec confirms or overturns.
 - Exact rejection-message wording, including the closest-match hint format (reuse R84's hint formatter; do not reimplement).
-- Test surface: pipeline-tier cases for name-match, type-match, ambiguity, inference-failure, type-mismatch, reserved-sigil rejection, $errors source path; execution-tier case against the OpprettRegelverksamlingPayload reproducer (or sakila equivalent if we add one).
-- LSP-tier coverage: `@field(name:)` autocomplete for `$source.<accessor>` paths against the producer's reflected return type, similar to R84's `argMapping` path completion.
-- Whether `MutationServiceRecordField`'s accessor walk continues to operate by name independently of `@field(name:)` paths (today's behaviour) or is rewritten to dispatch through the same inference rules (cleaner model, more migration cost). Recommend the former as default; cite the migration cost.
+- Test surface: pipeline-tier cases for name-match, type-match, ambiguity, inference-failure, type-mismatch, reserved-sigil rejection, `$errors` source path, `$source`-undefined rejection, `$source`-alone (root-value) binding; execution-tier case against the OpprettRegelverksamlingPayload reproducer (or sakila equivalent if we add one).
+- LSP-tier coverage: `@field(name:)` autocomplete for `$source.<accessor>` paths against the producer's reflected return type, similar to R84's `argMapping` path completion. Picks up R157's `typesByName` projection for step resolution; the new arms are root selection (`$source` / `$errors` / reserved `$context`) and the root-value `$source` suggestion.
 - The classifier-check key for the `$source`-is-internal invariant: when a path-leaf SDL field carries a border translator (`@nodeId`, enum textmap, custom scalar binding) the classifier requires the source accessor's Java type to match the translator's internal-side expectation. One load-bearing key per translator family or one shared key with per-translator rejection messages; the Spec should pick.
