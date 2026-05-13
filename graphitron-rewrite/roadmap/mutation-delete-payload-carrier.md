@@ -1,7 +1,7 @@
 ---
 id: R156
 title: "Payload-returning DELETE: carrier permits for PK-echo and PK-only RETURNING record"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 6
 theme: mutations-errors
