@@ -442,6 +442,15 @@ final class InputBeanResolver {
     /** Peeled Java type: list flag + element type name. */
     private record JavaElement(boolean list, String elementTypeName) {}
 
+    /**
+     * Peels {@code List<X>} / {@code Set<X>} to {@code X} and boxes a primitive scalar type name
+     * (e.g. {@code "int"}) to its wrapper FQN (e.g. {@code "java.lang.Integer"}). This is the
+     * single point at which {@link java.lang.reflect.Type#getTypeName()} enters the model, so the
+     * boxing here is what guarantees the {@link CallSiteExtraction.FieldBinding#javaElementTypeName}
+     * invariant ("real class name, never a primitive literal") that the emitter relies on. The list
+     * branches do not box: Java disallows {@code List<int>}, so the generic argument is always
+     * already a reference type.
+     */
     private static JavaElement peelJavaListSet(String typeName) {
         if (typeName.startsWith("java.util.List<") && typeName.endsWith(">")) {
             return new JavaElement(true,
@@ -451,7 +460,21 @@ final class InputBeanResolver {
             return new JavaElement(true,
                 typeName.substring("java.util.Set<".length(), typeName.length() - 1));
         }
-        return new JavaElement(false, typeName);
+        return new JavaElement(false, boxPrimitive(typeName));
+    }
+
+    static String boxPrimitive(String name) {
+        return switch (name) {
+            case "int"     -> "java.lang.Integer";
+            case "long"    -> "java.lang.Long";
+            case "boolean" -> "java.lang.Boolean";
+            case "double"  -> "java.lang.Double";
+            case "float"   -> "java.lang.Float";
+            case "short"   -> "java.lang.Short";
+            case "byte"    -> "java.lang.Byte";
+            case "char"    -> "java.lang.Character";
+            default        -> name;
+        };
     }
 
     /** Peeled SDL type: list flag + non-null/non-list element type. */

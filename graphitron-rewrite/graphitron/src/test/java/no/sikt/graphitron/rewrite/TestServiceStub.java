@@ -227,6 +227,26 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * Takes a {@link TestInputBeanWithPrimitive} (record with an {@code int n} component). Used
+     * by R155 to verify the primitive→wrapper box at the resolver boundary: the {@code n} field's
+     * {@code FieldBinding} must carry {@code javaElementTypeName == "java.lang.Integer"}, not
+     * {@code "int"}.
+     */
+    public static String runWithInputBeanPrimitive(TestInputBeanWithPrimitive input) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Takes a {@link TestInputJavaBeanWithBoolean} (JavaBean with a {@code void setActive(boolean)}
+     * setter). Used by R155 to verify the primitive→wrapper box on the JavaBean indexing path:
+     * the {@code active} field's {@code FieldBinding} must carry {@code javaElementTypeName ==
+     * "java.lang.Boolean"}, not {@code "boolean"}.
+     */
+    public static String runWithInputJavaBeanBoolean(TestInputJavaBeanWithBoolean input) {
+        throw new UnsupportedOperationException();
+    }
+
     // ===== ErrorChannel carrier-classifier fixtures (R12 §2c) =====
 
     /**

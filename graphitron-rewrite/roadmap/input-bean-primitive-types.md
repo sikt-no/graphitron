@@ -1,14 +1,13 @@
 ---
 id: R155
 title: "InputBeanResolver: primitive Java types break codegen"
-status: Spec
+status: In Review
 bucket: bug
 priority: 1
 theme: service
 depends-on: []
 created: 2026-05-13
 last-updated: 2026-05-13
-
 ---
 
 # InputBeanResolver: primitive Java types break codegen

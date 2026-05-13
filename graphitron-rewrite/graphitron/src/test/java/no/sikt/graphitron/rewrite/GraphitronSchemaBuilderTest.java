@@ -5350,6 +5350,66 @@ class GraphitronSchemaBuilderTest {
                     .beanClass().simpleName()).isEqualTo("TestInputBean");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
+        },
+
+        // ===== R155 input-bean primitive-field boxing =====
+
+        SERVICE_MUTATION_FIELD_INPUT_BEAN_PRIMITIVE_RECORD(
+            "R155: record bean with a primitive int component → FieldBinding.javaElementTypeName boxes to java.lang.Integer",
+            """
+            input TestInputBeanWithPrimitive { n: Int!, s: String }
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithInputBeanPrimitive(input: TestInputBeanWithPrimitive): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithInputBeanPrimitive"})
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithInputBeanPrimitive");
+                var p0 = f.method().params().get(0);
+                var extraction = ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p0.source()).extraction();
+                var ib = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean) extraction;
+                assertThat(ib.target())
+                    .isEqualTo(no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean.Target.RECORD);
+                var nField = ib.fields().stream()
+                    .filter(fb -> fb.sdlFieldName().equals("n")).findFirst().orElseThrow();
+                assertThat(nField.leaf()).isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct.class);
+                assertThat(nField.list()).isFalse();
+                assertThat(nField.javaElementTypeName())
+                    .as("primitive int component must box to java.lang.Integer so ClassName.bestGuess succeeds")
+                    .isEqualTo("java.lang.Integer");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
+        },
+
+        SERVICE_MUTATION_FIELD_INPUT_JAVABEAN_PRIMITIVE_BOOLEAN(
+            "R155: JavaBean with a void setActive(boolean) setter → FieldBinding.javaElementTypeName boxes to java.lang.Boolean",
+            """
+            input TestInputJavaBeanWithBoolean { active: Boolean! }
+            type FilmDetails @record { title: String }
+            type Query { x: String }
+            type Mutation {
+                runWithInputJavaBeanBoolean(input: TestInputJavaBeanWithBoolean): FilmDetails
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithInputJavaBeanBoolean"})
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithInputJavaBeanBoolean");
+                var p0 = f.method().params().get(0);
+                var extraction = ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p0.source()).extraction();
+                var ib = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean) extraction;
+                assertThat(ib.target())
+                    .isEqualTo(no.sikt.graphitron.rewrite.model.CallSiteExtraction.InputBean.Target.JAVA_BEAN);
+                var activeField = ib.fields().stream()
+                    .filter(fb -> fb.sdlFieldName().equals("active")).findFirst().orElseThrow();
+                assertThat(activeField.leaf()).isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct.class);
+                assertThat(activeField.list()).isFalse();
+                assertThat(activeField.javaElementTypeName())
+                    .as("primitive boolean setter must box to java.lang.Boolean so ClassName.bestGuess succeeds")
+                    .isEqualTo("java.lang.Boolean");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         };
 
         final String sdl;
