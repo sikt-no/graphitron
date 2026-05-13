@@ -1,6 +1,6 @@
 ---
 id: R144
-title: "Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with @multiRow"
+title: "Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with multiRow:"
 status: Spec
 bucket: architecture
 priority: 6
@@ -8,7 +8,7 @@ theme: mutations-errors
 depends-on: []
 ---
 
-# Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with @multiRow
+# Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with multiRow:
 
 The `@lookupKey` directive on `@mutation` `@table` input fields is opt-in: an
 author writes it to say "this field is the WHERE filter." A DELETE or UPDATE
@@ -26,7 +26,7 @@ CONFLICT clause, and (b) partitioning UPDATE / UPSERT input fields into "filter"
 vs "value" buckets. These jobs answer different questions ("is this a filter?"
 and "is this many rows?") and a single directive name can't carry both meanings
 cleanly. The reframe surfaced in conversation is to name the hazard, not the
-mechanism: the directive becomes `@multiRow` on the mutation field, announcing
+mechanism: the cardinality knob becomes a new `multiRow:` argument on `@mutation`, announcing
 "|output| can exceed |input|." Every input field on a DELETE / UPDATE `@table`
 input is a WHERE filter by default; the validator confirms those filters cover
 the table's primary key; the SET-partition concern on UPDATE is solved by a
@@ -41,18 +41,18 @@ In scope:
 
 - `@mutation(typeName: DELETE)`: every input field on the `@table` input
   participates in the WHERE clause. The set of contributed columns must cover
-  the table's primary key. `@multiRow` on the mutation field opts out of the PK
+  the table's primary key. `multiRow: true` on the `@mutation` directive opts out of the PK
   coverage check.
 - `@mutation(typeName: UPDATE)`: every input field on the `@table` input is a
   filter unless it carries `@value`, in which case it's a value to assign in
   the UPDATE statement's SET clause. WHERE-side
-  columns must cover the table's primary key. `@multiRow` opts out of the PK
+  columns must cover the table's primary key. `multiRow: true` opts out of the PK
   coverage check.
 - `@mutation(typeName: UPSERT)`: refused at classify time under the new regime.
   Existing UPSERT-using fixtures migrate or retire; R145
   (`mutation-cardinality-safety-upsert`) carries the UPSERT-specific safety
   story (ON CONFLICT requires a unique constraint by definition; the
-  `@multiRow` story interacts differently because UPSERT matches at most one
+  `multiRow:` story interacts differently because UPSERT matches at most one
   existing row).
 - `@mutation(typeName: INSERT)`: untouched. The R130 `CompositeColumnField ×
   INSERT` carve-out at `MutationInputResolver.java:312-320` is a separate
@@ -79,29 +79,51 @@ Explicitly out of scope (follow-up R-items file alongside this Spec):
 
 ## Design
 
-### New directives
+### Directive surface
+
+`@mutation` gains an optional `multiRow: Boolean = false` argument, and a
+new `@value` directive lands on `INPUT_FIELD_DEFINITION`:
 
 ```
 """
-Asserts that this mutation may affect more than one database row per input row.
-Required on @mutation(typeName: DELETE / UPDATE) when the input's filter
-columns do not cover the underlying @table's primary key. Without it, the
-classifier rejects an under-keyed DELETE / UPDATE at schema-classify time so a
-non-unique filter cannot silently broadcast.
+Define a graphitron-generated mutation field.
+
+`typeName`: the DML statement kind (INSERT / UPDATE / DELETE / UPSERT).
+
+`multiRow`: opt-in acknowledgement that this mutation may affect more than
+one database row per input row. Required on
+`@mutation(typeName: DELETE / UPDATE)` when the input's filter columns do
+not cover the underlying `@table`'s primary key. Without `multiRow: true`,
+the classifier rejects an under-keyed DELETE / UPDATE at schema-classify
+time so a non-unique filter cannot silently broadcast. Rejected on
+`typeName: INSERT` (INSERT has no WHERE clause to multiply over) and on
+`typeName: UPSERT` (refused under the new regime; see R145, where the
+conflict-target's uniqueness is the structural enforcement and a
+`multiRow:` analogue is unnecessary).
+
+The argument lives on `@mutation` rather than as a sibling directive
+because the cardinality knob is structurally coupled to the verb: there
+is no SDL site where multi-row semantics make sense without a `@mutation`
+directive present. A sibling directive would require an additional
+"reject standalone `multiRow: true` on a non-`@mutation` field" validator
+rule; the argument shape cannot be misapplied because there is nowhere
+else to put it.
 """
-directive @multiRow on FIELD_DEFINITION
+directive @mutation(typeName: MutationType!, multiRow: Boolean = false) on FIELD_DEFINITION
 
 """
-On a @mutation(typeName: UPDATE) @table input field, marks the field as a
-value column to assign rather than a key to filter by. The default for an
-input field is to participate in the WHERE clause; @value opts out for
-UPDATE's assignment columns. Rejected on DELETE inputs (DELETE has no
-assignment) and on UPSERT inputs (UPSERT is refused under the new regime).
+On a `@mutation(typeName: UPDATE)` `@table` input field, marks the field
+as a value column to assign rather than a key to filter by. The default
+for an input field is to participate in the WHERE clause; `@value` opts
+out for UPDATE's assignment columns. Rejected on DELETE inputs (DELETE
+has no assignment) and on UPSERT inputs (UPSERT is refused under the new
+regime).
 
-Names the author's intent ("this is a value to assign, not a key to filter
-by"), not the emitter's SQL clause ("SET"). The verb context (UPDATE) makes
-the clause vocabulary unambiguous, so the role-side name reads cleanly
-without leaking the underlying statement shape into authoring vocabulary.
+Names the author's intent ("this is a value to assign, not a key to
+filter by"), not the emitter's SQL clause ("SET"). The verb context
+(UPDATE) makes the clause vocabulary unambiguous, so the role-side name
+reads cleanly without leaking the underlying statement shape into
+authoring vocabulary.
 """
 directive @value on INPUT_FIELD_DEFINITION
 ```
@@ -131,54 +153,56 @@ the more aggressive fallback if surfacing.
 
 ### Alternatives considered
 
-Three shapes were considered for the partition concern (UPDATE: which fields
-are filters vs which are values). The Spec lands (A); (B) and (C) are recorded
-here so the choice is defensible at the gate.
+Five shapes were considered across the cardinality and partition concerns.
+The Spec lands (A); the rest are recorded here so the choices are
+defensible at the gate.
 
-(A) **Two directives, as drafted.** `@multiRow` on the mutation field for the
-cardinality concern; `@value` on input fields for the partition concern.
-Author writes both decisions explicitly. *Chosen.* Most predictable: every
-UPDATE input fixture says out loud which fields are filters and which are
-values; reviewer can read partition off the SDL without consulting the
-table's PK definition. Costs one directive on every UPDATE value field.
+(A) **`multiRow:` as a `@mutation` argument; `@value` as a sibling
+directive on input fields.** Cardinality opt-out lives on `@mutation`;
+UPDATE partition lives per-field. *Chosen.* The cardinality knob is
+structurally coupled to the verb that requires it (`multiRow:` has no
+SDL site of application without `@mutation`), so the argument shape is
+the principles-aligned choice: no orphan-directive rejection rule, no
+ambiguity about where the opt-out can appear, mirrors the existing
+`@mutation(typeName: ...)` precedent. The partition concern is genuinely
+per-input-field and benefits from per-field co-location, so `@value`
+stays a sibling directive on `INPUT_FIELD_DEFINITION`.
 
-(B) **Infer the partition from PK membership.** Drop the partition directive
-entirely on UPDATE; input fields whose columns are in the table's PK are
-filters by default, non-PK columns are values. An override directive (a
-narrower `@filter` or similar) is needed only for the `@multiRow` corner where
-the author wants to filter on a non-PK column. *Rejected.* Less ceremony in
-the headline case but introduces a silent dependency on the table's PK
-definition: an author reading the SDL cannot tell partition without consulting
-catalog metadata, and changing the PK silently changes mutation semantics for
-every existing UPDATE input on that table. The override-directive corner case
-is exactly the `@multiRow` setup, which is the dangerous-by-author-opt-in
-shape; routing dangerous shapes through inference rather than explicit
-marking concentrates surprise where it hurts most. Loses the "name the hazard"
-principle the cardinality reframe is built on.
+(B) **Two sibling directives**: `@multiRow` on `FIELD_DEFINITION`
+alongside `@value` on `INPUT_FIELD_DEFINITION`. *Rejected.* The
+hazard-naming argument for a sibling `@multiRow` is real but thin: a
+reviewer who would miss `multiRow: true` would also miss a `@multiRow`
+line. The sibling-directive shape adds a structural cost the argument
+shape doesn't pay — a validator rule rejecting standalone `@multiRow`
+on a non-`@mutation` field — and gains only hypothetical composability
+(a non-`@mutation` SDL site that needs the cardinality knob; no such
+site exists or is planned).
 
-(C) **One directive with reversed polarity.** Keep `@lookupKey`, flip its
-meaning so the directive marks the value field instead of the filter field.
-*Rejected.* The cardinality concern (per-mutation field, hazard-naming) and
-the partition concern (per-input-field, role-naming) are genuinely orthogonal
-axes; collapsing them onto one directive recreates today's overloading in a
-different polarity. The name `@lookupKey` carries decades of "lookup means
-filter" connotation in DB literature; flipping its meaning would be a
-maintenance footgun for any downstream reader unfamiliar with R144.
+(C) **Infer the partition from PK membership.** Drop the partition
+directive entirely on UPDATE; input fields whose columns are in the
+table's PK are filters by default, non-PK columns are values. An
+override directive (a narrower `@filter` or similar) is needed only
+for the `multiRow:` corner where the author wants to filter on a
+non-PK column. *Rejected.* Less ceremony in the headline case but
+introduces a silent dependency on the table's PK definition: an author
+reading the SDL cannot tell partition without consulting catalog
+metadata, and changing the PK silently changes mutation semantics for
+every existing UPDATE input on that table. The override-directive
+corner case is exactly the `multiRow:` setup, which is the dangerous-
+by-author-opt-in shape; routing dangerous shapes through inference
+rather than explicit marking concentrates surprise where it hurts most.
+Loses the "name the hazard" principle the cardinality reframe is built
+on.
 
-(D) **`@multiRow` as a `@mutation` argument**: `@mutation(typeName: DELETE,
-multiRow: true)` rather than a sibling directive. Compresses the schema
-surface (one directive on the mutation field instead of two), and keeps
-the cardinality knob next to the verb that requires it.
-*Rejected.* The hazard-naming principle the cardinality reframe is built
-on argues for the sibling directive: a separate `@multiRow` at the
-authoring site reads as a hazard flag in its own right (linting, code
-review, schema diff all pick up the addition / removal of a directive
-node more loudly than a boolean argument flip on an existing directive).
-A reviewer skimming `@mutation(typeName: DELETE, multiRow: true)` may
-miss the `multiRow: true` argument; a reviewer reading a `@multiRow`
-line that wasn't there yesterday cannot. The schema-surface cost is one
-extra directive on the mutations that actually need the opt-out, which
-is the rare case by design.
+(D) **One directive with reversed polarity.** Keep `@lookupKey`, flip
+its meaning so the directive marks the value field instead of the
+filter field. *Rejected.* The cardinality concern (per-mutation field,
+hazard-naming) and the partition concern (per-input-field, role-naming)
+are genuinely orthogonal axes; collapsing them onto one directive
+recreates today's overloading in a different polarity. The name
+`@lookupKey` carries decades of "lookup means filter" connotation in
+DB literature; flipping its meaning would be a maintenance footgun for
+any downstream reader unfamiliar with R144.
 
 (E) **Partition on the input type rather than per-field**:
 `input FilmUpdateInput @table(name: "film") @value(fields: ["title",
@@ -205,8 +229,8 @@ co-location that makes the role obvious at the SDL author's site. The
    (`ColumnField.column()` plus `CompositeColumnField.columns()` exploded). If
    the contributed-column set does not cover the table's primary key
    (`JooqCatalog.findPkColumns`), and the mutation field does not carry
-   `@multiRow`, reject with a guidance message naming the missing PK columns
-   and pointing at `@multiRow` as the opt-out.
+   `multiRow: true`, reject with a guidance message naming the missing PK columns
+   and pointing at `multiRow: true` as the opt-out.
 4. For `DmlKind.UPDATE`: partition input fields by `@value` presence. WHERE-side
    fields run through the same PK-coverage check as DELETE. SET-side fields are
    just listed; the existing "no non-`@lookupKey` fields to set" rejection
@@ -219,18 +243,18 @@ co-location that makes the role obvious at the SDL author's site. The
    `Rejection.deferred`
    keyed to the follow-up so `LoadBearingGuaranteeAuditTest`'s rejection-link
    audit can surface the deferral.
-6. For `DmlKind.INSERT`: unchanged. No `@multiRow` semantics, no `@value`
+6. For `DmlKind.INSERT`: unchanged. No `multiRow:` semantics, no `@value`
    acceptance (INSERT inputs are not partitioned), no PK coverage check.
-   Reject `@multiRow` on the mutation field at classify time ("`@multiRow`
+   Reject `multiRow: true` on the mutation field at classify time ("`multiRow: true`
    is not valid on `@mutation(typeName: INSERT)`; INSERT has no WHERE
    clause").
 
-Two additional structural rejections fire under `@multiRow` to keep the
+Two additional structural rejections fire under `multiRow:` to keep the
 opt-out from authorising the genuinely-catastrophic shape:
 
 - An empty input type on DELETE / UPDATE (zero `ColumnField` /
-  `CompositeColumnField` fields, even with `@multiRow`): reject with
-  "`@multiRow` does not authorise a `@mutation(typeName: <kind>)` with
+  `CompositeColumnField` fields, even with `multiRow: true`): reject with
+  "`multiRow: true` does not authorise a `@mutation(typeName: <kind>)` with
   no filter columns at all; this would broadcast across the entire
   table. Add at least one filter field to the input."
 - `@condition` on an input field is structurally a filter-narrowing
@@ -312,7 +336,7 @@ unaffected by the polarity flip.
 `@LoadBearingClassifierCheck("mutation-input.where-columns-cover-pk")` paired
 with a `@DependsOnClassifierCheck` consumer on the lookup-WHERE emitter
 (`buildLookupWhereSingleRow` / `buildBulkLookupRowIn`). The guarantee
-description reads: "On DELETE / UPDATE without `@multiRow`, the union of
+description reads: "On DELETE / UPDATE without `multiRow: true`, the union of
 contributed filter columns (`ColumnField.column()` and
 `CompositeColumnField.columns()`) covers the input `@table`'s primary key. Lets
 the lookup-WHERE emitter assume `WHERE` matches at most one row per input row."
@@ -340,8 +364,9 @@ mechanism) is in-scope-untouched and is *not* migrated.
 **Phase 1 edit sites (source code, not SDL):**
 
 - `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`
-  — directive declarations (add `@multiRow`, `@value`; `@lookupKey`
-  declaration unchanged).
+  — directive declarations (extend `@mutation` with the optional
+  `multiRow:` argument; add `@value`; `@lookupKey` declaration
+  unchanged).
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java`
   — resolver flow (drop gates, add per-verb dispatch, add audit-key
   producers).
@@ -424,16 +449,17 @@ site. Execution-tier UPSERT proofs in `SingleRecordCarrierDmlTest` and the
 
 Phase 1 — directive declarations and classifier admission.
 
-- Add `@multiRow` and `@value` to
+- Extend `@mutation` to take the new `multiRow: Boolean = false` argument
+  and add the new `@value on INPUT_FIELD_DEFINITION` directive in
   `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`.
   Leave `@lookupKey`'s `INPUT_FIELD_DEFINITION` location declared so the
   classifier can carry the retirement-prose rejection (`@notGenerated` /
   `@multitableReference` idiom).
 - Extend `MutationInputResolver.resolveInput` per the resolver-flow section
   above: drop the two retired gates, add the per-verb dispatch, add the new
-  PK-coverage check with `@multiRow` opt-out, add the UPSERT rejection arm,
-  add the structural rejections for `@value`-on-DELETE / `@multiRow`-on-INSERT
-  / empty-input-on-`@multiRow` / `@condition`-co-occurring-with-`@value`.
+  PK-coverage check with the `multiRow:` opt-out, add the UPSERT rejection arm,
+  add the structural rejections for `@value`-on-DELETE / `multiRow:`-on-INSERT
+  / empty-input-with-`multiRow:` / `@condition`-co-occurring-with-`@value`.
 - Rework `TableInputArg.of` (`ArgumentRef.java:258`) to take `DmlKind` and
   the `@value`-marked field names as additional parameters. UPDATE's
   partition reads from the names; DELETE / INSERT pass empty. Update the
@@ -468,7 +494,7 @@ Phase 2 — fixture migration.
 - All test fixtures using `@lookupKey` on input fields rewrite. Tests pinning
   the "no `@lookupKey` → UnclassifiedField" rejection
   (`GraphitronSchemaBuilderTest.DELETE_MUTATION_MISSING_LOOKUP_KEY` at line
-  5078-5093) retype to pin the new PK-coverage-or-`@multiRow` rejection.
+  5078-5093) retype to pin the new PK-coverage-or-`multiRow: true` rejection.
 - `MutationDmlNodeIdClassificationTest` cases that pin `CompositeColumnField`
   rejection outside `@lookupKey` position (R130 Phase 2) retype to admission
   cases; the rejection is gone.
@@ -477,20 +503,20 @@ Phase 3 — new test coverage.
 
 - Pipeline-tier cases on `MutationInputResolver` covering:
   - DELETE with PK-covering filter input → admit.
-  - DELETE without PK-covering filter, no `@multiRow` → reject with the new
+  - DELETE without PK-covering filter, no `multiRow: true` → reject with the new
     diagnostic.
-  - DELETE without PK-covering filter, with `@multiRow` → admit.
-  - DELETE with `@multiRow` and a *single non-PK* filter column → admit
-    (acknowledged broadcast; this is the headline `@multiRow` use case).
-  - DELETE / UPDATE on an empty `@table` input with `@multiRow` → reject
+  - DELETE without PK-covering filter, with `multiRow: true` → admit.
+  - DELETE with `multiRow: true` and a *single non-PK* filter column → admit
+    (acknowledged broadcast; this is the headline `multiRow:` use case).
+  - DELETE / UPDATE on an empty `@table` input with `multiRow: true` → reject
     ("no filter columns to broadcast").
   - UPDATE with WHERE-PK-covered filter + at least one `@value` field → admit.
-  - UPDATE without WHERE-PK-cover, no `@multiRow` → reject.
-  - UPDATE without WHERE-PK-cover, with `@multiRow` → admit.
+  - UPDATE without WHERE-PK-cover, no `multiRow: true` → reject.
+  - UPDATE without WHERE-PK-cover, with `multiRow: true` → admit.
   - UPDATE without `@value` fields → reject ("no fields to set").
   - UPDATE with every field `@value`-marked → reject ("no filter fields").
   - DELETE with `@value` on any field → reject ("`@value` not valid on DELETE").
-  - INSERT with `@multiRow` on the mutation field → reject ("`@multiRow`
+  - INSERT with `multiRow: true` on the mutation field → reject ("`multiRow: true`
     not valid on INSERT").
   - Input field with both `@condition` and `@value` → reject (mutually
     exclusive).
@@ -499,7 +525,7 @@ Phase 3 — new test coverage.
     (the retirement diagnostic).
   - INSERT unchanged: existing INSERT tests pass without modification.
 - Execution-tier proofs in `DmlBulkMutationsExecutionTest`: at least one DELETE
-  with `@multiRow` that affects multiple rows per input row, asserting the SQL
+  with `multiRow: true` that affects multiple rows per input row, asserting the SQL
   runs and the result count exceeds input count. Mirrors the R130 end-to-end
   coverage shape.
 
@@ -510,11 +536,11 @@ Phase 3 — new test coverage.
   `GraphitronSchemaBuilderTest.MutationCardinalitySafetyCase` covering the
   fifteen enumerated rows in Phase 3 (admission and rejection across DELETE
   / UPDATE / INSERT verbs; structural rejections for `@value`-on-DELETE,
-  no-SET-on-UPDATE, every-field-`@value`-on-UPDATE, `@multiRow`-on-INSERT,
-  empty-input-with-`@multiRow`, `@condition`-with-`@value`, UPSERT,
+  no-SET-on-UPDATE, every-field-`@value`-on-UPDATE, `multiRow:`-on-INSERT,
+  empty-input-with-`multiRow:`, `@condition`-with-`@value`, UPSERT,
   `@lookupKey` on input field).
 - **L4 (pipeline).** `MutationDmlNodeIdClassificationTest` updates as
-  described in Phase 2; new cases for `@multiRow` admission on
+  described in Phase 2; new cases for `multiRow:` admission on
   composite-PK-decoded inputs (the R130 sakila reproducer `slettRegelverksamling`
   shape becomes the canonical admission case for the new regime, *without*
   `@lookupKey`).
@@ -522,23 +548,23 @@ Phase 3 — new test coverage.
   graphitron-rewrite/pom.xml install -Plocal-db` passes end-to-end after
   migration.
 - **L6 (execution).** `DmlBulkMutationsExecutionTest` retains its R130 DELETE
-  fixtures (renaming any that drop `@lookupKey`); add at least one `@multiRow`
+  fixtures (renaming any that drop `@lookupKey`); add at least one `multiRow: true`
   DELETE end-to-end proof asserting `|affected rows| > |input rows|`.
 
 ## Acceptance criteria
 
-- `@multiRow` declared on `FIELD_DEFINITION`; `@value` declared on
-  `INPUT_FIELD_DEFINITION`. `@lookupKey`'s declaration drops
-  `INPUT_FIELD_DEFINITION` (or, fallback, the classifier rejects the use with
-  the documented migration diagnostic).
+- `@mutation` directive declaration gains optional `multiRow: Boolean = false`
+  argument; `@value on INPUT_FIELD_DEFINITION` directive declared.
+  `@lookupKey`'s declaration unchanged; the classifier rejects any
+  `INPUT_FIELD_DEFINITION` use with the documented migration diagnostic.
 - `MutationInputResolver` admits DELETE / UPDATE inputs without `@lookupKey`
   on their fields; rejects DELETE / UPDATE inputs whose filter columns don't
-  cover the PK when `@multiRow` is absent.
+  cover the PK when `multiRow: true` is absent.
 - `MutationInputResolver` rejects every `@mutation(typeName: UPSERT)` field
   with a `Rejection.deferred` keyed to `mutation-cardinality-safety-upsert`
   (R145).
 - `MutationInputResolver` rejects `@value` on DELETE / INSERT / UPSERT inputs;
-  rejects `@multiRow` on INSERT.
+  rejects `multiRow: true` on INSERT.
 - `EnumMappingResolver.buildLookupBindings` produces bindings for every
   admissible input field on DELETE / UPDATE inputs (modulo `@value` on UPDATE),
   regardless of `@lookupKey` presence.
@@ -561,7 +587,7 @@ Phase 3 — new test coverage.
   passes with the Phase 1 source edits in place.
 - New pipeline-tier cases cover the fifteen enumerated DELETE / UPDATE / INSERT admission
   and rejection rows above; execution-tier coverage includes at least one
-  `@multiRow` DELETE end-to-end against a real PostgreSQL via Testcontainers.
+  `multiRow: true` DELETE end-to-end against a real PostgreSQL via Testcontainers.
 - Full `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes on Java 25.
 
 ## Roadmap entries (siblings / dependencies / follow-ups)
@@ -579,7 +605,7 @@ Phase 3 — new test coverage.
   compact-constructor rejection on `DmlKind.UPSERT` deferring the bulk
   UPSERT path to R145 in coordination with this Spec's upstream UPSERT
   refusal. Two implications for R144's implementation:
-  - R144's `@multiRow` semantics apply to both `MutationDmlRecordField`
+  - R144's `multiRow:` semantics apply to both `MutationDmlRecordField`
     (singleton) and `MutationBulkDmlRecordField` (bulk) without
     additional code. The WHERE-coverage check fires on
     `MutationInputResolver.resolveInput`, which both carriers feed
@@ -615,7 +641,7 @@ Phase 3 — new test coverage.
 - **R145 (`mutation-cardinality-safety-upsert`)**, Backlog. Cardinality
   safety for UPSERT. UPSERT is refused under R144; R145 designs the
   cardinality story (ON CONFLICT requires a unique constraint by
-  definition; `@multiRow` interacts differently; `@value`-partition
+  definition; `multiRow: true` interacts differently; `@value`-partition
   extends naturally). R145's landing lifts UPSERT rejections at two
   sites in one pass: R144's upstream `MutationInputResolver`
   refusal *and* R141's compact-constructor rejection on
