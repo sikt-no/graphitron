@@ -59,12 +59,13 @@ class UnifiedEmissionPinsTest {
     @Test
     void rowsMethodEmitter_unifiedSkeleton() throws IOException {
         // Every rows-method MethodSpec emit site in the generators package routes through
-        // RowsMethodSkeleton.build. Current sites (4): SplitRowsMethodEmitter's three internal
+        // RowsMethodSkeleton.build. Current sites (6): SplitRowsMethodEmitter's three internal
         // builders (buildListMethod, buildSingleMethod, buildConnectionMethod) plus
-        // TypeFetcherGenerator.buildServiceRowsMethod. Together they cover all five
-        // RowsMethodBody permits (the four SQL permits route through the three internal SQL
-        // builders by single-vs-list-vs-connection cardinality; the Service permit routes via
-        // TypeFetcherGenerator).
+        // buildForRecordTableMethod's two arms (single-hop FK emit + multi-hop / ConditionJoin /
+        // empty-path runtime stub, R43 commit 5) plus TypeFetcherGenerator.buildServiceRowsMethod.
+        // Together they cover all six RowsMethodBody permits (the five SQL permits route through
+        // four internal SQL builders by single-vs-list-vs-connection cardinality plus the
+        // record-table-method shape; the Service permit routes via TypeFetcherGenerator).
         long unifiedCalls = countAcrossGenerators(
             Pattern.compile("\\bRowsMethodSkeleton\\.build\\b"),
             "RowsMethodSkeleton.java");
@@ -72,7 +73,7 @@ class UnifiedEmissionPinsTest {
             .as("Every R38 rows-method emit site outside RowsMethodSkeleton itself routes through "
                 + "RowsMethodSkeleton.build. A handcrafted bypass replaces one call here with "
                 + "inline rows-method MethodSpec construction; the count drop trips this pin.")
-            .isEqualTo(4);
+            .isEqualTo(6);
     }
 
     private static long countAcrossGenerators(Pattern pattern, String excludeFile) throws IOException {

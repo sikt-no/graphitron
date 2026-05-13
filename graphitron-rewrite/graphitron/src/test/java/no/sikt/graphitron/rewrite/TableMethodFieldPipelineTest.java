@@ -136,4 +136,54 @@ class TableMethodFieldPipelineTest {
             .as("parent $fields injects the FK source-side column resolved from the explicit @reference path")
             .isTrue();
     }
+
+    /**
+     * R43 commit 5: DTO-parent emit. Pin the fetcher + rows-method shape for
+     * {@link no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField}. The classifier
+     * routes a child {@code @tableMethod} on a JooqTableRecord-backed {@code @record} parent
+     * through the new branch in {@code FieldBuilder.classifyChildFieldOnResultType}; the emit
+     * follows the {@code RecordTableField} DataLoader-keyed batch pattern with the developer's
+     * static method substituted for the direct table reference.
+     */
+    @Test
+    void dtoParentFkAutoDerive_emitsDataLoaderFetcherAndRowsMethod() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+                language: Language
+                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
+                    @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """);
+
+        var fetchers = TypeFetcherGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals("FilmDetailsFetchers"))
+            .findFirst()
+            .orElseThrow();
+
+        var dataFetcher = fetchers.methodSpecs().stream()
+            .filter(m -> m.name().equals("language"))
+            .findFirst()
+            .orElseThrow();
+        // DataLoader-keyed batch: signature returns CompletableFuture<DataFetcherResult<Record>>.
+        assertThat(dataFetcher.returnType().toString())
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<org.jooq.Record>>");
+        assertThat(dataFetcher.code().toString())
+            .as("DataFetcher wires a DataLoader keyed on the FK source column lifted off the parent record")
+            .contains("DataLoader")
+            .contains("rowsLanguage");
+
+        var rowsMethod = fetchers.methodSpecs().stream()
+            .filter(m -> m.name().equals("rowsLanguage"))
+            .findFirst()
+            .orElseThrow();
+        assertThat(rowsMethod.code().toString())
+            .as("rows method calls the developer's @tableMethod and joins parentInput on the FK")
+            .contains("TestTableMethodStub")
+            .contains("getLanguage")
+            .contains("parentInput")
+            .contains("LANGUAGE_ID");
+    }
 }

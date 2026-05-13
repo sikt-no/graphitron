@@ -182,6 +182,7 @@ public class TypeFetcherGenerator {
         ChildField.SingleRecordTableField.class,
         ChildField.SingleRecordIdentityField.class,
         ChildField.TableMethodField.class,
+        ChildField.RecordTableMethodField.class,
         QueryField.QueryTableInterfaceField.class,
         ChildField.TableInterfaceField.class,
         ChildField.ParticipantColumnReferenceField.class,
@@ -261,14 +262,7 @@ public class TypeFetcherGenerator {
                     "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented"
                     + " — requires JOIN-with-projection emission; rooted-at-parent fixture"
                     + " (parent_node + child_ref) is in nodeidfixture and ready to drive coverage",
-                    "nodeidreferencefield-join-projection-form")),
-            Map.entry(ChildField.RecordTableMethodField.class,
-                deferredFor(ChildField.RecordTableMethodField.class,
-                    "RecordTableMethodField (child @tableMethod on @record parent) not yet implemented"
-                    + " — DTO-parent emit follows the RecordTableField DataLoader-keyed batch pattern"
-                    + " with the developer's static @tableMethod method substituted for the direct"
-                    + " table fetch; covered by R43 commit 5",
-                    "tablemethod-child-table-bound"))
+                    "nodeidreferencefield-join-projection-form"))
         );
 
     private static Rejection.Deferred deferredFor(
@@ -424,11 +418,11 @@ public class TypeFetcherGenerator {
                 // resolver reads it back via FetcherEmitter's ParticipantColumnReferenceField arm.
                 case ChildField.ParticipantColumnReferenceField ignored -> { }
                 case ChildField.RecordTableField rtf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rtf, rtf.sourceKey(), resultType, outputPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rtf, rtf.returnType(), rtf.sourceKey(), resultType, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForRecordTable(ctx, rtf, outputPackage));
                 }
                 case ChildField.RecordLookupTableField rltf -> {
-                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rltf, rltf.sourceKey(), resultType, outputPackage));
+                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rltf, rltf.returnType(), rltf.sourceKey(), resultType, outputPackage));
                     builder.addMethod(SplitRowsMethodEmitter.buildForRecordLookupTable(ctx, rltf, outputPackage));
                     // Input-rows helper identical in shape to SplitLookupTableField's — reads
                     // @lookupKey args from env.getArgument(name) and emits the typed Row<M+1>[].
@@ -440,7 +434,10 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.TableMethodField f              -> builder.addMethod(buildChildTableMethodFetcher(ctx, f, outputPackage));
-                case ChildField.RecordTableMethodField f        -> builder.addMethod(stub(f));
+                case ChildField.RecordTableMethodField rtmf -> {
+                    builder.addMethod(buildRecordBasedDataFetcher(ctx, rtmf, rtmf.returnType(), rtmf.sourceKey(), resultType, outputPackage));
+                    builder.addMethod(SplitRowsMethodEmitter.buildForRecordTableMethod(ctx, rtmf, outputPackage));
+                }
                 // SingleRecordTableField has no per-field fetcher method — its DataFetcher
                 // value is emitted inline by FetcherEmitter (env.getSource() typed cast +
                 // response SELECT outside the DML transaction). The wiring happens in
@@ -562,7 +559,9 @@ public class TypeFetcherGenerator {
             || (f instanceof ChildField.SplitLookupTableField slf
                 && slf.returnType().wrapper() instanceof FieldWrapper.List)
             || (f instanceof ChildField.RecordTableField rtf && rtf.returnType().wrapper().isList())
-            || f instanceof ChildField.RecordLookupTableField);
+            || f instanceof ChildField.RecordLookupTableField
+            || (f instanceof ChildField.RecordTableMethodField rtmf && rtmf.returnType().wrapper().isList()
+                && !rtmf.emitsSingleRecordPerKey()));
         if (hasListSplitField) {
             builder.addMethod(SplitRowsMethodEmitter.buildScatterByIdxHelper());
         }
@@ -4310,11 +4309,13 @@ public class TypeFetcherGenerator {
             + "single-cardinality LOAD_ONE). A LOAD_MANY accessor on a non-list field would "
             + "emit code expecting List<Record> from a loadMany that supplies Record, "
             + "miscompiling generated *Fetchers.")
-    private static <T extends ChildField.TableTargetField & BatchKeyField> MethodSpec
-            buildRecordBasedDataFetcher(TypeFetcherEmissionContext ctx, T field, SourceKey sourceKey,
+    private static <T extends GraphitronField & BatchKeyField> MethodSpec
+            buildRecordBasedDataFetcher(TypeFetcherEmissionContext ctx, T field,
+                    ReturnTypeRef.TableBoundReturnType returnType,
+                    SourceKey sourceKey,
                     GraphitronType.ResultType resultType, String outputPackage) {
 
-        boolean isList = field.returnType().wrapper().isList();
+        boolean isList = returnType.wrapper().isList();
 
         // The loader's per-key value is `Record` whenever the rows-method emits one record per
         // key (single-cardinality fields, or the LOAD_MANY loadMany contract on list fields);

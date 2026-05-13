@@ -1,12 +1,12 @@
 ---
 id: R43
 title: "Stub: child `@tableMethod` with table-bound return (`TableMethodField`)"
-status: In Progress
+status: In Review
 bucket: stubs
 priority: 4
 theme: model-cleanup
 depends-on: []
-last-updated: 2026-05-14
+last-updated: 2026-05-13
 ---
 
 # Stub: child `@tableMethod` with table-bound return (`TableMethodField`)
@@ -46,9 +46,16 @@ Emit stays stubbed: the dispatch arm in `TypeFetcherGenerator.generateTypeSpec` 
 
 Test coverage: a new `RecordTableMethodFieldCase` enum in `GraphitronSchemaBuilderTest` pins three classifier shapes (FK-auto-derive with implicit FK, FK-auto-derive with explicit `@reference` path, free-form-DTO rejection without `@sourceRow`); `VariantCoverageTest` confirms the new sealed leaf is represented.
 
-### Remaining commits
+### Commit 5 landed — DTO-parent emit
 
-- **Commit 5 — DTO-parent emit.** Reuse the `RecordTableField` emit pattern (DataLoader-keyed batch) with the developer's static method call substituted for the direct table fetch. Move `RecordTableMethodField` to `IMPLEMENTED_LEAVES`; add DTO-parent pipeline + execution coverage.
+`SplitRowsMethodEmitter.buildForRecordTableMethod` emits the DataLoader rows-method for the new variant: parent VALUES table built from the lifted FK source columns, the developer's static `@tableMethod` call substituted for the terminal `Tables.<X>.as("alias")` declaration, flat SELECT with `JOIN parentInput ON terminal.<targetSide> = parentInput.<sourceSide>`, scatter via `scatterByIdx` (list cardinality) or `scatterSingleByIdx` (single cardinality / LOAD_MANY). The `RowsMethodBody.SqlRecordTableMethod` sealed permit gives the body framing the same skeleton as the existing `SqlRecordTable*` siblings. `TypeFetcherGenerator.buildRecordBasedDataFetcher`'s generic constraint loosens from `<T extends TableTargetField & BatchKeyField>` to `<T extends GraphitronField & BatchKeyField>` (taking `returnType` as a parameter) so the existing record-parent DataFetcher emit is shared across the three variants without an interface widening. `RecordTableMethodField` moves to `IMPLEMENTED_LEAVES` and out of `STUBBED_VARIANTS`. The variant overrides `emitsSingleRecordPerKey()` like `RecordTableField` does so single-cardinality fields route through the right scatter helper.
+
+Coverage: a new pipeline-tier case in `TableMethodFieldPipelineTest` pins the emitted `DataFetcher` + `rowsLanguage` shape for the FK-auto-derive arm (FilmRecord parent + `getLanguage` + explicit `@reference` path); a new execution-tier test in `GraphQLQueryTest` exercises the end-to-end DTO-parent path against `rewrite_test` via the sakila fixture `Film.detailsForMethod: FilmDetailsForMethod` (a FilmRecord-backed `@record` reached via `ConstructorField` passthrough), with `languageId` declared on `FilmDetailsForMethod` so `film.language_id` lands in the parent SELECT and the `RecordTableMethodField` fetcher reads it for the DataLoader key. Compile-tier coverage is automatic via the `graphitron-sakila-example` build step.
+
+### Out of scope (commit 5)
+
+- Multi-hop FK path emit and `ConditionJoin` terminal emit for `RecordTableMethodField` — both surface a runtime `UnsupportedOperationException` mirroring the table-parent variant's commit-3 emit. The classifier already produces both shapes; lifting the emit is a follow-up.
+- A `@sourceRow`-arm execution test — pipeline-tier coverage stands via the classifier branch test; an execution test needs a concrete free-form DTO fixture with a hand-written lifter and is deferable.
 
 ## Plan
 
