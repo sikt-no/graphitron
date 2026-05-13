@@ -33,8 +33,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Progress |  | [plan](docs-site-asciidoc.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
-| `R157` | LSP: autocomplete and diagnostics for @field on @record-bound types <sub>blocked by: [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md), [emit-input-records](emit-input-records.md)</sub> | Spec | 2026-05-13 | [plan](lsp-record-bound-field-completions.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
+| `R157` | LSP: autocomplete and diagnostics for @field on @record-bound types <sub>blocked by: [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md), [emit-input-records](emit-input-records.md)</sub> | Ready | 2026-05-13 | [plan](lsp-record-bound-field-completions.md) |
 | `R153` | Set explicit TextEdit range on every completion item so clients do not concatenate the prefix with the candidate | Ready | 2026-05-13 | [plan](lsp-completion-text-edit-range.md) |
 | `R139` | Dev-pipeline to LSP schema-snapshot side-channel; first client unknown-directive validator | In Review |  | [plan](lsp-schema-snapshot-side-channel.md) |
 
@@ -215,7 +215,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
 - `R139` [**Dev-pipeline to LSP schema-snapshot side-channel; first client unknown-directive validator**](lsp-schema-snapshot-side-channel.md) — In Review, architecture
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
-- `R157` [**LSP: autocomplete and diagnostics for @field on @record-bound types**](lsp-record-bound-field-completions.md) — Spec, lsp, blocked by [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md), [emit-input-records](emit-input-records.md)
+- `R157` [**LSP: autocomplete and diagnostics for @field on @record-bound types**](lsp-record-bound-field-completions.md) — Ready, lsp, blocked by [lsp-schema-snapshot-side-channel](lsp-schema-snapshot-side-channel.md), [emit-input-records](emit-input-records.md)
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
 - `R153` [**Set explicit TextEdit range on every completion item so clients do not concatenate the prefix with the candidate**](lsp-completion-text-edit-range.md) — Ready, bug
 

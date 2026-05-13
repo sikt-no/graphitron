@@ -1,7 +1,7 @@
 ---
 id: R157
 title: "LSP: autocomplete and diagnostics for @field on @record-bound types"
-status: Spec
+status: Ready
 bucket: lsp
 theme: lsp
 depends-on: [lsp-schema-snapshot-side-channel, emit-input-records]
