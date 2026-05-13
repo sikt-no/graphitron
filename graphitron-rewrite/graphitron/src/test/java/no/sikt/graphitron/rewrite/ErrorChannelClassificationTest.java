@@ -85,18 +85,19 @@ class ErrorChannelClassificationTest {
     }
 
     @Test
-    void payloadConstructor_recordsErrorsSlotIndexAndDefaultLiterals() {
-        // Verifies the slot resolution: errorsSlotIndex points at the errors-typed parameter;
-        // defaultedSlots covers every other slot with its language-default literal. SakPayload
-        // is (String data, List<?> errors), so errorsSlotIndex=1 and defaultedSlots holds one
-        // entry for "data" → "null".
+    void payloadConstructor_recordsErrorsSlotAndDefaultLiterals() {
+        // Verifies the slot resolution: errorsSlot points at the errors-typed parameter (Phase 1
+        // produces ErrorsSlot.CtorParameterIndex); defaultedSlots covers every other slot with
+        // its language-default literal. SakPayload is (String data, List<?> errors), so the
+        // errors slot's ctor index is 1 and defaultedSlots holds one entry for "data" → "null".
         var schema = build(UNION_ERROR_PAYLOAD_SDL + """
             type Query { sak: SakPayload %s }
             """.formatted(SERVICE_DECL));
 
         var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
         var ch = f.errorChannel().orElseThrow();
-        assertThat(ch.errorsSlotIndex()).isEqualTo(1);
+        assertThat(ch.errorsSlot())
+            .isEqualTo(new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1));
         assertThat(ch.defaultedSlots()).hasSize(1);
         var dataSlot = ch.defaultedSlots().get(0);
         assertThat(dataSlot.index()).isEqualTo(0);
@@ -485,7 +486,8 @@ class ErrorChannelClassificationTest {
         var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
         assertThat(f.errorChannel()).isPresent();
         var ch = f.errorChannel().get();
-        assertThat(ch.errorsSlotIndex()).isEqualTo(1);
+        assertThat(ch.errorsSlot())
+            .isEqualTo(new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1));
         assertThat(ch.defaultedSlots()).hasSize(1);
         assertThat(ch.defaultedSlots().get(0).name()).isEqualTo("data");
     }

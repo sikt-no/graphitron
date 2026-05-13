@@ -1474,28 +1474,45 @@ public class TypeFetcherGenerator {
 
     /**
      * Emits the success-arm payload-construction block when a {@code ResultAssembly} is present
-     * on a service-backed fetcher. Walks the constructor's slot indices
-     * {@code 0..N-1} (where {@code N == 1 + ra.defaultedSlots().size()}) and prints, per slot:
-     * the row local at {@code resultSlotIndex}, {@code List.of()} at the channel's
-     * {@code errorsSlotIndex} when a channel is also present, and the slot's pre-resolved
-     * {@code defaultLiteral} otherwise. The block declares a typed {@code payload} local that
-     * the caller's {@link #returnSyncSuccess} subsequently wraps in the {@link DataFetcherResult}.
+     * on a service-backed fetcher. Dispatches on the assembly's {@link ResultSlot} arm:
+     * the all-fields-ctor arm walks the constructor's slot indices {@code 0..N-1} (where
+     * {@code N == 1 + ra.defaultedSlots().size()}) and prints, per slot: the row local at the
+     * result-ctor-index, {@code List.of()} at the channel's errors-ctor-index when a channel
+     * is also present, and the slot's pre-resolved {@code defaultLiteral} otherwise. The
+     * phase-2 setter arm lands as a new {@code case} on this switch. The block declares a typed
+     * {@code payload} local that the caller's {@link #returnSyncSuccess} subsequently wraps in
+     * the {@link DataFetcherResult}.
      */
     private static CodeBlock buildSuccessPayload(TypeName valueType,
                                                  no.sikt.graphitron.rewrite.model.ResultAssembly ra,
                                                  Optional<ErrorChannel> errorChannel,
                                                  String rowLocal) {
+        return switch (ra.resultSlot()) {
+            case no.sikt.graphitron.rewrite.model.ResultSlot.CtorParameterIndex resultCpi ->
+                buildSuccessPayloadCtor(valueType, ra, resultCpi.index(), errorChannel, rowLocal);
+        };
+    }
+
+    private static CodeBlock buildSuccessPayloadCtor(TypeName valueType,
+                                                     no.sikt.graphitron.rewrite.model.ResultAssembly ra,
+                                                     int resultSlotIndex,
+                                                     Optional<ErrorChannel> errorChannel,
+                                                     String rowLocal) {
         int slotCount = 1 + ra.defaultedSlots().size();
         var defaultsByIndex = ra.defaultedSlots().stream()
             .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
-        Integer errorsSlot = errorChannel.map(ErrorChannel::errorsSlotIndex).orElse(null);
+        Integer errorsCtorIndex = errorChannel
+            .map(ErrorChannel::errorsSlot)
+            .filter(s -> s instanceof no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex)
+            .map(s -> ((no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex) s).index())
+            .orElse(null);
 
         var ctor = CodeBlock.builder().add("$T payload = new $T(", valueType, valueType);
         for (int i = 0; i < slotCount; i++) {
             if (i > 0) ctor.add(", ");
-            if (i == ra.resultSlotIndex()) {
+            if (i == resultSlotIndex) {
                 ctor.add(rowLocal);
-            } else if (errorsSlot != null && i == errorsSlot) {
+            } else if (errorsCtorIndex != null && i == errorsCtorIndex) {
                 ctor.add("$T.of()", LIST);
             } else {
                 ctor.add(defaultsByIndex.get(i));
@@ -1560,16 +1577,25 @@ public class TypeFetcherGenerator {
      * bound to {@code errorsLocal} and every other slot prints its pre-resolved
      * {@link no.sikt.graphitron.rewrite.model.DefaultedSlot#defaultLiteral()}. Mirrors the
      * shape of {@link #payloadFactoryLambda} without wrapping in a lambda; used by the
-     * validator pre-step where the violations list is already in scope.
+     * validator pre-step where the violations list is already in scope. Dispatches on the
+     * channel's {@link ErrorsSlot} arm; the phase-2 setter arm lands as a new {@code case}.
      */
     private static CodeBlock newPayloadFromErrors(ErrorChannel channel, String errorsLocal) {
+        return switch (channel.errorsSlot()) {
+            case no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex cpi ->
+                newPayloadFromErrorsCtor(channel, cpi.index(), errorsLocal);
+        };
+    }
+
+    private static CodeBlock newPayloadFromErrorsCtor(ErrorChannel channel, int errorsCtorIndex,
+                                                      String errorsLocal) {
         var args = CodeBlock.builder();
         int slotCount = 1 + channel.defaultedSlots().size();
         var defaultsByIndex = channel.defaultedSlots().stream()
             .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
         for (int i = 0; i < slotCount; i++) {
             if (i > 0) args.add(", ");
-            if (i == channel.errorsSlotIndex()) {
+            if (i == errorsCtorIndex) {
                 args.add(errorsLocal);
             } else {
                 args.add(defaultsByIndex.get(i));
@@ -2966,32 +2992,44 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.rewrite.model.PayloadAssembly assembly,
             TypeName valueType,
             CodeBlock dmlChain) {
-        // ResultReturnType payload: capture the row record from .returning().fetchOne(),
-        // then construct the payload by walking constructor slots positionally (row local at
-        // rowSlotIndex, defaultLiteral at every defaultedSlot; the errors slot, if any, appears
-        // in defaultedSlots with a "null" literal). The payload-shape classifier guarantees one
-        // row slot exists and rejects list-payload returns at validateReturnType, so
-        // .fetchOne() is the only shape here.
+        // ResultReturnType payload: capture the row record from .returning().fetchOne(), then
+        // construct the payload by dispatching on assembly.rowSlot(). The all-fields-ctor arm
+        // walks constructor slots positionally (row local at the row-ctor-index, defaultLiteral
+        // at every defaultedSlot; the errors slot, if any, appears in defaultedSlots with a
+        // "null" literal). The phase-2 setter arm lands as a new case. The payload-shape
+        // classifier guarantees one row slot exists and rejects list-payload returns at
+        // validateReturnType, so .fetchOne() is the only shape here.
         var dml = CodeBlock.builder()
             .add("$T row = dsl\n", assembly.rowSlotType()).indent()
             .add(dmlChain)
             .add(".returning()\n")
             .add(".fetchOne();\n").unindent();
 
+        var payload = switch (assembly.rowSlot()) {
+            case no.sikt.graphitron.rewrite.model.RowSlot.CtorParameterIndex rowCpi ->
+                emitPayloadCtor(assembly, valueType, rowCpi.index());
+        };
+        return dml.add(payload).build();
+    }
+
+    private static CodeBlock emitPayloadCtor(
+            no.sikt.graphitron.rewrite.model.PayloadAssembly assembly,
+            TypeName valueType,
+            int rowSlotIndex) {
         var ctor = CodeBlock.builder().add("$T payload = new $T(", valueType, valueType);
         int slotCount = 1 + assembly.defaultedSlots().size();
         var defaultsByIndex = assembly.defaultedSlots().stream()
             .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
         for (int i = 0; i < slotCount; i++) {
             if (i > 0) ctor.add(", ");
-            if (i == assembly.rowSlotIndex()) {
+            if (i == rowSlotIndex) {
                 ctor.add("row");
             } else {
                 ctor.add(defaultsByIndex.get(i));
             }
         }
         ctor.add(");\n");
-        return dml.add(ctor.build()).build();
+        return ctor.build();
     }
 
     /**
@@ -4301,7 +4339,7 @@ public class TypeFetcherGenerator {
     /**
      * Builds the channel-aware catch arm: routes the throw through {@code ErrorRouter.dispatch}
      * with this channel's mapping-table constant and a synthesized payload factory lambda
-     * that binds the errors slot at {@link ErrorChannel#errorsSlotIndex()}.
+     * that binds the errors slot per the channel's {@link ErrorChannel#errorsSlot()} arm.
      */
     private static CodeBlock dispatchCatchArm(String outputPackage, ErrorChannel channel) {
         return CodeBlock.builder()
@@ -4314,19 +4352,29 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Synthesizes the {@code (errors) -> new <PayloadClass>(...)} factory lambda. Walks the
-     * constructor's parameter indices {@code 0..N-1} (where {@code N == 1 + defaultedSlots.size()}):
-     * at {@link ErrorChannel#errorsSlotIndex()} prints the lambda parameter, at every other
-     * slot prints the pre-resolved {@link no.sikt.graphitron.rewrite.model.DefaultedSlot#defaultLiteral()}.
+     * Synthesizes the {@code (errors) -> new <PayloadClass>(...)} factory lambda. Dispatches on
+     * the channel's {@link ErrorsSlot} arm: the all-fields-ctor arm walks the constructor's
+     * parameter indices {@code 0..N-1} (where {@code N == 1 + defaultedSlots.size()}), printing
+     * the lambda parameter at the errors-ctor-index and the pre-resolved
+     * {@link no.sikt.graphitron.rewrite.model.DefaultedSlot#defaultLiteral()} otherwise. The
+     * phase-2 setter arm lands as a new {@code case} that emits a lambda body of
+     * {@code errors -> { var p = new Payload(); p.setX(...); p.setErrors(errors); ...; return p; }}.
      */
     private static CodeBlock payloadFactoryLambda(ErrorChannel channel) {
+        return switch (channel.errorsSlot()) {
+            case no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex cpi ->
+                payloadFactoryLambdaCtor(channel, cpi.index());
+        };
+    }
+
+    private static CodeBlock payloadFactoryLambdaCtor(ErrorChannel channel, int errorsCtorIndex) {
         var args = CodeBlock.builder();
         int slotCount = 1 + channel.defaultedSlots().size();
         var defaultsByIndex = channel.defaultedSlots().stream()
             .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
         for (int i = 0; i < slotCount; i++) {
             if (i > 0) args.add(", ");
-            if (i == channel.errorsSlotIndex()) {
+            if (i == errorsCtorIndex) {
                 args.add("errors");
             } else {
                 args.add(defaultsByIndex.get(i));

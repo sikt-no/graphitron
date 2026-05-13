@@ -117,7 +117,7 @@ public final class MappingsConstantNameDedup {
                 continue;
             }
             var newChannel = new ErrorChannel(
-                ch.mappedErrorTypes(), ch.payloadClass(), ch.errorsSlotIndex(),
+                ch.mappedErrorTypes(), ch.payloadClass(), ch.errorsSlot(),
                 ch.defaultedSlots(), resolvedName);
             rewritten.put(entry.getKey(), withResolvedChannel(field, newChannel));
         }

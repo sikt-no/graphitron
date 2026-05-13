@@ -268,7 +268,8 @@ class ErrorMappingsClassGeneratorTest {
         var defaultedSlots = List.of(
             new DefaultedSlot(0, "data", stringType, "null"));
         return new ErrorChannel(mappedErrorTypes, ClassName.bestGuess(payloadFqn),
-            1, defaultedSlots, constantName);
+            new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
+            defaultedSlots, constantName);
     }
 
     /** Synthesises a minimal schema with one MutationServiceRecordField per channel supplied. */
