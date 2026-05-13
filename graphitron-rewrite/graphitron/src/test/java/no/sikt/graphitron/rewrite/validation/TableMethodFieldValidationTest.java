@@ -13,7 +13,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 import java.util.List;
 import java.util.Optional;
 
-import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.stubbedError;
 import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.validate;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -24,25 +23,25 @@ class TableMethodFieldValidationTest {
 
     enum Case implements ValidatorCase {
 
-        NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time (stubbed)",
+        NO_PATH("no @reference path — validator passes; classifier ensures auto-FK inference / explicit @reference at SDL time (R43 commit 2)",
             new TableMethodField("Film", "filteredActors", null, TestFixtures.tableBoundFilm(new FieldWrapper.Single(true)),
                 List.of(), TestFixtures.staticServiceMethodRef("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of()),
                 Optional.empty()),
-            List.of(stubbedError("Film.filteredActors", TableMethodField.class))),
+            List.of()),
 
-        WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey (stubbed)",
+        WITH_FK_PATH("explicit single-hop FK path — emit ships in R43 commit 3, validator passes",
             new TableMethodField("Film", "filteredActors", null, TestFixtures.tableBoundFilm(new FieldWrapper.Single(true)), List.of(
                 TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
                 TestFixtures.staticServiceMethodRef("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of()),
                 Optional.empty()),
-            List.of(stubbedError("Film.filteredActors", TableMethodField.class))),
+            List.of()),
 
-        WITH_CONDITION_ONLY("condition method only — no FK (stubbed)",
+        WITH_CONDITION_ONLY("condition method terminal — emitter throws at runtime, validator passes (multi-hop / condition emit are follow-ups)",
             new TableMethodField("Film", "filteredActors", null, TestFixtures.tableBoundFilm(new FieldWrapper.Single(true)), List.of(
                 new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
                 TestFixtures.staticServiceMethodRef("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of()),
                 Optional.empty()),
-            List.of(stubbedError("Film.filteredActors", TableMethodField.class)));
+            List.of());
 
         private final String description;
         private final GraphitronField field;

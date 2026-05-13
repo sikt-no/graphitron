@@ -514,6 +514,14 @@ type Inventory @table(name: "inventory") {
         className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions",
         method:    "filmCardData"
     })
+    # R43 commit 3 fixture: child @tableMethod on a @table parent, single-FK auto-inference.
+    # Inventory has a unique FK inventory_film_id_fkey -> film, so the classifier auto-infers
+    # the join. SampleQueryService.tableMethodFilm returns the Film table; the framework
+    # projects via FilmType.$fields(...) and correlates on inventory.film_id.
+    filmViaTableMethod: Film @tableMethod(
+        className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+        method: "tableMethodFilm"
+    )
 }
 
 type FilmCard @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
@@ -708,6 +716,14 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # content.film_id FK links a Content entry back to its Film. The generator emits a
     # per-parent fetcher that conditions on the FK and projects the discriminator column.
     filmContent: Content @reference(path: [{key: "content_film_id_fkey"}])
+    # R43 commit 3 fixture: child @tableMethod on a @table parent, explicit single-hop
+    # @reference path. SampleQueryService.tableMethodLanguage returns the Language table
+    # (potentially derived); the generator joins back to this Film row via
+    # film.language_id -> language.language_id and projects the developer-returned table.
+    languageViaTableMethod: Language @tableMethod(
+        className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+        method: "tableMethodLanguage"
+    ) @reference(path: [{key: "film_language_id_fkey"}])
 }
 
 type Actor implements Searchable @table(name: "actor") {

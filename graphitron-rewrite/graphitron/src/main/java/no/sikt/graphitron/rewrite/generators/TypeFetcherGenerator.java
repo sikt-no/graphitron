@@ -181,6 +181,7 @@ public class TypeFetcherGenerator {
         ChildField.ConstructorField.class,
         ChildField.SingleRecordTableField.class,
         ChildField.SingleRecordIdentityField.class,
+        ChildField.TableMethodField.class,
         QueryField.QueryTableInterfaceField.class,
         ChildField.TableInterfaceField.class,
         ChildField.ParticipantColumnReferenceField.class,
@@ -260,11 +261,7 @@ public class TypeFetcherGenerator {
                     "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented"
                     + " — requires JOIN-with-projection emission; rooted-at-parent fixture"
                     + " (parent_node + child_ref) is in nodeidfixture and ready to drive coverage",
-                    "nodeidreferencefield-join-projection-form")),
-            Map.entry(ChildField.TableMethodField.class,
-                deferredFor(ChildField.TableMethodField.class,
-                    "child @tableMethod (table-bound return) not yet implemented",
-                    "tablemethod-child-table-bound"))
+                    "nodeidreferencefield-join-projection-form"))
         );
 
     private static Rejection.Deferred deferredFor(
@@ -435,7 +432,7 @@ public class TypeFetcherGenerator {
                         builder.addMethod(LookupValuesJoinEmitter.buildInputRowsMethod(rltf, lookupTableClass));
                     }
                 }
-                case ChildField.TableMethodField f              -> builder.addMethod(stub(f));
+                case ChildField.TableMethodField f              -> builder.addMethod(buildChildTableMethodFetcher(ctx, f, outputPackage));
                 // SingleRecordTableField has no per-field fetcher method — its DataFetcher
                 // value is emitted inline by FetcherEmitter (env.getSource() typed cast +
                 // response SELECT outside the DML transaction). The wiring happens in
@@ -1066,6 +1063,148 @@ public class TypeFetcherGenerator {
         builder.endControlFlow();
 
         return builder.build();
+    }
+
+    /**
+     * Emits the fetcher for a {@link ChildField.TableMethodField}: per-row call to the developer's
+     * static {@code @tableMethod} returning the target table, joined back to the parent record via
+     * the resolved {@link JoinStep} chain.
+     *
+     * <p>Modelled on {@link #buildQueryTableMethodFetcher} (the root-site cognate) with one
+     * difference: a parent-correlation predicate built from {@code field.joinPath()} is added to
+     * the WHERE so the child fetch is scoped to the parent row. Unlike {@code RecordTableField}
+     * this is per-row, not DataLoader-keyed — {@code TableMethodField} carries no
+     * {@code parentSourceKey} / {@code loaderRegistration}.
+     *
+     * <p>Single-hop {@link JoinStep.FkJoin} is the shipped emit shape — the common case in
+     * practice and the only one exercised by the R43 commit 3 pipeline + execution coverage.
+     * Multi-hop FK paths and {@link JoinStep.ConditionJoin} arms surface a runtime
+     * {@link UnsupportedOperationException} so classification stays permissive (the schema is
+     * still emittable) but the runtime gap is explicit.
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "tablemethod-resolver-return-is-table-bound",
+        reliesOn = "Reads field.returnType().table() to declare the specific generated jOOQ table "
+            + "local without a cast. The resolver's TableBoundReturnType invariant guarantees the "
+            + "narrow return type at this site.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "service-catalog-strict-tablemethod-return",
+        reliesOn = "Declares <SpecificTable> table = Method.x(...) with no downcast. The classifier "
+            + "rejects wider Table<?> returns.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "service-catalog-tablemethod-must-be-static",
+        reliesOn = "Emits 'ClassName.method(...)' static-call shape unconditionally. Instance "
+            + "tableMethod methods are rejected at classification.")
+    private static MethodSpec buildChildTableMethodFetcher(TypeFetcherEmissionContext ctx, ChildField.TableMethodField tmf,
+                                                            String outputPackage) {
+        var tableRef = tmf.returnType().table();
+        var names = GeneratorUtils.ResolvedTableNames.of(tableRef, tmf.returnType().returnTypeName(), outputPackage);
+        boolean isList = tmf.returnType().wrapper().isList();
+
+        TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+
+        var methodClass = ClassName.bestGuess(tmf.method().className());
+        String conditionsClassName = outputPackage + ".conditions."
+            + tmf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
+
+        var builder = MethodSpec.methodBuilder(tmf.name())
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(syncResultType(valueType))
+            .addParameter(ENV, "env");
+
+        builder.beginControlFlow("try");
+
+        List<JoinStep> path = tmf.joinPath();
+        boolean unsupportedPath = path.isEmpty() || path.size() > 1
+            || !(path.get(0) instanceof JoinStep.FkJoin);
+        if (unsupportedPath) {
+            // Multi-hop FK paths and ConditionJoin terminals are accepted by the classifier so the
+            // schema remains well-formed, but R43 commit 3 ships only the single-hop FK emit shape
+            // (the common case, and the one covered by the planned pipeline + execution tests).
+            // Surfacing the gap as a runtime throw rather than an empty fetcher keeps the failure
+            // mode loud and pointable.
+            String shapeLabel = path.isEmpty()
+                ? "empty joinPath"
+                : path.size() > 1 ? "multi-hop join path" : "ConditionJoin path";
+            builder.addStatement("throw new $T($S)",
+                UnsupportedOperationException.class,
+                "child @tableMethod with " + shapeLabel + " is not yet emitted — only single-hop FK "
+                    + "paths ship in R43 commit 3 (multi-hop and condition-join emit are follow-ups)");
+            builder.nextControlFlow("catch ($T e)", Exception.class);
+            builder.addCode(catchArm(outputPackage, tmf.errorChannel()));
+            builder.endControlFlow();
+            return builder.build();
+        }
+
+        builder.addStatement("$T parentRecord = ($T) env.getSource()", RECORD, RECORD);
+        // Developer-authored static method returning the specific generated jOOQ table class.
+        // No cast: classifier-time return-type strictness (Invariants §3) guarantees the precise type.
+        builder.addStatement("$T table = $T.$L($L)",
+            names.jooqTableClass(),
+            methodClass,
+            tmf.method().methodName(),
+            ArgCallEmitter.buildMethodBackedCallArgs(ctx, tmf.method(), null, conditionsClassName));
+
+        builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
+
+        // Parent-row correlation. For each slot in the single FK hop, target-side column on the
+        // developer's table equals source-side column from the parent record. AND across composite FKs.
+        var fkJoin = (JoinStep.FkJoin) path.get(0);
+        builder.addCode(buildTableMethodParentCorrelation(fkJoin));
+
+        builder.addCode(CodeBlock.builder()
+            .add("$T payload = dsl\n", valueType)
+            .indent()
+            .add(".select($T.$$fields(env.getSelectionSet(), table, env))\n", names.typeClass())
+            .add(".from(table)\n")
+            .add(".where(condition)\n")
+            .add(isList ? ".fetch();\n" : ".fetchOne();\n")
+            .unindent()
+            .build());
+        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(catchArm(outputPackage, tmf.errorChannel()));
+        builder.endControlFlow();
+
+        return builder.build();
+    }
+
+    /**
+     * Builds the {@code Condition condition = ...} declaration for a child {@code @tableMethod}
+     * fetcher's parent-correlation WHERE clause. ANDs target-side-equals-source-side equality
+     * predicates across every slot of the single FK hop. The target side reads off the
+     * {@code table} local (the developer's returned table), the source side reads off
+     * {@code parentRecord.get(...)} via the column's SQL name.
+     *
+     * <p>Composite FKs (more than one slot) are uncommon for {@code @tableMethod} fields in
+     * practice, but the emitter handles them uniformly via {@code DSL.and(...)} composition.
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "fk-join.slots-oriented-source-and-target",
+        reliesOn = "Reads slot.targetSide() (developer table's column) and slot.sourceSide() "
+            + "(parent record's column) without re-deriving FK direction; depends on synthesis-time "
+            + "slot orientation.")
+    private static CodeBlock buildTableMethodParentCorrelation(JoinStep.FkJoin fkJoin) {
+        var slots = fkJoin.slots();
+        if (slots.isEmpty()) {
+            // jOOQ catalog unavailable at build time — emit a runtime-throwing condition so the
+            // mismatch surfaces at execution rather than silently producing broken SQL.
+            return CodeBlock.builder()
+                .addStatement("$T condition = $T.noCondition()", CONDITION, DSL)
+                .build();
+        }
+        var code = CodeBlock.builder().add("$T condition = ", CONDITION);
+        for (int i = 0; i < slots.size(); i++) {
+            var slot = slots.get(i);
+            ClassName columnType = ClassName.bestGuess(slot.sourceSide().columnClass());
+            if (i > 0) code.add(".and(");
+            code.add("table.$L.eq(parentRecord.get($T.name($S), $T.class))",
+                slot.targetSide().javaName(), DSL, slot.sourceSide().sqlName(), columnType);
+            if (i > 0) code.add(")");
+        }
+        code.add(";\n");
+        return code.build();
     }
 
     /**

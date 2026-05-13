@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.test.services;
 
 import no.sikt.graphitron.rewrite.test.jooq.Tables;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
+import no.sikt.graphitron.rewrite.test.jooq.tables.Language;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import org.jooq.DSLContext;
 import org.jooq.Result;
@@ -115,5 +116,28 @@ public final class SampleQueryService {
             .where(Tables.FILM.FILM_ID.in(ids))
             .orderBy(Tables.FILM.FILM_ID)
             .fetch();
+    }
+
+    /**
+     * R43 commit 3 fixture: child {@code @tableMethod} on a {@code @table} parent
+     * ({@code Inventory.filmViaTableMethod: Film}). The classifier auto-infers the unique FK
+     * {@code inventory.film_id -> film.film_id} and the generated fetcher correlates the
+     * developer-returned table on that FK. Returning the unfiltered {@code Tables.FILM} is the
+     * minimal valid shape; downstream tests assert the parent-row correlation projects the
+     * single matching Film for each Inventory row.
+     */
+    public static Film tableMethodFilm() {
+        return Tables.FILM;
+    }
+
+    /**
+     * R43 commit 3 fixture: child {@code @tableMethod} on a {@code @table} parent
+     * ({@code Film.languageViaTableMethod: Language}) with an explicit
+     * {@code @reference(path: [{key: "film_language_id_fkey"}])}. The single FK is named
+     * explicitly to disambiguate from {@code film_original_language_id_fkey}; the generated
+     * fetcher correlates the developer-returned Language table on that FK.
+     */
+    public static Language tableMethodLanguage() {
+        return Tables.LANGUAGE;
     }
 }
