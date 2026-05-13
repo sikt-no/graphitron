@@ -1,7 +1,7 @@
 ---
 id: R159
-title: "Root-value sigil $source on @field(name:) for carrier-payload sourcing"
-status: Spec
+title: Root-value sigil $source on @field(name:) for carrier-payload sourcing
+status: Ready
 bucket: structural
 priority: 2
 theme: service
