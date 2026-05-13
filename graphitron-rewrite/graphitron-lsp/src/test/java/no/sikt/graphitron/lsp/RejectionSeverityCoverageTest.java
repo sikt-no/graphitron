@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,7 +39,7 @@ class RejectionSeverityCoverageTest {
         var path = "/tmp/coverage.graphqls";
         var uri = ValidationReport.canonicalUri(path);
         var loc = new SourceLocation(1, 1, path);
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of());
+        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(), Map.of());
         var file = new WorkspaceFile(1, "type Foo { x: Int }\n");
 
         var unmapped = new ArrayList<String>();

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -65,7 +66,7 @@ class CatalogRefreshTest {
             workspace.setBuildOutput(
                 new GraphQLRewriteGenerator.BuildArtifacts(
                     newCatalog,
-                    new LspSchemaSnapshot.Built.Current(List.of())),
+                    new LspSchemaSnapshot.Built.Current(List.of(), Map.of())),
                 ValidationReport.empty());
             fired.countDown();
         };

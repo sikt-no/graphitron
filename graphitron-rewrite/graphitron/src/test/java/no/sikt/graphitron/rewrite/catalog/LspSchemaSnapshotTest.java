@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,7 +28,7 @@ class LspSchemaSnapshotTest {
     @Test
     void builtCurrentDirectiveLookupIsCaseSensitive() {
         var shape = new DirectiveShape("key", List.of(), Optional.empty());
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(shape));
+        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(shape), Map.of());
 
         assertThat(snapshot.directive("key")).contains(shape);
         assertThat(snapshot.directive("Key")).isEmpty();
@@ -37,7 +38,7 @@ class LspSchemaSnapshotTest {
     @Test
     void builtPreviousDirectiveLookupBehavesIdentically() {
         var shape = new DirectiveShape("key", List.of(), Optional.empty());
-        var snapshot = new LspSchemaSnapshot.Built.Previous(List.of(shape));
+        var snapshot = new LspSchemaSnapshot.Built.Previous(List.of(shape), Map.of());
 
         assertThat(snapshot.directive("key")).contains(shape);
         assertThat(snapshot.directive("Key")).isEmpty();
@@ -47,7 +48,7 @@ class LspSchemaSnapshotTest {
     void builtDirectivesAreUnmodifiable() {
         var shape = new DirectiveShape("key", List.of(), Optional.empty());
         var mutable = new java.util.ArrayList<>(List.of(shape));
-        var snapshot = new LspSchemaSnapshot.Built.Current(mutable);
+        var snapshot = new LspSchemaSnapshot.Built.Current(mutable, Map.of());
 
         assertThatThrownBy(() -> snapshot.directives().add(
             new DirectiveShape("other", List.of(), Optional.empty())))
@@ -58,7 +59,7 @@ class LspSchemaSnapshotTest {
     void builtCurrentDefensivelyCopiesItsDirectivesList() {
         var shape = new DirectiveShape("key", List.of(), Optional.empty());
         var mutable = new java.util.ArrayList<>(List.of(shape));
-        var snapshot = new LspSchemaSnapshot.Built.Current(mutable);
+        var snapshot = new LspSchemaSnapshot.Built.Current(mutable, Map.of());
 
         mutable.clear();
 

@@ -253,9 +253,9 @@ public final class Hovers {
         return switch (backing) {
             case TypeBackingShape.RecordBacking r -> slotHover(r.components(), memberName, file, valueNode);
             case TypeBackingShape.PojoBacking p -> slotHover(p.accessors(), memberName, file, valueNode);
-            case TypeBackingShape.JooqRecordBacking j -> j.tableName() == null
-                ? Optional.<Hover>empty()
-                : tableColumnHover(catalog, j.tableName(), memberName, file, valueNode);
+            case TypeBackingShape.JooqRecordBacking.WithTable j ->
+                tableColumnHover(catalog, j.tableName(), memberName, file, valueNode);
+            case TypeBackingShape.JooqRecordBacking.Standalone ignored -> Optional.empty();
             case TypeBackingShape.TableBacking t ->
                 tableColumnHover(catalog, t.tableName(), memberName, file, valueNode);
             case TypeBackingShape.NoBacking ignored -> Optional.empty();

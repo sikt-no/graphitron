@@ -37,7 +37,7 @@ class MethodCompletionsTest {
                 new CompletionData.Method("get", "Film", "",
                     List.of(new CompletionData.Parameter("id", "int", null, "")))
             )
-        ))
+        , List.of()))
     );
 
     @Test

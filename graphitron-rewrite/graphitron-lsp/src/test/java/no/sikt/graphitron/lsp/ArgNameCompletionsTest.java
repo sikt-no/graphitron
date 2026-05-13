@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp;
 
+import java.util.Map;
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.completions.ArgNameCompletions;
@@ -138,7 +139,7 @@ class ArgNameCompletionsTest {
         int col = lines[line].indexOf(", ") + 2;
 
         var items = runWithSnapshot(source, new Point(line, col),
-            new LspSchemaSnapshot.Built.Current(java.util.List.of(authShapeWithScope())));
+            new LspSchemaSnapshot.Built.Current(java.util.List.of(authShapeWithScope()), Map.of()));
 
         assertThat(items).extracting(i -> i.getLabel())
             .containsExactlyInAnyOrder("role", "scope");
@@ -159,7 +160,7 @@ class ArgNameCompletionsTest {
         int col = lines[line].indexOf("{ }") + 2;
 
         var items = runWithSnapshot(source, new Point(line, col),
-            new LspSchemaSnapshot.Built.Current(java.util.List.of(authShapeWithScope())));
+            new LspSchemaSnapshot.Built.Current(java.util.List.of(authShapeWithScope()), Map.of()));
 
         assertThat(items).isEmpty();
     }
@@ -206,7 +207,7 @@ class ArgNameCompletionsTest {
         int col = lines[line].indexOf(", ") + 2;
 
         var items = runWithSnapshot(source, new Point(line, col),
-            new LspSchemaSnapshot.Built.Current(java.util.List.of(shadow)));
+            new LspSchemaSnapshot.Built.Current(java.util.List.of(shadow), Map.of()));
 
         // Bundled @table args are `name` (no `extraArg`); the shadow's
         // `extraArg` must not appear.
@@ -229,7 +230,7 @@ class ArgNameCompletionsTest {
         int col = lines[line].indexOf(", ") + 2;
 
         var items = runWithSnapshot(source, new Point(line, col),
-            new LspSchemaSnapshot.Built.Previous(java.util.List.of(authShapeWithScope())));
+            new LspSchemaSnapshot.Built.Previous(java.util.List.of(authShapeWithScope()), Map.of()));
 
         assertThat(items).extracting(i -> i.getLabel())
             .containsExactlyInAnyOrder("role", "scope");

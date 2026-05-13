@@ -65,13 +65,31 @@ public sealed interface TypeBackingShape
     }
 
     /**
-     * Type backed by a jOOQ {@code Record<?>} subclass. {@code tableName} is
-     * the jOOQ table name for column-set lookup through
-     * {@link CompletionData#getTable}; may be {@code null} when the catalog
-     * does not carry the table (e.g. backing class compiled against a catalog
-     * not loaded at build time).
+     * Type backed by a jOOQ {@code Record<?>} subclass. Sealed over whether
+     * the classifier carries a {@link no.sikt.graphitron.rewrite.model.TableRef}
+     * for the record: {@link WithTable} routes column-set lookup through
+     * {@link CompletionData#getTable}; {@link Standalone} declines (no
+     * actionable column metadata available).
      */
-    record JooqRecordBacking(String fqClassName, String tableName) implements TypeBackingShape {}
+    sealed interface JooqRecordBacking extends TypeBackingShape
+        permits JooqRecordBacking.WithTable, JooqRecordBacking.Standalone {
+
+        String fqClassName();
+
+        /**
+         * jOOQ record bound to a specific table — the classifier carried a
+         * {@link no.sikt.graphitron.rewrite.model.TableRef}. {@code tableName}
+         * is the jOOQ table name for column lookup.
+         */
+        record WithTable(String fqClassName, String tableName) implements JooqRecordBacking {}
+
+        /**
+         * jOOQ record without a table binding — typically a custom
+         * {@code Record<?>} subclass authored by the consumer outside the
+         * jOOQ-generated table set. No column candidates available.
+         */
+        record Standalone(String fqClassName) implements JooqRecordBacking {}
+    }
 
     /**
      * Type bound to a jOOQ table — covers {@code @table}-bearing objects,

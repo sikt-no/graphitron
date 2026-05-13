@@ -188,7 +188,7 @@ class DirectiveShapeSmokeTest {
         return new CompletionData(
             List.of(),
             List.of(),
-            List.of(new CompletionData.ExternalReference(className, className, "", methods))
+            List.of(new CompletionData.ExternalReference(className, className, "", methods, List.of()))
         );
     }
 

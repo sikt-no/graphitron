@@ -208,10 +208,24 @@ class CatalogBuilderSnapshotTest {
         var snapshot = CatalogBuilder.buildSnapshot(registry, schema, CompletionData.empty());
 
         assertThat(snapshot.typesByName().get("FilmRecord"))
-            .isInstanceOfSatisfying(TypeBackingShape.JooqRecordBacking.class, j -> {
+            .isInstanceOfSatisfying(TypeBackingShape.JooqRecordBacking.WithTable.class, j -> {
                 assertThat(j.fqClassName()).isEqualTo("no.sikt.example.tables.records.FilmRecord");
                 assertThat(j.tableName()).isEqualTo("film");
             });
+    }
+
+    @Test
+    void jooqRecordTypeWithoutTableProjectsToStandalone() {
+        var registry = new SchemaParser().parse("type Query { x: Int }");
+        var schema = schemaOf("CustomRecord",
+            new GraphitronType.JooqRecordType("CustomRecord", SourceLocation.EMPTY,
+                "no.sikt.example.records.CustomRecord"));
+
+        var snapshot = CatalogBuilder.buildSnapshot(registry, schema, CompletionData.empty());
+
+        assertThat(snapshot.typesByName().get("CustomRecord"))
+            .isInstanceOfSatisfying(TypeBackingShape.JooqRecordBacking.Standalone.class,
+                j -> assertThat(j.fqClassName()).isEqualTo("no.sikt.example.records.CustomRecord"));
     }
 
     @Test

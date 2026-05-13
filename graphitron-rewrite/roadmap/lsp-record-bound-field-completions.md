@@ -67,16 +67,22 @@ the canonical constructor).
 sealed interface TypeBackingShape permits
     RecordBacking,     // JavaRecord{Input,}Type
     PojoBacking,       // PojoInputType, PojoResultType.Backed
-    JooqRecordBacking, // JooqRecord{Input,}Type, JooqTableRecord{Input,}Type
+    JooqRecordBacking, // sealed: WithTable | Standalone
+                       //   WithTable    — JooqTableRecord{Input,}Type
+                       //   Standalone   — JooqRecord{Input,}Type (no table)
     TableBacking,      // TableType + any GraphitronType carrying a jOOQ
                        // table binding (incl. table-backed interfaces)
     NoBacking          // sealed: Root | UnbackedResult | UnclassifiedInterface
 ```
 
 `RecordBacking` and `PojoBacking` carry a `List<MemberSlot>` of
-`(name, displayType)` pairs. `JooqRecordBacking` and `TableBacking`
-carry the jOOQ table name so the existing column-set lookup against
-`CompletionData.tables()` keeps working through the same data path.
+`(name, displayType)` pairs. `JooqRecordBacking.WithTable` and
+`TableBacking` carry the jOOQ table name so the existing column-set
+lookup against `CompletionData.tables()` keeps working through the
+same data path. `JooqRecordBacking.Standalone` is the seam for jOOQ
+record subclasses that don't bind a specific table; the consumer
+pattern-dispatches rather than fielding a nullable `tableName`
+sentinel.
 
 `NoBacking` is itself sealed because the three sub-arms support
 observably-different diagnostics later (a `@field` site under `Root` is

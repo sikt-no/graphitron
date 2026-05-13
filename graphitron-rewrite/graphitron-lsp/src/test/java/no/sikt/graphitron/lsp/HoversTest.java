@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import io.github.treesitter.jtreesitter.Point;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -256,7 +257,7 @@ class HoversTest {
             List.of(new CompletionData.ExternalReference(
                 "com.example.FilmService", "com.example.FilmService", "",
                 List.of(method)
-            ))
+            , List.of()))
         );
         var file = file("""
             type Query {
@@ -295,7 +296,7 @@ class HoversTest {
         // Cursor on the @auth identifier itself. The bundled overlay has no
         // @auth, so resolution falls through to the snapshot's directive
         // shape and the directive's description renders as the hover body.
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(authShape()));
+        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of());
         var file = file("""
             type Query {
                 customers: [String!]! @auth(role: "admin")
@@ -315,7 +316,7 @@ class HoversTest {
         // Cursor on the `role:` arg-name token of a user-declared directive.
         // Bundled has no coordinate for @auth's role; falls through to the
         // user snapshot's InputValueShape description.
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(authShape()));
+        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of());
         var file = file("""
             type Query {
                 customers: [String!]! @auth(role: "admin")
@@ -351,7 +352,7 @@ class HoversTest {
     void userDirectiveHoverUnderPreviousSnapshot_stillReturnsContent() {
         // Stale-prefers-over-silence: hovers fire even on Built.Previous,
         // since an old description beats nothing while the user is mid-edit.
-        var snapshot = new LspSchemaSnapshot.Built.Previous(List.of(authShape()));
+        var snapshot = new LspSchemaSnapshot.Built.Previous(List.of(authShape()), Map.of());
         var file = file("""
             type Query {
                 customers: [String!]! @auth(role: "admin")
@@ -392,7 +393,7 @@ class HoversTest {
         var pos = new Point(line, col);
 
         assertThat(Hovers.compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(shadow)), pos))
+            new LspSchemaSnapshot.Built.Current(List.of(shadow), Map.of()), pos))
             .isEmpty();
     }
 
@@ -505,7 +506,7 @@ class HoversTest {
             List.of(new CompletionData.ExternalReference(
                 "com.example.FilmService", "com.example.FilmService", "",
                 List.of(listMethod)
-            ))
+            , List.of()))
         );
     }
 
@@ -513,7 +514,7 @@ class HoversTest {
         return new CompletionData(
             List.of(),
             List.of(),
-            List.of(new CompletionData.ExternalReference(fqn, fqn, "", List.of()))
+            List.of(new CompletionData.ExternalReference(fqn, fqn, "", List.of(), List.of()))
         );
     }
 

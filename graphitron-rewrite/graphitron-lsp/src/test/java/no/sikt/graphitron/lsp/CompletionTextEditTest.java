@@ -68,7 +68,7 @@ class CompletionTextEditTest {
         var items = runMethod(source, cursor,
             new CompletionData(List.of(), List.of(), List.of(
                 new CompletionData.ExternalReference("com.example.FilmService", "com.example.FilmService", "",
-                    List.of(new CompletionData.Method("list", "List", "", List.of()))))));
+                    List.of(new CompletionData.Method("list", "List", "", List.of())), List.of()))));
 
         assertTextEditRange(items, "list",
             new Range(new Position(0, methodStart), new Position(0, methodStart + "li".length())));
@@ -296,7 +296,7 @@ class CompletionTextEditTest {
     }
 
     private static CompletionData.ExternalReference fqn(String name) {
-        return new CompletionData.ExternalReference(name, name, "", List.of());
+        return new CompletionData.ExternalReference(name, name, "", List.of(), List.of());
     }
 
     private static void assertTextEditRange(List<CompletionItem> items, String label, Range expected) {
