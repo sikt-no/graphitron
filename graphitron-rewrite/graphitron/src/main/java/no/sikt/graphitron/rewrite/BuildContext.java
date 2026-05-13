@@ -6,6 +6,7 @@ import graphql.language.BooleanValue;
 import graphql.language.NullValue;
 import graphql.language.SourceLocation;
 import graphql.language.StringValue;
+import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLDirectiveContainer;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectField;
@@ -18,11 +19,17 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
+import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.CarrierFieldRole;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.DataElement;
+import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.HelperRef;
+import no.sikt.graphitron.rewrite.model.PkResolution;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -562,6 +569,276 @@ class BuildContext {
     }
 
     /**
+     * Verb-aware trigger function for single-record DML carriers (R156). Extends the verbless
+     * {@link #tryResolveSingleRecordCarrier(String)} with DELETE-admissibility per element arm.
+     * Called from {@link FieldBuilder} during mutation classification where the {@link DmlKind}
+     * is in scope; the verbless overload remains the shape-only entry point used by
+     * {@code TypeBuilder.promoteSingleRecordCarriers}, the schema-walk loop, and
+     * {@code MutationInputResolver}'s input-side recognition.
+     *
+     * <p>Sealed-result extension on top of the verbless shape:
+     * <ul>
+     *   <li>{@link DataElement.Id} arm — admitted only on {@link DmlKind#DELETE}; rejected on
+     *       INSERT / UPDATE / UPSERT with the permit-verb message. The rule is structural:
+     *       {@code DataElement.Id} commits the carrier to PK as the entire post-image, and the
+     *       only verb whose post-image is the PK is DELETE.</li>
+     *   <li>{@link DataElement.Table} arm — on DELETE, runs the projection step
+     *       ({@link #classifyDeleteTableProjection}); rejects the carrier if the projection step
+     *       surfaces a {@code NonPkNonNullable}, {@code ServiceField}, or
+     *       {@code UnsupportedField} arm. On non-DELETE, admits unchanged (existing R75 / R141
+     *       carrier path).</li>
+     *   <li>{@link DataElement.Record} arm — admits unchanged on every verb (R75 Phase 2
+     *       {@code @service}-only path; the mutation-field classifier upstream already filters
+     *       Record-element shapes off the DML path).</li>
+     * </ul>
+     *
+     * <p>The verb-aware overload is intentionally a STRICT EXTENSION of the verbless walk: the
+     * positive-criterion shape check runs through {@link #tryResolveSingleRecordCarrier(String)},
+     * and the verb arm layers on top. Two callers ask the same admissibility question through
+     * the same gate; the validator (when it surfaces the diagnostic for SDL authors) reads
+     * through the verb-aware overload, not through a parallel kind-checking path. This closes
+     * the "two consumers evaluating the same predicate over a model field" smell the
+     * generation-thinking principle warns against.
+     *
+     * <p>Note on the {@code DataElement.Id} encoder: this overload does NOT resolve the
+     * NodeId encoder against the owning mutation's input {@code @table}. The encoder lookup
+     * needs the input {@code @table}, which is in scope at {@link FieldBuilder}'s mutation
+     * classifier (where {@code tia.inputTable()} is known) but not here. FieldBuilder resolves
+     * the encoder after the verb-aware overload returns {@code Ok}, constructs the per-field
+     * {@link ChildField.SingleRecordIdFieldFromReturning} carrier with the encoder, and writes
+     * it to {@code fieldRegistry}.
+     */
+    SingleRecordCarrierResolution tryResolveSingleRecordCarrier(String typeName, DmlKind kind) {
+        var base = tryResolveSingleRecordCarrier(typeName);
+        if (!(base instanceof SingleRecordCarrierResolution.Ok ok)) {
+            return base;
+        }
+        var dataElement = ok.shape().roles().stream()
+            .filter(r -> r instanceof CarrierFieldRole.DataChannel)
+            .map(r -> ((CarrierFieldRole.DataChannel) r).element())
+            .findFirst()
+            .orElseThrow();
+        return switch (dataElement) {
+            case DataElement.Id ignored -> {
+                if (kind == DmlKind.DELETE) {
+                    yield ok;
+                }
+                yield new SingleRecordCarrierResolution.Rejected(
+                    "single-record carrier '" + typeName + "' has data field of element type ID, "
+                    + "which is the PK-echo permit (post-image == primary key) and is admitted "
+                    + "only on @mutation(typeName: DELETE) carriers. On @mutation(typeName: "
+                    + kind + ") the post-image is richer; use a @table-element data field or a "
+                    + "@record-element data field instead.");
+            }
+            case DataElement.Table tableElement -> {
+                if (kind != DmlKind.DELETE) {
+                    yield ok;
+                }
+                var projection = classifyDeleteTableProjection(typeName, tableElement);
+                yield switch (projection) {
+                    case DeleteTableProjection.Admitted admitted -> ok;
+                    case DeleteTableProjection.Rejected rejected ->
+                        new SingleRecordCarrierResolution.Rejected(rejected.reason());
+                };
+            }
+            case DataElement.Record ignored -> ok;
+        };
+    }
+
+    /**
+     * Outcome of the DELETE carrier walk's per-field projection over a
+     * {@link DataElement.Table} element type (R156). Builder-internal sealed type, used by the
+     * verb-aware {@link #tryResolveSingleRecordCarrier(String, DmlKind)} overload to validate
+     * admissibility and by {@link FieldBuilder} to construct the per-field
+     * {@link ChildField.SingleRecordTableFieldFromReturning} carrier's projection list.
+     *
+     * <p>Two arms:
+     * <ul>
+     *   <li>{@link Admitted} — every element-type field classified into an admissible
+     *       {@link PerFieldOutcome} arm; the projection list contains the
+     *       per-field {@link PkResolution} carrier the emitter consumes.</li>
+     *   <li>{@link Rejected} — at least one element-type field classified into a rejection arm
+     *       ({@link PerFieldOutcome.NonPkNonNullable}, {@link PerFieldOutcome.ServiceField},
+     *       or {@link PerFieldOutcome.UnsupportedField}); the reason names the offending
+     *       fields and points authors at {@link DataElement.Id} as the recommended pattern.</li>
+     * </ul>
+     */
+    sealed interface DeleteTableProjection {
+        record Admitted(List<PkResolution> projection) implements DeleteTableProjection {}
+        record Rejected(String reason) implements DeleteTableProjection {}
+    }
+
+    /**
+     * R156 — DELETE carrier projection step. Walks the element SDL type's fields, classifies
+     * each into a {@link PerFieldOutcome} arm, and either rejects the whole carrier (any
+     * {@code NonPkNonNullable}, {@code ServiceField}, or {@code UnsupportedField} arm present)
+     * or projects the surviving outcomes to a narrow {@link PkResolution} list that rides on
+     * {@link ChildField.SingleRecordTableFieldFromReturning} to the emitter.
+     *
+     * <p>Single producer of {@code List<PkResolution>} by construction; consumers of the
+     * projection list rely on the rejection rule (the
+     * {@code mutation-delete-carrier.pk-resolution-projection-clean} load-bearing classifier
+     * check) being a hard reject and not a silent drop. Relaxing the rejection would break the
+     * emitter's exhaustive sealed switch over {@link PkResolution}'s two arms — the rejection
+     * arms cannot reach the emitter by type.
+     *
+     * <p>Consumes already-classified {@link ChildField} values from {@link #fieldRegistry};
+     * called from {@link FieldBuilder} during mutation classification, where every type's
+     * fields are guaranteed to be classified ahead of the Mutation root's field-classification
+     * pass.
+     */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "mutation-delete-carrier.pk-resolution-projection-clean",
+        description = "BuildContext.classifyDeleteTableProjection rejects DELETE @table-element "
+            + "projections on any PerFieldOutcome.NonPkNonNullable, ServiceField, or "
+            + "UnsupportedField arm, naming the offending field(s) in the diagnostic, before "
+            + "projecting to List<PkResolution>; consumers of the projection rely on the "
+            + "rejection arms being a hard reject and not a silent drop. Relaxing the gate "
+            + "breaks the emitter's exhaustive sealed switch over PkResolution's two arms.")
+    DeleteTableProjection classifyDeleteTableProjection(String carrierTypeName, DataElement.Table tableElement) {
+        String elementTypeName = tableElement.name();
+        var raw = schema.getType(elementTypeName);
+        if (!(raw instanceof GraphQLObjectType elementObj)) {
+            return new DeleteTableProjection.Rejected(
+                "DELETE carrier '" + carrierTypeName + "' element type '" + elementTypeName
+                + "' is not a GraphQL Object type; only @table-backed Object types can be projected");
+        }
+        var pkColumns = tableElement.table().primaryKeyColumns();
+        var pkSqlNames = pkColumns.stream().map(ColumnRef::sqlName).collect(Collectors.toSet());
+
+        var outcomes = new ArrayList<PerFieldOutcome>();
+        for (var fieldDef : elementObj.getFieldDefinitions()) {
+            var coords = FieldCoordinates.coordinates(elementTypeName, fieldDef.getName());
+            var classified = fieldRegistry.get(coords);
+            outcomes.add(classifyElementFieldForDeleteProjection(fieldDef, classified, pkSqlNames));
+        }
+
+        var nonPkNonNull = outcomes.stream()
+            .filter(o -> o instanceof PerFieldOutcome.NonPkNonNullable)
+            .map(PerFieldOutcome::fieldName)
+            .toList();
+        var serviceFields = outcomes.stream()
+            .filter(o -> o instanceof PerFieldOutcome.ServiceField)
+            .map(PerFieldOutcome::fieldName)
+            .toList();
+        var unsupported = outcomes.stream()
+            .filter(o -> o instanceof PerFieldOutcome.UnsupportedField)
+            .map(o -> {
+                var u = (PerFieldOutcome.UnsupportedField) o;
+                return u.fieldName() + " (" + u.leafKind() + ")";
+            })
+            .toList();
+
+        if (!nonPkNonNull.isEmpty() || !serviceFields.isEmpty() || !unsupported.isEmpty()) {
+            var msg = new StringBuilder();
+            msg.append("@mutation(typeName: DELETE) carrier '").append(carrierTypeName)
+                .append("': data field element type '").append(elementTypeName).append("' has field(s):");
+            if (!nonPkNonNull.isEmpty()) {
+                msg.append(" - ").append(String.join(", ", nonPkNonNull))
+                    .append(" resolving to non-primary-key columns and declared non-nullable "
+                        + "(after DELETE only the table's primary key can carry data; either make "
+                        + "them nullable or move them off the type);");
+            }
+            if (!serviceFields.isEmpty()) {
+                msg.append(" - ").append(String.join(", ", serviceFields))
+                    .append(" are @service-resolved (projecting a deleted SDL type through a "
+                        + "@service field is not supported on DELETE carriers — the service "
+                        + "would receive a PK-only Record at runtime and any non-PK source "
+                        + "param would silently produce null);");
+            }
+            if (!unsupported.isEmpty()) {
+                msg.append(" - ").append(String.join(", ", unsupported))
+                    .append(" are not resolvable from the PK-only RETURNING record (no follow-up "
+                        + "query runs against the deleted row);");
+            }
+            msg.append(" Prefer a DataElement.Id shape: a carrier field of type ID or [ID!] "
+                + "(with @nodeId either implicit by the input @table's @node registration or "
+                + "explicit on the field), which echoes the deleted primary keys without "
+                + "requiring a @table-element projection.");
+            return new DeleteTableProjection.Rejected(msg.toString());
+        }
+
+        var projection = outcomes.stream()
+            .map(o -> switch (o) {
+                case PerFieldOutcome.PkRead p ->
+                    (PkResolution) new PkResolution.PkRead(p.fieldName(), p.columns(), p.encode());
+                case PerFieldOutcome.NonPkNullable n ->
+                    (PkResolution) new PkResolution.NonPkNullable(n.fieldName());
+                case PerFieldOutcome.NonPkNonNullable ignored ->
+                    throw new AssertionError("rejected above");
+                case PerFieldOutcome.ServiceField ignored ->
+                    throw new AssertionError("rejected above");
+                case PerFieldOutcome.UnsupportedField ignored ->
+                    throw new AssertionError("rejected above");
+            })
+            .toList();
+        return new DeleteTableProjection.Admitted(projection);
+    }
+
+    /**
+     * Classify a single element-SDL-type field for the DELETE projection. Switches on the
+     * already-classified {@link ChildField} from {@link #fieldRegistry}; the four
+     * non-rejecting arms ({@code PkRead}, {@code NonPkNullable}) map to admissible projection
+     * cases, the two rejection arms ({@code NonPkNonNullable}, {@code ServiceField}) capture
+     * the offending shape, and {@code UnsupportedField} is the catch-all for any
+     * {@link GraphitronField} leaf the projection cannot resolve from a PK-only RETURNING
+     * record (table-bound child collections, computed fields, record-bound nested fields, etc.).
+     */
+    private PerFieldOutcome classifyElementFieldForDeleteProjection(
+            GraphQLFieldDefinition fieldDef, GraphitronField classified, Set<String> pkSqlNames) {
+        String fieldName = fieldDef.getName();
+        boolean fieldNullable = !(fieldDef.getType() instanceof graphql.schema.GraphQLNonNull);
+        if (classified == null) {
+            // No classification — treat as unsupported. Could happen if the element type is a
+            // PlainObjectType whose fields the schema walk left unclassified. Rejecting at the
+            // carrier walk is honest: the projection cannot resolve a field the classifier
+            // never typed.
+            return new PerFieldOutcome.UnsupportedField(fieldName, "unclassified");
+        }
+        return switch (classified) {
+            case ChildField.ColumnField cf -> {
+                boolean pkColumn = pkSqlNames.contains(cf.column().sqlName());
+                if (pkColumn) {
+                    Optional<HelperRef.Encode> encode = cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys nek
+                        ? Optional.of(nek.encodeMethod())
+                        : Optional.empty();
+                    yield new PerFieldOutcome.PkRead(fieldName, List.of(cf.column()), encode);
+                }
+                yield fieldNullable
+                    ? new PerFieldOutcome.NonPkNullable(fieldName)
+                    : new PerFieldOutcome.NonPkNonNullable(fieldName);
+            }
+            case ChildField.CompositeColumnField ccf -> {
+                boolean allPk = ccf.columns().stream().map(ColumnRef::sqlName).allMatch(pkSqlNames::contains);
+                if (allPk) {
+                    yield new PerFieldOutcome.PkRead(fieldName, ccf.columns(),
+                        Optional.of(ccf.compaction().encodeMethod()));
+                }
+                yield fieldNullable
+                    ? new PerFieldOutcome.NonPkNullable(fieldName)
+                    : new PerFieldOutcome.NonPkNonNullable(fieldName);
+            }
+            case ChildField.ColumnReferenceField crf -> {
+                // Terminal column lives on a joined target table; after DELETE no follow-up join
+                // can run. Treated as non-PK-resolvable regardless of whether the FK source
+                // column happens to be in the input @table's PK.
+                yield fieldNullable
+                    ? new PerFieldOutcome.NonPkNullable(fieldName)
+                    : new PerFieldOutcome.NonPkNonNullable(fieldName);
+            }
+            case ChildField.CompositeColumnReferenceField ignored -> fieldNullable
+                ? new PerFieldOutcome.NonPkNullable(fieldName)
+                : new PerFieldOutcome.NonPkNonNullable(fieldName);
+            case ChildField.ServiceTableField ignored -> new PerFieldOutcome.ServiceField(fieldName);
+            case ChildField.ServiceRecordField ignored -> new PerFieldOutcome.ServiceField(fieldName);
+            case GraphitronField.UnclassifiedField ignored ->
+                new PerFieldOutcome.UnsupportedField(fieldName, "unclassified");
+            default ->
+                new PerFieldOutcome.UnsupportedField(fieldName, classified.getClass().getSimpleName());
+        };
+    }
+
+    /**
      * Per-field carrier classifier outcome. Three arms:
      *
      * <ul>
@@ -590,46 +867,82 @@ class BuildContext {
 
         // The data field's element type is registered as TableBackedType (Phase 1 carrier) or a
         // record-backed ResultType with a non-null backing class (Phase 2 @service carrier).
-        // Plain SDL Objects promoted to PojoResultType.NoBacking have no class to match against
-        // a @service method's reflected return type, so they're rejected as elements (only
-        // admissible as the carrier itself). Anything else (Int, String, an interface/union the
-        // carrier walk does not know how to project) lands as no-permit-match.
+        // R156 adds the DataElement.Id arm: an ID-scalar carrier field for payload-returning
+        // DELETE. Plain SDL Objects promoted to PojoResultType.NoBacking have no class to match
+        // against a @service method's reflected return type, so they're rejected as elements
+        // (only admissible as the carrier itself). Anything else (Int, String, an
+        // interface/union the carrier walk does not know how to project) lands as
+        // no-permit-match.
         GraphitronType elementType = types.get(dataElementName);
         FieldWrapper dataWrapper = buildWrapper(dataField);
         DataElement dataElement;
+        boolean isIdElement = "ID".equals(dataElementName);
         if (elementType instanceof TableBackedType tbt) {
             dataElement = new DataElement.Table(dataElementName, tbt.table(), dataWrapper);
         } else if (elementType instanceof ResultType rt && rt.fqClassName() != null) {
             dataElement = new DataElement.Record(dataElementName, rt.fqClassName(), dataWrapper);
+        } else if (isIdElement) {
+            // R156 — DataElement.Id: ID-scalar carrier field. Wrapper must be singleton (ID/ID!)
+            // or list-of-non-null ([ID!]/[ID!]!); list-of-nullable ([ID]) rejects here.
+            // Connection wrappers reject as well (the DataElement.Id record's compact ctor would
+            // throw, surface as HardReject here for a clean diagnostic). Verb-restriction
+            // (DELETE-only) and encoder resolution against the owning mutation's input @table
+            // happen in the verb-aware tryResolveSingleRecordCarrier overload + FieldBuilder.
+            if (dataWrapper instanceof FieldWrapper.List list && list.itemNullable()) {
+                return new CarrierFieldClassification.HardReject(
+                    "single-record carrier field '" + dataFieldName + "' has element type 'ID' "
+                    + "with a list-of-nullable wrapper '[ID]'; payload-returning DELETE requires "
+                    + "either singleton (ID / ID!) or list-of-non-null ([ID!] / [ID!]!) — every "
+                    + "element of a successful DELETE response is the encoded PK of an "
+                    + "actually-deleted row, so the slot cannot be null");
+            }
+            if (dataWrapper instanceof FieldWrapper.Connection) {
+                return new CarrierFieldClassification.HardReject(
+                    "single-record carrier field '" + dataFieldName + "' has element type 'ID' "
+                    + "with a Connection wrapper; payload-returning DELETE requires either "
+                    + "singleton (ID / ID!) or list-of-non-null ([ID!] / [ID!]!)");
+            }
+            dataElement = new DataElement.Id(dataElementName, dataWrapper);
         } else {
             return new CarrierFieldClassification.NoPermit(
                 "carrier field '" + dataFieldName + "' (element '" + dataElementName
                 + "') resolves to no CarrierFieldRole permit; only DataChannel (one @table data "
-                + "field paired to the input @table) and ErrorChannelRole (R12 errors-shaped "
-                + "field) are admitted today. Adding support for '" + dataFieldName
+                + "field paired to the input @table, or one ID-scalar data field for "
+                + "payload-returning DELETE) and ErrorChannelRole (R12 errors-shaped field) are "
+                + "admitted today. Adding support for '" + dataFieldName
                 + "' requires a new CarrierFieldRole permit; file a roadmap item for the field "
                 + "shape.");
         }
 
         // The data field carries no graphitron-domain directive. Directives like @service,
-        // @sourceRow, @reference, @nodeId, @field, @asConnection, @splitQuery, and @externalField
+        // @sourceRow, @reference, @field, @asConnection, @splitQuery, and @externalField
         // signal a different fetcher contract than SingleRecordTableField's ResultRowWalk emit;
         // routing the data field through here would fight the field's intended classification.
         // Pure-metadata directives (@deprecated, user-defined custom directives without execution
         // semantics) are not on the list and pass through silently. Authors who need
         // graphitron-domain behaviour on the data field can opt back in with
         // @record(record: {className: ...}) explicitly.
-        Set<String> forbidden = Set.of(
-            DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_NODE_ID, DIR_FIELD,
-            DIR_AS_CONNECTION, DIR_SPLIT_QUERY, DIR_EXTERNAL_FIELD, DIR_CONDITION,
-            DIR_LOOKUP_KEY, DIR_NOT_GENERATED, DIR_TABLE_METHOD, DIR_DEFAULT_ORDER,
-            DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
+        //
+        // R156: @nodeId is permitted on DataElement.Id carrier fields (the explicit-encoder
+        // recognition form). The encoder's pinning to the owning mutation's input @table is
+        // verified later in FieldBuilder where the input @table is in scope; here we only
+        // accept the directive structurally.
+        Set<String> forbidden = isIdElement
+            ? Set.of(DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_FIELD,
+                DIR_AS_CONNECTION, DIR_SPLIT_QUERY, DIR_EXTERNAL_FIELD, DIR_CONDITION,
+                DIR_LOOKUP_KEY, DIR_NOT_GENERATED, DIR_TABLE_METHOD, DIR_DEFAULT_ORDER,
+                DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE)
+            : Set.of(DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_NODE_ID, DIR_FIELD,
+                DIR_AS_CONNECTION, DIR_SPLIT_QUERY, DIR_EXTERNAL_FIELD, DIR_CONDITION,
+                DIR_LOOKUP_KEY, DIR_NOT_GENERATED, DIR_TABLE_METHOD, DIR_DEFAULT_ORDER,
+                DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
         for (var applied : dataField.getAppliedDirectives()) {
             if (forbidden.contains(applied.getName())) {
                 return new CarrierFieldClassification.HardReject(
                     "single-record carrier field '" + dataFieldName + "' carries '@"
-                    + applied.getName() + "'; Phase 1 admits @table-element data fields without "
-                    + "graphitron-domain field-level directives");
+                    + applied.getName() + "'; admits @table-element / @record-element / "
+                    + "ID-element data fields without graphitron-domain field-level directives "
+                    + "(except @nodeId on ID-element fields for the R156 explicit-encoder form)");
             }
         }
 
