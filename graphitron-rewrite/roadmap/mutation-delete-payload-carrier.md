@@ -60,12 +60,20 @@ In scope:
   to carry a SDL `@table`-backed element type, but the response data fetcher
   resolves directly off the PK-only RETURNING `Record` rather than running a
   follow-up SELECT. The carrier walk classifies each field on the element SDL
-  type via a typed `PkResolution` projection and rejects on any
-  `NonPkNonNullable` or `ServiceField` arm. The projection is carried through
-  to the emitter (no re-derivation at emit time).
+  type into a typed `PkResolution` projection (sealed: `PkRead`,
+  `NonPkNullable`, `NonPkNonNullable`, `ServiceField`) and rejects on any
+  `NonPkNonNullable` or `ServiceField` arm. The projection rides on the new
+  per-field `ChildField.SingleRecordTableFieldFromReturning` carrier (no
+  re-derivation at emit time).
 - Both bulk and single via the existing wrapper cardinality dispatch on the
   carrier's data field: `MutationBulkDmlRecordField` for list-shaped data
   fields (R141), `MutationDmlRecordField` for singletons (R75 Phase 1).
+- Two new `ChildField` sealed siblings ; `SingleRecordIdFieldFromReturning`
+  (owns the `CallSiteCompaction.NodeIdEncodeKeys` for `DataElement.Id`) and
+  `SingleRecordTableFieldFromReturning` (owns the `List<PkResolution>` for
+  `DataElement.Table`) ; carry the DELETE-specific emission story per-field;
+  no DELETE-specific plumbing rides on `SingleRecordCarrierShape` or on
+  `DataElement.Table` / `DataElement.Record`.
 - Removes the unconditional DELETE-with-carrier rejection at
   `FieldBuilder.java:2689` entirely. The DELETE-admissibility decision moves
   into `tryResolveSingleRecordCarrier`, which now takes a `DmlKind` and
@@ -109,21 +117,39 @@ on the roadmap):
  * <p>The arm describes the element SDL shape only. The projection plan ; how
  * to turn the source {@code Record}'s PK columns into an encoded {@code ID}
  * value at runtime ; lives in a sibling {@link CallSiteCompaction.NodeIdEncodeKeys}
- * slot on the resolved carrier shape, the same slot every other NodeId-encoded
- * field uses (see {@code CallSiteCompaction.java}). Mixing the encoder
- * reference into the {@code DataElement.Id} record itself would conflate two
- * axes ; "what's the element shape" and "how to project it" ; and create a
- * parallel home for an encoder reference {@code CallSiteCompaction} already owns.
+ * slot on the per-field carrier (the new {@link ChildField.SingleRecordIdFieldFromReturning}
+ * sibling, §Runtime), the same slot every other NodeId-encoded field uses (see
+ * {@code CallSiteCompaction.java}). Mixing the encoder reference into the
+ * {@code DataElement.Id} record itself would conflate two axes ; "what's the
+ * element shape" and "how to project it" ; and create a parallel home for an
+ * encoder reference {@code CallSiteCompaction} already owns.
+ *
+ * <p>The compact constructor pins the admitted wrapper set to the two SDL
+ * shapes the carrier walk admits ({@code ID} / {@code ID!} singleton, or
+ * {@code [ID!]} / {@code [ID!]!} list-of-non-null). The classifier produces
+ * the SDL-level rejection on bad authoring; the compact constructor produces
+ * the same rejection on a programming-error construction (e.g. a future
+ * caller passing a list-of-nullable wrapper).
  */
-record Id(String name, FieldWrapper wrapper) implements DataElement {}
+record Id(String name, FieldWrapper wrapper) implements DataElement {
+    public Id {
+        if (!(wrapper.isSingleton() || (wrapper.isList() && wrapper.elementNonNull()))) {
+            throw new IllegalArgumentException(
+                "DataElement.Id wrapper must be singleton ID/ID! or list-of-non-null"
+                + " [ID!]/[ID!]!; got " + wrapper);
+        }
+    }
+}
 ```
 
 The encoder is resolved once at carrier-classify time (same lookup the bare-`ID`
-DELETE return path uses at `FieldBuilder.java:2732-2741`) and attached to the
-carrier shape via the existing `CallSiteCompaction.NodeIdEncodeKeys` slot. The
-data fetcher emission for `DataElement.Id` reads the compaction off the role,
-not off the element. Carriers whose input `@table` is not `@node`-backed reject
-with the same diagnostic as the bare-`ID` path.
+DELETE return path uses at `FieldBuilder.java:2732-2741`) and stored on the
+per-field `ChildField.SingleRecordIdFieldFromReturning` carrier that the
+classifier produces for the data field. The data fetcher emission for
+`DataElement.Id` reads the compaction off that per-field carrier, not off the
+element record and not off `SingleRecordCarrierShape`. Carriers whose input
+`@table` is not `@node`-backed reject with the same diagnostic as the
+bare-`ID` path.
 
 ### Carrier classifier admission for `DataElement.Id`
 
@@ -139,12 +165,18 @@ when:
    `@node`-backed and the recognised encoder pins to that table; or (explicit)
    the carrier field carries `@nodeId` and the directive's resolved encoder
    pins to the same input `@table`. In both cases the resolved encoder
-   attaches to the carrier shape via `CallSiteCompaction.NodeIdEncodeKeys`.
-4. The mutation kind is `DmlKind.DELETE`. INSERT / UPDATE / UPSERT carriers
-   reject `DataElement.Id` at classify time with the message "PK-echo
-   `DataElement.Id` is only valid on `@mutation(typeName: DELETE)` carriers;
-   on other verbs the response SELECT runs normally — use a `@table` element
-   type instead".
+   attaches to the per-field `ChildField.SingleRecordIdFieldFromReturning`
+   carrier via `CallSiteCompaction.NodeIdEncodeKeys`.
+4. The mutation kind is `DmlKind.DELETE`. `DataElement.Id` is the PK-echo
+   permit and commits the carrier to PK as the *entire* post-image; the only
+   verb whose post-image is the PK is DELETE. INSERT / UPDATE / UPSERT
+   carriers reject `DataElement.Id` at classify time with the message
+   "`DataElement.Id` is the PK-echo permit (post-image == primary key) and is
+   admitted only on `@mutation(typeName: DELETE)` carriers. On INSERT /
+   UPDATE / UPSERT the post-image is richer; use `DataElement.Table` or
+   `DataElement.Record` instead." The justification is permit-verb structural,
+   not emitter-mechanism: the rule lives in the type system because PK-echo
+   commits to a narrower post-image than the other verbs make available.
 
 The cardinality matrix (bulk × {Id, Table}, single × {Id, Table}) drops out
 of the existing carrier-data-field wrapper dispatch at `FieldBuilder.java:2707`:
@@ -156,18 +188,27 @@ singleton to `MutationDmlRecordField`. No new dispatch axis.
 For DELETE, the existing `DataElement.Table` arm continues to be admitted, but
 only when the carrier walk's per-field classification over the element SDL type
 produces an admissible projection. The classification is itself a typed,
-builder-internal sealed result that the carrier shape carries through to the
-emitter, rather than a binary admit/reject predicate that gets thrown away.
+builder-internal sealed result that the new `ChildField.SingleRecordTableFieldFromReturning`
+permit carries through to the emitter (see §Runtime for the carrier itself),
+rather than a binary admit/reject predicate that gets thrown away.
 
 ```java
 /**
  * Per-field classification produced by the DELETE carrier walk over a
  * {@link DataElement.Table} element type. Each field on the element SDL type
  * classifies into exactly one arm; the carrier rejects on the presence of any
- * {@link NonPkNonNullable} or {@link ServiceField} arm and otherwise carries
- * the full per-field projection forward to the data-fetcher emitter, which
- * consumes the projection to decide which fields read from the source
- * RETURNING {@code Record} and which resolve to {@code null}.
+ * {@link NonPkNonNullable} or {@link ServiceField} arm and otherwise hands the
+ * full per-field projection list to {@link ChildField.SingleRecordTableFieldFromReturning},
+ * whose emitter exhaustively switches on the arms to decide which fields read
+ * from the source RETURNING {@code Record} and which emit a constant-null
+ * fetcher.
+ *
+ * <p>The projection list rides on the per-field {@link ChildField} permit ; not on
+ * {@link SingleRecordCarrierShape} and not on {@link DataElement.Table} ; because
+ * it is data only the new DELETE-specific child carrier consumes. Placing it on the
+ * shape or on the element record would force every non-DELETE consumer of those
+ * sealed types to ignore a slot it has no story for, exactly the "narrow component
+ * types over broad interfaces" smell.
  *
  * <p>Builder-internal sealed projection (per the
  * {@code rewrite-design-principles.adoc} "Builder-internal sealed hierarchies
@@ -178,16 +219,24 @@ emitter, rather than a binary admit/reject predicate that gets thrown away.
 public sealed interface PkResolution {
     String fieldName();
 
-    /** Field maps directly to a PK column on the input @table. Resolves from the source Record. */
-    record PkColumn(String fieldName, jOOQField<?> column) implements PkResolution {}
+    /**
+     * Field resolves to a PK column set on the input @table; the resolver reads
+     * the column(s) off the source {@code Record}. Single-column PK: {@code columns}
+     * has size 1, {@code encode} is empty. Composite PK or {@code @nodeId}-over-PK
+     * (including the SDL {@code id} alias on a {@code @node}-backed element type
+     * whose backing PK is the input @table's PK): {@code columns} carries the PK
+     * column set in declaration order, {@code encode} carries the NodeId encoder.
+     *
+     * <p>The classifier produces this arm for plain {@code ColumnField} over PK,
+     * for {@code CompositeColumnField} via {@code @nodeId} over PK, and for the
+     * SDL {@code id}-alias case. The three SDL shapes share the same emitter
+     * dispatch (read column(s), optionally encode), so they share one arm. A
+     * future emitter that genuinely needs to split (e.g. a faster path for the
+     * single-column no-encode case) lifts at that point.
+     */
+    record PkRead(String fieldName, List<jOOQField<?>> columns, Optional<HelperRef.Encode> encode) implements PkResolution {}
 
-    /** Field is @nodeId over a composite PK column set. Resolves via the composite encoder. */
-    record PkComposite(String fieldName, List<jOOQField<?>> columns, HelperRef.Encode encode) implements PkResolution {}
-
-    /** Field is the SDL "id" alias on a @node-backed element type whose PK is the input @table's PK. */
-    record NodePkAlias(String fieldName, HelperRef.Encode encode) implements PkResolution {}
-
-    /** Field maps to a non-PK column. Nullable in SDL; runtime resolves to null. */
+    /** Field maps to a non-PK column. Nullable in SDL; emitter emits a constant-null fetcher. */
     record NonPkNullable(String fieldName) implements PkResolution {}
 
     /** Field maps to a non-PK column and is non-nullable in SDL. Carrier rejects. */
@@ -299,39 +348,63 @@ RETURNING inside a tight transaction"). No change to the RETURNING projection
 machinery is required: the carrier walk's data-channel element kind drives the
 post-RETURNING fetcher emission, not the RETURNING clause itself.
 
-The data fetcher splits by `DataElement` arm:
+The carrier walk produces two new sibling `ChildField` permits for the
+DELETE-with-carrier data field, one per `DataElement` arm. Each owns the data
+its emitter consumes; no DELETE-specific plumbing rides on
+`SingleRecordCarrierShape` or on `DataElement.Table`/`DataElement.Record`.
 
-- **`DataElement.Id`**: the data field's value is the encoded `ID` produced by
-  running the source PK `Record`'s PK columns through the
-  `CallSiteCompaction.NodeIdEncodeKeys` slot the carrier shape carries.
-  Single-shaped element wrapper emits `($T env) -> encode(record.get(pkCol))`;
-  composite PK uses the existing `CompositeColumnField` composite encoder
-  call (`FetcherEmitter.java:114-130`). Bulk-shaped wrappers iterate the
-  `Result<Record>` and map each row through the same encoder. No follow-up
-  SELECT.
-- **`DataElement.Table`**: the data field's value is the source PK `Record`
-  itself, presented to graphql-java as the parent record for the projected
-  element type's per-field traversal. Each field's resolution is decided by
-  the typed `PkResolution` projection the carrier shape carries: `PkColumn`,
-  `PkComposite`, and `NodePkAlias` arms emit normal column / encoder reads;
-  `NonPkNullable` arms emit a constant-`null` fetcher (carried as a per-field
-  flag on the source-key plumbing rather than re-derived from the SDL type).
+- **`ChildField.SingleRecordIdFieldFromReturning(name, encode, wrapper)`** ;
+  produced when the resolved `DataElement` is `Id`. Carries the
+  `CallSiteCompaction.NodeIdEncodeKeys` (the `encode` slot) and the SDL
+  wrapper. Emitter: read PK column(s) off the source `Record`, run them
+  through `encode`. Single-shaped wrapper emits
+  `($T env) -> encode(record.get(pkCol))`; composite PK reuses the existing
+  composite encoder call shape at `FetcherEmitter.java:114-130`. Bulk-shaped
+  wrappers iterate `Result<Record>` and map each row through the same encoder.
   No follow-up SELECT.
 
-The two arms share neither runtime mechanism, so the emit-site type forks
-sealed-switch-style: a new `ChildField.SingleRecordTableFieldFromReturning`
-holds the `DataElement.Table` DELETE emission, sibling to today's
-`ChildField.SingleRecordTableField` at `FetcherEmitter.java:60`. The two
-siblings encode genuinely different *invariants*, not different values of one
-knob: today's `SingleRecordTableField` carries the "follow-up SELECT outside
-the tx" invariant load-bearing for INSERT / UPDATE / UPSERT (jOOQ field errors
-during the read or nested traversal cannot undo the DML); the new sibling
-carries the opposite invariant ("no follow-up read at all; source IS the
-RETURNING record") load-bearing for DELETE (the row is gone, there is no SELECT
-to attempt). A discriminator on a single type would force every consumer to
-branch on it; the sealed sibling pushes the certainty into the type system.
-The existing `SingleRecordTableField` continues to handle INSERT / UPDATE /
-UPSERT carriers unchanged.
+- **`ChildField.SingleRecordTableFieldFromReturning(name, projection, wrapper)`** ;
+  produced when the resolved `DataElement` is `Table`. Carries the per-field
+  `List<PkResolution> projection` (the typed result of the §Narrowed
+  `DataElement.Table` walk). Emitter exhaustively switches on the projection's
+  arms:
+  - `PkRead` ; read column(s) off the source `Record`; if `encode` is present,
+    run the values through it (the SDL `id`-alias and composite-PK cases);
+    otherwise return the column value directly.
+  - `NonPkNullable` ; emit `($T env) -> null`. The constant-null fetcher is
+    not a parallel boolean; it is the direct emitter case for this arm of the
+    sealed switch.
+  - `NonPkNonNullable` and `ServiceField` are unreachable here by classifier
+    guarantee (the carrier walk rejects on either arm). The sealed switch's
+    exhaustiveness check produces an `IllegalStateException` ; "invariant
+    violated: carrier admitted with arm X" ; as a defence-in-depth on the
+    classifier-emitter contract; `LoadBearingGuaranteeAuditTest` pins the
+    contract.
+
+  No follow-up SELECT.
+
+The two new permits are sealed siblings of today's `ChildField.SingleRecordTableField`
+(at `FetcherEmitter.java:60`), not discriminator variants of it. The trio
+encodes three genuinely different invariants:
+
+- `SingleRecordTableField` ; "follow-up SELECT outside the tx," load-bearing for
+  INSERT / UPDATE / UPSERT carriers (jOOQ field errors during the read or
+  nested traversal cannot undo the DML).
+- `SingleRecordTableFieldFromReturning` ; "no follow-up read at all; source IS
+  the RETURNING record; per-field projection comes from the typed `PkResolution`
+  list," load-bearing for DELETE + `DataElement.Table` (the row is gone, there
+  is no SELECT to attempt).
+- `SingleRecordIdFieldFromReturning` ; "no follow-up read; element is the
+  encoded PK ID via `CallSiteCompaction.NodeIdEncodeKeys`," load-bearing for
+  DELETE + `DataElement.Id` (the entire post-image is the PK, the response
+  shape is the encoded scalar).
+
+A discriminator on a single type would force every consumer to branch on
+it; the sealed siblings push the certainty into the type system. Each per-field
+carrier owns the data its emitter consumes (`encode` on the `Id` sibling,
+`projection` on the `Table` sibling), mirroring the principle of parallel
+ownership the architecture review called for. The existing
+`SingleRecordTableField` is unchanged.
 
 The cardinality dispatch in the runtime mirrors the classify-time matrix:
 
@@ -407,10 +480,18 @@ the strict-reject decision.
 
 ## Tests
 
-- **L1 (model).** Compact-constructor invariants on `DataElement.Id`
-  (encoder non-null, wrapper accepted, name accepted). The existing
-  `SingleRecordCarrierShape` compact constructor needs no change: the new
-  arm composes through the sealed `DataElement` interface.
+- **L1 (model).**
+  - `DataElement.Id` compact-constructor rejects bad wrappers
+    (list-of-nullable, list-of-list, scalar non-`ID`-typed wrapper). Admits
+    singleton `ID` / `ID!` and `[ID!]` / `[ID!]!`.
+  - `PkResolution` arms admit construction with their documented slots; the
+    sealed root admits the four arms and no others (compiler-enforced).
+  - `ChildField.SingleRecordIdFieldFromReturning` and
+    `SingleRecordTableFieldFromReturning` compact-constructor invariants:
+    `encode` non-null on the `Id` sibling; `projection` non-null on the
+    `Table` sibling and rejects projections that include any
+    `NonPkNonNullable` or `ServiceField` arm (defence-in-depth on the
+    classifier contract).
 - **L3 (validator).** New parameterised case in
   `GraphitronSchemaBuilderTest.MutationDeletePayloadCarrierCase` covering the
   admission and rejection matrix:
@@ -420,7 +501,9 @@ the strict-reject decision.
   - single DELETE + `ID @nodeId` carrier field, explicit: admits.
   - bulk DELETE + `[Foo!]` carrier field, element type has only PK-resolvable
     non-nullable fields and nullable non-PK fields: admits; `PkResolution`
-    projection carries the per-field plan to the emitter.
+    projection rides on the produced
+    `ChildField.SingleRecordTableFieldFromReturning` and the assertion
+    inspects it.
   - bulk DELETE + `[Foo!]` carrier field, element type has a non-null non-PK
     column field: rejects with the documented diagnostic naming the field.
   - DELETE + `[Foo!]` carrier field, element type has a non-null FK reference
@@ -435,6 +518,16 @@ the strict-reject decision.
     rejects with the same diagnostic as today's bare-`ID` DELETE path.
   - DELETE + `[ID!] @nodeId` carrier field, `@nodeId` encoder pins to a
     different table than the input `@table`: rejects.
+- **L3 (audit).** A new `PkResolutionEmitterReachabilityTest` enumerates the
+  emitter's accepted `PkResolution` arms (the two "OK" arms: `PkRead`,
+  `NonPkNullable`) and fails if a new arm is added without an emitter case.
+  Paired with a fixture that constructs a `ServiceField`-arm classification
+  and asserts the carrier-walk rejection fires before any
+  `ChildField.SingleRecordTableFieldFromReturning` is constructed. The two
+  together close the classifier-emitter contract loop ; a future refactor
+  that lets a `ServiceField` slip past the carrier walk surfaces as either a
+  compile error (new arm without emitter case) or a test failure (rejection
+  no longer fires).
 - **L4 (pipeline).** `MutationDmlNodeIdClassificationTest` adds rows for
   the four admission cells of the cardinality × element matrix.
   Composite-PK admission row uses the R130 reproducer fixture (the
@@ -457,38 +550,58 @@ the strict-reject decision.
 
 - `DataElement.Id(String name, FieldWrapper wrapper)` is added to the sealed
   `DataElement` interface, axis-symmetric with `Table` and `Record`. The
-  resolved NodeId encoder lives on the carrier shape via
-  `CallSiteCompaction.NodeIdEncodeKeys`, not on the `DataElement.Id` record.
-  All consumers exhaustively switch over the three arms; the
+  record's compact constructor pins the admitted wrapper set (singleton
+  `ID`/`ID!` or list-of-non-null `[ID!]`/`[ID!]!`); the resolved NodeId
+  encoder lives on the per-field `ChildField.SingleRecordIdFieldFromReturning`
+  carrier via `CallSiteCompaction.NodeIdEncodeKeys`, not on the
+  `DataElement.Id` record and not on `SingleRecordCarrierShape`. All
+  consumers exhaustively switch over the three `DataElement` arms; the
   `CarrierFieldRoleCoverageTest` build-time audit is green.
-- `PkResolution` sealed interface added with arms `PkColumn`, `PkComposite`,
-  `NodePkAlias`, `NonPkNullable`, `NonPkNonNullable`, `ServiceField` per the
-  shape in §Narrowed `DataElement.Table` for DELETE. The
-  `SingleRecordCarrierShape` for a DELETE + `DataElement.Table` carrier
-  carries the per-field projection list as a slot on the shape.
+- `PkResolution` sealed interface added with four arms (`PkRead`,
+  `NonPkNullable`, `NonPkNonNullable`, `ServiceField`) per the shape in
+  §Narrowed `DataElement.Table` for DELETE. The projection list rides on the
+  per-field `ChildField.SingleRecordTableFieldFromReturning` carrier (not on
+  `SingleRecordCarrierShape`, not on `DataElement.Table`). The classifier
+  produces `PkRead` for plain `ColumnField`-over-PK, for
+  `CompositeColumnField` via `@nodeId` over PK, and for the SDL `id`-alias
+  case (one arm because the three share emitter dispatch).
 - `BuildContext.tryResolveSingleRecordCarrier` is `DmlKind`-aware and produces
   a typed result that already encodes DELETE-admissibility. The resolution
   admits `DataElement.Id` on DELETE per §Carrier classifier admission and
-  rejects on every non-DELETE verb. For `DataElement.Table` on DELETE, the
-  resolution computes the `PkResolution` projection and rejects on any
-  `NonPkNonNullable` or `ServiceField` arm.
+  rejects on every non-DELETE verb with the permit-verb invariant message.
+  For `DataElement.Table` on DELETE, the resolution computes the
+  `PkResolution` projection and rejects on any `NonPkNonNullable` or
+  `ServiceField` arm before constructing any `ChildField` carrier.
 - The unconditional DELETE-with-carrier rejection at
   `FieldBuilder.java:2689` is removed entirely. `FieldBuilder` consumes the
   typed `SingleRecordCarrierResolution` result without re-branching on
   `DmlKind`.
+- `PkResolutionEmitterReachabilityTest` enumerates the emitter's accepted
+  `PkResolution` arms and fails on additions without an emitter case; the
+  paired fixture asserts `ServiceField`-arm classifications are caught at
+  the carrier-walk gate before any `ChildField` carrier is constructed.
 - `MutationDmlRecordField` and `MutationBulkDmlRecordField` accept
   `DmlKind.DELETE` once the upstream classifier admits it; both compact
   constructors update their kind-set invariant accordingly.
-- A new `ChildField.SingleRecordTableFieldFromReturning` carries the "no
-  follow-up SELECT; source IS the RETURNING record" *invariant* for
-  DELETE + `DataElement.Table`, sealed-sibling to today's
-  `ChildField.SingleRecordTableField` which carries the opposite "follow-up
-  SELECT outside the tx" invariant for INSERT / UPDATE / UPSERT carriers.
-  The two siblings encode different invariants, not different values of one
-  knob; the existing `SingleRecordTableField` is unchanged.
+- Two new `ChildField` sealed siblings of today's `SingleRecordTableField`:
+  - `SingleRecordIdFieldFromReturning(name, encode, wrapper)` ; "no follow-up
+    read; element is the encoded PK ID via `CallSiteCompaction.NodeIdEncodeKeys`,"
+    load-bearing for DELETE + `DataElement.Id`.
+  - `SingleRecordTableFieldFromReturning(name, projection, wrapper)` ; "no
+    follow-up read; source IS the RETURNING record; per-field projection comes
+    from the typed `PkResolution` list," load-bearing for DELETE +
+    `DataElement.Table`.
+  The two siblings encode genuinely different invariants from today's
+  `SingleRecordTableField` ("follow-up SELECT outside the tx," load-bearing
+  for INSERT / UPDATE / UPSERT), not different values of one knob. The
+  existing `SingleRecordTableField` is unchanged. Each per-field carrier
+  owns the data its emitter consumes (`encode` on the `Id` sibling,
+  `projection` on the `Table` sibling).
 - The data-fetcher emitter for `SingleRecordTableFieldFromReturning` consumes
-  the per-field `PkResolution` projection off the carrier shape directly; it
-  does not re-walk the element SDL type to decide which fields go to null.
+  the per-field `PkResolution` projection off its own carrier directly; it
+  does not re-walk the element SDL type and does not consult a parallel boolean
+  to decide which fields emit `null` ; the `NonPkNullable` arm of the sealed
+  switch is the direct emitter case.
 - The DML emitter narrows RETURNING to PK columns on DELETE-with-carrier.
   For INSERT / UPDATE the existing RETURNING shape is unchanged.
 - Pipeline-tier and execution-tier coverage per §Tests is in place and green.
