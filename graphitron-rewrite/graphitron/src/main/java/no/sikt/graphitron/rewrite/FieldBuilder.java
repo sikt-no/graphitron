@@ -3130,6 +3130,72 @@ class FieldBuilder {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
+        // @tableMethod on a @record parent — DTO-parent shape, produces RecordTableMethodField.
+        // Fires BEFORE the @sourceRow branch because both directives may coexist (their roles
+        // are complementary: @sourceRow provides the batch-key lifter; @tableMethod provides the
+        // developer's static jOOQ table method). When @sourceRow is absent, the parent must be
+        // backed by a jOOQ TableRecord so the FK source-key can be auto-derived from the catalog.
+        if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
+            warnIfSplitQueryOnRecordParent(fieldDef, parentTypeName, name, location);
+            var tableMethodResolved = tableMethodResolver.resolve(parentTypeName, fieldDef, /*isRoot=*/false);
+            if (tableMethodResolved instanceof TableMethodDirectiveResolver.Resolved.Rejected r) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
+            }
+            var tmTb = (TableMethodDirectiveResolver.Resolved.TableBound) tableMethodResolved;
+            var tbReturn = tmTb.returnType();
+            String targetTableName = tbReturn.table().tableName();
+            String rawTypeName0 = baseTypeName(fieldDef);
+            String elementTypeName0 = ctx.isConnectionType(rawTypeName0)
+                ? ctx.connectionElementTypeName(rawTypeName0) : rawTypeName0;
+
+            SourceKey sourceKey;
+            LoaderRegistration loaderRegistration;
+            List<JoinStep> joinPath;
+            if (fieldDef.hasAppliedDirective(DIR_SOURCE_ROW)) {
+                var sr = sourceRowResolver.resolve(parentTypeName, fieldDef, parentResultType, elementTypeName0);
+                if (sr instanceof SourceRowDirectiveResolver.Resolved.Rejected rj) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
+                }
+                var ok = (SourceRowDirectiveResolver.Resolved.Ok) sr;
+                sourceKey = ok.sourceKey();
+                loaderRegistration = ok.loaderRegistration();
+                joinPath = ok.joinPath();
+            } else {
+                String parentSqlTableName = parentResultType instanceof GraphitronType.JooqTableRecordType jtr
+                        && jtr.table() != null
+                    ? jtr.table().tableName() : null;
+                var tmPath = ctx.parsePath(fieldDef, name, parentSqlTableName, targetTableName, buildWrapper(fieldDef).isList());
+                if (tmPath.hasError()) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tmPath.errorMessage()));
+                }
+                var fkSource = deriveFkRecordParentSource(tmPath.elements(), parentResultType, tbReturn);
+                if (fkSource == null) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                        "@tableMethod on a @record parent requires either a typed jOOQ TableRecord backing "
+                        + "(so the FK to the @tableMethod return-type table can be auto-derived from the catalog), "
+                        + "or @sourceRow(className: ..., method: ...) to lift the batch key manually. Parent '"
+                        + parentTypeName + "' has neither."));
+                }
+                sourceKey = fkSource.sourceKey();
+                loaderRegistration = fkSource.loaderRegistration();
+                joinPath = tmPath.elements();
+            }
+
+            if (!joinPath.isEmpty() && joinPath.getLast() instanceof JoinStep.FkJoin lastFk
+                && !lastFk.targetTable().tableName().equalsIgnoreCase(targetTableName)) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                    "@tableMethod @reference path: last hop lands on '" + lastFk.targetTable().tableName()
+                    + "' but @tableMethod's return type is bound to table '" + targetTableName + "'"));
+            }
+            var capturedJoinPath = joinPath;
+            var capturedSourceKey = sourceKey;
+            var capturedLoaderRegistration = loaderRegistration;
+            return buildMethodBackedWithChannel(tbReturn, tmTb.method(),
+                parentTypeName, name, location, fieldDef,
+                ch -> new ChildField.RecordTableMethodField(parentTypeName, name, location, tbReturn,
+                    capturedJoinPath, tmTb.method(), capturedSourceKey, capturedLoaderRegistration, ch));
+        }
+
         // @sourceRow is owned by its dedicated resolver from this point onward: the resolver
         // validates the parent shape, the directive payload, the lifter's signature, and the
         // @reference composition; non-table returns surface a directive-specific rejection here

@@ -92,6 +92,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.LookupTableField f       -> validateLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.SplitLookupTableField f  -> validateSplitLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableMethodField f        -> validateTableMethodField(f, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField f  -> validateRecordTableMethodField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField f     -> validateTableInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.InterfaceField f          -> validateInterfaceField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.UnionField f              -> validateUnionField(f, types, errors);
@@ -586,6 +587,10 @@ public class GraphitronSchemaValidator {
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }
     private void validateTableMethodField(no.sikt.graphitron.rewrite.model.ChildField.TableMethodField field, List<ValidationError> errors) {
+        validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
+        validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
+    }
+    private void validateRecordTableMethodField(no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField field, List<ValidationError> errors) {
         validateReferencePath(field.qualifiedName(), field.location(), field.joinPath(), errors);
         validateCardinality(field.qualifiedName(), field.location(), field.returnType().wrapper(), errors);
     }

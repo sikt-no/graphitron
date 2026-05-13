@@ -261,7 +261,14 @@ public class TypeFetcherGenerator {
                     "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented"
                     + " — requires JOIN-with-projection emission; rooted-at-parent fixture"
                     + " (parent_node + child_ref) is in nodeidfixture and ready to drive coverage",
-                    "nodeidreferencefield-join-projection-form"))
+                    "nodeidreferencefield-join-projection-form")),
+            Map.entry(ChildField.RecordTableMethodField.class,
+                deferredFor(ChildField.RecordTableMethodField.class,
+                    "RecordTableMethodField (child @tableMethod on @record parent) not yet implemented"
+                    + " — DTO-parent emit follows the RecordTableField DataLoader-keyed batch pattern"
+                    + " with the developer's static @tableMethod method substituted for the direct"
+                    + " table fetch; covered by R43 commit 5",
+                    "tablemethod-child-table-bound"))
         );
 
     private static Rejection.Deferred deferredFor(
@@ -433,6 +440,7 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.TableMethodField f              -> builder.addMethod(buildChildTableMethodFetcher(ctx, f, outputPackage));
+                case ChildField.RecordTableMethodField f        -> builder.addMethod(stub(f));
                 // SingleRecordTableField has no per-field fetcher method — its DataFetcher
                 // value is emitted inline by FetcherEmitter (env.getSource() typed cast +
                 // response SELECT outside the DML transaction). The wiring happens in

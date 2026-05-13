@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.test.jooq.tables.Actor;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
+import no.sikt.graphitron.rewrite.test.jooq.tables.Inventory;
 import no.sikt.graphitron.rewrite.test.jooq.tables.Language;
 
 /**
@@ -46,6 +47,11 @@ class TestTableMethodStub {
 
     /** Returns {@link Actor} — for {@code @tableMethod} on an {@code Actor} (or list/connection) return type. */
     public static Actor getActor() {
+        throw new UnsupportedOperationException();
+    }
+
+    /** Returns {@link Inventory} — for {@code @tableMethod} tests targeting Inventory (single-FK auto-derive cases on Film). */
+    public static Inventory getInventory() {
         throw new UnsupportedOperationException();
     }
 

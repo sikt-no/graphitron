@@ -6,7 +6,7 @@ bucket: stubs
 priority: 4
 theme: model-cleanup
 depends-on: []
-last-updated: 2026-05-13
+last-updated: 2026-05-14
 ---
 
 # Stub: child `@tableMethod` with table-bound return (`TableMethodField`)
@@ -36,9 +36,18 @@ Preparatory work landed on trunk (commits `a868125` + `46ed616`) and is recorded
 
 The execution-tier gap on commit 3 is closed. `TypeClassGenerator.collectRequiredProjectionColumns` (renamed from `collectSourceKeyColumns`) now also walks `ChildField.TableMethodField` and projects the single-hop `FkJoin`'s source-side columns into the parent SELECT regardless of the user's SDL selection. `TableMethodFieldPipelineTest` gained two assertions (auto-FK on `Inventory.film_id`, explicit-path on `Film.language_id`) using the shared `TypeSpecAssertions.appendsRequiredColumn` helper. `GraphQLQueryTest` gained two execution-tier cases that exercise the sakila fixtures end-to-end against PostgreSQL: `inventoryById_filmViaTableMethod_correlatesParentRowViaInjectedFkProjection` (auto-FK arm, three inventory rows each correlating to their matching Film by `inventory.film_id`) and `filmById_languageViaTableMethod_correlatesParentRowViaExplicitReferencePathFk` (explicit single-hop `@reference` path arm, films correlating to `Language` via `film.language_id`).
 
+### Commit 4 landed — `ChildField.RecordTableMethodField` (stubbed emit)
+
+The new sealed-permit `ChildField.RecordTableMethodField` carries `parentTypeName`, `name`, `location`, `ReturnTypeRef.TableBoundReturnType returnType`, `List<JoinStep> joinPath`, `MethodRef method`, `SourceKey sourceKey`, `LoaderRegistration loaderRegistration`, `Optional<ErrorChannel> errorChannel`. It implements `ChildField, MethodBackedField, BatchKeyField, WithErrorChannel` and wears `@DependsOnClassifierCheck("tablemethod-resolver-return-is-table-bound")` (the shared key with `TableMethodField`).
+
+`FieldBuilder.classifyChildFieldOnResultType` grew a new `@tableMethod` branch that fires before the `@sourceRow` branch (so both directives can coexist when the DTO parent needs an explicit lifter). Two arms: (a) `JooqTableRecordType` parent with a unique catalog FK to the `@tableMethod` return-type table auto-derives the `SourceKey` via the existing `deriveFkRecordParentSource` helper; (b) free-form DTO parent supplies `@sourceRow(className:, method:)` and the lifter-derived `SourceKey` flows out of `SourceRowDirectiveResolver`. The same last-hop-target check from the table-parent branch applies. A free-form DTO parent without `@sourceRow` and without FK metadata produces a structured `UnclassifiedField` AUTHOR_ERROR pointing the schema author at the three lift options.
+
+Emit stays stubbed: the dispatch arm in `TypeFetcherGenerator.generateTypeSpec` routes `RecordTableMethodField` through `stub(f)`, and a `STUBBED_VARIANTS` entry deferred against this same plan slug carries the user-facing reason. `GraphitronSchemaValidator` gained a sibling `validateRecordTableMethodField` arm mirroring the table-parent validator's reference-path + cardinality checks. `MappingsConstantNameDedup` rebuilds the new variant via its existing `WithErrorChannel` switch.
+
+Test coverage: a new `RecordTableMethodFieldCase` enum in `GraphitronSchemaBuilderTest` pins three classifier shapes (FK-auto-derive with implicit FK, FK-auto-derive with explicit `@reference` path, free-form-DTO rejection without `@sourceRow`); `VariantCoverageTest` confirms the new sealed leaf is represented.
+
 ### Remaining commits
 
-- **Commit 4 — New variant `ChildField.RecordTableMethodField` (stubbed emit).** Add the record, slot into sealed permits, wear `@DependsOnClassifierCheck("tablemethod-resolver-return-is-table-bound")`. Classifier extends to the DTO-parent branch (FK-auto-derive + `@sourceRow` arms); emit stays stubbed: the new variant joins `STUBBED_VARIANTS` with its own deferred slug.
 - **Commit 5 — DTO-parent emit.** Reuse the `RecordTableField` emit pattern (DataLoader-keyed batch) with the developer's static method call substituted for the direct table fetch. Move `RecordTableMethodField` to `IMPLEMENTED_LEAVES`; add DTO-parent pipeline + execution coverage.
 
 ## Plan

@@ -26,6 +26,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.SplitTableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableInterfaceField;
 import no.sikt.graphitron.rewrite.model.ChildField.TableMethodField;
+import no.sikt.graphitron.rewrite.model.ChildField.RecordTableMethodField;
 import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
@@ -2600,6 +2601,88 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(AccessorDerivedSourceCase.class)
     void accessorDerivedSourceClassification(AccessorDerivedSourceCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== RecordTableMethodField (R43 commit 4 — child @tableMethod on @record parent) =====
+
+    /**
+     * Classifier coverage for {@link RecordTableMethodField}: child {@code @tableMethod} on a
+     * {@code @record} (non-table) parent. Two admit arms (FK-auto-derive on a JooqTableRecord-
+     * backed parent + lifter-derived via {@code @sourceRow} on a free-form DTO parent) and one
+     * rejection (free-form DTO without {@code @sourceRow}). Emit stays stubbed at commit 4;
+     * end-to-end emit + execution coverage lands with commit 5.
+     */
+    enum RecordTableMethodFieldCase implements ClassificationCase {
+        JOOQ_TABLE_RECORD_PARENT_AUTO_FK(
+            "JooqTableRecordType @record parent + @tableMethod with single FK → RecordTableMethodField, auto-FK source-key",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+              inventories: [Inventory!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getInventory")
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (RecordTableMethodField) schema.field("FilmDetails", "inventories");
+                assertThat(f.joinPath()).hasSize(1);
+                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+                assertThat(f.sourceKey().cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+                assertThat(f.method().methodName()).isEqualTo("getInventory");
+            }),
+
+        JOOQ_TABLE_RECORD_PARENT_EXPLICIT_REFERENCE(
+            "JooqTableRecordType @record parent + @tableMethod + @reference(path:) → RecordTableMethodField with explicit FK path",
+            """
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+              language: Language
+                @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
+                @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (RecordTableMethodField) schema.field("FilmDetails", "language");
+                assertThat(f.joinPath()).hasSize(1);
+                assertThat(f.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(f.sourceKey().reader()).isInstanceOf(SourceKey.Reader.ColumnRead.class);
+            }),
+
+        FREE_FORM_PARENT_NO_SOURCEROW_REJECTED(
+            "Pojo parent (no FK metadata) + @tableMethod without @sourceRow → UnclassifiedField AUTHOR_ERROR pointing at the lift options",
+            """
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              inventories: [Inventory!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getInventory")
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("FilmDetails", "inventories");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("@tableMethod").contains("@sourceRow").contains("TableRecord");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        };
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        RecordTableMethodFieldCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(RecordTableMethodField.class); }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(RecordTableMethodFieldCase.class)
+    void recordTableMethodFieldClassification(RecordTableMethodFieldCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 
