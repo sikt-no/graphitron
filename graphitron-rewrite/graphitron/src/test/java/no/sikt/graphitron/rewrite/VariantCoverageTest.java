@@ -35,6 +35,11 @@ class VariantCoverageTest {
      * leaf should have a case showing the classifier lands there.
      */
     private static final Map<Class<?>, String> NO_CASE_REQUIRED = Map.of(
+        no.sikt.graphitron.rewrite.model.MutationField.MutationUpsertTableField.class,
+            "R144 retires UPSERT generation pending R145 (mutation-cardinality-safety-upsert); "
+            + "the classifier rejects every UPSERT mutation at MutationInputResolver, so no "
+            + "schema-reachable case lands on this leaf. Add a fresh case when R145 lifts the "
+            + "upstream rejection.",
         GraphitronType.JooqRecordType.class,
             "No plain jOOQ Record<?> (non-TableRecord) fixture class in the test classpath; "
             + "add a case when a suitable fixture is introduced.",

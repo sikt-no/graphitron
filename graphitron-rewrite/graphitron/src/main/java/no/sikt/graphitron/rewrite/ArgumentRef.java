@@ -2,11 +2,14 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
+import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.TableRef;
+
+import java.util.Set;
 
 import static java.util.Objects.requireNonNull;
 
@@ -217,15 +220,17 @@ public sealed interface ArgumentRef {
          * Used by composite-key lookups and by mutations.
          *
          * <p>{@code lookupKeyFields} / {@code setFields} are the typed partition of {@code fields}
-         * around {@code fieldBindings}: lookup-key-bound carriers in the first list, non-lookup-key
-         * carriers in the second. Both lists are sealed on
-         * {@link InputField.LookupKeyField} / {@link InputField.SetField} respectively (R130
-         * admitted-carrier set: {@code ColumnField}, {@code CompositeColumnField}); reference
-         * carriers stay outside the permits set. Construct via {@link #of} so the partition has
-         * a single derivation path.
+         * sourced from {@code DmlKind}-aware logic (R144): on UPDATE, {@code setFields} is exactly
+         * the input fields carrying {@code @value} (in SDL declaration order) and
+         * {@code lookupKeyFields} is the complement; on DELETE / INSERT, {@code setFields} is empty
+         * by classifier guarantee and every admissible input field flows into {@code lookupKeyFields}.
+         * Both lists are sealed on {@link InputField.LookupKeyField} / {@link InputField.SetField}
+         * respectively (R130 admitted-carrier set: {@code ColumnField},
+         * {@code CompositeColumnField}); reference carriers stay outside the permits set. Construct
+         * via {@link #of} so the partition has a single derivation path.
          *
          * <p>{@code fieldBindings} is {@code List<InputColumnBindingGroup>}: one group per
-         * {@code @lookupKey}-bearing input field. {@link InputColumnBindingGroup.MapGroup} for a
+         * WHERE-bound input field. {@link InputColumnBindingGroup.MapGroup} for a
          * {@code ColumnField} carrier, {@link InputColumnBindingGroup.DecodedRecordGroup} for a
          * {@code CompositeColumnField} carrier (the composite-PK NodeId case where decode runs
          * once per row at the arg layer into a {@code Record<N>}).
@@ -251,9 +256,23 @@ public sealed interface ArgumentRef {
             }
 
             /**
-             * Factory: derives {@code lookupKeyFields} and {@code setFields} from {@code fields}
-             * and {@code fieldBindings}. Use this rather than the canonical constructor so the
-             * partition is computed once, in the model.
+             * Factory: partitions {@code fields} into WHERE-side {@code lookupKeyFields} and
+             * assignment-side {@code setFields} from the verb {@code kind} and the set of
+             * {@code @value}-marked field names (R144).
+             *
+             * <ul>
+             *   <li>UPDATE: {@code setFields} is exactly the {@code @value}-marked admissible
+             *       carriers (in SDL declaration order); {@code lookupKeyFields} is the complement
+             *       (admissible carriers without {@code @value}).</li>
+             *   <li>DELETE / INSERT: {@code setFields} is empty; {@code lookupKeyFields} is every
+             *       admissible carrier. INSERT walks {@code fields()} directly for VALUES emit, so
+             *       an empty {@code setFields} is correct (audit key
+             *       {@code mutation-input.update-set-fields-equal-value-marked}).</li>
+             *   <li>UPSERT: refused upstream by {@code MutationInputResolver} under R144; the
+             *       factory is unreachable with this kind. Query-side ({@code kind == null}) takes
+             *       the same shape as DELETE: every admissible carrier in {@code lookupKeyFields},
+             *       empty {@code setFields}.</li>
+             * </ul>
              */
             public static TableInputArg of(
                 String name,
@@ -263,28 +282,30 @@ public sealed interface ArgumentRef {
                 TableRef inputTable,
                 List<InputColumnBindingGroup> fieldBindings,
                 Optional<ArgConditionRef> argCondition,
-                List<InputField> fields
+                List<InputField> fields,
+                DmlKind kind,
+                Set<String> valueMarkedNames
             ) {
-                var lookupNames = new java.util.HashSet<String>();
-                for (var g : fieldBindings) {
-                    switch (g) {
-                        case InputColumnBindingGroup.MapGroup mg -> {
-                            for (var b : mg.bindings()) lookupNames.add(b.fieldName());
-                        }
-                        case InputColumnBindingGroup.DecodedRecordGroup drg ->
-                            lookupNames.add(drg.sourceFieldName());
-                    }
+                List<InputField.LookupKeyField> lookupKeyFields;
+                List<InputField.SetField> setFields;
+                if (kind == DmlKind.UPDATE) {
+                    lookupKeyFields = fields.stream()
+                        .filter(f -> f instanceof InputField.LookupKeyField)
+                        .map(f -> (InputField.LookupKeyField) f)
+                        .filter(lk -> !valueMarkedNames.contains(((InputField) lk).name()))
+                        .toList();
+                    setFields = fields.stream()
+                        .filter(f -> f instanceof InputField.SetField)
+                        .map(f -> (InputField.SetField) f)
+                        .filter(sf -> valueMarkedNames.contains(((InputField) sf).name()))
+                        .toList();
+                } else {
+                    lookupKeyFields = fields.stream()
+                        .filter(f -> f instanceof InputField.LookupKeyField)
+                        .map(f -> (InputField.LookupKeyField) f)
+                        .toList();
+                    setFields = List.of();
                 }
-                var lookupKeyFields = fields.stream()
-                    .filter(f -> f instanceof InputField.LookupKeyField)
-                    .map(f -> (InputField.LookupKeyField) f)
-                    .filter(lk -> lookupNames.contains(((InputField) lk).name()))
-                    .toList();
-                var setFields = fields.stream()
-                    .filter(f -> f instanceof InputField.SetField)
-                    .map(f -> (InputField.SetField) f)
-                    .filter(sf -> !lookupNames.contains(((InputField) sf).name()))
-                    .toList();
                 return new TableInputArg(
                     name, typeName, nonNull, list, inputTable, fieldBindings,
                     argCondition, fields, lookupKeyFields, setFields);

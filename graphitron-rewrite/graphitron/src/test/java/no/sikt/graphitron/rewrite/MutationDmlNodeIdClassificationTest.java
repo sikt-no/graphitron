@@ -81,7 +81,7 @@ class MutationDmlNodeIdClassificationTest {
     }
 
     @Test
-    void nodeIdFieldInInput_withoutLookupKey_rejected() {
+    void nodeIdFieldInInput_withoutValueMarker_rejected() {
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
@@ -96,13 +96,11 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (UnclassifiedField) schema.field("Mutation", "updateBar");
-        // Bare @nodeId on an input infers typeName from the unique @table-matching object type
-        // (Bar). Post-R130, the composite-PK same-table @nodeId carrier (CompositeColumnField)
-        // is admitted on lookup-bearing verbs only as a @lookupKey field; without @lookupKey
-        // the carrier is rejected because the SET-side / INSERT-arm dispatch for composite-PK
-        // column writes is out of R130 scope.
+        // R144: every input field is a WHERE filter by default. UPDATE requires at least one
+        // @value field to define the SET clause; this input has none, so the classifier rejects
+        // with the new "no @value fields" diagnostic.
         assertThat(f.reason())
-            .contains("CompositeColumnField is admitted only as a @lookupKey field");
+            .contains("@mutation(typeName: UPDATE) has no @value fields to set");
     }
 
     @Test
@@ -116,7 +114,7 @@ class MutationDmlNodeIdClassificationTest {
                 name: String
             }
             input DeleteBarInput @table(name: "bar") {
-                id: ID! @nodeId @lookupKey
+                id: ID! @nodeId
             }
             type Query { x: String }
             type Mutation { deleteBar(in: DeleteBarInput!): ID @mutation(typeName: DELETE) }
@@ -146,8 +144,8 @@ class MutationDmlNodeIdClassificationTest {
                 name: String
             }
             input UpdateBarInput @table(name: "bar") {
-                id: ID! @nodeId @lookupKey
-                name: String
+                id: ID! @nodeId
+                name: String @value
             }
             type Query { x: String }
             type Mutation { updateBar(in: UpdateBarInput!): ID @mutation(typeName: UPDATE) }
@@ -164,27 +162,26 @@ class MutationDmlNodeIdClassificationTest {
     }
 
     @Test
-    void compositePkNodeIdLookupKey_upsert_admitted() {
+    void compositePkNodeId_upsert_rejected_underR144() {
+        // R144 refuses UPSERT outright. The Deferred rejection carries R145's slug
+        // (mutation-cardinality-safety-upsert), which designs the conflict-target uniqueness
+        // and bulk-cardinality story before re-admitting UPSERT.
         var schema = TestSchemaHelper.buildSchema("""
             type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
                 id: ID! @nodeId
                 name: String
             }
             input UpsertBarInput @table(name: "bar") {
-                id: ID! @nodeId @lookupKey
-                name: String
+                id: ID! @nodeId
+                name: String @value
             }
             type Query { x: String }
             type Mutation { upsertBar(in: UpsertBarInput!): ID @mutation(typeName: UPSERT) }
             """, NODEID_CTX);
 
-        var f = (MutationField.MutationUpsertTableField) schema.field("Mutation", "upsertBar");
-        // ON-CONFLICT key list comes from the decoded record's target columns.
-        var conflictCols = f.tableInputArg().fieldBindings().stream()
-            .flatMap(g -> g.targetColumns().stream())
-            .map(c -> c.sqlName())
-            .toList();
-        assertThat(conflictCols).containsExactly("id_1", "id_2");
+        var f = (UnclassifiedField) schema.field("Mutation", "upsertBar");
+        assertThat(f.reason())
+            .contains("@mutation(typeName: UPSERT) is not supported under the R144");
     }
 
     @Test
@@ -219,7 +216,7 @@ class MutationDmlNodeIdClassificationTest {
                 id: ID! @nodeId
             }
             input DeleteBazInput @table(name: "baz") {
-                id: ID! @nodeId @lookupKey
+                id: ID! @nodeId
             }
             type Query { x: String }
             type Mutation { deleteBaz(in: DeleteBazInput!): ID @mutation(typeName: DELETE) }

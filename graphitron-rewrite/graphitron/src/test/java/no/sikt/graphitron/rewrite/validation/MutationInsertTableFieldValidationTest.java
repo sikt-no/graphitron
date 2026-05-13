@@ -33,7 +33,9 @@ class MutationInsertTableFieldValidationTest {
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     List.of(),
                     Optional.empty(),
-                    List.of()),
+                    List.of(),
+                    no.sikt.graphitron.rewrite.model.DmlKind.INSERT,
+                    java.util.Set.of()),
                 Optional.empty()),
             List.of());
 

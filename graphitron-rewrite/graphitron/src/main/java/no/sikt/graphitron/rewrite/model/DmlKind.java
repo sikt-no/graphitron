@@ -13,12 +13,21 @@ package no.sikt.graphitron.rewrite.model;
 public enum DmlKind {
     INSERT, UPDATE, DELETE, UPSERT;
 
-    /** UPDATE / DELETE / UPSERT require at least one {@code @lookupKey} binding. */
-    public boolean requiresLookupKey() {
-        return this != INSERT;
-    }
-    /** UPDATE / DELETE require all PK columns to be covered by {@code @lookupKey} bindings. */
+    /**
+     * UPDATE / DELETE require all WHERE-side filter columns to cover the input
+     * {@code @table}'s primary key (R144). UPSERT is refused upstream by
+     * {@code MutationInputResolver}; INSERT has no WHERE clause to cover.
+     */
     public boolean requiresPkCoverage() {
         return this == UPDATE || this == DELETE;
+    }
+
+    /**
+     * UPDATE accepts {@code @value} on input fields to partition them from the WHERE-side
+     * filters. DELETE / INSERT reject {@code @value} as a structural error (DELETE has no
+     * assignment clause; INSERT does not partition).
+     */
+    public boolean acceptsValueMarker() {
+        return this == UPDATE;
     }
 }

@@ -3732,6 +3732,7 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145 (mutation-cardinality-safety-upsert); the upsertFilm fixture no longer exists.")
     void upsertFilm_updateBranch_writesAndReturnsProjectedFilm() {
         // UPSERT-on-existing-row: emitter runs `dsl.insertInto(film, ...).values(...)
         // .onConflict(film_id).doUpdate().set(title, ...).set(language_id, ...)
@@ -3771,6 +3772,7 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilm_insertBranch_writesAndReturnsProjectedFilm() {
         // UPSERT-on-novel-row: the supplied filmId does not exist, so the INSERT branch fires.
         // Pick an id well above the Sakila max (~1000) to avoid collisions with other tests.
@@ -3858,6 +3860,7 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilm_omittedFieldOnUpdateBranchLeavesColumnAlone() {
         // R77 Phase C: UPSERT update-branch shares UPDATE's dynamic SET. When the conflict
         // branch fires, the SET map walks `in`'s present-key set with `DSL.excluded(col)` as
@@ -3903,6 +3906,7 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilm_omittedFieldOnInsertBranchUsesColumnDefault() {
         // R77 Phase B + C: when the upsert hits the INSERT branch (no conflict), per-cell
         // containsKey-gated DEFAULT applies. Sakila's `rental_duration` is NOT NULL DEFAULT 3.
@@ -3955,6 +3959,7 @@ class GraphQLQueryTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilm_onlyLookupKeyFields_raisesError() {
         // Single-row analogue of upsertFilms_onlyLookupKeyFields_raisesError. FilmUpsertInput
         // has non-lookup setFields (title, languageId, rentalDuration), but the input map

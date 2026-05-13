@@ -45,7 +45,9 @@ class MutationDeleteTableFieldValidationTest {
                                 new ColumnRef("film_id", "FILM_ID", "java.lang.Long"),
                                 new CallSiteExtraction.Direct())))),
                     Optional.empty(),
-                    List.of()),
+                    List.of(),
+                    no.sikt.graphitron.rewrite.model.DmlKind.DELETE,
+                    java.util.Set.of()),
                 Optional.empty()),
             List.of());
 

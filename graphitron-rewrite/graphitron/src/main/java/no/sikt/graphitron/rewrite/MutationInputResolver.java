@@ -19,8 +19,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_MULTI_ROW;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_VALUE;
 
 /**
  * Resolves the DML {@code @mutation} concern: walks a mutation field's arguments to find the
@@ -134,6 +138,19 @@ final class MutationInputResolver {
     }
 
     /**
+     * Reads {@code @mutation(multiRow:)} from the field's directive application. Defaults to
+     * {@code false} when the argument is absent or set to {@code null}.
+     */
+    static boolean parseMultiRow(GraphQLFieldDefinition fieldDef) {
+        var dir = fieldDef.getAppliedDirective(DIR_MUTATION);
+        if (dir == null) return false;
+        var arg = dir.getArgument(ARG_MULTI_ROW);
+        if (arg == null) return false;
+        Object value = arg.getValue();
+        return value instanceof Boolean b && b;
+    }
+
+    /**
      * Validates Invariant #14 — DML {@code @mutation} return type must be {@code ID},
      * {@code [ID]}, {@code T}, {@code [T]}, or a single {@code @record} payload (where
      * {@code T} is a {@code @table} type) — and Invariant #15 — when the {@code @table}
@@ -244,17 +261,56 @@ final class MutationInputResolver {
 
     /**
      * Walks a DML {@code @mutation} field's arguments and resolves the single {@code @table}
-     * input argument that drives the statement. Enforces the structural mutation invariants on the
-     * input shape: exactly one {@code TableInputArg}, no other argument shapes, no listed
-     * input, no {@code @condition} on the {@code @table} arg, only {@code ColumnField} entries
-     * inside the input type, and (for UPDATE / DELETE / UPSERT) at least one {@code @lookupKey}
-     * binding plus (for UPDATE / DELETE) full PK coverage and (for UPDATE) at least one
-     * non-{@code @lookupKey} field.
+     * input argument that drives the statement. R144 enforces:
+     *
+     * <ul>
+     *   <li>UPSERT is refused outright (deferred to R145).</li>
+     *   <li>{@code multiRow: true} is rejected on INSERT (no WHERE clause to multiply over).</li>
+     *   <li>Per-input-field structural checks: only {@link InputField.ColumnField} and
+     *       {@link InputField.CompositeColumnField} are admitted; reference carriers and nesting
+     *       fields stay deferred. {@code @lookupKey} on input fields rejects via the classifier's
+     *       retirement diagnostic (handled upstream).</li>
+     *   <li>{@code @value}-on-DELETE / {@code @value}-on-INSERT and
+     *       {@code @value}-with-{@code @condition} on the same field are mutually exclusive
+     *       structural rejections.</li>
+     *   <li>DELETE / UPDATE: WHERE-side filter columns must cover the table's primary key, unless
+     *       the mutation carries {@code multiRow: true}.</li>
+     *   <li>UPDATE: at least one {@code @value}-marked field; not every field {@code @value}-marked.</li>
+     *   <li>{@code multiRow: true} requires at least one filter column on DELETE / UPDATE (empty
+     *       input rejects: would broadcast across the entire table).</li>
+     * </ul>
      *
      * @param kind one of {@link DmlKind#INSERT} / {@link DmlKind#UPDATE} /
      *             {@link DmlKind#DELETE} / {@link DmlKind#UPSERT}
      */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "mutation-input.where-columns-cover-pk",
+        description = "On DELETE / UPDATE without `multiRow: true`, the union of contributed "
+            + "filter columns (ColumnField.column() and CompositeColumnField.columns()) covers "
+            + "the input @table's primary key. Lets the lookup-WHERE emitter assume the WHERE "
+            + "clause matches at most one row per input row.")
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "mutation-input.update-set-fields-equal-value-marked",
+        description = "On DmlKind.UPDATE, tia.setFields() is exactly the set of input fields "
+            + "carrying @value (in SDL declaration order). On DmlKind.DELETE / DmlKind.INSERT, "
+            + "tia.setFields() is empty. Lets each SET-walking emitter trust the partition "
+            + "source without checking kind or directive presence.")
     Resolved resolveInput(GraphQLFieldDefinition fieldDef, DmlKind kind) {
+        if (kind == DmlKind.UPSERT) {
+            return new Resolved.Rejected(Rejection.deferred(
+                "@mutation(typeName: UPSERT) is not supported under the R144 cardinality-safety "
+                + "regime; the conflict-target's uniqueness and the bulk-UPSERT cardinality story "
+                + "are designed under R145 (mutation-cardinality-safety-upsert).",
+                "mutation-cardinality-safety-upsert"));
+        }
+
+        boolean multiRow = parseMultiRow(fieldDef);
+        if (multiRow && kind == DmlKind.INSERT) {
+            return new Resolved.Rejected(Rejection.structural(
+                "@mutation(typeName: INSERT) does not accept multiRow: true; INSERT has no WHERE "
+                + "clause to multiply over"));
+        }
+
         var args = fieldDef.getArguments();
         ArgumentRef.InputTypeArg.TableInputArg foundTia = null;
         String multipleArgsError = null;
@@ -271,9 +327,55 @@ final class MutationInputResolver {
                         + "' of type '" + argTypeName + "'"));
             }
 
+            // Resolve the SDL input object so per-field @value / @condition co-occurrence can be
+            // checked. Same lookup the binding walk uses.
+            var sdlInputType = ctx.schema.getType(argTypeName);
+            if (!(sdlInputType instanceof graphql.schema.GraphQLInputObjectType iot)) {
+                return new Resolved.Rejected(Rejection.structural(
+                    "@mutation input '" + argTypeName + "' did not resolve as an InputObject in the schema"));
+            }
+
+            // Validate directive presence per verb. @value rejects on DELETE / INSERT;
+            // @lookupKey on any input field rejects with the retirement diagnostic (R144);
+            // @value + @condition on the same field is mutually exclusive.
+            var valueMarkedNames = new java.util.LinkedHashSet<String>();
+            for (var sdlField : iot.getFieldDefinitions()) {
+                boolean hasValue = sdlField.hasAppliedDirective(DIR_VALUE);
+                boolean hasLookupKey = sdlField.hasAppliedDirective(DIR_LOOKUP_KEY);
+                boolean hasCondition = sdlField.hasAppliedDirective(DIR_CONDITION);
+                if (hasLookupKey) {
+                    return new Resolved.Rejected(Rejection.structural(
+                        "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
+                        + "': @lookupKey on a mutation input field is no longer supported (R144); "
+                        + "remove it (the field is a filter by default), or replace it with "
+                        + "@value on UPDATE value fields"));
+                }
+                if (hasValue) {
+                    if (!kind.acceptsValueMarker()) {
+                        String suffix = kind == DmlKind.DELETE
+                            ? "DELETE has no assignment clause"
+                            : "INSERT does not partition its input fields";
+                        return new Resolved.Rejected(Rejection.structural(
+                            "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
+                            + "': @value is not valid on @mutation(typeName: " + kind + ") inputs; " + suffix));
+                    }
+                    if (hasCondition) {
+                        return new Resolved.Rejected(Rejection.structural(
+                            "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
+                            + "': @value and @condition on the same input field are mutually exclusive"));
+                    }
+                    valueMarkedNames.add(sdlField.getName());
+                }
+            }
+
             var bindingErrors = new java.util.ArrayList<String>();
             List<InputColumnBindingGroup> bindings =
-                enumMapping.buildLookupBindings(tit, arg, fieldDef, argName, bindingErrors);
+                enumMapping.buildLookupBindings(tit, arg, fieldDef, argName, bindingErrors, valueMarkedNames);
+            // INSERT walks tia.fields() directly for VALUES emission and never reads
+            // tia.fieldBindings(); the binding set is structurally empty.
+            if (kind == DmlKind.INSERT) {
+                bindings = List.of();
+            }
             if (!bindingErrors.isEmpty()) {
                 return new Resolved.Rejected(Rejection.structural(String.join("; ", bindingErrors)));
             }
@@ -285,7 +387,8 @@ final class MutationInputResolver {
                     { return new Resolved.Rejected(Rejection.structural(r.message())); }
             }
             var tia = ArgumentRef.InputTypeArg.TableInputArg.of(
-                argName, argTypeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
+                argName, argTypeName, nonNull, list, tit.table(), bindings, argCondition,
+                tit.inputFields(), kind, valueMarkedNames);
 
             if (foundTia != null) {
                 multipleArgsError = "@mutation field has more than one @table input argument";
@@ -303,39 +406,20 @@ final class MutationInputResolver {
         if (foundTia.argCondition().isPresent()) {
             return new Resolved.Rejected(Rejection.structural("@condition on a @mutation field argument is not supported"));
         }
-        // Index @lookupKey-bearing field names from the resolved bindings so the per-field check
-        // can dispatch on (carrier × isLookupKey × verb). One InputColumnBindingGroup per
-        // @lookupKey-bearing input field: MapGroup carries one or more MapBindings (each named
-        // by an input-field name); DecodedRecordGroup names its source input field directly.
-        var lookupKeyFieldNames = new java.util.HashSet<String>();
-        for (var g : foundTia.fieldBindings()) {
-            switch (g) {
-                case InputColumnBindingGroup.MapGroup mg -> {
-                    for (var b : mg.bindings()) lookupKeyFieldNames.add(b.fieldName());
-                }
-                case InputColumnBindingGroup.DecodedRecordGroup drg ->
-                    lookupKeyFieldNames.add(drg.sourceFieldName());
-            }
-        }
 
         for (var f : foundTia.fields()) {
             // ColumnField admission rule:
             //   Direct extraction  → always admitted (canonical mutation-input shape).
             //   NodeIdDecodeKeys   → admitted (R130): single-PK NodeId-decoded column write.
-            //                        Lookup-WHERE / INSERT-side value reads dispatch on the
-            //                        extraction at emit time (Phase 3).
             if (f instanceof InputField.ColumnField) {
                 continue;
             }
-            // CompositeColumnField is admitted only on lookup-bearing verbs as a @lookupKey
-            // field. INSERT / non-@lookupKey-position is carved out (R130 spec): structurally
-            // valid but easy to misuse with auto-generated PKs; lifting waits for a forcing-
-            // function schema. Lookup-bearing verbs (DELETE/UPDATE/UPSERT) accept the carrier
-            // when it bears @lookupKey because the emitter consumes the DecodedRecordGroup;
-            // a CompositeColumnField in non-@lookupKey position would require the emitter to
-            // write N PK columns from a decoded record on the SET / INSERT-arm side, which
-            // is out of R130's scope.
-            if (f instanceof InputField.CompositeColumnField ccf) {
+            // R144 lifts the R130 carve-out: CompositeColumnField is now admissible on every
+            // non-UPSERT verb regardless of @value position. The directive question "filter or
+            // value?" is answered by @value presence, not by carrier shape. R130's INSERT carve-
+            // out stays in place (composite-PK INSERT shape is architecturally rare; lifting
+            // waits for a forcing-function schema).
+            if (f instanceof InputField.CompositeColumnField) {
                 if (kind == DmlKind.INSERT) {
                     return new Resolved.Rejected(Rejection.deferred(
                         "@mutation input '" + foundTia.typeName() + "' field '" + f.name()
@@ -345,20 +429,11 @@ final class MutationInputResolver {
                         + " if you really need it.",
                         ""));
                 }
-                if (!lookupKeyFieldNames.contains(ccf.name())) {
-                    return new Resolved.Rejected(Rejection.deferred(
-                        "@mutation input '" + foundTia.typeName() + "' field '" + f.name()
-                        + "': CompositeColumnField is admitted only as a @lookupKey field on"
-                        + " lookup-bearing @mutation verbs (DELETE/UPDATE/UPSERT). Apply"
-                        + " @lookupKey to this field, or route through individual @field"
-                        + " columns if a composite-PK column write was intended.",
-                        ""));
-                }
                 continue;
             }
-            // Reference carriers (ColumnReferenceField / CompositeColumnReferenceField) stay
-            // deferred: no forcing-function schema reaches them today, and re-admission
-            // tracks R24's NodeIdReferenceField join-projection work.
+            // Reference carriers and nesting fields stay deferred: no forcing-function schema
+            // reaches them today, and re-admission tracks R24's NodeIdReferenceField
+            // join-projection work / R128's compound-entity-mutations territory.
             String reason = switch (f) {
                 case InputField.NestingField nf -> "nested input types in @mutation fields are not yet supported";
                 case InputField.ColumnReferenceField crf ->
@@ -367,9 +442,6 @@ final class MutationInputResolver {
                 case InputField.CompositeColumnReferenceField ccrf ->
                     "@reference / FK-target @nodeId in @mutation inputs is not yet supported;"
                     + " tracked in R24's scope when a forcing-function schema appears";
-                // ColumnField / CompositeColumnField are admitted above; this default exists
-                // because the sealed sub-interfaces LookupKeyField / SetField widen the surface
-                // pattern even though every leaf is reachable through the named arms.
                 default -> "input field shape " + f.getClass().getSimpleName() + " is not yet supported";
             };
             Rejection rej = (f instanceof InputField.ColumnReferenceField
@@ -381,15 +453,41 @@ final class MutationInputResolver {
             return new Resolved.Rejected(rej);
         }
 
-        if (kind.requiresLookupKey() && foundTia.fieldBindings().isEmpty()) {
-            return new Resolved.Rejected(Rejection.structural("@mutation(typeName: " + kind + ") requires at least one @lookupKey field in the input type"));
+        // Admissible-carrier count: ColumnField + CompositeColumnField (the LookupKeyField /
+        // SetField permits). DELETE / UPDATE require at least one such carrier; INSERT needs it
+        // too because an empty INSERT VALUES list is meaningless.
+        long admissibleCount = foundTia.fields().stream()
+            .filter(f -> f instanceof InputField.ColumnField || f instanceof InputField.CompositeColumnField)
+            .count();
+
+        // multiRow: true does not authorise an empty-input mutation that would broadcast across
+        // the entire table.
+        if (multiRow && admissibleCount == 0) {
+            return new Resolved.Rejected(Rejection.structural(
+                "@mutation(typeName: " + kind + ") with multiRow: true must declare at least one "
+                + "filter column on its @table input; an empty input would broadcast across the "
+                + "entire table"));
         }
 
-        if (kind == DmlKind.UPDATE && foundTia.setFields().isEmpty()) {
-            return new Resolved.Rejected(Rejection.structural("@mutation(typeName: UPDATE) has no non-@lookupKey fields to set"));
+        if (kind == DmlKind.UPDATE) {
+            if (foundTia.setFields().isEmpty()) {
+                return new Resolved.Rejected(Rejection.structural(
+                    "@mutation(typeName: UPDATE) has no @value fields to set; mark at least one "
+                    + "input field with @value to define the SET clause"));
+            }
+            if (foundTia.lookupKeyFields().isEmpty()) {
+                return new Resolved.Rejected(Rejection.structural(
+                    "@mutation(typeName: UPDATE) has no filter fields (every input field is "
+                    + "@value-marked); UPDATE without a WHERE clause would update every row"));
+            }
         }
 
-        if (kind.requiresPkCoverage()) {
+        if (kind == DmlKind.DELETE && admissibleCount == 0) {
+            return new Resolved.Rejected(Rejection.structural(
+                "@mutation(typeName: DELETE) has no admissible filter fields on the @table input"));
+        }
+
+        if (kind.requiresPkCoverage() && !multiRow) {
             var pkColumns = ctx.catalog.findPkColumns(foundTia.inputTable().tableName());
             if (!pkColumns.isEmpty()) {
                 var boundSqlNames = foundTia.fieldBindings().stream()
@@ -402,8 +500,10 @@ final class MutationInputResolver {
                     .toList();
                 if (!missing.isEmpty()) {
                     return new Resolved.Rejected(Rejection.structural("@mutation(typeName: " + kind
-                            + ") @lookupKey fields do not cover all PK column(s); missing: "
-                            + String.join(", ", missing)));
+                            + ") filter columns do not cover all PK column(s); missing: "
+                            + String.join(", ", missing)
+                            + ". Add the missing column(s) to the @table input, or opt into "
+                            + "broadcast semantics with multiRow: true on the @mutation directive."));
                 }
             }
         }

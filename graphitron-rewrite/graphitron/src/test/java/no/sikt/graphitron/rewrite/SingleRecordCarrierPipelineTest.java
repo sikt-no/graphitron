@@ -68,7 +68,7 @@ class SingleRecordCarrierPipelineTest {
         var mutField = schema.field("Mutation", mutationName(DmlKind.UPSERT));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains("UPSERT", "R145", "deferred");
+        assertThat(reason).contains("UPSERT", "R145", "not supported");
     }
 
     @ParameterizedTest
@@ -92,7 +92,7 @@ class SingleRecordCarrierPipelineTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE", "UPSERT"})
+    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void carrier_singleDataField_dataFieldClassifiesWithCardinalityOne(DmlKind kind) {
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload { film: Film }"));
 
@@ -105,7 +105,7 @@ class SingleRecordCarrierPipelineTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE", "UPSERT"})
+    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void carrier_atRecordWithNullClassName_classifiesAsMutationDmlRecordField(DmlKind kind) {
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload @record { film: Film }"));
         assertThat(schema.field("Mutation", mutationName(kind)))
@@ -285,7 +285,7 @@ class SingleRecordCarrierPipelineTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE", "UPSERT"})
+    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void carrier_dataTableMismatchesInputTable_rejectsAtClassifier(DmlKind kind) {
         // The data field's @table is `actor`, but the mutation's input @table is `film` —
         // the load-bearing mutation-dml-record-field.data-table-equals-input-table check rejects.
@@ -314,7 +314,7 @@ class SingleRecordCarrierPipelineTest {
     // ===== Direct-@table two-step emit pin =====
 
     @ParameterizedTest
-    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE", "UPSERT"})
+    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void directReturn_dmlFetcher_emitsTwoStepShape(DmlKind kind) {
         // Direct-@table-return DML mutations migrate to the two-step shape uniformly with the
         // carrier path: PK-only RETURNING inside dsl.transactionResult(...), follow-up SELECT
@@ -361,13 +361,12 @@ class SingleRecordCarrierPipelineTest {
     }
 
     private static String directReturnInputBody(DmlKind kind) {
-        // Direct-@table returns can use single inputs uniformly here; the two-step pin only
-        // cares about the emit shape, not the input cardinality.
+        // R144: filter-by-default for DELETE/UPDATE; @value marks SET-clause columns on UPDATE.
         return switch (kind) {
             case INSERT -> "title: String";
-            case UPDATE -> "filmId: Int! @field(name: \"film_id\") @lookupKey, title: String";
-            case DELETE -> "filmId: Int! @field(name: \"film_id\") @lookupKey";
-            case UPSERT -> "filmId: Int! @field(name: \"film_id\") @lookupKey, title: String";
+            case UPDATE -> "filmId: Int! @field(name: \"film_id\"), title: String @value";
+            case DELETE -> "filmId: Int! @field(name: \"film_id\")";
+            case UPSERT -> "filmId: Int! @field(name: \"film_id\"), title: String @value";
         };
     }
 
@@ -439,7 +438,7 @@ class SingleRecordCarrierPipelineTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE", "UPSERT"})
+    @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void carrier_recordElement_dmlMutationRejectsAtClassifier(DmlKind kind) {
         // Phase 2 keeps @mutation (DML) restricted to @table-element data. A record-element
         // carrier (DataElement.Record) on a DML mutation would require a "DML row → domain
@@ -499,9 +498,9 @@ class SingleRecordCarrierPipelineTest {
     private static String inputBody(DmlKind kind) {
         return switch (kind) {
             case INSERT -> "title: String";
-            case UPDATE -> "filmId: Int! @field(name: \"film_id\") @lookupKey, title: String";
-            case DELETE -> "filmId: Int! @field(name: \"film_id\") @lookupKey";
-            case UPSERT -> "filmId: Int! @field(name: \"film_id\") @lookupKey, title: String";
+            case UPDATE -> "filmId: Int! @field(name: \"film_id\"), title: String @value";
+            case DELETE -> "filmId: Int! @field(name: \"film_id\")";
+            case UPSERT -> "filmId: Int! @field(name: \"film_id\"), title: String @value";
         };
     }
 

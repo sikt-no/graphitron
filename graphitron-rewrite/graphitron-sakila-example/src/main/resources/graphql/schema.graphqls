@@ -773,8 +773,8 @@ type FilmInlineBundle {
 # @lookupKey scalars. The generator builds a VALUES(idx, film_id, actor_id) derived table
 # and joins on the full composite key, preserving caller input order.
 input FilmActorKey @table(name: "film_actor") {
-    filmId:  Int! @field(name: "film_id")  @lookupKey
-    actorId: Int! @field(name: "actor_id") @lookupKey
+    filmId:  Int! @field(name: "film_id")
+    actorId: Int! @field(name: "actor_id")
 }
 
 type FilmActor implements Node @table(name: "film_actor") @node {
@@ -1111,44 +1111,38 @@ input FilmCreateInput @table(name: "film") {
     rentalDuration: Int     @field(name: "rental_duration")
 }
 
-# R22 Phase 4 fixture: minimal UPDATE input. `filmId` is the @lookupKey (covers the single-column
-# PK); `title` is the SET-clause field. Invariant #4 requires at least one non-@lookupKey field.
+# R22 Phase 4 fixture: minimal UPDATE input. `filmId` defaults to the WHERE filter
+# (PK-covering, R144's filter-by-default rule); `title` and `description` carry `@value`
+# to land in the SET clause. R144 requires at least one `@value` field on UPDATE.
 input FilmUpdateInput @table(name: "film") {
-    filmId:      Int!    @field(name: "film_id") @lookupKey
-    title:       String! @field(name: "title")
-    # R77 Phase C: optional non-@lookupKey field used by the missing-vs-null
-    # execution tests on single-row UPDATE. Sakila's `description` is a nullable
-    # `text` column: omitting drops it from the SET clause (PATCH semantics);
-    # explicit null binds typed null (writes SQL NULL).
-    description: String  @field(name: "description")
+    filmId:      Int!    @field(name: "film_id")
+    title:       String! @field(name: "title") @value
+    # R77 Phase C: optional `@value` field used by the missing-vs-null execution tests
+    # on single-row UPDATE. Sakila's `description` is a nullable `text` column: omitting
+    # drops it from the SET clause (PATCH semantics); explicit null binds typed null
+    # (writes SQL NULL).
+    description: String  @field(name: "description") @value
 }
 
-# R22 Phase 5 fixture: minimal UPSERT input. `filmId` is the ON CONFLICT key; `title` and
-# `languageId` carry through to both the INSERT branch (column list) and the UPDATE branch
-# (SET clause). UPSERT is exempt from Invariant #4's non-@lookupKey-required gate (an
-# upsert with no SET-clause fields is `INSERT ... ON CONFLICT DO NOTHING`, a legitimate shape).
-input FilmUpsertInput @table(name: "film") {
-    filmId:         Int!    @field(name: "film_id") @lookupKey
-    title:          String! @field(name: "title")
-    languageId:     Int!    @field(name: "language_id")
-    # R77 Phase C: optional NOT-NULL-DEFAULT field. On the INSERT branch, omitting
-    # it lets `DEFAULT` land via Phase B's containsKey-gated cell emit. On the
-    # UPDATE branch, omitting it drops the column from `DO UPDATE SET` entirely
-    # (PATCH semantics), preserving the existing row's value rather than
-    # overwriting it. Type is nullable in GraphQL to preserve the absent-vs-null
-    # distinction; the column is NOT NULL with DEFAULT 3 in Sakila.
-    rentalDuration: Int     @field(name: "rental_duration")
-}
-
-# R77 Phase F fixture: minimal DELETE input. `filmId` carries the @lookupKey;
-# the bulk-DELETE arm emits `DSL.row(film_id).in(in.stream().map(row -> DSL.row(...)).toList())`,
-# locking the row-tuple `IN` shape for execution-tier coverage. Sakila has no
-# single-row DELETE mutation today; this surface is the first DELETE test fixture.
+# R77 Phase F fixture: minimal DELETE input. `filmId` is a WHERE filter by default
+# (R144's filter-by-default rule covers the single-column PK). The bulk-DELETE arm
+# emits `DSL.row(film_id).in(in.stream().map(row -> DSL.row(...)).toList())`, locking
+# the row-tuple `IN` shape for execution-tier coverage.
 input FilmDeleteInput @table(name: "film") {
-    filmId: Int! @field(name: "film_id") @lookupKey
+    filmId: Int! @field(name: "film_id")
 }
 
-# R130 execution-tier fixture: composite-PK @nodeId-decoded @lookupKey on a @mutation
+# R144 execution-tier fixture: a multiRow DELETE that broadcasts across films sharing
+# a release_year. The filter column is non-PK; without `multiRow: true` on the
+# surrounding @mutation directive, R144's PK-coverage check would reject the schema.
+# `multiRow: true` opts into the broadcast: a single input row can affect many database
+# rows. The execution-tier proof inserts N films sharing one release_year, calls the
+# mutation with one input row carrying that year, and asserts |affected rows| > 1.
+input FilmReleaseYearDeleteInput @table(name: "film") {
+    releaseYear: Int! @field(name: "release_year")
+}
+
+# R130 execution-tier fixture: composite-PK @nodeId-decoded filter on a @mutation
 # DELETE input. The headline forcing function shape — `slettRegelverksamling`-shaped
 # DELETE of a composite-PK row keyed by its opaque NodeId. Classifies as
 # InputField.CompositeColumnField; the resolver builds one InputColumnBindingGroup.DecodedRecordGroup
@@ -1159,7 +1153,7 @@ input FilmDeleteInput @table(name: "film") {
 # Bulk variant exercises buildBulkLookupRowIn's block-lambda form (one decode per row
 # inside the stream lambda).
 input DeleteFilmActorByNodeIdInput @table(name: "film_actor") {
-    id: ID! @nodeId(typeName: "FilmActor") @lookupKey
+    id: ID! @nodeId(typeName: "FilmActor")
 }
 
 # R130 execution-tier fixture: single-PK @node type whose PK column (`id`) is a
@@ -1206,22 +1200,26 @@ type Mutation {
     # R22 Phase 4: UPDATE emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.update(film).set(title, val).where(film_id.eq(val)).returningResult(<$fields>).fetchOne(r -> r)`.
     updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
-    # R22 Phase 5: UPSERT emitter with TableBoundReturnType return. The fetcher emits
-    # `dsl.insertInto(film, ...).values(...).onConflict(film_id).doUpdate().set(...)
-    #  .returningResult(<$fields>).fetchOne(r -> r)`. Generated method runtime-guards against
-    # the Oracle dialect (jOOQ silently translates ON CONFLICT to MERGE).
-    upsertFilm(in: FilmUpsertInput!): Film @mutation(typeName: UPSERT)
+    # R22 Phase 5 (UPSERT) retired under R144's cardinality-safety regime; tracked in R145
+    # (mutation-cardinality-safety-upsert), which designs the conflict-target uniqueness
+    # and bulk-cardinality story before re-admitting UPSERT.
 
     # R77 Phase F: bulk DML mutations. Each takes a list of @table inputs and dispatches
     # the per-verb bulk arm in TypeFetcherGenerator (INSERT: valuesOfRows + per-cell
     # containsKey dispatch; UPDATE: VALUES join with uniform-shape, no-set-fields, and
-    # duplicate-tuple guards; UPSERT: valuesOfRows + dynamic doUpdate SET; DELETE:
-    # row-tuple IN). Return shapes deliberately mix [Film!]! (ProjectedList) and
-    # [ID!]! (EncodedList) to cover both terminator arms.
+    # duplicate-tuple guards; DELETE: row-tuple IN). Return shapes deliberately mix
+    # [Film!]! (ProjectedList) and [ID!]! (EncodedList) to cover both terminator arms.
+    # UPSERT retired under R144 (see above).
     createFilms(in: [FilmCreateInput!]!): [Film!]! @mutation(typeName: INSERT)
     updateFilms(in: [FilmUpdateInput!]!): [Film!]! @mutation(typeName: UPDATE)
-    upsertFilms(in: [FilmUpsertInput!]!): [Film!]! @mutation(typeName: UPSERT)
     deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE)
+
+    # R144 execution-tier proof of the multiRow opt-out. Filter column is non-PK
+    # (release_year); a single input row can affect many database rows. The
+    # response shape is [ID!]! to keep the execution test focused on the
+    # WHERE-broadcast semantics rather than payload assembly.
+    deleteFilmsByReleaseYear(in: [FilmReleaseYearDeleteInput!]!): [ID!]!
+        @mutation(typeName: DELETE, multiRow: true)
 
     # R130 execution-tier surfaces. Single-row and bulk DELETE keyed by a composite-PK
     # @nodeId-decoded carrier. The single-row form drives buildLookupWhereSingleRow's
@@ -1253,7 +1251,7 @@ type Mutation {
     # [ID!]! for that surface.
     createFilmPayload(in: FilmCreateInput!): FilmPayload @mutation(typeName: INSERT)
     updateFilmPayload(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE)
-    upsertFilmPayload(in: FilmUpsertInput!): FilmPayload @mutation(typeName: UPSERT)
+    # upsertFilmPayload retired under R144 (UPSERT lifts via R145).
 
     # R141: bulk-input single-carrier list-data-field DML mutations. The classifier routes the
     # bulk-input + list-shaped @table-element data field case to MutationBulkDmlRecordField; the
