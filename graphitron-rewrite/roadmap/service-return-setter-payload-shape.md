@@ -1,7 +1,7 @@
 ---
 id: R154
 title: Admit setter-based mutable payload shape on @service returns
-status: Spec
+status: Ready
 bucket: architecture
 priority: 6
 theme: service

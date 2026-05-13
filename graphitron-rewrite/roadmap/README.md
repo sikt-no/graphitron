@@ -17,9 +17,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | In Progress | 2026-05-13 | [plan](tablemethod-child-table-bound.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
-| `R154` | Admit setter-based mutable payload shape on @service returns | Spec | 2026-05-13 | [plan](service-return-setter-payload-shape.md) |
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
+| `R154` | Admit setter-based mutable payload shape on @service returns | Ready | 2026-05-13 | [plan](service-return-setter-payload-shape.md) |
 | `R144` | Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with multiRow: | In Review | 2026-05-13 | [plan](mutation-cardinality-safety-default.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec |  | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
@@ -127,7 +127,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
 - `R137` [**@service method return-type wrapper composition (Optional / CompletableFuture / Mono / DataFetcherResult)**](service-wrapper-composition.md) — Backlog, architecture
-- `R154` [**Admit setter-based mutable payload shape on @service returns**](service-return-setter-payload-shape.md) — Spec, architecture
+- `R154` [**Admit setter-based mutable payload shape on @service returns**](service-return-setter-payload-shape.md) — Ready, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [typed-context-value-registry](typed-context-value-registry.md)
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
