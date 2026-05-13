@@ -498,12 +498,17 @@ new test coverage) shipped in one cycle. Reviewer cross-references:
 - Pipeline-tier coverage: new `R144_*` rows on
   `GraphitronSchemaBuilderTest.MutationDmlCase` exercise PK-coverage
   admission and rejection, `multiRow:` admission, `@value`-on-DELETE
-  rejection, and `multiRow:`-on-INSERT rejection. The "empty input with
-  `multiRow:`" row is omitted because constructing an SDL fixture with
-  zero admissible carriers requires a non-trivial nested-only shape
-  that drifts from the rejection under test; the rejection still fires
-  at the resolver and the `admissibleCount == 0` branch is exercised by
-  the DELETE-admissible-count rejection row.
+  rejection, `multiRow:`-on-INSERT rejection, and
+  `@value`-with-`@condition` mutual-exclusion. The Spec's
+  "empty input with `multiRow:`" and "DELETE with zero admissible
+  carriers" rejection bullets shipped as unreachable defensive checks
+  (graphql-java rejects empty input types at parse with
+  `"InputObjectType ... must define one or more fields"`, and the
+  per-field loop in `resolveInput` rejects every non-admissible field
+  shape before the admissible-count check). Both branches were
+  removed per the project's "no error handling for scenarios that
+  can't happen" rule; a Javadoc note on `resolveInput` records the
+  parser-level guarantee they rely on.
 - Execution-tier proof:
   `DmlBulkMutationsExecutionTest.deleteFilmsByReleaseYear_multiRowBroadcastsAcrossInputCardinality`
   inserts three films sharing one `release_year`, runs the
