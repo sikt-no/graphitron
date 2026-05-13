@@ -42,13 +42,15 @@ public List<RegelverksamlingRecord> opprettRegelverksamling(List<OpprettRegelver
 
 ### Parser
 
-A new sealed `FieldNameRef.{BareName | UpstreamRoot}` carries the resolved directive value. The parser arm:
+Sigil parsing is interposed at the one site that admits it, not at every directive read. A new helper `argFieldNameRef(field, DIR_FIELD, ARG_NAME)` returns `Optional<FieldNameRef>` where `FieldNameRef` is a sealed `{BareName(String value) | UpstreamRoot}`:
 
-- `@field(name: "$source")` parses to `FieldNameRef.UpstreamRoot`.
-- Any other value parses to `FieldNameRef.BareName(value)`.
+- `@field(name: "$source")` produces `FieldNameRef.UpstreamRoot`.
+- Any non-`$`-prefixed value produces `FieldNameRef.BareName(value)`.
 - Any `$`-prefixed value other than exactly `$source` rejects at parse time with `"Unknown sigil '$X'; allowed: $source"`.
 
-The parser lives at the existing `argString(field, DIR_FIELD, ARG_NAME)` read sites in `BuildContext`, `FieldBuilder`, `TypeBuilder`, `EnumMappingResolver`, and `GraphitronSchemaBuilder`. Today nine call sites consume the raw String; they migrate to consume the sealed `FieldNameRef`. Six of those sites (`EnumMappingResolver` x2, `TypeBuilder.328`, `FieldBuilder.1097`, `FieldBuilder.3280`, `FieldBuilder.3300`, `FieldBuilder.4331`, `BuildContext.1385`) are bare-name-only and reject `UpstreamRoot` with `"$source is not defined at this site"`. The classifier site for carrier-payload data fields (in `GraphitronSchemaBuilder.registerCarrierDataField` and the `BuildContext.tryResolveSingleRecordCarrier` walk) is the one that admits `UpstreamRoot`.
+The helper is called from the one site that admits `UpstreamRoot`: the carrier-payload data field classifier in `GraphitronSchemaBuilder.registerCarrierDataField` and the `BuildContext.tryResolveSingleRecordCarrier` walk.
+
+The other eight existing `argString(field, DIR_FIELD, ARG_NAME)` call sites (`EnumMappingResolver` x2, `TypeBuilder.328`, `FieldBuilder.1097`, `FieldBuilder.3280`, `FieldBuilder.3300`, `FieldBuilder.4331`, `BuildContext.1385`) are not changed. Those sites do not learn about sigils. A schema author who writes `@field(name: "$source")` at one of them surfaces today's existing "no such accessor / column / enum value" rejection unchanged, on the literal string `$source`. R159 does not add eight mechanical "I never accepted sigils" arms; the sites that never accepted sigils stay structurally identical to today, and the principle "Directives carry only what the SDL author needs to say" applies: the site already disambiguates whether sigils are meaningful.
 
 ### Classifier model output
 
@@ -56,32 +58,41 @@ The classifier emits the same model arm for `@field(name: "$source")` and for th
 
 Concrete shape: `CarrierFieldRole.DataChannel` gains a sealed sub-permit `Binding.{NamedAccessor(String name, JavaType type) | UpstreamRoot(JavaType type)}`. The current bare-name name-match case produces `NamedAccessor`; the current bare-name type-match-fallback case and `@field(name: "$source")` both produce `UpstreamRoot`. R158's reader-variant work consumes `UpstreamRoot` directly.
 
+**Bare-name fallback retro-classification.** Every site that today reaches `tryResolveSingleRecordCarrier`'s type-match fallback now classifies as `UpstreamRoot`, not `NamedAccessor`. The schema author's syntax is unchanged; the *classified model arm* under the existing bare-name resolution flips for those fixtures. Generator output and runtime behavior are unchanged because no emitter today branches on the `NamedAccessor` vs. `UpstreamRoot` distinction at this site (R158 is the first consumer). The pipeline regression test asserts the new classified shape, not "unchanged."
+
 ### Sites where `$source` is defined
 
-`$source` is defined at:
+The defined-at predicate is derived from R157's shipped `TypeBackingShape` projection on the field's parent, plus the carrier-payload data field admit.
 
-- A carrier-payload data field on a `@service`-backed producer (the producer's reflected return value).
-- A child field of a `@table`-backed parent (the bound jOOQ record).
-- A child field of a `@record`-backed parent (the bound domain object).
-- A child field of a `@service` or `@tableMethod` parent (the method's reflected return).
+`$source` is defined at a field `F` of parent `P` iff one of:
 
-`$source` is **not** defined at:
+- `F` is a carrier-payload data field on a `@service`-backed producer (the producer's reflected return value binds at `F`'s site). This is the R158 admit.
+- `P` classifies as `TypeBackingShape.RecordBacking` (`@record` parent: the bound domain object).
+- `P` classifies as `TypeBackingShape.PojoBacking` (the bound POJO).
+- `P` classifies as `TypeBackingShape.JooqRecordBacking` (a `@service` / `@tableMethod` reflected return that surfaces as a jOOQ record).
+- `P` classifies as `TypeBackingShape.TableBacking` (`@table` parent: the bound jOOQ record).
+- `P` is an interface whose implementing types all classify as one of the above (backed-interface admit, derived from the projection rather than enumerated). The Java upstream binds at the implementer-resolved type; `$source` is well-typed at the interface site by lub.
 
-- Query, Mutation, and Subscription root fields.
-- Plain (unbacked) interface members.
-- `@error` type fields.
-- `@enum` and `@scalar` types.
+`$source` is **not** defined at any `P` classifying as `TypeBackingShape.NoBacking.*`, including:
 
-`@field(name: "$source")` at a site not in the defined list rejects at classify time with `"$source is not defined at this site"`. The undefined-site rejection is the same load-bearing classifier check (`field-source-sigil.upstream-type-match`) producing a typed `Rejection` rather than an admit.
+- Query, Mutation, and Subscription root fields (`NoBacking.RootOperation`).
+- Plain (unbacked) interface members (`NoBacking.UnbackedInterface`).
+- `@error` type fields (`NoBacking.ErrorType`).
+- `@enum` and `@scalar` types (these don't surface as parents in the projection but the carrier walk rejects them upstream).
+
+A `@splitQuery` child resolves through the projection like any other child: the parent's `TypeBackingShape` determines admit. R159 does not special-case it.
+
+`@field(name: "$source")` at an undefined site rejects at classify time with `"$source is not defined at this site"`. The undefined-site rejection is pinned by the `field-source-sigil.site-defined` load-bearing key.
 
 ### Type matching
 
-`@field(name: "$source")` binds the upstream Java value to the SDL field. The classifier checks the source's Java type against the SDL field's element type:
+`@field(name: "$source")` binds the upstream Java value to the SDL field. The classifier checks the source's Java type against the SDL field's element type by the following predicate (authoritative; the existing `tryResolveSingleRecordCarrier` type-match fallback is refactored to call this predicate, so the carrier walk and the explicit sigil share one implementation):
 
 - **`@table`-backed SDL element type**: require exact equality of the source type with the bound record class. List-wrapping is preserved on both sides (`List<XRecord>` source matches `[X!]` SDL element-of-list).
-- **Domain-object SDL element type**: require Java assignability of the source type to the backing class.
+- **Domain-object SDL element type** (`@record` / POJO backing): require Java assignability of the source type to the backing class.
+- **Interface SDL element type** with backed implementers: require Java assignability of the source type to the lub of the implementer backing classes.
 
-This is the same predicate today's type-match fallback applies in `tryResolveSingleRecordCarrier`. R159 lifts it from an implicit step inside the carrier walk to a callable classifier check with a load-bearing key.
+R159 lifts the predicate from an implicit step inside the carrier walk to a callable classifier check named by a load-bearing key.
 
 ### Internal-representation invariant
 
@@ -89,10 +100,21 @@ This is the same predicate today's type-match fallback applies in `tryResolveSin
 
 ## Load-bearing classifier checks
 
-One new key: `field-source-sigil.upstream-type-match`.
+Two new keys, each pinning one guarantee so consumers can name the exact shape they consume:
 
-- **Producer**: the classify site that admits `@field(name: "$source")` and the implicit type-match-fallback path in `tryResolveSingleRecordCarrier`. The key pins "every `UpstreamRoot` binding carries a Java type that matches the SDL element type by the predicate above; the carrier-side downstream may rely on this without re-checking."
-- **Consumers**: R158's `SourceKey.Reader` sub-taxonomy consumer for the `@service`-backed reader variant, and any future fetcher emitter that reads `UpstreamRoot`.
+**`field-source-sigil.site-defined`.**
+
+- **Producer**: the classify site that resolves `@field(name: "$source")` against the defined-at predicate (R157's `TypeBackingShape` projection on the parent, plus the carrier-payload data field admit).
+- **Pin**: "every `UpstreamRoot` binding occurs at a site where the parent classifies as one of the backed shapes (or at the carrier-payload data field admit); the consumer may assume the upstream Java value exists and has a known type."
+- **Consumers**: any emitter that reads `UpstreamRoot` and dereferences the upstream Java value. R158's `SourceKey.Reader` consumer relies on this for the existence half of its cast.
+
+**`field-source-sigil.upstream-type-match`.**
+
+- **Producer**: the classify site that admits `@field(name: "$source")` and the refactored type-match path in `tryResolveSingleRecordCarrier` (both call the predicate from § "Type matching").
+- **Pin**: "every `UpstreamRoot` binding carries a Java type that matches the SDL element type by the type-matching predicate; the carrier-side downstream may rely on this without re-checking."
+- **Consumers**: R158's `SourceKey.Reader` consumer for the `@service`-backed reader variant, and any future fetcher emitter that reads `UpstreamRoot`. This is the typed-cast half of R158's emitter.
+
+The unknown-sigil parse-time rejection (`"$bogus"`) is hygiene; no emitter relies on it, so it does not need a load-bearing key.
 
 The existing `single-record-carrier-shape.roles-exhaustively-classified` key remains in place; R159's permit-shape change to `DataChannel` slots into the existing audit.
 
@@ -118,8 +140,10 @@ Pipeline-tier:
 - `$source` type-mismatch reject (source's Java type does not match the SDL element's backing class).
 - `$source`-at-Query-root reject ("not defined at this site").
 - `$source`-at-unbacked-interface-member reject.
+- `$source`-at-backed-interface admit (interface with uniformly backed implementers).
 - Unknown-sigil reject (`@field(name: "$bogus")`).
-- Bare-name regression: every existing bare-name fixture continues to classify unchanged.
+- Bare-name name-match regression: bare-name fixtures whose accessor matches by name continue to classify as `NamedAccessor`, unchanged.
+- Bare-name type-match-fallback retro-classification: bare-name fixtures whose accessor matches only by type now classify as `UpstreamRoot` (the new shape; generator output and runtime behavior unchanged).
 
 Execution-tier:
 
@@ -135,7 +159,7 @@ LSP-tier:
 - **R158** consumes `$source` at the carrier-payload data field site. R158 is unblocked the moment R159 ships and the two land in either order (R158 can be drafted against R159's `UpstreamRoot` permit before R159 lands; the execution-tier test in R158 gates on R159 being in trunk).
 - **R12** owns error-channel binding. R159 does not extend it; a future name-decoupled error binding has its own item if a consumer arises.
 - **R96** owns `@record` directive cleanup. R159 carries no defensive `@record`-on-payload rejection.
-- **R157** ships the LSP `typesByName` projection R159 consumes for completion site classification.
+- **R157** ships the `TypeBackingShape` projection R159 consumes for both the defined-at predicate (classifier and validator) and LSP completion site classification.
 
 ## Out of scope
 
