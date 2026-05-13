@@ -276,9 +276,12 @@ final class MutationInputResolver {
      *   <li>DELETE / UPDATE: WHERE-side filter columns must cover the table's primary key, unless
      *       the mutation carries {@code multiRow: true}.</li>
      *   <li>UPDATE: at least one {@code @value}-marked field; not every field {@code @value}-marked.</li>
-     *   <li>{@code multiRow: true} requires at least one filter column on DELETE / UPDATE (empty
-     *       input rejects: would broadcast across the entire table).</li>
      * </ul>
+     *
+     * <p>The empty-input case ("no fields on the {@code @table} input") needs no resolver-level
+     * check: graphql-java rejects empty input types at parse time
+     * ({@code "InputObjectType ... must define one or more fields"}), so {@code foundTia.fields()}
+     * is non-empty by parser guarantee. Every non-admissible field shape rejects in the loop above.
      *
      * @param kind one of {@link DmlKind#INSERT} / {@link DmlKind#UPDATE} /
      *             {@link DmlKind#DELETE} / {@link DmlKind#UPSERT}
@@ -453,22 +456,6 @@ final class MutationInputResolver {
             return new Resolved.Rejected(rej);
         }
 
-        // Admissible-carrier count: ColumnField + CompositeColumnField (the LookupKeyField /
-        // SetField permits). DELETE / UPDATE require at least one such carrier; INSERT needs it
-        // too because an empty INSERT VALUES list is meaningless.
-        long admissibleCount = foundTia.fields().stream()
-            .filter(f -> f instanceof InputField.ColumnField || f instanceof InputField.CompositeColumnField)
-            .count();
-
-        // multiRow: true does not authorise an empty-input mutation that would broadcast across
-        // the entire table.
-        if (multiRow && admissibleCount == 0) {
-            return new Resolved.Rejected(Rejection.structural(
-                "@mutation(typeName: " + kind + ") with multiRow: true must declare at least one "
-                + "filter column on its @table input; an empty input would broadcast across the "
-                + "entire table"));
-        }
-
         if (kind == DmlKind.UPDATE) {
             if (foundTia.setFields().isEmpty()) {
                 return new Resolved.Rejected(Rejection.structural(
@@ -480,11 +467,6 @@ final class MutationInputResolver {
                     "@mutation(typeName: UPDATE) has no filter fields (every input field is "
                     + "@value-marked); UPDATE without a WHERE clause would update every row"));
             }
-        }
-
-        if (kind == DmlKind.DELETE && admissibleCount == 0) {
-            return new Resolved.Rejected(Rejection.structural(
-                "@mutation(typeName: DELETE) has no admissible filter fields on the @table input"));
         }
 
         if (kind.requiresPkCoverage() && !multiRow) {
