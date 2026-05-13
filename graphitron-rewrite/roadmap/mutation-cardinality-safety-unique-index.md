@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 14
 theme: mutations-errors
-depends-on: [mutation-cardinality-safety-default]
+depends-on: []
 ---
 
 # Unique-index coverage as an alternative to PK for mutation cardinality safety
