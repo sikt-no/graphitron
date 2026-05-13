@@ -96,7 +96,7 @@ class FixtureCatalogTest {
             """;
         int line = 1;
         int col = source.split("\n")[line].indexOf('"') + 1;
-        var items = fieldCompletions(catalog(), source, new Point(line, col));
+        var items = fieldCompletions(catalog(), fooFilmSnapshot(), source, new Point(line, col));
         assertThat(items).extracting(CompletionItem::getLabel)
             .contains("FILM_ID", "TITLE", "LANGUAGE_ID");
         assertThat(items).extracting(CompletionItem::getLabel)
@@ -112,7 +112,7 @@ class FixtureCatalogTest {
                 x: Int @field(name: "FILM_ID")
             }
             """);
-        assertThat(Diagnostics.compute("", file, catalog(), LspSchemaSnapshot.unavailable(), ValidationReport.empty())).isEmpty();
+        assertThat(Diagnostics.compute("", file, catalog(), fooFilmSnapshot(), ValidationReport.empty())).isEmpty();
     }
 
     @Test
@@ -122,7 +122,7 @@ class FixtureCatalogTest {
                 x: Int @field(name: "film_id")
             }
             """);
-        var diags = Diagnostics.compute("", file, catalog(), LspSchemaSnapshot.unavailable(), ValidationReport.empty());
+        var diags = Diagnostics.compute("", file, catalog(), fooFilmSnapshot(), ValidationReport.empty());
         assertThat(diags).isEmpty();
     }
 
@@ -133,7 +133,7 @@ class FixtureCatalogTest {
                 x: Int @field(name: "NO_SUCH_COL")
             }
             """);
-        var diags = Diagnostics.compute("", file, catalog(), LspSchemaSnapshot.unavailable(), ValidationReport.empty());
+        var diags = Diagnostics.compute("", file, catalog(), fooFilmSnapshot(), ValidationReport.empty());
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("NO_SUCH_COL");
     }
@@ -154,7 +154,20 @@ class FixtureCatalogTest {
                 x: Int @reference(path: [{key: "%s"}])
             }
             """, fkKey));
-        assertThat(Diagnostics.compute("", file, data, LspSchemaSnapshot.unavailable(), ValidationReport.empty())).isEmpty();
+        assertThat(Diagnostics.compute("", file, data, fooFilmSnapshot(), ValidationReport.empty())).isEmpty();
+    }
+
+    /**
+     * Snapshot mapping {@code Foo → TableBacking("film")}: the LSP's
+     * {@code @field(name:)} arm reads the classifier-projected backing,
+     * not the SDL directive. Each test in this file declares its types as
+     * {@code type Foo @table(name: "film")}, so this snapshot matches.
+     */
+    private static LspSchemaSnapshot fooFilmSnapshot() {
+        return new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film"))
+        );
     }
 
     // ---- Helpers ----
@@ -172,7 +185,9 @@ class FixtureCatalogTest {
         return TableCompletions.generate(VOCAB, data, context);
     }
 
-    private static List<CompletionItem> fieldCompletions(CompletionData data, String source, Point cursor) {
+    private static List<CompletionItem> fieldCompletions(
+        CompletionData data, LspSchemaSnapshot snapshot, String source, Point cursor
+    ) {
         var bytes = source.getBytes(StandardCharsets.UTF_8);
         var tree = parser().parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
@@ -180,7 +195,7 @@ class FixtureCatalogTest {
         var locOpt = VOCAB.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
         var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
-        return FieldCompletions.generate(VOCAB, data, context, directive, bytes);
+        return FieldCompletions.generate(VOCAB, data, snapshot, context, directive, bytes);
     }
 
     private static Parser parser() {

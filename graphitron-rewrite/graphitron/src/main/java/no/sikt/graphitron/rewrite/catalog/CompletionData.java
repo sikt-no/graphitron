@@ -135,13 +135,38 @@ public record CompletionData(
 
     /**
      * Service / condition / record class plus its public methods.
+     *
+     * <p>{@code recordComponents} is populated when the class file's
+     * {@code Record} attribute is present (i.e., a Java {@code record} class);
+     * an empty list otherwise. The LSP's snapshot projection consumes this to
+     * back {@code @field(name:)} completions / diagnostics / hovers under
+     * {@code @record}-declared SDL types whose backing class is a Java
+     * record.
      */
     public record ExternalReference(
         String name,
         String className,
         String description,
-        List<Method> methods
-    ) {}
+        List<Method> methods,
+        List<RecordComponent> recordComponents
+    ) {
+        public ExternalReference {
+            methods = List.copyOf(methods);
+            recordComponents = List.copyOf(recordComponents);
+        }
+
+        public ExternalReference(String name, String className, String description, List<Method> methods) {
+            this(name, className, description, methods, List.of());
+        }
+    }
+
+    /**
+     * One entry in a Java {@code record} class's component list — name plus
+     * a rendered display type for hover. Source: the JVM
+     * {@link java.lang.classfile.attribute.RecordAttribute} attribute on the
+     * class file, read by {@link ClasspathScanner}.
+     */
+    public record RecordComponent(String name, String displayType) {}
 
     /**
      * Method on an {@link ExternalReference}.

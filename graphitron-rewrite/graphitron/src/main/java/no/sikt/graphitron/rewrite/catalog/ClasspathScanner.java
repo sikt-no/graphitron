@@ -7,6 +7,7 @@ import java.lang.classfile.ClassFile;
 import java.lang.classfile.ClassModel;
 import java.lang.classfile.MethodModel;
 import java.lang.classfile.attribute.MethodParametersAttribute;
+import java.lang.classfile.attribute.RecordAttribute;
 import java.lang.constant.ClassDesc;
 import java.lang.reflect.AccessFlag;
 import java.nio.file.Files;
@@ -116,7 +117,29 @@ public final class ClasspathScanner {
         String fqn = cm.thisClass().asInternalName().replace('/', '.');
         if (jooqPrefix != null && fqn.startsWith(jooqPrefix)) return null;
         var methods = readMethods(cm);
-        return new CompletionData.ExternalReference(fqn, fqn, "", methods);
+        var recordComponents = readRecordComponents(cm);
+        return new CompletionData.ExternalReference(fqn, fqn, "", methods, recordComponents);
+    }
+
+    /**
+     * Reads the JVM {@code Record} attribute on a class file when present:
+     * the attribute lists the record's component name + JVM type-descriptor
+     * pairs in declaration order. Returns an empty list for non-record
+     * classes (the attribute is absent on plain classes, enums, interfaces,
+     * abstract classes).
+     */
+    private static List<CompletionData.RecordComponent> readRecordComponents(ClassModel cm) {
+        var attrOpt = cm.findAttribute(Attributes.record());
+        if (attrOpt.isEmpty()) return List.of();
+        RecordAttribute attr = attrOpt.get();
+        var components = new ArrayList<CompletionData.RecordComponent>(attr.components().size());
+        for (var info : attr.components()) {
+            String name = info.name().stringValue();
+            String descriptor = info.descriptor().stringValue();
+            String displayType = displayName(ClassDesc.ofDescriptor(descriptor));
+            components.add(new CompletionData.RecordComponent(name, displayType));
+        }
+        return List.copyOf(components);
     }
 
     private static List<CompletionData.Method> readMethods(ClassModel cm) {

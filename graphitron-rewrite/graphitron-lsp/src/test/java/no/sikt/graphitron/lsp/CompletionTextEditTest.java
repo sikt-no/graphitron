@@ -107,8 +107,12 @@ class CompletionTextEditTest {
                 List.of(CompletionData.Column.of("title", "String", false, "")),
                 List.of())),
             List.of(), List.of());
+        var snapshot = new no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot.Built.Current(
+            List.of(),
+            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film"))
+        );
         var items = runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> FieldCompletions.generate(VOCAB, data, ctx, dir, bytes));
+            (ctx, dir, bytes) -> FieldCompletions.generate(VOCAB, data, snapshot, ctx, dir, bytes));
 
         assertTextEditRange(items, "title",
             new Range(new Position(line, innerStart), new Position(line, innerStart + "ti".length())));

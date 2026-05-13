@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.InputValueShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.catalog.TypeShape;
 import org.eclipse.lsp4j.MarkupKind;
 import org.junit.jupiter.api.Test;
@@ -62,13 +63,34 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "title");
 
-        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var hover = Hovers.compute(file, filmCatalog(), fooFilmSnapshot(), pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Column** `title`");
         assertThat(md).contains("on `film`");
         assertThat(md).contains("`String`");
         assertThat(md).contains("not null");
+    }
+
+    @Test
+    void fieldHoverOnRecordBackingShowsComponentMetadata() {
+        var file = file("""
+            input FilmInput @record(record: {className: "com.example.FilmDto"}) {
+                bar: Int @field(name: "title")
+            }
+            """);
+        var pos = pointAt(file, 1, "title");
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            java.util.Map.of("FilmInput", new TypeBackingShape.RecordBacking(
+                "com.example.FilmDto",
+                List.of(new TypeBackingShape.MemberSlot("title", "String"))
+            ))
+        );
+        var hover = Hovers.compute(file, filmCatalog(), snapshot, pos).orElseThrow();
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md).contains("**title**").contains("`String`");
     }
 
     @Test
@@ -132,7 +154,15 @@ class HoversTest {
             """);
         var pos = pointAt(file, 1, "GHOST");
 
-        assertThat(Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+        assertThat(Hovers.compute(file, filmCatalog(), fooFilmSnapshot(), pos)).isEmpty();
+    }
+
+    /** {@code Foo → TableBacking("film")}; matches every {@code type Foo @table(name: "film")} fixture in this file. */
+    private static LspSchemaSnapshot fooFilmSnapshot() {
+        return new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            java.util.Map.of("Foo", new TypeBackingShape.TableBacking("film"))
+        );
     }
 
     private static Point pointAt(WorkspaceFile file, int line, String token) {
@@ -404,7 +434,7 @@ class HoversTest {
             """);
         var pos = pointAt(file, 0, "title");
 
-        var hover = Hovers.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
+        var hover = Hovers.compute(file, filmCatalog(), fooFilmSnapshot(), pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
 
         assertThat(md).contains("**Column** `title`");

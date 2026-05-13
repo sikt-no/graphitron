@@ -13,6 +13,7 @@ import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
@@ -20,6 +21,7 @@ import org.eclipse.lsp4j.Range;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -72,7 +74,7 @@ public final class Hovers {
 
         if (coordOpt.isPresent() && rangeNode != null) {
             var coord = coordOpt.get();
-            var richer = richerHover(vocabulary, coord, directive, file, catalog, pos, rangeNode);
+            var richer = richerHover(vocabulary, coord, directive, file, catalog, snapshot, pos, rangeNode);
             if (richer.isPresent()) return richer;
             // SDL docstring on the coordinate. Empty if the parsed
             // definition has no description (rare in directives.graphqls).
@@ -139,7 +141,7 @@ public final class Hovers {
     private static Optional<Hover> richerHover(
         LspVocabulary vocabulary, SchemaCoordinate coord,
         Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
-        Point pos, Node rangeNode
+        LspSchemaSnapshot snapshot, Point pos, Node rangeNode
     ) {
         var behavior = vocabulary.behaviorAt(coord);
         if (behavior.isEmpty()) return Optional.empty();
@@ -148,7 +150,7 @@ public final class Hovers {
             case Behavior.MethodNameBinding mnb ->
                 methodHover(vocabulary, directive, file, catalog, pos, rangeNode, mnb.classNameCoord());
             case Behavior.CatalogTableBinding ignored -> tableHover(file, catalog, rangeNode);
-            case Behavior.CatalogColumnBinding ignored -> columnHover(directive, file, catalog, rangeNode);
+            case Behavior.CatalogColumnBinding ignored -> columnHover(directive, file, catalog, snapshot, rangeNode);
             case Behavior.CatalogFkBinding ignored -> fkHover(file, catalog, rangeNode);
             case Behavior.ArgMappingBinding ignored -> Optional.empty();
             case Behavior.ScalarTypeBinding ignored -> Optional.empty();
@@ -230,20 +232,55 @@ public final class Hovers {
         return catalog.getTable(name).map(t -> hover(file, valueNode, formatTable(t)));
     }
 
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "java-record-type-backs-record-class",
+        reliesOn = "Renders the record component's displayType on hover under a @record-bound "
+            + "Java record parent; trusts the classifier's RecordBacking projection without "
+            + "re-reading the backing class."
+    )
     private static Optional<Hover> columnHover(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Node valueNode
+        Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
+        LspSchemaSnapshot snapshot, Node valueNode
     ) {
-        String columnName = Nodes.unquote(Nodes.text(valueNode, file.source()));
+        String memberName = Nodes.unquote(Nodes.text(valueNode, file.source()));
+        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
         var typeDef = TypeContext.enclosingTypeDefinition(directive.outer());
         if (typeDef.isEmpty()) return Optional.empty();
-        var tableName = TypeContext.tableNameOf(typeDef.get(), file.source());
-        if (tableName.isEmpty()) return Optional.empty();
-        var tableOpt = catalog.getTable(tableName.get());
+        var typeName = TypeContext.declaredNameOf(typeDef.get(), file.source());
+        if (typeName.isEmpty()) return Optional.empty();
+        var backing = built.typesByName().get(typeName.get());
+        if (backing == null) return Optional.empty();
+        return switch (backing) {
+            case TypeBackingShape.RecordBacking r -> slotHover(r.components(), memberName, file, valueNode);
+            case TypeBackingShape.PojoBacking p -> slotHover(p.accessors(), memberName, file, valueNode);
+            case TypeBackingShape.JooqRecordBacking j -> j.tableName() == null
+                ? Optional.<Hover>empty()
+                : tableColumnHover(catalog, j.tableName(), memberName, file, valueNode);
+            case TypeBackingShape.TableBacking t ->
+                tableColumnHover(catalog, t.tableName(), memberName, file, valueNode);
+            case TypeBackingShape.NoBacking ignored -> Optional.empty();
+        };
+    }
+
+    private static Optional<Hover> tableColumnHover(
+        CompletionData catalog, String tableName, String columnName,
+        WorkspaceFile file, Node valueNode
+    ) {
+        var tableOpt = catalog.getTable(tableName);
         if (tableOpt.isEmpty()) return Optional.empty();
         return tableOpt.get().columns().stream()
             .filter(c -> c.name().equalsIgnoreCase(columnName))
             .findFirst()
-            .map(column -> hover(file, valueNode, formatColumn(tableName.get(), column)));
+            .map(column -> hover(file, valueNode, formatColumn(tableName, column)));
+    }
+
+    private static Optional<Hover> slotHover(
+        List<TypeBackingShape.MemberSlot> slots, String memberName, WorkspaceFile file, Node valueNode
+    ) {
+        return slots.stream()
+            .filter(s -> s.name().equals(memberName))
+            .findFirst()
+            .map(slot -> hover(file, valueNode, "**" + slot.name() + "**: `" + slot.displayType() + "`"));
     }
 
     private static Optional<Hover> fkHover(

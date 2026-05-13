@@ -1,7 +1,7 @@
 ---
 id: R157
 title: "LSP: autocomplete and diagnostics for @field on @record-bound types"
-status: Ready
+status: In Review
 bucket: lsp
 theme: lsp
 depends-on: [lsp-schema-snapshot-side-channel, emit-input-records]
@@ -169,7 +169,21 @@ Supporting unit tests:
 - `HoversTest`: hover on `@field(name: "filmId")` renders the slot's
   `displayType`.
 
-### 6. Out of scope
+### 6. Exhaustive projection over `GraphitronType` permits
+
+`CatalogBuilder.projectType` is a sealed-exhaustive switch over every
+`GraphitronType` leaf. The four backed families dispatch as listed
+above; every other variant
+(`EnumType`, `ScalarType`, `ErrorType`, `PlainObjectType`,
+`PojoResultType.NoBacking`, `ConnectionType`, `EdgeType`,
+`PageInfoType`, `UnionType`, `UnclassifiedType`) projects to
+`NoBacking.UnbackedResult`. `RootType` projects to `NoBacking.Root`,
+plain `InterfaceType` (no `@table`) projects to
+`NoBacking.UnclassifiedInterface`. A future `GraphitronType` variant
+trips a compile error on the projector and demands an explicit
+dispatch decision rather than defaulting silently.
+
+### 7. Out of scope
 
 - `@enum(enum: {className:})` types. Enums don't carry `@field(name:)`;
   separate item if it ever matters.
@@ -197,12 +211,16 @@ component name diverges from the SDL field name), R157's completions
 silently degrade to the wrong member list rather than fail loudly.
 
 Mitigation: declare one `@LoadBearingClassifierCheck` key on the
-producer (`javarecordinputtype-backs-record-class` and the output-side
-mirror) at the projection site in `CatalogBuilder.buildSnapshot`, paired
-with `@DependsOnClassifierCheck` on the consumer-side dispatch in
-`FieldCompletions` / `Diagnostics` / `Hovers`. A future classifier
-change that widens those variants then trips the key audit instead of
-silently returning empty completions.
+producer (`java-record-type-backs-record-class`, covering both
+`JavaRecordType` and `JavaRecordInputType`) at the projection site in
+`CatalogBuilder.buildSnapshot`, paired with `@DependsOnClassifierCheck`
+on the consumer-side dispatch in `FieldCompletions` / `Diagnostics` /
+`Hovers`. The audit-test scope (`LoadBearingGuaranteeAuditTest`) runs
+inside the `graphitron` module only; the LSP-module consumers wear
+`@DependsOnClassifierCheck` for find-usages navigation and reviewer-
+signal purposes, and the producer-without-consumer case is explicitly
+allowed by `rewrite-design-principles.adoc § "Classifier guarantees
+shape emitter assumptions"`.
 
 ## Risk
 

@@ -187,7 +187,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             if (!methodItems.isEmpty()) return methodItems;
             var tableItems = TableCompletions.generate(vocab, data, context);
             if (!tableItems.isEmpty()) return tableItems;
-            var fieldItems = FieldCompletions.generate(vocab, data, context, directive, source);
+            var fieldItems = FieldCompletions.generate(vocab, data, workspace.snapshot(), context, directive, source);
             if (!fieldItems.isEmpty()) return fieldItems;
             var refItems = ReferenceCompletions.generate(vocab, data, context, directive, source);
             if (!refItems.isEmpty()) return refItems;
