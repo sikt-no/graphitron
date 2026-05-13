@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 13
 theme: mutations-errors
-depends-on: [mutation-cardinality-safety-default]
+depends-on: []
 ---
 
 # Cardinality safety story for UPSERT under the multiRow: regime
