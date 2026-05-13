@@ -5,7 +5,7 @@ status: Backlog
 bucket: structural
 priority: 3
 theme: mutations-errors
-depends-on: []
+depends-on: [service-payload-intermediate-semantics]
 created: 2026-05-13
 last-updated: 2026-05-13
 ---
@@ -15,6 +15,8 @@ last-updated: 2026-05-13
 The `SingleRecordTableField/MANY` fetcher emitted by `FetcherEmitter.buildSingleRecordTableFetcherValue` (graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/FetcherEmitter.java:251) pins its upstream producer to a jOOQ `Result<RecordN<PK>>` via the `SourceKey.Reader.ResultRowWalk` pairing. That contract is satisfied by `MutationBulkDmlRecordField`'s `.returningResult(PK)` shape but no other; a `@service` mutation feeding a payload-carrier with a `@table`-element data field returns the developer-declared `List<XRecord>` verbatim, so the cast `(Result<RecordN<...>>) env.getSource()` fails at runtime with `ArrayList cannot be cast to org.jooq.Result`. Reproducer: `OpprettRegelverksamlingPayload` + `opprettRegelverksamling` `@service` returning `List<RegelverksamlingRecord>`.
 
 The producer-kind axis is a classifier fact, not a runtime tolerance. The fix is to make that axis explicit in the model.
+
+**Blocked on R159.** A second-pass principles-architect read surfaced that the producer-kind reframe is downstream of an unanswered semantic question: what does it *mean* for a schema author to interpose a payload-shaped SDL type between a `@service` field and the structural Java analogue of its return? Today's carrier walk admits the shape under an unstated intuition (virtual passthrough); R158's reader-variant mechanism only earns its keep once that intuition is made contractual and the admission predicate is pinned. R159 owns the semantic question; this item waits on its resolution and then implements the consumer-side mechanism the resolved admission predicate calls for.
 
 Spec direction (to be confirmed during Backlog to Spec):
 
