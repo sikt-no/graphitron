@@ -18,19 +18,19 @@ Legacy graphitron supported a second shape: a no-arg constructor plus per-SDL-fi
 
 ## Architectural principle
 
-**Variant identity tracks construction shape.** Per the rule applied four times already (R61 / R70 / R71 / R74), the right shape for "two structurally distinct ways of building the same artifact" is a sealed sub-taxonomy where the variant identifier carries the shape, not a flag or a nullable component. The all-fields-ctor path and the no-arg-ctor-plus-setters path have different mechanical contracts (`new Payload(...)` vs. `var p = new Payload(); p.setX(...); ... return p;`), different slot-identification rules (parameter index vs. setter method by SDL field name), and different ambiguity modes; each emitter that forks on shape reads its arm directly, no per-instance branching.
+**Variant identity tracks construction shape.** Per the rule applied four times already (R61 / R70 / R71 / R74), the right shape for "two structurally distinct ways of building the same artifact" is a sealed sub-taxonomy where the variant identifier carries the shape, not a flag or a nullable component. The all-fields-ctor path and the mutable-bean path have different mechanical contracts (`new Payload(...)` vs. `var p = new Payload(); p.setX(...); ... return p;`), different slot-identification rules (parameter index vs. setter method by SDL field name), and different ambiguity modes; each emitter that forks on shape reads its arm directly, no per-instance branching.
 
 ```java
 sealed interface PayloadConstructionShape
-    permits AllFieldsCtor, NoArgCtorWithSetters {
+    permits AllFieldsCtor, MutableBean {
 
     /** Canonical all-fields constructor; today's contract. */
     record AllFieldsCtor(
         java.lang.reflect.Constructor<?> ctor      // parameters[] aligned positionally to SDL field order
     ) implements PayloadConstructionShape {}
 
-    /** No-arg constructor plus per-SDL-field setter; legacy bridge shape. */
-    record NoArgCtorWithSetters(
+    /** Java-bean shape: no-arg constructor plus per-SDL-field setter; legacy bridge. */
+    record MutableBean(
         java.lang.reflect.Constructor<?> noArgCtor,
         java.util.List<SetterBinding> bindings    // one per SDL field, in SDL declaration order
     ) implements PayloadConstructionShape {}
@@ -71,9 +71,9 @@ These three are siblings in form but live in their own sealed hierarchies (per *
 `findCanonicalCtor` (or its successor `resolvePayloadConstructionShape`) walks the payload class with two predicates, in order:
 
 1. **All-fields-ctor predicate** (today's rule). Records always hit this. Hand-rolled POJOs hit it when the canonical ctor is unambiguous. If matched, return `AllFieldsCtor`.
-2. **No-arg-ctor-with-setters predicate** (new). The class declares a public no-arg constructor *and* a Java-bean setter (`setXxx`, case-insensitive on the first letter after `set`) for every SDL field on the payload type, with parameter assignability matching the SDL-derived Java type (or `Optional<T>` of it; the legacy `setterAcceptsOptional` rule lifts unchanged). If matched, return `NoArgCtorWithSetters`.
+2. **Mutable-bean predicate** (new). The class declares a public no-arg constructor *and* a Java-bean setter (`setXxx`, case-insensitive on the first letter after `set`) for every SDL field on the payload type, with parameter assignability matching the SDL-derived Java type (or `Optional<T>` of it; the legacy `setterAcceptsOptional` rule lifts unchanged). If matched, return `MutableBean`.
 3. **Both predicates match.** Reject with `AmbiguousConstructionShape` carrying both shapes. The configuration-drift principle (see R96 §"Misconfiguration risk") rules against silent precedence ; the consumer either drops the no-arg ctor / setters or drops the all-fields ctor. Explicit choice survives, ambiguity surfaces at classify time.
-4. **Neither predicate matches.** Today's `CanonicalCtorResult.Reject` message extends to enumerate both shapes the classifier accepted and which structural element each missed (e.g. *"no all-fields ctor matching SDL field count 4; no-arg-ctor-with-setters shape rejected: missing setter for SDL field 'rating'"*). LSP / IDE consumers read the structured rejection per existing rendering rules.
+4. **Neither predicate matches.** Today's `CanonicalCtorResult.Reject` message extends to enumerate both shapes the classifier accepted and which structural element each missed (e.g. *"no all-fields ctor matching SDL field count 4; mutable-bean shape rejected: missing setter for SDL field 'rating'"*). LSP / IDE consumers read the structured rejection per existing rendering rules.
 
 The setter shape's "for every SDL field" predicate uses **SDL field name** as the join key, not constructor parameter order. SDL field order is irrelevant on this arm because emit walks the SDL field list and looks up each binding by name. This means the setter shape is robust against SDL field reordering in a way the all-fields-ctor shape isn't, a property worth documenting.
 
@@ -85,7 +85,7 @@ Today's positional-index errors slot generalises to `ErrorsSlot.SetterMethod` st
 // AllFieldsCtor (today)
 errors -> new Payload(arg0, arg1, errors, arg3);
 
-// NoArgCtorWithSetters (new)
+// MutableBean (new)
 errors -> { var p = new Payload(); p.setA(arg0); p.setB(arg1); p.setErrors(errors); p.setD(arg3); return p; };
 ```
 
@@ -153,7 +153,7 @@ Per *Pipeline tests are the primary behavioural tier* (`rewrite-design-principle
 
 ### Unit-tier (L1, structural invariants)
 
-- `PayloadConstructionShapeTest` (new): parameterised over hand-rolled fixture classes covering each shape and each rejection. Records produce `AllFieldsCtor`; no-arg-ctor-with-setter classes produce `NoArgCtorWithSetters`; classes with both shapes produce `AmbiguousConstructionShape`; classes with neither produce `Reject`. Pins setter-name resolution under Java-bean naming (`rating` → `setRating`, `xRating` → `setXRating`).
+- `PayloadConstructionShapeTest` (new): parameterised over hand-rolled fixture classes covering each shape and each rejection. Records produce `AllFieldsCtor`; mutable-bean classes (no-arg ctor + setters) produce `MutableBean`; classes with both shapes produce `AmbiguousConstructionShape`; classes with neither produce `Reject`. Pins setter-name resolution under Java-bean naming (`rating` → `setRating`, `xRating` → `setXRating`).
 
 ### Pipeline-tier (L4, primary signal)
 
@@ -175,7 +175,7 @@ Assertions are structural per `rewrite-design-principles.adoc:130`; use `TypeSpe
 
 ## Acceptance criteria
 
-- `PayloadConstructionShape` exists as a sealed interface with `AllFieldsCtor` and `NoArgCtorWithSetters` permits ; `findCanonicalCtor` (or successor) returns the sealed shape. Every existing fixture's payload class still classifies (as `AllFieldsCtor`); no consumer behaviour changes in Phase 1.
+- `PayloadConstructionShape` exists as a sealed interface with `AllFieldsCtor` and `MutableBean` permits ; `findCanonicalCtor` (or successor) returns the sealed shape. Every existing fixture's payload class still classifies (as `AllFieldsCtor`); no consumer behaviour changes in Phase 1.
 - `ErrorChannel`, `ResultAssembly`, and `PayloadAssembly` carry sealed slot types (`ErrorsSlot`, `ResultSlot`, `RowSlot`) replacing the existing positional ints. Every `switch(shape)` in the emitter sites is `javac`-checked exhaustive.
 - The setter-shape predicate admits no-arg-ctor + Java-bean-setter classes; the ambiguous-shape and neither-shape rejections fire at classify time, surface as `UnclassifiedField`, and carry structured rejection per the existing `Rejection` patterns.
 - The three emit sites (catch-arm payload factory, service-result-assembly, DML-row-assembly) dispatch on `PayloadConstructionShape` and emit the matching source (positional `new Payload(...)` vs. `var p = new P(); p.setX(...); return p;`).
@@ -192,7 +192,7 @@ The implementer can pin these during In Progress; choices land in the In Review 
 
 ## Non-goals
 
-- Builder-pattern (fluent immutable) payload classes (`Payload.builder().rating(...).build()`). Different construction shape from both `AllFieldsCtor` and `NoArgCtorWithSetters`; if it surfaces in a real schema, file a sibling item that adds a `BuilderPattern` permit to `PayloadConstructionShape`. The seal makes this strictly additive.
+- Builder-pattern (fluent immutable) payload classes (`Payload.builder().rating(...).build()`). Different construction shape from both `AllFieldsCtor` and `MutableBean`; if it surfaces in a real schema, file a sibling item that adds a `BuilderPattern` permit to `PayloadConstructionShape`. The seal makes this strictly additive.
 - Lombok-`@Data`-generated setters. Lombok bytecode injects standard setters at compile time; the reflection-based predicate sees them no differently from hand-written setters. Nothing special to do.
 - Replacing the all-fields-ctor shape with the setter shape. The two coexist; records remain the recommended shape; setters are a parallel-supported migration bridge.
 - Designing a `@constructionShape(setter)` SDL directive to disambiguate. Per *configuration drift* reasoning (R96 §"Misconfiguration risk"), opt-in directives that duplicate a structural signal the classifier can already see are themselves drift sources. The classifier walks the class and rejects ambiguity; consumers pick a single shape.
