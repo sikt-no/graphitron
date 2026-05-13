@@ -269,6 +269,25 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * Returns the setter-shape sibling payload. Used by tests exercising R154 §2's mutable-bean
+     * payload-construction shape: the service returns the SDL payload type directly (legacy
+     * passthrough), so no ResultAssembly is resolved; the carrier classifier resolves only the
+     * ErrorChannel against the setter-shape payload class.
+     */
+    public static no.sikt.graphitron.codereferences.dummyreferences.SetterShapeSakPayload runSetterSak() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Returns the both-shapes sibling payload. Used by the canonical-over-bridge precedence
+     * test: a class that exposes both an all-fields ctor and a no-arg ctor + setters classifies
+     * as AllFieldsCtor (predicate 1 short-circuits).
+     */
+    public static no.sikt.graphitron.codereferences.dummyreferences.BothShapesSakPayload runBothShapesSak() {
+        throw new UnsupportedOperationException();
+    }
+
     // ===== R32 child-@service strict-return-type fixtures =====
 
     /**

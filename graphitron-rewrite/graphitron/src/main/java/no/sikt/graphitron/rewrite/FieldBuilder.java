@@ -407,12 +407,14 @@ class FieldBuilder {
     }
 
     /**
-     * Outcome of {@link PayloadConstructionShape} resolution for a payload class.
-     * {@code Resolved} carries the resolved shape (today: only the {@link
-     * PayloadConstructionShape.AllFieldsCtor} arm); {@code Reject} carries a human-readable
-     * reason suitable for surfacing on an {@code UnclassifiedField}.
+     * Outcome of {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape} resolution
+     * for a payload class. {@code Resolved} carries the resolved shape (an
+     * {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor} or
+     * {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean}). {@code
+     * Reject} carries a human-readable reason suitable for surfacing on an
+     * {@code UnclassifiedField}.
      */
-    private sealed interface PayloadConstructionShapeResult {
+    sealed interface PayloadConstructionShapeResult {
         record Resolved(no.sikt.graphitron.rewrite.model.PayloadConstructionShape shape)
             implements PayloadConstructionShapeResult {}
         record Reject(String reason) implements PayloadConstructionShapeResult {}
@@ -423,49 +425,93 @@ class FieldBuilder {
      * payload class. Predicates run in order:
      *
      * <ol>
-     *   <li><b>All-fields-ctor predicate</b> (today's rule). Records always hit this. Hand-rolled
-     *       POJOs hit it when the canonical ctor is unambiguous: either the class declares
-     *       exactly one constructor, or the unique ctor whose parameter count matches the SDL
-     *       field count is the canonical one. Returns
-     *       {@link PayloadConstructionShape.AllFieldsCtor}.</li>
-     *   <li><b>Mutable-bean predicate</b> (phase 2). Lands in a follow-up alongside the
-     *       {@code MutableBean} permit on {@link PayloadConstructionShape}.</li>
+     *   <li><b>All-fields-ctor predicate</b>. Records always hit this. Hand-rolled POJOs hit it
+     *       when the canonical ctor is unambiguous: either the class declares exactly one
+     *       constructor, or the unique ctor whose parameter count matches the SDL field count
+     *       is the canonical one. Returns
+     *       {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor}.</li>
+     *   <li><b>Mutable-bean predicate</b>. The class declares a public no-arg constructor
+     *       <em>and</em> a Java-bean setter ({@code setX} for SDL field {@code x}) accepting
+     *       one parameter for every SDL field. Returns
+     *       {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean}.</li>
      * </ol>
      *
-     * <p>When predicate 1 matches it short-circuits the walk and {@code AllFieldsCtor} wins ; this
-     * is the canonical-over-bridge precedence (records always present the all-fields ctor; the
-     * setter shape is a legacy bridge from {@code graphitron-codegen-parent}). Both shapes yield
-     * equivalent payload instances, so there's no construction drift to surface. Neither
-     * predicate matching is the only rejection mode.
+     * <p>When predicate 1 matches it short-circuits the walk and {@code AllFieldsCtor} wins ;
+     * this is the canonical-over-bridge precedence (records always present the all-fields ctor;
+     * the setter shape is a legacy bridge from {@code graphitron-codegen-parent}). Both shapes
+     * yield equivalent payload instances, so there's no construction drift to surface.
+     * Consumers who want the setter shape exclusively drop the all-fields ctor from their class.
+     * Neither predicate matching is the only rejection mode.
+     *
+     * <p>{@code sdlFieldNames} is the SDL payload's field names in declaration order; when the
+     * payload's SDL type isn't an object (e.g. transient classifier callers without a fully
+     * resolved schema fragment), pass {@code null} to skip the setter predicate.
      */
-    private static PayloadConstructionShapeResult resolvePayloadConstructionShape(
-            Class<?> payloadCls, int sdlFieldCount) {
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "payload-construction.shape-resolved",
+        description = "Every ErrorChannel, ResultAssembly, and PayloadAssembly carries a "
+            + "PayloadConstructionShape arm (AllFieldsCtor or MutableBean) the emitter "
+            + "dispatches on. The three TypeFetcherGenerator payload-factory emit sites "
+            + "(catch-arm payload-factory lambda, service-result buildSuccessPayload, "
+            + "DML-row emitPayload) wear @DependsOnClassifierCheck on this key.")
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "payload-construction.setter-name-matches-sdl-field",
+        description = "Every MutableBean SetterBinding's setter method name matches the SDL "
+            + "field name under Java-bean conversion (sdl field 'rating' -> 'setRating'). "
+            + "The catch-arm payload-factory and analogous service-result / DML-row emit "
+            + "sites call setter.getName() directly into the generated source; the binding "
+            + "guarantees that name resolves to a real method on the payload class.")
+    static PayloadConstructionShapeResult resolvePayloadConstructionShape(
+            Class<?> payloadCls, java.util.List<String> sdlFieldNames) {
         var ctors = payloadCls.getDeclaredConstructors();
         if (ctors.length == 0) {
             return new PayloadConstructionShapeResult.Reject(
                 "payload class '" + payloadCls.getName() + "' has no declared constructors");
         }
+        int sdlFieldCount = sdlFieldNames == null ? -1 : sdlFieldNames.size();
+        // Predicate 1: all-fields ctor. A class with a single declared ctor takes the trivial
+        // path only when (a) the SDL field count is unknown (legacy callers that pass null),
+        // or (b) the ctor's parameter count matches the SDL field count. The arity check
+        // matters now that predicate 2 (mutable-bean) is a sibling: a class with only a public
+        // no-arg ctor is a setter-shape candidate, not a degenerate "canonical" all-fields ctor.
+        java.lang.reflect.Constructor<?> allFieldsCtor = null;
         if (ctors.length == 1) {
-            return new PayloadConstructionShapeResult.Resolved(
-                new no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor(ctors[0]));
+            if (sdlFieldCount < 0 || ctors[0].getParameterCount() == sdlFieldCount) {
+                allFieldsCtor = ctors[0];
+            }
+        } else {
+            var matches = java.util.Arrays.stream(ctors)
+                .filter(c -> c.getParameterCount() == sdlFieldCount)
+                .toList();
+            if (matches.size() == 1) {
+                allFieldsCtor = matches.get(0);
+            }
         }
-        var matches = java.util.Arrays.stream(ctors)
-            .filter(c -> c.getParameterCount() == sdlFieldCount)
-            .toList();
-        if (matches.size() == 1) {
+        if (allFieldsCtor != null) {
             return new PayloadConstructionShapeResult.Resolved(
-                new no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor(matches.get(0)));
+                new no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor(allFieldsCtor));
         }
+        // Predicate 2: mutable-bean shape (no-arg ctor + per-SDL-field setters).
+        var beanResult = tryMutableBean(payloadCls, sdlFieldNames, ctors);
+        if (beanResult != null) {
+            return beanResult;
+        }
+        // Neither shape matches.
         String prefix = "payload class '" + payloadCls.getName() + "' has " + ctors.length
             + " declared constructors";
         String guidance = ". Convert the class to a Java record (which always declares one"
-            + " canonical constructor), or remove the extra constructor(s) so only the all-fields"
-            + " constructor remains";
+            + " canonical constructor), remove the extra constructor(s) so only the all-fields"
+            + " constructor remains, or add a public no-arg constructor plus Java-bean setters"
+            + " for every SDL field";
+        var matches = java.util.Arrays.stream(ctors)
+            .filter(c -> c.getParameterCount() == sdlFieldCount)
+            .toList();
         if (matches.isEmpty()) {
             return new PayloadConstructionShapeResult.Reject(prefix
                 + " but none has parameter count " + sdlFieldCount
                 + " matching the SDL field count; the carrier requires a canonical (all-fields)"
-                + " constructor — found: " + formatCtorSignatures(ctors) + guidance);
+                + " constructor or a mutable-bean shape — found: " + formatCtorSignatures(ctors)
+                + guidance);
         }
         return new PayloadConstructionShapeResult.Reject(prefix
             + " with parameter count " + sdlFieldCount + " matching the SDL field count;"
@@ -474,14 +520,62 @@ class FieldBuilder {
     }
 
     /**
-     * SDL field count for the named GraphQL object type, or {@code -1} when the schema doesn't
-     * resolve to an object type. Used by canonical-ctor selection to disambiguate hand-rolled
-     * payload classes with multiple constructors.
+     * Tries the mutable-bean predicate: a public no-arg constructor plus a Java-bean setter for
+     * every SDL field. Returns {@code Resolved(MutableBean)} on match, a structured
+     * {@code Reject} when a partial match is detected (no-arg ctor exists but one or more
+     * SDL-field setters are missing or mis-typed), or {@code null} when no no-arg ctor exists
+     * (so the caller can fall through to the "neither predicate" reject path).
      */
-    private int sdlFieldCount(String returnTypeName) {
-        return ctx.schema.getType(returnTypeName) instanceof GraphQLObjectType obj
-            ? obj.getFieldDefinitions().size()
-            : -1;
+    private static PayloadConstructionShapeResult tryMutableBean(
+            Class<?> payloadCls,
+            java.util.List<String> sdlFieldNames,
+            java.lang.reflect.Constructor<?>[] ctors) {
+        if (sdlFieldNames == null || sdlFieldNames.isEmpty()) {
+            return null;
+        }
+        java.lang.reflect.Constructor<?> noArgCtor = java.util.Arrays.stream(ctors)
+            .filter(c -> c.getParameterCount() == 0
+                && java.lang.reflect.Modifier.isPublic(c.getModifiers()))
+            .findFirst()
+            .orElse(null);
+        if (noArgCtor == null) {
+            return null;
+        }
+        var bindings = new java.util.ArrayList<no.sikt.graphitron.rewrite.model.PayloadConstructionShape.SetterBinding>(
+            sdlFieldNames.size());
+        for (String sdlFieldName : sdlFieldNames) {
+            String setterName = javaBeanSetterName(sdlFieldName);
+            var candidates = java.util.Arrays.stream(payloadCls.getMethods())
+                .filter(m -> m.getName().equals(setterName) && m.getParameterCount() == 1)
+                .toList();
+            if (candidates.isEmpty()) {
+                return new PayloadConstructionShapeResult.Reject(
+                    "payload class '" + payloadCls.getName()
+                        + "' has a public no-arg constructor but no setter '" + setterName
+                        + "(...)' for SDL field '" + sdlFieldName + "'; the mutable-bean shape"
+                        + " requires a Java-bean setter for every SDL field");
+            }
+            if (candidates.size() > 1) {
+                return new PayloadConstructionShapeResult.Reject(
+                    "payload class '" + payloadCls.getName()
+                        + "' has multiple overloads of '" + setterName + "(...)' for SDL field '"
+                        + sdlFieldName + "'; the mutable-bean shape requires a unique single-arg"
+                        + " setter");
+            }
+            var setter = candidates.get(0);
+            boolean acceptsOptional = setter.getParameterTypes()[0] == java.util.Optional.class;
+            bindings.add(new no.sikt.graphitron.rewrite.model.PayloadConstructionShape.SetterBinding(
+                sdlFieldName, setter, acceptsOptional));
+        }
+        return new PayloadConstructionShapeResult.Resolved(
+            new no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean(
+                noArgCtor, bindings));
+    }
+
+    /** Java-bean setter name: SDL field "rating" maps to "setRating" (first letter upper-cased). */
+    private static String javaBeanSetterName(String sdlFieldName) {
+        return "set" + Character.toUpperCase(sdlFieldName.charAt(0))
+            + sdlFieldName.substring(1);
     }
 
     private static String formatAsConnectionSameTableWarning(
@@ -1752,24 +1846,45 @@ class FieldBuilder {
 
         // Records always declare a single canonical constructor; hand-rolled @record POJOs may
         // declare extras (e.g. a no-arg constructor alongside the all-fields one). The helper
-        // disambiguates by matching parameter count to the SDL field count. Phase 1 only
-        // produces the AllFieldsCtor arm; the seal carries the contract explicitly so the
-        // phase-2 setter arm drops in without touching this site's switch.
-        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFields.size());
+        // disambiguates by matching parameter count to the SDL field count, then falls back to
+        // the mutable-bean predicate (no-arg ctor + per-SDL-field setters). AllFieldsCtor wins
+        // when both shapes match (canonical-over-bridge precedence).
+        var sdlFieldNames = sdlFields.stream()
+            .map(graphql.schema.GraphQLFieldDefinition::getName)
+            .toList();
+        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFieldNames);
         if (shapeResult instanceof PayloadConstructionShapeResult.Reject r) {
             return new ErrorChannelResult.Reject(r.reason());
         }
         var shape = ((PayloadConstructionShapeResult.Resolved) shapeResult).shape();
-        var ctor = ((no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor) shape).ctor();
+
+        var payloadClassName = ClassName.bestGuess(result.fqClassName());
+        String mappingsConstantName = toScreamingSnake(payloadCls.getSimpleName());
+
+        return switch (shape) {
+            case no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor afc ->
+                buildErrorChannelCtorArm(result, afc, errorsFieldIndex, mappedErrorTypes,
+                    payloadClassName, mappingsConstantName);
+            case no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean mb ->
+                buildErrorChannelBeanArm(result, mb, errorsFieldIndex, mappedErrorTypes,
+                    payloadClassName, mappingsConstantName);
+        };
+    }
+
+    private static ErrorChannelResult buildErrorChannelCtorArm(
+            ReturnTypeRef.ResultReturnType result,
+            no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor afc,
+            int errorsFieldIndex,
+            List<ErrorType> mappedErrorTypes,
+            ClassName payloadClassName,
+            String mappingsConstantName) {
+        var ctor = afc.ctor();
         var parameters = ctor.getParameters();
         var genericParameterTypes = ctor.getGenericParameterTypes();
-
-        // §2c positional errors-slot rule: the SDL ErrorsField's declaration index
-        // (errorsFieldIndex) maps directly to the constructor parameter at the same index.
-        // Records preserve declaration order; hand-rolled payloads must expose a canonical
-        // constructor matching SDL field order. The slot's element type is Object; the only
-        // structural check left is that the parameter is a List/Iterable so the catch arm's
-        // synthesized payload-factory lambda (errors -> new Payload(..., errors, ...)) compiles.
+        // §2c positional errors-slot rule: the SDL ErrorsField's declaration index maps directly
+        // to the constructor parameter at the same index. The slot's element type is Object;
+        // the only structural check left is that the parameter is a List/Iterable so the catch
+        // arm's synthesized payload-factory lambda compiles.
         if (errorsFieldIndex >= parameters.length) {
             return new ErrorChannelResult.Reject(
                 "payload class '" + result.fqClassName()
@@ -1777,23 +1892,59 @@ class FieldBuilder {
                     + ") than the SDL field declaration order requires; the errors-shaped SDL "
                     + "field at index " + errorsFieldIndex + " has no matching ctor parameter");
         }
-        int errorsSlotIndex = errorsFieldIndex;
-        if (!Iterable.class.isAssignableFrom(parameters[errorsSlotIndex].getType())) {
+        if (!Iterable.class.isAssignableFrom(parameters[errorsFieldIndex].getType())) {
             return new ErrorChannelResult.Reject(
                 "payload class '" + result.fqClassName()
-                    + "' parameter at index " + errorsSlotIndex + " is "
-                    + parameters[errorsSlotIndex].getType().getName()
+                    + "' parameter at index " + errorsFieldIndex + " is "
+                    + parameters[errorsFieldIndex].getType().getName()
                     + "; the errors slot must be a List/Iterable so the catch arm's "
                     + "synthesized payload-factory lambda compiles");
         }
-
-        var defaultedSlots = collectDefaultedSlots(parameters, genericParameterTypes, errorsSlotIndex);
-
-        var payloadClassName = ClassName.bestGuess(result.fqClassName());
-        String mappingsConstantName = toScreamingSnake(payloadCls.getSimpleName());
-        var errorsSlot = new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(errorsSlotIndex);
+        var defaultedSlots = collectDefaultedSlots(parameters, genericParameterTypes, errorsFieldIndex);
+        var errorsSlot = new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(errorsFieldIndex);
         return new ErrorChannelResult.Channel(new ErrorChannel(
             mappedErrorTypes, payloadClassName, errorsSlot, defaultedSlots, mappingsConstantName));
+    }
+
+    private static ErrorChannelResult buildErrorChannelBeanArm(
+            ReturnTypeRef.ResultReturnType result,
+            no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean mb,
+            int errorsFieldIndex,
+            List<ErrorType> mappedErrorTypes,
+            ClassName payloadClassName,
+            String mappingsConstantName) {
+        var bindings = mb.bindings();
+        var errorsBinding = bindings.get(errorsFieldIndex);
+        var errorsSetter = errorsBinding.setter();
+        if (!Iterable.class.isAssignableFrom(errorsSetter.getParameterTypes()[0])) {
+            return new ErrorChannelResult.Reject(
+                "payload class '" + result.fqClassName() + "' setter '" + errorsSetter.getName()
+                    + "' accepts " + errorsSetter.getParameterTypes()[0].getName()
+                    + "; the errors-slot setter must accept List/Iterable so the catch arm's "
+                    + "synthesized payload-factory compiles");
+        }
+        var nonBoundSetters = collectNonBoundSetters(bindings, errorsFieldIndex);
+        var errorsSlot = new no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod(
+            errorsSetter, nonBoundSetters);
+        // defaultedSlots is the ctor-arm carrier; under the setter shape the non-bound
+        // setters with their defaults travel on the slot variant, and the carrier list is empty.
+        return new ErrorChannelResult.Channel(new ErrorChannel(
+            mappedErrorTypes, payloadClassName, errorsSlot, java.util.List.of(),
+            mappingsConstantName));
+    }
+
+    private static List<no.sikt.graphitron.rewrite.model.NonBoundSetter> collectNonBoundSetters(
+            List<no.sikt.graphitron.rewrite.model.PayloadConstructionShape.SetterBinding> bindings,
+            int boundIndex) {
+        var out = new java.util.ArrayList<no.sikt.graphitron.rewrite.model.NonBoundSetter>(
+            bindings.size() - 1);
+        for (int i = 0; i < bindings.size(); i++) {
+            if (i == boundIndex) continue;
+            var b = bindings.get(i);
+            out.add(new no.sikt.graphitron.rewrite.model.NonBoundSetter(
+                b.setter(), defaultLiteralFor(b.setter().getParameterTypes()[0])));
+        }
+        return out;
     }
 
     // ===== Carrier classifier: DML PayloadAssembly resolution =====
@@ -1863,12 +2014,15 @@ class FieldBuilder {
                 "payload class '" + result.fqClassName() + "' could not be loaded");
         }
 
-        int sdlFieldCount = sdlFieldCount(result.returnTypeName());
-        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFieldCount);
+        var sdlFieldNames = sdlFieldNames(result.returnTypeName());
+        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFieldNames);
         if (shapeResult instanceof PayloadConstructionShapeResult.Reject r) {
             return new DmlPayloadAssemblyResult.Reject(r.reason());
         }
         var shape = ((PayloadConstructionShapeResult.Resolved) shapeResult).shape();
+        if (shape instanceof no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean mb) {
+            return buildDmlPayloadAssemblyBeanArm(mb, result, tableRecordClass, dmlTableSqlName);
+        }
         var ctor = ((no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor) shape).ctor();
         var parameters = ctor.getParameters();
         var genericParameterTypes = ctor.getGenericParameterTypes();
@@ -1904,6 +2058,58 @@ class FieldBuilder {
         var rowSlot = new no.sikt.graphitron.rewrite.model.RowSlot.CtorParameterIndex(rowSlotIndex);
         return new DmlPayloadAssemblyResult.Assembly(new PayloadAssembly(
             payloadClassName, rowSlot, rowSlotType, defaultedSlots));
+    }
+
+    private static DmlPayloadAssemblyResult buildDmlPayloadAssemblyBeanArm(
+            no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean mb,
+            ReturnTypeRef.ResultReturnType result,
+            Class<?> tableRecordClass,
+            String dmlTableSqlName) {
+        var bindings = mb.bindings();
+        int boundIndex = -1;
+        for (int i = 0; i < bindings.size(); i++) {
+            var setter = bindings.get(i).setter();
+            if (setter.getParameterTypes()[0].equals(tableRecordClass)) {
+                if (boundIndex >= 0) {
+                    return new DmlPayloadAssemblyResult.Reject(
+                        "payload class '" + result.fqClassName()
+                            + "' has multiple setters typed as " + tableRecordClass.getName()
+                            + "; the DML's table '" + dmlTableSqlName
+                            + "' requires exactly one row-slot setter");
+                }
+                boundIndex = i;
+            }
+        }
+        if (boundIndex < 0) {
+            return new DmlPayloadAssemblyResult.Reject(
+                "payload class '" + result.fqClassName()
+                    + "' has no setter typed as " + tableRecordClass.getName()
+                    + "; the DML's table '" + dmlTableSqlName
+                    + "' requires exactly one row-slot setter assignable from this record class");
+        }
+        var boundSetter = bindings.get(boundIndex).setter();
+        var nonBoundSetters = collectNonBoundSetters(bindings, boundIndex);
+        var rowSlot = new no.sikt.graphitron.rewrite.model.RowSlot.SetterMethod(
+            boundSetter, nonBoundSetters);
+        var rowSlotType = no.sikt.graphitron.javapoet.TypeName.get(
+            boundSetter.getGenericParameterTypes()[0]);
+        var payloadClassName = ClassName.bestGuess(result.fqClassName());
+        return new DmlPayloadAssemblyResult.Assembly(new PayloadAssembly(
+            payloadClassName, rowSlot, rowSlotType, java.util.List.of()));
+    }
+
+    /**
+     * SDL field names for the named GraphQL object type in declaration order, or {@code null}
+     * when the schema doesn't resolve to an object type. Used by
+     * {@link #resolvePayloadConstructionShape} to drive the mutable-bean predicate's
+     * per-SDL-field setter lookup.
+     */
+    private java.util.List<String> sdlFieldNames(String returnTypeName) {
+        return ctx.schema.getType(returnTypeName) instanceof GraphQLObjectType obj
+            ? obj.getFieldDefinitions().stream()
+                .map(graphql.schema.GraphQLFieldDefinition::getName)
+                .toList()
+            : null;
     }
 
     // ===== Carrier classifier: service ResultAssembly resolution =====
@@ -1992,8 +2198,8 @@ class FieldBuilder {
         // legacy passthrough (service returns the SDL payload class directly), and we already
         // ruled that out above; surface the legacy "must return" wording so existing fixture
         // tests keep asserting on a single message.
-        int sdlFieldCount = sdlFieldCount(result.returnTypeName());
-        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFieldCount);
+        var sdlFieldNamesList = sdlFieldNames(result.returnTypeName());
+        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFieldNamesList);
         if (shapeResult instanceof PayloadConstructionShapeResult.Reject) {
             return new ResultAssemblyResult.Reject(
                 "@service method '" + method.className() + "." + method.methodName()
@@ -2001,6 +2207,9 @@ class FieldBuilder {
                     + "declared payload type — got '" + method.returnType() + "'");
         }
         var shape = ((PayloadConstructionShapeResult.Resolved) shapeResult).shape();
+        if (shape instanceof no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean mb) {
+            return buildResultAssemblyBeanArm(mb, result, method, sdlPayloadTypeName);
+        }
         var ctor = ((no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor) shape).ctor();
         var parameters = ctor.getParameters();
         var genericParameterTypes = ctor.getGenericParameterTypes();
@@ -2032,6 +2241,46 @@ class FieldBuilder {
         var resultSlot = new no.sikt.graphitron.rewrite.model.ResultSlot.CtorParameterIndex(resultSlotIndex);
         return new ResultAssemblyResult.Assembly(new no.sikt.graphitron.rewrite.model.ResultAssembly(
             payloadClassName, resultSlot, resultSlotType, defaultedSlots));
+    }
+
+    private static ResultAssemblyResult buildResultAssemblyBeanArm(
+            no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean mb,
+            ReturnTypeRef.ResultReturnType result,
+            no.sikt.graphitron.rewrite.model.MethodRef method,
+            no.sikt.graphitron.javapoet.TypeName sdlPayloadTypeName) {
+        var bindings = mb.bindings();
+        int boundIndex = -1;
+        for (int i = 0; i < bindings.size(); i++) {
+            var setter = bindings.get(i).setter();
+            var paramTypeName = no.sikt.graphitron.javapoet.TypeName.get(
+                setter.getGenericParameterTypes()[0]);
+            if (paramTypeName.equals(method.returnType())) {
+                if (boundIndex >= 0) {
+                    return new ResultAssemblyResult.Reject(
+                        "payload class '" + result.fqClassName()
+                            + "' has multiple setters typed as " + method.returnType()
+                            + "; the service's return type requires exactly one matching "
+                            + "result-slot setter");
+                }
+                boundIndex = i;
+            }
+        }
+        if (boundIndex < 0) {
+            return new ResultAssemblyResult.Reject(
+                "@service method '" + method.className() + "." + method.methodName()
+                    + "' must return '" + sdlPayloadTypeName + "' (the field's declared payload "
+                    + "class) or a type matching one setter on " + result.fqClassName()
+                    + "'s mutable-bean shape — got '" + method.returnType() + "'");
+        }
+        var boundSetter = bindings.get(boundIndex).setter();
+        var nonBoundSetters = collectNonBoundSetters(bindings, boundIndex);
+        var resultSlot = new no.sikt.graphitron.rewrite.model.ResultSlot.SetterMethod(
+            boundSetter, nonBoundSetters);
+        var resultSlotType = no.sikt.graphitron.javapoet.TypeName.get(
+            boundSetter.getGenericParameterTypes()[0]);
+        var payloadClassName = ClassName.bestGuess(result.fqClassName());
+        return new ResultAssemblyResult.Assembly(new no.sikt.graphitron.rewrite.model.ResultAssembly(
+            payloadClassName, resultSlot, resultSlotType, java.util.List.of()));
     }
 
     /**

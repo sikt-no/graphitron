@@ -295,6 +295,97 @@ class FetcherPipelineTest {
         assertThat(body).doesNotContain("ErrorRouter.dispatch");
     }
 
+    // ===== R154 §2: mutable-bean payload shape admission =====
+
+    /** Same SDL as SAK_DISPATCH_SDL but referencing the setter-shape SakPayload sibling class.
+     *  Service method returns the setter-shape type directly (legacy passthrough), so only the
+     *  ErrorChannel resolves against the setter-shape payload class. */
+    private static final String SETTER_SHAPE_SAK_SDL = """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = ValidationErr | DbErr
+            type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SetterShapeSakPayload"}) {
+                data: String
+                errors: [SakError]
+            }
+            type Query {
+                sak: SakPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSetterSak"})
+            }
+            """;
+
+    @Test
+    void serviceMutation_setterShapePayload_emitsSetterFactory() {
+        // Mutable-bean payload: classifier resolves ErrorsSlot.SetterMethod; emitter prints the
+        // multi-statement factory body (var p = new Payload(); p.setX(...); p.setErrors(errors);
+        // ...; return p;) inside the catch-arm payload-factory lambda.
+        var sak = method(findSpec("QueryFetchers", SETTER_SHAPE_SAK_SDL), "sak");
+        var body = sak.code().toString();
+        assertThat(body).contains("ErrorRouter.dispatch");
+        assertThat(body).contains("errors -> {");
+        assertThat(body).contains("new no.sikt.graphitron.codereferences.dummyreferences.SetterShapeSakPayload()");
+        assertThat(body).contains(".setErrors(errors)");
+        assertThat(body).contains(".setData(null)");
+        assertThat(body).contains("return p;");
+    }
+
+    @Test
+    void serviceMutation_allFieldsCtorPayload_emitsCtorFactory_unchanged() {
+        // Regression cover: the all-fields-ctor path still emits the positional new Payload(...)
+        // expression, with no setter calls.
+        var sak = method(findSpec("QueryFetchers", SAK_DISPATCH_SDL), "sak");
+        var body = sak.code().toString();
+        assertThat(body).contains("ErrorRouter.dispatch");
+        assertThat(body).contains("errors -> new no.sikt.graphitron.codereferences.dummyreferences.SakPayload(");
+        assertThat(body).doesNotContain(".setErrors(errors)");
+    }
+
+    @Test
+    void serviceMutation_bothShapesPresent_prefersCtorFactory() {
+        // Canonical-over-bridge precedence: when a payload exposes both an all-fields ctor and
+        // a no-arg ctor + setters, the classifier picks AllFieldsCtor (predicate 1 short-
+        // circuits the walk). Emit reflects the positional ctor form.
+        var sdl = SETTER_SHAPE_SAK_SDL
+            .replace(
+                "no.sikt.graphitron.codereferences.dummyreferences.SetterShapeSakPayload",
+                "no.sikt.graphitron.codereferences.dummyreferences.BothShapesSakPayload")
+            .replace("runSetterSak", "runBothShapesSak");
+        var sak = method(findSpec("QueryFetchers", sdl), "sak");
+        var body = sak.code().toString();
+        assertThat(body).contains("ErrorRouter.dispatch");
+        assertThat(body).contains("errors -> new no.sikt.graphitron.codereferences.dummyreferences.BothShapesSakPayload(");
+        assertThat(body).doesNotContain(".setErrors(errors)");
+    }
+
+    @Test
+    void dmlMutation_setterShapePayload_emitsSetterFactory() {
+        // DML mutation with a setter-shape payload: row-slot classifier picks RowSlot.SetterMethod
+        // (setFilm), and the success arm constructs the payload via no-arg ctor + setters. The
+        // catch-arm payload-factory mirrors the shape (ErrorsSlot.SetterMethod). Same SDL as
+        // DML_DELETE_PAYLOAD_DISPATCH_SDL but swapping in the setter-shape sibling fixture.
+        var sdl = DML_DELETE_PAYLOAD_DISPATCH_SDL.replace(
+            "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmPayload",
+            "no.sikt.graphitron.codereferences.dummyreferences.SetterShapeDeleteFilmPayload");
+        var deleteFilm = method(findSpec("MutationFetchers", sdl), "deleteFilm");
+        var body = deleteFilm.code().toString();
+        assertThat(body)
+            .contains("FilmRecord row = dsl")
+            .contains(".deleteFrom")
+            .contains(".returning()")
+            .contains(".fetchOne()")
+            .contains("SetterShapeDeleteFilmPayload payload = new")
+            .contains("payload.setFilm(row)")
+            .contains("ErrorRouter.dispatch");
+        // Catch-arm payload factory uses the setter form too.
+        assertThat(body).contains(".setErrors(errors)");
+    }
+
     // ===== R12 DML payload assembly + dispatch (lifted Invariant #14) =====
 
     private static final String DML_DELETE_PAYLOAD_DISPATCH_SDL = """

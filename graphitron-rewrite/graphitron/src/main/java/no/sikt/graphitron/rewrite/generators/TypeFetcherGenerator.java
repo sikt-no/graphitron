@@ -1483,6 +1483,11 @@ public class TypeFetcherGenerator {
      * {@code payload} local that the caller's {@link #returnSyncSuccess} subsequently wraps in
      * the {@link DataFetcherResult}.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "payload-construction.shape-resolved",
+        reliesOn = "switch over resultSlot is total because the classifier resolves "
+            + "PayloadConstructionShape to either AllFieldsCtor or MutableBean, and each arm "
+            + "produces the matching slot variant. The emitter never sees a third shape.")
     private static CodeBlock buildSuccessPayload(TypeName valueType,
                                                  no.sikt.graphitron.rewrite.model.ResultAssembly ra,
                                                  Optional<ErrorChannel> errorChannel,
@@ -1490,7 +1495,36 @@ public class TypeFetcherGenerator {
         return switch (ra.resultSlot()) {
             case no.sikt.graphitron.rewrite.model.ResultSlot.CtorParameterIndex resultCpi ->
                 buildSuccessPayloadCtor(valueType, ra, resultCpi.index(), errorChannel, rowLocal);
+            case no.sikt.graphitron.rewrite.model.ResultSlot.SetterMethod sm ->
+                buildSuccessPayloadSetters(valueType, sm, errorChannel, rowLocal);
         };
+    }
+
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "payload-construction.setter-name-matches-sdl-field",
+        reliesOn = "calls boundSetter.getName() and nonBoundSetter.setter().getName() directly "
+            + "into the generated source; the classifier guarantees each Method resolves to a "
+            + "real public method on the payload class.")
+    private static CodeBlock buildSuccessPayloadSetters(
+            TypeName valueType,
+            no.sikt.graphitron.rewrite.model.ResultSlot.SetterMethod sm,
+            Optional<ErrorChannel> errorChannel,
+            String rowLocal) {
+        var b = CodeBlock.builder().add("$T payload = new $T();\n", valueType, valueType);
+        b.add("payload.$L($L);\n", sm.boundSetter().getName(), rowLocal);
+        java.lang.reflect.Method errorsSetter = errorChannel
+            .map(ErrorChannel::errorsSlot)
+            .filter(s -> s instanceof no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod)
+            .map(s -> ((no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod) s).boundSetter())
+            .orElse(null);
+        for (var nbs : sm.nonBoundSetters()) {
+            if (errorsSetter != null && nbs.setter().equals(errorsSetter)) {
+                b.add("payload.$L($T.of());\n", nbs.setter().getName(), LIST);
+            } else {
+                b.add("payload.$L($L);\n", nbs.setter().getName(), nbs.defaultLiteral());
+            }
+        }
+        return b.build();
     }
 
     private static CodeBlock buildSuccessPayloadCtor(TypeName valueType,
@@ -1565,26 +1599,60 @@ public class TypeFetcherGenerator {
             b.endControlFlow();
         }
         b.beginControlFlow("if (!__violations.isEmpty())");
+        b.add(declareEarlyPayloadFromErrors(channel, "__violations"));
         b.add("return $T.<$T>newResult()\n", DATA_FETCHER_RESULT, boxed(valueType));
-        b.add("    .data(").add(newPayloadFromErrors(channel, "__violations")).add(")\n");
+        b.add("    .data(__earlyPayload)\n");
         b.addStatement("    .build()");
         b.endControlFlow();
         return b.build();
     }
 
     /**
-     * Synthesizes a direct {@code new <PayloadClass>(...)} expression where the errors slot is
-     * bound to {@code errorsLocal} and every other slot prints its pre-resolved
-     * {@link no.sikt.graphitron.rewrite.model.DefaultedSlot#defaultLiteral()}. Mirrors the
-     * shape of {@link #payloadFactoryLambda} without wrapping in a lambda; used by the
-     * validator pre-step where the violations list is already in scope. Dispatches on the
-     * channel's {@link ErrorsSlot} arm; the phase-2 setter arm lands as a new {@code case}.
+     * Emits the statements that declare a local {@code __earlyPayload} populated from the
+     * validation-violations list. Used by the validator pre-step where the caller subsequently
+     * references {@code __earlyPayload} inside {@code .data(...)}. Dispatches on the channel's
+     * {@link ErrorsSlot} arm: the ctor arm emits a single
+     * {@code <Payload> __earlyPayload = new <Payload>(...)} statement; the setter arm emits a
+     * sequence of {@code __earlyPayload.setX(...)} statements after a no-arg construction.
      */
-    private static CodeBlock newPayloadFromErrors(ErrorChannel channel, String errorsLocal) {
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "payload-construction.shape-resolved",
+        reliesOn = "switch over errorsSlot is total because the classifier resolves "
+            + "PayloadConstructionShape to either AllFieldsCtor (CtorParameterIndex) or "
+            + "MutableBean (SetterMethod). No third arm.")
+    private static CodeBlock declareEarlyPayloadFromErrors(ErrorChannel channel, String errorsLocal) {
         return switch (channel.errorsSlot()) {
             case no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex cpi ->
-                newPayloadFromErrorsCtor(channel, cpi.index(), errorsLocal);
+                declareEarlyPayloadCtor(channel, cpi.index(), errorsLocal);
+            case no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod sm ->
+                declareEarlyPayloadSetters(channel, sm, errorsLocal);
         };
+    }
+
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "payload-construction.setter-name-matches-sdl-field",
+        reliesOn = "prints setter names directly into the generated validator pre-step; the "
+            + "classifier guarantees each name resolves to a real method on the payload class.")
+    private static CodeBlock declareEarlyPayloadSetters(
+            ErrorChannel channel,
+            no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod sm,
+            String errorsLocal) {
+        var b = CodeBlock.builder();
+        b.add("$T __earlyPayload = new $T();\n", channel.payloadClass(), channel.payloadClass());
+        b.add("__earlyPayload.$L($L);\n", sm.boundSetter().getName(), errorsLocal);
+        for (var nbs : sm.nonBoundSetters()) {
+            b.add("__earlyPayload.$L($L);\n", nbs.setter().getName(), nbs.defaultLiteral());
+        }
+        return b.build();
+    }
+
+    private static CodeBlock declareEarlyPayloadCtor(ErrorChannel channel, int errorsCtorIndex,
+                                                      String errorsLocal) {
+        return CodeBlock.builder()
+            .add("$T __earlyPayload = ", channel.payloadClass())
+            .add(newPayloadFromErrorsCtor(channel, errorsCtorIndex, errorsLocal))
+            .add(";\n")
+            .build();
     }
 
     private static CodeBlock newPayloadFromErrorsCtor(ErrorChannel channel, int errorsCtorIndex,
@@ -3008,8 +3076,26 @@ public class TypeFetcherGenerator {
         var payload = switch (assembly.rowSlot()) {
             case no.sikt.graphitron.rewrite.model.RowSlot.CtorParameterIndex rowCpi ->
                 emitPayloadCtor(assembly, valueType, rowCpi.index());
+            case no.sikt.graphitron.rewrite.model.RowSlot.SetterMethod sm ->
+                emitPayloadSetters(assembly, valueType, sm);
         };
         return dml.add(payload).build();
+    }
+
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "payload-construction.setter-name-matches-sdl-field",
+        reliesOn = "prints boundSetter.getName() and nonBoundSetter.setter().getName() into "
+            + "the generated DML-success body; the classifier guarantees each Method resolves.")
+    private static CodeBlock emitPayloadSetters(
+            no.sikt.graphitron.rewrite.model.PayloadAssembly assembly,
+            TypeName valueType,
+            no.sikt.graphitron.rewrite.model.RowSlot.SetterMethod sm) {
+        var b = CodeBlock.builder().add("$T payload = new $T();\n", valueType, valueType);
+        b.add("payload.$L(row);\n", sm.boundSetter().getName());
+        for (var nbs : sm.nonBoundSetters()) {
+            b.add("payload.$L($L);\n", nbs.setter().getName(), nbs.defaultLiteral());
+        }
+        return b.build();
     }
 
     private static CodeBlock emitPayloadCtor(
@@ -4360,11 +4446,42 @@ public class TypeFetcherGenerator {
      * phase-2 setter arm lands as a new {@code case} that emits a lambda body of
      * {@code errors -> { var p = new Payload(); p.setX(...); p.setErrors(errors); ...; return p; }}.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "payload-construction.shape-resolved",
+        reliesOn = "switch over errorsSlot is total. CtorParameterIndex emits the positional "
+            + "lambda; SetterMethod emits the no-arg-ctor + setters lambda body.")
     private static CodeBlock payloadFactoryLambda(ErrorChannel channel) {
         return switch (channel.errorsSlot()) {
             case no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex cpi ->
                 payloadFactoryLambdaCtor(channel, cpi.index());
+            case no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod sm ->
+                payloadFactoryLambdaSetters(channel, sm);
         };
+    }
+
+    /**
+     * Mutable-bean variant of {@link #payloadFactoryLambda}: emits a multi-statement
+     * {@code errors -> { var p = new Payload(); p.setA(...); ...; p.setErrors(errors); ...;
+     * return p; }} lambda that invokes the bound errors setter with the runtime list and every
+     * other setter with its language-default literal. Per
+     * {@code rewrite-design-principles.adoc} the bound setter is called first for diagnostic
+     * clarity; semantic order doesn't matter (Java-bean setters are independent assignments).
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "payload-construction.setter-name-matches-sdl-field",
+        reliesOn = "prints boundSetter.getName() and each nonBoundSetter.setter().getName() "
+            + "into the generated lambda body; the classifier guarantees each name resolves.")
+    private static CodeBlock payloadFactoryLambdaSetters(
+            ErrorChannel channel,
+            no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod sm) {
+        var b = CodeBlock.builder().add("errors -> {\n").indent();
+        b.add("$T p = new $T();\n", channel.payloadClass(), channel.payloadClass());
+        b.add("p.$L(errors);\n", sm.boundSetter().getName());
+        for (var nbs : sm.nonBoundSetters()) {
+            b.add("p.$L($L);\n", nbs.setter().getName(), nbs.defaultLiteral());
+        }
+        b.add("return p;\n").unindent().add("}");
+        return b.build();
     }
 
     private static CodeBlock payloadFactoryLambdaCtor(ErrorChannel channel, int errorsCtorIndex) {

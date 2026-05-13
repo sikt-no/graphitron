@@ -4175,6 +4175,53 @@ class GraphQLQueryTest {
         payload.extractingByKey("errors", as(LIST)).isEmpty();
     }
 
+    // ===== R154 mutable-bean payload shape end-to-end =====
+    //
+    // submitSetterShapeFilmReview returns a SetterShapeFilmReviewPayload (no-arg ctor +
+    // setters). The carrier classifier resolves R154's MutableBean shape; the emitter produces
+    // the catch-arm payload-factory in setter form. End-to-end round-trip through Sakila
+    // PostgreSQL pins that R154's emit changes don't regress the mutation pillar.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitSetterShapeFilmReview_validInput_returnsHappyPathPayload() {
+        Map<String, Object> data = execute("""
+            mutation {
+                submitSetterShapeFilmReview(filmId: 42, rating: 5) { reviewId errors { __typename } }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitSetterShapeFilmReview", as(MAP));
+        payload.containsEntry("reviewId", 50042);
+        payload.extractingByKey("errors", as(LIST)).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitSetterShapeFilmReview_invalidRating_routesThroughBadRatingErrorType() {
+        // Catch-arm payload-factory emits `errors -> { var p = new SetterShapeFilmReviewPayload();
+        // p.setReviewId(null); p.setErrors(errors); return p; }` in setter form. End-to-end
+        // round-trip places the bad-rating throwable into the errors list.
+        Map<String, Object> data = execute("""
+            mutation {
+                submitSetterShapeFilmReview(filmId: 1, rating: 11) {
+                    reviewId
+                    errors {
+                        __typename
+                        ... on FilmReviewBadRating { path message }
+                        ... on FilmReviewMissingFilm { path message }
+                    }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitSetterShapeFilmReview", as(MAP));
+        payload.containsEntry("reviewId", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmReviewBadRating");
+        only.containsEntry("message", "rating must be in [1, 10]; got 11");
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void submitFilmReviewWithDetails_routesThroughInstantiatedInputBean() {

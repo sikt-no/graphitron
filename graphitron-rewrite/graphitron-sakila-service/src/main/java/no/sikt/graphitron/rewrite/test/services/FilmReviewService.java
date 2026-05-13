@@ -49,4 +49,26 @@ public final class FilmReviewService {
         }
         return submit(details.filmId(), details.rating());
     }
+
+    /**
+     * R154 fixture: identical branching to {@link #submit} but returns the setter-shape sibling
+     * payload class. Drives the {@code MutationServiceRecordField} emit through R154's
+     * mutable-bean construction shape (no-arg ctor + setters) end-to-end through the execution
+     * tier.
+     */
+    public static SetterShapeFilmReviewPayload submitSetterShape(Integer filmId, Integer rating) {
+        if (filmId == null || rating == null) {
+            throw new FilmReviewBadRatingException("filmId and rating are required");
+        }
+        if (rating < 1 || rating > 10) {
+            throw new FilmReviewBadRatingException("rating must be in [1, 10]; got " + rating);
+        }
+        if (filmId == 999) {
+            throw new FilmReviewMissingFilmException("film " + filmId + " not found");
+        }
+        var out = new SetterShapeFilmReviewPayload();
+        out.setReviewId(rating * 10000 + filmId);
+        out.setErrors(java.util.List.of());
+        return out;
+    }
 }

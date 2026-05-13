@@ -1,5 +1,8 @@
 package no.sikt.graphitron.rewrite.model;
 
+import java.lang.reflect.Method;
+import java.util.List;
+
 /**
  * The location of the errors slot on a payload class, paired with the
  * {@link PayloadConstructionShape} the classifier resolved. Two structurally distinct ways to
@@ -9,9 +12,9 @@ package no.sikt.graphitron.rewrite.model;
  *   <li>{@link CtorParameterIndex} : pass the errors list as the constructor parameter at this
  *       index ({@code new Payload(arg0, arg1, errors, arg3)}). Pairs with
  *       {@link PayloadConstructionShape.AllFieldsCtor}.</li>
- *   <li>{@code SetterMethod} (phase 2) : invoke this setter on a no-arg-constructed instance
+ *   <li>{@link SetterMethod} : invoke this setter on a no-arg-constructed instance
  *       ({@code var p = new Payload(); ...; p.setErrors(errors); ...; return p;}). Pairs with
- *       the phase-2 mutable-bean permit.</li>
+ *       {@link PayloadConstructionShape.MutableBean}.</li>
  * </ul>
  *
  * <p>Sibling of {@link ResultSlot} and {@link RowSlot} in form but lives in its own sealed
@@ -20,7 +23,8 @@ package no.sikt.graphitron.rewrite.model;
  * ({@code ErrorChannel}, {@code ResultAssembly}, {@code PayloadAssembly} each carry their own
  * slot type).
  */
-public sealed interface ErrorsSlot permits ErrorsSlot.CtorParameterIndex {
+public sealed interface ErrorsSlot
+        permits ErrorsSlot.CtorParameterIndex, ErrorsSlot.SetterMethod {
 
     /**
      * All-fields-ctor shape: the errors parameter sits at {@code index} in the canonical
@@ -34,6 +38,23 @@ public sealed interface ErrorsSlot permits ErrorsSlot.CtorParameterIndex {
                 throw new IllegalArgumentException(
                     "ErrorsSlot.CtorParameterIndex: index must be non-negative; got " + index);
             }
+        }
+    }
+
+    /**
+     * Mutable-bean shape: invoke {@code boundSetter} on a no-arg-constructed payload with the
+     * errors list. {@code nonBoundSetters} captures every other SDL field's setter paired with
+     * its language-default literal so the emit walks one structured list (in SDL declaration
+     * order minus the errors slot) and prints each setter call with its default value.
+     */
+    record SetterMethod(Method boundSetter, List<NonBoundSetter> nonBoundSetters)
+            implements ErrorsSlot {
+        public SetterMethod {
+            if (boundSetter == null) {
+                throw new IllegalArgumentException(
+                    "ErrorsSlot.SetterMethod: boundSetter must be non-null");
+            }
+            nonBoundSetters = List.copyOf(nonBoundSetters);
         }
     }
 }
