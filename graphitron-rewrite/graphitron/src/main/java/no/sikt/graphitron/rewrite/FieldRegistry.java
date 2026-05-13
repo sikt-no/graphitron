@@ -49,6 +49,44 @@ public final class FieldRegistry {
     }
 
     /**
+     * Replace an existing classification for {@code coords}. Used only by R156's DELETE
+     * carrier-walk path, where the verbless walk's {@code GraphitronSchemaBuilder.registerCarrierDataField}
+     * registers a {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField} on
+     * the carrier's data field before {@link no.sikt.graphitron.rewrite.FieldBuilder} knows the
+     * owning mutation's {@link no.sikt.graphitron.rewrite.model.DmlKind}; FieldBuilder reclassifies
+     * to {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning}
+     * (the DELETE-specific sibling with the {@link no.sikt.graphitron.rewrite.model.PkResolution}
+     * projection) once the verb is in scope. The {@code expectedExistingClass} parameter is the
+     * structural guard: if the verbless walk wrote something other than the expected sibling,
+     * the reclassification fails fast rather than silently overwriting a divergent shape.
+     *
+     * <p>{@link #classify} stays the duplicate-rejecting entry point for every other call site;
+     * this method is the explicit, named exception that the carrier-walk path is allowed to
+     * take and no other path should reach for.
+     */
+    public void reclassify(FieldCoordinates coords, GraphitronField field,
+                           Class<? extends GraphitronField> expectedExistingClass) {
+        Objects.requireNonNull(coords, "coords");
+        Objects.requireNonNull(field, "field");
+        Objects.requireNonNull(expectedExistingClass, "expectedExistingClass");
+        var existing = fields.get(coords);
+        if (existing == null) {
+            // No pre-existing classification — admit; behave like classify(). This happens for
+            // DataElement.Id carriers where the verbless walk leaves the data field
+            // unregistered (encoder lookup needs the owning mutation's input @table).
+            fields.put(coords, field);
+            traceOutput(field);
+            return;
+        }
+        if (!expectedExistingClass.isInstance(existing)) {
+            throw new IllegalStateException("reclassify(" + coords + "): expected existing "
+                + expectedExistingClass.getSimpleName() + " but got " + existing.getClass().getSimpleName());
+        }
+        fields.put(coords, field);
+        traceOutput(field);
+    }
+
+    /**
      * Trace-only emission for an input-field classification. Both {@code Resolved} and
      * {@code Unresolved} resolutions emit one record per call; the leaf class is the
      * contained {@link InputField} record class on success, or

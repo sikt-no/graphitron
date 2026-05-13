@@ -150,12 +150,13 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     ) implements MutationField {
 
         public MutationDmlRecordField {
-            if (kind == DmlKind.DELETE) {
-                throw new IllegalArgumentException(
-                    "MutationDmlRecordField cannot carry DmlKind.DELETE — DELETE-with-payload-return "
-                    + "is rejected at classify time (returning pre-deletion state is incorrect by "
-                    + "construction; the row is gone before the response SELECT can read it).");
-            }
+            // R156: DELETE is admitted. The per-field carrier on the payload's data field is a
+            // SingleRecordIdFieldFromReturning (encoded PK echo) or
+            // SingleRecordTableFieldFromReturning (PK-only RETURNING projected through a sealed
+            // PkResolution switch); both fetcher paths consume the RETURNING record directly,
+            // so no follow-up SELECT runs after the row is gone. The verb-aware carrier walk
+            // (BuildContext.tryResolveSingleRecordCarrier(typeName, DmlKind)) is the producer
+            // site for the DELETE-admissibility decision.
         }
     }
 
@@ -210,10 +211,16 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * {@link DmlKind} enum field encodes the per-emit-shape dispatch and the parameterised
      * emitter switches on it.
      *
-     * <p><b>DELETE rejection.</b> Mirrors {@link MutationDmlRecordField}: DELETE-with-payload-
-     * return is incorrect by construction (the row is gone before the response SELECT can
-     * read it). The compact-constructor invariant is belt-and-braces under the upstream
-     * classifier check that already rejects DELETE before this record is constructed.
+     * <p><b>DELETE admission (R156).</b> Mirrors {@link MutationDmlRecordField}: DELETE is
+     * admitted, with the per-field data-field carrier classified as
+     * {@link ChildField.SingleRecordIdFieldFromReturning} or
+     * {@link ChildField.SingleRecordTableFieldFromReturning} (no follow-up SELECT — the row is
+     * gone, the encoded PK or PkResolution projection is consumed directly off the RETURNING
+     * record). The verb-aware
+     * {@link no.sikt.graphitron.rewrite.BuildContext#tryResolveSingleRecordCarrier(String, no.sikt.graphitron.rewrite.model.DmlKind)}
+     * overload is the producer site for the DELETE-admissibility decision; this record's
+     * compact constructor admits all four {@link DmlKind} values today (with UPSERT deferred
+     * per R145).
      *
      * @see no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator
      */
@@ -236,13 +243,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     ) implements MutationField {
 
         public MutationBulkDmlRecordField {
-            if (kind == DmlKind.DELETE) {
-                throw new IllegalArgumentException(
-                    "MutationBulkDmlRecordField cannot carry DmlKind.DELETE — "
-                    + "DELETE-with-payload-return is rejected at classify time "
-                    + "(returning pre-deletion state is incorrect by construction; the row "
-                    + "is gone before the response SELECT can read it).");
-            }
+            // R156: DELETE is admitted. Same reasoning as MutationDmlRecordField — the
+            // per-field carrier on the payload's data field is a SingleRecordIdFieldFromReturning
+            // or SingleRecordTableFieldFromReturning, both reading the RETURNING record directly
+            // with no follow-up SELECT.
             if (kind == DmlKind.UPSERT) {
                 throw new IllegalArgumentException(
                     "MutationBulkDmlRecordField cannot carry DmlKind.UPSERT under R144's "

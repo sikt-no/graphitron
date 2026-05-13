@@ -112,16 +112,23 @@ class SingleRecordCarrierPipelineTest {
             .isInstanceOf(MutationField.MutationDmlRecordField.class);
     }
 
-    // ===== DELETE-with-carrier rejection =====
+    // ===== DELETE-with-carrier admission (R156) =====
 
     @Test
-    void carrier_withDelete_rejectsAtClassifier() {
+    void carrier_withDeleteAndProjectableElement_admitsAsMutationDmlRecordField() {
+        // R156: DELETE-with-carrier admits when the element type's fields all classify into
+        // admissible PerFieldOutcome arms. `Film @table { title: String }` has only one field,
+        // nullable non-PK, which classifies into PerFieldOutcome.NonPkNullable → admits.
+        // The mutation classifies as MutationDmlRecordField with kind=DELETE; the per-field
+        // data carrier on `FilmPayload.film` is registered as SingleRecordTableFieldFromReturning
+        // (overwriting the verbless walk's SingleRecordTableField).
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.DELETE, "type FilmPayload { film: Film }"));
         var mutField = schema.field("Mutation", mutationName(DmlKind.DELETE));
-        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
-        var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains(
-            "DELETE", "is not supported", "use ID or [ID!]");
+        assertThat(mutField).isInstanceOf(MutationField.MutationDmlRecordField.class);
+        assertThat(((MutationField.MutationDmlRecordField) mutField).kind()).isEqualTo(DmlKind.DELETE);
+        var dataFieldClassification = schema.field("FilmPayload", "film");
+        assertThat(dataFieldClassification)
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning.class);
     }
 
     // ===== Carrier-walk rejection (R141: no CarrierFieldRole permit match) =====
@@ -464,7 +471,7 @@ class SingleRecordCarrierPipelineTest {
         assertThat(reason).contains(
             "'FilmDtoPayload'",
             "record-element data field",
-            "DML mutations require an @table-element data field",
+            "@table-element or ID-scalar data field",
             "@service mutation");
     }
 
