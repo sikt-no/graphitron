@@ -166,7 +166,10 @@ class FixtureCatalogTest {
         var tree = parser().parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("no directive at cursor"));
-        return TableCompletions.generate(VOCAB, data, directive, cursor, bytes);
+        var locOpt = VOCAB.locateAt(directive, cursor, bytes);
+        if (locOpt.isEmpty()) return List.of();
+        var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
+        return TableCompletions.generate(VOCAB, data, context);
     }
 
     private static List<CompletionItem> fieldCompletions(CompletionData data, String source, Point cursor) {
@@ -174,7 +177,10 @@ class FixtureCatalogTest {
         var tree = parser().parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("no directive at cursor"));
-        return FieldCompletions.generate(VOCAB, data, directive, cursor, bytes);
+        var locOpt = VOCAB.locateAt(directive, cursor, bytes);
+        if (locOpt.isEmpty()) return List.of();
+        var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
+        return FieldCompletions.generate(VOCAB, data, context, directive, bytes);
     }
 
     private static Parser parser() {

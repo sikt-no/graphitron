@@ -116,6 +116,9 @@ class MethodCompletionsTest {
         var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
-        return MethodCompletions.generate(VOCAB, DATA, directive, cursor, bytes);
+        var locOpt = VOCAB.locateAt(directive, cursor, bytes);
+        if (locOpt.isEmpty()) return List.of();
+        var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
+        return MethodCompletions.generate(VOCAB, DATA, context, directive, cursor, bytes);
     }
 }

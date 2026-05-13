@@ -1,21 +1,22 @@
 package no.sikt.graphitron.lsp.completions;
 
 import no.sikt.graphitron.lsp.parsing.Behavior;
-import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
-import io.github.treesitter.jtreesitter.Point;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.List;
 
 /**
  * Class-name completions for any coordinate the {@link LspVocabulary}
  * overlay declares as a {@link Behavior.ClassNameBinding}. The dispatch
- * is identity-keyed: the cursor's coordinate is computed once and looked
- * up in the overlay; if the result is a {@code ClassNameBinding}, this
- * provider emits the catalog's external-reference set as completion items.
+ * is identity-keyed: the cursor's coordinate (carried on
+ * {@link CompletionContext}) is looked up in the overlay; if the result
+ * is a {@code ClassNameBinding}, this provider emits the catalog's
+ * external-reference set as completion items.
  *
  * <p>Coordinate-driven dispatch: every coordinate the canonical overlay
  * binds as a class-name slot fires this provider, including the flat
@@ -29,24 +30,23 @@ public final class ClassNameCompletions {
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
         CompletionData data,
-        Directives.Directive directive,
-        Point pos,
-        byte[] source
+        CompletionContext context
     ) {
-        var coord = vocabulary.coordinateAt(directive, pos, source);
-        if (coord.isEmpty()) return List.of();
-        var behavior = vocabulary.behaviorAt(coord.get());
+        var behavior = vocabulary.behaviorAt(context.coordinate());
         if (behavior.isEmpty() || !(behavior.get() instanceof Behavior.ClassNameBinding)) {
             return List.of();
         }
         return data.externalReferences().stream()
-            .map(ClassNameCompletions::toCompletionItem)
+            .map(ref -> toCompletionItem(ref, context))
             .toList();
     }
 
-    private static CompletionItem toCompletionItem(CompletionData.ExternalReference ref) {
+    private static CompletionItem toCompletionItem(
+        CompletionData.ExternalReference ref, CompletionContext context
+    ) {
         var item = new CompletionItem(ref.className());
         item.setKind(CompletionItemKind.Class);
+        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), ref.className())));
         return item;
     }
 }

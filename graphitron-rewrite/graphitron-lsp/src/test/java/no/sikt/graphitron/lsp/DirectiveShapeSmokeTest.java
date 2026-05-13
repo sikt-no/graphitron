@@ -57,10 +57,11 @@ class DirectiveShapeSmokeTest {
         );
         // Class-name completion: cursor inside className: value.
         Point classCursor = pointInside(source, "no.sikt.graphitron");
-        var classItems = ClassNameCompletions.generate(
-            VOCAB, data, directiveAt(source, classCursor), classCursor,
-            source.getBytes(StandardCharsets.UTF_8)
-        );
+        var classBytes = source.getBytes(StandardCharsets.UTF_8);
+        var classDirective = directiveAt(source, classCursor);
+        var classLoc = VOCAB.locateAt(classDirective, classCursor, classBytes).orElseThrow();
+        var classContext = no.sikt.graphitron.lsp.completions.CompletionContext.from(classLoc, classBytes);
+        var classItems = ClassNameCompletions.generate(VOCAB, data, classContext);
         assertThat(classItems).extracting(i -> i.getLabel())
             .contains("no.sikt.graphitron.rewrite.test.services.SampleQueryService");
 
@@ -68,10 +69,12 @@ class DirectiveShapeSmokeTest {
         Point methodCursor = pointInside(source, "filmsByService\"\n");
         // Land inside the method:'s value (after the opening quote of "filmsByService").
         methodCursor = adjustToInsideValue(source, methodCursor, "method: \"filmsByService\"");
+        var methodBytes = source.getBytes(StandardCharsets.UTF_8);
+        var methodDirective = directiveAt(source, methodCursor);
+        var methodLoc = VOCAB.locateAt(methodDirective, methodCursor, methodBytes).orElseThrow();
+        var methodContext = no.sikt.graphitron.lsp.completions.CompletionContext.from(methodLoc, methodBytes);
         var methodItems = MethodCompletions.generate(
-            VOCAB, data, directiveAt(source, methodCursor), methodCursor,
-            source.getBytes(StandardCharsets.UTF_8)
-        );
+            VOCAB, data, methodContext, methodDirective, methodCursor, methodBytes);
         assertThat(methodItems).extracting(i -> i.getLabel()).contains("filmsByService");
 
         // Diagnostics: this schema is internally consistent; no errors.
@@ -160,14 +163,19 @@ class DirectiveShapeSmokeTest {
         int idx = source.indexOf("argMapping: \"") + "argMapping: \"".length();
         Point cursor = lspPoint(source, idx);
 
-        var classItems = ClassNameCompletions.generate(
-            VOCAB, data, directiveAt(source, cursor), cursor,
-            source.getBytes(StandardCharsets.UTF_8)
-        );
-        var methodItems = MethodCompletions.generate(
-            VOCAB, data, directiveAt(source, cursor), cursor,
-            source.getBytes(StandardCharsets.UTF_8)
-        );
+        var argMapBytes = source.getBytes(StandardCharsets.UTF_8);
+        var argMapDirective = directiveAt(source, cursor);
+        var argMapLoc = VOCAB.locateAt(argMapDirective, cursor, argMapBytes);
+        var classItems = argMapLoc
+            .map(loc -> ClassNameCompletions.generate(
+                VOCAB, data, no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, argMapBytes)))
+            .orElseGet(List::of);
+        var methodItems = argMapLoc
+            .map(loc -> MethodCompletions.generate(
+                VOCAB, data,
+                no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, argMapBytes),
+                argMapDirective, cursor, argMapBytes))
+            .orElseGet(List::of);
 
         assertThat(classItems).isEmpty();
         assertThat(methodItems).isEmpty();

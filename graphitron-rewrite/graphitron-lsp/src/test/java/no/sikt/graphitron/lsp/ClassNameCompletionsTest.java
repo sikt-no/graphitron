@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp;
 
 import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
+import no.sikt.graphitron.lsp.completions.CompletionContext;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -161,7 +162,10 @@ class ClassNameCompletionsTest {
         var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
-        return ClassNameCompletions.generate(VOCAB, DATA, directive, cursor, bytes);
+        var locOpt = VOCAB.locateAt(directive, cursor, bytes);
+        if (locOpt.isEmpty()) return List.of();
+        var context = CompletionContext.from(locOpt.get(), bytes);
+        return ClassNameCompletions.generate(VOCAB, DATA, context);
     }
 
     private static CompletionData.ExternalReference ext(String fqn) {

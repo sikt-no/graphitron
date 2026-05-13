@@ -49,7 +49,10 @@ class TableCompletionsTest {
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor"));
 
-        var items = TableCompletions.generate(VOCAB, data, directive, cursor, bytes);
+        var locOpt = VOCAB.locateAt(directive, cursor, bytes);
+        var items = locOpt
+            .map(loc -> TableCompletions.generate(VOCAB, data, no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, bytes)))
+            .orElseGet(List::of);
 
         assertThat(items).hasSize(2);
         assertThat(items.get(0).getLabel()).isEqualTo("FILM");
@@ -85,7 +88,10 @@ class TableCompletionsTest {
             List.of()
         );
 
-        var items = TableCompletions.generate(VOCAB, data, directive, cursor, bytes);
+        var locOpt = VOCAB.locateAt(directive, cursor, bytes);
+        var items = locOpt
+            .map(loc -> TableCompletions.generate(VOCAB, data, no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, bytes)))
+            .orElseGet(List::of);
 
         assertThat(items).extracting(i -> i.getLabel()).containsExactlyInAnyOrder("FILM", "ACTOR");
     }
@@ -108,7 +114,10 @@ class TableCompletionsTest {
             .orElseThrow();
 
         var data = new CompletionData(List.of(table("FILM", "")), List.of(), List.of());
-        var items = TableCompletions.generate(VOCAB, data, directive, cursor, bytes);
+        var locOpt = VOCAB.locateAt(directive, cursor, bytes);
+        var items = locOpt
+            .map(loc -> TableCompletions.generate(VOCAB, data, no.sikt.graphitron.lsp.completions.CompletionContext.from(loc, bytes)))
+            .orElseGet(List::of);
 
         assertThat(items).isEmpty();
     }

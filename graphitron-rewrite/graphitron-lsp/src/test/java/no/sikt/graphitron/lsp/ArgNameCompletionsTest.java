@@ -263,6 +263,7 @@ class ArgNameCompletionsTest {
         var tree = parser.parse(source).orElseThrow();
         var directive = Directives.findContaining(tree.getRootNode(), cursor)
             .orElseThrow(() -> new AssertionError("expected directive at cursor " + cursor));
-        return ArgNameCompletions.generate(VOCAB, snapshot, directive, cursor, bytes);
+        var lspPos = new org.eclipse.lsp4j.Position(cursor.row(), cursor.column());
+        return ArgNameCompletions.generate(VOCAB, snapshot, directive, cursor, lspPos, bytes);
     }
 }
