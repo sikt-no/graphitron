@@ -15,9 +15,12 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.RewriteContext;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
+import no.sikt.graphitron.rewrite.model.TableRef;
 import org.jooq.ForeignKey;
 import org.jooq.Table;
 
@@ -78,6 +81,30 @@ public final class CatalogBuilder {
             + "arg/hover consumers rely on round-trip faithfulness."
     )
     public static LspSchemaSnapshot.Built.Current buildSnapshot(TypeDefinitionRegistry registry) {
+        return buildSnapshot(registry, null, null);
+    }
+
+    /**
+     * Full projection: directive surface plus per-type backing shapes. The
+     * three-arg form is what the production pipeline calls; the
+     * {@link #buildSnapshot(TypeDefinitionRegistry)} overload exists so unit
+     * tests of the directive arm can run without spinning up the full
+     * classifier + jOOQ catalog.
+     *
+     * <p>When {@code schema} or {@code catalog} is {@code null} the
+     * type-backing map is empty (back-compat for the one-arg overload only).
+     */
+    @LoadBearingClassifierCheck(
+        key = "java-record-type-backs-record-class",
+        description = "A classifier-produced JavaRecordType / JavaRecordInputType implies the "
+            + "backing class is a Java record on the consumer's classpath. The LSP's "
+            + "@field(name:)-on-record arms (FieldCompletions / Diagnostics / Hovers) consume the "
+            + "Record attribute components without re-checking that the class is in fact a record; "
+            + "silent classifier widening would degrade completions instead of failing loudly."
+    )
+    public static LspSchemaSnapshot.Built.Current buildSnapshot(
+        TypeDefinitionRegistry registry, GraphitronSchema schema, CompletionData catalog
+    ) {
         var directives = new ArrayList<DirectiveShape>();
         for (var def : registry.getDirectiveDefinitions().values()) {
             directives.add(new DirectiveShape(
@@ -86,7 +113,107 @@ public final class CatalogBuilder {
                 descriptionOf(def.getDescription())
             ));
         }
-        return new LspSchemaSnapshot.Built.Current(directives);
+        var typesByName = (schema == null || catalog == null)
+            ? Map.<String, TypeBackingShape>of()
+            : projectTypesByName(schema, catalog);
+        return new LspSchemaSnapshot.Built.Current(directives, typesByName);
+    }
+
+    /**
+     * Walks the lifted {@link GraphitronSchema} and projects each typed
+     * variant into a {@link TypeBackingShape}. The dispatch is exhaustive on
+     * the {@code GraphitronType} sealed permits, so any future variant trips
+     * a compile error here. Catalog-side data ({@link CompletionData#externalReferences})
+     * supplies the record-component / accessor-method lists; the projector
+     * itself does no class-file reading.
+     */
+    private static Map<String, TypeBackingShape> projectTypesByName(
+        GraphitronSchema schema, CompletionData catalog
+    ) {
+        var out = new LinkedHashMap<String, TypeBackingShape>();
+        for (var entry : schema.types().entrySet()) {
+            out.put(entry.getKey(), projectType(entry.getValue(), catalog));
+        }
+        return Map.copyOf(out);
+    }
+
+    private static TypeBackingShape projectType(GraphitronType type, CompletionData catalog) {
+        return switch (type) {
+            case GraphitronType.JavaRecordType t -> projectRecord(t.fqClassName(), catalog);
+            case GraphitronType.JavaRecordInputType t -> projectRecord(t.fqClassName(), catalog);
+            case GraphitronType.PojoResultType.Backed t -> projectPojo(t.fqClassName(), catalog);
+            case GraphitronType.PojoInputType t -> t.fqClassName() == null
+                ? new TypeBackingShape.NoBacking.UnbackedResult()
+                : projectPojo(t.fqClassName(), catalog);
+            case GraphitronType.JooqRecordType t -> new TypeBackingShape.JooqRecordBacking(t.fqClassName(), null);
+            case GraphitronType.JooqRecordInputType t -> new TypeBackingShape.JooqRecordBacking(t.fqClassName(), null);
+            case GraphitronType.JooqTableRecordType t -> new TypeBackingShape.JooqRecordBacking(t.fqClassName(), tableNameOf(t.table()));
+            case GraphitronType.JooqTableRecordInputType t -> new TypeBackingShape.JooqRecordBacking(t.fqClassName(), tableNameOf(t.table()));
+            case GraphitronType.TableType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
+            case GraphitronType.NodeType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
+            case GraphitronType.TableInterfaceType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
+            case GraphitronType.TableInputType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
+            case GraphitronType.RootType ignored -> new TypeBackingShape.NoBacking.Root();
+            case GraphitronType.InterfaceType ignored -> new TypeBackingShape.NoBacking.UnclassifiedInterface();
+            case GraphitronType.UnionType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.PojoResultType.NoBacking ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.ErrorType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.EnumType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.ScalarType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.ConnectionType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.EdgeType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.PageInfoType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.PlainObjectType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+            case GraphitronType.UnclassifiedType ignored -> new TypeBackingShape.NoBacking.UnbackedResult();
+        };
+    }
+
+    private static String tableNameOf(TableRef ref) {
+        return ref == null ? null : ref.tableName();
+    }
+
+    private static TypeBackingShape projectRecord(String fqClassName, CompletionData catalog) {
+        var slots = catalog.externalReferences().stream()
+            .filter(r -> r.className().equals(fqClassName))
+            .findFirst()
+            .map(r -> r.recordComponents().stream()
+                .map(rc -> new TypeBackingShape.MemberSlot(rc.name(), rc.displayType()))
+                .toList())
+            .orElse(List.of());
+        return new TypeBackingShape.RecordBacking(fqClassName, slots);
+    }
+
+    private static TypeBackingShape projectPojo(String fqClassName, CompletionData catalog) {
+        var ref = catalog.externalReferences().stream()
+            .filter(r -> r.className().equals(fqClassName))
+            .findFirst();
+        if (ref.isEmpty()) {
+            return new TypeBackingShape.PojoBacking(fqClassName, List.of());
+        }
+        var accessors = new ArrayList<TypeBackingShape.MemberSlot>();
+        for (var method : ref.get().methods()) {
+            if (!method.parameters().isEmpty()) continue;
+            var slot = beanAccessorSlot(method);
+            if (slot != null) accessors.add(slot);
+        }
+        return new TypeBackingShape.PojoBacking(fqClassName, accessors);
+    }
+
+    private static TypeBackingShape.MemberSlot beanAccessorSlot(CompletionData.Method method) {
+        String name = method.name();
+        String field;
+        if (name.startsWith("get") && name.length() > 3 && Character.isUpperCase(name.charAt(3))) {
+            field = lowercaseFirst(name.substring(3));
+        } else if (name.startsWith("is") && name.length() > 2 && Character.isUpperCase(name.charAt(2))) {
+            field = lowercaseFirst(name.substring(2));
+        } else {
+            return null;
+        }
+        return new TypeBackingShape.MemberSlot(field, method.returnType());
+    }
+
+    private static String lowercaseFirst(String s) {
+        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
     }
 
     private static List<InputValueShape> projectInputValues(List<InputValueDefinition> defs) {

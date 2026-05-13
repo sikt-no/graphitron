@@ -56,7 +56,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("TYPO").contains("column");
@@ -70,7 +70,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
 
         assertThat(diags).isEmpty();
     }
@@ -83,7 +83,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
 
         assertThat(diags).isEmpty();
     }
@@ -98,10 +98,61 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), fooTableBacking("MISSING"));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("MISSING");
+    }
+
+    @Test
+    void unknownRecordComponentProducesError() {
+        var file = file("""
+            input FilmInput @record(record: {className: "com.example.FilmDto"}) {
+                bar: Int @field(name: "TYPO")
+            }
+            """);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("FilmInput", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking(
+                "com.example.FilmDto",
+                java.util.List.of(
+                    new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("filmId", "Integer"),
+                    new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("title", "String")
+                )
+            ))
+        );
+        var diags = compute(file, filmCatalog(), snapshot);
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("TYPO").contains("component").contains("com.example.FilmDto");
+    }
+
+    @Test
+    void knownRecordComponentProducesNoError() {
+        var file = file("""
+            input FilmInput @record(record: {className: "com.example.FilmDto"}) {
+                bar: Int @field(name: "title")
+            }
+            """);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("FilmInput", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking(
+                "com.example.FilmDto",
+                java.util.List.of(new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("title", "String"))
+            ))
+        );
+        var diags = compute(file, filmCatalog(), snapshot);
+
+        assertThat(diags).isEmpty();
+    }
+
+    private static LspSchemaSnapshot fooTableBacking(String tableName) {
+        return new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking(tableName))
+        );
     }
 
     @Test
@@ -969,7 +1020,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("GHOST").contains("column");
@@ -984,7 +1035,7 @@ class DiagnosticsTest {
             }
             """);
 
-        var diags = compute(file, filmCatalog(), LspSchemaSnapshot.unavailable());
+        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
 
         assertThat(diags).isEmpty();
     }

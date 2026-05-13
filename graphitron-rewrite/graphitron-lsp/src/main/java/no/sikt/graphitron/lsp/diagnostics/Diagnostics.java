@@ -20,6 +20,7 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
+import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
@@ -122,7 +123,7 @@ public final class Diagnostics {
                 validateRequiredArgs(directive, dirDef, file, out);
                 var leaves = vocabulary.leafCoordinates(directive, file.source());
                 for (var leaf : leaves) {
-                    dispatch(directive, leaf, vocabulary, file, catalog, out);
+                    dispatch(directive, leaf, vocabulary, file, catalog, snapshot, out);
                 }
                 // The legacy `name:` arm fires once per ExternalCodeReference
                 // object whose `className:` is empty/missing. Driven by leaves,
@@ -373,7 +374,7 @@ public final class Diagnostics {
 
     private static void dispatch(
         Directives.Directive directive, LspVocabulary.Leaf leaf, LspVocabulary vocabulary,
-        WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+        WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot, List<Diagnostic> out
     ) {
         var behavior = vocabulary.behaviorAt(leaf.coord()).orElse(null);
         if (behavior == null) return;
@@ -381,7 +382,7 @@ public final class Diagnostics {
             case Behavior.CatalogTableBinding ignored ->
                 validateCatalogTable(leaf.valueNode(), file, catalog, out);
             case Behavior.CatalogColumnBinding ignored ->
-                validateCatalogColumn(directive, leaf.valueNode(), file, catalog, out);
+                validateCatalogColumn(directive, leaf.valueNode(), file, catalog, snapshot, out);
             case Behavior.CatalogFkBinding ignored ->
                 validateCatalogFk(leaf.valueNode(), file, catalog, out);
             case Behavior.ClassNameBinding ignored ->
@@ -484,17 +485,46 @@ public final class Diagnostics {
         }
     }
 
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "java-record-type-backs-record-class",
+        reliesOn = "Treats RecordBacking.components as the authoritative member list for "
+            + "@field(name:) validation under a @record-bound Java record parent; emits "
+            + "\"Unknown component\" without re-checking that the backing class is a record."
+    )
     private static void validateCatalogColumn(
         Directives.Directive directive, Node valueNode,
-        WorkspaceFile file, CompletionData catalog, List<Diagnostic> out
+        WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot, List<Diagnostic> out
     ) {
-        String columnName = Nodes.unquote(Nodes.text(valueNode, file.source()));
-        if (columnName.isEmpty()) return;
+        String memberName = Nodes.unquote(Nodes.text(valueNode, file.source()));
+        if (memberName.isEmpty()) return;
+        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return;
         var typeDef = TypeContext.enclosingTypeDefinition(directive.outer());
         if (typeDef.isEmpty()) return;
-        var tableName = TypeContext.tableNameOf(typeDef.get(), file.source());
-        if (tableName.isEmpty()) return;
-        var table = catalog.getTable(tableName.get());
+        var typeName = TypeContext.declaredNameOf(typeDef.get(), file.source());
+        if (typeName.isEmpty()) return;
+        var backing = built.typesByName().get(typeName.get());
+        if (backing == null) return;
+        switch (backing) {
+            case TypeBackingShape.RecordBacking r ->
+                validateMemberSlot(r.components(), memberName, "component", r.fqClassName(), valueNode, file, out);
+            case TypeBackingShape.PojoBacking p ->
+                validateMemberSlot(p.accessors(), memberName, "property", p.fqClassName(), valueNode, file, out);
+            case TypeBackingShape.JooqRecordBacking j -> {
+                if (j.tableName() != null) {
+                    validateColumnOnTable(catalog, j.tableName(), memberName, valueNode, file, out);
+                }
+            }
+            case TypeBackingShape.TableBacking t ->
+                validateColumnOnTable(catalog, t.tableName(), memberName, valueNode, file, out);
+            case TypeBackingShape.NoBacking ignored -> { /* no actionable diagnostic */ }
+        }
+    }
+
+    private static void validateColumnOnTable(
+        CompletionData catalog, String tableName, String columnName,
+        Node valueNode, WorkspaceFile file, List<Diagnostic> out
+    ) {
+        var table = catalog.getTable(tableName);
         if (table.isEmpty()) {
             // The enclosing @table is itself a typo; the @table validation
             // already flagged it. Skip the duplicate here.
@@ -505,7 +535,19 @@ public final class Diagnostics {
             .findFirst();
         if (matched.isEmpty()) {
             out.add(diagnostic(file, valueNode, DiagnosticSeverity.Error,
-                "Unknown column '" + columnName + "' on table '" + tableName.get() + "'."));
+                "Unknown column '" + columnName + "' on table '" + tableName + "'."));
+        }
+    }
+
+    private static void validateMemberSlot(
+        List<TypeBackingShape.MemberSlot> slots, String memberName, String kind,
+        String fqClassName, Node valueNode, WorkspaceFile file, List<Diagnostic> out
+    ) {
+        if (slots.isEmpty()) return;
+        boolean matched = slots.stream().anyMatch(s -> s.name().equals(memberName));
+        if (!matched) {
+            out.add(diagnostic(file, valueNode, DiagnosticSeverity.Error,
+                "Unknown " + kind + " '" + memberName + "' on backing class '" + fqClassName + "'."));
         }
     }
 

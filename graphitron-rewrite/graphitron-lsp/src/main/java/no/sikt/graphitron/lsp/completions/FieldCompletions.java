@@ -5,6 +5,9 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
+import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
@@ -15,12 +18,22 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import java.util.List;
 
 /**
- * Catalog column-name completions for any coordinate the
- * {@link LspVocabulary} overlay declares as a
- * {@link Behavior.CatalogColumnBinding}. The candidate set is the
- * columns of the table declared on the enclosing GraphQL type's
- * {@code @table} directive; if the enclosing type is not table-backed,
- * no completions fire.
+ * Catalog-aware completions for any coordinate the {@link LspVocabulary}
+ * overlay declares as a {@link Behavior.CatalogColumnBinding}. The candidate
+ * set depends on the enclosing GraphQL type's backing shape, looked up from
+ * the {@link LspSchemaSnapshot.Built#typesByName()} projection:
+ *
+ * <ul>
+ *   <li>{@link TypeBackingShape.TableBacking} or
+ *       {@link TypeBackingShape.JooqRecordBacking} with a known table — jOOQ
+ *       column list, routed through {@link CompletionData#getTable}.</li>
+ *   <li>{@link TypeBackingShape.RecordBacking} — record-component names off
+ *       the backing class's {@code Record} attribute.</li>
+ *   <li>{@link TypeBackingShape.PojoBacking} — bean-accessor names off the
+ *       backing class's public method set.</li>
+ *   <li>{@link TypeBackingShape.NoBacking} or snapshot miss — empty list
+ *       (matches today's "no info" behaviour).</li>
+ * </ul>
  */
 public final class FieldCompletions {
 
@@ -29,6 +42,7 @@ public final class FieldCompletions {
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
         CompletionData data,
+        LspSchemaSnapshot snapshot,
         CompletionContext context,
         Directives.Directive directive,
         byte[] source
@@ -41,19 +55,55 @@ public final class FieldCompletions {
         if (typeDef.isEmpty()) {
             return List.of();
         }
-        var tableName = TypeContext.tableNameOf(typeDef.get(), source);
-        if (tableName.isEmpty()) {
+        var typeName = TypeContext.declaredNameOf(typeDef.get(), source);
+        if (typeName.isEmpty()) {
             return List.of();
         }
+        return completionsFor(data, snapshot, context, typeName.get());
+    }
 
-        return data.getTable(tableName.get())
+    @DependsOnClassifierCheck(
+        key = "java-record-type-backs-record-class",
+        reliesOn = "RecordBacking.components is the record's @RecordAttribute component list; "
+            + "FieldCompletions emits them verbatim as @field(name:) candidates without "
+            + "re-checking that the backing class is in fact a record."
+    )
+    private static List<CompletionItem> completionsFor(
+        CompletionData data, LspSchemaSnapshot snapshot, CompletionContext context, String typeName
+    ) {
+        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) {
+            return List.of();
+        }
+        var backing = built.typesByName().get(typeName);
+        if (backing == null) return List.of();
+        return switch (backing) {
+            case TypeBackingShape.RecordBacking r -> memberSlotItems(r.components(), context);
+            case TypeBackingShape.PojoBacking p -> memberSlotItems(p.accessors(), context);
+            case TypeBackingShape.JooqRecordBacking j -> j.tableName() == null
+                ? List.of()
+                : tableColumnItems(data, j.tableName(), context);
+            case TypeBackingShape.TableBacking t -> tableColumnItems(data, t.tableName(), context);
+            case TypeBackingShape.NoBacking ignored -> List.of();
+        };
+    }
+
+    private static List<CompletionItem> tableColumnItems(
+        CompletionData data, String tableName, CompletionContext context
+    ) {
+        return data.getTable(tableName)
             .map(t -> t.columns().stream()
-                .map(c -> toCompletionItem(c, context))
+                .map(c -> toColumnItem(c, context))
                 .toList())
             .orElse(List.of());
     }
 
-    private static CompletionItem toCompletionItem(CompletionData.Column column, CompletionContext context) {
+    private static List<CompletionItem> memberSlotItems(
+        List<TypeBackingShape.MemberSlot> slots, CompletionContext context
+    ) {
+        return slots.stream().map(s -> toMemberSlotItem(s, context)).toList();
+    }
+
+    private static CompletionItem toColumnItem(CompletionData.Column column, CompletionContext context) {
         var item = new CompletionItem(column.name());
         item.setKind(CompletionItemKind.Field);
         if (!column.description().isEmpty()) {
@@ -63,6 +113,14 @@ public final class FieldCompletions {
         }
         item.setDetail(column.graphqlType() + (column.nullable() ? " (nullable)" : ""));
         item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), column.name())));
+        return item;
+    }
+
+    private static CompletionItem toMemberSlotItem(TypeBackingShape.MemberSlot slot, CompletionContext context) {
+        var item = new CompletionItem(slot.name());
+        item.setKind(CompletionItemKind.Field);
+        item.setDetail(slot.displayType());
+        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), slot.name())));
         return item;
     }
 }

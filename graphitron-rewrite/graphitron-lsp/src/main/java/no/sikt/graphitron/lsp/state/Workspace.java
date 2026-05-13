@@ -184,7 +184,7 @@ public final class Workspace {
     public void demoteSnapshot() {
         var current = this.snapshot;
         if (current instanceof LspSchemaSnapshot.Built.Current c) {
-            this.snapshot = new LspSchemaSnapshot.Built.Previous(c.directives());
+            this.snapshot = new LspSchemaSnapshot.Built.Previous(c.directives(), c.typesByName());
             markAllForRecalculation();
         }
     }

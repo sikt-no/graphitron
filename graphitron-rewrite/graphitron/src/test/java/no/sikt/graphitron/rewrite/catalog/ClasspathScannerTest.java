@@ -177,6 +177,50 @@ class ClasspathScannerTest {
     }
 
     @Test
+    void populatesRecordComponentsForRecordClasses(@TempDir Path classes) throws IOException {
+        // A Java record class carries its component list in the Record
+        // attribute on the class file. The scanner reads it without
+        // re-classifying — that's the seam the R157 snapshot projection
+        // consumes for RecordBacking dispatch.
+        var fqn = "com.example.FilmCard";
+        var stringDesc = ClassDesc.of("java.lang.String");
+        var integerDesc = ClassDesc.of("java.lang.Integer");
+        byte[] bytes = ClassFile.of().build(ClassDesc.of(fqn), cb -> cb
+            .withFlags(ClassFile.ACC_PUBLIC | ClassFile.ACC_FINAL)
+            .withSuperclass(ClassDesc.of("java.lang.Record"))
+            .with(java.lang.classfile.attribute.RecordAttribute.of(java.util.List.of(
+                java.lang.classfile.attribute.RecordComponentInfo.of(
+                    "filmId", integerDesc
+                ),
+                java.lang.classfile.attribute.RecordComponentInfo.of(
+                    "title", stringDesc
+                )
+            )))
+        );
+        writeRawClassBytes(classes, fqn, bytes);
+
+        var refs = ClasspathScanner.scan(classes, JOOQ_PKG);
+
+        assertThat(refs).hasSize(1);
+        assertThat(refs.get(0).recordComponents())
+            .extracting(CompletionData.RecordComponent::name, CompletionData.RecordComponent::displayType)
+            .containsExactly(
+                org.assertj.core.api.Assertions.tuple("filmId", "Integer"),
+                org.assertj.core.api.Assertions.tuple("title", "String")
+            );
+    }
+
+    @Test
+    void plainClassLeavesRecordComponentsEmpty(@TempDir Path classes) throws IOException {
+        writePublicClass(classes, "com.example.Plain");
+
+        var refs = ClasspathScanner.scan(classes, JOOQ_PKG);
+
+        assertThat(refs).hasSize(1);
+        assertThat(refs.get(0).recordComponents()).isEmpty();
+    }
+
+    @Test
     void skipsNonClassBytesGracefully(@TempDir Path classes) throws IOException {
         writePublicClass(classes, "com.example.Real");
         // A file ending in `.class` that isn't a valid classfile should not

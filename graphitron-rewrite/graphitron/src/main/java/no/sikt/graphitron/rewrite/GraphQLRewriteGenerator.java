@@ -102,7 +102,7 @@ public class GraphQLRewriteGenerator {
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, ctx);
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
         var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
-        var snapshot = CatalogBuilder.buildSnapshot(attributed.registry());
+        var snapshot = CatalogBuilder.buildSnapshot(attributed.registry(), bundle.model(), catalog);
         var errors = new GraphitronSchemaValidator().validate(bundle.model());
         var warnings = bundle.model().warnings();
         var report = ValidationReport.from(errors, warnings);
