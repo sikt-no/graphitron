@@ -14,7 +14,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R155` | InputBeanResolver: primitive Java types break codegen | In Review | 2026-05-13 | [plan](input-bean-primitive-types.md) |
 | `R39` | Validate that list fields on tables without a PK require explicit ordering | Spec | 2026-05-13 | [plan](validate-list-fields-require-ordering.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | In Progress | 2026-05-13 | [plan](tablemethod-child-table-bound.md) |
@@ -126,7 +125,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R155` [**InputBeanResolver: primitive Java types break codegen**](input-bean-primitive-types.md) — In Review, bug
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
 - `R137` [**@service method return-type wrapper composition (Optional / CompletableFuture / Mono / DataFetcherResult)**](service-wrapper-composition.md) — Backlog, architecture
