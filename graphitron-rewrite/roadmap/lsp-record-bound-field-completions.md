@@ -1,150 +1,190 @@
 ---
-id: R156
+id: R157
 title: "LSP: autocomplete and diagnostics for @field on @record-bound types"
 status: Spec
 bucket: lsp
 theme: lsp
-depends-on: []
+depends-on: [lsp-schema-snapshot-side-channel]
 created: 2026-05-13
 last-updated: 2026-05-13
 ---
 
 # LSP: autocomplete and diagnostics for @field on @record-bound types
 
-The LSP has no record-component awareness today. `@field(name: "X")` only
-resolves and validates against a jOOQ table when the enclosing type carries
-`@table(name: "...")`; if the enclosing type carries
-`@record(record: {className: "com.example.Foo"})` instead, the column
-completion (`FieldCompletions.generate`) silently returns `List.of()` and
-the diagnostic (`Diagnostics.validateCatalogColumn`) silently returns. The
-schema author gets neither suggestions nor a "field name does not match a
-component on `Foo`" error. This affects both
-`OBJECT`- and `INPUT_OBJECT`-typed `@record` parents (the directive applies
-on both per `directives.graphqls:290`); the asymmetry the user reported on
-input types is a special case of "no record-component awareness anywhere."
+`@field(name: "X")` only completes and validates against a jOOQ table today;
+when the enclosing GraphQL type's backing is a Java record (or POJO, or
+non-table jOOQ record), `FieldCompletions.generate` and
+`Diagnostics.validateCatalogColumn` silently return empty. The schema
+author gets neither suggestions nor a "name does not match a component
+on the backing class" error. The symptom surfaces on input types because
+input-side recordy bindings are the common case the user hits, but the
+gap is uniform across input and output and across every backing shape
+the classifier produces.
 
-The gap is structural, not a missing branch: there's no
-`Behavior.RecordComponentBinding` arm in
-`graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/parsing/Behavior.java`,
-`CompletionData.ExternalReference`
-(`graphitron/src/main/java/no/sikt/graphitron/rewrite/catalog/CompletionData.java:139-144`)
-carries only `name`, `className`, `description`, and `methods` (no record
-components), and `ClasspathScanner.readIfCandidate`
-(`graphitron/src/main/java/no/sikt/graphitron/rewrite/catalog/ClasspathScanner.java:92-120`)
-doesn't read the `Record` class-file attribute. The fix adds the missing
-data on the catalog side, the missing dispatch arm on the LSP side, and
-wires the existing `@field(name:)` consumer to fall back from `@table`
-lookup to `@record` lookup.
+## Design: read the lifted model, not the SDL directives
 
-## Interaction with R96 (deprecate-record-directive)
+The signal lives in `GraphitronSchema` already: every SDL type is lifted
+to a `GraphitronType` variant
+(`graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronType.java`)
+that carries its backing class and shape (`JavaRecordInputType`,
+`PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType`, and
+the output-side mirror `JavaRecordType`, `PojoResultType.Backed`,
+`JooqRecordType`, `JooqTableRecordType`, `TableType`). The classifier
+decides what backs each type — `@record`, `@table`, service-return
+introspection, R94's input-record emitter — and writes the answer into
+the model. The LSP consults the model.
 
-R96 Phase 1 removes `@record` on `INPUT_OBJECT` entirely (gated on R94),
-and Phase 3 narrows it on `OBJECT` to *polymorphic-return-only*. After R96
-ships:
+This decouples R156 from any specific SDL directive. R96 can churn the
+producers (drop `@record` on `INPUT_OBJECT`, narrow it on `OBJECT`,
+migrate categories to introspection signals); as long as the classifier
+still produces `JavaRecordInputType`-or-equivalent for the same SDL types,
+R156's LSP arms continue to fire correctly. No `TypeContext.tableNameOf`
+companion that sniffs `@record` from the AST; no `@table`-versus-`@record`
+fallback branch; no shadow-rule mirroring. One lookup keyed by SDL type
+name.
 
-- The input-side LSP work in R156 becomes dead code (no input type carries
-  `@record` anymore). Authors of input types use `@table` (already
-  works) or R94's graphitron-internal records (not author-visible, not an
-  LSP surface).
-- The output-side LSP work persists in narrowed form: `@field(name:)` on
-  `@record(record:)`-bound `OBJECT` is still a real coordinate, used for
-  polymorphic-return payload classes.
-
-R156 should land *before* R96 Phase 1 to be useful on the input side, or
-should drop the input scope and target only the output scope (Java-record
-payload classes for polymorphic returns). Picking the timing is part of
-the Spec → Ready handoff; the implementation is the same either way.
+This is also fine on freshness. The user has explicitly said R156
+does not need to react instantly to in-editor edits — stale-but-correct
+is fine. The dev-pipeline run rebuilds the snapshot on file save (the
+same cadence as today's `LspSchemaSnapshot` updates from R139); between
+runs the LSP sees the last good projection. No tree-sitter walk over
+the open buffer.
 
 ## Implementation shape
 
-### 1. Catalog: read record components
+### 1. Extend the snapshot side-channel with a per-type backing projection
 
-Extend `ClasspathScanner.readIfCandidate` to detect record classes
-(`cm.findAttribute(Attributes.record())` returns an `Optional<RecordAttribute>`;
-present iff the class is a record) and read each `RecordComponentInfo` into a
-new `CompletionData.RecordComponent(name, type, description)` shape. Each
-`ExternalReference` gains a `List<RecordComponent> recordComponents` field
-(empty list for non-records). The `type` rendering matches
-`ClasspathScanner.displayName` so component types display the same way method
-return types do.
+R139 (`lsp-schema-snapshot-side-channel`, In Review) already ships an
+`LspSchemaSnapshot` carrying `List<DirectiveShape>`. Add a sibling
+projection: `Map<String, TypeBackingShape> typesByName`, where
+`TypeBackingShape` is a sealed projection over the
+record-component / accessor-method / column-set variants the LSP cares
+about. Naming and depth match `DirectiveShape` / `InputValueShape`'s
+existing pattern (sealed projection, no graphql-java leak, copy-of in
+the canonical constructor).
 
-### 2. LSP: new `Behavior` arm
+```
+sealed interface TypeBackingShape permits
+    RecordBacking,    // JavaRecord{Input,}Type
+    PojoBacking,      // PojoInputType, PojoResultType.Backed
+    JooqRecordBacking,// JooqRecord{Input,}Type, JooqTableRecord{Input,}Type
+    TableBacking,     // TableType (jOOQ-table-bound)
+    NoBacking { ... } // PojoResultType.NoBacking, RootType, interfaces
+```
 
-Add `Behavior.RecordComponentBinding()` (sibling to `CatalogColumnBinding`,
-same shape — the candidate set is derived from the enclosing type's
-`@record` className, not from any sibling coordinate).
+`RecordBacking` and `PojoBacking` carry a `List<MemberSlot>` of
+`(name, displayType)` pairs. `JooqRecordBacking` and `TableBacking`
+carry the jOOQ table name so the existing column-set lookup against
+`CompletionData.tables()` keeps working through the same data path.
+`NoBacking` is the explicit "no field-component completion makes sense
+here" arm.
 
-### 3. LSP: dispatch — keep one coordinate, branch by enclosing type
+### 2. Producer: extend `CatalogBuilder.buildSnapshot`
 
-`@field(name:)` already resolves to `Behavior.CatalogColumnBinding` (the
-overlay entry at `LspVocabulary.java:714`). Don't split the overlay; the
-overlay maps coordinates to behavior structurally, not contextually.
-Instead, in the three consumer sites
-(`FieldCompletions.generate`, `Diagnostics.validateCatalogColumn`,
-`Hovers.columnHover`), extend the enclosing-type lookup to:
+`CatalogBuilder.buildSnapshot` today only sees the `TypeDefinitionRegistry`.
+Pass it the lifted `GraphitronSchema` too (the build pipeline already has
+it; `GraphQLRewriteGenerator` calls `GraphitronSchemaBuilder.build` before
+the snapshot step). Walk `schema.types()`; project each `GraphitronType`
+variant to the matching `TypeBackingShape`. For `Java*Type` variants the
+member slots come from the backing-class catalog scan (extending
+`ClasspathScanner` to also read the class-file `Record` attribute via
+`Attributes.record()` and project record components onto the existing
+`CompletionData.ExternalReference`); for `Pojo*` variants the member
+slots come from the existing methods list filtered to JavaBean-style
+accessors (drop `get`/`is` prefix, lowercase first letter, no-arg public
+methods). The `Record` attribute read and the accessor filter are local
+to `ClasspathScanner` and `CatalogBuilder.buildSnapshot` respectively;
+neither touches the LSP.
 
-1. Resolve `TypeContext.enclosingTypeDefinition(directive.outer())`.
-2. If the type carries `@table(name:)`, behave as today (catalog column
-   completion / diagnostic / hover).
-3. Otherwise, if the type carries `@record(record: {className:})`, look up
-   the className in `CompletionData.externalReferences()` and use that
-   entry's `recordComponents` as the candidate set / validation domain /
-   hover content.
-4. If neither, return empty.
+### 3. Consumer: snapshot lookup, not SDL parse
 
-Add a `TypeContext.recordClassNameOf(typeDef, source)` helper that mirrors
-`TypeContext.tableNameOf` but reads `@record(record: {className: ...})`.
-Both `@record` and `@table` may co-occur on the same `OBJECT` (the
-`@table + @record` shadow rule that R96 Phase 1 removes); preserve current
-shadow precedence by checking `@table` first.
+In `FieldCompletions.generate`, `Diagnostics.validateCatalogColumn`, and
+`Hovers.columnHover`:
 
-### 4. Hover content
+1. Resolve the enclosing type *name* via
+   `TypeContext.enclosingTypeDefinition(...)` +
+   `TypeContext.declaredNameOf(...)`. Keep these — they're cheap,
+   buffer-local, and don't read directives.
+2. Look up the name in the snapshot's `typesByName`.
+3. Dispatch on the `TypeBackingShape` variant:
+   - `RecordBacking` / `PojoBacking` → completions / validation / hover
+     against the member-slot list.
+   - `JooqRecordBacking` / `TableBacking` → existing
+     `CompletionData.getTable(...)` path.
+   - `NoBacking` or snapshot miss → empty (same observational shape as
+     today's empty return).
 
-`columnHover` renders the column with its `graphqlType` + nullable note.
-The record-component hover renders the component's Java type (e.g.
-`Integer filmId`) — there's no jOOQ-level "graphqlType" derivation for a
-Java record component, just the declared component type. Matches the
-texture of `MethodCompletions.formatSignature`.
+The old `TypeContext.tableNameOf` path goes away from the three consumer
+sites; the helper itself stays for the moment because other arms
+(`@nodeId(typeName:)`'s metadata projection) still call it. A follow-up
+can remove it once those arms also migrate to the snapshot.
+
+### 4. Snapshot freshness
+
+`LspSchemaSnapshot.Built.Current` vs. `Built.Previous` already encodes
+"last good snapshot" vs. "stale because the latest parse failed".
+R156's consumers read uniformly through `LspSchemaSnapshot.Built` (no
+freshness branch) — same convention as
+`DirectiveResolution.resolve(LspVocabulary, LspSchemaSnapshot, String)`.
+`Unavailable` returns empty completions / no diagnostic / no hover,
+matching today's "no info yet" semantics.
 
 ### 5. Tests
 
-- `FieldCompletionsTest`: positive test on
-  `type Foo @record(record: {className: "com.example.FilmCard"}) { bar: Int @field(name: "") }`
-  with a catalog containing `FilmCard` as a record (components
-  `filmId`, `title`). Mirror for `input FooInput @record(...)`. Negative
-  test: enclosing `@record` references an unknown className → empty
+- `CatalogBuilderTest`: per-variant snapshot projection. Build a small
+  `GraphitronSchema` with one each of `JavaRecordInputType`,
+  `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType`,
+  `JavaRecordType`, `PojoResultType.Backed`, `TableType`; assert the
+  snapshot's `typesByName` carries the expected `TypeBackingShape`
+  arm with the right slot list.
+- `ClasspathScannerTest`: a `record FilmCard(Integer filmId, String title)`
+  on the classpath produces an `ExternalReference` whose component list
+  is `[filmId: Integer, title: String]`; a plain class produces an empty
+  component list.
+- `FieldCompletionsTest`: positive test for each `TypeBackingShape`
+  variant. Both `type Foo @record(...)` and `input FooInput @record(...)`
+  (with corresponding snapshot fixtures) produce the right slot set.
+  Negative test: snapshot miss → empty completions; `NoBacking` → empty
   completions.
-- `DiagnosticsTest`: `@field(name: "ghost")` on a `@record`-bound type
-  produces an "Unknown component" error; `@field(name: "filmId")` produces
-  no error. Both for input and output enclosing types.
-- `HoversTest`: hover on `@field(name: "filmId")` inside a `@record`-bound
-  type renders the component's Java type.
-- `ClasspathScannerTest`: a record class on the classpath surfaces its
-  components on the matching `ExternalReference`; a non-record class still
-  surfaces an empty `recordComponents` list.
+- `DiagnosticsTest`: `@field(name: "ghost")` on a `RecordBacking` type
+  produces an "Unknown component" error keyed by member name;
+  `@field(name: "filmId")` on the same produces no error.
+- `HoversTest`: hover on `@field(name: "filmId")` renders the slot's
+  `displayType`.
 
 ### 6. Out of scope
 
-- `@enum(enum: {className:})`-bound types — the LSP has no
-  "enum constants of a class" notion either, but enums don't carry
-  `@field(name:)` so the same gap doesn't bite. Separate item if it ever
-  matters.
-- jOOQ-generated record components. `@table` already covers this via the
-  column path; the record-component path is purely for developer-authored
-  Java records via `@record`.
-- Hover/diagnostic on `@reference(...)` keys inside a `@record`-bound
-  type. `@reference` is FK-shaped and there's no FK metadata on a
-  developer-authored record; reject as inapplicable.
+- `@enum(enum: {className:})` types. Enums don't carry `@field(name:)`;
+  separate item if it ever matters.
+- Migrating `@nodeId(typeName:)`'s metadata projection onto
+  `typesByName`. Plausible follow-up after R156, not blocking.
+- Per-component nullability / Jakarta-constraint surfacing on
+  `MemberSlot`. R12-adjacent; this item only carries name + display
+  type.
+
+## Tests / load-bearing checks
+
+The classifier-produced `GraphitronType` variant is the load-bearing
+signal R156 depends on. If an arm in `GraphitronSchemaBuilder` or the
+classifier silently widens (e.g. an input that should be
+`JavaRecordInputType` falls through to `PojoInputType` because a record
+component name diverges from the SDL field name), R156's completions
+miss. The Tests section above pins the snapshot projection per variant;
+no `@LoadBearingClassifierCheck` keys are introduced for this item
+because the snapshot consumes the classifier's output rather than
+re-deriving it.
 
 ## Risk
 
-- **Short-lived for input scope.** Per the R96 interaction above, the
-  input-side LSP work is gone within one or two roadmap items. If R94/R96
-  are imminent, drop input scope and target output only.
-- **Component-type display fidelity.** The class-file `Record` attribute
-  stores component types as JVM descriptors (`Ljava/lang/Integer;`,
-  `I`, `Ljava/util/List;`). `ClasspathScanner.displayName` already converts
-  these for method types; reuse it. Generic type parameters on components
-  (`List<Foo>`) are erased in the descriptor — the hover shows `List`,
-  not `List<Foo>`. Matches the existing method-parameter rendering, so
-  no new fidelity gap.
+- **Snapshot wire-up depth.** R139's snapshot side-channel ships
+  directive shapes only; R156 broadens the contract to "directive shapes
+  + per-type backing shapes." That's a real surface-area increase on the
+  LSP/build boundary. Mitigation: lift the projection in
+  `CatalogBuilder.buildSnapshot` only, leave the consumer-side dispatch
+  in three named call-sites, and pin the round-trip with the per-variant
+  `CatalogBuilderTest`.
+- **Backing-class catalog coverage.** `ClasspathScanner` walks the
+  output classes directory; consumer-authored records on the classpath
+  but outside the scan root would surface as snapshot misses, not
+  errors. The same caveat already applies to `@service` method lookups;
+  R156 inherits the existing scan-root contract without widening it.
