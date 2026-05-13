@@ -66,6 +66,8 @@ sealed interface RowSlot {
 
 These three are siblings in form but live in their own sealed hierarchies (per *Narrow component types over broad interfaces*) ; folding them onto one `Slot { Ctor | Setter }` interface would force every consumer to widen and reach back through `instanceof` for the role-specific data. `ErrorChannel`, `ResultAssembly`, and `PayloadAssembly` each carry their own slot type.
 
+`resolvePayloadConstructionShape` returns a sealed result analogous to today's `CanonicalCtorResult.Found | .Reject` (`FieldBuilder.java:414`): a `Resolved(PayloadConstructionShape)` arm wrapping the success cases above, and a `Rejected(Rejection)` arm whose typed rejection enumerates the two failure modes ("both shapes match: ambiguous" and "neither shape matches: missing structural element X"). Consumers `switch` on the result the same way they switch on `CanonicalCtorResult` today; the rejection threads onto `UnclassifiedField` per the existing pattern.
+
 ## Classifier widening
 
 `findCanonicalCtor` (or its successor `resolvePayloadConstructionShape`) walks the payload class with two predicates, in order:
@@ -101,9 +103,9 @@ For both, the emit forks on the producing `PayloadConstructionShape`: `new Paylo
 
 ## Interplay with neighbouring items
 
-- **R96 (`deprecate-record-directive.md`, Spec).** R96 migrates `@record`-driven backing-class resolution to introspection signals (`@service` return type, `@table` record-class derivation, parent-accessor return type). Whichever signal R96 settles on still produces a `Class<?>`; R153 widens the *shape* contract on that class. Add one row to R96's Phase 3 audit table (`Classifier-site → replacement-signal audit`) noting that `findCanonicalCtor` becomes `resolvePayloadConstructionShape` and the load-bearing key `result-type.backing-class-from-producer-signal` widens to admit both shapes. The two items are sequentially independent: R153 can ship before R96 (the widening lives inside `FieldBuilder`'s reflection helpers regardless of which producer signal feeds it) or after (the widened helper is consumed by whichever signal R96 leaves standing).
-- **R75 (shipped, `changelog.md:33`).** R75's `PojoResultType.NoBacking` admits payloads with no authored class at all (identity passthrough). R153 widens the *Backed* arm of `PojoResultType`. The two arms remain orthogonal: `NoBacking` skips construction entirely, `Backed` carries a `PayloadConstructionShape` describing how to build it.
-- **R137 (`service-wrapper-composition.md`, Backlog).** R137 peels `Optional` / `CompletableFuture` / `Mono` / `DataFetcherResult` off the service return type. R153's widening is independent: once R137 unwraps the wrapper layer, the unwrapped return type binds against either construction shape per R153's rules. No coordination needed beyond R137's 8-case matrix gaining a "× setter-shape backing class" row if the matrix is rerun after R153.
+- **R96 (`deprecate-record-directive.md`, Spec).** R96 migrates `@record`-driven backing-class resolution to introspection signals (`@service` return type, `@table` record-class derivation, parent-accessor return type). Whichever signal R96 settles on still produces a `Class<?>`; R154 widens the *shape* contract on that class. Add one row to R96's Phase 3 audit table (`Classifier-site → replacement-signal audit`) noting that `findCanonicalCtor` becomes `resolvePayloadConstructionShape` and the load-bearing key `result-type.backing-class-from-producer-signal` widens to admit both shapes. The two items are sequentially independent: R154 can ship before R96 (the widening lives inside `FieldBuilder`'s reflection helpers regardless of which producer signal feeds it) or after (the widened helper is consumed by whichever signal R96 leaves standing).
+- **R75 (shipped, `changelog.md:33`).** R75's `PojoResultType.NoBacking` admits payloads with no authored class at all (identity passthrough). R154's widening doesn't touch `PojoResultType.Backed` itself; it lands at the assembly carriers (`ErrorChannel`, `ResultAssembly`, `PayloadAssembly`), which gain sealed slot types resolved against the `Backed.fqClassName` class via reflection. The two arms of `PojoResultType` remain orthogonal: `NoBacking` skips construction entirely, `Backed` names the class the shape resolver walks.
+- **R137 (`service-wrapper-composition.md`, Backlog).** R137 peels `Optional` / `CompletableFuture` / `Mono` / `DataFetcherResult` off the service return type. R154's widening is independent: once R137 unwraps the wrapper layer, the unwrapped return type binds against either construction shape per R154's rules. No coordination needed beyond R137's 8-case matrix gaining a "× setter-shape backing class" row if the matrix is rerun after R154.
 - **Error-handling parity (`error-handling-parity.md`).** The `ErrorChannel` carrier's `errorsSlotIndex: int` field becomes `errorsSlot: ErrorsSlot` (sealed). Mechanical: every producer (`resolveErrorChannel`) and every consumer (`TypeFetcherGenerator`'s catch-arm payload-factory emit) walks the new sealed shape. The seal makes `javac` enumerate the consumers.
 
 ## Migration intent
@@ -120,10 +122,10 @@ A diagnostic (*info*, not *warn*) could mention the existence of the all-fields-
 
 Per *Validator mirrors classifier invariants* (`rewrite-design-principles.adoc:103`), the classifier publishes:
 
-- `payload-construction.shape-resolved`: every `ErrorChannel.Channel`, every `ResultAssembly`, and every `PayloadAssembly` carries a `PayloadConstructionShape` arm that the emitter dispatches on. Producer: `FieldBuilder.resolvePayloadConstructionShape`. Consumers: `TypeFetcherGenerator`'s three payload-factory emit sites (catch-arm, service-result-assembly, DML-row-assembly), each wearing `@DependsOnClassifierCheck`.
-- `payload-construction.setter-name-matches-sdl-field`: every `SetterBinding`'s `setter` method matches the SDL field name under Java-bean conversion (`xRating` → `setXRating`; first letter case-flexible). Producer: setter-shape predicate in `resolvePayloadConstructionShape`. Consumer: catch-arm payload-factory emit, which calls `setter.getName()` directly into the generated source.
+- `payload-construction.shape-resolved`: every `ErrorChannel.Channel`, every `ResultAssembly`, and every `PayloadAssembly` carries a `PayloadConstructionShape` arm that the emitter dispatches on. Producer: `FieldBuilder.resolvePayloadConstructionShape`. Consumers: `TypeFetcherGenerator`'s three payload-factory emit sites (catch-arm, service-result-assembly, DML-row-assembly), each wearing `@DependsOnClassifierCheck` against this key.
+- `payload-construction.setter-name-matches-sdl-field`: every `SetterBinding`'s `setter` method matches the SDL field name under Java-bean conversion (`xRating` → `setXRating`; first letter case-flexible). Producer: setter-shape predicate in `resolvePayloadConstructionShape`. Consumer: catch-arm payload-factory emit, which calls `setter.getName()` directly into the generated source, wearing `@DependsOnClassifierCheck` against this key.
 
-`LoadBearingGuaranteeAuditTest` picks up orphans automatically.
+Producer- and consumer-side annotations are not substitutes for pipeline-test pinning (per R125's framing); both ship. `LoadBearingGuaranteeAuditTest` picks up orphans automatically when a consumer is missing its `@DependsOnClassifierCheck` annotation.
 
 ## Phasing
 
@@ -138,12 +140,14 @@ Two phases, independently shippable. Phase 1 lifts the model; Phase 2 lifts the 
 
 Acceptance: full build green, every classification yields `AllFieldsCtor`, the sealed switch in every emit site reachable arm passes through the new `CtorParameterIndex` slot type and emits the same source as before.
 
+Phase 1 is value-additive on its own even if Phase 2 stalls: the seal carries the construction contract explicitly (rather than implicitly inside `findCanonicalCtor`'s `Constructor<?>` return), and the typed slots replace the raw `int` indices on the three assembly carriers. A sealed-with-one-permit shape is unusual but not wrong; the seal already documents the intent for the second arm and gives `javac` the lever to enforce exhaustiveness when it lands.
+
 ### Phase 2: setter-shape admission + emit
 
 - Implement the setter-shape predicate in `resolvePayloadConstructionShape`. Reject ambiguity (both shapes match).
 - Implement the three emit-site forks: catch-arm payload-factory lambda (`errors -> { var p = new P(); p.setX(...); p.setErrors(errors); ...; return p; }`), service-result-assembly success arm, DML-row-assembly success arm.
 - Pin the rejection shapes for "both shapes match" and "neither shape matches" under the existing typed-rejection patterns; `UnclassifiedField` carries a structured rejection enumerating both shapes and the structural element each missed.
-- Sakila fixture: one `@service`-backed mutation whose payload class is hand-rolled with no-arg ctor + setters (e.g. `SetterShapeReviewPayload` next to the existing `FilmReviewPayload`), plus the matching execution-tier round-trip.
+- Sakila fixture: one `@service`-backed mutation whose payload class is hand-rolled with no-arg ctor + setters (e.g. `SetterShapeReviewPayload` next to the existing `FilmReviewPayload`, which is the record-based regression cover for the all-fields-ctor path), plus the matching execution-tier round-trip.
 
 Acceptance: setter-shape payload round-trips through `@service` mutation; classifier rejects the ambiguous-shape configuration; the all-fields-ctor path is unchanged for every existing fixture.
 
@@ -153,7 +157,7 @@ Per *Pipeline tests are the primary behavioural tier* (`rewrite-design-principle
 
 ### Unit-tier (L1, structural invariants)
 
-- `PayloadConstructionShapeTest` (new): parameterised over hand-rolled fixture classes covering each shape and each rejection. Records produce `AllFieldsCtor`; mutable-bean classes (no-arg ctor + setters) produce `MutableBean`; classes with both shapes produce `AmbiguousConstructionShape`; classes with neither produce `Reject`. Pins setter-name resolution under Java-bean naming (`rating` → `setRating`, `xRating` → `setXRating`).
+- `PayloadConstructionShapeTest` (new): parameterised over hand-rolled fixture classes covering each shape and each rejection. Records produce `AllFieldsCtor`; mutable-bean classes (no-arg ctor + setters) produce `MutableBean`; classes with both shapes produce `AmbiguousConstructionShape`; classes with neither produce `Reject`. Pins setter-name resolution under Java-bean naming (`rating` → `setRating`, `xRating` → `setXRating`). Pins the `Optional<T>` setter case (`void setRating(Optional<Integer>)` sets `SetterBinding.acceptsOptional = true`). Pins the parameter-type-mismatch rejection: a setter whose parameter erasure is neither the SDL-derived `T` nor `Optional<T>` rejects with a structured rejection naming the offending setter and the expected type.
 
 ### Pipeline-tier (L4, primary signal)
 
