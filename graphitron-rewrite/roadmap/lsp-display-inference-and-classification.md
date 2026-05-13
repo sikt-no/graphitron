@@ -4,7 +4,7 @@ title: LSP inlay hints and hover for inferred directives and field/type classifi
 status: Spec
 bucket: feature
 theme: lsp
-depends-on: []
+depends-on: [lsp-schema-snapshot-side-channel]
 created: 2026-05-13
 last-updated: 2026-05-13
 ---
@@ -54,7 +54,7 @@ Three model-shape additions in C1:
 
 - `TableRef` gains a `Provenance` field. Populated by the classifier; today the only inference rule is "table name from SDL type name" (`FromSdlName`), but the sealed family accommodates future rules without revisiting consumer sites.
 - `ColumnRef` gains a `Provenance` field. The `@field(name:)` case follows the same shape: written → `Authored`, omitted → `FromSdlName`.
-- The `@reference(path:)`-consuming permits (today `ChildField.ColumnReferenceField`, `ChildField.CompositeColumnReferenceField`, `ChildField.ParticipantColumnReferenceField`, and the equivalent input-side permits) gain a `Provenance` on the path carrier itself. The single-hop inference path through `BuildContext.parsePath` (the existing code-path that returns `ParsedPath(List.of(), null)` when both inference preconditions hold) is the only `Inferred` arm at filing; the multi-hop path is always `Authored`.
+- The `@reference(path:)`-consuming permits (today `ChildField.ColumnReferenceField`, `ChildField.CompositeColumnReferenceField`, `ChildField.ParticipantColumnReferenceField`, and the equivalent input-side permits) gain a `Provenance` as a sibling record component alongside the existing `joinPath` (mirroring how `TableRef` and `ColumnRef` gain a sibling field; no new path-wrapper record). The single-hop inference path through `BuildContext.parsePath` is the only `Inferred` arm at filing; the multi-hop path is always `Authored`. The construction-site signal: at the call sites that today invoke `ctx.parsePath(...)` (e.g. `FieldBuilder.java:660`, `:717`, `:3167`, `:4262`, `:4280`, `:4316`; `NodeIdLeafResolver.java:473`; `TypeBuilder.java:320`; `SourceRowDirectiveResolver.java:282`), check `container.getAppliedDirective(DIR_REFERENCE)` for path-argument presence (`appliedDirective != null && appliedDirective.getArgument(ARG_PATH) != null` ⇒ authored; otherwise inferred-eligible) before/around the call, the same shape `BuildContext.parsePath` itself uses at BuildContext.java:835-843; when the path argument is absent and `parsePath` returned a non-empty `elements` list, the synthesized single-hop step is at `parsed.elements().get(0)` as a `JoinStep.FkJoin` whose `fkName()` (or equivalent accessor) populates `Provenance.Inferred.FromUniqueFk.fkName`. When the path argument is present, `Provenance.Authored`. When `parsePath` errored, the containing field is already routed to `UnclassifiedField` and no `Provenance` is constructed (the permit isn't either).
 
 Adding `Provenance` to these carriers does not change behaviour at any existing consumer ; they read the resolved name without caring about the axis. The compiler enforces the new field at construction time, so the classifier-side population is a small mechanical addition the C1 step lands in lock-step with the model edit.
 
@@ -113,7 +113,16 @@ sealed interface FieldClassification
             FieldClassification.ComputedField,
             FieldClassification.PropertyField,
             FieldClassification.ErrorsField,
-            FieldClassification.QueryField,
+            FieldClassification.QueryLookupTableField,
+            FieldClassification.QueryTableField,
+            FieldClassification.QueryTableMethodTableField,
+            FieldClassification.QueryNodeField,
+            FieldClassification.QueryNodesField,
+            FieldClassification.QueryTableInterfaceField,
+            FieldClassification.QueryInterfaceField,
+            FieldClassification.QueryUnionField,
+            FieldClassification.QueryServiceTableField,
+            FieldClassification.QueryServiceRecordField,
             FieldClassification.MutationInsertTableField,
             FieldClassification.MutationUpdateTableField,
             FieldClassification.MutationDeleteTableField,
@@ -128,8 +137,11 @@ sealed interface FieldClassification
             FieldClassification.InputCompositeColumnReferenceField,
             FieldClassification.InputNestingField,
             FieldClassification.Unclassified {
-    // permits list mirrors the generator-side ChildField + RootField + MutationField + InputField + UnclassifiedField leaves
-    // (and stays in lock-step via the projector's exhaustive switch; see "Validator-mirrors-classifier alignment" below)
+    // permits list mirrors the generator-side leaves of GraphitronField — ChildField's
+    // permits, QueryField's permits (10 leaves under RootField → QueryField), MutationField's
+    // permits (DmlTableField's four DML records plus the four sibling Mutation* records),
+    // InputField's permits, and GraphitronField.UnclassifiedField — and stays in lock-step
+    // via the projector's exhaustive switch (see "Validator-mirrors-classifier alignment" below).
 
     record ColumnField(String tableName, String columnName) implements FieldClassification {}
     record ColumnReferenceField(String tableName, String columnName, String fkName, boolean fkInverse) implements FieldClassification {}
@@ -210,7 +222,7 @@ Under `Unavailable`: no hints. No stale-marker indication; the editor simply doe
 
 ## Implementation plan
 
-1. **C1 ; `Provenance` axis on model carriers.** Add the `Provenance` sealed family under `no.sikt.graphitron.rewrite.model`; add a `Provenance` field to `TableRef`, `ColumnRef`, and the `@reference(path:)`-consuming `ChildField` permits (`ColumnReferenceField`, `CompositeColumnReferenceField`, `ParticipantColumnReferenceField`, and the input-side equivalents under `InputField`). Populate from the existing classifier paths: `TableRef` construction in `BuildContext`/`TypeBuilder` reads the raw directive arg presence; `ColumnRef` likewise on `@field`; the `@reference`-permit constructors read from `BuildContext.parsePath`'s outcome (`ParsedPath.elements.isEmpty()` AND a single-FK inference fired → `Inferred.FromUniqueFk`). Wear the `provenance-axis-faithful` `@LoadBearingClassifierCheck` at each producer site. No behaviour change at any existing consumer (they keep reading the resolved name).
+1. **C1 ; `Provenance` axis on model carriers.** Add the `Provenance` sealed family under `no.sikt.graphitron.rewrite.model`; add a `Provenance` field to `TableRef`, `ColumnRef`, and to each of the `@reference(path:)`-consuming `ChildField` permits (`ColumnReferenceField`, `CompositeColumnReferenceField`, `ParticipantColumnReferenceField`, and the input-side equivalents under `InputField`) as a sibling record component alongside the existing fields. Populate from the existing classifier paths: `TableRef` construction in `BuildContext`/`TypeBuilder` reads the raw directive-arg presence on `@table(name:)`; `ColumnRef` likewise on `@field(name:)`. For the `@reference`-permit constructors, the same directive-arg-presence check applies: at each `ctx.parsePath(...)` call site, sample `directive.getArgument(ARG_PATH) == null` *before* the call, then on the inferred branch (path arg absent, `parsePath` returned non-empty elements) read the FK name from the synthesized single-hop step at `parsed.elements().get(0)` (a `JoinStep.FkJoin`) into `Provenance.Inferred.FromUniqueFk.fkName`. Read-the-directive-state-at-the-call-site, not `parsed.elements().isEmpty()`: the latter signals the error branch (BuildContext.java:862), not the successful inference branch (BuildContext.java:887, where the inferred FkJoin has been appended). Wear the `provenance-axis-faithful` `@LoadBearingClassifierCheck` at each producer site. No behaviour change at any existing consumer (they keep reading the resolved name).
 2. **C2 ; new projection types in the catalog package.** Land `InferredDirectiveBindings` and the sealed `FieldClassification` / `TypeClassification` families under `no.sikt.graphitron.rewrite.catalog`. Initially unwired. Unit-tier test asserts the sealed structure compiles and each permit's payload fields are reachable.
 3. **C3 ; producer side in `CatalogBuilder`.** Three new methods: `projectInferredBindings(GraphitronSchema)`, `projectFieldClassification(GraphitronField)`, `projectTypeClassification(GraphitronType)`. Exhaustive switches on the generator-side permits. Wear the two `*-classification-payload-faithful` `@LoadBearingClassifierCheck` annotations.
 4. **C4 ; `LspSchemaSnapshot.Built` extension.** Add the three new fields (`inferredBindings`, `fieldClassificationsByCoord`, `typeClassificationsByName`), update `Built.Current` and `Built.Previous` symmetrically, update `CatalogBuilder.buildSnapshot` overloads (the one-arg overload returns empty projections, matching the existing `typesByName == Map.of()` behaviour).
@@ -248,7 +260,7 @@ Per the rewrite-design-principles test-tier guide.
 
 LSP-side classification labels rendered by `LspClassificationLabels`. The projection is 1:1 with the generator-side permits (see "Projection 2"); this table is the LSP-module's label switch laid out as a review artifact, not a permit-collapse table. The projector's exhaustive switch enforces that every generator-side permit has an LSP-side mapping; this table enforces that every LSP-side mapping has a chosen label.
 
-Field-side labels (mapped from the `GraphitronField` permits as enumerated under `ChildField`, `RootField`, `MutationField`, `InputField`, and `GraphitronField.UnclassifiedField`):
+Field-side labels (mapped from the `GraphitronField` leaves as enumerated under `ChildField`, `QueryField` (`RootField.QueryField`'s permits), `MutationField`, `InputField`, and `GraphitronField.UnclassifiedField`):
 
 | Generator-side permit | Label |
 |---|---|
@@ -278,11 +290,20 @@ Field-side labels (mapped from the `GraphitronField` permits as enumerated under
 | `ChildField.ComputedField` | "computed field" |
 | `ChildField.PropertyField` | "property field" |
 | `ChildField.ErrorsField` | "errors field" |
-| `RootField.QueryField` | "query field" |
-| `MutationField.DmlTableField.MutationInsertTableField` | "insert mutation" |
-| `MutationField.DmlTableField.MutationUpdateTableField` | "update mutation" |
-| `MutationField.DmlTableField.MutationDeleteTableField` | "delete mutation" |
-| `MutationField.DmlTableField.MutationUpsertTableField` | "upsert mutation" |
+| `QueryField.QueryTableField` | "query table field" |
+| `QueryField.QueryLookupTableField` | "query lookup table field" |
+| `QueryField.QueryTableMethodTableField` | "query table-method field" |
+| `QueryField.QueryNodeField` | "query node field" |
+| `QueryField.QueryNodesField` | "query nodes field" |
+| `QueryField.QueryTableInterfaceField` | "query table-interface field" |
+| `QueryField.QueryInterfaceField` | "query interface field" |
+| `QueryField.QueryUnionField` | "query union field" |
+| `QueryField.QueryServiceTableField` | "query service-table field" |
+| `QueryField.QueryServiceRecordField` | "query service-record field" |
+| `MutationField.MutationInsertTableField` | "insert mutation" |
+| `MutationField.MutationUpdateTableField` | "update mutation" |
+| `MutationField.MutationDeleteTableField` | "delete mutation" |
+| `MutationField.MutationUpsertTableField` | "upsert mutation" |
 | `MutationField.MutationServiceTableField` | "service table mutation" |
 | `MutationField.MutationServiceRecordField` | "service record mutation" |
 | `MutationField.MutationDmlRecordField` | "DML record mutation" |
@@ -323,7 +344,7 @@ Type-side labels (mapped from `GraphitronType` permits):
 | `GraphitronType.PlainObjectType` | "plain object" |
 | `GraphitronType.UnclassifiedType` | "unclassified ({rejection})" |
 
-Tables are exhaustive on the current `GraphitronField` and `GraphitronType` permits as of R160's filing (cross-checked against `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ChildField.java`, `RootField.java`, `MutationField.java`, `InputField.java`, and `GraphitronType.java`). The projector's exhaustive switches enforce that new permits added downstream get an LSP-side mapping in the same commit. Labels are the LSP module's call; later refinement of phrasing does not affect the projection.
+Tables are exhaustive on the current `GraphitronField` and `GraphitronType` permits as of R160's filing (cross-checked against `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ChildField.java`, `RootField.java`, `QueryField.java`, `MutationField.java`, `InputField.java`, and `GraphitronType.java`). The projector's exhaustive switches enforce that new permits added downstream get an LSP-side mapping in the same commit. Labels are the LSP module's call; later refinement of phrasing does not affect the projection.
 
 ## References
 
