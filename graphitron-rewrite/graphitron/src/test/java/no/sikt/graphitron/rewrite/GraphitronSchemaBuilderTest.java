@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
 import no.sikt.graphitron.rewrite.model.ChildField.ErrorsField;
+import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField;
@@ -6142,6 +6143,114 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(MutationDmlCase.class)
     void mutationDmlClassification(MutationDmlCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== MutationDeletePayloadCarrierCase (R156) =====
+
+    /**
+     * R156 admission / rejection matrix for {@code @mutation(typeName: DELETE)} carriers. The
+     * verb-aware carrier walk admits two element-arm shapes (DataElement.Id PK-echo,
+     * DataElement.Table with a clean projection through PerFieldOutcome) and rejects everything
+     * else, including DataElement.Id on non-DELETE verbs (the post-image of INSERT/UPDATE/UPSERT
+     * is richer than the PK), list-of-nullable {@code [ID]} wrappers, projection-table types
+     * with non-PK non-nullable / @service / unsupported (FK-traversing / child-collection)
+     * fields, and DataElement.Id carriers whose input @table is not @node-backed or whose
+     * explicit @nodeId pins to a different table.
+     */
+    enum MutationDeletePayloadCarrierCase implements ClassificationCase {
+
+        BULK_DELETE_TABLE_NULLABLE_NON_PK_ADMITS(
+            "bulk DELETE + [Foo!] carrier with only nullable non-PK column fields → MutationBulkDmlRecordField + SingleRecordTableFieldFromReturning with PkResolution.NonPkNullable projection",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type DeletedFilmsPayload { deleted: [Film!] }
+            type Query { x: String }
+            type Mutation { deleteFilms(in: [FilmInput!]!): DeletedFilmsPayload @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var mut = schema.field("Mutation", "deleteFilms");
+                assertThat(mut).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
+                var dataField = schema.field("DeletedFilmsPayload", "deleted");
+                assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableFieldFromReturning.class);
+                var tableCarrier = (ChildField.SingleRecordTableFieldFromReturning) dataField;
+                assertThat(tableCarrier.projection())
+                    .anyMatch(arm -> arm instanceof no.sikt.graphitron.rewrite.model.PkResolution.NonPkNullable n
+                                  && n.fieldName().equals("title"));
+            }) {
+            @Override public Set<Class<?>> variants() {
+                return Set.of(MutationField.MutationBulkDmlRecordField.class,
+                    ChildField.SingleRecordTableFieldFromReturning.class);
+            }
+        },
+
+        BULK_DELETE_TABLE_NON_NULL_NON_PK_REJECTS(
+            "DELETE + [Foo!] with non-null non-PK column → UnclassifiedField naming the offending field, pointing at DataElement.Id",
+            """
+            type Film @table(name: "film") { title: String! }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type DeletedFilmsPayload { deleted: [Film!] }
+            type Query { x: String }
+            type Mutation { deleteFilms(in: [FilmInput!]!): DeletedFilmsPayload @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteFilms");
+                assertThat(f.reason()).contains("title", "non-primary-key columns", "non-nullable", "DataElement.Id");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        INSERT_ID_CARRIER_REJECTS(
+            "INSERT + [ID!] carrier → UnclassifiedField (DataElement.Id is the PK-echo permit; admitted only on DELETE)",
+            """
+            type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID! @nodeId title: String }
+            input FilmInput @table(name: "film") { title: String }
+            type InsertedFilmsPayload { insertedIds: [ID!] }
+            type Query { x: String }
+            type Mutation { insertFilms(in: [FilmInput!]!): InsertedFilmsPayload @mutation(typeName: INSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "insertFilms");
+                assertThat(f.reason()).contains("element type ID", "PK-echo permit", "DELETE",
+                    "INSERT");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        DELETE_LIST_OF_NULLABLE_REJECTS(
+            "DELETE + [ID] (list-of-nullable) carrier → UnclassifiedField at the verbless walk (HardReject wrapper shape)",
+            """
+            type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID! @nodeId title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type DeletedFilmsPayload { deletedIds: [ID] }
+            type Query { x: String }
+            type Mutation { deleteFilms(in: [FilmInput!]!): DeletedFilmsPayload @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteFilms");
+                assertThat(f.reason()).contains("ID", "list-of-nullable", "list-of-non-null");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        ;
+
+        final String description;
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        MutationDeletePayloadCarrierCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.description = description;
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(); }
+        @Override public String toString() { return description; }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(MutationDeletePayloadCarrierCase.class)
+    void mutationDeletePayloadCarrierClassification(MutationDeletePayloadCarrierCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 
