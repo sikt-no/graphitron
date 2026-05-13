@@ -24,20 +24,23 @@ type SlettRegelverksamlingPayload {
 }
 ```
 
-The first rejection fires at `FieldBuilder.java:2689`: today's R75 / R141 carrier
-path runs a PK-only RETURNING inside the tx and then a follow-up response SELECT
-outside it (`FetcherEmitter.java:60-66`). For DELETE the follow-up SELECT can't
-run because the row is gone, so the carrier path refuses DELETE unconditionally.
+The first rejection fires at `FieldBuilder.java:2960` (the
+`if (kind == DmlKind.DELETE)` branch inside the carrier path): today's R75 / R141
+carrier path runs a PK-only RETURNING inside the tx and then a follow-up response
+SELECT outside it (`FetcherEmitter.java:60-66`). For DELETE the follow-up SELECT
+can't run because the row is gone, so the carrier path refuses DELETE
+unconditionally.
 The second rejection fires at the role-permit classifier: today's only admitted
 `DataChannel.DataElement` arms are `Table` and `Record`, neither of which fits
 an `ID`-element echo.
 
 Once R12 (`error-handling-parity`) lands, every mutation will want a payload
 type to carry the `errors:` channel alongside the produced rows. The current
-"use bare `ID` / `[ID!]` as the return type" escape hatch at
-`FieldBuilder.java:2732-2741` cannot compose with R12, so DELETE will be the
-only verb that can't participate in payload-carrier shapes. This item closes
-that gap.
+"use bare `ID` / `[ID!]` as the return type" escape hatch (encoder lookup at
+`FieldBuilder.java:3002-3013`, emission at `FieldBuilder.java:2729-2733` via
+`buildDmlReturnExpression`) cannot compose with R12, so DELETE will be the only
+verb that can't participate in payload-carrier shapes. This item closes that
+gap.
 
 The design rule the user committed to in conversation: after a DELETE the only
 data the response can honestly project is the deleted row's primary key. Any
@@ -75,10 +78,13 @@ In scope:
   no DELETE-specific plumbing rides on `SingleRecordCarrierShape` or on
   `DataElement.Table` / `DataElement.Record`.
 - Removes the unconditional DELETE-with-carrier rejection at
-  `FieldBuilder.java:2689` entirely. The DELETE-admissibility decision moves
-  into `tryResolveSingleRecordCarrier`, which now takes a `DmlKind` and
-  produces a typed result. `FieldBuilder` consumes the typed result without
-  re-branching on kind.
+  `FieldBuilder.java:2960-2965` entirely. The DELETE-admissibility decision
+  moves into a new `tryResolveSingleRecordCarrier(String, DmlKind)` overload on
+  `BuildContext`; the existing zero-`DmlKind` overload at
+  `BuildContext.java:505` is preserved for non-DML callers
+  (`GraphitronSchemaBuilder.java:227`, `MutationInputResolver.java:178/210/233`)
+  so this change is additive at the call sites that don't classify a verb.
+  `FieldBuilder` consumes the typed result without re-branching on kind.
 
 Explicitly out of scope (follow-up R-items filed alongside this Spec or already
 on the roadmap):
@@ -143,7 +149,7 @@ record Id(String name, FieldWrapper wrapper) implements DataElement {
 ```
 
 The encoder is resolved once at carrier-classify time (same lookup the bare-`ID`
-DELETE return path uses at `FieldBuilder.java:2732-2741`) and stored on the
+DELETE return path uses at `FieldBuilder.java:3002-3013`) and stored on the
 per-field `ChildField.SingleRecordIdFieldFromReturning` carrier that the
 classifier produces for the data field. The data fetcher emission for
 `DataElement.Id` reads the compaction off that per-field carrier, not off the
@@ -179,9 +185,11 @@ when:
    commits to a narrower post-image than the other verbs make available.
 
 The cardinality matrix (bulk × {Id, Table}, single × {Id, Table}) drops out
-of the existing carrier-data-field wrapper dispatch at `FieldBuilder.java:2707`:
-a list-shaped element data field routes to `MutationBulkDmlRecordField`, a
-singleton to `MutationDmlRecordField`. No new dispatch axis.
+of the existing carrier-data-field wrapper dispatch at
+`FieldBuilder.java:2978-2999` (the `boolean dataFieldIsList = ...` lookup
+followed by the `if (tia.list() && dataFieldIsList)` branch): a list-shaped
+element data field routes to `MutationBulkDmlRecordField`, a singleton to
+`MutationDmlRecordField`. No new dispatch axis.
 
 ### Narrowed `DataElement.Table` for DELETE: typed per-field projection
 
@@ -234,7 +242,7 @@ public sealed interface PkResolution {
      * future emitter that genuinely needs to split (e.g. a faster path for the
      * single-column no-encode case) lifts at that point.
      */
-    record PkRead(String fieldName, List<jOOQField<?>> columns, Optional<HelperRef.Encode> encode) implements PkResolution {}
+    record PkRead(String fieldName, List<ColumnRef> columns, Optional<HelperRef.Encode> encode) implements PkResolution {}
 
     /** Field maps to a non-PK column. Nullable in SDL; emitter emits a constant-null fetcher. */
     record NonPkNullable(String fieldName) implements PkResolution {}
@@ -293,19 +301,23 @@ typed projection and emits `null` for each at runtime. No re-derivation of
 
 ### Push the gate into the carrier walk
 
-Today's `FieldBuilder.java:2689` re-asks "is this element kind admissible for
-DELETE?" with a `kind == DmlKind.DELETE` branch, after the carrier walk has
+Today's `FieldBuilder.java:2960-2965` re-asks "is this element kind admissible
+for DELETE?" with a `kind == DmlKind.DELETE` branch, after the carrier walk has
 already classified the element. Two consumers reading the same admissibility
 predicate. The principles-architect rule "if two consumers evaluate the same
 predicate over a model field, the branch belongs in the model" applies here.
 
-The fix: `tryResolveSingleRecordCarrier` itself produces a kind-aware result.
-`SingleRecordCarrierResolution.Ok` already carries the resolved shape; the walk
-gains a `DmlKind` parameter (or routes through a per-kind helper) so that the
-DELETE-admissibility check (element kind in `{Id, Table}`; the per-field
-`PkResolution` projection clean) happens during resolution. The
-`SingleRecordCarrierResolution` sealed type's existing `Rejected` arm carries
-the diagnostic for inadmissible DELETE shapes.
+The fix: a new `BuildContext.tryResolveSingleRecordCarrier(String, DmlKind)`
+overload produces a kind-aware result, alongside the existing
+`tryResolveSingleRecordCarrier(String)` overload at `BuildContext.java:505`
+(kept verbatim for the three non-DML callers in `GraphitronSchemaBuilder` and
+`MutationInputResolver` that don't classify a verb). The new overload shares the
+existing walk's positive-criterion checks and adds the DELETE-admissibility
+arm (element kind in `{Id, Table}`; the per-field `PkResolution` projection
+clean) before returning. The `SingleRecordCarrierResolution` sealed type's
+existing `Rejected` arm carries the diagnostic for inadmissible DELETE shapes;
+the existing `NotCandidate` arm continues to mean "not a single-record-carrier
+shape at all" and is unchanged.
 
 `FieldBuilder` then consumes the typed result without re-asking:
 
@@ -323,14 +335,14 @@ switch (ctx.tryResolveSingleRecordCarrier(rawReturn, kind)) {
         // ... (existing per-cardinality MutationDmlRecordField / MutationBulkDmlRecordField dispatch)
     }
     case SingleRecordCarrierResolution.Rejected rejected ->
-        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rejected.message()));
-    case SingleRecordCarrierResolution.NotACarrier nac -> {
+        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rejected.reason()));
+    case SingleRecordCarrierResolution.NotCandidate nc -> {
         // existing bare-ID / bare-[ID!] DELETE return path stays
     }
 }
 ```
 
-The unconditional DELETE rejection at `FieldBuilder.java:2689` disappears
+The unconditional DELETE rejection at `FieldBuilder.java:2960-2965` disappears
 entirely. Any future `DataElement` arm that adds DELETE-admissibility lands in
 the carrier walk and `FieldBuilder` doesn't change.
 
@@ -378,8 +390,17 @@ its emitter consumes; no DELETE-specific plumbing rides on
     guarantee (the carrier walk rejects on either arm). The sealed switch's
     exhaustiveness check produces an `IllegalStateException` ; "invariant
     violated: carrier admitted with arm X" ; as a defence-in-depth on the
-    classifier-emitter contract; `LoadBearingGuaranteeAuditTest` pins the
-    contract.
+    classifier-emitter contract. The contract is pinned by a new
+    `@LoadBearingClassifierCheck(key =
+    "mutation-delete-carrier.pk-resolution-projection-clean", description =
+    "Carrier walk rejects any DELETE @table-element projection containing a
+    NonPkNonNullable or ServiceField arm before constructing a
+    SingleRecordTableFieldFromReturning; the emitter's sealed switch consumes
+    only PkRead and NonPkNullable arms.")` on the carrier-walk site that
+    produces the `PkResolution` list, with a matching `@DependsOnClassifierCheck`
+    on the `SingleRecordTableFieldFromReturning` emitter case in
+    `FetcherEmitter`. `LoadBearingGuaranteeAuditTest`'s scan picks the pair up
+    and fails the build on orphaned consumers or duplicate producers.
 
   No follow-up SELECT.
 
@@ -478,6 +499,88 @@ outweighs the benefit on this carrier path. The principles-architect's
 underlying concern (the silent-null hole at runtime) is fully addressed by
 the strict-reject decision.
 
+## User documentation (first-client check)
+
+This item adds a new SDL author surface: payload-returning DELETE. The chapter
+draft below ships co-located with the existing mutations documentation at
+`docs/manual/reference/mutations.adoc` (sub-section `Payload-returning DELETE`)
+when the implementation lands; it is reproduced in the plan so the design is
+reviewed against the prose its first reader will actually see.
+
+> ### Payload-returning DELETE
+>
+> Graphitron supports two payload shapes on `@mutation(typeName: DELETE)`. Both
+> echo information about the rows the DML actually removed; neither projects
+> non-primary-key columns from the deleted rows (the row is gone before the
+> response can read it).
+>
+> #### Echoing the deleted primary key (recommended)
+>
+> The simplest payload returns the encoded NodeId of each deleted row:
+>
+> ```graphql
+> type SlettRegelverksamlingPayload {
+>     deletedIds: [ID!]   # implicit @nodeId; encoder resolves against the input @table's @node
+> }
+>
+> extend type Mutation {
+>     slettRegelverksamling(input: [RegelverksamlingDeleteInput!]!): SlettRegelverksamlingPayload
+>       @mutation(typeName: DELETE, table: "regelverksamling")
+> }
+> ```
+>
+> The carrier field's element type must be `ID` (single DELETE) or `[ID!]`
+> (bulk DELETE). The encoder is recognised implicitly when the input `@table`
+> registers a `@node`. To pin the encoder explicitly (recommended when grep-
+> ability matters), attach `@nodeId` to the carrier field; the directive's
+> encoder must resolve to the same `@table`.
+>
+> The response contains exactly the IDs of rows the DML actually removed.
+> Input IDs that don't match any row are absent from the response (subset
+> semantics, not error semantics; combine with `errors:` from `@errorChannel`
+> if you need per-row failure reporting).
+>
+> #### Projecting the deleted row's primary key onto an SDL type
+>
+> The carrier may also return the `@table`-backed SDL type, but only when every
+> non-nullable field on the type resolves to a primary-key column:
+>
+> ```graphql
+> type Regelverksamling @table(name: "regelverksamling") @node {
+>     id: ID!                              # PK; admits
+>     navn: String                         # non-PK, nullable; admits, runtime returns null
+>     beskrivelse: String!                 # non-PK, non-nullable; REJECTS the carrier
+> }
+> ```
+>
+> The classifier inspects every field on the element type and rejects the
+> carrier if any non-nullable field maps to a non-PK column. Nullable non-PK
+> fields admit and always resolve to `null` at runtime; this is by design ;
+> after a DELETE there is no row left to read those columns from. If your SDL
+> type carries non-nullable non-PK fields, prefer the `[ID!]` shape above, or
+> define a dedicated `DeletedRegelverksamling` SDL type whose non-nullable
+> fields are PK-only.
+>
+> `@service`-resolved fields are not admitted on the element type, nullable or
+> not. The service would receive a PK-only row at runtime and any non-PK source
+> parameter would silently produce `null`. Use the `[ID!]` shape and resolve
+> service-backed data on the deleted entity through a sibling lookup if needed.
+>
+> #### Single vs bulk
+>
+> Both shapes work with single and bulk DELETE; cardinality follows the carrier
+> field's wrapper (`ID`/`Foo!` for single, `[ID!]`/`[Foo!]` for bulk).
+>
+> #### What you can't return
+>
+> - Arbitrary non-PK columns of the deleted row. The row is gone; `RETURNING`
+>   is narrowed to primary-key columns. If you need the full pre-delete state,
+>   snapshot it in your application code before issuing the mutation.
+> - A bare `@record`-backed type. Use a NodeId echo or a `@table` projection.
+
+If any prose above stops reading cleanly to an author who arrives from search,
+the design (not just the docs) needs revisiting before implementation.
+
 ## Tests
 
 - **L1 (model).**
@@ -565,17 +668,26 @@ the strict-reject decision.
   produces `PkRead` for plain `ColumnField`-over-PK, for
   `CompositeColumnField` via `@nodeId` over PK, and for the SDL `id`-alias
   case (one arm because the three share emitter dispatch).
-- `BuildContext.tryResolveSingleRecordCarrier` is `DmlKind`-aware and produces
-  a typed result that already encodes DELETE-admissibility. The resolution
-  admits `DataElement.Id` on DELETE per §Carrier classifier admission and
-  rejects on every non-DELETE verb with the permit-verb invariant message.
-  For `DataElement.Table` on DELETE, the resolution computes the
-  `PkResolution` projection and rejects on any `NonPkNonNullable` or
-  `ServiceField` arm before constructing any `ChildField` carrier.
+- A new `BuildContext.tryResolveSingleRecordCarrier(String, DmlKind)` overload
+  is `DmlKind`-aware and produces a typed result that already encodes
+  DELETE-admissibility. The resolution admits `DataElement.Id` on DELETE per
+  §Carrier classifier admission and rejects on every non-DELETE verb with the
+  permit-verb invariant message. For `DataElement.Table` on DELETE, the
+  resolution computes the `PkResolution` projection and rejects on any
+  `NonPkNonNullable` or `ServiceField` arm before constructing any `ChildField`
+  carrier. The carrier-walk site that produces the cleaned `PkResolution` list
+  wears `@LoadBearingClassifierCheck(key =
+  "mutation-delete-carrier.pk-resolution-projection-clean", ...)`; the matching
+  `@DependsOnClassifierCheck` lands on the
+  `SingleRecordTableFieldFromReturning` emitter case in `FetcherEmitter`.
 - The unconditional DELETE-with-carrier rejection at
-  `FieldBuilder.java:2689` is removed entirely. `FieldBuilder` consumes the
-  typed `SingleRecordCarrierResolution` result without re-branching on
-  `DmlKind`.
+  `FieldBuilder.java:2960-2965` is removed entirely. `FieldBuilder` consumes
+  the typed `SingleRecordCarrierResolution` result from the new
+  `tryResolveSingleRecordCarrier(String, DmlKind)` overload without
+  re-branching on `DmlKind`. The pre-existing single-arg overload at
+  `BuildContext.java:505` is unchanged; the three non-DML call sites
+  (`GraphitronSchemaBuilder.java:227`, `MutationInputResolver.java:178/210/233`)
+  continue to use it.
 - `PkResolutionEmitterReachabilityTest` enumerates the emitter's accepted
   `PkResolution` arms and fails on additions without an emitter case; the
   paired fixture asserts `ServiceField`-arm classifications are caught at
@@ -607,11 +719,13 @@ the strict-reject decision.
 - Pipeline-tier and execution-tier coverage per §Tests is in place and green.
 - Full `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes on
   Java 25.
-- User-facing doc: a new `docs/manual/reference/mutations/delete-payloads.adoc`
-  (or co-located in the existing mutations doc) covers the two element arms,
-  the non-null PK-resolvability rule on `DataElement.Table`, the silent-null
-  semantics on nullable non-PK fields, and the recommendation to prefer
-  `DataElement.Id`.
+- User-facing doc: the `Payload-returning DELETE` sub-section drafted in
+  §"User documentation (first-client check)" lands in
+  `docs/manual/reference/mutations.adoc` (co-located with the existing
+  mutations content) covering the two element arms, the non-null
+  PK-resolvability rule on `DataElement.Table`, the silent-null semantics on
+  nullable non-PK fields, the strict `@service` reject, and the
+  recommendation to prefer `DataElement.Id`.
 
 ## Roadmap entries (siblings / dependencies / follow-ups)
 
@@ -620,7 +734,7 @@ the strict-reject decision.
   (`MutationBulkDmlRecordField` R141) are the two emit-site classes this
   item lifts DELETE onto. Both compact constructors today reject
   `DmlKind.DELETE`; this item lifts that rejection in coordination with the
-  upstream `FieldBuilder.java:2689` lift.
+  upstream `FieldBuilder.java:2960-2965` lift.
 - **Sibling to R12 (`error-handling-parity`).** R12's `ErrorChannelRole`
   permit composes with the existing `DataChannel`; the `DataElement.Id` and
   narrowed `DataElement.Table` arms inherit that composition without
