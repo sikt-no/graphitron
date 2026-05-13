@@ -65,6 +65,16 @@ Bare names continue to mean what they mean today: column on the bound jOOQ recor
 
 R84's existing `input` root on `argMapping` is unchanged; it sits on the input side of the dual and is not affected by this item.
 
+### Invariant: `$source` is the internal representation
+
+`$source` paths always walk the internal Java value of the upstream: jOOQ records, domain beans, jOOQ tables and keys, generated record subclasses, primitive column values. Border translators (`@nodeId` encode, enum textmap encode, custom scalar binding) run between `$source` and the GraphQL wire, transparent to path resolution. The schema author writes `$source.<column-or-accessor>` and gets the internal value; the wire-shape (base64 nodeId string, enum text label, custom scalar serialization) materialises only at fetcher emission.
+
+This is symmetric with R84's input side. There, `input` paths walk the wire-form arguments and border translators run at the path leaf where the directive lives: an `argMapping: "filmId: input.id"` whose `id` carries `@nodeId(typeName: "Film")` decodes at the leaf into the internal column tuple, then binds to `filmId`. The sigil-rooted path never sees the encoded form on the internal side, nor the decoded form on the wire side.
+
+The canonical example where the duality matters most is `ChildField.CompositeColumnField`. The field's internal representation is a tuple of jOOQ columns; the wire representation is a base64-encoded nodeId. A carrier field `@field(name: "$source.id")` where the source's `id` is composite-backed yields the internal tuple, and if the SDL field carries `@nodeId(typeName: "X")` the encoder runs on the tuple at wire emission. Schema authors do not write `$source.encodedId` because there is no internal accessor by that name; the path-form keeps everything inside the Java boundary.
+
+A path-leaf type mismatch surfaces at classify time: SDL field declares `@nodeId(typeName: "Film")` (expects internal column tuple from `$source`), the source accessor yields `String` instead, classifier rejects with a typed message naming the translator mismatch. The same pattern applies to enum textmap and custom scalar boundaries.
+
 ### Path walk
 
 Path walk reuses R84's `PathExpr.{Head | Step}` chain. The head fixes the sigil-named root's Java type; each step resolves to an accessor on the prior step's type. List-shaped intermediates lift element-wise per `liftsList`, matching R84's flat-path-with-intermediate-list semantics. The structural rules from R84's `Result.PathRejected` (walk-through scalar/enum/union/interface, unknown segment with closest-match hint) carry over verbatim; the Spec re-uses the rejection carrier rather than introducing a parallel one.
@@ -135,3 +145,4 @@ Apollo's `@connect(selection: ...)` mapping language is the closest external pre
 - Test surface: pipeline-tier cases for name-match, type-match, ambiguity, inference-failure, type-mismatch, reserved-sigil rejection, $errors source path; execution-tier case against the OpprettRegelverksamlingPayload reproducer (or sakila equivalent if we add one).
 - LSP-tier coverage: `@field(name:)` autocomplete for `$source.<accessor>` paths against the producer's reflected return type, similar to R84's `argMapping` path completion.
 - Whether `MutationServiceRecordField`'s accessor walk continues to operate by name independently of `@field(name:)` paths (today's behaviour) or is rewritten to dispatch through the same inference rules (cleaner model, more migration cost). Recommend the former as default; cite the migration cost.
+- The classifier-check key for the `$source`-is-internal invariant: when a path-leaf SDL field carries a border translator (`@nodeId`, enum textmap, custom scalar binding) the classifier requires the source accessor's Java type to match the translator's internal-side expectation. One load-bearing key per translator family or one shared key with per-translator rejection messages; the Spec should pick.
