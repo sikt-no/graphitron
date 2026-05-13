@@ -1,7 +1,7 @@
 ---
 id: R153
 title: Set explicit TextEdit range on every completion item so clients do not concatenate the prefix with the candidate
-status: Spec
+status: Ready
 bucket: bug
 theme: lsp
 depends-on: []
