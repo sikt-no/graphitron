@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R39` | Validate that list fields on tables without a PK require explicit ordering | Spec | 2026-05-13 | [plan](validate-list-fields-require-ordering.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | In Progress | 2026-05-14 | [plan](tablemethod-child-table-bound.md) |
+| `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | In Review | 2026-05-13 | [plan](tablemethod-child-table-bound.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
@@ -158,7 +158,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### model-cleanup
 
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md) — Spec, validation
-- `R43` [**Stub: child `@tableMethod` with table-bound return (`TableMethodField`)**](tablemethod-child-table-bound.md) — In Progress, stubs
+- `R43` [**Stub: child `@tableMethod` with table-bound return (`TableMethodField`)**](tablemethod-child-table-bound.md) — In Review, stubs
 - `R129` [**Stub: ConditionJoin path in @reference on ColumnReferenceField**](column-reference-on-scalar-field-condition-join.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
 - `R96` [**Deprecate @record (narrow scope; defer polymorphic-return case)**](deprecate-record-directive.md) — Spec, cleanup, blocked by [emit-input-records](emit-input-records.md)

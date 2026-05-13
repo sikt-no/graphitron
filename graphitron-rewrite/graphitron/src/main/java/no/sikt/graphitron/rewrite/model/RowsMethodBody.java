@@ -74,6 +74,18 @@ public sealed interface RowsMethodBody {
     }
 
     /**
+     * SQL body for {@code RecordTableMethodField} — {@code @record} parent + child
+     * {@code @tableMethod}. Identical SQL framing to {@link SqlRecordTable} (parent VALUES
+     * join, scatter by idx) with the developer's static {@code @tableMethod} call substituted
+     * for the {@code Tables.X.as("alias")} terminal table declaration.
+     */
+    record SqlRecordTableMethod(CodeBlock content) implements RowsMethodBody {
+        public SqlRecordTableMethod {
+            Objects.requireNonNull(content, "content");
+        }
+    }
+
+    /**
      * Service-delegating body for {@code ServiceTableField} / {@code ServiceRecordField}. The
      * {@code needsDsl} flag mirrors {@link MethodRef.CallShape.Static#needsDslLocal()} (with
      * {@link MethodRef.CallShape.InstanceWithDslHolder} folding to {@code true}); the skeleton

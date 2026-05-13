@@ -136,12 +136,13 @@ class RowsMethodSkeletonTest {
     void rowsMethodBody_sealedSwitchIsExhaustive() {
         Class<?>[] permitted = RowsMethodBody.class.getPermittedSubclasses();
         assertThat(permitted)
-            .as("RowsMethodBody permits exactly the five body shapes from the spec")
+            .as("RowsMethodBody permits exactly the six body shapes (five spec shapes + SqlRecordTableMethod, R43 commit 5)")
             .containsExactlyInAnyOrder(
                 RowsMethodBody.SqlSplitTable.class,
                 RowsMethodBody.SqlSplitLookupTable.class,
                 RowsMethodBody.SqlRecordTable.class,
                 RowsMethodBody.SqlRecordLookupTable.class,
+                RowsMethodBody.SqlRecordTableMethod.class,
                 RowsMethodBody.Service.class);
     }
 }

@@ -536,6 +536,24 @@ type FilmCard @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.
     filmId: Int @field(name: "film_id")
 }
 
+# R43 commit 5 fixture: a @record-typed type whose parent is the full Film row record
+# (via ConstructorField passthrough from Film.detailsForMethod). The FilmRecord backing
+# makes this a JooqTableRecordType parent, which is the auto-FK-derive arm of
+# FieldBuilder.classifyChildFieldOnResultType's @tableMethod branch. languageId is
+# materialised on the parent record by being declared here so the framework projects
+# film.language_id; languageViaTableMethod's RecordTableMethodField fetcher then reads
+# parentRecord.get(film.LANGUAGE_ID) for the DataLoader key tuple. Both shapes of the
+# DTO-parent @tableMethod branch ship together (FK-auto-derive on the JooqTableRecord
+# parent + the explicit-@reference variant via the SDL directive).
+type FilmDetailsForMethod @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
+    filmId: Int @field(name: "film_id")
+    languageId: Int @field(name: "language_id")
+    languageViaTableMethod: Language @tableMethod(
+        className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+        method: "tableMethodLanguage"
+    ) @reference(path: [{key: "film_language_id_fkey"}])
+}
+
 # R75 Phase 2 compilation-tier fixture: plain SDL Object carrier whose single data field
 # 'card' has a @record-backed element type (FilmCardWrapper, see below). No @record /
 # @table on the carrier itself; TypeBuilder.promoteSingleRecordCarriers promotes it to
@@ -732,6 +750,11 @@ type Film implements Node & Searchable @table(name: "film") @node {
         className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
         method: "tableMethodLanguage"
     ) @reference(path: [{key: "film_language_id_fkey"}])
+    # R43 commit 5 fixture: child @tableMethod on a @record-typed parent (DTO-parent emit).
+    # ConstructorField passthrough: env.getSource() at FilmDetailsForMethod's depth is the
+    # parent Film row record (carrying all projected columns including language_id), which
+    # the FilmRecord-backed @record on FilmDetailsForMethod accepts as its source.
+    detailsForMethod: FilmDetailsForMethod
 }
 
 type Actor implements Searchable @table(name: "actor") {

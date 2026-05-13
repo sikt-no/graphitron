@@ -384,6 +384,181 @@ public final class SplitRowsMethodEmitter {
     }
 
     // -----------------------------------------------------------------------
+    // RecordTableMethodField
+    // -----------------------------------------------------------------------
+
+    /**
+     * Rows-method for {@link ChildField.RecordTableMethodField}: the DTO-parent sibling of
+     * {@link #buildForRecordTable}. Identical parent-VALUES + flat-JOIN-on-FK shape; the only
+     * difference is that the terminal table is materialised by calling the developer's static
+     * {@code @tableMethod} (returning a generated jOOQ table) rather than referencing
+     * {@code Tables.<X>} directly. Single-hop {@link JoinStep.FkJoin} only, mirroring the
+     * table-parent {@link ChildField.TableMethodField} emit's shipped shape (R43 commit 3);
+     * multi-hop FK paths, {@link JoinStep.ConditionJoin}, and empty joinPaths surface a runtime
+     * {@link UnsupportedOperationException}.
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "tablemethod-resolver-return-is-table-bound",
+        reliesOn = "Reads field.returnType().table() to declare the developer's table local "
+            + "with the specific generated jOOQ class. The resolver's TableBoundReturnType "
+            + "invariant guarantees the narrow return type at this site.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "fk-join.slots-oriented-source-and-target",
+        reliesOn = "Reads slot.targetSide() (developer-returned table's column) and "
+            + "slot.sourceSide() (parent's lifted-key column) without re-deriving FK direction.")
+    static MethodSpec buildForRecordTableMethod(TypeFetcherEmissionContext ctx,
+            ChildField.RecordTableMethodField rtmf, String outputPackage) {
+        TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
+        TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
+        TypeName keyElement = rtmf.sourceKey().keyElementType();
+        TypeName keysListType = ParameterizedTypeName.get(LIST, keyElement);
+        boolean singleRecordPerKey = rtmf.emitsSingleRecordPerKey();
+        TypeName outerReturn = singleRecordPerKey ? listOfRecord : listOfListOfRecord;
+
+        List<JoinStep> path = rtmf.joinPath();
+        boolean unsupportedPath = path.isEmpty() || path.size() > 1
+            || !(path.get(0) instanceof JoinStep.FkJoin);
+        if (unsupportedPath) {
+            String shapeLabel = path.isEmpty()
+                ? "empty joinPath"
+                : path.size() > 1 ? "multi-hop join path" : "ConditionJoin path";
+            var stub = CodeBlock.builder()
+                .addStatement("throw new $T($S)",
+                    UnsupportedOperationException.class,
+                    "RecordTableMethodField with " + shapeLabel + " is not yet emitted — only single-hop "
+                        + "FK paths ship in R43 commit 5")
+                .build();
+            return RowsMethodSkeleton.build(
+                rtmf.rowsMethodName(),
+                outerReturn,
+                keysListType,
+                ctx.graphitronContextCall(),
+                new RowsMethodBody.SqlRecordTableMethod(stub));
+        }
+
+        var body = CodeBlock.builder();
+        emitRecordTableMethodBody(ctx, body, rtmf, outputPackage, singleRecordPerKey);
+
+        return RowsMethodSkeleton.build(
+            rtmf.rowsMethodName(),
+            outerReturn,
+            keysListType,
+            ctx.graphitronContextCall(),
+            new RowsMethodBody.SqlRecordTableMethod(body.build()));
+    }
+
+    /**
+     * Inlines the body for the single-hop FK shape: parent {@code VALUES} rows + developer's
+     * {@code @tableMethod} call + flat join + scatter by idx. Kept separate from
+     * {@link #buildForRecordTableMethod} so the runtime-stub fallback in the entry method stays
+     * close to the shape check.
+     */
+    private static void emitRecordTableMethodBody(TypeFetcherEmissionContext ctx,
+            CodeBlock.Builder body, ChildField.RecordTableMethodField rtmf, String outputPackage,
+            boolean singleRecordPerKey) {
+        var returnType = rtmf.returnType();
+        var sourceKey = rtmf.sourceKey();
+        String fieldName = rtmf.name();
+
+        ClassName typeClass = ClassName.get(
+            outputPackage + ".types",
+            returnType.returnTypeName());
+        var names = GeneratorUtils.ResolvedTableNames.of(returnType.table(),
+            returnType.returnTypeName(), outputPackage);
+
+        List<ColumnRef> pkCols = sourceKey.columns();
+        TypeName keyElement = sourceKey.keyElementType();
+        int parentRowArity = pkCols.size() + 1;
+        if (parentRowArity > 22) {
+            throw new IllegalStateException(
+                "Parent PK arity " + pkCols.size() + " + idx exceeds jOOQ's typed Row/Record arity limit (22)");
+        }
+        TypeName[] parentRowTypeArgs = new TypeName[parentRowArity];
+        parentRowTypeArgs[0] = ClassName.get(Integer.class);
+        for (int i = 0; i < pkCols.size(); i++) {
+            parentRowTypeArgs[i + 1] = ClassName.bestGuess(pkCols.get(i).columnClass());
+        }
+        TypeName parentRowType = ParameterizedTypeName.get(rowClass(parentRowArity), parentRowTypeArgs);
+        TypeName parentRecordType = ParameterizedTypeName.get(recordClass(parentRowArity), parentRowTypeArgs);
+        TypeName parentInputTableType = ParameterizedTypeName.get(TABLE, parentRecordType);
+
+        body.add("@$T({$S, $S})\n", ClassName.get("java.lang", "SuppressWarnings"), "unchecked", "rawtypes");
+        body.addStatement("$T[] parentRows = ($T[]) new $T[keys.size()]",
+            parentRowType, parentRowType, rowClass(parentRowArity));
+        body.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
+        body.addStatement("$T k = keys.get(i)", keyElement);
+        var rowArgs = CodeBlock.builder();
+        rowArgs.add("$T.inline(i)", DSL);
+        boolean isAccessor = sourceKey.reader() instanceof SourceKey.Reader.AccessorCall;
+        for (int i = 0; i < pkCols.size(); i++) {
+            if (isAccessor) {
+                rowArgs.add(", $T.val(k.value$L())", DSL, i + 1);
+            } else {
+                rowArgs.add(", k.field$L()", i + 1);
+            }
+        }
+        body.addStatement("parentRows[i] = $T.row($L)", DSL, rowArgs.build());
+        body.endControlFlow();
+
+        var parentInputAlias = CodeBlock.builder();
+        parentInputAlias.add("$S, $S", "parentInput", "idx");
+        for (var col : pkCols) {
+            parentInputAlias.add(", $S", col.sqlName());
+        }
+        body.addStatement("$T parentInput = $T.values(parentRows).as($L)",
+            parentInputTableType, DSL, parentInputAlias.build());
+
+        // Terminal table: invoke the developer's static @tableMethod. Aliased so the parent-input
+        // JOIN can address its columns via the local. The leading-table parameter was retired
+        // in R43 commit 1; ArgCallEmitter is called with null for the table expression.
+        var methodClass = ClassName.bestGuess(rtmf.method().className());
+        String conditionsClassName = outputPackage + ".conditions."
+            + rtmf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
+        String terminalAlias = fieldName + "_terminal";
+        body.addStatement("$T $L = $T.$L($L).as($S)",
+            names.jooqTableClass(), terminalAlias,
+            methodClass, rtmf.method().methodName(),
+            ArgCallEmitter.buildMethodBackedCallArgs(ctx, rtmf.method(), null, conditionsClassName),
+            terminalAlias);
+
+        TypeName wildField = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
+        TypeName listOfField = ParameterizedTypeName.get(LIST, wildField);
+        body.addStatement("$T selectFields = new $T<>($T.$$fields(env.getSelectionSet(), $L, env))",
+            listOfField, ARRAY_LIST, typeClass, terminalAlias);
+        body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
+            Integer.class, IDX_COLUMN);
+
+        // JOIN parentInput on FK columns. The single FkJoin's slots pair source (parent) and
+        // target (developer table) columns; the parent-side column lookup goes by sqlName + Java
+        // type (sidestepping potential @node ordering mismatches).
+        JoinStep.FkJoin firstHop = (JoinStep.FkJoin) rtmf.joinPath().get(0);
+        var onCond = CodeBlock.builder();
+        int slotIdx = 0;
+        for (var slot : firstHop.slots()) {
+            if (slotIdx > 0) onCond.add(".and(");
+            ColumnRef parentCol = slot.sourceSide();
+            ClassName parentColType = ClassName.bestGuess(parentCol.columnClass());
+            onCond.add("$L.$L.eq(parentInput.field($S, $T.class))",
+                terminalAlias,
+                slot.targetSide().javaName(),
+                parentCol.sqlName(), parentColType);
+            if (slotIdx > 0) onCond.add(")");
+            slotIdx++;
+        }
+
+        body.add("$T<$T> flat = dsl\n", ClassName.get("org.jooq", "Result"), RECORD);
+        body.indent();
+        body.add(".select(selectFields)\n");
+        body.add(".from($L)\n", terminalAlias);
+        body.add(".join(parentInput).on($L)\n", onCond.build());
+        body.add(".fetch();\n");
+        body.unindent();
+
+        body.addStatement("return $L(flat, keys.size())",
+            singleRecordPerKey ? "scatterSingleByIdx" : "scatterByIdx");
+    }
+
+    // -----------------------------------------------------------------------
     // RecordLookupTableField
     // -----------------------------------------------------------------------
 

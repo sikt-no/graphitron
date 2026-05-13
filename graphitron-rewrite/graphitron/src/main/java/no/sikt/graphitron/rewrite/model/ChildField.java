@@ -358,7 +358,13 @@ public sealed interface ChildField extends GraphitronField
         SourceKey sourceKey,
         LoaderRegistration loaderRegistration,
         Optional<ErrorChannel> errorChannel
-    ) implements ChildField, MethodBackedField, BatchKeyField, WithErrorChannel {}
+    ) implements ChildField, MethodBackedField, BatchKeyField, WithErrorChannel {
+        @Override
+        public boolean emitsSingleRecordPerKey() {
+            return !returnType().wrapper().isList()
+                || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
+        }
+    }
 
     record TableInterfaceField(
         String parentTypeName,

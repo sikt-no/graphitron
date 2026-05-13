@@ -83,6 +83,7 @@ public final class RowsMethodSkeleton {
             case RowsMethodBody.SqlSplitLookupTable s  -> emitSqlBody(b, s.content(), graphitronContextCall);
             case RowsMethodBody.SqlRecordTable s       -> emitSqlBody(b, s.content(), graphitronContextCall);
             case RowsMethodBody.SqlRecordLookupTable s -> emitSqlBody(b, s.content(), graphitronContextCall);
+            case RowsMethodBody.SqlRecordTableMethod s -> emitSqlBody(b, s.content(), graphitronContextCall);
             case RowsMethodBody.Service s              -> emitServiceBody(b, s, graphitronContextCall);
         }
         return b.build();

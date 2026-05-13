@@ -429,6 +429,38 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void filmById_detailsForMethod_languageViaTableMethod_routesThroughRecordTableMethodFieldDtoParentEmit() {
+        // R43 commit 5 execution-tier fixture: child @tableMethod on a @record (DTO) parent.
+        // Film.detailsForMethod is a ConstructorField passthrough to FilmDetailsForMethod,
+        // a @record(FilmRecord)-backed type (JooqTableRecordType). FilmDetailsForMethod's
+        // languageViaTableMethod field classifies as ChildField.RecordTableMethodField; the
+        // FK-auto-derive arm of the new @tableMethod branch in
+        // FieldBuilder.classifyChildFieldOnResultType produces it with SourceKey columns =
+        // [film.language_id] (FK source side). The emit
+        // (SplitRowsMethodEmitter.buildForRecordTableMethod) uses the RecordTableField
+        // DataLoader-keyed batch skeleton with the developer's static @tableMethod call
+        // (SampleQueryService.tableMethodLanguage) substituted for the direct Tables.LANGUAGE
+        // reference. languageId is declared on FilmDetailsForMethod so the parent SELECT
+        // projects film.language_id; the DataFetcher reads parentRecord.get(film.LANGUAGE_ID)
+        // for the DataLoader key. All seeded films have language_id=1; language_id=1 has
+        // name "English".
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId detailsForMethod { filmId languageId languageViaTableMethod { languageId name } } } }");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmById");
+        assertThat(rows).hasSize(2);
+        for (var row : rows) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> details = (Map<String, Object>) row.get("detailsForMethod");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> language = (Map<String, Object>) details.get("languageViaTableMethod");
+            assertThat(language).extractingByKey("languageId").isEqualTo(1);
+            // language.name is char(20) in Sakila; PostgreSQL pads with spaces — strip before compare.
+            assertThat(((String) language.get("name")).strip()).isEqualTo("English");
+        }
+    }
+
+    @Test
     void filmCardWrapper_recordExample_resolvesAllThreeAccessorArms() {
         // R88 execution-tier fixture: a @record-Java-backed type whose three SDL fields each
         // exercise a different accessor-resolution arm — bare-name (Java record component
