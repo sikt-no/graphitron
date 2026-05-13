@@ -117,6 +117,12 @@ public final class ArgNameCompletions {
      * carry input-object shapes yet); when the cursor sits inside an
      * argument value, return empty. Completion is freshness-agnostic:
      * stale suggestions beat silence for an editor surface.
+     *
+     * <p>Asymmetric with {@link #bundledGenerate}: the bundled arm fires
+     * on the arg-key side of an already-filled arg (partial-identifier
+     * editing), the user arm does not. The asymmetry is incidental to
+     * R153's wire-format scope and would warrant its own roadmap item if
+     * a user-directive partial-identifier completion gap surfaces.
      */
     private static List<CompletionItem> userGenerate(
         DirectiveShape shape, Directives.Argument enclosing, Range range
