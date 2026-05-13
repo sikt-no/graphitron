@@ -3,6 +3,7 @@ package no.sikt.graphitron.lsp.server;
 import no.sikt.graphitron.lsp.code_action.CodeActions;
 import no.sikt.graphitron.lsp.completions.ArgNameCompletions;
 import no.sikt.graphitron.lsp.completions.ClassNameCompletions;
+import no.sikt.graphitron.lsp.completions.CompletionContext;
 import no.sikt.graphitron.lsp.completions.FieldCompletions;
 import no.sikt.graphitron.lsp.completions.MethodCompletions;
 import no.sikt.graphitron.lsp.completions.NodeTypeCompletions;
@@ -152,44 +153,54 @@ public class GraphitronTextDocumentService implements TextDocumentService {
     }
 
     /**
-     * For {@code @service} / {@code @condition}, the cursor decides whether
-     * we offer class-name FQNs (when in {@code <outer>.className}) or
-     * method names off the sibling class (when in {@code <outer>.method}).
-     * One of the two providers returns non-empty; the other returns
-     * empty.
-     */
-    /**
-     * Single-walk dispatch: every coordinate-driven completion provider
-     * pattern-matches on the cursor's behavior arm. The first non-empty
-     * list wins; behaviors are mutually exclusive at any one coordinate
-     * so the order is incidental.
+     * Single-walk dispatch: {@link no.sikt.graphitron.lsp.parsing.LspVocabulary#locateAt}
+     * runs once for the cursor and the coordinate-driven providers each
+     * pattern-match on the behavior arm of the resulting coordinate. The
+     * first non-empty list wins; behaviors are mutually exclusive at any
+     * one coordinate so the order is incidental. Locating produces a
+     * {@link CompletionContext} carrying the replace range so every value
+     * item ships an explicit {@code TextEdit} (R153 — clients otherwise
+     * apply per-client word-boundary heuristics to dotted candidates).
+     *
+     * <p>When {@code locateAt} is empty (cursor outside any directive
+     * arg's value, on the arg-name side, or on whitespace inside an
+     * {@code object_value}), the value providers are skipped entirely
+     * and dispatch falls straight through to
+     * {@link ArgNameCompletions}, which has its own walk for partial
+     * arg-name identifiers and zero-width insertion points.
      */
     private static List<CompletionItem> coordinateBasedCompletions(
         no.sikt.graphitron.lsp.state.Workspace workspace,
         no.sikt.graphitron.lsp.parsing.Directives.Directive directive,
         io.github.treesitter.jtreesitter.Point pos,
+        org.eclipse.lsp4j.Position lspPos,
         byte[] source
     ) {
         var data = workspace.catalog();
         var vocab = workspace.vocabulary();
-        var classItems = ClassNameCompletions.generate(vocab, data, directive, pos, source);
-        if (!classItems.isEmpty()) return classItems;
-        var methodItems = MethodCompletions.generate(vocab, data, directive, pos, source);
-        if (!methodItems.isEmpty()) return methodItems;
-        var tableItems = TableCompletions.generate(vocab, data, directive, pos, source);
-        if (!tableItems.isEmpty()) return tableItems;
-        var fieldItems = FieldCompletions.generate(vocab, data, directive, pos, source);
-        if (!fieldItems.isEmpty()) return fieldItems;
-        var refItems = ReferenceCompletions.generate(vocab, data, directive, pos, source);
-        if (!refItems.isEmpty()) return refItems;
-        var scalarItems = ScalarTypeCompletions.generate(vocab, data, directive, pos, source);
-        if (!scalarItems.isEmpty()) return scalarItems;
-        var nodeTypeItems = NodeTypeCompletions.generate(vocab, data, directive, pos, source);
-        if (!nodeTypeItems.isEmpty()) return nodeTypeItems;
-        // Arg-name fallback last: catalog-aware providers above return
-        // value completions for known coordinates; this provider fires
-        // when the cursor is at an arg-name slot rather than a value slot.
-        var argNameItems = ArgNameCompletions.generate(vocab, workspace.snapshot(), directive, pos, source);
+        var locationOpt = vocab.locateAt(directive, pos, source);
+        if (locationOpt.isPresent()) {
+            var context = CompletionContext.from(locationOpt.get(), source);
+            var classItems = ClassNameCompletions.generate(vocab, data, context);
+            if (!classItems.isEmpty()) return classItems;
+            var methodItems = MethodCompletions.generate(vocab, data, context, directive, pos, source);
+            if (!methodItems.isEmpty()) return methodItems;
+            var tableItems = TableCompletions.generate(vocab, data, context);
+            if (!tableItems.isEmpty()) return tableItems;
+            var fieldItems = FieldCompletions.generate(vocab, data, context, directive, source);
+            if (!fieldItems.isEmpty()) return fieldItems;
+            var refItems = ReferenceCompletions.generate(vocab, data, context, directive, source);
+            if (!refItems.isEmpty()) return refItems;
+            var scalarItems = ScalarTypeCompletions.generate(vocab, data, context, directive, source);
+            if (!scalarItems.isEmpty()) return scalarItems;
+            var nodeTypeItems = NodeTypeCompletions.generate(vocab, data, context);
+            if (!nodeTypeItems.isEmpty()) return nodeTypeItems;
+        }
+        // Arg-name fallback: fires both when locateAt is empty (cursor on
+        // arg-name / whitespace) and when locateAt produced no value
+        // matches above. Computes its own range independent of context.
+        var argNameItems = ArgNameCompletions.generate(
+            vocab, workspace.snapshot(), directive, pos, lspPos, source);
         if (!argNameItems.isEmpty()) return argNameItems;
         return List.of();
     }
@@ -210,8 +221,8 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 return Either.forLeft(List.of());
             }
             var directive = directiveOpt.get();
-            return Either.forLeft(
-                coordinateBasedCompletions(workspace, directive, pos, file.source()));
+            return Either.forLeft(coordinateBasedCompletions(
+                workspace, directive, pos, params.getPosition(), file.source()));
         });
     }
 }

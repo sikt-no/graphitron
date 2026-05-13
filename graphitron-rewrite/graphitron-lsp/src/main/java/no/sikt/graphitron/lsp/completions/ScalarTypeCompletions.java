@@ -1,6 +1,5 @@
 package no.sikt.graphitron.lsp.completions;
 
-import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.parsing.Behavior;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
@@ -9,6 +8,8 @@ import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -38,13 +39,11 @@ public final class ScalarTypeCompletions {
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
         CompletionData data,
+        CompletionContext context,
         Directives.Directive directive,
-        Point pos,
         byte[] source
     ) {
-        var coord = vocabulary.coordinateAt(directive, pos, source);
-        if (coord.isEmpty()) return List.of();
-        var behavior = vocabulary.behaviorAt(coord.get());
+        var behavior = vocabulary.behaviorAt(context.coordinate());
         if (behavior.isEmpty() || !(behavior.get() instanceof Behavior.ScalarTypeBinding)) {
             return List.of();
         }
@@ -65,6 +64,7 @@ public final class ScalarTypeCompletions {
             var item = new CompletionItem(fqn);
             item.setKind(CompletionItemKind.Constant);
             item.setDetail("extended-scalars convention");
+            item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), fqn)));
             items.add(item);
         }
         return items;

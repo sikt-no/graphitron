@@ -2,14 +2,13 @@ package no.sikt.graphitron.lsp.completions;
 
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.lsp.parsing.Behavior;
-import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
+import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
-import io.github.treesitter.jtreesitter.Point;
 
 import java.util.List;
 
@@ -29,22 +28,18 @@ public final class TableCompletions {
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
         CompletionData data,
-        Directives.Directive directive,
-        Point pos,
-        byte[] source
+        CompletionContext context
     ) {
-        var coord = vocabulary.coordinateAt(directive, pos, source);
-        if (coord.isEmpty()) return List.of();
-        var behavior = vocabulary.behaviorAt(coord.get());
+        var behavior = vocabulary.behaviorAt(context.coordinate());
         if (behavior.isEmpty() || !(behavior.get() instanceof Behavior.CatalogTableBinding)) {
             return List.of();
         }
         return data.tables().stream()
-            .map(TableCompletions::toCompletionItem)
+            .map(t -> toCompletionItem(t, context))
             .toList();
     }
 
-    private static CompletionItem toCompletionItem(CompletionData.Table table) {
+    private static CompletionItem toCompletionItem(CompletionData.Table table, CompletionContext context) {
         var item = new CompletionItem(table.name());
         item.setKind(CompletionItemKind.Class);
         if (!table.description().isEmpty()) {
@@ -52,6 +47,7 @@ public final class TableCompletions {
                 new MarkupContent(MarkupKind.PLAINTEXT, table.description())
             ));
         }
+        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), table.name())));
         return item;
     }
 }

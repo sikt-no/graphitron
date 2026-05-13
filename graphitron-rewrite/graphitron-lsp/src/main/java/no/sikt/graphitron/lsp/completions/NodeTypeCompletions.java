@@ -1,12 +1,12 @@
 package no.sikt.graphitron.lsp.completions;
 
-import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.parsing.Behavior;
-import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,28 +28,27 @@ public final class NodeTypeCompletions {
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
         CompletionData data,
-        Directives.Directive directive,
-        Point pos,
-        byte[] source
+        CompletionContext context
     ) {
-        var coord = vocabulary.coordinateAt(directive, pos, source);
-        if (coord.isEmpty()) return List.of();
-        var behavior = vocabulary.behaviorAt(coord.get());
+        var behavior = vocabulary.behaviorAt(context.coordinate());
         if (behavior.isEmpty() || !(behavior.get() instanceof Behavior.NodeTypeBinding)) {
             return List.of();
         }
         var items = new ArrayList<CompletionItem>(data.nodeMetadata().size());
         for (var entry : data.nodeMetadata().entrySet()) {
-            items.add(toCompletionItem(entry.getKey(), entry.getValue()));
+            items.add(toCompletionItem(entry.getKey(), entry.getValue(), context));
         }
         return items;
     }
 
-    private static CompletionItem toCompletionItem(String typeName, CompletionData.NodeMetadata meta) {
+    private static CompletionItem toCompletionItem(
+        String typeName, CompletionData.NodeMetadata meta, CompletionContext context
+    ) {
         var item = new CompletionItem(typeName);
         item.setKind(CompletionItemKind.Class);
         String detail = meta.typeId() != null ? "typeId: " + meta.typeId() : "@node";
         item.setDetail(detail);
+        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), typeName)));
         return item;
     }
 }

@@ -8,12 +8,17 @@ import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
+import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
 import no.sikt.graphitron.rewrite.catalog.InputValueShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -46,6 +51,7 @@ public final class ArgNameCompletions {
         LspSchemaSnapshot snapshot,
         Directives.Directive directive,
         Point pos,
+        Position lspPos,
         byte[] source
     ) {
         String directiveName = Nodes.text(directive.nameNode(), source);
@@ -59,13 +65,50 @@ public final class ArgNameCompletions {
             }
         }
 
+        Range range = replaceRangeFor(directive, pos, lspPos, source);
+
         return switch (resolution) {
             case DirectiveResolution.Bundled bundled ->
-                bundledGenerate(bundled.def(), vocabulary, enclosing, pos, source);
+                bundledGenerate(bundled.def(), vocabulary, enclosing, pos, source, range);
             case DirectiveResolution.User user ->
-                userGenerate(user.shape(), enclosing);
+                userGenerate(user.shape(), enclosing, range);
             case DirectiveResolution.Unknown ignored -> List.of();
         };
+    }
+
+    /**
+     * Range to replace when the user accepts a suggestion. If the cursor
+     * sits on a {@code name} node (a partial arg-name identifier inside
+     * the directive's argument tree), the range is that node's full span;
+     * otherwise (whitespace inside the directive's parens, or inside an
+     * {@code object_value} between {@code object_field}s) the range is
+     * zero-width at the cursor. The discrimination mirrors the spec's
+     * "cursor-on-{@code name} vs. not" rule for the {@code ArgNameCompletions}
+     * provider.
+     */
+    private static Range replaceRangeFor(
+        Directives.Directive directive, Point pos, Position lspPos, byte[] source
+    ) {
+        for (var arg : directive.arguments()) {
+            if (!arg.contains(pos)) continue;
+            Node name = innermostNameAt(arg.full(), pos);
+            if (name != null) {
+                return new Range(
+                    Positions.toLspPosition(source, name.getStartByte()),
+                    Positions.toLspPosition(source, name.getEndByte()));
+            }
+        }
+        return new Range(lspPos, lspPos);
+    }
+
+    private static Node innermostNameAt(Node node, Point pos) {
+        if (node == null || !Nodes.contains(node, pos)) return null;
+        Node best = "name".equals(node.getType()) ? node : null;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            Node descendant = innermostNameAt(node.getChild(i).orElse(null), pos);
+            if (descendant != null) best = descendant;
+        }
+        return best;
     }
 
     /**
@@ -76,18 +119,16 @@ public final class ArgNameCompletions {
      * stale suggestions beat silence for an editor surface.
      */
     private static List<CompletionItem> userGenerate(
-        DirectiveShape shape, Directives.Argument enclosing
+        DirectiveShape shape, Directives.Argument enclosing, Range range
     ) {
         if (enclosing != null) return List.of();
-        return userToCompletionItems(shape.args());
+        return userToCompletionItems(shape.args(), range);
     }
 
-    private static List<CompletionItem> userToCompletionItems(List<InputValueShape> args) {
+    private static List<CompletionItem> userToCompletionItems(List<InputValueShape> args, Range range) {
         var items = new ArrayList<CompletionItem>();
         for (var arg : args) {
-            var item = new CompletionItem(arg.name());
-            item.setKind(CompletionItemKind.Field);
-            items.add(item);
+            items.add(toCompletionItem(arg.name(), range));
         }
         return items;
     }
@@ -97,12 +138,20 @@ public final class ArgNameCompletions {
         LspVocabulary vocabulary,
         Directives.Argument enclosing,
         Point pos,
-        byte[] source
+        byte[] source,
+        Range range
     ) {
         if (enclosing == null) {
             // Cursor inside the directive's parens but not on any argument:
             // top-level arg-name completion.
-            return toCompletionItems(dirDef.getInputValueDefinitions());
+            return toCompletionItems(dirDef.getInputValueDefinitions(), range);
+        }
+
+        // Cursor on the arg-key side of an existing arg ("partial arg-name
+        // identifier"): still top-level arg-name territory; the user is
+        // editing the key, not the value.
+        if (Nodes.contains(enclosing.key(), pos) && !Nodes.contains(enclosing.value(), pos)) {
+            return toCompletionItems(dirDef.getInputValueDefinitions(), range);
         }
 
         // Cursor is inside an argument value. If it's inside a nested
@@ -139,17 +188,22 @@ public final class ArgNameCompletions {
         var inputType = vocabulary.registry()
             .getTypeOrNull(currentType, InputObjectTypeDefinition.class);
         if (inputType == null) return List.of();
-        return toCompletionItems(inputType.getInputValueDefinitions());
+        return toCompletionItems(inputType.getInputValueDefinitions(), range);
     }
 
-    private static List<CompletionItem> toCompletionItems(List<InputValueDefinition> defs) {
+    private static List<CompletionItem> toCompletionItems(List<InputValueDefinition> defs, Range range) {
         var items = new ArrayList<CompletionItem>();
         for (var def : defs) {
-            var item = new CompletionItem(def.getName());
-            item.setKind(CompletionItemKind.Field);
-            items.add(item);
+            items.add(toCompletionItem(def.getName(), range));
         }
         return items;
+    }
+
+    private static CompletionItem toCompletionItem(String label, Range range) {
+        var item = new CompletionItem(label);
+        item.setKind(CompletionItemKind.Field);
+        item.setTextEdit(Either.forLeft(new TextEdit(range, label)));
+        return item;
     }
 
     /**

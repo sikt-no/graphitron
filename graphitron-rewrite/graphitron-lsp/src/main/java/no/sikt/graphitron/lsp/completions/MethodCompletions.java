@@ -7,6 +7,8 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import io.github.treesitter.jtreesitter.Point;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.List;
 import java.util.Optional;
@@ -30,13 +32,12 @@ public final class MethodCompletions {
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
         CompletionData data,
+        CompletionContext context,
         Directives.Directive directive,
         Point pos,
         byte[] source
     ) {
-        var coord = vocabulary.coordinateAt(directive, pos, source);
-        if (coord.isEmpty()) return List.of();
-        var behavior = vocabulary.behaviorAt(coord.get());
+        var behavior = vocabulary.behaviorAt(context.coordinate());
         if (behavior.isEmpty() || !(behavior.get() instanceof Behavior.MethodNameBinding mnb)) {
             return List.of();
         }
@@ -47,14 +48,15 @@ public final class MethodCompletions {
             .findFirst();
         if (ref.isEmpty()) return List.of();
         return ref.get().methods().stream()
-            .map(MethodCompletions::toCompletionItem)
+            .map(m -> toCompletionItem(m, context))
             .toList();
     }
 
-    private static CompletionItem toCompletionItem(CompletionData.Method method) {
+    private static CompletionItem toCompletionItem(CompletionData.Method method, CompletionContext context) {
         var item = new CompletionItem(method.name());
         item.setKind(CompletionItemKind.Method);
         item.setDetail(formatSignature(method));
+        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), method.name())));
         return item;
     }
 

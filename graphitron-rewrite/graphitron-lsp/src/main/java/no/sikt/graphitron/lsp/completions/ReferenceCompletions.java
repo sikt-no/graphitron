@@ -7,7 +7,8 @@ import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
-import io.github.treesitter.jtreesitter.Point;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -32,13 +33,11 @@ public final class ReferenceCompletions {
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
         CompletionData data,
+        CompletionContext context,
         Directives.Directive directive,
-        Point pos,
         byte[] source
     ) {
-        var coord = vocabulary.coordinateAt(directive, pos, source);
-        if (coord.isEmpty()) return List.of();
-        var behavior = vocabulary.behaviorAt(coord.get());
+        var behavior = vocabulary.behaviorAt(context.coordinate());
         if (behavior.isEmpty() || !(behavior.get() instanceof Behavior.CatalogFkBinding)) {
             return List.of();
         }
@@ -57,6 +56,7 @@ public final class ReferenceCompletions {
             item.setKind(CompletionItemKind.Reference);
             String detail = (ref.inverse() ? "← " : "→ ") + ref.targetTable();
             item.setDetail(detail);
+            item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), ref.keyName())));
             items.add(item);
         }
         return items;

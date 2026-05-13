@@ -332,36 +332,67 @@ public record LspVocabulary(
     }
 
     /**
-     * Computes the {@link SchemaCoordinate} at the cursor position
-     * inside {@code directive}. The cursor walk descends through the
-     * directive's argument-list tree; intermediate nesting levels are
-     * resolved against the parsed registry's input-type field tree.
-     *
-     * <p>Replaces the per-consumer {@code innermostObjectField} +
-     * directive-name-switch idiom with a single primitive every consumer
-     * can dispatch on. Today's call sites (R119 phase 2):
-     * {@code ClassNameCompletions}, {@code MethodCompletions},
-     * {@code Diagnostics}, {@code Hovers}, {@code FieldCompletions},
-     * {@code TableCompletions}, {@code ReferenceCompletions}.
+     * Cursor location resolved against the directive surface: the schema
+     * coordinate keyed by the position plus the tree-sitter leaf node
+     * (value or identifier) the cursor sits inside. The leaf is one of
+     * {@code string_value}, {@code enum_value}, or {@code name}, the
+     * kinds the completion-range helper knows how to slice; consumers
+     * that only need the coordinate use {@link #coordinateAt} instead.
+     */
+    public record CursorLocation(SchemaCoordinate coordinate, Node leafNode) {}
+
+    /**
+     * Coordinate-only view of {@link #locateAt}: the schema coordinate
+     * at the cursor inside {@code directive}, if any. Wraps
+     * {@code locateAt} and discards the leaf node; non-completion callers
+     * ({@code Hovers}) consume this shape.
      *
      * <p>Cases:
      * <ul>
      *   <li><b>Cursor on a directive arg's value (no nesting).</b>
      *       Returns {@link SchemaCoordinate.DirectiveArg}, e.g. cursor on
      *       {@code @table(name: "x|")} returns {@code @table(name:)}.</li>
-     *   <li><b>Cursor inside a nested {@code object_field}.</b> Walks the
-     *       directive arg's input type, descending one input-type-field
-     *       lookup per nesting level, and returns
+     *   <li><b>Cursor inside a nested {@code object_field}.</b> Returns
      *       {@link SchemaCoordinate.InputField} keyed on the leaf's
      *       parent input type. {@code @reference(path: [{table: "x|"}])}
      *       returns {@code ReferenceElement.table};
      *       {@code @reference(path: [{condition: {className: "x|"}}])}
      *       returns {@code ExternalCodeReference.className}.</li>
-     *   <li><b>Cursor outside any arg, or on an unknown directive.</b>
-     *       Empty.</li>
+     *   <li><b>Cursor outside any arg's value, on an unknown directive,
+     *       or on whitespace between fields.</b> Empty.</li>
      * </ul>
      */
     public Optional<SchemaCoordinate> coordinateAt(
+        Directives.Directive directive,
+        Point pos,
+        byte[] source
+    ) {
+        return locateAt(directive, pos, source).map(CursorLocation::coordinate);
+    }
+
+    /**
+     * Computes the {@link CursorLocation} at the cursor position inside
+     * {@code directive}: the {@link SchemaCoordinate} keyed by the
+     * cursor's position in the directive's argument tree, plus the
+     * tree-sitter leaf node (value or identifier) the cursor sits inside.
+     *
+     * <p>The leaf walk descends through the directive's argument-list
+     * tree the same way as the coordinate walk, then returns the deepest
+     * leaf-kind node ({@code string_value}, {@code enum_value}, or bare
+     * {@code name}) containing {@code pos}. Used by the completion
+     * dispatch site to compute an explicit replace-range for each
+     * {@link org.eclipse.lsp4j.TextEdit}, sidestepping client
+     * word-boundary heuristics that would otherwise concatenate the
+     * candidate with a partial prefix.
+     *
+     * <p>Returns empty when the cursor is outside any directive arg's
+     * value (whitespace inside the directive's parens, on the arg-name
+     * side of an arg, or inside an {@code object_value} but outside
+     * every {@code object_field}'s value); those positions flow into
+     * the {@code ArgNameCompletions} fallback at the dispatch site,
+     * which has its own walk for partial arg-name identifiers.
+     */
+    public Optional<CursorLocation> locateAt(
         Directives.Directive directive,
         Point pos,
         byte[] source
@@ -379,33 +410,61 @@ public record LspVocabulary(
             }
         }
         if (enclosing == null) return Optional.empty();
-        String argName = Nodes.text(enclosing.key(), source);
+        if (!Nodes.contains(enclosing.value(), pos)) return Optional.empty();
 
+        Node leaf = innermostLeafAt(enclosing.value(), pos);
+        if (leaf == null) return Optional.empty();
+
+        String argName = Nodes.text(enclosing.key(), source);
         var fieldChain = collectObjectFieldChain(enclosing.value(), pos, source);
 
+        SchemaCoordinate coord;
         if (fieldChain.isEmpty()) {
-            return Optional.of(new SchemaCoordinate.DirectiveArg(directiveName, argName));
+            coord = new SchemaCoordinate.DirectiveArg(directiveName, argName);
+        } else {
+            var argDef = findInputValue(dirDef.get().getInputValueDefinitions(), argName);
+            if (argDef.isEmpty()) return Optional.empty();
+            String currentType = unwrapToInputTypeName(argDef.get().getType());
+            if (currentType == null) return Optional.empty();
+
+            // Walk every level except the leaf; the leaf's name plus the
+            // enclosing input type is the coordinate.
+            for (int i = 0; i < fieldChain.size() - 1; i++) {
+                var inputType = registry.getTypeOrNull(currentType, InputObjectTypeDefinition.class);
+                if (inputType == null) return Optional.empty();
+                var stepField = findInputValue(inputType.getInputValueDefinitions(), fieldChain.get(i));
+                if (stepField.isEmpty()) return Optional.empty();
+                String next = unwrapToInputTypeName(stepField.get().getType());
+                if (next == null) return Optional.empty();
+                currentType = next;
+            }
+            coord = new SchemaCoordinate.InputField(
+                currentType, fieldChain.get(fieldChain.size() - 1));
         }
+        return Optional.of(new CursorLocation(coord, leaf));
+    }
 
-        var argDef = findInputValue(dirDef.get().getInputValueDefinitions(), argName);
-        if (argDef.isEmpty()) return Optional.empty();
-        String currentType = unwrapToInputTypeName(argDef.get().getType());
-        if (currentType == null) return Optional.empty();
-
-        // Walk every level except the leaf; the leaf's name plus the
-        // enclosing input type is the coordinate.
-        for (int i = 0; i < fieldChain.size() - 1; i++) {
-            var inputType = registry.getTypeOrNull(currentType, InputObjectTypeDefinition.class);
-            if (inputType == null) return Optional.empty();
-            var stepField = findInputValue(inputType.getInputValueDefinitions(), fieldChain.get(i));
-            if (stepField.isEmpty()) return Optional.empty();
-            String next = unwrapToInputTypeName(stepField.get().getType());
-            if (next == null) return Optional.empty();
-            currentType = next;
+    /**
+     * Deepest tree-sitter node containing {@code pos} whose kind is one
+     * of {@code string_value}, {@code enum_value}, or {@code name}.
+     * Descent stops at {@code string_value} so the anonymous
+     * delimiter / content tokens inside a string literal never surface
+     * as the leaf.
+     */
+    private static Node innermostLeafAt(Node node, Point pos) {
+        if (node == null || !Nodes.contains(node, pos)) return null;
+        String type = node.getType();
+        if ("string_value".equals(type)) return node;
+        Node best = isLeafKind(type) ? node : null;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            Node descendant = innermostLeafAt(node.getChild(i).orElse(null), pos);
+            if (descendant != null) best = descendant;
         }
+        return best;
+    }
 
-        return Optional.of(new SchemaCoordinate.InputField(
-            currentType, fieldChain.get(fieldChain.size() - 1)));
+    private static boolean isLeafKind(String type) {
+        return "enum_value".equals(type) || "name".equals(type);
     }
 
     /**

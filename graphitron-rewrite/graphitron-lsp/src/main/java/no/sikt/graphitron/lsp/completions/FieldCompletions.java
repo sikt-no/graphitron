@@ -9,8 +9,8 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.MarkupKind;
+import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
-import io.github.treesitter.jtreesitter.Point;
 
 import java.util.List;
 
@@ -29,13 +29,11 @@ public final class FieldCompletions {
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
         CompletionData data,
+        CompletionContext context,
         Directives.Directive directive,
-        Point pos,
         byte[] source
     ) {
-        var coord = vocabulary.coordinateAt(directive, pos, source);
-        if (coord.isEmpty()) return List.of();
-        var behavior = vocabulary.behaviorAt(coord.get());
+        var behavior = vocabulary.behaviorAt(context.coordinate());
         if (behavior.isEmpty() || !(behavior.get() instanceof Behavior.CatalogColumnBinding)) {
             return List.of();
         }
@@ -50,12 +48,12 @@ public final class FieldCompletions {
 
         return data.getTable(tableName.get())
             .map(t -> t.columns().stream()
-                .map(FieldCompletions::toCompletionItem)
+                .map(c -> toCompletionItem(c, context))
                 .toList())
             .orElse(List.of());
     }
 
-    private static CompletionItem toCompletionItem(CompletionData.Column column) {
+    private static CompletionItem toCompletionItem(CompletionData.Column column, CompletionContext context) {
         var item = new CompletionItem(column.name());
         item.setKind(CompletionItemKind.Field);
         if (!column.description().isEmpty()) {
@@ -64,6 +62,7 @@ public final class FieldCompletions {
             ));
         }
         item.setDetail(column.graphqlType() + (column.nullable() ? " (nullable)" : ""));
+        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(), column.name())));
         return item;
     }
 }
