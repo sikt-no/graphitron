@@ -312,6 +312,18 @@ public class GraphitronSchemaBuilder {
                                     new ReturnTypeRef.ResultReturnType(
                                         recordElement.name(), recordElement.wrapper(), recordElement.fqClassName())));
                         }
+                        case no.sikt.graphitron.rewrite.model.DataElement.Id ignored -> {
+                            // R156 — DataElement.Id per-field carrier registration is deferred
+                            // to the verb-aware mutation classifier in FieldBuilder, which has
+                            // the owning mutation's input @table in scope and can resolve the
+                            // NodeId encoder via that table's @node registration. The verbless
+                            // walk admits the Id shape structurally (the schema-walk loop
+                            // promotes the carrier type), but doesn't construct
+                            // SingleRecordIdFieldFromReturning here because the encoder lookup
+                            // is per-owning-mutation: two mutations sharing the same Id-carrier
+                            // payload with different input @tables would pin to different
+                            // encoders, so the per-field carrier is a verb-aware artefact.
+                        }
                     }
                 }
                 case no.sikt.graphitron.rewrite.model.CarrierFieldRole.ErrorChannelRole ignored -> {

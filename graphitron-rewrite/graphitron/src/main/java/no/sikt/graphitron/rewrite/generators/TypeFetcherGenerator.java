@@ -181,6 +181,8 @@ public class TypeFetcherGenerator {
         ChildField.ConstructorField.class,
         ChildField.SingleRecordTableField.class,
         ChildField.SingleRecordIdentityField.class,
+        ChildField.SingleRecordIdFieldFromReturning.class,
+        ChildField.SingleRecordTableFieldFromReturning.class,
         ChildField.TableMethodField.class,
         ChildField.RecordTableMethodField.class,
         QueryField.QueryTableInterfaceField.class,
@@ -447,6 +449,13 @@ public class TypeFetcherGenerator {
                 // identity passthrough emit (env -> env.getSource()) is emitted inline by
                 // FetcherEmitter.dataFetcherValue.
                 case ChildField.SingleRecordIdentityField ignored -> { }
+                // R156 — both SingleRecordIdFieldFromReturning and SingleRecordTableFieldFromReturning
+                // emit their DataFetcher value inline through FetcherEmitter (PK column read +
+                // optional NodeId encode for Id; sealed switch over PkResolution arms for Table).
+                // No per-field fetcher method is emitted here; wiring lands in
+                // FetcherRegistrationsEmitter.
+                case ChildField.SingleRecordIdFieldFromReturning ignored -> { }
+                case ChildField.SingleRecordTableFieldFromReturning ignored -> { }
                 case ChildField.InterfaceField f -> {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter

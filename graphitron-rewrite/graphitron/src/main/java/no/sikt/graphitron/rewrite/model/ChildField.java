@@ -22,6 +22,8 @@ public sealed interface ChildField extends GraphitronField
             ChildField.RecordField,
             ChildField.ComputedField, ChildField.PropertyField,
             ChildField.SingleRecordIdentityField,
+            ChildField.SingleRecordIdFieldFromReturning,
+            ChildField.SingleRecordTableFieldFromReturning,
             ChildField.ErrorsField {
 
     /**
@@ -89,6 +91,77 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.ResultReturnType returnType
     ) implements ChildField {}
+
+    /**
+     * R156 — the single data field on a payload-returning DELETE carrier whose
+     * {@link DataElement.Id} arm encodes the deleted row's primary key as an {@code ID} scalar.
+     * The parent classifies as {@code MutationField.MutationDmlRecordField} (single DELETE) or
+     * {@code MutationField.MutationBulkDmlRecordField} (bulk DELETE) returning the PK-only
+     * RETURNING rows; this data field's fetcher reads PK column(s) off the source {@code Record}
+     * and runs them through {@link #encode} to produce the encoded NodeId.
+     *
+     * <p>Sibling of {@link SingleRecordTableField} ("follow-up SELECT outside the tx,"
+     * load-bearing for INSERT / UPDATE / UPSERT carriers) and
+     * {@link SingleRecordTableFieldFromReturning} ("no follow-up read; source IS the RETURNING
+     * record; per-field projection via {@link PkResolution}," load-bearing for DELETE +
+     * {@code DataElement.Table}). The three encode genuinely different invariants — follow-up
+     * SELECT vs no-follow-up vs no-follow-up-encoded-PK — not different values of one knob; the
+     * sealed split pushes the per-carrier emission story into the type system. The existing
+     * {@link SingleRecordTableField} is unchanged.
+     *
+     * <p>Declines {@link TableTargetField} (element is the {@code ID} scalar, not a table-bound
+     * type) and {@link BatchKeyField} (no DataLoader). The {@link #encode} compaction carries
+     * the resolved per-Node encoder and the column shape, mirroring the
+     * {@link CallSiteCompaction.NodeIdEncodeKeys} slot every other NodeId-encoded projection
+     * uses; mixing the encoder into {@link DataElement.Id} would conflate the "what's the
+     * element shape" and "how to project it" axes the rewrite already splits.
+     */
+    record SingleRecordIdFieldFromReturning(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.ScalarReturnType returnType,
+        CallSiteCompaction.NodeIdEncodeKeys encode
+    ) implements ChildField {}
+
+    /**
+     * R156 — the single data field on a payload-returning DELETE carrier whose
+     * {@link DataElement.Table} element type projects the PK-only RETURNING record onto a
+     * {@code @table}-backed SDL type. The parent classifies as
+     * {@code MutationField.MutationDmlRecordField} (single DELETE) or
+     * {@code MutationField.MutationBulkDmlRecordField} (bulk DELETE); the fetcher reads each
+     * per-field arm of {@link #projection} off the source {@code Record} (no follow-up SELECT —
+     * the row is gone).
+     *
+     * <p>{@link #projection} is the narrow two-arm {@link PkResolution} list, the projected
+     * result of the carrier walk's per-field {@code PerFieldOutcome} classification. The only
+     * producer is {@code BuildContext.classifyDeleteTableProjection}, which rejects the carrier
+     * before constructing any element if the classification surfaces a {@code NonPkNonNullable},
+     * {@code ServiceField}, or {@code UnsupportedField} arm. The emitter's sealed switch on
+     * {@link PkResolution} is therefore exhaustive over its two arms with no defensive default
+     * — the rejection arms cannot reach this carrier by type.
+     *
+     * <p>Sibling of {@link SingleRecordTableField} (which carries the "follow-up SELECT outside
+     * the tx" invariant for INSERT / UPDATE / UPSERT) and {@link SingleRecordIdFieldFromReturning}
+     * (which carries the "encoded PK scalar" invariant for DELETE + {@link DataElement.Id}). The
+     * three are genuinely different invariants, not discriminator variants of one knob; the
+     * sealed split pushes the per-carrier emission story into the type system. The existing
+     * {@link SingleRecordTableField} is unchanged.
+     *
+     * <p>Declines {@link TableTargetField} (no SQL is generated for this carrier — the fetcher
+     * reads off the RETURNING record) and {@link BatchKeyField} (no DataLoader).
+     */
+    record SingleRecordTableFieldFromReturning(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        List<PkResolution> projection
+    ) implements ChildField {
+        public SingleRecordTableFieldFromReturning {
+            projection = List.copyOf(projection);
+        }
+    }
 
     /**
      * A single-column output carrier on a table-backed parent. The column's value reaches the
