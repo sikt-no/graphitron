@@ -128,7 +128,7 @@ Apollo's `@connect(selection: ...)` mapping language is the closest external pre
 ## Out of scope
 
 - **DML-producer carrier walk (R75, R141).** Different producer, different upstream shape; the DML path continues to use R141's PK-keyed-map for now. A future item may unify the DML path under `$source` once the migration cost is paid.
-- **Path-form replacement of `@reference` via jOOQ path-based joins.** The grammar is designed to accept FK chains as path steps; the consumer-side work (lifting `FkJoin` / `ColumnReferenceField` to walk path expressions) is its own item. Motivation only here.
+- **Path-form coverage of FK-traversal use cases via jOOQ path-based joins.** The grammar is designed to accept FK chains as path steps, which would let path-form `@field(name:)` express some of what `@reference` expresses today. This is overlap, not replacement: `@reference` stays as a first-class directive for the foreseeable future, and the two mechanisms coexist on the same surface. The consumer-side work (lifting `FkJoin` / `ColumnReferenceField` to walk path expressions where the schema author opts in) is its own follow-up item. Motivation only here.
 - **`argMapping` extension for `$source` on the input side** (parent-PK threading into a child `@service` resolver, currently done by implicit type-matching). Sibling Backlog item to be filed once this item's syntax is pinned; dataloader source-binding implications called out at that site, not here.
 - **`$context` sigil consumer.** Reserved in the grammar; its consumer item (path-form contextArguments, unifying with today's list-form shorthand) is not yet filed.
 - **Transforms / method-chain (`@`, `->name(args)`).** Apollo precedent exists; no graphitron use case yet. Defer.
