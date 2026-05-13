@@ -73,17 +73,14 @@ class VariantCoverageTest {
             + "target yet (the fixtures use `bar` (composite PK) only for same-table NodeId "
             + "paths). Add a NodeIdPipelineTest case when a composite-PK FK target lands.",
         ChildField.SingleRecordIdFieldFromReturning.class,
-            "R156 — added in Phase A; the verb-aware carrier walk (Phase B) and FieldBuilder "
-            + "rewire (Phase C) produce this leaf for @mutation(typeName: DELETE) carriers with "
-            + "DataElement.Id. The L3 admission matrix lives in GraphitronSchemaBuilderTest's "
-            + "MutationDeletePayloadCarrierCase (Phase G); remove this entry when that case "
-            + "lands.",
-        ChildField.SingleRecordTableFieldFromReturning.class,
-            "R156 — added in Phase A; the verb-aware carrier walk (Phase B) and FieldBuilder "
-            + "rewire (Phase C) produce this leaf for @mutation(typeName: DELETE) carriers with "
-            + "DataElement.Table. The L3 admission matrix lives in GraphitronSchemaBuilderTest's "
-            + "MutationDeletePayloadCarrierCase (Phase G); remove this entry when that case "
-            + "lands."
+            "R156 — produced by the verb-aware carrier walk for @mutation(typeName: DELETE) "
+            + "carriers with DataElement.Id; needs a @node-backed input @table with "
+            + "KjerneJooqGenerator-synthesized __NODE_TYPE_ID metadata. The standard test "
+            + "catalog has only `film_actor` with that metadata; the explicit "
+            + "@node(typeId:, keyColumns:) SDL form doesn't synthesize a NodeType in the test "
+            + "harness. Add a MutationDeletePayloadCarrierCase admission case once the test "
+            + "fixture surface supports it (either via NodeIdPipelineTest's nodeidfixture "
+            + "catalog or via a film_actor-keyed DELETE-with-Id case)."
     );
 
     private static final List<Class<?>> ROOTS = List.of(
