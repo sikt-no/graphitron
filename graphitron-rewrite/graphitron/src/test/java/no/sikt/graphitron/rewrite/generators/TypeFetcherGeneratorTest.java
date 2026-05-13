@@ -2523,6 +2523,38 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
+    void inputBeanInstantiationEmitter_recordSingularHelper_boxedPrimitiveFieldEmitsWrapperCast() {
+        // R155: post-fix, a record component typed `int` reaches the emitter as
+        // javaElementTypeName = "java.lang.Integer". The emitter must succeed (ClassName.bestGuess
+        // accepts the wrapper FQN), declare an Integer-typed local, cast raw.get(...) to Integer,
+        // and pass the local positionally to the canonical record constructor (which autoboxes).
+        var bean = ClassName.get("com.example", "Foo");
+        var ib = new CallSiteExtraction.InputBean(bean,
+            CallSiteExtraction.InputBean.Target.RECORD,
+            List.of(new CallSiteExtraction.FieldBinding(
+                "n", "n", new CallSiteExtraction.Direct(), false, "java.lang.Integer")));
+        var body = InputBeanInstantiationEmitter.buildSingularHelper(ib).code().toString();
+        assertThat(body).contains("java.lang.Integer n = (java.lang.Integer) raw.get(\"n\")");
+        assertThat(body).contains("new com.example.Foo(n)");
+    }
+
+    @Test
+    void inputBeanInstantiationEmitter_javaBeanSingularHelper_boxedPrimitiveFieldEmitsWrapperCast() {
+        // R155: post-fix mirror of the record case for the JavaBean path. A `void setActive(boolean)`
+        // setter reaches the emitter as javaElementTypeName = "java.lang.Boolean". The emitter must
+        // declare a Boolean local, cast raw.get(...) to Boolean, and pass the local to setActive
+        // (which auto-unboxes to the primitive boolean parameter).
+        var bean = ClassName.get("com.example", "Foo");
+        var ib = new CallSiteExtraction.InputBean(bean,
+            CallSiteExtraction.InputBean.Target.JAVA_BEAN,
+            List.of(new CallSiteExtraction.FieldBinding(
+                "active", "active", new CallSiteExtraction.Direct(), false, "java.lang.Boolean")));
+        var body = InputBeanInstantiationEmitter.buildSingularHelper(ib).code().toString();
+        assertThat(body).contains("java.lang.Boolean active = (java.lang.Boolean) raw.get(\"active\")");
+        assertThat(body).contains("bean.setActive(active)");
+    }
+
+    @Test
     void inputBeanInstantiationEmitter_collectTransitively_dedupNestedBeans() {
         var inner = new CallSiteExtraction.InputBean(
             ClassName.get("com.example", "Inner"),
