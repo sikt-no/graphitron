@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R159` | Root-value sigil $source on @field(name:) for carrier-payload sourcing | Spec | 2026-05-14 <sub>created 2026-05-13</sub> | [plan](service-payload-intermediate-semantics.md) |
+| `R159` | Root-value sigil $source on @field(name:) for carrier-payload sourcing | Spec | 2026-05-13 | [plan](service-payload-intermediate-semantics.md) |
 | `R39` | Validate that list fields on tables without a PK require explicit ordering | Spec | 2026-05-13 | [plan](validate-list-fields-require-ordering.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | In Review | 2026-05-13 | [plan](tablemethod-child-table-bound.md) |
