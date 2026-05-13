@@ -131,7 +131,9 @@ Producer- and consumer-side annotations are not substitutes for pipeline-test pi
 
 Two phases, independently shippable. Phase 1 lifts the model; Phase 2 lifts the emitters and the consumer fixtures.
 
-### Phase 1: model lift
+**Status:** Phase 1 shipped at `d82fed9`. Phase 2 in this commit.
+
+### Phase 1: model lift (shipped at d82fed9)
 
 - Introduce `PayloadConstructionShape` sealed interface and its two permits.
 - Replace `findCanonicalCtor`'s return type with `PayloadConstructionShape | Reject`. Today's `AllFieldsCtor` arm is what every existing call site already gets; the seal lets `javac` flag every consumer that needs to fork.

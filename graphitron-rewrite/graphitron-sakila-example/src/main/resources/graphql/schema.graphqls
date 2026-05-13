@@ -421,6 +421,14 @@ type FilmReviewPayload @record(record: {className: "no.sikt.graphitron.rewrite.t
     errors: [FilmReviewError]
 }
 
+# R154 fixture: setter-shape sibling of FilmReviewPayload. The backing class is a hand-rolled
+# POJO with a public no-arg constructor and Java-bean setters; the carrier classifier resolves
+# R154's MutableBean construction shape against it.
+type SetterShapeFilmReviewPayload @record(record: {className: "no.sikt.graphitron.rewrite.test.services.SetterShapeFilmReviewPayload"}) {
+    reviewId: Int
+    errors: [FilmReviewError]
+}
+
 type Customer implements Node @table(name: "customer") @node {
     id:         ID!      @nodeId
     customerId: Int!     @field(name: "CUSTOMER_ID")
@@ -1302,6 +1310,16 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
             method: "submitWithDetails"
+        })
+
+    # R154 execution-tier fixture: @service mutation whose payload class uses the mutable-bean
+    # shape (no-arg ctor + setters). The success arm round-trips reviewId/errors through the
+    # generated MutationServiceRecordField fetcher; thrown FilmReviewBadRatingException routes
+    # through the catch-arm payload-factory built from p.setErrors(errors).
+    submitSetterShapeFilmReview(filmId: Int!, rating: Int!): SetterShapeFilmReviewPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "submitSetterShape"
         })
 
     # R75 Phase 2 compilation-tier fixture: @service Mutation returning a single-record
