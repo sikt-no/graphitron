@@ -90,6 +90,7 @@ class BuildContext {
     static final String DIR_ORDER_BY            = "orderBy";
     static final String DIR_CONDITION           = "condition";
     static final String DIR_MUTATION            = "mutation";
+    static final String DIR_VALUE               = "value";
     static final String DIR_DISCRIMINATOR       = "discriminator";
     static final String DIR_AS_CONNECTION       = "asConnection";
     static final String DIR_SOURCE_ROW          = "sourceRow";
@@ -129,6 +130,7 @@ class BuildContext {
     static final String ARG_DEFAULT_FIRST_VALUE = "defaultFirstValue";
     static final String ARG_CONNECTION_NAME     = "connectionName";
     static final String ARG_OVERRIDE            = "override";
+    static final String ARG_MULTI_ROW           = "multiRow";
 
     // ===== Shared state =====
 
@@ -1365,6 +1367,13 @@ class BuildContext {
         if (field.hasAppliedDirective(DIR_NOT_GENERATED)) {
             return new InputFieldResolution.Unresolved(name, null,
                 "@notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.");
+        }
+        if (field.hasAppliedDirective(DIR_LOOKUP_KEY)) {
+            return new InputFieldResolution.Unresolved(name, null,
+                "@lookupKey on a mutation input field is no longer supported (R144); "
+                + "remove it (the field is a filter by default), or replace it with "
+                + "@value on UPDATE value fields. On Query-side @table input args, "
+                + "move @lookupKey to the surrounding ARGUMENT_DEFINITION instead.");
         }
         GraphQLType type = field.getType();
         boolean nonNull = type instanceof GraphQLNonNull;

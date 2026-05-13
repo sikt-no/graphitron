@@ -3016,8 +3016,8 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
             }),
 
-        LOOKUP_KEY_ON_INPUT_FIELD_WITH_REFERENCE_JOIN_REJECTED(
-            "@lookupKey on a @reference-navigating input-type field → classify-time error (argres Phase 3 supports scalar ColumnField bindings only)",
+        LOOKUP_KEY_ON_INPUT_FIELD_RETIRED_R144(
+            "@lookupKey on any INPUT_FIELD_DEFINITION → classify-time retirement error (R144); the diagnostic names the migration path",
             """
             input FilmKey @table(name: "film") {
                 languageName: String @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name") @lookupKey
@@ -3028,26 +3028,32 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
+                // R144: @lookupKey on INPUT_FIELD_DEFINITION is retired across mutation and query
+                // surfaces. The diagnostic mentions the migration target (filter-by-default on
+                // mutation inputs, @value for UPDATE assignment columns).
+                // For Query, the @lookupKey moves to the arg if lookup behavior is intended;
+                // see LOOKUP_KEY_ON_NODEID_INPUT_FIELD_ADMITTED for that shape.
                 var f = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) schema.field("Query", "filmByKey");
                 assertThat(f.reason())
-                    .contains("@lookupKey is only supported on scalar column fields");
+                    .contains("R144");
             }),
 
         LOOKUP_KEY_ON_NODEID_INPUT_FIELD_ADMITTED(
-            "R130: @lookupKey on a same-table singular `id: ID! @nodeId` input field (single-PK"
-                + " NodeType) → admitted via the extraction-propagation path. The carrier"
-                + " classifies as InputField.ColumnField with NodeIdDecodeKeys extraction;"
-                + " buildLookupBindings reads cf.extraction() directly so the resolver-supplied"
-                + " decode method survives the binding-build (R130 fix at source for the bug"
-                + " R131's follow-up guard papered over). The MapGroup carries one MapBinding"
-                + " whose extraction is the carrier's NodeIdDecodeKeys.",
+            "R130 + R144: @lookupKey on the ARGUMENT_DEFINITION of a same-table singular "
+                + "`id: ID! @nodeId` @table input arg → admitted via the extraction-propagation "
+                + "path. R144 retires @lookupKey on the input field; the arg-level @lookupKey "
+                + "drives the lookup-binding walk over every admissible input field. The carrier "
+                + "classifies as InputField.ColumnField with NodeIdDecodeKeys extraction; "
+                + "buildLookupBindings reads cf.extraction() directly so the resolver-supplied "
+                + "decode method survives the binding-build (R130 fix at source). The MapGroup "
+                + "carries one MapBinding whose extraction is the carrier's NodeIdDecodeKeys.",
             """
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId }
             input FilmLookupKey @table(name: "film") {
-                id: ID! @nodeId @lookupKey
+                id: ID! @nodeId
             }
             type Query {
-                filmByKey(key: FilmLookupKey): [Film!]!
+                filmByKey(key: FilmLookupKey @lookupKey): [Film!]!
             }
             """,
             schema -> {
@@ -3066,18 +3072,18 @@ class GraphitronSchemaBuilderTest {
             }),
 
         LOOKUP_KEY_ON_NODEID_INPUT_FIELD_ADMITTED_COMPOSITE_PK(
-            "R130: @lookupKey on a same-table singular `id: ID! @nodeId` input field"
-                + " (composite-PK NodeType) → admitted as a DecodedRecordGroup, projected to"
-                + " a LookupArg.DecodedRecord at the lookup-mapping layer. The"
-                + " per-NodeType decode runs once at the arg layer and the N record slots"
-                + " bind positionally to the target PK columns.",
+            "R130 + R144: @lookupKey on the ARGUMENT_DEFINITION of a same-table singular "
+                + "`id: ID! @nodeId` @table input arg (composite-PK NodeType) → admitted as a "
+                + "DecodedRecordGroup, projected to a LookupArg.DecodedRecord at the "
+                + "lookup-mapping layer. The per-NodeType decode runs once at the arg layer and "
+                + "the N record slots bind positionally to the target PK columns.",
             """
             type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
             input FilmActorLookupKey @table(name: "film_actor") {
-                id: ID! @nodeId @lookupKey
+                id: ID! @nodeId
             }
             type Query {
-                filmActorByKey(key: FilmActorLookupKey): [FilmActor!]!
+                filmActorByKey(key: FilmActorLookupKey @lookupKey): [FilmActor!]!
             }
             """,
             schema -> {
@@ -3232,26 +3238,26 @@ class GraphitronSchemaBuilderTest {
             }),
 
         TABLE_INPUT_IMPLICIT_CONDITION_LOOKUP_KEY_SKIPPED(
-            "@lookupKey field on a @table input → no implicit BodyParam emitted; sibling plain field gets one",
+            "@lookupKey arg on a @table input arg (R144) → no implicit BodyParam emitted for "
+                + "any binding-bound input field; sibling plain (non-table) arg gets implicit "
+                + "BodyParams normally",
             """
             input FilmInput @table(name: "film") {
-              filmId: Int! @field(name: "film_id") @lookupKey
+              filmId: Int! @field(name: "film_id")
               title: String @field(name: "title")
             }
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") title: String! @field(name: "title") }
-            type Query { films(filter: FilmInput): [Film!]! }
+            type Query { films(filter: FilmInput @lookupKey): [Film!]! }
             """,
             schema -> {
-                // @lookupKey on an input field promotes this to QueryLookupTableField; access
-                // filters via the SqlGeneratingField interface shared with QueryTableField.
+                // Arg-level @lookupKey on a @table input promotes this to QueryLookupTableField.
+                // Every admissible input field becomes a binding under R144's filter-by-default
+                // rule; bound fields are consumed by LookupValuesJoinEmitter and must not appear
+                // as implicit BodyParams. With no plain (non-table) arg present, no
+                // GeneratedConditionFilter is emitted.
                 var f = (SqlGeneratingField) schema.field("Query", "films");
-                // filmId is @lookupKey → consumed by LookupValuesJoinEmitter, must not also
-                // appear as an implicit BodyParam. title has no @condition → implicit emitted.
-                var gcf = (GeneratedConditionFilter) f.filters().stream()
-                    .filter(fi -> fi instanceof GeneratedConditionFilter)
-                    .findFirst().orElseThrow();
-                assertThat(gcf.bodyParams()).hasSize(1);
-                assertThat(gcf.bodyParams().get(0).name()).isEqualTo("title");
+                long condFilters = f.filters().stream().filter(fi -> fi instanceof GeneratedConditionFilter).count();
+                assertThat(condFilters).isZero();
             }),
 
         TABLE_INPUT_IMPLICIT_CONDITION_NESTED_TWO_LEVEL(
@@ -4727,7 +4733,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         LOOKUP_NESTED_IN_INPUT(
-            "@lookupKey nested in input type with no direct scalar key → UnclassifiedField (composite-key support deferred to Phase 3)",
+            "@lookupKey on a plain input type's scalar field → UnclassifiedField (R144 retirement diagnostic)",
             """
             input FilmKey { id: ID @lookupKey }
             type Film @table(name: "film") { title: String }
@@ -4736,8 +4742,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Query", "filmByKey");
                 assertThat(f.reason())
-                    .contains("@lookupKey is declared")
-                    .contains("no argument resolved to a lookup column");
+                    .contains("R144")
+                    .contains("ARGUMENT_DEFINITION");
             }),
 
         LOOKUP_FIELD_COLUMN_ARG(
@@ -4770,44 +4776,47 @@ class GraphitronSchemaBuilderTest {
                 assertThat(uf.reason()).contains("unknownColumn");
             }),
 
-        LOOKUP_FIELD_TABLE_INPUT_TYPE_ARG_NO_INNER_LOOKUP_KEY(
-            "lookup field whose @table input type has no @lookupKey on any scalar field → UnclassifiedField (Phase 3 requires @lookupKey on the input-type scalar fields, not on the outer argument)",
+        LOOKUP_FIELD_TABLE_INPUT_TYPE_ARG_ADMITS_EVERY_FIELD(
+            "R144: lookup field whose @table input type has scalar admissible carriers and the arg carries @lookupKey → QueryLookupTableField (every admissible input field becomes a binding under R144's filter-by-default rule)",
             """
             input FilmKey @table(name: "film") { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
             type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """,
             schema -> {
-                var f = (UnclassifiedField) schema.field("Query", "filmByKey");
-                assertThat(f.reason())
-                    .contains("@lookupKey is declared")
-                    .contains("no argument resolved to a lookup column");
-            }),
+                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmByKey");
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                assertThat(cm.args()).hasSize(1);
+                var arg = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping.LookupArg.MapInput) cm.args().get(0);
+                assertThat(arg.bindings()).hasSize(1);
+                assertThat(arg.bindings().get(0).fieldName()).isEqualTo("filmId");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryLookupTableField.class); }
+        },
 
-        LOOKUP_FIELD_IMPLICIT_TABLE_INPUT_TYPE_ARG_NO_INNER_LOOKUP_KEY(
-            "lookup field whose plain input type (promoted to TableInputType) has no @lookupKey on any field → UnclassifiedField; promoted type remains in the types map",
+        LOOKUP_FIELD_IMPLICIT_TABLE_INPUT_TYPE_ARG_ADMITS_EVERY_FIELD(
+            "R144: lookup field whose plain input type (promoted to TableInputType) with admissible carriers and arg-level @lookupKey → QueryLookupTableField; the promoted type remains in the types map",
             """
             input FilmKey { filmId: Int @field(name: "film_id") }
             type Film @table(name: "film") { title: String }
             type Query { filmByKey(key: [FilmKey] @lookupKey): [Film!]! }
             """,
             schema -> {
-                var f = (UnclassifiedField) schema.field("Query", "filmByKey");
-                assertThat(f.reason())
-                    .contains("@lookupKey is declared")
-                    .contains("no argument resolved to a lookup column");
-                // The type was still promoted to TableInputType in types map (classification
-                // of the input type happens independently of field classification).
+                var f = (QueryField.QueryLookupTableField) schema.field("Query", "filmByKey");
+                var cm = (no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping) f.lookupMapping();
+                assertThat(cm.args()).hasSize(1);
                 assertThat(schema.type("FilmKey"))
                     .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType.class);
-            }),
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryLookupTableField.class); }
+        },
 
         LOOKUP_FIELD_COMPOSITE_KEY_INPUT_TYPE_ARG(
-            "lookup field whose @table input type carries @lookupKey on two scalar fields → QueryLookupTableField with one MapInput LookupArg carrying two MapBindings",
+            "lookup field whose @table input type carries two scalar fields with arg-level @lookupKey → QueryLookupTableField with one MapInput LookupArg carrying two MapBindings (R144: every admissible input field becomes a binding when the arg carries @lookupKey)",
             """
             input FilmActorKey @table(name: "film_actor") {
-                filmId: Int @field(name: "film_id") @lookupKey
-                actorId: Int @field(name: "actor_id") @lookupKey
+                filmId: Int @field(name: "film_id")
+                actorId: Int @field(name: "actor_id")
             }
             type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
             type Query { filmActorByKey(key: [FilmActorKey] @lookupKey): [FilmActor!]! }
@@ -5039,7 +5048,7 @@ class GraphitronSchemaBuilderTest {
             "@mutation(typeName: UPDATE) → MutationUpdateTableField",
             """
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey, title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id"), title: String @value }
             type Query { x: String }
             type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
             """,
@@ -5051,7 +5060,7 @@ class GraphitronSchemaBuilderTest {
             "@mutation(typeName: DELETE) → MutationDeleteTableField",
             """
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { x: String }
             type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE) }
             """,
@@ -5075,33 +5084,38 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
-        DELETE_MUTATION_MISSING_LOOKUP_KEY(
-            "@mutation(typeName: DELETE) with @table input but no @lookupKey → UnclassifiedField",
+        DELETE_MUTATION_MISSING_PK_COVERAGE(
+            "@mutation(typeName: DELETE) on a composite-PK table with one filter column missing → UnclassifiedField (R144 PK-coverage rejection without multiRow)",
             """
-            type Film @table(name: "film") { title: String }
-            input FilmKey @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type FilmActor @table(name: "film_actor") { actorId: Int, filmId: Int }
+            input FilmActorKey @table(name: "film_actor") { filmId: Int! @field(name: "film_id") }
             type Query { x: String }
-            type Mutation { deleteFilm(in: FilmKey!): Film @mutation(typeName: DELETE) }
+            type Mutation { deleteFilmActor(in: FilmActorKey!): ID @mutation(typeName: DELETE) }
             """,
             schema -> {
-                var field = schema.field("Mutation", "deleteFilm");
+                var field = schema.field("Mutation", "deleteFilmActor");
                 assertThat(field).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) field).reason())
-                    .contains("requires at least one @lookupKey field");
+                    .contains("filter columns do not cover all PK column(s)", "multiRow: true");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
-        UPSERT_MUTATION_FIELD(
-            "@mutation(typeName: UPSERT) → MutationUpsertTableField",
+        UPSERT_MUTATION_REJECTED_UNDER_R144(
+            "@mutation(typeName: UPSERT) → UnclassifiedField (R144 refuses UPSERT pending R145)",
             """
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey, title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id"), title: String @value }
             type Query { x: String }
             type Mutation { upsertFilm(in: FilmInput!): Film @mutation(typeName: UPSERT) }
             """,
-            schema -> assertThat(schema.field("Mutation", "upsertFilm")).isInstanceOf(MutationField.MutationUpsertTableField.class)) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpsertTableField.class); }
+            schema -> {
+                var field = schema.field("Mutation", "upsertFilm");
+                assertThat(field).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) field).reason())
+                    .contains("@mutation(typeName: UPSERT) is not supported under the R144");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
         SERVICE_MUTATION_FIELD(
@@ -5346,8 +5360,8 @@ class GraphitronSchemaBuilderTest {
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id") @lookupKey
-                title: String
+                filmId: Int! @field(name: "film_id")
+                title: String @value
             }
             type Query { x: String }
             type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
@@ -5360,8 +5374,8 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
         },
 
-        UPDATE_NO_LOOKUP_KEY_REJECTED(
-            "UPDATE without @lookupKey → UnclassifiedField (Invariant #2)",
+        UPDATE_NO_VALUE_FIELDS_REJECTED(
+            "UPDATE without any @value fields → UnclassifiedField (R144 requires at least one @value)",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
@@ -5370,31 +5384,31 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
-                assertThat(f.reason()).contains("@mutation(typeName: UPDATE) requires at least one @lookupKey");
+                assertThat(f.reason()).contains("@mutation(typeName: UPDATE) has no @value fields to set");
             }),
 
-        UPDATE_ALL_FIELDS_LOOKUP_KEY_REJECTED(
-            "UPDATE where every input field is @lookupKey → UnclassifiedField (Invariant #4)",
+        UPDATE_EVERY_FIELD_VALUE_MARKED_REJECTED(
+            "UPDATE where every input field is @value-marked → UnclassifiedField (R144: no filter fields → would update every row)",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id") @lookupKey
+                title: String @value
             }
             type Query { x: String }
             type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
-                assertThat(f.reason()).contains("@mutation(typeName: UPDATE) has no non-@lookupKey fields to set");
+                assertThat(f.reason()).contains("no filter fields", "every input field is");
             }),
 
         UPDATE_PARTIAL_COMPOSITE_PK_REJECTED(
-            "UPDATE on composite-PK table where @lookupKey covers only one PK column → UnclassifiedField listing missing PK column (Invariant #2)",
+            "UPDATE on composite-PK table where filter columns cover only one PK column without multiRow → UnclassifiedField listing missing PK column (R144 PK-coverage)",
             """
             type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
             input FilmActorInput @table(name: "film_actor") {
-                actorId: Int! @field(name: "actor_id") @lookupKey
-                lastUpdate: String @field(name: "last_update")
+                actorId: Int! @field(name: "actor_id")
+                lastUpdate: String @field(name: "last_update") @value
             }
             type Query { x: String }
             type Mutation { updateFilmActor(in: FilmActorInput!): FilmActor @mutation(typeName: UPDATE) }
@@ -5402,18 +5416,19 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilmActor");
                 assertThat(f.reason())
-                    .contains("@lookupKey fields do not cover all PK column(s)")
-                    .contains("film_id");
+                    .contains("filter columns do not cover all PK column(s)")
+                    .contains("film_id")
+                    .contains("multiRow: true");
             }),
 
         UPDATE_FULL_COMPOSITE_PK_HAPPY(
-            "UPDATE on composite-PK table where @lookupKey covers all PK columns → MutationUpdateTableField with both bindings",
+            "UPDATE on composite-PK table where filter columns cover all PK columns and one @value field is present → MutationUpdateTableField with both bindings (R144)",
             """
             type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
             input FilmActorInput @table(name: "film_actor") {
-                actorId: Int! @field(name: "actor_id") @lookupKey
-                filmId: Int! @field(name: "film_id") @lookupKey
-                lastUpdate: String @field(name: "last_update")
+                actorId: Int! @field(name: "actor_id")
+                filmId: Int! @field(name: "film_id")
+                lastUpdate: String @field(name: "last_update") @value
             }
             type Query { x: String }
             type Mutation { updateFilmActor(in: FilmActorInput!): FilmActor @mutation(typeName: UPDATE) }
@@ -5432,8 +5447,8 @@ class GraphitronSchemaBuilderTest {
             """
             type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
             input FilmActorInput @table(name: "film_actor") {
-                actorId: Int! @field(name: "actor_id") @lookupKey
-                filmId: Int! @field(name: "film_id") @lookupKey
+                actorId: Int! @field(name: "actor_id")
+                filmId: Int! @field(name: "film_id")
             }
             type Query { x: String }
             type Mutation { deleteFilmActor(in: FilmActorInput!): FilmActor @mutation(typeName: DELETE) }
@@ -5447,30 +5462,30 @@ class GraphitronSchemaBuilderTest {
                     .containsExactlyInAnyOrder("actor_id", "film_id");
             }),
 
-        UPSERT_PARTIAL_COMPOSITE_PK_HAPPY(
-            "UPSERT exempt from full-PK coverage: @lookupKey on one column of a composite PK → MutationUpsertTableField",
+        DELETE_PARTIAL_COMPOSITE_PK_REJECTED(
+            "DELETE on composite-PK table with only one filter column and no multiRow → UnclassifiedField (R144 PK-coverage rejection)",
             """
             type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
             input FilmActorInput @table(name: "film_actor") {
-                actorId: Int! @field(name: "actor_id") @lookupKey
-                filmId: Int! @field(name: "film_id")
+                actorId: Int! @field(name: "actor_id")
             }
             type Query { x: String }
-            type Mutation { upsertFilmActor(in: FilmActorInput!): FilmActor @mutation(typeName: UPSERT) }
+            type Mutation { deleteFilmActor(in: FilmActorInput!): FilmActor @mutation(typeName: DELETE) }
             """,
             schema -> {
-                var f = (MutationField.MutationUpsertTableField) schema.field("Mutation", "upsertFilmActor");
-                assertThat(f.tableInputArg().fieldBindings()).hasSize(1);
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteFilmActor");
+                assertThat(f.reason())
+                    .contains("filter columns do not cover all PK column(s)", "multiRow: true");
             }),
 
         UPDATE_TIA_PARTITIONS_FIELDS_INTO_LOOKUP_AND_SET(
-            "UPDATE TableInputArg projects fields into typed lookupKeyFields / setFields in declaration order",
+            "UPDATE TableInputArg projects fields into typed lookupKeyFields / setFields in declaration order (R144: @value-marked fields land in setFields)",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id") @lookupKey
-                title: String
-                description: String
+                filmId: Int! @field(name: "film_id")
+                title: String @value
+                description: String @value
             }
             type Query { x: String }
             type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
@@ -5481,26 +5496,6 @@ class GraphitronSchemaBuilderTest {
                 assertThat(tia.setFields()).extracting("name").containsExactly("title", "description");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpdateTableField.class); }
-        },
-
-        UPSERT_TIA_PARTITIONS_FIELDS_INTO_LOOKUP_AND_SET(
-            "UPSERT TableInputArg projects fields into typed lookupKeyFields / setFields in declaration order",
-            """
-            type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id") @lookupKey
-                title: String
-                description: String
-            }
-            type Query { x: String }
-            type Mutation { upsertFilm(in: FilmInput!): Film @mutation(typeName: UPSERT) }
-            """,
-            schema -> {
-                var tia = ((MutationField.MutationUpsertTableField) schema.field("Mutation", "upsertFilm")).tableInputArg();
-                assertThat(tia.lookupKeyFields()).extracting("name").containsExactly("filmId");
-                assertThat(tia.setFields()).extracting("name").containsExactly("title", "description");
-            }) {
-            @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationUpsertTableField.class); }
         },
 
         DML_NESTING_FIELD_DEFERRED(
@@ -5564,8 +5559,8 @@ class GraphitronSchemaBuilderTest {
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id") @lookupKey
-                title: String
+                filmId: Int! @field(name: "film_id")
+                title: String @value
             }
             type Query { x: String }
             type Mutation { updateFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: UPDATE) }
@@ -5582,7 +5577,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id") @lookupKey
+                filmId: Int! @field(name: "film_id")
             }
             type Query { x: String }
             type Mutation { deleteFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: DELETE) }
@@ -5594,22 +5589,20 @@ class GraphitronSchemaBuilderTest {
                     .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList("Film"));
             }),
 
-        DML_UPSERT_LIST_LIST_OK(
-            "DML UPSERT with listed input + listed @table return → MutationUpsertTableField with tia.list() == true",
+        DML_UPSERT_LIST_LIST_REJECTED_UNDER_R144(
+            "DML UPSERT with listed input + listed @table return → UnclassifiedField (R144 refuses UPSERT pending R145)",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id") @lookupKey
-                title: String
+                filmId: Int! @field(name: "film_id")
+                title: String @value
             }
             type Query { x: String }
             type Mutation { upsertFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: UPSERT) }
             """,
             schema -> {
-                var f = (MutationField.MutationUpsertTableField) schema.field("Mutation", "upsertFilms");
-                assertThat(f.tableInputArg().list()).isTrue();
-                assertThat(f.returnExpression())
-                    .isEqualTo(new no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList("Film"));
+                var f = (UnclassifiedField) schema.field("Mutation", "upsertFilms");
+                assertThat(f.reason()).contains("@mutation(typeName: UPSERT) is not supported under the R144");
             }),
 
         DML_INSERT_LIST_SINGLE_T_REJECTED(
@@ -5777,19 +5770,19 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_LIST_LOOKUP_KEY_FIELD_REJECTED(
-            "DML mutation with @lookupKey on a list-typed input field → UnclassifiedField with buildLookupBindings error",
+            "DML mutation with list-typed admissible carrier input field → UnclassifiedField (R144: list cardinality must live on the outer argument)",
             """
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") {
-                filmIds: [Int!]! @field(name: "film_id") @lookupKey
-                title: String
+                filmIds: [Int!]! @field(name: "film_id")
+                title: String @value
             }
             type Query { x: String }
             type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
-                assertThat(f.reason()).contains("@lookupKey on a list-typed input field is not supported");
+                assertThat(f.reason()).contains("list-typed input field is not supported");
             }),
 
         DML_RECORD_PAYLOAD_RETURN_HAPPY(
@@ -5809,7 +5802,7 @@ class GraphitronSchemaBuilderTest {
                 film: Film
                 errors: [DeleteFilmError]
             }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { x: String }
             type Mutation { deleteFilm(in: FilmInput!): DeleteFilmPayload @mutation(typeName: DELETE) }
             """,
@@ -5829,7 +5822,7 @@ class GraphitronSchemaBuilderTest {
             type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
                 film: Film
             }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { x: String }
             type Mutation { deleteFilm(in: FilmInput!): DeleteFilmPayload @mutation(typeName: DELETE) }
             """,
@@ -5847,7 +5840,7 @@ class GraphitronSchemaBuilderTest {
             type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
                 film: Film
             }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { x: String }
             type Mutation { deleteFilms(in: FilmInput!): [DeleteFilmPayload] @mutation(typeName: DELETE) }
             """,
@@ -5869,7 +5862,7 @@ class GraphitronSchemaBuilderTest {
                 path: [String!]!
                 message: String!
             }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { x: String }
             type Mutation { deleteFilm(in: FilmInput!): SakPayload @mutation(typeName: DELETE) }
             """,
@@ -5879,6 +5872,57 @@ class GraphitronSchemaBuilderTest {
                     .contains("no parameter typed as")
                     .contains("FilmRecord")
                     .contains("requires exactly one row-slot parameter");
+            }),
+
+        // ===== R144 new admission and rejection cases =====
+
+        R144_DELETE_PK_COVERED_ADMIT(
+            "R144: DELETE with PK-covering filter input → MutationDeleteTableField",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { x: String }
+            type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE) }
+            """,
+            schema -> assertThat(schema.field("Mutation", "deleteFilm")).isInstanceOf(MutationField.MutationDeleteTableField.class)),
+
+        R144_DELETE_MULTIROW_ADMIT(
+            "R144: DELETE without PK-covering filter but with multiRow: true → MutationDeleteTableField (broadcast opt-in)",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String @field(name: "title") }
+            type Query { x: String }
+            type Mutation { deleteFilms(in: FilmInput!): Film @mutation(typeName: DELETE, multiRow: true) }
+            """,
+            schema -> assertThat(schema.field("Mutation", "deleteFilms")).isInstanceOf(MutationField.MutationDeleteTableField.class)),
+
+        R144_INSERT_MULTIROW_REJECTED(
+            "R144: multiRow: true on @mutation(typeName: INSERT) → UnclassifiedField",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT, multiRow: true) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
+                assertThat(f.reason()).contains("INSERT", "does not accept multiRow: true");
+            }),
+
+        R144_DELETE_VALUE_DIRECTIVE_REJECTED(
+            "R144: @value on DELETE input field → UnclassifiedField (DELETE has no assignment clause)",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id")
+                title: String @value
+            }
+            type Query { x: String }
+            type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
+                assertThat(f.reason()).contains("@value is not valid", "DELETE");
             });
 
         final String description;

@@ -811,9 +811,17 @@ class FieldBuilder {
         // plain-input path so lookup-key search still runs and produces a focused error.
         var resolvedType = ctx.types.get(typeName);
         if (resolvedType instanceof GraphitronType.TableInputType tit) {
-            List<InputColumnBindingGroup> bindings = enumMappingResolver.buildLookupBindings(tit, arg, fieldDef, name, errors);
+            // R144: @lookupKey on INPUT_FIELD_DEFINITION is retired. Query-side @table input args
+            // derive their lookup binding set from arg-level @lookupKey on ARGUMENT_DEFINITION:
+            // every admissible input field becomes a binding when the arg carries the directive.
+            // When it doesn't, no bindings are produced (filter-only flow handled via
+            // walkInputFieldConditions).
+            List<InputColumnBindingGroup> bindings = arg.hasAppliedDirective(DIR_LOOKUP_KEY)
+                ? enumMappingResolver.buildLookupBindings(tit, arg, fieldDef, name, errors, java.util.Set.of())
+                : List.of();
             return ArgumentRef.InputTypeArg.TableInputArg.of(
-                name, typeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields());
+                name, typeName, nonNull, list, tit.table(), bindings, argCondition, tit.inputFields(),
+                null, java.util.Set.of());
         }
         boolean isInputLike = resolvedType instanceof GraphitronType.InputType
             || (resolvedType instanceof GraphitronType.UnclassifiedType
@@ -832,6 +840,17 @@ class FieldBuilder {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
                         "input field '" + rejected.get().getName()
                         + "': @notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.");
+                }
+                var retiredLookupKey = iot.getFieldDefinitions().stream()
+                    .filter(f -> f.hasAppliedDirective(DIR_LOOKUP_KEY))
+                    .findFirst();
+                if (retiredLookupKey.isPresent()) {
+                    return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
+                        "input field '" + retiredLookupKey.get().getName()
+                        + "': @lookupKey on a mutation input field is no longer supported (R144); "
+                        + "remove it (the field is a filter by default), or replace it with "
+                        + "@value on UPDATE value fields. On Query-side @table input args, move "
+                        + "@lookupKey to the surrounding ARGUMENT_DEFINITION instead.");
                 }
             }
             List<InputField> plainFields = inputFieldResolver.resolve(typeName, rt, errors);

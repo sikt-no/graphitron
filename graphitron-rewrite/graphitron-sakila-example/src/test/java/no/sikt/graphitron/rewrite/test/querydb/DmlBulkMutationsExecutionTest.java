@@ -195,6 +195,7 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilms_writesNRowsAndReturnsProjectedListAcrossBothBranches() {
         // Mixes INSERT branch (novel filmId) and UPDATE branch (pre-existing filmId)
         // in a single bulk call. Single dispatched statement; `valuesOfRows`
@@ -367,6 +368,7 @@ class DmlBulkMutationsExecutionTest {
     // ===== UPSERT missing-vs-null =====
 
     @Test
+    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilms_omittedFieldOnInsertBranchUsesColumnDefault() {
         // INSERT branch fires (novel filmIds). Per-cell containsKey dispatch on the
         // VALUES list binds DSL.defaultValue when rentalDuration is absent.
@@ -393,6 +395,7 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilms_omittedFieldOnUpdateBranchLeavesColumnAlone() {
         // UPDATE branch (existing filmIds). The dynamic doUpdate SET walks firstKeys
         // and binds DSL.excluded(col) only for present keys. rentalDuration is omitted
@@ -450,6 +453,7 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilms_divergentInputShapes_raisesError() {
         // UPSERT in `.doUpdate()` mode (FilmUpsertInput has setFields). Uniform-shape
         // guard fires before SQL.
@@ -490,6 +494,7 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilms_onlyLookupKeyFields_raisesError() {
         // FilmUpsertInput has non-lookup setFields, but the input map carries only
         // filmId — the dynamic doUpdate SET walks firstKeys and finds none of the
@@ -559,6 +564,7 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilms_emptyListInput_doesNotRoundTrip() {
         QUERY_COUNT.set(0);
         Map<String, Object> data = execute("mutation { upsertFilms(in: []) { filmId } }");
@@ -830,5 +836,53 @@ class DmlBulkMutationsExecutionTest {
         } finally {
             cleanupFilmActor(3, 3);
         }
+    }
+
+    // ===== R144: multiRow DELETE broadcast =====
+
+    @Test
+    void deleteFilmsByReleaseYear_multiRowBroadcastsAcrossInputCardinality() {
+        // R144 end-to-end proof of the multiRow opt-out. The mutation declares
+        // `@mutation(typeName: DELETE, multiRow: true)` and filters on release_year
+        // (non-PK). With three pre-inserted rows sharing one release_year, a single
+        // input row deletes all three — |affected rows| > |input rows| is the
+        // explicit, opted-in semantics.
+        Integer releaseYear = 2125;
+        // Pre-clean any seed rows on this year so the test owns the row count.
+        dsl.deleteFrom(DSL.table("film"))
+            .where(DSL.field("release_year", Integer.class).eq(releaseYear))
+            .execute();
+        Integer id1 = insertFilmWithYear(randomMarker("R144-MULTIROW-A"), releaseYear);
+        Integer id2 = insertFilmWithYear(randomMarker("R144-MULTIROW-B"), releaseYear);
+        Integer id3 = insertFilmWithYear(randomMarker("R144-MULTIROW-C"), releaseYear);
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    deleteFilmsByReleaseYear(in: [
+                        { releaseYear: %d }
+                    ])
+                }
+                """.formatted(releaseYear));
+            List<?> deletedIds = (List<?>) data.get("deleteFilmsByReleaseYear");
+            assertThat(deletedIds)
+                .as("one input row broadcasts to three database rows under multiRow: true")
+                .hasSize(3);
+            int remaining = dsl.fetchCount(DSL.selectFrom(DSL.table("film"))
+                .where(DSL.field("release_year", Integer.class).eq(releaseYear)));
+            assertThat(remaining).isZero();
+        } finally {
+            deleteFilmById(id1);
+            deleteFilmById(id2);
+            deleteFilmById(id3);
+        }
+    }
+
+    private Integer insertFilmWithYear(String title, int releaseYear) {
+        return dsl.insertInto(DSL.table("film"))
+            .set(DSL.field("title"), title)
+            .set(DSL.field("language_id"), (short) 1)
+            .set(DSL.field("release_year", Integer.class), releaseYear)
+            .returningResult(DSL.field("film_id", Integer.class))
+            .fetchOne().value1();
     }
 }

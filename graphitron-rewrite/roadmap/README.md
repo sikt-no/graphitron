@@ -20,7 +20,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R154` | Admit setter-based mutable payload shape on @service returns | Spec | 2026-05-13 | [plan](service-return-setter-payload-shape.md) |
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
-| `R144` | Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with multiRow: | Ready | 2026-05-13 | [plan](mutation-cardinality-safety-default.md) |
+| `R144` | Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with multiRow: | In Review | 2026-05-13 | [plan](mutation-cardinality-safety-default.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec |  | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R74` | Row/Record return shapes for typed accessor batch keys | Spec |  | [plan](accessor-row-record-shapes.md) |
@@ -136,7 +136,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R144` [**Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with multiRow:**](mutation-cardinality-safety-default.md) — Ready, architecture
+- `R144` [**Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with multiRow:**](mutation-cardinality-safety-default.md) — In Review, architecture
 - `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Ready, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [catalog-check-constraint-validation](catalog-check-constraint-validation.md)

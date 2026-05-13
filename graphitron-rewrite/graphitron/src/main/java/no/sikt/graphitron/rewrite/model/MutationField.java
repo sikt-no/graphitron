@@ -217,6 +217,14 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      *
      * @see no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator
      */
+    @DependsOnClassifierCheck(
+        key = "mutation-input.where-columns-cover-pk",
+        reliesOn = "The bulk emitter's per-row UPDATE/DELETE WHERE clause assumes the contributed "
+            + "filter columns cover the input @table's primary key (so each row matches at most "
+            + "one database row), or the field carries multiRow: true and the broadcast is "
+            + "opted-in. Both arrive via MutationInputResolver.resolveInput; any future refactor "
+            + "that branches the bulk path around resolveInput would surface here as an orphaned "
+            + "consumer.")
     record MutationBulkDmlRecordField(
         String parentTypeName,
         String name,

@@ -90,12 +90,13 @@ class LookupTableFieldPipelineTest {
 
     @Test
     void compositeKeyInputType_producesSwitchArmAndInputRowsHelper() {
-        // Phase 3 — @table input type with @lookupKey on two scalar fields emits inline via
-        // TypeClassGenerator.$fields, with a composite VALUES helper on the type class.
+        // Phase 3 — @table input type used as a @lookupKey-bearing arg (R144: arg-level
+        // @lookupKey drives the binding walk over every admissible input field). Emits inline
+        // via TypeClassGenerator.$fields, with a composite VALUES helper on the type class.
         var schema = TestSchemaHelper.buildSchema("""
             input FilmActorKey @table(name: "film_actor") {
-                filmId: Int @field(name: "film_id") @lookupKey
-                actorId: Int @field(name: "actor_id") @lookupKey
+                filmId: Int @field(name: "film_id")
+                actorId: Int @field(name: "actor_id")
             }
             type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
             type Film @table(name: "film") {

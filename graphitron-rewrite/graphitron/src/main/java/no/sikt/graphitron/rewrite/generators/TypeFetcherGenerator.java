@@ -1754,6 +1754,11 @@ public class TypeFetcherGenerator {
             + "guard (HashSet<List<Object>> over per-row tuples) rejects same-key inputs before "
             + "the chain executes; otherwise Postgres' implementation-defined join would "
             + "silently drop one row's data.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "mutation-input.update-set-fields-equal-value-marked",
+        reliesOn = "Single-row UPDATE: walks tia.setFields() for the SET-map construction without "
+            + "checking @value directive presence or DmlKind; R144's classifier guarantee that "
+            + "setFields() is exactly the @value-marked admissible carriers on UPDATE.")
     private static MethodSpec buildMutationUpdateFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpdateTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
@@ -1816,6 +1821,12 @@ public class TypeFetcherGenerator {
      * {@code UPDATE … FROM (VALUES …)} form jOOQ renders here. R63 lifts both this guard and
      * UPSERT's existing Oracle-dialect guard onto typed {@code DialectRequirement} later.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "mutation-input.update-set-fields-equal-value-marked",
+        reliesOn = "Walks tia.setFields() for the bulk UPDATE's v-table column list and per-row "
+            + "cell construction without checking @value directive presence or DmlKind; R144's "
+            + "classifier guarantee that setFields() is exactly the @value-marked admissible "
+            + "carriers (in SDL declaration order) on UPDATE.")
     private static MethodSpec buildBulkUpdateFetcher(TypeFetcherEmissionContext ctx,
                                                      MutationField.MutationUpdateTableField f,
                                                      String outputPackage,
@@ -2189,6 +2200,14 @@ public class TypeFetcherGenerator {
      *       WHERE expression.</li>
      * </ul>
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "mutation-input.where-columns-cover-pk",
+        reliesOn = "Emits the WHERE predicate as the AND of every contributed filter column "
+            + "without inspecting whether the union of columns is unique against the table. "
+            + "R144's PK-coverage classifier guarantee lets the emitter treat the WHERE clause "
+            + "as matching at most one row per input row when `multiRow: true` is absent. With "
+            + "`multiRow: true` the guarantee is intentionally not enforced and the broadcast "
+            + "is the documented opt-out semantics.")
     private static LookupWhereChunk buildLookupWhereSingleRow(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
@@ -2375,6 +2394,12 @@ public class TypeFetcherGenerator {
      * lambda (one decode call per arg per row). One shape regardless of key arity (PostgreSQL
      * renders 1-key {@code (col) IN ((v))} identically to {@code col IN (v)}).
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "mutation-input.where-columns-cover-pk",
+        reliesOn = "Builds the bulk row-tuple IN predicate from the filter-column union without "
+            + "verifying that the union is unique against the table. R144's PK-coverage "
+            + "classifier guarantee lets the emitter treat each input row as matching at most "
+            + "one database row; `multiRow: true` intentionally opts out of the guarantee.")
     private static CodeBlock buildBulkLookupRowIn(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
@@ -3438,6 +3463,12 @@ public class TypeFetcherGenerator {
         return new DmlChainAndGuards(chain.build(), preGuard.build());
     }
 
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "mutation-input.update-set-fields-equal-value-marked",
+        reliesOn = "MutationDmlRecordField UPDATE arm: walks tia.setFields() for the SET map "
+            + "without checking @value directive presence or DmlKind; R144's classifier "
+            + "guarantee that setFields() is exactly the @value-marked admissible carriers on "
+            + "UPDATE.")
     private static DmlChainAndGuards buildRecordUpdateChain(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {

@@ -222,6 +222,7 @@ class SingleRecordCarrierDmlTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilmPayload_insertsNewRowAndReturnsPayload() {
         int novelId = 999_301;
         deleteFilmById(novelId);
@@ -316,6 +317,7 @@ class SingleRecordCarrierDmlTest {
     }
 
     @Test
+    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
     void upsertFilmPayload_updatesExistingRowAndReturnsPayload() {
         String existingMarker = randomMarker("R75-UPSERT-EXISTING");
         Integer existingId = insertFilm(existingMarker);

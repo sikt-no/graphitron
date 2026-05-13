@@ -21,11 +21,11 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
 
@@ -229,8 +229,21 @@ final class EnumMappingResolver {
 
     /**
      * Walks a {@link GraphitronType.TableInputType} argument's fields and builds one
-     * {@link InputColumnBindingGroup} per {@code @lookupKey}-bearing input field. Each admitted
-     * carrier produces one group:
+     * {@link InputColumnBindingGroup} per admissible non-excluded input field. R144 retired
+     * {@code @lookupKey} on {@code INPUT_FIELD_DEFINITION}; the directive no longer gates this
+     * walk. The caller decides which fields to admit:
+     *
+     * <ul>
+     *   <li>Mutation-side (DELETE / UPDATE): every admissible input field is a WHERE-binding,
+     *       modulo {@code excludeFieldNames} which carries the {@code @value}-marked names on
+     *       UPDATE. INSERT passes an empty caller-side and skips the call (no WHERE clause).</li>
+     *   <li>Query-side ({@code @lookupKey} on {@code ARGUMENT_DEFINITION}, with a {@code @table}
+     *       input arg): every admissible input field of the input type is a lookup-key binding;
+     *       {@code excludeFieldNames} is empty. The Query-side derivation reads the binding set
+     *       as the VALUES-join column list.</li>
+     * </ul>
+     *
+     * Each admitted carrier produces one group:
      *
      * <ul>
      *   <li>{@link InputField.ColumnField} (whether {@link CallSiteExtraction.Direct} or
@@ -247,12 +260,11 @@ final class EnumMappingResolver {
      *       decoded {@code Record<N>}.</li>
      * </ul>
      *
-     * <p>{@code @lookupKey} on a reference-navigating, nesting, or list-typed input field is
-     * rejected here. List cardinality must live on the outer argument, not on an individual
-     * input-type field. Returns {@link List#of()} when no input field carries {@code @lookupKey}.
-     * The caller (validity gate in {@code FieldBuilder.projectForFilter}) reports "empty lookup
-     * mapping despite {@code @lookupKey}" only when the field trips the lookup gate with no other
-     * source of lookup columns.
+     * <p>List-typed admissible carriers are rejected: list cardinality must live on the outer
+     * argument, not on an individual input-type field. Reference, nesting, and unresolved
+     * carriers are silently skipped here; the caller surfaces them through its own structural
+     * rejection path (mutation: {@code MutationInputResolver.resolveInput}'s per-field walk;
+     * query: not currently a binding shape).
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "lookup-mapping-bindings-table-coherent",
@@ -262,10 +274,10 @@ final class EnumMappingResolver {
             + "read b.targetColumn() across bindings without re-checking table coherence.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "lookup-key-input-field-non-list",
-        description = "Rejects @lookupKey on a list-typed input field with the 'move list "
-            + "cardinality to the outer argument' diagnostic. Lets the slot pipeline assume "
-            + "binding-level cardinality is scalar; only the outer LookupArg.list() drives "
-            + "row-count broadcasting in the emitter.")
+        description = "Rejects list-typed admissible carriers with the 'move list cardinality "
+            + "to the outer argument' diagnostic. Lets the slot pipeline assume binding-level "
+            + "cardinality is scalar; only the outer LookupArg.list() drives row-count "
+            + "broadcasting in the emitter.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "mutation-input.lookup-binding-honors-carrier-extraction",
         description = "Each MapBinding's extraction comes from the carrier's cf.extraction() "
@@ -285,7 +297,8 @@ final class EnumMappingResolver {
             + "lets INSERT/UPDATE/UPSERT walks that dispatch on CompositeColumnField iterate "
             + "0..columns.size()-1 with record.value(i) reads against the carrier's columns.")
     List<InputColumnBindingGroup> buildLookupBindings(GraphitronType.TableInputType tit,
-            GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String argName, List<String> errors) {
+            GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String argName,
+            List<String> errors, Set<String> excludeFieldNames) {
         var sdlType = ctx.schema.getType(tit.name());
         if (!(sdlType instanceof GraphQLInputObjectType iot)) {
             return List.of();
@@ -294,13 +307,13 @@ final class EnumMappingResolver {
             .collect(Collectors.toMap(InputField::name, f -> f));
         var groups = new ArrayList<InputColumnBindingGroup>();
         for (var sdlField : iot.getFieldDefinitions()) {
-            if (!sdlField.hasAppliedDirective(DIR_LOOKUP_KEY)) continue;
+            if (excludeFieldNames.contains(sdlField.getName())) continue;
             var resolved = byName.get(sdlField.getName());
             switch (resolved) {
                 case InputField.ColumnField cf -> {
                     if (cf.list()) {
                         errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
-                            + "': @lookupKey on a list-typed input field is not supported; "
+                            + "': list-typed input field is not supported in this binding position; "
                             + "move list cardinality to the outer argument");
                         continue;
                     }
@@ -313,11 +326,6 @@ final class EnumMappingResolver {
                             continue;
                         }
                     }
-                    // R130: honor the carrier's resolver-supplied extraction when non-Direct
-                    // (NodeIdDecodeKeys for arity-1 NodeId-decoded ColumnFields). The pre-R130
-                    // unconditional deriveExtraction call discarded the NodeIdDecodeKeys and
-                    // silently re-derived a generic extraction from raw column metadata; the
-                    // R131 follow-up papered over the bug at the cost of rejecting the shape.
                     CallSiteExtraction extraction;
                     if (cf.extraction() instanceof CallSiteExtraction.Direct) {
                         String mapFieldName = fieldDef.getName().toUpperCase() + "_"
@@ -332,7 +340,7 @@ final class EnumMappingResolver {
                 case InputField.CompositeColumnField ccf -> {
                     if (ccf.list()) {
                         errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
-                            + "': @lookupKey on a list-typed input field is not supported; "
+                            + "': list-typed input field is not supported in this binding position; "
                             + "move list cardinality to the outer argument");
                         continue;
                     }
@@ -343,8 +351,10 @@ final class EnumMappingResolver {
                     groups.add(new InputColumnBindingGroup.DecodedRecordGroup(
                         sdlField.getName(), ccf.extraction(), recordBindings));
                 }
-                case null, default -> errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
-                    + "': @lookupKey is only supported on scalar column fields");
+                case null, default -> {
+                    // Reference, nesting, and unresolved carriers are not admissible binding
+                    // shapes; the caller's structural walk surfaces them as rejections.
+                }
             }
         }
         return List.copyOf(groups);

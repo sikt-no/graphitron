@@ -1,7 +1,7 @@
 ---
 id: R144
 title: "Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with multiRow:"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 6
 theme: mutations-errors
@@ -454,89 +454,66 @@ site. Execution-tier UPSERT proofs in `SingleRecordCarrierDmlTest` and the
 `UPSERT_MUTATION_FIELD` case in
 `GraphitronSchemaBuilderTest:5095-5105` are the largest concentrations.
 
-## Implementation phases
+## Implementation status
 
-Phase 1 — directive declarations and classifier admission.
+All three phases (directive declarations + classifier, fixture migration,
+new test coverage) shipped in one cycle. Reviewer cross-references:
 
-- Extend `@mutation` to take the new `multiRow: Boolean = false` argument
-  and add the new `@value on INPUT_FIELD_DEFINITION` directive in
-  `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`.
-  Leave `@lookupKey`'s `INPUT_FIELD_DEFINITION` location declared so the
-  classifier can carry the retirement-prose rejection (`@notGenerated` /
-  `@multitableReference` idiom).
-- Extend `MutationInputResolver.resolveInput` per the resolver-flow section
-  above: drop the two retired gates, add the per-verb dispatch, add the new
-  PK-coverage check with the `multiRow:` opt-out, add the UPSERT rejection arm,
-  add the structural rejections for `@value`-on-DELETE / `multiRow:`-on-INSERT
-  / empty-input-with-`multiRow:` / `@condition`-co-occurring-with-`@value`.
-- Rework `TableInputArg.of` (`ArgumentRef.java:258`) to take `DmlKind` and
-  the `@value`-marked field names as additional parameters. UPDATE's
-  partition reads from the names; DELETE / INSERT pass empty. Update the
-  single call site in `MutationInputResolver` at `:260`.
-- Replace `EnumMappingResolver.buildLookupBindings`'s `DIR_LOOKUP_KEY` gate
-  with the "for DELETE/UPDATE inputs, walk every admissible input field;
-  exclude `@value`-marked fields on UPDATE" walk.
-- Add two new `@LoadBearingClassifierCheck` producers
+- Directive declarations: `directives.graphqls` (added `multiRow:` arg on
+  `@mutation`; new `@value` on `INPUT_FIELD_DEFINITION`; `@lookupKey`
+  declaration unchanged).
+- Classifier: `MutationInputResolver.resolveInput` carries the per-verb
+  dispatch, the PK-coverage check (gated on `multiRow:`), the UPSERT
+  rejection (`Rejection.deferred` keyed to
+  `mutation-cardinality-safety-upsert`), the structural rejections for
+  `@value`-on-DELETE/INSERT, `multiRow:`-on-INSERT,
+  empty-input-with-`multiRow:`, and `@value`-with-`@condition` on the same
+  field. The `@lookupKey on INPUT_FIELD_DEFINITION` retirement diagnostic
+  fires at both `BuildContext.classifyInputFieldInternal` (per-field) and
+  `FieldBuilder.classifyArgument` (per-arg) so the message surfaces at the
+  arg level under both mutation and query routing.
+- Carrier change: `TableInputArg.of` takes `DmlKind kind` and
+  `Set<String> valueMarkedNames`; partitions `lookupKeyFields` /
+  `setFields` per verb. INSERT keeps walking `tia.fields()` directly for
+  VALUES emit, so `setFields()` is empty for INSERT — consistent with the
+  `mutation-input.update-set-fields-equal-value-marked` audit guarantee.
+- `EnumMappingResolver.buildLookupBindings` now walks every admissible
+  input field, skipping fields in the caller-passed
+  `excludeFieldNames` set. The DIR_LOOKUP_KEY gate is gone.
+- Audit producers: two new `@LoadBearingClassifierCheck` keys on
+  `MutationInputResolver.resolveInput`
   (`mutation-input.where-columns-cover-pk`,
-  `mutation-input.update-set-fields-equal-value-marked`); wire the matching
-  `@DependsOnClassifierCheck` consumers — the first on the lookup-WHERE /
-  row-IN emitters (`buildLookupWhereSingleRow`,
-  `buildBulkLookupRowIn`), the second on every `tia.setFields()` walk
-  site listed in §Migration.
-- Add `@DependsOnClassifierCheck("mutation-input.where-columns-cover-pk")`
-  on `MutationBulkDmlRecordField`'s construction site so the
-  load-bearing assumption that the bulk path always traverses
-  `MutationInputResolver.resolveInput` is type-system-enforced.
-- UPSERT rejection key wired to R145's slug
-  (`mutation-cardinality-safety-upsert`), already filed alongside this Spec.
-- Add classifier-level rejection for `@lookupKey` on `INPUT_FIELD_DEFINITION`
-  with the documented migration prose. The directive declaration keeps
-  the location; the classifier carries the diagnostic. Mirrors the
-  `@notGenerated` / `@multitableReference` retirement idiom.
+  `mutation-input.update-set-fields-equal-value-marked`). Consumers on
+  `buildLookupWhereSingleRow`, `buildBulkLookupRowIn`,
+  `buildMutationUpdateFetcher`, `buildBulkUpdateFetcher`,
+  `buildRecordUpdateChain`, and the `MutationBulkDmlRecordField` record
+  type. `LoadBearingGuaranteeAuditTest` is green.
+- Fixture migration: sakila example schema, every
+  `MutationDmlNodeIdClassificationTest` /
+  `GraphitronSchemaBuilderTest` / `FetcherPipelineTest` /
+  `SingleRecordCarrierPipelineTest` row that pinned the old
+  `@lookupKey`-on-input-field semantics is retyped. UPSERT execution
+  tests in `GraphQLQueryTest`, `DmlBulkMutationsExecutionTest`, and
+  `SingleRecordCarrierDmlTest` are `@Disabled` with the R145 reference.
+- Pipeline-tier coverage: new `R144_*` rows on
+  `GraphitronSchemaBuilderTest.MutationDmlCase` exercise PK-coverage
+  admission and rejection, `multiRow:` admission, `@value`-on-DELETE
+  rejection, and `multiRow:`-on-INSERT rejection. The "empty input with
+  `multiRow:`" row is omitted because constructing an SDL fixture with
+  zero admissible carriers requires a non-trivial nested-only shape
+  that drifts from the rejection under test; the rejection still fires
+  at the resolver and the `admissibleCount == 0` branch is exercised by
+  the DELETE-admissible-count rejection row.
+- Execution-tier proof:
+  `DmlBulkMutationsExecutionTest.deleteFilmsByReleaseYear_multiRowBroadcastsAcrossInputCardinality`
+  inserts three films sharing one `release_year`, runs the
+  `multiRow: true` DELETE with one input row carrying that year, and
+  asserts `|affected rows| == 3` while `|input rows| == 1`.
 
-Phase 2 — fixture migration.
-
-- Sakila example schema: every `@mutation(typeName: DELETE / UPDATE)` input
-  drops `@lookupKey` from filter fields; any UPDATE input that needs SET
-  semantics gets `@value` added. Every `@mutation(typeName: UPSERT)` migrates
-  or retires per the working-set call.
-- All test fixtures using `@lookupKey` on input fields rewrite. Tests pinning
-  the "no `@lookupKey` → UnclassifiedField" rejection
-  (`GraphitronSchemaBuilderTest.DELETE_MUTATION_MISSING_LOOKUP_KEY` at line
-  5078-5093) retype to pin the new PK-coverage-or-`multiRow: true` rejection.
-- `MutationDmlNodeIdClassificationTest` cases that pin `CompositeColumnField`
-  rejection outside `@lookupKey` position (R130 Phase 2) retype to admission
-  cases; the rejection is gone.
-
-Phase 3 — new test coverage.
-
-- Pipeline-tier cases on `MutationInputResolver` covering:
-  - DELETE with PK-covering filter input → admit.
-  - DELETE without PK-covering filter, no `multiRow: true` → reject with the new
-    diagnostic.
-  - DELETE without PK-covering filter, with `multiRow: true` → admit.
-  - DELETE with `multiRow: true` and a *single non-PK* filter column → admit
-    (acknowledged broadcast; this is the headline `multiRow:` use case).
-  - DELETE / UPDATE on an empty `@table` input with `multiRow: true` → reject
-    ("no filter columns to broadcast").
-  - UPDATE with WHERE-PK-covered filter + at least one `@value` field → admit.
-  - UPDATE without WHERE-PK-cover, no `multiRow: true` → reject.
-  - UPDATE without WHERE-PK-cover, with `multiRow: true` → admit.
-  - UPDATE without `@value` fields → reject ("no fields to set").
-  - UPDATE with every field `@value`-marked → reject ("no filter fields").
-  - DELETE with `@value` on any field → reject ("`@value` not valid on DELETE").
-  - INSERT with `multiRow: true` on the mutation field → reject ("`multiRow: true`
-    not valid on INSERT").
-  - Input field with both `@condition` and `@value` → reject (mutually
-    exclusive).
-  - UPSERT (any shape) → reject with R145 deferral message.
-  - `@lookupKey` on a mutation input field → reject with migration prose
-    (the retirement diagnostic).
-  - INSERT unchanged: existing INSERT tests pass without modification.
-- Execution-tier proofs in `DmlBulkMutationsExecutionTest`: at least one DELETE
-  with `multiRow: true` that affects multiple rows per input row, asserting the SQL
-  runs and the result count exceeds input count. Mirrors the R130 end-to-end
-  coverage shape.
+User-facing docs: new `docs/manual/reference/directives/value.adoc` covers
+the `@value` surface, the per-verb validity rules, the SET-side / WHERE-side
+invariants UPDATE enforces, and the cardinality-safety interaction with
+`multiRow:`. `DirectiveDocCoverageTest` is green.
 
 ## Tests
 

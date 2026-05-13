@@ -189,8 +189,46 @@ directive @condition(
   contextArguments: [String!]
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
 
+"""
+Names a Query-side lookup key on an `ARGUMENT_DEFINITION`: the resolver derives the target
+table via the `@nodeId`-decoded keys of the argument (`LookupTableField` /
+`SplitLookupTableField`).
+
+Retired on `INPUT_FIELD_DEFINITION`. The declaration retains the location only so the GraphQL
+parser does not fail with "unknown directive location"; the rewrite classifier rejects any
+`INPUT_FIELD_DEFINITION` use with a migration message. Mutation input fields default to
+participating in the WHERE clause; on `@mutation(typeName: UPDATE)` inputs, mark assignment
+columns with `@value` (which `@lookupKey` previously did by negation). See R144.
+"""
 directive @lookupKey on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
-directive @mutation(typeName: MutationType!) on FIELD_DEFINITION
+
+"""
+Define a graphitron-generated mutation field.
+
+`typeName`: the DML statement kind (INSERT / UPDATE / DELETE / UPSERT).
+
+`multiRow`: opt-in acknowledgement that this mutation may affect more than one database
+row per input row. Required on `@mutation(typeName: DELETE / UPDATE)` when the input's
+filter columns do not cover the underlying `@table`'s primary key. Without
+`multiRow: true`, the classifier rejects an under-keyed DELETE / UPDATE at
+schema-classify time so a non-unique filter cannot silently broadcast. Rejected on
+`typeName: INSERT` (INSERT has no WHERE clause to multiply over) and on
+`typeName: UPSERT` (refused under the new regime; see R145).
+"""
+directive @mutation(typeName: MutationType!, multiRow: Boolean = false) on FIELD_DEFINITION
+
+"""
+On a `@mutation(typeName: UPDATE)` `@table` input field, marks the field as a value column
+to assign rather than a key to filter by. The default for an input field is to participate
+in the WHERE clause; `@value` opts out for UPDATE's assignment columns. Rejected on DELETE
+inputs (DELETE has no assignment) and on UPSERT inputs (UPSERT is refused under the new
+regime; see R145). Mutually exclusive with `@condition` on the same input field.
+
+The partition disjointness (a `@value` field never contributes to the WHERE-column set)
+holds structurally by directive position; the emitter sites that read both partitions rely
+on this without an explicit classifier check.
+"""
+directive @value on INPUT_FIELD_DEFINITION
 
 """
 Marks a list field as a Relay cursor-paginated connection. The rewrite pipeline synthesizes

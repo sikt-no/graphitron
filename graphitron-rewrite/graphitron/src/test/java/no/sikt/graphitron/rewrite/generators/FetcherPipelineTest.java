@@ -312,7 +312,7 @@ class FetcherPipelineTest {
                 film: Film
                 errors: [DeleteFilmError]
             }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { dummy: String }
             type Mutation { deleteFilm(in: FilmInput!): DeleteFilmPayload @mutation(typeName: DELETE) }
             """;
@@ -348,7 +348,7 @@ class FetcherPipelineTest {
             type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
                 film: Film
             }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { dummy: String }
             type Mutation { deleteFilm(in: FilmInput!): DeleteFilmPayload @mutation(typeName: DELETE) }
             """;
@@ -368,7 +368,7 @@ class FetcherPipelineTest {
         // Object to org.jooq.Record on the ProjectedSingle arm.
         var sdl = """
             type Film @table(name: "film") { title: String }
-            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { dummy: String }
             type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE) }
             """;
@@ -431,43 +431,25 @@ class FetcherPipelineTest {
     }
 
     @Test
-    void dmlUpsertField_bulkInput_emitsValuesOfRowsAndDynamicDoUpdateSetWithUniformShapeGuard() {
+    void dmlUpsertField_bulkInput_rejectedUnderR144() {
+        // R144 retires UPSERT generation pending R145 (mutation-cardinality-safety-upsert).
+        // The classifier surfaces a deferred rejection at MutationInputResolver before any
+        // fetcher is emitted, so the structural pin lives at the rejection message instead of
+        // the SQL chain.
         var sdl = """
             type Film @table(name: "film") { title: String }
             input FilmUpsertInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id") @lookupKey
-                title: String! @field(name: "title")
-                description: String @field(name: "description")
+                filmId: Int! @field(name: "film_id")
+                title: String! @field(name: "title") @value
+                description: String @field(name: "description") @value
             }
             type Query { dummy: String }
             type Mutation { upsertFilms(in: [FilmUpsertInput!]!): [Film!]! @mutation(typeName: UPSERT) }
             """;
-        var upsertFilms = method(findSpec("MutationFetchers", sdl), "upsertFilms");
-        var body = upsertFilms.code().toString();
-        assertThat(body)
-            .contains("java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument")
-            .contains("if (in.isEmpty())")
-            .as(".doUpdate() mode captures firstKeys + uniform-shape guard before SET map")
-            .contains("java.util.Set<?> firstKeys = in.get(0).keySet()")
-            .contains("if (!in.get(rowIdx).keySet().equals(firstKeys))")
-            .as("DO UPDATE SET map walks setFields conditionally on firstKeys")
-            .contains("if (firstKeys.contains(\"title\"))")
-            .contains("if (firstKeys.contains(\"description\"))")
-            .contains("setsUpdate.put(")
-            .contains("org.jooq.impl.DSL.excluded(")
-            .as("no-set-fields-present check rejects when nothing is settable")
-            .contains("if (setsUpdate.isEmpty())")
-            .contains("@mutation(typeName: UPSERT) call has no settable fields present")
-            .as("multi-row insert side via valuesOfRows + per-cell containsKey on INSERT cells")
-            .contains(".valuesOfRows(in.stream()")
-            .contains("row.containsKey(\"title\")")
-            .contains("org.jooq.impl.DSL.defaultValue(")
-            .contains(".onConflict(")
-            .contains(".doUpdate()")
-            .as("Oracle-dialect guard preserved for the silent-MERGE-INTO emulation")
-            .contains("dsl.dialect().name().startsWith(\"ORACLE\")");
-        assertThat(upsertFilms.returnType().toString())
-            .isEqualTo("graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>");
+        var spec = findSpec("MutationFetchers", sdl);
+        assertThat(spec.methodSpecs()).extracting(m -> m.name())
+            .as("UPSERT generation is suppressed under R144; no upsertFilms fetcher emitted")
+            .doesNotContain("upsertFilms");
     }
 
     @Test
@@ -477,7 +459,7 @@ class FetcherPipelineTest {
         // terminator, so ProjectedList is the right vehicle for the structural pin.
         var sdl = """
             type Film @table(name: "film") { title: String }
-            input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") @lookupKey }
+            input FilmDeleteInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query { dummy: String }
             type Mutation { deleteFilms(in: [FilmDeleteInput!]!): [Film!]! @mutation(typeName: DELETE) }
             """;
@@ -504,9 +486,9 @@ class FetcherPipelineTest {
         var sdl = """
             type Film @table(name: "film") { title: String }
             input FilmUpdateInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id") @lookupKey
-                title: String! @field(name: "title")
-                description: String @field(name: "description")
+                filmId: Int! @field(name: "film_id")
+                title: String! @field(name: "title") @value
+                description: String @field(name: "description") @value
             }
             type Query { dummy: String }
             type Mutation { updateFilms(in: [FilmUpdateInput!]!): [Film!]! @mutation(typeName: UPDATE) }
@@ -550,33 +532,21 @@ class FetcherPipelineTest {
     }
 
     @Test
-    void dmlUpsertField_bulkInput_doNothingMode_omitsUniformShapeAndSetMapEmits() {
-        // Fixture's input has only a @lookupKey field, so tia.setFields() is empty.
-        // The emitter gates the firstKeys / uniform-shape guard / setsUpdate walk on
-        // !setFields().isEmpty(); with that empty, all three should drop out of the
-        // generated source. The dispatched SQL is INSERT ... ON CONFLICT (...) DO
-        // NOTHING — no DO UPDATE branch. The execution tier can't observe this
-        // shape because PostgreSQL enforces NOT NULL before ON CONFLICT (Sakila's
-        // film table has multiple NOT NULL columns without defaults), so the
-        // structural pin lives here at the tier that reads the emitted source.
+    void dmlUpsertField_doNothingMode_rejectedUnderR144() {
+        // R144 retires UPSERT generation: the doNothing / doUpdate dispatch is no longer
+        // exercised at the fetcher tier. The classifier rejects upstream; no fetcher is
+        // emitted.
         var sdl = """
             type Film @table(name: "film") { title: String }
             input FilmUpsertNoSetInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id") @lookupKey
+                filmId: Int! @field(name: "film_id")
             }
             type Query { dummy: String }
             type Mutation { upsertFilms(in: [FilmUpsertNoSetInput!]!): [Film!]! @mutation(typeName: UPSERT) }
             """;
-        var upsertFilms = method(findSpec("MutationFetchers", sdl), "upsertFilms");
-        var body = upsertFilms.code().toString();
-        assertThat(body)
-            .contains("java.util.List<java.util.Map<?, ?>> in = (java.util.List<java.util.Map<?, ?>>) env.getArgument")
-            .as("doNothing mode: no firstKeys capture, no uniform-shape guard, no setsUpdate walk")
-            .doesNotContain("firstKeys")
-            .doesNotContain("setsUpdate")
-            .doesNotContain(".doUpdate()")
-            .contains(".onConflict(")
-            .contains(".doNothing()");
+        var spec = findSpec("MutationFetchers", sdl);
+        assertThat(spec.methodSpecs()).extracting(m -> m.name())
+            .doesNotContain("upsertFilms");
     }
 
     @Test
@@ -588,9 +558,9 @@ class FetcherPipelineTest {
         var sdl = """
             type Film @table(name: "film") { title: String }
             input FilmUpdateInput @table(name: "film") {
-                filmId: Int! @field(name: "film_id") @lookupKey
-                title: String @field(name: "title")
-                description: String @field(name: "description")
+                filmId: Int! @field(name: "film_id")
+                title: String @field(name: "title") @value
+                description: String @field(name: "description") @value
             }
             type Query { dummy: String }
             type Mutation { updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE) }
