@@ -174,6 +174,9 @@ public final class MappingsConstantNameDedup {
             case ChildField.TableMethodField f -> new ChildField.TableMethodField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
                 present);
+            case ChildField.RecordTableMethodField f -> new ChildField.RecordTableMethodField(
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
+                f.sourceKey(), f.loaderRegistration(), present);
             default -> throw new IllegalStateException(
                 "MappingsConstantNameDedup: unhandled WithErrorChannel variant "
                     + field.getClass().getName()

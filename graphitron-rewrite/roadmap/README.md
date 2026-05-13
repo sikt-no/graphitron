@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R39` | Validate that list fields on tables without a PK require explicit ordering | Spec | 2026-05-13 | [plan](validate-list-fields-require-ordering.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | In Progress | 2026-05-13 | [plan](tablemethod-child-table-bound.md) |
+| `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | In Progress | 2026-05-14 | [plan](tablemethod-child-table-bound.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |

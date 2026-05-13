@@ -15,6 +15,7 @@ public sealed interface ChildField extends GraphitronField
             ChildField.CompositeColumnField, ChildField.CompositeColumnReferenceField,
             ChildField.TableTargetField,
             ChildField.TableMethodField,
+            ChildField.RecordTableMethodField,
             ChildField.InterfaceField, ChildField.UnionField,
             ChildField.ConstructorField, ChildField.NestingField,
             ChildField.ServiceRecordField,
@@ -328,6 +329,36 @@ public sealed interface ChildField extends GraphitronField
         MethodRef method,
         Optional<ErrorChannel> errorChannel
     ) implements ChildField, MethodBackedField, WithErrorChannel {}
+
+    /**
+     * DTO-parent sibling of {@link TableMethodField}: a child field on a {@code @record} (non-table)
+     * parent that uses {@code @tableMethod} to bind a developer-authored static jOOQ table method.
+     * The parent has no parent-table alias to join from, so the developer's table is joined against
+     * a DataLoader-keyed batch lifted out of the parent DTO via {@link #sourceKey}, mirroring the
+     * existing {@link RecordTableField} / {@link RecordLookupTableField} pattern. {@link #joinPath}
+     * is the resolved parent-to-target chain: {@code [fkJoin]} for the FK-auto-derive arm on a
+     * jOOQ-table-record-backed parent, the lifter's resolved chain on the {@code @sourceRow} arm.
+     *
+     * <p>The {@code @LoadBearingClassifierCheck} key {@code tablemethod-resolver-return-is-table-bound}
+     * is shared with {@link TableMethodField}: the directive resolver narrows the returnType to
+     * {@link ReturnTypeRef.TableBoundReturnType} for both producers.
+     */
+    @DependsOnClassifierCheck(
+        key = "tablemethod-resolver-return-is-table-bound",
+        reliesOn = "Declares returnType with the narrow ReturnTypeRef.TableBoundReturnType "
+            + "component type. Downstream consumers reach .table() / .table().tableClass() "
+            + "without a sealed-switch or instanceof guard.")
+    record RecordTableMethodField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        List<JoinStep> joinPath,
+        MethodRef method,
+        SourceKey sourceKey,
+        LoaderRegistration loaderRegistration,
+        Optional<ErrorChannel> errorChannel
+    ) implements ChildField, MethodBackedField, BatchKeyField, WithErrorChannel {}
 
     record TableInterfaceField(
         String parentTypeName,
