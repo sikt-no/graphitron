@@ -73,25 +73,12 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
                 directives = List.copyOf(directives);
                 typesByName = Map.copyOf(typesByName);
             }
-
-            /**
-             * Back-compat: directive-only construction defaults
-             * {@code typesByName} to empty. Useful in tests that exercise
-             * only the directive arm.
-             */
-            public Current(List<DirectiveShape> directives) {
-                this(directives, Map.of());
-            }
         }
 
         record Previous(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName) implements Built {
             public Previous {
                 directives = List.copyOf(directives);
                 typesByName = Map.copyOf(typesByName);
-            }
-
-            public Previous(List<DirectiveShape> directives) {
-                this(directives, Map.of());
             }
         }
     }

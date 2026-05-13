@@ -382,7 +382,7 @@ public final class Diagnostics {
             case Behavior.CatalogTableBinding ignored ->
                 validateCatalogTable(leaf.valueNode(), file, catalog, out);
             case Behavior.CatalogColumnBinding ignored ->
-                validateCatalogColumn(directive, leaf.valueNode(), file, catalog, snapshot, out);
+                validateFieldMember(directive, leaf.valueNode(), file, catalog, snapshot, out);
             case Behavior.CatalogFkBinding ignored ->
                 validateCatalogFk(leaf.valueNode(), file, catalog, out);
             case Behavior.ClassNameBinding ignored ->
@@ -485,13 +485,21 @@ public final class Diagnostics {
         }
     }
 
+    /**
+     * Validates a {@code @field(name:)} (or other {@code CatalogColumnBinding}
+     * coordinate) against the enclosing SDL type's backing shape: column on a
+     * table-bound type, component on a Java record, accessor on a POJO. The
+     * dispatch reads {@link LspSchemaSnapshot.Built#typesByName} so the
+     * classifier's projection of the enclosing type is the authoritative
+     * answer.
+     */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "java-record-type-backs-record-class",
         reliesOn = "Treats RecordBacking.components as the authoritative member list for "
             + "@field(name:) validation under a @record-bound Java record parent; emits "
             + "\"Unknown component\" without re-checking that the backing class is a record."
     )
-    private static void validateCatalogColumn(
+    private static void validateFieldMember(
         Directives.Directive directive, Node valueNode,
         WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot, List<Diagnostic> out
     ) {
@@ -509,11 +517,9 @@ public final class Diagnostics {
                 validateMemberSlot(r.components(), memberName, "component", r.fqClassName(), valueNode, file, out);
             case TypeBackingShape.PojoBacking p ->
                 validateMemberSlot(p.accessors(), memberName, "property", p.fqClassName(), valueNode, file, out);
-            case TypeBackingShape.JooqRecordBacking j -> {
-                if (j.tableName() != null) {
-                    validateColumnOnTable(catalog, j.tableName(), memberName, valueNode, file, out);
-                }
-            }
+            case TypeBackingShape.JooqRecordBacking.WithTable j ->
+                validateColumnOnTable(catalog, j.tableName(), memberName, valueNode, file, out);
+            case TypeBackingShape.JooqRecordBacking.Standalone ignored -> { /* no actionable diagnostic */ }
             case TypeBackingShape.TableBacking t ->
                 validateColumnOnTable(catalog, t.tableName(), memberName, valueNode, file, out);
             case TypeBackingShape.NoBacking ignored -> { /* no actionable diagnostic */ }

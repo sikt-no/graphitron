@@ -79,9 +79,8 @@ public final class FieldCompletions {
         return switch (backing) {
             case TypeBackingShape.RecordBacking r -> memberSlotItems(r.components(), context);
             case TypeBackingShape.PojoBacking p -> memberSlotItems(p.accessors(), context);
-            case TypeBackingShape.JooqRecordBacking j -> j.tableName() == null
-                ? List.of()
-                : tableColumnItems(data, j.tableName(), context);
+            case TypeBackingShape.JooqRecordBacking.WithTable j -> tableColumnItems(data, j.tableName(), context);
+            case TypeBackingShape.JooqRecordBacking.Standalone ignored -> List.of();
             case TypeBackingShape.TableBacking t -> tableColumnItems(data, t.tableName(), context);
             case TypeBackingShape.NoBacking ignored -> List.of();
         };

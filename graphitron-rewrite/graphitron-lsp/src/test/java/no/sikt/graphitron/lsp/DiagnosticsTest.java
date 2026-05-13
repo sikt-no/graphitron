@@ -335,7 +335,7 @@ class DiagnosticsTest {
             List.of(new CompletionData.ExternalReference(
                 "com.example.FilmService", "com.example.FilmService", "",
                 List.of(listMethod)
-            ))
+            , List.of()))
         );
     }
 
@@ -353,7 +353,7 @@ class DiagnosticsTest {
             List.of(new CompletionData.ExternalReference(
                 "com.example.FilmService", "com.example.FilmService", "",
                 List.of(method)
-            ))
+            , List.of()))
         );
         var file = file("""
             type Query {
@@ -377,7 +377,7 @@ class DiagnosticsTest {
             List.of(new CompletionData.ExternalReference(
                 "com.example.FilmService", "com.example.FilmService", "",
                 List.of(method)
-            ))
+            , List.of()))
         );
         var file = file("""
             type Query {
@@ -637,7 +637,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(), Map.of()));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("@tabel").contains("Unknown directive");
@@ -676,7 +676,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Previous(List.of()));
+            new LspSchemaSnapshot.Built.Previous(List.of(), Map.of()));
 
         assertThat(diags).isEmpty();
     }
@@ -701,7 +701,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(keyShape)));
+            new LspSchemaSnapshot.Built.Current(List.of(keyShape), Map.of()));
 
         assertThat(diags).isEmpty();
     }
@@ -726,7 +726,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(shadowTable)));
+            new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of()));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -910,7 +910,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(authShape())));
+            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of()));
 
         assertThat(diags).hasSize(2);
         assertThat(diags).extracting(d -> d.getMessage())
@@ -928,7 +928,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(authShape())));
+            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of()));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -945,7 +945,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(authShape())));
+            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of()));
 
         assertThat(diags).isEmpty();
     }
@@ -975,7 +975,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Previous(List.of(authShape())));
+            new LspSchemaSnapshot.Built.Previous(List.of(authShape()), Map.of()));
 
         assertThat(diags).isEmpty();
     }
@@ -999,7 +999,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(shadowTable)));
+            new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of()));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -1119,7 +1119,7 @@ class DiagnosticsTest {
         return new CompletionData(
             List.of(),
             List.of(),
-            List.of(new CompletionData.ExternalReference(fqn, fqn, "", List.of(foo)))
+            List.of(new CompletionData.ExternalReference(fqn, fqn, "", List.of(foo), List.of()))
         );
     }
 
@@ -1133,7 +1133,7 @@ class DiagnosticsTest {
         return new CompletionData(
             List.of(),
             List.of(),
-            List.of(new CompletionData.ExternalReference(knownClass, knownClass, "", List.of(foo))),
+            List.of(new CompletionData.ExternalReference(knownClass, knownClass, "", List.of(foo), List.of())),
             namedReferences
         );
     }

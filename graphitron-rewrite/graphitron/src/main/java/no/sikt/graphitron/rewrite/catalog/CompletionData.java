@@ -154,10 +154,6 @@ public record CompletionData(
             methods = List.copyOf(methods);
             recordComponents = List.copyOf(recordComponents);
         }
-
-        public ExternalReference(String name, String className, String description, List<Method> methods) {
-            this(name, className, description, methods, List.of());
-        }
     }
 
     /**

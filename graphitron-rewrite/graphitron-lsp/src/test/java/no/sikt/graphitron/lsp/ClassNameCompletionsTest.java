@@ -169,6 +169,6 @@ class ClassNameCompletionsTest {
     }
 
     private static CompletionData.ExternalReference ext(String fqn) {
-        return new CompletionData.ExternalReference(fqn, fqn, "", List.of());
+        return new CompletionData.ExternalReference(fqn, fqn, "", List.of(), List.of());
     }
 }

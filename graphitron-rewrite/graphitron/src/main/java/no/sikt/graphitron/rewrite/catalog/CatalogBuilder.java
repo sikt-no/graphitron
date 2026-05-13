@@ -145,10 +145,10 @@ public final class CatalogBuilder {
             case GraphitronType.PojoInputType t -> t.fqClassName() == null
                 ? new TypeBackingShape.NoBacking.UnbackedResult()
                 : projectPojo(t.fqClassName(), catalog);
-            case GraphitronType.JooqRecordType t -> new TypeBackingShape.JooqRecordBacking(t.fqClassName(), null);
-            case GraphitronType.JooqRecordInputType t -> new TypeBackingShape.JooqRecordBacking(t.fqClassName(), null);
-            case GraphitronType.JooqTableRecordType t -> new TypeBackingShape.JooqRecordBacking(t.fqClassName(), tableNameOf(t.table()));
-            case GraphitronType.JooqTableRecordInputType t -> new TypeBackingShape.JooqRecordBacking(t.fqClassName(), tableNameOf(t.table()));
+            case GraphitronType.JooqRecordType t -> new TypeBackingShape.JooqRecordBacking.Standalone(t.fqClassName());
+            case GraphitronType.JooqRecordInputType t -> new TypeBackingShape.JooqRecordBacking.Standalone(t.fqClassName());
+            case GraphitronType.JooqTableRecordType t -> jooqRecordWithTable(t.fqClassName(), t.table());
+            case GraphitronType.JooqTableRecordInputType t -> jooqRecordWithTable(t.fqClassName(), t.table());
             case GraphitronType.TableType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
             case GraphitronType.NodeType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
             case GraphitronType.TableInterfaceType t -> new TypeBackingShape.TableBacking(tableNameOf(t.table()));
@@ -170,6 +170,13 @@ public final class CatalogBuilder {
 
     private static String tableNameOf(TableRef ref) {
         return ref == null ? null : ref.tableName();
+    }
+
+    private static TypeBackingShape jooqRecordWithTable(String fqClassName, TableRef table) {
+        String tableName = tableNameOf(table);
+        return tableName == null
+            ? new TypeBackingShape.JooqRecordBacking.Standalone(fqClassName)
+            : new TypeBackingShape.JooqRecordBacking.WithTable(fqClassName, tableName);
     }
 
     private static TypeBackingShape projectRecord(String fqClassName, CompletionData catalog) {
