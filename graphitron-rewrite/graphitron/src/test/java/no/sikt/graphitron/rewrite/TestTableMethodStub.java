@@ -14,33 +14,38 @@ import no.sikt.graphitron.rewrite.test.jooq.tables.Language;
  * methods further down ({@link #get}, {@link #getWithContext}) intentionally violate that
  * rule and exist solely so tests can assert the rejection path.
  *
+ * <p>After R43 the {@code @tableMethod} contract no longer accepts a parent or return-type
+ * Table parameter: graphitron derives the target table from the method's return type and
+ * parent-table filtering is {@code @reference}'s job. Methods that need GraphQL-driven
+ * filtering declare regular parameters bound via {@code argMapping}.
+ *
  * <p>Requires the {@code -parameters} compiler flag for context-arg variants (the project's
  * {@code pom.xml} already sets this flag).
  */
 class TestTableMethodStub {
 
     /** Returns {@link Film} — for {@code @tableMethod} on a {@code Film} return type. */
-    public static Film getFilm(Film table) {
+    public static Film getFilm() {
         throw new UnsupportedOperationException();
     }
 
     /** Returns {@link Film} with a context argument. */
-    public static Film getFilmWithContext(Film table, String tenantId) {
+    public static Film getFilmWithContext(String tenantId) {
         throw new UnsupportedOperationException();
     }
 
     /** Returns {@link Language} — for {@code @tableMethod} on a {@code Language} return type. */
-    public static Language getLanguage(Language table) {
+    public static Language getLanguage() {
         throw new UnsupportedOperationException();
     }
 
     /** Returns {@link Language} with a context argument — used to test context-arg reflection. */
-    public static Language getLanguageWithContext(Language table, String tenantId) {
+    public static Language getLanguageWithContext(String tenantId) {
         throw new UnsupportedOperationException();
     }
 
     /** Returns {@link Actor} — for {@code @tableMethod} on an {@code Actor} (or list/connection) return type. */
-    public static Actor getActor(Actor table) {
+    public static Actor getActor() {
         throw new UnsupportedOperationException();
     }
 
@@ -49,12 +54,12 @@ class TestTableMethodStub {
      * {@code "get"} on a specific @table-bound return get the strict-return-type rejection.
      * Kept as a fixture so the rejection path can be asserted directly.
      */
-    public static org.jooq.Table<?> get(org.jooq.Table<?> table) {
+    public static org.jooq.Table<?> get() {
         throw new UnsupportedOperationException();
     }
 
     /** Wider return type with a context argument. */
-    public static org.jooq.Table<?> getWithContext(org.jooq.Table<?> table, String tenantId) {
+    public static org.jooq.Table<?> getWithContext(String tenantId) {
         throw new UnsupportedOperationException();
     }
 
@@ -64,7 +69,7 @@ class TestTableMethodStub {
      * {@code ServiceCatalog.reflectTableMethod}. Used by
      * {@code TableMethodFieldValidationTest.instanceTableMethod_validatorReportsAuthorError}.
      */
-    public Film getFilmInstance(Film table) {
+    public Film getFilmInstance() {
         throw new UnsupportedOperationException();
     }
 }

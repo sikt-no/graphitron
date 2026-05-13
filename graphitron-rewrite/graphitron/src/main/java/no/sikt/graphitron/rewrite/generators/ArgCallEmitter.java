@@ -96,8 +96,12 @@ public final class ArgCallEmitter {
      *   <li>{@link ParamSource.Context} — {@code graphitronContext(env).getContextArgument(env, name)}.</li>
      *   <li>{@link ParamSource.DslContext} — literal {@code dsl}; the per-leaf fetcher
      *       declares the local before calling this helper.</li>
-     *   <li>{@link ParamSource.Table} — the supplied {@code tableExpression} {@code CodeBlock}
-     *       (e.g. {@code Tables.FILM} for {@code @tableMethod}); {@code null} for service variants.</li>
+     *   <li>{@link ParamSource.Table} — never reached by {@code @service}/{@code @tableMethod}
+     *       emission. After R43 {@code @tableMethod} methods declare no Table parameter and
+     *       {@code @service} methods never had one. The slot stays on {@link ParamSource} for
+     *       {@code @condition}, whose emission lives in {@link no.sikt.graphitron.rewrite.generators.QueryConditionsGenerator}
+     *       (not this helper). Callers pass {@code null} for {@code tableExpression}; if a Table
+     *       param ever leaked through reflection the helper throws {@link IllegalStateException}.</li>
      *   <li>{@link ParamSource.Sources} / {@link ParamSource.SourceTable} — never reached:
      *       the classifier (FieldBuilder Invariants §2) and the {@code @tableMethod} reflection
      *       check (ServiceCatalog) prevent a root leaf from carrying these. The helper throws
@@ -105,8 +109,10 @@ public final class ArgCallEmitter {
      * </ul>
      *
      * @param method            the developer method to call.
-     * @param tableExpression   expression emitted at the {@link ParamSource.Table} slot;
-     *                          must be non-null when the method declares a {@code Table<?>} parameter.
+     * @param tableExpression   legacy slot; after R43 every caller passes {@code null} (neither
+     *                          {@code @service} nor {@code @tableMethod} methods declare a Table
+     *                          parameter). Retained so a leaked {@link ParamSource.Table} surfaces
+     *                          as a clear {@link IllegalStateException} rather than a NPE.
      * @param conditionsClassName  target for {@link CallSiteExtraction.TextMapLookup}; may be null
      *                             when no {@code TextMapLookup} extractions exist on the method.
      */

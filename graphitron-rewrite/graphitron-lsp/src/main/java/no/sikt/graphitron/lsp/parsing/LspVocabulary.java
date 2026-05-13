@@ -701,6 +701,14 @@ public record LspVocabulary(
             out.put(sourceRowClassName, new Behavior.ClassNameBinding());
             out.put(new SchemaCoordinate.DirectiveArg("sourceRow", "method"),
                 new Behavior.MethodNameBinding(sourceRowClassName));
+            // R43: @tableMethod is flat (className, method, argMapping directly on the directive),
+            // mirroring @sourceRow rather than wrapping an ExternalCodeReference.
+            var tableMethodClassName = new SchemaCoordinate.DirectiveArg("tableMethod", "className");
+            out.put(tableMethodClassName, new Behavior.ClassNameBinding());
+            out.put(new SchemaCoordinate.DirectiveArg("tableMethod", "method"),
+                new Behavior.MethodNameBinding(tableMethodClassName));
+            out.put(new SchemaCoordinate.DirectiveArg("tableMethod", "argMapping"),
+                new Behavior.ArgMappingBinding());
             out.put(new SchemaCoordinate.DirectiveArg("table", "name"),
                 new Behavior.CatalogTableBinding());
             out.put(new SchemaCoordinate.DirectiveArg("field", "name"),

@@ -1032,7 +1032,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
-                language: Language @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage"})
+                language: Language @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
             }
             type Query { film: Film }
             """,
@@ -1044,7 +1044,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
-                actors: [Actor!]! @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor"})
+                actors: [Actor!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
             }
             type Query { film: Film }
             """,
@@ -1058,7 +1058,7 @@ class GraphitronSchemaBuilderTest {
             type ActorEdge { node: Actor cursor: String }
             type ActorConnection { edges: [ActorEdge] }
             type Film @table(name: "film") {
-                actors: ActorConnection @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor"})
+                actors: ActorConnection @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
             }
             type Query { film: Film }
             """,
@@ -1074,7 +1074,7 @@ class GraphitronSchemaBuilderTest {
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
                 language: Language
-                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage"})
+                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
                     @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query { film: Film }
@@ -2800,7 +2800,7 @@ class GraphitronSchemaBuilderTest {
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
                 language: Language
-                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguageWithContext"}, contextArguments: ["tenantId"])
+                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguageWithContext", contextArguments: ["tenantId"])
             }
             type Query { film: Film }
             """,
@@ -4909,7 +4909,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { title: String }
             type Query {
                 filteredFilms: [Film!]!
-                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilmWithContext"}, contextArguments: ["tenantId"])
+                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilmWithContext", contextArguments: ["tenantId"])
             }
             """,
             schema -> {
@@ -6022,7 +6022,7 @@ class GraphitronSchemaBuilderTest {
             }
             type Query {
                 methodFilms(first: Int, after: String): FilmConnection
-                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get"})
+                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get")
             }
             """,
             schema -> {
@@ -6052,7 +6052,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Film @table(name: "film") { title: String }
             type Query {
-                wider: [Film!]! @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get"})
+                wider: [Film!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get")
             }
             """,
             schema -> {
@@ -6067,7 +6067,7 @@ class GraphitronSchemaBuilderTest {
             """
             type Film @table(name: "film") { title: String }
             type Query {
-                count: Int @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilm"})
+                count: Int @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilm")
             }
             """,
             schema -> {
@@ -6081,7 +6081,7 @@ class GraphitronSchemaBuilderTest {
             "@tableMethod on a child field returning a scalar → UnclassifiedField (R43: clear schema error, not a deferred stub)",
             """
             type Film @table(name: "film") {
-                title: String @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilm"})
+                title: String @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilm")
             }
             type Query { film: Film }
             """,
@@ -6508,7 +6508,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") {
                 language: Language
                     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
-                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
+                    @tableMethod(className: "com.example.Foo", method: "get")
             }
             type Query { film: Film }
             """,
@@ -6531,7 +6531,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") {
                 language: Language
                     @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
-                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
+                    @tableMethod(className: "com.example.Foo", method: "get")
             }
             type Query { film: Film }
             """,
@@ -6586,7 +6586,7 @@ class GraphitronSchemaBuilderTest {
             type Query {
                 film: Film
                     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
-                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
+                    @tableMethod(className: "com.example.Foo", method: "get")
             }
             """,
             "Query", "film", "@service", "@tableMethod"),
@@ -6597,7 +6597,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") { title: String }
             type Query {
                 film(id: ID @lookupKey): Film
-                    @tableMethod(tableMethodReference: {className: "com.example.Foo", method: "get"})
+                    @tableMethod(className: "com.example.Foo", method: "get")
             }
             """,
             "Query", "film", "@lookupKey", "@tableMethod"),

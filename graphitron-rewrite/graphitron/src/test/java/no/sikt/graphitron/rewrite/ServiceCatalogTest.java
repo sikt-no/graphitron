@@ -513,7 +513,8 @@ class ServiceCatalogTest {
     @Test
     void reflectTableMethod_matchingExpected_succeedsAndCapturesClassName() {
         var result = newCatalog().reflectTableMethod(
-            TABLE_METHOD_STUB_CLASS, "getFilm", bindings(Map.of()), Set.of(), FILM_TABLE_CLASS);
+            TABLE_METHOD_STUB_CLASS, "getFilm", bindings(Map.of()), Set.of(), FILM_TABLE_CLASS,
+            ServiceCatalog.TableSlotPolicy.FORBIDDEN);
 
         assertThat(result.failed()).isFalse();
         assertThat(result.ref().returnType()).isEqualTo(FILM_TABLE_CLASS);
@@ -525,7 +526,8 @@ class ServiceCatalogTest {
         // Table<?>-returning `get` covers the wider-return-type case; this case pins that the
         // strict check rejects mismatched specific-class returns symmetrically.
         var result = newCatalog().reflectTableMethod(
-            TABLE_METHOD_STUB_CLASS, "getFilm", bindings(Map.of()), Set.of(), LANGUAGE_TABLE_CLASS);
+            TABLE_METHOD_STUB_CLASS, "getFilm", bindings(Map.of()), Set.of(), LANGUAGE_TABLE_CLASS,
+            ServiceCatalog.TableSlotPolicy.FORBIDDEN);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.rejection().message())
@@ -540,7 +542,8 @@ class ServiceCatalogTest {
         // expects a specific table class. Pins the rejection path the user is most likely to
         // trip into.
         var result = newCatalog().reflectTableMethod(
-            TABLE_METHOD_STUB_CLASS, "get", bindings(Map.of()), Set.of(), FILM_TABLE_CLASS);
+            TABLE_METHOD_STUB_CLASS, "get", bindings(Map.of()), Set.of(), FILM_TABLE_CLASS,
+            ServiceCatalog.TableSlotPolicy.FORBIDDEN);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.rejection().message())
@@ -606,29 +609,49 @@ class ServiceCatalogTest {
 
     @Test
     void reflectTableMethod_argByJavaName_override_bindsJavaNameToArgName() {
-        // @tableMethod variant: override targets a non-Table<?> Java parameter. Plan §66: the
-        // override map must skip the Table<?> slot, so an override targeting a non-Table<?>
-        // Java parameter works the same way as for @service.
+        // @tableMethod variant (FORBIDDEN policy after R43): override targets a non-Table Java
+        // parameter. The Java method takes only (String tenantId); the override maps "tenantId"
+        // to the GraphQL arg "tenant".
         var argByJavaName = bindings(Map.of("tenantId", "tenant"));
         var result = newCatalog().reflectTableMethod(
-            TABLE_METHOD_STUB_CLASS, "getFilmWithContext", argByJavaName, Set.of(), FILM_TABLE_CLASS);
+            TABLE_METHOD_STUB_CLASS, "getFilmWithContext", argByJavaName, Set.of(), FILM_TABLE_CLASS,
+            ServiceCatalog.TableSlotPolicy.FORBIDDEN);
 
         assertThat(result.failed()).isFalse();
         var params = result.ref().params();
-        assertThat(params).hasSize(2);
-        assertThat(params.get(0).source()).isInstanceOf(ParamSource.Table.class);
-        assertThat(params.get(1).name()).isEqualTo("tenantId");
-        assertThat(params.get(1).source()).isInstanceOf(ParamSource.Arg.class);
-        assertThat(((ParamSource.Arg) params.get(1).source()).graphqlArgName()).isEqualTo("tenant");
+        assertThat(params).hasSize(1);
+        assertThat(params.get(0).name()).isEqualTo("tenantId");
+        assertThat(params.get(0).source()).isInstanceOf(ParamSource.Arg.class);
+        assertThat(((ParamSource.Arg) params.get(0).source()).graphqlArgName()).isEqualTo("tenant");
     }
 
     @Test
-    void reflectTableMethod_overrideTargetingTableSlot_rejected() {
-        // Plan §66: an override that points the Java target at the Table<?> parameter is
-        // rejected; the Table<?> slot is reserved for the field's target table.
+    void reflectTableMethod_tableParamRejected_underForbiddenPolicy() {
+        // R43: under FORBIDDEN policy a Table<?> parameter on a @tableMethod method is rejected
+        // outright; graphitron derives the target table from the return type and parent-table
+        // filtering is @reference's job. The legacy `get(Table<?>)` method exercises this — but
+        // the project's TestTableMethodStub no longer declares Table parameters after R43, so
+        // we exercise the rejection via TestConditionStub (which still declares Table-leading
+        // methods).
+        var result = newCatalog().reflectTableMethod(
+            "no.sikt.graphitron.rewrite.TestConditionStub", "lifterFieldCondition",
+            bindings(Map.of()), Set.of(), null,
+            ServiceCatalog.TableSlotPolicy.FORBIDDEN);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("is a Table<?>")
+            .contains("must not declare");
+    }
+
+    @Test
+    void reflectTableMethod_overrideTargetingTableSlot_rejected_underRequiredPolicy() {
+        // Under REQUIRED policy (@condition caller), an override that points the Java target at
+        // the Table<?> parameter is rejected; the Table<?> slot is reserved.
         var argByJavaName = bindings(Map.of("table", "input"));
         var result = newCatalog().reflectTableMethod(
-            TABLE_METHOD_STUB_CLASS, "getFilmWithContext", argByJavaName, Set.of(), FILM_TABLE_CLASS);
+            "no.sikt.graphitron.rewrite.TestConditionStub", "argCondition", argByJavaName, Set.of(), null,
+            ServiceCatalog.TableSlotPolicy.REQUIRED);
 
         assertThat(result.failed()).isTrue();
         assertThat(result.rejection().message())
@@ -638,11 +661,14 @@ class ServiceCatalogTest {
 
     @Test
     void reflectTableMethod_nullExpected_skipsValidation() {
-        // Condition-method callers (BuildContext + FieldBuilder) pass null for the expected class
-        // since their return shape is Condition, not a table. Pin that null disables strict
-        // validation regardless of the actual return type.
+        // Condition-method callers (REQUIRED policy) pass null for the expected class since
+        // their return shape is Condition, not a table. Pin that null disables strict validation
+        // regardless of the actual return type. Uses a no-arg method on TestTableMethodStub that
+        // returns the wider Table<?>; under REQUIRED with no Table param the test would fail the
+        // foundTable check, so the test uses FORBIDDEN here — the null-expected branch is shared.
         var result = newCatalog().reflectTableMethod(
-            TABLE_METHOD_STUB_CLASS, "get", bindings(Map.of()), Set.of(), null);
+            TABLE_METHOD_STUB_CLASS, "get", bindings(Map.of()), Set.of(), null,
+            ServiceCatalog.TableSlotPolicy.FORBIDDEN);
 
         assertThat(result.failed()).isFalse();
         // Captured return is the wider Table<?> raw class; the model still records it faithfully.

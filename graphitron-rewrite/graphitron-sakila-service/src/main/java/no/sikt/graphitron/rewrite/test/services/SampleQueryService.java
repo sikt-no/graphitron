@@ -29,15 +29,17 @@ public final class SampleQueryService {
     private SampleQueryService() {}
 
     /**
-     * Filters the FILM table by minimum rental rate. The generated jOOQ {@code Film} class
-     * overrides {@code where(...)} to return {@code Film} (not {@code Table<R>}), so the
-     * filtered derived table preserves the specific table type required by the strict
+     * Filters the FILM table by minimum rental rate. After R43 the {@code @tableMethod} contract
+     * passes only GraphQL field arguments to the method (no parent or return-type table), so the
+     * fixture method derives the {@code FILM} table itself. The generated jOOQ {@code Film} class
+     * overrides {@code where(...)} to return {@code Film} (not {@code Table<R>}), so the filtered
+     * derived table preserves the specific table type required by the strict
      * {@code @tableMethod} return-type check in {@code ServiceCatalog.reflectTableMethod}, and
      * feeds {@code FilmType.$fields(...)} directly without a downcast. See
      * {@code rewrite-design-principles.md} ("Classifier guarantees shape emitter assumptions").
      */
-    public static Film popularFilms(Film filmTable, Double minRentalRate) {
-        return filmTable.where(filmTable.RENTAL_RATE.ge(java.math.BigDecimal.valueOf(minRentalRate)));
+    public static Film popularFilms(Double minRentalRate) {
+        return Tables.FILM.where(Tables.FILM.RENTAL_RATE.ge(java.math.BigDecimal.valueOf(minRentalRate)));
     }
 
     /**

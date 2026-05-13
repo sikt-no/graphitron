@@ -428,18 +428,37 @@ class ServiceCatalog {
     }
 
     /**
+     * Table-parameter policy for {@link #reflectTableMethod}, distinguishing the two callers.
+     *
+     * <ul>
+     *   <li>{@link #REQUIRED} — {@code @condition}: the method's first slot is the parent
+     *       {@code Table<?>}; reflection must find exactly one Table parameter and emit it as
+     *       {@link ParamSource.Table}. argMapping entries targeting the Table slot are rejected
+     *       (the reserved-slot typo guard).</li>
+     *   <li>{@link #FORBIDDEN} — {@code @tableMethod} (after R43): the developer's method
+     *       receives GraphQL field arguments and context values only; graphitron derives the
+     *       target table from the method's return type. Any {@code Table<?>} parameter is
+     *       rejected outright.</li>
+     * </ul>
+     */
+    enum TableSlotPolicy { REQUIRED, FORBIDDEN }
+
+    /**
      * Loads the table-method class and method via reflection and classifies each parameter.
      *
-     * <p>Parameters whose type is assignable to {@link org.jooq.Table} get {@link ParamSource.Table};
-     * parameters whose name appears as a key in {@code argBindings} get {@link ParamSource.Arg}
+     * <p>Parameters whose name appears as a key in {@code argBindings} get {@link ParamSource.Arg}
      * with {@link ParamSource.Arg#graphqlArgName()} set to the corresponding value;
      * parameters whose name matches a context key get {@link ParamSource.Context}.
-     * Any other parameter is an error.
+     * The {@link TableSlotPolicy} governs how {@code Table<?>}-typed parameters are handled:
+     * {@code REQUIRED} (the {@code @condition} caller) treats them as the parent Table slot and
+     * emits {@link ParamSource.Table}; {@code FORBIDDEN} (the {@code @tableMethod} caller after
+     * R43) rejects them. Any other parameter shape is an error.
      *
      * <p>{@code argBindings} carries the Java-target → GraphQL-arg-name mapping per
-     * {@link #reflectServiceMethod}. Override entries that target the {@code Table<?>} parameter,
-     * or that point at non-existent Java parameters, are rejected with a typo-guard message
-     * naming the directive site and the available parameter names.
+     * {@link #reflectServiceMethod}. Override entries pointing at non-existent Java parameters are
+     * rejected with a typo-guard message naming the directive site and the available parameter names.
+     * Under {@code REQUIRED}, an override entry targeting the Table parameter is additionally
+     * rejected by {@link #checkConditionOverrideTargets}.
      *
      * <p>If the compiler was not invoked with {@code -parameters}, any parameter may lack a name.
      * A warning is logged proactively as soon as any nameless parameter is detected — even if
@@ -462,11 +481,12 @@ class ServiceCatalog {
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "service-catalog-tablemethod-must-be-static",
         description = "The Modifier.isStatic check rejects instance @tableMethod methods. "
-            + "Lets the emitter unconditionally emit `ClassName.method(table, ...)` "
+            + "Lets the emitter unconditionally emit `ClassName.method(...)` "
             + "static-call shape for @tableMethod refs without forking on call shape — the "
             + "MethodRef.StaticOnly variant produced here carries that guarantee structurally.")
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
-            ArgBindingMap argBindings, Set<String> ctxKeys, ClassName expectedReturnClass) {
+            ArgBindingMap argBindings, Set<String> ctxKeys, ClassName expectedReturnClass,
+            TableSlotPolicy tableSlotPolicy) {
         var argByJavaName = argBindings.byJavaName();
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, Rejection.structural("table method reference is incomplete"));
@@ -491,7 +511,7 @@ class ServiceCatalog {
                 return new ServiceReflectionResult(null,
                     Rejection.structural("method '" + methodName + "' in class '" + className
                     + "' must be declared 'static' for @tableMethod — instance @tableMethod methods are not supported;"
-                    + " the call site emits 'ClassName.method(table, ...)' which requires a static method"));
+                    + " the call site emits 'ClassName.method(...)' which requires a static method"));
             }
             ClassName actualReturnClass = ClassName.get(javaMethod.getReturnType());
             if (expectedReturnClass != null
@@ -505,7 +525,9 @@ class ServiceCatalog {
             if (Arrays.stream(javaMethod.getParameters()).anyMatch(p -> !p.isNamePresent())) {
                 emitParametersWarning();
             }
-            String tableTypoGuard = checkTableMethodOverrideTargets(argByJavaName, javaMethod, methodName, className);
+            String tableTypoGuard = tableSlotPolicy == TableSlotPolicy.REQUIRED
+                ? checkConditionOverrideTargets(argByJavaName, javaMethod, methodName, className)
+                : checkOverrideTargets(argByJavaName, javaMethod, methodName, className);
             if (tableTypoGuard != null) {
                 return new ServiceReflectionResult(null, Rejection.structural(tableTypoGuard));
             }
@@ -513,6 +535,14 @@ class ServiceCatalog {
             boolean foundTable = false;
             for (var p : javaMethod.getParameters()) {
                 if (org.jooq.Table.class.isAssignableFrom(p.getType())) {
+                    if (tableSlotPolicy == TableSlotPolicy.FORBIDDEN) {
+                        String paramName = p.isNamePresent() ? p.getName() : "<unnamed>";
+                        return new ServiceReflectionResult(null,
+                            Rejection.structural("parameter '" + paramName + "' in method '" + methodName
+                            + "' in class '" + className + "' is a Table<?> — @tableMethod must not declare"
+                            + " a Table parameter; graphitron derives the target table from the method's return type"
+                            + " and parent-table filtering is handled via @reference"));
+                    }
                     String paramName = p.isNamePresent() ? p.getName() : "table";
                     params.add(new MethodRef.Param.Typed(paramName,
                         p.getParameterizedType().getTypeName(), new ParamSource.Table()));
@@ -535,13 +565,13 @@ class ServiceCatalog {
                 } else {
                     return new ServiceReflectionResult(null,
                         Rejection.structural("parameter '" + pName + "' in method '" + methodName
-                        + "' is not a Table<?> parameter, not a GraphQL argument, and not a context key"));
+                        + "' is not a GraphQL argument and not a context key"));
                 }
             }
-            if (!foundTable) {
+            if (tableSlotPolicy == TableSlotPolicy.REQUIRED && !foundTable) {
                 return new ServiceReflectionResult(null,
                     Rejection.structural("method '" + methodName + "' in class '" + className
-                    + "' has no Table<?> parameter — @tableMethod requires exactly one Table<?> parameter"));
+                    + "' has no Table<?> parameter — the directive requires exactly one Table<?> parameter"));
             }
             return new ServiceReflectionResult(
                 new MethodRef.StaticOnly(className, methodName,
@@ -637,13 +667,14 @@ class ServiceCatalog {
     }
 
     /**
-     * {@code @tableMethod}-specific override-target check: rejects override entries that point
-     * at the {@code Table<?>} parameter slot, then defers to the same logic as
-     * {@link #checkOverrideTargets} for missing-parameter detection.
+     * Override-target check for {@link TableSlotPolicy#REQUIRED} callers ({@code @condition}):
+     * rejects argMapping entries that target the reserved {@code Table<?>} parameter slot, then
+     * defers to {@link #checkOverrideTargets} for missing-parameter detection. Mirrors the legacy
+     * {@code checkTableMethodOverrideTargets} that {@code @tableMethod} no longer needs after R43.
      */
-    private static String checkTableMethodOverrideTargets(Map<String, PathExpr> argByJavaName,
-                                                          java.lang.reflect.Method javaMethod,
-                                                          String methodName, String className) {
+    private static String checkConditionOverrideTargets(Map<String, PathExpr> argByJavaName,
+                                                        java.lang.reflect.Method javaMethod,
+                                                        String methodName, String className) {
         var tableParamNames = Arrays.stream(javaMethod.getParameters())
             .filter(p -> org.jooq.Table.class.isAssignableFrom(p.getType()))
             .filter(java.lang.reflect.Parameter::isNamePresent)
@@ -655,7 +686,7 @@ class ServiceCatalog {
             if (path.isHead() && javaTarget.equals(path.headName())) continue;
             if (tableParamNames.contains(javaTarget)) {
                 return "argMapping entry '" + javaTarget + ": " + path.asString()
-                    + "' targets the Table<?> parameter of @tableMethod '" + methodName
+                    + "' targets the Table<?> parameter of method '" + methodName
                     + "' in class '" + className + "' — the Table<?> slot is reserved and cannot be"
                     + " bound to a GraphQL argument";
             }

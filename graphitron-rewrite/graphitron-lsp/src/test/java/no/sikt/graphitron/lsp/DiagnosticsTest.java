@@ -369,7 +369,7 @@ class DiagnosticsTest {
     void unknownTableMethodClassProducesError() {
         var file = file("""
             type Foo {
-                bar: Int @tableMethod(tableMethodReference: {className: "com.example.Missing", method: "foo"})
+                bar: Int @tableMethod(className: "com.example.Missing", method: "foo")
             }
             """);
 
@@ -429,7 +429,7 @@ class DiagnosticsTest {
     void unknownTableMethodMethodOnKnownClassProducesError() {
         var file = file("""
             type Foo {
-                bar: Int @tableMethod(tableMethodReference: {className: "com.example.FilmService", method: "ghost"})
+                bar: Int @tableMethod(className: "com.example.FilmService", method: "ghost")
             }
             """);
 
@@ -524,20 +524,9 @@ class DiagnosticsTest {
         assertThat(diags.get(0).getMessage()).contains("'Ghost'");
     }
 
-    @Test
-    void legacyName_unresolved_tableMethod() {
-        var file = file("""
-            type Foo {
-                bar: Int @tableMethod(tableMethodReference: {name: "Ghost", method: "foo"})
-            }
-            """);
-
-        var diags = compute(file, catalogWithNamedReferences(
-            Map.of(), "com.example.RealTableMethod"), LspSchemaSnapshot.unavailable());
-
-        assertThat(diags).hasSize(1);
-        assertThat(diags.get(0).getMessage()).contains("'Ghost'");
-    }
+    // legacyName_unresolved_tableMethod removed: after R43 the @tableMethod directive
+    // is flat (className: + method: directly on the directive) and does not carry the
+    // deprecated `name:` alias.
 
     @Test
     void legacyName_unresolved_record() {

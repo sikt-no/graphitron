@@ -58,10 +58,10 @@ Set `method:` only when the Java method's name diverges from the field name:
 ----
 type Query {
     popularFilms(minRentalRate: Float!): [Film!]!
-        @tableMethod(tableMethodReference: {
+        @tableMethod(
             className: "com.example.services.SampleQueryService",
             method:    "popularFilmsAboveRate"
-        })
+        )
 }
 ----
 
@@ -101,15 +101,16 @@ Each directive's `ExternalCodeReference!` parameter has its own name, but the co
 [cols="1,2,2",options="header"]
 |===
 | Directive | Slot name | Reference page
-| `@service` | `service:` | xref:../reference/directives/service.adoc[`@service`]
-| `@externalField` | `reference:` | xref:../reference/directives/externalField.adoc[`@externalField`]
-| `@tableMethod` | `tableMethodReference:` | xref:../reference/directives/tableMethod.adoc[`@tableMethod`]
-| `@condition` | `condition:` | xref:../reference/directives/condition.adoc[`@condition`]
-| `@enum` | `enumReference:` | xref:../reference/directives/enum.adoc[`@enum`]
-| `@record` | `record:` | xref:../reference/directives/record.adoc[`@record`]
+| `@service` | `service:` (`ExternalCodeReference`) | xref:../reference/directives/service.adoc[`@service`]
+| `@externalField` | `reference:` (`ExternalCodeReference`) | xref:../reference/directives/externalField.adoc[`@externalField`]
+| `@tableMethod` | flat `className:` + `method:` + `argMapping:` | xref:../reference/directives/tableMethod.adoc[`@tableMethod`]
+| `@condition` | `condition:` (`ExternalCodeReference`) | xref:../reference/directives/condition.adoc[`@condition`]
+| `@enum` | `enumReference:` (`ExternalCodeReference`) | xref:../reference/directives/enum.adoc[`@enum`]
+| `@record` | `record:` (`ExternalCodeReference`) | xref:../reference/directives/record.adoc[`@record`]
+| `@sourceRow` | flat `className:` + `method:` | xref:../reference/directives/sourceRow.adoc[`@sourceRow`]
 |===
 
-The slot names are historical (each directive was named before the shape was unified). Mechanically all six slots accept the same `ExternalCodeReference` input.
+The slot names are historical (each directive was named before the shape was unified). The two flat-form directives (`@tableMethod`, `@sourceRow`) carry `className:` and `method:` directly on the directive; the rest still wrap them in an `ExternalCodeReference` input object.
 
 == Constraints
 

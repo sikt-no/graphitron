@@ -1001,9 +1001,9 @@ public class TypeFetcherGenerator {
      * Emits the fetcher for a {@link QueryField.QueryTableMethodTableField}: declares the
      * developer-returned table local with the specific jOOQ table class (e.g. {@code Film}),
      * then projects via {@code $fields} over that table. The developer method's parameter
-     * list is reproduced in declaration order via
-     * {@link ArgCallEmitter#buildMethodBackedCallArgs}; the {@link ParamSource.Table} slot
-     * resolves to {@code Tables.<NAME>} wherever the user declared it.
+     * list is reproduced in declaration order via {@link ArgCallEmitter#buildMethodBackedCallArgs};
+     * after R43 the method receives GraphQL field arguments and context values only, with no
+     * leading Table parameter (graphitron derives the target table from the method's return type).
      *
      * <p>The local is declared with the specific table class (e.g. {@code Film}, not
      * {@code Table<?>}). Type-strictness is enforced at classifier time
@@ -1031,7 +1031,6 @@ public class TypeFetcherGenerator {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
 
         var methodClass = ClassName.bestGuess(qtmtf.method().className());
-        var tableExpression = CodeBlock.of("$T.$L", names.tablesClass(), tableRef.javaFieldName());
         String conditionsClassName = outputPackage + ".conditions."
             + qtmtf.parentTypeName() + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
 
@@ -1044,11 +1043,13 @@ public class TypeFetcherGenerator {
         // <SpecificTableClass> table = MethodClass.method(<args>);
         // No cast: classifier-time return-type check (Invariants §3) guarantees the developer's
         // method returns the specific table class. A wider return type fails classification.
+        // No leading Table arg: after R43 @tableMethod methods are passed GraphQL field args
+        // and context values only; graphitron derives the target table from the return type.
         builder.addStatement("$T table = $T.$L($L)",
             names.jooqTableClass(),
             methodClass,
             qtmtf.method().methodName(),
-            ArgCallEmitter.buildMethodBackedCallArgs(ctx, qtmtf.method(), tableExpression, conditionsClassName));
+            ArgCallEmitter.buildMethodBackedCallArgs(ctx, qtmtf.method(), null, conditionsClassName));
 
         builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
         builder.addCode(CodeBlock.builder()

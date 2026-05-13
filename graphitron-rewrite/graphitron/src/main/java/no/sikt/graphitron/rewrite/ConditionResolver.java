@@ -104,7 +104,8 @@ final class ConditionResolver {
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            argBindings, Set.copyOf(cond.contextArguments()), null);
+            argBindings, Set.copyOf(cond.contextArguments()), null,
+            ServiceCatalog.TableSlotPolicy.REQUIRED);
         if (result.failed()) {
             return new ArgConditionResult.Rejected(result.rejection().prefixedWith("argument '" + argName + "' @condition: "));
         }
@@ -138,7 +139,8 @@ final class ConditionResolver {
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            argBindings, Set.copyOf(cond.contextArguments()), null);
+            argBindings, Set.copyOf(cond.contextArguments()), null,
+            ServiceCatalog.TableSlotPolicy.REQUIRED);
         if (result.failed()) {
             return new FieldConditionResult.Rejected(result.rejection().prefixedWith("field '" + fieldDef.getName() + "' @condition: "));
         }
