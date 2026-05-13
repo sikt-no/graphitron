@@ -10,16 +10,18 @@ import java.util.List;
  * a DML mutation fetcher. Where {@link ErrorChannel} captures the catch-arm wiring (which
  * {@code @error} types route here, which constant on {@code ErrorMappings} holds the dispatch
  * table), this record captures the success-arm wiring: which payload class to instantiate, the
- * row-slot index the SQL row record binds to, and the defaulted slots for everything else.
+ * row slot the SQL row record binds to, and the defaulted slots for everything else.
  *
  * <p>Populated by the carrier classifier when a DML mutation field returns a {@code @record}
- * payload type whose all-fields constructor exposes one parameter assignable from the DML's
- * table record. The emitter walks the constructor's parameter indices {@code 0..N-1} (where
- * {@code N == 1 + defaultedSlots.size()}) and prints, per slot:
+ * payload type whose resolved {@link PayloadConstructionShape} exposes one slot assignable from
+ * the DML's table record. The emitter dispatches on {@code rowSlot}:
  * <ul>
- *   <li>the row record local variable when the slot index equals {@code rowSlotIndex}</li>
- *   <li>the slot's pre-resolved {@link DefaultedSlot#defaultLiteral()} otherwise (this covers
- *       any errors slot too; on the success arm the errors list is {@code null})</li>
+ *   <li>{@link RowSlot.CtorParameterIndex} : walk constructor slots positionally, printing the
+ *       row record local at {@code rowSlot.index()} and the slot's pre-resolved
+ *       {@link DefaultedSlot#defaultLiteral()} otherwise (this covers any errors slot too; on
+ *       the success arm the errors list is {@code null}).</li>
+ *   <li>Phase-2 setter arm : no-arg-construct then invoke the row setter with the row record
+ *       local; non-row setters are not invoked (the bean's default field values stand).</li>
  * </ul>
  *
  * <p>Independent of {@link ErrorChannel}: a DML payload return without an errors-shaped field
@@ -34,21 +36,22 @@ import java.util.List;
  */
 public record PayloadAssembly(
     ClassName payloadClass,
-    int rowSlotIndex,
+    RowSlot rowSlot,
     TypeName rowSlotType,
     List<DefaultedSlot> defaultedSlots
 ) {
     public PayloadAssembly {
         defaultedSlots = List.copyOf(defaultedSlots);
-        if (rowSlotIndex < 0) {
-            throw new IllegalArgumentException(
-                "PayloadAssembly: rowSlotIndex must be non-negative; got " + rowSlotIndex);
+        if (rowSlot == null) {
+            throw new IllegalArgumentException("PayloadAssembly: rowSlot must be non-null");
         }
-        for (var slot : defaultedSlots) {
-            if (slot.index() == rowSlotIndex) {
-                throw new IllegalArgumentException(
-                    "PayloadAssembly: defaultedSlots must not include the row slot at index "
-                        + rowSlotIndex + "; got slot for parameter '" + slot.name() + "'");
+        if (rowSlot instanceof RowSlot.CtorParameterIndex cpi) {
+            for (var slot : defaultedSlots) {
+                if (slot.index() == cpi.index()) {
+                    throw new IllegalArgumentException(
+                        "PayloadAssembly: defaultedSlots must not include the row slot at index "
+                            + cpi.index() + "; got slot for parameter '" + slot.name() + "'");
+                }
             }
         }
     }

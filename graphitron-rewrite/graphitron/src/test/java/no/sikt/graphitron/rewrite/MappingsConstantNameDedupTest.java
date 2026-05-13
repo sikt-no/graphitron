@@ -159,7 +159,7 @@ class MappingsConstantNameDedupTest {
         return new ErrorChannel(
             List.of(errorType),
             ClassName.bestGuess(payloadFqn),
-            1,
+            new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
             List.of(new DefaultedSlot(0, "data", ClassName.get("java.lang", "String"), "null")),
             constantName);
     }

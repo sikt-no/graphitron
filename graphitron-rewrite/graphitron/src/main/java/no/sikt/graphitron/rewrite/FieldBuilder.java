@@ -407,40 +407,54 @@ class FieldBuilder {
     }
 
     /**
-     * Outcome of canonical-constructor resolution for a {@code @record} payload class.
-     * {@code Found} carries the chosen constructor; {@code Reject} carries a human-readable
+     * Outcome of {@link PayloadConstructionShape} resolution for a payload class.
+     * {@code Resolved} carries the resolved shape (today: only the {@link
+     * PayloadConstructionShape.AllFieldsCtor} arm); {@code Reject} carries a human-readable
      * reason suitable for surfacing on an {@code UnclassifiedField}.
      */
-    private sealed interface CanonicalCtorResult {
-        record Found(java.lang.reflect.Constructor<?> ctor) implements CanonicalCtorResult {}
-        record Reject(String reason) implements CanonicalCtorResult {}
+    private sealed interface PayloadConstructionShapeResult {
+        record Resolved(no.sikt.graphitron.rewrite.model.PayloadConstructionShape shape)
+            implements PayloadConstructionShapeResult {}
+        record Reject(String reason) implements PayloadConstructionShapeResult {}
     }
 
     /**
-     * Picks the canonical (all-fields) constructor on a payload class. Records always declare
-     * exactly one canonical constructor and take that path trivially; hand-rolled POJOs with
-     * multiple constructors (e.g. an extra no-arg constructor alongside the all-fields one) are
-     * disambiguated structurally: the canonical constructor is the unique one whose parameter
-     * count matches the payload type's SDL field count.
+     * Resolves the {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape} for a
+     * payload class. Predicates run in order:
      *
-     * <p>Zero matches or more than one match is genuinely ambiguous and surfaces as a reject
-     * with the same "convert to a record" guidance as before. The single-ctor case skips the
-     * arity check so it works regardless of how the SDL field count was resolved.
+     * <ol>
+     *   <li><b>All-fields-ctor predicate</b> (today's rule). Records always hit this. Hand-rolled
+     *       POJOs hit it when the canonical ctor is unambiguous: either the class declares
+     *       exactly one constructor, or the unique ctor whose parameter count matches the SDL
+     *       field count is the canonical one. Returns
+     *       {@link PayloadConstructionShape.AllFieldsCtor}.</li>
+     *   <li><b>Mutable-bean predicate</b> (phase 2). Lands in a follow-up alongside the
+     *       {@code MutableBean} permit on {@link PayloadConstructionShape}.</li>
+     * </ol>
+     *
+     * <p>When predicate 1 matches it short-circuits the walk and {@code AllFieldsCtor} wins ; this
+     * is the canonical-over-bridge precedence (records always present the all-fields ctor; the
+     * setter shape is a legacy bridge from {@code graphitron-codegen-parent}). Both shapes yield
+     * equivalent payload instances, so there's no construction drift to surface. Neither
+     * predicate matching is the only rejection mode.
      */
-    private static CanonicalCtorResult findCanonicalCtor(Class<?> payloadCls, int sdlFieldCount) {
+    private static PayloadConstructionShapeResult resolvePayloadConstructionShape(
+            Class<?> payloadCls, int sdlFieldCount) {
         var ctors = payloadCls.getDeclaredConstructors();
         if (ctors.length == 0) {
-            return new CanonicalCtorResult.Reject(
+            return new PayloadConstructionShapeResult.Reject(
                 "payload class '" + payloadCls.getName() + "' has no declared constructors");
         }
         if (ctors.length == 1) {
-            return new CanonicalCtorResult.Found(ctors[0]);
+            return new PayloadConstructionShapeResult.Resolved(
+                new no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor(ctors[0]));
         }
         var matches = java.util.Arrays.stream(ctors)
             .filter(c -> c.getParameterCount() == sdlFieldCount)
             .toList();
         if (matches.size() == 1) {
-            return new CanonicalCtorResult.Found(matches.get(0));
+            return new PayloadConstructionShapeResult.Resolved(
+                new no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor(matches.get(0)));
         }
         String prefix = "payload class '" + payloadCls.getName() + "' has " + ctors.length
             + " declared constructors";
@@ -448,12 +462,12 @@ class FieldBuilder {
             + " canonical constructor), or remove the extra constructor(s) so only the all-fields"
             + " constructor remains";
         if (matches.isEmpty()) {
-            return new CanonicalCtorResult.Reject(prefix
+            return new PayloadConstructionShapeResult.Reject(prefix
                 + " but none has parameter count " + sdlFieldCount
                 + " matching the SDL field count; the carrier requires a canonical (all-fields)"
                 + " constructor — found: " + formatCtorSignatures(ctors) + guidance);
         }
-        return new CanonicalCtorResult.Reject(prefix
+        return new PayloadConstructionShapeResult.Reject(prefix
             + " with parameter count " + sdlFieldCount + " matching the SDL field count;"
             + " the canonical (all-fields) constructor is ambiguous — found: "
             + formatCtorSignatures(ctors) + guidance);
@@ -1738,12 +1752,15 @@ class FieldBuilder {
 
         // Records always declare a single canonical constructor; hand-rolled @record POJOs may
         // declare extras (e.g. a no-arg constructor alongside the all-fields one). The helper
-        // disambiguates by matching parameter count to the SDL field count.
-        var ctorResult = findCanonicalCtor(payloadCls, sdlFields.size());
-        if (ctorResult instanceof CanonicalCtorResult.Reject r) {
+        // disambiguates by matching parameter count to the SDL field count. Phase 1 only
+        // produces the AllFieldsCtor arm; the seal carries the contract explicitly so the
+        // phase-2 setter arm drops in without touching this site's switch.
+        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFields.size());
+        if (shapeResult instanceof PayloadConstructionShapeResult.Reject r) {
             return new ErrorChannelResult.Reject(r.reason());
         }
-        var ctor = ((CanonicalCtorResult.Found) ctorResult).ctor();
+        var shape = ((PayloadConstructionShapeResult.Resolved) shapeResult).shape();
+        var ctor = ((no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor) shape).ctor();
         var parameters = ctor.getParameters();
         var genericParameterTypes = ctor.getGenericParameterTypes();
 
@@ -1774,8 +1791,9 @@ class FieldBuilder {
 
         var payloadClassName = ClassName.bestGuess(result.fqClassName());
         String mappingsConstantName = toScreamingSnake(payloadCls.getSimpleName());
+        var errorsSlot = new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(errorsSlotIndex);
         return new ErrorChannelResult.Channel(new ErrorChannel(
-            mappedErrorTypes, payloadClassName, errorsSlotIndex, defaultedSlots, mappingsConstantName));
+            mappedErrorTypes, payloadClassName, errorsSlot, defaultedSlots, mappingsConstantName));
     }
 
     // ===== Carrier classifier: DML PayloadAssembly resolution =====
@@ -1846,11 +1864,12 @@ class FieldBuilder {
         }
 
         int sdlFieldCount = sdlFieldCount(result.returnTypeName());
-        var ctorResult = findCanonicalCtor(payloadCls, sdlFieldCount);
-        if (ctorResult instanceof CanonicalCtorResult.Reject r) {
+        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFieldCount);
+        if (shapeResult instanceof PayloadConstructionShapeResult.Reject r) {
             return new DmlPayloadAssemblyResult.Reject(r.reason());
         }
-        var ctor = ((CanonicalCtorResult.Found) ctorResult).ctor();
+        var shape = ((PayloadConstructionShapeResult.Resolved) shapeResult).shape();
+        var ctor = ((no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor) shape).ctor();
         var parameters = ctor.getParameters();
         var genericParameterTypes = ctor.getGenericParameterTypes();
 
@@ -1882,8 +1901,9 @@ class FieldBuilder {
         var defaultedSlots = collectDefaultedSlots(parameters, genericParameterTypes, rowSlotIndex);
         var payloadClassName = ClassName.bestGuess(result.fqClassName());
         var rowSlotType = no.sikt.graphitron.javapoet.TypeName.get(genericParameterTypes[rowSlotIndex]);
+        var rowSlot = new no.sikt.graphitron.rewrite.model.RowSlot.CtorParameterIndex(rowSlotIndex);
         return new DmlPayloadAssemblyResult.Assembly(new PayloadAssembly(
-            payloadClassName, rowSlotIndex, rowSlotType, defaultedSlots));
+            payloadClassName, rowSlot, rowSlotType, defaultedSlots));
     }
 
     // ===== Carrier classifier: service ResultAssembly resolution =====
@@ -1973,14 +1993,15 @@ class FieldBuilder {
         // ruled that out above; surface the legacy "must return" wording so existing fixture
         // tests keep asserting on a single message.
         int sdlFieldCount = sdlFieldCount(result.returnTypeName());
-        var ctorResult = findCanonicalCtor(payloadCls, sdlFieldCount);
-        if (ctorResult instanceof CanonicalCtorResult.Reject) {
+        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFieldCount);
+        if (shapeResult instanceof PayloadConstructionShapeResult.Reject) {
             return new ResultAssemblyResult.Reject(
                 "@service method '" + method.className() + "." + method.methodName()
                     + "' must return '" + sdlPayloadTypeName + "' to match the field's "
                     + "declared payload type — got '" + method.returnType() + "'");
         }
-        var ctor = ((CanonicalCtorResult.Found) ctorResult).ctor();
+        var shape = ((PayloadConstructionShapeResult.Resolved) shapeResult).shape();
+        var ctor = ((no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor) shape).ctor();
         var parameters = ctor.getParameters();
         var genericParameterTypes = ctor.getGenericParameterTypes();
 
@@ -2008,8 +2029,9 @@ class FieldBuilder {
 
         var defaultedSlots = collectDefaultedSlots(parameters, genericParameterTypes, resultSlotIndex);
         var resultSlotType = no.sikt.graphitron.javapoet.TypeName.get(genericParameterTypes[resultSlotIndex]);
+        var resultSlot = new no.sikt.graphitron.rewrite.model.ResultSlot.CtorParameterIndex(resultSlotIndex);
         return new ResultAssemblyResult.Assembly(new no.sikt.graphitron.rewrite.model.ResultAssembly(
-            payloadClassName, resultSlotIndex, resultSlotType, defaultedSlots));
+            payloadClassName, resultSlot, resultSlotType, defaultedSlots));
     }
 
     /**

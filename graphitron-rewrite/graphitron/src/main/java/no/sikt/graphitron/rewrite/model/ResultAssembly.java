@@ -14,42 +14,45 @@ import java.util.List;
  * return value.
  *
  * <p>Populated by the carrier classifier when a service-backed field's payload class has a
- * canonical constructor exposing exactly one parameter assignable from the service method's
- * declared return type. The emitter walks {@code 0..N-1} (where
- * {@code N == 1 + defaultedSlots.size()}) and prints, per slot:
+ * resolved {@link PayloadConstructionShape} exposing exactly one slot assignable from the
+ * service method's declared return type. The emitter dispatches on {@code resultSlot}:
  * <ul>
- *   <li>the captured service-return local at {@code resultSlotIndex}</li>
- *   <li>{@code List.of()} at the channel's errors slot when an {@link ErrorChannel} is also
- *       present (success arm initialises the errors list to empty)</li>
- *   <li>the slot's pre-resolved {@link DefaultedSlot#defaultLiteral()} otherwise</li>
+ *   <li>{@link ResultSlot.CtorParameterIndex} : walk constructor slots positionally, printing
+ *       the captured service-return local at {@code resultSlot.index()},
+ *       {@code List.of()} at the channel's errors-ctor-index when an {@link ErrorChannel} is
+ *       also present (success arm initialises the errors list to empty), and the slot's
+ *       pre-resolved {@link DefaultedSlot#defaultLiteral()} otherwise.</li>
+ *   <li>Phase-2 setter arm : no-arg-construct then invoke the result setter with the
+ *       service-return local; the success-arm errors setter receives an empty list when an
+ *       {@link ErrorChannel} is also present.</li>
  * </ul>
  *
  * <p>Independent of {@link ErrorChannel}: a service-backed field whose payload has no errors
  * slot carries a {@code ResultAssembly} (so the success arm constructs the payload around the
  * domain return) but no channel (so the catch arm falls back to {@code ErrorRouter.redact}).
- * When both are present they reference the same payload class; the classifier verifies their
- * slot indices are distinct (errors slot &ne; result slot).
+ * When both are present they reference the same payload class.
  *
  * <p>Service-backed fields whose service method returns the SDL payload class directly do
  * not get a {@code ResultAssembly}; the emitter passes the service return through unchanged.
  */
 public record ResultAssembly(
     ClassName payloadClass,
-    int resultSlotIndex,
+    ResultSlot resultSlot,
     TypeName resultSlotType,
     List<DefaultedSlot> defaultedSlots
 ) {
     public ResultAssembly {
         defaultedSlots = List.copyOf(defaultedSlots);
-        if (resultSlotIndex < 0) {
-            throw new IllegalArgumentException(
-                "ResultAssembly: resultSlotIndex must be non-negative; got " + resultSlotIndex);
+        if (resultSlot == null) {
+            throw new IllegalArgumentException("ResultAssembly: resultSlot must be non-null");
         }
-        for (var slot : defaultedSlots) {
-            if (slot.index() == resultSlotIndex) {
-                throw new IllegalArgumentException(
-                    "ResultAssembly: defaultedSlots must not include the result slot at index "
-                        + resultSlotIndex + "; got slot for parameter '" + slot.name() + "'");
+        if (resultSlot instanceof ResultSlot.CtorParameterIndex cpi) {
+            for (var slot : defaultedSlots) {
+                if (slot.index() == cpi.index()) {
+                    throw new IllegalArgumentException(
+                        "ResultAssembly: defaultedSlots must not include the result slot at index "
+                            + cpi.index() + "; got slot for parameter '" + slot.name() + "'");
+                }
             }
         }
     }

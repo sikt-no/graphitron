@@ -5912,7 +5912,8 @@ class GraphitronSchemaBuilderTest {
                 var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload) f.returnExpression();
                 assertThat(rex.assembly().payloadClass().reflectionName())
                     .isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmPayload");
-                assertThat(rex.assembly().rowSlotIndex()).isEqualTo(0);
+                assertThat(rex.assembly().rowSlot())
+                    .isEqualTo(new no.sikt.graphitron.rewrite.model.RowSlot.CtorParameterIndex(0));
                 assertThat(f.errorChannel()).isPresent();
             }),
 
@@ -5930,7 +5931,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilm");
                 var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload) f.returnExpression();
-                assertThat(rex.assembly().rowSlotIndex()).isEqualTo(0);
+                assertThat(rex.assembly().rowSlot())
+                    .isEqualTo(new no.sikt.graphitron.rewrite.model.RowSlot.CtorParameterIndex(0));
                 assertThat(f.errorChannel()).isEmpty();
             }),
 

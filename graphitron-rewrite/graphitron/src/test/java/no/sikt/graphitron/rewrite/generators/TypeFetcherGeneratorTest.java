@@ -804,12 +804,12 @@ class TypeFetcherGeneratorTest {
     private static ErrorChannel sakPayloadChannel() {
         // Mirrors the SakPayload(String data, List<?> errors) shape used by
         // ErrorChannelClassificationTest. The mappedErrorTypes list is empty here because the
-        // catch-arm emission only walks errorsSlotIndex + defaultedSlots + mappingsConstantName;
+        // catch-arm emission only walks errorsSlot + defaultedSlots + mappingsConstantName;
         // the channel's @error classes don't need to be resolved for the lambda print.
         return new ErrorChannel(
             List.of(),
             ClassName.bestGuess("com.example.SakPayload"),
-            1,
+            new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
             List.of(
                 new no.sikt.graphitron.rewrite.model.DefaultedSlot(
                     0, "data", ClassName.get("java.lang", "String"), "null")),
@@ -1025,7 +1025,7 @@ class TypeFetcherGeneratorTest {
         var channel = new ErrorChannel(
             List.of(validationErr),
             ClassName.bestGuess("com.example.SakPayload"),
-            1,
+            new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
             List.of(new no.sikt.graphitron.rewrite.model.DefaultedSlot(
                 0, "data", ClassName.get("java.lang", "String"), "null")),
             "SAK_PAYLOAD");
