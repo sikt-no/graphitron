@@ -1032,7 +1032,9 @@ class GraphitronSchemaBuilderTest {
             """
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
-                language: Language @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
+                language: Language
+                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
+                    @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query { film: Film }
             """,
@@ -1044,7 +1046,9 @@ class GraphitronSchemaBuilderTest {
             """
             type Actor @table(name: "actor") { name: String }
             type Film @table(name: "film") {
-                actors: [Actor!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
+                actors: [Actor!]!
+                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
             }
             type Query { film: Film }
             """,
@@ -1058,7 +1062,9 @@ class GraphitronSchemaBuilderTest {
             type ActorEdge { node: Actor cursor: String }
             type ActorConnection { edges: [ActorEdge] }
             type Film @table(name: "film") {
-                actors: ActorConnection @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
+                actors: ActorConnection
+                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
             }
             type Query { film: Film }
             """,
@@ -1083,6 +1089,40 @@ class GraphitronSchemaBuilderTest {
                 var field = (TableMethodField) schema.field("Film", "language");
                 assertThat(field.joinPath()).hasSize(1);
                 assertThat(field.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+            }),
+
+        WITH_AUTO_FK_INFERENCE(
+            "@tableMethod without @reference and exactly one FK between parent and target table → single-hop FkJoin auto-inferred",
+            """
+            type Film @table(name: "film") { title: String }
+            type Inventory @table(name: "inventory") {
+                film: Film @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilm")
+            }
+            type Query { inventory: Inventory }
+            """,
+            schema -> {
+                var field = (TableMethodField) schema.field("Inventory", "film");
+                assertThat(field.joinPath()).hasSize(1);
+                assertThat(field.joinPath().get(0)).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(((JoinStep.FkJoin) field.joinPath().get(0)).targetTable().tableName())
+                    .isEqualToIgnoringCase("film");
+            }),
+
+        WITH_CONDITION_PATH(
+            "@tableMethod + @reference(path:[{condition:...}]) resolves to a ConditionJoin",
+            """
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+                actor: Actor
+                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
+                    @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}])
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var field = (TableMethodField) schema.field("Film", "actor");
+                assertThat(field.joinPath()).hasSize(1);
+                assertThat(field.joinPath().get(0)).isInstanceOf(JoinStep.ConditionJoin.class);
             });
 
         final String sdl;
@@ -2801,6 +2841,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") {
                 language: Language
                     @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguageWithContext", contextArguments: ["tenantId"])
+                    @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query { film: Film }
             """,
@@ -6090,6 +6131,61 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
                     .isEqualTo("@tableMethod requires a @table-annotated return type");
+            }),
+
+        TABLEMETHOD_CHILD_AMBIGUOUS_FK_REJECTED(
+            "@tableMethod on a child of a @table parent with multiple FKs between parent and target and no @reference → UnclassifiedField (R43 commit 2)",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "language");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("multiple foreign keys")
+                    .contains("'film'")
+                    .contains("'language'");
+            }),
+
+        TABLEMETHOD_CHILD_MISSING_FK_REJECTED(
+            "@tableMethod on a child of a @table parent with no FK between parent and target and no @reference → UnclassifiedField (R43 commit 2)",
+            """
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "actors");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("no foreign key")
+                    .contains("'film'")
+                    .contains("'actor'");
+            }),
+
+        TABLEMETHOD_CHILD_LAST_HOP_MISMATCH_REJECTED(
+            "@tableMethod with @reference whose last hop lands on a table other than the return-type table → UnclassifiedField (R43 commit 2)",
+            """
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+                wrongTarget: Actor
+                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getActor")
+                    @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "wrongTarget");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("last hop lands on 'language'")
+                    .contains("'actor'");
             }),
 
         SERVICE_WITH_WRONG_RETURN_TYPE_REJECTED(
