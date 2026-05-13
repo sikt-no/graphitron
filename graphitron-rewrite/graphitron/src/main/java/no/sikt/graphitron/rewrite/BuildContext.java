@@ -818,17 +818,15 @@ class BuildContext {
                     ? new PerFieldOutcome.NonPkNullable(fieldName)
                     : new PerFieldOutcome.NonPkNonNullable(fieldName);
             }
-            case ChildField.ColumnReferenceField crf -> {
+            case ChildField.ColumnReferenceField crf ->
                 // Terminal column lives on a joined target table; after DELETE no follow-up join
-                // can run. Treated as non-PK-resolvable regardless of whether the FK source
-                // column happens to be in the input @table's PK.
-                yield fieldNullable
-                    ? new PerFieldOutcome.NonPkNullable(fieldName)
-                    : new PerFieldOutcome.NonPkNonNullable(fieldName);
-            }
-            case ChildField.CompositeColumnReferenceField ignored -> fieldNullable
-                ? new PerFieldOutcome.NonPkNullable(fieldName)
-                : new PerFieldOutcome.NonPkNonNullable(fieldName);
+                // can run. The runtime fetcher reads aliased joined columns off the source Record,
+                // which the DELETE carrier's synthesized PK-only Record cannot supply — even on
+                // nullable SDL fields the per-field ColumnFetcher would throw at runtime. Reject
+                // the carrier rather than silently breaking the SDL field at fetch time.
+                new PerFieldOutcome.UnsupportedField(fieldName, "ColumnReferenceField (FK reference; resolving requires a follow-up join that DELETE cannot run)");
+            case ChildField.CompositeColumnReferenceField ignored ->
+                new PerFieldOutcome.UnsupportedField(fieldName, "CompositeColumnReferenceField (composite FK reference; resolving requires a follow-up join that DELETE cannot run)");
             case ChildField.ServiceTableField ignored -> new PerFieldOutcome.ServiceField(fieldName);
             case ChildField.ServiceRecordField ignored -> new PerFieldOutcome.ServiceField(fieldName);
             case GraphitronField.UnclassifiedField ignored ->

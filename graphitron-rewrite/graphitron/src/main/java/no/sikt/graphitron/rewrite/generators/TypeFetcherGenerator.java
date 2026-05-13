@@ -3703,9 +3703,30 @@ public class TypeFetcherGenerator {
             case INSERT -> buildRecordInsertChain(tia, tableRef, tablesOnly, tableLocal);
             case UPDATE -> buildRecordUpdateChain(tia, tableRef, tablesOnly, tableLocal);
             case UPSERT -> buildRecordUpsertChain(tia, tableRef, tablesOnly, tableLocal);
-            case DELETE -> throw new IllegalStateException(
-                "MutationDmlRecordField with DmlKind.DELETE — classifier should have rejected this");
+            case DELETE -> buildRecordDeleteChain(tia, tableRef, tablesOnly, tableLocal);
         };
+    }
+
+    /**
+     * R156 — DELETE chain for a single-input {@link MutationField.MutationDmlRecordField} carrier.
+     * Mirrors the direct-return DELETE chain ({@link #buildMutationDeleteFetcher}): same WHERE
+     * shape from the input @table's PK / @lookupKey columns, no SET clause. The enclosing
+     * {@link #buildMutationDmlRecordFetcher} adds {@code .returningResult(pkCols)} so the
+     * fetcher's value (consumed by the per-field
+     * {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning}
+     * or {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning}
+     * carrier) is a PK-only RETURNING Record.
+     */
+    private static DmlChainAndGuards buildRecordDeleteChain(
+            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
+        var whereChunk = buildLookupWhereSingleRow(tia, tablesOnly, tableRef);
+        var preGuard = CodeBlock.builder().add(whereChunk.decodeLocals());
+        var chain = CodeBlock.builder()
+            .add(".deleteFrom($L)\n", tableLocal)
+            .add(".where(").add(whereChunk.whereExpr()).add(")\n")
+            .build();
+        return new DmlChainAndGuards(chain, preGuard.build());
     }
 
     private static DmlChainAndGuards buildRecordInsertChain(
@@ -3981,10 +4002,39 @@ public class TypeFetcherGenerator {
                 "MutationBulkDmlRecordField with DmlKind.UPSERT — compact-constructor should "
                 + "have rejected this; UPSERT is deferred to R145 under R144's cardinality-"
                 + "safety regime");
-            case DELETE -> throw new IllegalStateException(
-                "MutationBulkDmlRecordField with DmlKind.DELETE — compact-constructor should "
-                + "have rejected this; DELETE-with-payload-return is incorrect by construction");
+            case DELETE -> buildBulkRecordPerRowDeleteBody(
+                tia, tableRef, tablesOnly, tableLocal, pkCols, recordRowType);
         };
+    }
+
+    /**
+     * R156 — per-row DELETE body for {@link #buildBulkRecordPerRowBody}. Each input row builds a
+     * {@code deleteFrom(table).where(<lookup>).returningResult(PK).fetchOne()} statement; the
+     * returned PK-only {@code RecordN} is appended to the bulk accumulator in input order. A
+     * row that matches no target raises {@link IllegalStateException} with the same shape as the
+     * UPDATE no-match path — input-order preservation is a contract of the bulk-DML emit, and
+     * silent skipping would break it.
+     */
+    private static CodeBlock buildBulkRecordPerRowDeleteBody(
+            no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
+            TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
+            String tableLocal,
+            List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols,
+            TypeName recordRowType) {
+        var body = CodeBlock.builder();
+        var whereChunk = buildLookupWhereSingleRow(tia, tablesOnly, tableRef, "row");
+        body.add(whereChunk.decodeLocals());
+        body.add("$T rec = txd.deleteFrom($L)\n", recordRowType, tableLocal)
+            .add("    .where(").add(whereChunk.whereExpr()).add(")\n")
+            .add("    .returningResult(").add(buildPkFieldList(pkCols, tablesOnly, tableRef)).add(")\n")
+            .add("    .fetchOne();\n");
+        body.beginControlFlow("if (rec == null)")
+            .addStatement("throw new $T($S + row)", IllegalStateException.class,
+                "@mutation(typeName: DELETE) bulk row matched zero rows; @lookupKey filter "
+                    + "found no target for input row: ")
+            .endControlFlow();
+        body.add("acc.add(rec);\n");
+        return body.build();
     }
 
     private static CodeBlock buildBulkRecordPerRowInsertBody(
