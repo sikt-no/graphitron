@@ -108,7 +108,7 @@ class ClassNameCompletionsTest {
 
     @Test
     void tableMethodClassNameCompletesFqns() {
-        String source = "type Query { x: Int @tableMethod(tableMethodReference: {className: \"\", method: \"foo\"}) }\n";
+        String source = "type Query { x: Int @tableMethod(className: \"\", method: \"foo\") }\n";
         Point cursor = new Point(0, source.indexOf('"') + 1);
 
         var items = run(source, cursor, "tableMethod");

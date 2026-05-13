@@ -661,14 +661,13 @@ class TypeFetcherGeneratorTest {
         // return type is Result<Record> for a List-cardinality @table-bound return. Body-shape
         // properties (specific-table local, $fields projection, .from(table) call) are behavioural
         // and asserted at execution tier — see GraphQLQueryTest.queryTableMethod_popularFilms_*.
+        // After R43 the @tableMethod method has no Table parameter — graphitron derives the
+        // target table from the method's return type. Method takes only the GraphQL arg.
         var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             "popularFilms",
             ClassName.get("no.sikt.graphitron.rewrite.test.jooq.tables", "Film"),
             List.of(
-                new MethodRef.Param.Typed("filmTable",
-                    "no.sikt.graphitron.rewrite.test.jooq.tables.Film",
-                    new ParamSource.Table()),
                 new MethodRef.Param.Typed("minRentalRate", "java.lang.Double",
                     new ParamSource.Arg(new CallSiteExtraction.Direct(), no.sikt.graphitron.rewrite.PathExpr.head("minRentalRate")))));
         var field = new QueryField.QueryTableMethodTableField("Query", "popularFilms", null,

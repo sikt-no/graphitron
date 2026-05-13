@@ -374,9 +374,26 @@ directive @nodeId(
 
 
 """
-Specifies that the table that is used on the field should be the jOOQ table returned from the specified tableMethod
+Specifies that the table that is used on the field should be the jOOQ table returned from the specified tableMethod.
+
+The referenced static method receives GraphQL field arguments only — no parent or return-type
+Table is passed; graphitron derives the target table from the method's return type. Parent-table
+filtering is `@reference`'s job.
 """
-directive @tableMethod(tableMethodReference: ExternalCodeReference!, contextArguments: [String!]) on FIELD_DEFINITION
+directive @tableMethod(
+  """Fully-qualified Java class name carrying the static table method."""
+  className: String!
+  """Static method name; must return the generated jOOQ table class for the field's `@table`-bound return type."""
+  method: String!
+  """
+  Maps Java method parameters to GraphQL argument names. Each entry is
+  `javaParam: graphqlArg`; multiple entries are comma-separated. Unmentioned
+  parameters bind to a GraphQL argument of the same name (identity).
+  """
+  argMapping: String
+  """Names of context arguments to pass through to the method (parameter names must match)."""
+  contextArguments: [String!]
+) on FIELD_DEFINITION
 
 """
 Specifies how fields should be resolved for nested types. This would typically be used with non-resolvable federation entities.

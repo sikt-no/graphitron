@@ -165,10 +165,10 @@ type Query {
     # plan-service-root-fetchers.md: @tableMethod root fetcher. Developer returns a
     # Table<FilmRecord>; framework projects via FilmType.$fields(...).
     popularFilms(minRentalRate: Float!): [Film!]!
-        @tableMethod(tableMethodReference: {
+        @tableMethod(
             className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             method: "popularFilms"
-        })
+        )
     # plan-service-root-fetchers.md: @service root fetcher with @table-bound return.
     # Service hands back Result<FilmRecord> directly; framework does no projection.
     filmsByService(ids: [Int!]!): [Film!]!

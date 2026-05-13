@@ -57,7 +57,7 @@ class ServiceRootFetcherPipelineTest {
             type Film @table(name: "film") { title: String }
             type Query {
                 wider: [Film!]!
-                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get"})
+                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "get")
             }
             """);
 

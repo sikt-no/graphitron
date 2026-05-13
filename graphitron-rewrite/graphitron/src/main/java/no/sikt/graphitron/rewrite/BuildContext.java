@@ -100,7 +100,6 @@ class BuildContext {
     static final String ARG_CONTEXT_ARGUMENTS  = "contextArguments";
     static final String ARG_RECORD             = "record";
     static final String ARG_SERVICE_REF        = "service";
-    static final String ARG_TABLE_METHOD_REF   = "tableMethodReference";
     static final String ARG_EXTERNAL_FIELD_REF = "reference";
     static final String ARG_METHOD             = "method";
     static final String ARG_ARG_MAPPING        = "argMapping";
@@ -1207,7 +1206,8 @@ class BuildContext {
                 "path-step @condition: " + p.message());
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
-        var result = svc.reflectTableMethod(className, methodName, argBindings, Set.of(), null);
+        var result = svc.reflectTableMethod(className, methodName, argBindings, Set.of(), null,
+            ServiceCatalog.TableSlotPolicy.REQUIRED);
         return result.failed() ? new ConditionResolution(null, null) : new ConditionResolution(result.ref(), null);
     }
 
@@ -1299,7 +1299,8 @@ class BuildContext {
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
-            argBindings, Set.copyOf(cond.contextArguments()), null);
+            argBindings, Set.copyOf(cond.contextArguments()), null,
+            ServiceCatalog.TableSlotPolicy.REQUIRED);
         if (result.failed()) {
             errors.add("input field '" + inputFieldName + "' @condition: " + result.rejection().message());
             return Optional.empty();

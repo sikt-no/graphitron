@@ -10,8 +10,11 @@ import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_TABLE_METHOD_REF;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARG_MAPPING;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
 
@@ -111,14 +114,25 @@ final class TableMethodDirectiveResolver {
             return new Resolved.Rejected(Rejection.invalidSchema("@tableMethod at the root does not support Connection return types — use [T] or T instead"));
         }
 
-        FieldBuilder.ExternalRef ref = fb.parseExternalRef(parentTypeName, fieldDef, DIR_TABLE_METHOD, ARG_TABLE_METHOD_REF);
-        if (ref != null && ref.lookupError() != null) {
-            return new Resolved.Rejected(Rejection.structural("table method could not be resolved — " + ref.lookupError()));
+        var dir = fieldDef.getAppliedDirective(DIR_TABLE_METHOD);
+        if (dir == null) {
+            // Caller pre-checked hasAppliedDirective; reaching here is a classifier bug.
+            throw new IllegalStateException(
+                "TableMethodDirectiveResolver invoked on field without @tableMethod: "
+                + parentTypeName + "." + fieldDef.getName());
         }
-        if (ref != null && ref.argMappingError() != null) {
-            return new Resolved.Rejected(Rejection.structural("table method could not be resolved — @tableMethod " + ref.argMappingError()));
+        String className = Optional.ofNullable(dir.getArgument(ARG_CLASS_NAME))
+            .map(a -> a.getValue()).map(Object::toString).orElse(null);
+        String methodName = Optional.ofNullable(dir.getArgument(ARG_METHOD))
+            .map(a -> a.getValue()).map(Object::toString).orElse(null);
+        String rawArgMapping = Optional.ofNullable(dir.getArgument(ARG_ARG_MAPPING))
+            .map(a -> a.getValue()).map(Object::toString).orElse(null);
+
+        var parsedMapping = ArgBindingMap.parseArgMapping(rawArgMapping);
+        if (parsedMapping instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
+            return new Resolved.Rejected(Rejection.structural("table method could not be resolved — @tableMethod " + pe.message()));
         }
-        var argMapping = ref != null ? ref.argMapping() : Map.<String, List<String>>of();
+        Map<String, List<String>> argMapping = ((ArgBindingMap.ParsedArgMapping.Ok) parsedMapping).overrides();
         var argBindingsResult = ArgBindingMap.of(FieldBuilder.argSlotTypes(fieldDef), argMapping);
         if (argBindingsResult instanceof ArgBindingMap.Result.UnknownArgRef u) {
             return new Resolved.Rejected(Rejection.structural("table method could not be resolved — @tableMethod " + u.message()));
@@ -135,10 +149,10 @@ final class TableMethodDirectiveResolver {
         ClassName expectedReturnClass = tableBoundReturnType.table().tableClass();
 
         var result = svc.reflectTableMethod(
-            ref != null ? ref.className() : null,
-            ref != null ? ref.methodName() : null,
+            className, methodName,
             argBindings, new HashSet<>(contextArgs),
-            expectedReturnClass);
+            expectedReturnClass,
+            ServiceCatalog.TableSlotPolicy.FORBIDDEN);
         if (result.failed()) {
             return new Resolved.Rejected(result.rejection().prefixedWith("table method could not be resolved — "));
         }

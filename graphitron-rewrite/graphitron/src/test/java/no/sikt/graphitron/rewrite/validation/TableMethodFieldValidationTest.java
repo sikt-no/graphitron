@@ -83,7 +83,7 @@ class TableMethodFieldValidationTest {
             type Film @table(name: "film") { title: String }
             type Query {
                 films: [Film!]!
-                    @tableMethod(tableMethodReference: {className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilmInstance"})
+                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilmInstance")
             }
             """);
 
