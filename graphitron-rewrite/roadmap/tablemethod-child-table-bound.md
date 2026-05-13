@@ -1,11 +1,12 @@
 ---
 id: R43
 title: "Stub: child `@tableMethod` with table-bound return (`TableMethodField`)"
-status: Ready
+status: In Progress
 bucket: stubs
 priority: 4
 theme: model-cleanup
 depends-on: []
+last-updated: 2026-05-13
 ---
 
 # Stub: child `@tableMethod` with table-bound return (`TableMethodField`)
