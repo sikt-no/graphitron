@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
@@ -92,11 +93,18 @@ public class TypeClassGenerator {
             .map(f -> (ChildField.ComputedField) f)
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
-        // Split* fields don't appear in $fields (they're handled by DataLoader-backed fetchers),
-        // but their SourceKey columns must land in the parent SELECT so key extraction reads
-        // non-null values off env.getSource(). Recurse into NestingField.nestedFields() so nested
-        // Split fields' SourceKey columns are also projected by the outer parent's SELECT.
-        var requiredProjectionColumns = collectSourceKeyColumns(schema.fieldsOf(typeName))
+        // Fields whose fetchers read parent-row columns the parent SELECT would not otherwise
+        // project must opt those columns into $fields explicitly:
+        //   - Split* fields (DataLoader-backed; they don't appear in $fields) — their SourceKey
+        //     columns must land in the parent SELECT so key extraction reads non-null values
+        //     off env.getSource().
+        //   - TableMethodField on a table-bound parent — buildChildTableMethodFetcher correlates
+        //     via parentRecord.get(DSL.name("<sourceSqlName>"), …) on the FK's source-side
+        //     columns; without this injection, the read throws IllegalArgumentException when the
+        //     user didn't request the FK column in their SDL selection.
+        // Recurse into NestingField.nestedFields() so nested fields' required columns are also
+        // projected by the outer parent's SELECT.
+        var requiredProjectionColumns = collectRequiredProjectionColumns(schema.fieldsOf(typeName))
             .distinct()
             .toList();
         return buildTypeSpec(typeName, type.table(), columnFields, compositeColumnFields, columnReferenceFields, tableFields, lookupTableFields, nestingFields, computedFields, requiredProjectionColumns, outputPackage);
@@ -207,10 +215,11 @@ public class TypeClassGenerator {
         flat.addAll(computedFields);
         emitSelectionSwitch(builder, 0, flat, "table", entryType, outputPackage);
 
-        // Required-projection set: SourceKey columns of every DataLoader-backed Split* child on
-        // this type must land in the SELECT regardless of selection, so parent key extraction
-        // in the fetcher reads non-null values. Dedup at runtime against whatever the selection
-        // switch appended (jOOQ Field identity on the aliased table).
+        // Required-projection set: columns the parent SELECT must include regardless of the
+        // user's SDL selection — SourceKey columns for DataLoader-backed Split* children, FK
+        // source-side columns for child @tableMethod fields (see collectRequiredProjectionColumns
+        // for the full taxonomy). Dedup at runtime against whatever the selection switch appended
+        // (jOOQ Field identity on the aliased table).
         for (ColumnRef col : requiredProjectionColumns) {
             builder.addStatement("if (!fields.contains(table.$L)) fields.add(table.$L)",
                 col.javaName(), col.javaName());
@@ -297,14 +306,40 @@ public class TypeClassGenerator {
     private static String sfName(int depth) { return depth == 0 ? "sf" : "sf" + depth; }
     private static String entryName(int depth) { return depth == 0 ? "entry" : "entry" + depth; }
 
-    private static java.util.stream.Stream<ColumnRef> collectSourceKeyColumns(List<? extends GraphitronField> fields) {
+    /**
+     * Walks the children of a type and surfaces every column the parent SELECT must project
+     * regardless of the user's SDL selection. Two sources today:
+     *
+     * <ul>
+     *   <li>Split* fields' {@code SourceKey} columns — their fetchers extract the parent-row
+     *       key off {@code env.getSource()} after the parent {@code $fields()} SELECT runs.</li>
+     *   <li>{@link ChildField.TableMethodField} on a table-bound parent — the fetcher built by
+     *       {@code TypeFetcherGenerator.buildChildTableMethodFetcher} correlates the developer's
+     *       returned table against the parent via {@code parentRecord.get(DSL.name("<src>"), …)}
+     *       on the resolved FK's source-side columns. Only the single-hop {@link JoinStep.FkJoin}
+     *       shape is projected: multi-hop and {@code ConditionJoin} paths surface a runtime
+     *       {@code UnsupportedOperationException} in the emitter, so projecting their first hop
+     *       would synthesise dead columns.</li>
+     * </ul>
+     *
+     * <p>Recurses into {@link ChildField.NestingField} so nested fields whose fetchers need
+     * parent-row columns get those columns into the outer table-class's {@code $fields}.
+     */
+    private static java.util.stream.Stream<ColumnRef> collectRequiredProjectionColumns(List<? extends GraphitronField> fields) {
         return fields.stream().flatMap(f -> {
             if (f instanceof ChildField.SplitTableField stf)
                 return stf.sourceKey().columns().stream();
             if (f instanceof ChildField.SplitLookupTableField slf)
                 return slf.sourceKey().columns().stream();
+            if (f instanceof ChildField.TableMethodField tmf) {
+                var path = tmf.joinPath();
+                if (path.size() == 1 && path.get(0) instanceof JoinStep.FkJoin fk) {
+                    return fk.sourceSideColumns().stream();
+                }
+                return java.util.stream.Stream.empty();
+            }
             if (f instanceof ChildField.NestingField nf)
-                return collectSourceKeyColumns(nf.nestedFields());
+                return collectRequiredProjectionColumns(nf.nestedFields());
             return java.util.stream.Stream.empty();
         });
     }

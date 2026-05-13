@@ -381,6 +381,54 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void inventoryById_filmViaTableMethod_correlatesParentRowViaInjectedFkProjection() {
+        // R43 FK-projection sub-commit: the child @tableMethod fetcher reads
+        // parentRecord.get(DSL.name("film_id"), …) for the parent-row correlation. Without
+        // TypeClassGenerator.collectRequiredProjectionColumns injecting Inventory.film_id into
+        // the parent SELECT, the read throws IllegalArgumentException because the user's SDL
+        // selection (inventoryId, filmViaTableMethod { ... }) doesn't request inventory.film_id.
+        // Seed: inventory_id N -> film_id N for N in {1, 2, 3}, with film_id N's title pinned
+        // by the sakila init seed.
+        Map<String, Object> data = execute(
+            "{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmViaTableMethod { filmId title } } }");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("inventoryById");
+        assertThat(rows).hasSize(3);
+        Map<Integer, String> expectedTitleByFilmId = Map.of(
+            1, "ACADEMY DINOSAUR",
+            2, "ACE GOLDFINGER",
+            3, "ADAPTATION HOLES");
+        for (var row : rows) {
+            int inventoryId = (Integer) row.get("inventoryId");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> film = (Map<String, Object>) row.get("filmViaTableMethod");
+            assertThat(film).extractingByKey("filmId").isEqualTo(inventoryId);
+            assertThat(film).extractingByKey("title").isEqualTo(expectedTitleByFilmId.get(inventoryId));
+        }
+    }
+
+    @Test
+    void filmById_languageViaTableMethod_correlatesParentRowViaExplicitReferencePathFk() {
+        // R43 FK-projection sub-commit (explicit @reference path arm): Film.languageViaTableMethod
+        // uses @reference(path: [{key: "film_language_id_fkey"}]); the resolved FK's source-side
+        // column is film.language_id. The same projection-injection mechanism applies — the parent
+        // SELECT must carry language_id even when the user's SDL selection omits it.
+        // All seeded films have language_id=1; seeded language with language_id=1 has name "English".
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId languageViaTableMethod { languageId name } } }");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("filmById");
+        assertThat(rows).hasSize(2);
+        for (var row : rows) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> language = (Map<String, Object>) row.get("languageViaTableMethod");
+            assertThat(language).extractingByKey("languageId").isEqualTo(1);
+            // language.name is char(20) in Sakila; PostgreSQL pads with spaces — strip before compare.
+            assertThat(((String) language.get("name")).strip()).isEqualTo("English");
+        }
+    }
+
+    @Test
     void filmCardWrapper_recordExample_resolvesAllThreeAccessorArms() {
         // R88 execution-tier fixture: a @record-Java-backed type whose three SDL fields each
         // exercise a different accessor-resolution arm — bare-name (Java record component
