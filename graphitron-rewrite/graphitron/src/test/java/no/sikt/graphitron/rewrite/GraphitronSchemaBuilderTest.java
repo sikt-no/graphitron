@@ -5964,6 +5964,22 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
                 assertThat(f.reason()).contains("@value is not valid", "DELETE");
+            }),
+
+        R144_VALUE_WITH_CONDITION_REJECTED(
+            "R144: @value and @condition on the same input field → UnclassifiedField (mutually exclusive)",
+            """
+            type Film @table(name: "film") { title: String, rating: String }
+            input FilmInput @table(name: "film") {
+                filmId: Int! @field(name: "film_id") @value
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"})
+            }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
+                assertThat(f.reason()).contains("@value and @condition", "mutually exclusive");
             });
 
         final String description;
