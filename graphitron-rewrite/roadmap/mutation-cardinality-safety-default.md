@@ -1,11 +1,12 @@
 ---
 id: R144
 title: "Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with multiRow:"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 6
 theme: mutations-errors
 depends-on: []
+last-updated: 2026-05-13
 ---
 
 # Default DELETE / UPDATE inputs to unique-key cardinality safety; opt out with multiRow:
@@ -276,10 +277,18 @@ UPDATE (modulo `@value` exclusion on UPDATE), so `lookupNames` would
 contain every field name and `setFields` would always derive empty.
 Every downstream emitter that walks `tia.setFields()`
 (`TypeFetcherGenerator` at `:1734`, `:1776`, `:1810`, `:1855`, `:1880`,
-`:1898`, `:2043`, `:2053`, `:2109`, `:3453`, `:3490`; `FieldBuilder` at
-`:1161`; `LookupMappingResolver` at `:86`) would then walk an empty set
-on UPDATE and emit an UPDATE with no SET clause. This is a real
-correctness break, not a cosmetic one.
+`:1898`, `:2043`, `:2053`, `:2109`, `:3453`, `:3490`) would then walk an
+empty set on UPDATE and emit an UPDATE with no SET clause. This is a
+real correctness break, not a cosmetic one. `FieldBuilder.java:1161`
+and `LookupMappingResolver.java:86` walk `tia.fieldBindings()`, not
+`setFields()`, and are unaffected by the partition-source change: they
+consume `fieldBindings` to know which input fields are WHERE-bound (the
+former to suppress implicit `@condition` predicates on lookup-bound
+fields, the latter to flatten map bindings into `LookupArg.MapInput`
+slots). Under the polarity flip `fieldBindings` widens to cover every
+admissible DELETE / UPDATE input field (modulo `@value` on UPDATE),
+which is exactly the WHERE-bound set both sites need. No new audit-key
+wiring is required at those two sites.
 
 `TableInputArg.of` re-derives the partition from `@value` presence on
 UPDATE rather than from `fieldBindings` membership. Two viable shapes:
