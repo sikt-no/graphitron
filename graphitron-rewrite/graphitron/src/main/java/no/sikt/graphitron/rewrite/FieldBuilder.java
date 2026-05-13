@@ -3935,17 +3935,26 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_TABLE_METHOD)) {
-            var tableMethodPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), null);
-            if (tableMethodPath.hasError()) {
-                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tableMethodPath.errorMessage()));
-            }
             return switch (tableMethodResolver.resolve(parentTypeName, fieldDef, false)) {
                 case TableMethodDirectiveResolver.Resolved.Rejected r ->
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
-                case TableMethodDirectiveResolver.Resolved.TableBound tb ->
-                    buildMethodBackedWithChannel(tb.returnType(), tb.method(),
+                case TableMethodDirectiveResolver.Resolved.TableBound tb -> {
+                    String targetTableName = tb.returnType().table().tableName();
+                    var tableMethodPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), targetTableName, buildWrapper(fieldDef).isList());
+                    if (tableMethodPath.hasError()) {
+                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tableMethodPath.errorMessage()));
+                    }
+                    var pathElements = tableMethodPath.elements();
+                    if (!pathElements.isEmpty() && pathElements.getLast() instanceof JoinStep.FkJoin lastFk
+                        && !lastFk.targetTable().tableName().equalsIgnoreCase(targetTableName)) {
+                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                            "@tableMethod @reference path: last hop lands on '" + lastFk.targetTable().tableName()
+                            + "' but @tableMethod's return type is bound to table '" + targetTableName + "'"));
+                    }
+                    yield buildMethodBackedWithChannel(tb.returnType(), tb.method(),
                         parentTypeName, name, location, fieldDef,
-                        ch -> new TableMethodField(parentTypeName, name, location, tb.returnType(), tableMethodPath.elements(), tb.method(), ch));
+                        ch -> new TableMethodField(parentTypeName, name, location, tb.returnType(), pathElements, tb.method(), ch));
+                }
             };
         }
 
