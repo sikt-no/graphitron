@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.generators.TypeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
+import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import org.junit.jupiter.api.Test;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
@@ -84,5 +86,54 @@ class TableMethodFieldPipelineTest {
             .as("body dispatches to the developer-authored static @tableMethod method")
             .contains("TestTableMethodStub")
             .contains("getLanguage");
+    }
+
+    /**
+     * FK-projection injection: the parent type class's {@code $fields} method must project the
+     * FK source-side column even when the user's SDL selection doesn't request it, otherwise the
+     * fetcher's {@code parentRecord.get(DSL.name("<src>"), …)} read throws
+     * {@code IllegalArgumentException} at runtime. Mirrors the synthesis that Split* fields
+     * already get via {@code TypeClassGenerator.collectRequiredProjectionColumns}.
+     */
+    @Test
+    void singleFkAutoInferred_parentDollarFieldsProjectsFkSourceColumn() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type Inventory @table(name: "inventory") {
+                film: Film @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilm")
+            }
+            type Query { inventory: Inventory }
+            """);
+
+        var inventoryClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals("Inventory"))
+            .findFirst()
+            .orElseThrow();
+
+        assertThat(TypeSpecAssertions.appendsRequiredColumn(inventoryClass, "FILM_ID"))
+            .as("parent $fields injects the FK source-side column the child @tableMethod fetcher reads")
+            .isTrue();
+    }
+
+    @Test
+    void explicitReferencePathSingleHopFk_parentDollarFieldsProjectsFkSourceColumn() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language
+                    @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
+                    @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { film: Film }
+            """);
+
+        var filmClass = TypeClassGenerator.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals("Film"))
+            .findFirst()
+            .orElseThrow();
+
+        assertThat(TypeSpecAssertions.appendsRequiredColumn(filmClass, "LANGUAGE_ID"))
+            .as("parent $fields injects the FK source-side column resolved from the explicit @reference path")
+            .isTrue();
     }
 }
