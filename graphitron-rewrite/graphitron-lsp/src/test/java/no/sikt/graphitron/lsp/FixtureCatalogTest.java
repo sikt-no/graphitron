@@ -166,8 +166,8 @@ class FixtureCatalogTest {
     private static LspSchemaSnapshot fooFilmSnapshot() {
         return new LspSchemaSnapshot.Built.Current(
             java.util.List.of(),
-            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film"))
-        );
+            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
+        Map.of());
     }
 
     // ---- Helpers ----

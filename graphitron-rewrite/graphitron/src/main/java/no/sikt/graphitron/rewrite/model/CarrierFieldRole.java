@@ -24,8 +24,16 @@ public sealed interface CarrierFieldRole {
      * operation's {@code @table} (or, for the {@code @service} carrier path, the method's
      * reflected record return). The {@link DataElement} arm discriminates the element kind;
      * the wrapper lives on the element arm.
+     *
+     * <p>R159 — {@code sourceSigil} carries the carrier walk's parse decision for the
+     * data field's optional {@code @field(name: "$source")} directive: {@code true} when
+     * the author opted into the upstream-root binding sigil, {@code false} for the
+     * implicit binding (no {@code @field} directive, or {@code @field} with a bare name).
+     * The bit is read downstream by the type-match validator in {@code FieldBuilder} so
+     * the SDL directive is parsed exactly once at carrier-walk time. Always {@code false}
+     * for {@link DataElement.Id} carriers (the sigil is not admitted there).
      */
-    record DataChannel(String fieldName, DataElement element) implements CarrierFieldRole {}
+    record DataChannel(String fieldName, DataElement element, boolean sourceSigil) implements CarrierFieldRole {}
 
     /**
      * The error-channel field: the carrier-side {@code errors: [SomeError!]!} field whose

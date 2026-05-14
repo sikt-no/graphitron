@@ -79,10 +79,14 @@ public final class FieldCompletions {
             return List.of();
         }
         // R159: at the carrier-payload data field site, prepend $source as a top-level completion.
-        // Snapshot-uncertainty rule: when the parent type has no entry in the carrier projection,
-        // do not suggest the sigil (the snapshot's view is "shape unknown" today).
+        // The snapshot owns the (typeName, fieldName) -> SiteContext classification through
+        // siteContext(); we route the predicate through sourceSigilDefinedAt rather than reading
+        // the underlying projection ourselves. Snapshot-uncertainty rule: when the parent type
+        // has no entry in the carrier projection, siteContext returns Other and the sigil is
+        // not suggested.
         boolean isCarrierDataField = fieldName != null
-            && built.carrierDataField(typeName).filter(n -> n.equals(fieldName)).isPresent();
+            && no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilDefinedAt(
+                built.siteContext(typeName, fieldName));
         var sigilItems = isCarrierDataField ? List.of(sourceSigilItem(context)) : List.<CompletionItem>of();
         var backing = built.typesByName().get(typeName);
         if (backing == null) return sigilItems;

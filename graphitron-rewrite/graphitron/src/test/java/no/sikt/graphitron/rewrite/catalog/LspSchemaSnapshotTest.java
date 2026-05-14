@@ -28,7 +28,7 @@ class LspSchemaSnapshotTest {
     @Test
     void builtCurrentDirectiveLookupIsCaseSensitive() {
         var shape = new DirectiveShape("key", List.of(), Optional.empty());
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(shape), Map.of());
+        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(shape), Map.of(), Map.of());
 
         assertThat(snapshot.directive("key")).contains(shape);
         assertThat(snapshot.directive("Key")).isEmpty();
@@ -38,7 +38,7 @@ class LspSchemaSnapshotTest {
     @Test
     void builtPreviousDirectiveLookupBehavesIdentically() {
         var shape = new DirectiveShape("key", List.of(), Optional.empty());
-        var snapshot = new LspSchemaSnapshot.Built.Previous(List.of(shape), Map.of());
+        var snapshot = new LspSchemaSnapshot.Built.Previous(List.of(shape), Map.of(), Map.of());
 
         assertThat(snapshot.directive("key")).contains(shape);
         assertThat(snapshot.directive("Key")).isEmpty();
@@ -48,7 +48,7 @@ class LspSchemaSnapshotTest {
     void builtDirectivesAreUnmodifiable() {
         var shape = new DirectiveShape("key", List.of(), Optional.empty());
         var mutable = new java.util.ArrayList<>(List.of(shape));
-        var snapshot = new LspSchemaSnapshot.Built.Current(mutable, Map.of());
+        var snapshot = new LspSchemaSnapshot.Built.Current(mutable, Map.of(), Map.of());
 
         assertThatThrownBy(() -> snapshot.directives().add(
             new DirectiveShape("other", List.of(), Optional.empty())))
@@ -59,7 +59,7 @@ class LspSchemaSnapshotTest {
     void builtCurrentDefensivelyCopiesItsDirectivesList() {
         var shape = new DirectiveShape("key", List.of(), Optional.empty());
         var mutable = new java.util.ArrayList<>(List.of(shape));
-        var snapshot = new LspSchemaSnapshot.Built.Current(mutable, Map.of());
+        var snapshot = new LspSchemaSnapshot.Built.Current(mutable, Map.of(), Map.of());
 
         mutable.clear();
 

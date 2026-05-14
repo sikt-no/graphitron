@@ -965,7 +965,7 @@ class BuildContext {
         }
 
         return new CarrierFieldClassification.Role(
-            new CarrierFieldRole.DataChannel(dataFieldName, dataElement));
+            new CarrierFieldRole.DataChannel(dataFieldName, dataElement, fieldIsSourceSigil));
     }
 
     // ===== Error-message helpers =====
