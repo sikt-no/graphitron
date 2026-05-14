@@ -59,7 +59,10 @@ public final class FieldCompletions {
         if (typeName.isEmpty()) {
             return List.of();
         }
-        return completionsFor(data, snapshot, context, typeName.get());
+        var fieldName = TypeContext.enclosingFieldDefinition(directive.outer())
+            .flatMap(fd -> TypeContext.fieldNameOf(fd, source))
+            .orElse(null);
+        return completionsFor(data, snapshot, context, typeName.get(), fieldName);
     }
 
     @DependsOnClassifierCheck(
@@ -69,21 +72,42 @@ public final class FieldCompletions {
             + "re-checking that the backing class is in fact a record."
     )
     private static List<CompletionItem> completionsFor(
-        CompletionData data, LspSchemaSnapshot snapshot, CompletionContext context, String typeName
+        CompletionData data, LspSchemaSnapshot snapshot, CompletionContext context,
+        String typeName, String fieldName
     ) {
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) {
             return List.of();
         }
+        // R159: at the carrier-payload data field site, prepend $source as a top-level completion.
+        // Snapshot-uncertainty rule: when the parent type has no entry in the carrier projection,
+        // do not suggest the sigil (the snapshot's view is "shape unknown" today).
+        boolean isCarrierDataField = fieldName != null
+            && built.carrierDataField(typeName).filter(n -> n.equals(fieldName)).isPresent();
+        var sigilItems = isCarrierDataField ? List.of(sourceSigilItem(context)) : List.<CompletionItem>of();
         var backing = built.typesByName().get(typeName);
-        if (backing == null) return List.of();
-        return switch (backing) {
+        if (backing == null) return sigilItems;
+        var rest = switch (backing) {
             case TypeBackingShape.RecordBacking r -> memberSlotItems(r.components(), context);
             case TypeBackingShape.PojoBacking p -> memberSlotItems(p.accessors(), context);
             case TypeBackingShape.JooqRecordBacking.WithTable j -> tableColumnItems(data, j.tableName(), context);
-            case TypeBackingShape.JooqRecordBacking.Standalone ignored -> List.of();
+            case TypeBackingShape.JooqRecordBacking.Standalone ignored -> List.<CompletionItem>of();
             case TypeBackingShape.TableBacking t -> tableColumnItems(data, t.tableName(), context);
-            case TypeBackingShape.NoBacking ignored -> List.of();
+            case TypeBackingShape.NoBacking ignored -> List.<CompletionItem>of();
         };
+        if (sigilItems.isEmpty()) return rest;
+        var combined = new java.util.ArrayList<CompletionItem>(sigilItems.size() + rest.size());
+        combined.addAll(sigilItems);
+        combined.addAll(rest);
+        return List.copyOf(combined);
+    }
+
+    private static CompletionItem sourceSigilItem(CompletionContext context) {
+        var item = new CompletionItem(no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL);
+        item.setKind(CompletionItemKind.Keyword);
+        item.setDetail("Root-value sigil — bind to the upstream Java value as a whole (R159)");
+        item.setTextEdit(Either.forLeft(new TextEdit(context.replaceRange(),
+            no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL)));
+        return item;
     }
 
     private static List<CompletionItem> tableColumnItems(

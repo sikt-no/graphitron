@@ -232,6 +232,80 @@ class FieldCompletionsTest {
         assertThat(items).isEmpty();
     }
 
+    // ===== R159 — $source sigil completion =====
+
+    @Test
+    void sourceSigil_atCarrierDataField_isSuggested() {
+        // Carrier projection declares FilmListPayload.films as the carrier data field; the
+        // parent's TypeBackingShape is NoBacking.UnbackedResult (the promoted-Pojo carrier
+        // shape). $source ships as the only completion (no column / accessor list applies on
+        // NoBacking).
+        String source = """
+            type FilmListPayload {
+                films: [Film!] @field(name: "")
+            }
+            """;
+        int line = 1;
+        int col = source.split("\n")[line].indexOf('"') + 1;
+        Point cursor = new Point(line, col);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            Map.of("FilmListPayload", new TypeBackingShape.NoBacking.UnbackedResult()),
+            Map.of("FilmListPayload", "films")
+        );
+        var items = run(filmCatalog(), snapshot, source, cursor);
+
+        assertThat(items).extracting(c -> c.getLabel())
+            .containsExactly(no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL);
+    }
+
+    @Test
+    void sourceSigil_atNonCarrierSite_isNotSuggested() {
+        // Same SDL shape (a NoBacking.UnbackedResult parent), but no entry in the carrier
+        // projection — $source is NOT suggested. The LSP's narrow predicate matches the
+        // build's narrow predicate.
+        String source = """
+            type FilmListPayload {
+                films: [Film!] @field(name: "")
+            }
+            """;
+        int line = 1;
+        int col = source.split("\n")[line].indexOf('"') + 1;
+        Point cursor = new Point(line, col);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            Map.of("FilmListPayload", new TypeBackingShape.NoBacking.UnbackedResult()),
+            Map.of()
+        );
+        var items = run(filmCatalog(), snapshot, source, cursor);
+
+        assertThat(items).extracting(c -> c.getLabel())
+            .doesNotContain(no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL);
+    }
+
+    @Test
+    void sourceSigil_snapshotUncertainty_silent() {
+        // Parent type has no entry in typesByName AND no entry in carrierDataFieldByType:
+        // the snapshot's view is "shape unknown" (mid-edit / not-yet-classified rename).
+        // The LSP arm is silent on both axes — no completion, no diagnostic. Mirrors the
+        // existing snapshot-uncertainty behaviour for the column/accessor arms.
+        String source = """
+            type RenamedMidEdit {
+                films: [Film!] @field(name: "")
+            }
+            """;
+        int line = 1;
+        int col = source.split("\n")[line].indexOf('"') + 1;
+        Point cursor = new Point(line, col);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
+        var items = run(filmCatalog(), snapshot, source, cursor);
+
+        assertThat(items).isEmpty();
+    }
+
     private static LspSchemaSnapshot tableSnapshot(String typeName, String tableName) {
         return new LspSchemaSnapshot.Built.Current(
             List.of(),

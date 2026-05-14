@@ -925,6 +925,25 @@ class BuildContext {
         // recognition form). The encoder's pinning to the owning mutation's input @table is
         // verified later in FieldBuilder where the input @table is in scope; here we only
         // accept the directive structurally.
+        //
+        // R159: @field(name: "$source") is admitted on @table-element / @record-element data
+        // fields (not on Id-element). The directive is a no-op confirmation of the implicit
+        // binding the carrier walk already produces from the SDL element type; the producer
+        // type-match check fires downstream in FieldBuilder where the producer MethodRef is
+        // in scope. Unknown sigils ($X != $source) hard-reject here with the canonical
+        // FieldSourceSigil message before the forbidden-directive loop runs, so the author
+        // sees "Unknown sigil" rather than "forbidden directive".
+        boolean fieldIsSourceSigil = false;
+        if (!isIdElement) {
+            switch (FieldSourceSigil.parseArgFieldNameRef(dataField, DIR_FIELD, ARG_NAME)) {
+                case FieldSourceSigil.ParseResult.Absent ignored -> {}
+                case FieldSourceSigil.ParseResult.Ok ok -> {
+                    fieldIsSourceSigil = ok.ref() instanceof FieldSourceSigil.FieldNameRef.UpstreamRoot;
+                }
+                case FieldSourceSigil.ParseResult.UnknownSigil us ->
+                    { return new CarrierFieldClassification.HardReject(FieldSourceSigil.unknownSigilMessage(us.raw())); }
+            }
+        }
         Set<String> forbidden = isIdElement
             ? Set.of(DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_FIELD,
                 DIR_AS_CONNECTION, DIR_SPLIT_QUERY, DIR_EXTERNAL_FIELD, DIR_CONDITION,
@@ -935,6 +954,7 @@ class BuildContext {
                 DIR_LOOKUP_KEY, DIR_NOT_GENERATED, DIR_TABLE_METHOD, DIR_DEFAULT_ORDER,
                 DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
         for (var applied : dataField.getAppliedDirectives()) {
+            if (fieldIsSourceSigil && DIR_FIELD.equals(applied.getName())) continue;
             if (forbidden.contains(applied.getName())) {
                 return new CarrierFieldClassification.HardReject(
                     "single-record carrier field '" + dataFieldName + "' carries '@"

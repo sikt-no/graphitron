@@ -56,6 +56,19 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
          */
         Map<String, TypeBackingShape> typesByName();
 
+        /**
+         * R159 — per-carrier projection of the carrier-payload data field's name. Keyed by the
+         * carrier's SDL type name; value is the SDL field name of the carrier's single
+         * {@code DataChannel} role. Populated only for types whose classifier-side carrier walk
+         * returns {@code Ok}; absent for everything else.
+         *
+         * <p>The LSP's {@code @field(name: "$source")} arms (FieldCompletions admit,
+         * Diagnostics not-defined-here overlay) consume this to detect "is this site a carrier
+         * data field?" without a separate predicate evaluation: parent type name lookup plus
+         * field-name equality.
+         */
+        Map<String, String> carrierDataFieldByType();
+
         default Optional<DirectiveShape> directive(String name) {
             return directives().stream().filter(d -> d.name().equals(name)).findFirst();
         }
@@ -68,17 +81,37 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
             return Optional.ofNullable(typesByName().get(name));
         }
 
-        record Current(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName) implements Built {
+        /**
+         * R159 — convenience lookup returning the carrier's data-field name for {@code typeName},
+         * or {@link Optional#empty()} when {@code typeName} is not a classified carrier today.
+         */
+        default Optional<String> carrierDataField(String typeName) {
+            return Optional.ofNullable(carrierDataFieldByType().get(typeName));
+        }
+
+        record Current(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName,
+                       Map<String, String> carrierDataFieldByType) implements Built {
             public Current {
                 directives = List.copyOf(directives);
                 typesByName = Map.copyOf(typesByName);
+                carrierDataFieldByType = Map.copyOf(carrierDataFieldByType);
+            }
+            /** Back-compat overload for callers that don't yet populate the carrier projection. */
+            public Current(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName) {
+                this(directives, typesByName, Map.of());
             }
         }
 
-        record Previous(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName) implements Built {
+        record Previous(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName,
+                        Map<String, String> carrierDataFieldByType) implements Built {
             public Previous {
                 directives = List.copyOf(directives);
                 typesByName = Map.copyOf(typesByName);
+                carrierDataFieldByType = Map.copyOf(carrierDataFieldByType);
+            }
+            /** Back-compat overload for callers that don't yet populate the carrier projection. */
+            public Previous(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName) {
+                this(directives, typesByName, Map.of());
             }
         }
     }

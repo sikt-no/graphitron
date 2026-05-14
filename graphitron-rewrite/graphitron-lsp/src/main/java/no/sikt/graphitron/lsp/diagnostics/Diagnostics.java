@@ -510,6 +510,24 @@ public final class Diagnostics {
         if (typeDef.isEmpty()) return;
         var typeName = TypeContext.declaredNameOf(typeDef.get(), file.source());
         if (typeName.isEmpty()) return;
+        var fieldName = TypeContext.enclosingFieldDefinition(directive.outer())
+            .flatMap(fd -> TypeContext.fieldNameOf(fd, file.source()))
+            .orElse(null);
+        // R159: if the value is the $source sigil, the diagnostic shape is sigil-aware. At an
+        // admitted carrier-data-field site, the sigil is valid — no diagnostic. Anywhere else,
+        // emit the canonical FieldSourceSigil.sourceSigilNotDefinedHereMessage(). Snapshot-
+        // uncertainty: when the parent type has no entry in the carrier projection at all
+        // (mid-edit / not-yet-classified), stay silent so we don't punish the user for a
+        // shape we cannot resolve.
+        if (no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL.equals(memberName)) {
+            boolean isCarrierDataField = fieldName != null
+                && built.carrierDataField(typeName.get()).filter(n -> n.equals(fieldName)).isPresent();
+            if (!isCarrierDataField && built.typesByName().containsKey(typeName.get())) {
+                out.add(diagnostic(file, valueNode, DiagnosticSeverity.Error,
+                    no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilNotDefinedHereMessage()));
+            }
+            return;
+        }
         var backing = built.typesByName().get(typeName.get());
         if (backing == null) return;
         switch (backing) {

@@ -50,6 +50,37 @@ public final class TypeContext {
     }
 
     /**
+     * R159 — walks ancestors of {@code inner} until the {@code field_definition} node is found.
+     * Returns empty if {@code inner} is not inside a field definition (e.g. directly on the
+     * type's own directive list rather than on one of its fields).
+     */
+    public static Optional<Node> enclosingFieldDefinition(Node inner) {
+        Node node = inner;
+        while (node != null) {
+            if ("field_definition".equals(node.getType())) {
+                return Optional.of(node);
+            }
+            Node parent = node.getParent().orElse(null);
+            if (parent == null || parent.equals(node)) {
+                return Optional.empty();
+            }
+            node = parent;
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * R159 — reads the field-name child of a {@code field_definition} node. Returns
+     * {@link Optional#empty()} when the node has no {@code name} child (shouldn't happen for a
+     * well-formed parse but defensive against partial-edit trees).
+     */
+    public static Optional<String> fieldNameOf(Node fieldDef, byte[] source) {
+        Node nameNode = childOfKind(fieldDef, "name");
+        if (nameNode == null) return Optional.empty();
+        return Optional.of(Nodes.text(nameNode, source));
+    }
+
+    /**
      * Returns the SQL table name from the {@code @table(name: "...")}
      * directive applied to {@code typeDef}, if any. Strips surrounding
      * quotes from the string literal. Only inspects directives directly

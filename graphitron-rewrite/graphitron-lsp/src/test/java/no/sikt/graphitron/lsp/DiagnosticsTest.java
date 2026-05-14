@@ -155,6 +155,68 @@ class DiagnosticsTest {
         );
     }
 
+    // ===== R159 — $source sigil diagnostics =====
+
+    @Test
+    void sourceSigil_atCarrierDataField_producesNoDiagnostic() {
+        // Admitted carrier-data-field site — $source is valid; no diagnostic.
+        var file = file("""
+            type FilmListPayload {
+                films: [Film!] @field(name: "$source")
+            }
+            """);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("FilmListPayload", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.NoBacking.UnbackedResult()),
+            java.util.Map.of("FilmListPayload", "films")
+        );
+        var diags = compute(file, filmCatalog(), snapshot);
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void sourceSigil_atNonCarrierSite_producesCanonicalNotDefinedHereDiagnostic() {
+        // Parent has a known TypeBackingShape (RecordBacking) but no entry in the carrier
+        // projection — the LSP emits the canonical "$source is not defined here" message.
+        var file = file("""
+            type Foo @record(record: {className: "com.example.FooDto"}) {
+                bar: Int @field(name: "$source")
+            }
+            """);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking(
+                "com.example.FooDto", java.util.List.of())),
+            java.util.Map.of()
+        );
+        var diags = compute(file, filmCatalog(), snapshot);
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage())
+            .isEqualTo(no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilNotDefinedHereMessage());
+    }
+
+    @Test
+    void sourceSigil_snapshotUncertainty_silent() {
+        // No entry for the parent in typesByName AND no entry in carrierDataFieldByType —
+        // shape unknown. LSP is silent: no diagnostic emitted even though the user typed
+        // $source (we cannot resolve whether the site admits it; defer to the build).
+        var file = file("""
+            type RenamedMidEdit {
+                films: [Film!] @field(name: "$source")
+            }
+            """);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(), java.util.Map.of(), java.util.Map.of());
+        var diags = compute(file, filmCatalog(), snapshot);
+
+        assertThat(diags).isEmpty();
+    }
+
     @Test
     void unknownReferenceKeyProducesError() {
         var file = file("""
