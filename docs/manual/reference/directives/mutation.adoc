@@ -64,6 +64,56 @@ The `RETURNING` projection narrows to the response selection set: a mutation tha
 
 `UPDATE` uses `@lookupKey` on the input field to identify the target row; the remaining input fields populate the `SET` clause. `UPSERT` adds `ON CONFLICT` keyed on the `@lookupKey` columns. `DELETE` uses `@lookupKey` and returns the deleted row's columns through `RETURNING`.
 
+== Payload-returning DELETE
+
+`@mutation(typeName: DELETE)` supports two payload-carrier shapes. Both echo information about the rows the DML actually removed; neither projects non-primary-key columns from the deleted rows (the row is gone before the response can read it).
+
+=== Echoing the deleted primary key (recommended)
+
+The simplest payload returns the encoded NodeId of each deleted row:
+
+[source,graphql]
+----
+type SlettRegelverksamlingPayload {
+    deletedIds: [ID!]   # implicit @nodeId; encoder resolves against the input @table's @node
+}
+
+extend type Mutation {
+    slettRegelverksamling(input: [RegelverksamlingDeleteInput!]!): SlettRegelverksamlingPayload
+      @mutation(typeName: DELETE)
+}
+----
+
+The carrier field's element type must be `ID` (single DELETE) or `[ID!]` (bulk DELETE). The list wrapper must be list-of-non-null; `[ID]` (list-of-nullable) is rejected, because every element of a successful DELETE response is the encoded PK of an actually-deleted row, the slot cannot be null. The encoder is recognised implicitly when the input `@table` registers a `@node`. If the input `@table` is not `@node`-backed, the carrier is rejected with the same diagnostic as the bare-`ID` DELETE path; register the input type as `@node` first. To pin the encoder explicitly (recommended when grep-ability matters), attach `@nodeId(typeName: "...")` to the carrier field; the directive's encoder must resolve to the same `@table` as the mutation's input. An `@nodeId` whose encoder resolves to a different table is rejected: you would be returning IDs of a different entity than the one the DML acted on.
+
+The response contains exactly the IDs of rows the DML actually removed.
+
+=== Projecting the deleted row's primary key onto an SDL type
+
+The carrier may also return the `@table`-backed SDL type, but only when every non-nullable field on the type resolves to a primary-key column:
+
+[source,graphql]
+----
+type Regelverksamling @table(name: "regelverksamling") @node {
+    id: ID!                              # PK; admits
+    navn: String                         # non-PK, nullable; admits, runtime returns null
+    beskrivelse: String!                 # non-PK, non-nullable; REJECTS the carrier
+}
+----
+
+The classifier inspects every field on the element type and rejects the carrier if any non-nullable field maps to a non-PK column. Nullable non-PK fields admit and always resolve to `null` at runtime; this is by design — after a DELETE there is no row left to read those columns from. If your SDL type carries non-nullable non-PK fields, prefer the `[ID!]` shape above, or define a dedicated `DeletedRegelverksamling` SDL type whose non-nullable fields are PK-only.
+
+`@service`-resolved fields are not admitted on the element type, nullable or not. The service would receive a PK-only row at runtime and any non-PK source parameter would silently produce `null`. Use the `[ID!]` shape and resolve service-backed data on the deleted entity through a sibling lookup if needed. FK-traversing reference fields (`@reference` paths to a joined target table) are also rejected on DELETE carriers, since the join cannot run after the row is gone.
+
+=== Single vs bulk
+
+Both shapes work with single and bulk DELETE; cardinality follows the carrier field's wrapper (`ID`/`Foo` for single, `[ID!]`/`[Foo!]` for bulk).
+
+=== What you can't return
+
+* Arbitrary non-PK columns of the deleted row. The row is gone; `RETURNING` is narrowed to primary-key columns. If you need the full pre-delete state, snapshot it in your application code before issuing the mutation.
+* A bare `@record`-backed type. Use a NodeId echo or a `@table` projection.
+
 == Constraints
 
 * The mutation's input type must carry `@table`. The generator fails the build with a "@mutation requires a @table-bound input type" error otherwise; without `@table` it has no way to know which table the operation targets.
