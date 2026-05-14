@@ -13,11 +13,11 @@ import java.util.Optional;
  * <p>Each field on the element SDL type classifies into exactly one arm. The
  * {@code classifyDeleteTableProjection} step on {@link BuildContext} consumes the
  * {@code List<PerFieldOutcome>}, and either rejects the whole carrier (any
- * {@link NonPkNonNullable} or {@link ServiceField} arm present, with a diagnostic naming the
- * offending fields) or projects the surviving outcomes to the narrow model-facing
- * {@link no.sikt.graphitron.rewrite.model.PkResolution}.
+ * {@link NonPkNonNullable}, {@link ServiceField}, or {@link UnsupportedField} arm present, with
+ * a diagnostic naming the offending fields) or projects the surviving outcomes to the narrow
+ * model-facing {@link no.sikt.graphitron.rewrite.model.PkResolution}.
  *
- * <p>The four arms exist so the projection step can carry the certainty into the type system
+ * <p>The five arms exist so the projection step can carry the certainty into the type system
  * that the rejection arms cannot reach the emitter. {@link PkResolution} (model-facing) admits
  * only the two non-rejecting arms; the projection step maps {@code PerFieldOutcome.PkRead} to
  * {@code PkResolution.PkRead} and {@code PerFieldOutcome.NonPkNullable} to

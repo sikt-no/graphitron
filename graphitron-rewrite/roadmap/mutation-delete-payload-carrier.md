@@ -63,10 +63,11 @@ In scope:
   to carry a SDL `@table`-backed element type, but the response data fetcher
   resolves directly off the PK-only RETURNING `Record` rather than running a
   follow-up SELECT. The carrier walk classifies each field on the element SDL
-  type into a builder-internal sealed `PerFieldOutcome` (four arms: `PkRead`,
-  `NonPkNullable`, `NonPkNonNullable`, `ServiceField`) and either rejects (any
-  `NonPkNonNullable` or `ServiceField` arm) or projects the surviving outcomes
-  to a narrow model-facing `PkResolution` (two arms: `PkRead`, `NonPkNullable`).
+  type into a builder-internal sealed `PerFieldOutcome` (five arms: `PkRead`,
+  `NonPkNullable`, `NonPkNonNullable`, `ServiceField`, `UnsupportedField`) and
+  either rejects (any `NonPkNonNullable`, `ServiceField`, or `UnsupportedField`
+  arm) or projects the surviving outcomes to a narrow model-facing `PkResolution`
+  (two arms: `PkRead`, `NonPkNullable`).
   The `List<PkResolution>` rides on the new per-field
   `ChildField.SingleRecordTableFieldFromReturning` carrier (no re-derivation at
   emit time).
@@ -203,7 +204,7 @@ builder-internal `PerFieldOutcome` (four arms; ephemeral; consumed only by the
 projection step) and a narrow model-facing `PkResolution` (two arms; carried by
 `ChildField.SingleRecordTableFieldFromReturning` to the emitter). The split is
 the "Builder-internal sealed hierarchies for multi-target classification"
-principle: the four-arm classifier outcome lives inside the classifier; the
+principle: the five-arm classifier outcome lives inside the classifier; the
 two-arm projected result is what consumers downstream of the classifier see.
 
 ```java
@@ -212,10 +213,10 @@ two-arm projected result is what consumers downstream of the classifier see.
  * {@link DataElement.Table} element type. Each field on the element SDL type
  * classifies into exactly one arm. The {@code classifyDeleteTableProjection}
  * step on {@link BuildContext} consumes the {@code List<PerFieldOutcome>}, and
- * either rejects the whole carrier (any {@link NonPkNonNullable} or
- * {@link ServiceField} arm present, with a diagnostic naming the offending
- * fields) or projects the surviving outcomes to the narrow model-facing
- * {@link PkResolution}.
+ * either rejects the whole carrier (any {@link NonPkNonNullable},
+ * {@link ServiceField}, or {@link UnsupportedField} arm present, with a
+ * diagnostic naming the offending fields) or projects the surviving outcomes to
+ * the narrow model-facing {@link PkResolution}.
  *
  * <p>This type does NOT escape the classifier. The downstream
  * {@link ChildField.SingleRecordTableFieldFromReturning} carrier holds the
@@ -229,6 +230,10 @@ sealed interface PerFieldOutcome {
     record NonPkNullable(String fieldName) implements PerFieldOutcome {}
     record NonPkNonNullable(String fieldName) implements PerFieldOutcome {}
     record ServiceField(String fieldName) implements PerFieldOutcome {}
+    /** Catch-all over GraphitronField leaves that can't resolve from a PK-only synthesized Record
+     *  (e.g. ColumnReferenceField over a joined column, ChildField.TableField child collection,
+     *  ChildField.ComputedField). Hard-rejects the carrier with a diagnostic naming the leaf kind. */
+    record UnsupportedField(String fieldName, String leafKind) implements PerFieldOutcome {}
 }
 
 /**
@@ -238,11 +243,11 @@ sealed interface PerFieldOutcome {
  * the only producer of {@code List<PkResolution>} is
  * {@code BuildContext.classifyDeleteTableProjection}, which rejects the carrier
  * before constructing any {@link PkResolution} when any element-type field
- * classifies into a {@link PerFieldOutcome.NonPkNonNullable} or
- * {@link PerFieldOutcome.ServiceField} arm. The emitter's sealed switch on
- * {@link PkResolution} is therefore exhaustive over its two arms with no
- * "unreachable arm" defensive default ; the type system carries the certainty
- * that the rejection arms cannot appear here.
+ * classifies into a {@link PerFieldOutcome.NonPkNonNullable},
+ * {@link PerFieldOutcome.ServiceField}, or {@link PerFieldOutcome.UnsupportedField}
+ * arm. The emitter's sealed switch on {@link PkResolution} is therefore
+ * exhaustive over its two arms with no "unreachable arm" defensive default ;
+ * the type system carries the certainty that the rejection arms cannot appear here.
  *
  * <p>The projection list rides on the per-field {@link ChildField} permit ; not on
  * {@link SingleRecordCarrierShape} and not on {@link DataElement.Table} ; because
@@ -292,7 +297,8 @@ rejection arms by type accident.
 
 **Carrier-admission rule.** `BuildContext.classifyDeleteTableProjection`
 computes the per-field `List<PerFieldOutcome>` at classify time and rejects the
-carrier if any arm is `NonPkNonNullable` or `ServiceField`. The rejection
+carrier if any arm is `NonPkNonNullable`, `ServiceField`, or `UnsupportedField`.
+The rejection
 message names the offending field(s) and points at `DataElement.Id` as the
 recommended pattern:
 
@@ -422,7 +428,7 @@ its emitter consumes; no DELETE-specific plumbing rides on
   `List<PkResolution> projection` ; the narrow two-arm sealed result of the
   §Narrowed `DataElement.Table` walk's projection step. The emitter switches
   exhaustively on the two arms with no defensive default; the rejection arms
-  (`NonPkNonNullable`, `ServiceField`) cannot appear here by type:
+  (`NonPkNonNullable`, `ServiceField`, `UnsupportedField`) cannot appear here by type:
   - `PkRead` ; read column(s) off the source `Record`; if `encode` is present,
     run the values through it (the SDL `id`-alias and composite-PK cases);
     otherwise return the column value directly.
@@ -434,15 +440,15 @@ its emitter consumes; no DELETE-specific plumbing rides on
   is the single producer of `List<PkResolution>`; the type system carries the
   guarantee that disallowed arms cannot reach the emitter. The behavioural
   contract ; "if any element-type field classifies into
-  `PerFieldOutcome.NonPkNonNullable` or `ServiceField`, the projection step
-  MUST reject the carrier rather than silently dropping the field" ; is pinned
-  by a `@LoadBearingClassifierCheck(key =
+  `PerFieldOutcome.NonPkNonNullable`, `ServiceField`, or `UnsupportedField`,
+  the projection step MUST reject the carrier rather than silently dropping the
+  field" ; is pinned by a `@LoadBearingClassifierCheck(key =
   "mutation-delete-carrier.pk-resolution-projection-clean", description =
   "BuildContext.classifyDeleteTableProjection rejects DELETE @table-element
-  projections on any PerFieldOutcome.NonPkNonNullable or ServiceField arm,
-  naming the offending field(s) in the diagnostic, before projecting to
-  List<PkResolution>; consumers of the projection rely on the rejection arms
-  being a hard reject and not a silent drop.")` on
+  projections on any PerFieldOutcome.NonPkNonNullable, ServiceField, or
+  UnsupportedField arm, naming the offending field(s) in the diagnostic, before
+  projecting to List<PkResolution>; consumers of the projection rely on the
+  rejection arms being a hard reject and not a silent drop.")` on
   `classifyDeleteTableProjection`, with a matching `@DependsOnClassifierCheck`
   on the `SingleRecordTableFieldFromReturning` emitter case in `FetcherEmitter`.
   `LoadBearingGuaranteeAuditTest`'s scan picks the pair up and fails the build
@@ -723,9 +729,10 @@ the design (not just the docs) needs revisiting before implementation.
   `DataElement.Id` record and not on `SingleRecordCarrierShape`. All
   consumers exhaustively switch over the three `DataElement` arms; the
   `CarrierFieldRoleCoverageTest` build-time audit is green.
-- Builder-internal `PerFieldOutcome` sealed interface added with four arms
-  (`PkRead`, `NonPkNullable`, `NonPkNonNullable`, `ServiceField`); model-facing
-  `PkResolution` sealed interface added with two arms (`PkRead`, `NonPkNullable`),
+- Builder-internal `PerFieldOutcome` sealed interface added with five arms
+  (`PkRead`, `NonPkNullable`, `NonPkNonNullable`, `ServiceField`,
+  `UnsupportedField`); model-facing `PkResolution` sealed interface added with
+  two arms (`PkRead`, `NonPkNullable`),
   per §Narrowed `DataElement.Table` for DELETE. `PerFieldOutcome` is package-
   private to the carrier-walk site and does not escape the classifier;
   `PkResolution` is the public, narrow type carried by
@@ -742,9 +749,9 @@ the design (not just the docs) needs revisiting before implementation.
   §Carrier classifier admission and rejects on every non-DELETE verb with the
   permit-verb invariant message. For `DataElement.Table` on DELETE, the
   resolution calls `BuildContext.classifyDeleteTableProjection`, which produces
-  a `List<PerFieldOutcome>` and either rejects (any `NonPkNonNullable` or
-  `ServiceField` arm, diagnostic naming the offending fields) or projects to a
-  `List<PkResolution>` carried on the resulting carrier.
+  a `List<PerFieldOutcome>` and either rejects (any `NonPkNonNullable`,
+  `ServiceField`, or `UnsupportedField` arm, diagnostic naming the offending
+  fields) or projects to a `List<PkResolution>` carried on the resulting carrier.
   `classifyDeleteTableProjection` wears `@LoadBearingClassifierCheck(key =
   "mutation-delete-carrier.pk-resolution-projection-clean", ...)`; the matching
   `@DependsOnClassifierCheck` lands on the
