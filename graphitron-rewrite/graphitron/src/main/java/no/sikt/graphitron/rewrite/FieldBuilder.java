@@ -2733,6 +2733,42 @@ class FieldBuilder {
     }
 
     /**
+     * R159 — type-match check at the carrier-data-field {@code $source} admission site. Runs
+     * when an @service mutation returns a single-record carrier whose data field opts into
+     * the {@code $source} sigil via {@code @field(name: "$source")}: compares the producer's
+     * reflected return {@link no.sikt.graphitron.javapoet.TypeName} against the SDL element's
+     * backing class through {@link FieldSourceSigil#sourceSigilTypeMatches}.
+     *
+     * <p>Returns {@code null} when the check passes (or when no carrier shape / no
+     * {@code $source} sigil applies); on mismatch, returns the canonical
+     * {@link FieldSourceSigil#typeMismatchMessage} for the caller to wrap into an
+     * {@link UnclassifiedField}.
+     */
+    private String checkSourceSigilTypeMatch(
+            no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType returnType,
+            no.sikt.graphitron.rewrite.model.MethodRef method) {
+        var resolution = ctx.tryResolveSingleRecordCarrier(returnType.returnTypeName());
+        if (!(resolution instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok ok)) {
+            return null;
+        }
+        var dataChannel = ok.shape().data();
+        var carrierType = ctx.schema.getType(returnType.returnTypeName());
+        if (!(carrierType instanceof graphql.schema.GraphQLObjectType carrierObj)) {
+            return null;
+        }
+        var dataField = carrierObj.getFieldDefinition(dataChannel.fieldName());
+        if (dataField == null) return null;
+        var parsed = FieldSourceSigil.parseArgFieldNameRef(
+            dataField, BuildContext.DIR_FIELD, BuildContext.ARG_NAME);
+        if (!(parsed instanceof FieldSourceSigil.ParseResult.Ok parseOk)) return null;
+        if (!(parseOk.ref() instanceof FieldSourceSigil.FieldNameRef.UpstreamRoot)) return null;
+        var mismatch = FieldSourceSigil.sourceSigilTypeMatches(
+            method.returnType(), method.className(), method.methodName(),
+            dataChannel.element());
+        return mismatch.orElse(null);
+    }
+
+    /**
      * R156 — resolve the NodeId encoder for a {@link DataElement.Id} carrier field on a
      * DELETE mutation. Two recognition forms:
      * <ul>
@@ -3075,9 +3111,21 @@ class FieldBuilder {
                 case ServiceDirectiveResolver.Resolved.TableBound tb ->
                     buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, ra) ->
                         new MutationField.MutationServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch, ra));
-                case ServiceDirectiveResolver.Resolved.Result r ->
-                    buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, (ch, ra) ->
+                case ServiceDirectiveResolver.Resolved.Result r -> {
+                    // R159: when the @service mutation returns a carrier-payload type whose
+                    // data field opts into the $source sigil, verify the producer's reflected
+                    // return type matches the SDL element's backing class. The check is colocated
+                    // here because classifyCarrierField (in BuildContext) does not have the
+                    // producer's MethodRef in scope; the rejection still flows through the
+                    // existing UnclassifiedField -> ValidationError -> LSP path.
+                    String sourceSigilError = checkSourceSigilTypeMatch(r.returnType(), r.method());
+                    if (sourceSigilError != null) {
+                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                            Rejection.structural(sourceSigilError));
+                    }
+                    yield buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, (ch, ra) ->
                         new MutationField.MutationServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), ch, ra));
+                }
                 case ServiceDirectiveResolver.Resolved.Scalar s ->
                     buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, ra) ->
                         new MutationField.MutationServiceRecordField(parentTypeName, name, location, s.returnType(), s.method(), ch, ra));

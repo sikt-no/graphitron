@@ -1,14 +1,40 @@
 ---
 id: R159
 title: Root-value sigil $source on @field(name:) for carrier-payload sourcing
-status: In Progress
+status: In Review
 bucket: structural
 priority: 2
 theme: service
 depends-on: []
 created: 2026-05-13
-last-updated: 2026-05-13
+last-updated: 2026-05-14
 ---
+
+## What shipped (Implementation pass, 2026-05-14)
+
+- `FieldSourceSigil` utility (`graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldSourceSigil.java`): sealed `FieldNameRef = BareName | UpstreamRoot`, `ParseResult = Absent | Ok | UnknownSigil`, `SiteContext` (placeholder for the predicate's future-broadening axis), canonical message accessors (`unknownSigilMessage`, `sourceSigilNotDefinedHereMessage`, `typeMismatchMessage`), and `sourceSigilTypeMatches` predicate. The utility owns the canonical rejection text; classifier, LSP completion, and LSP diagnostic all route through it.
+- `BuildContext.classifyCarrierField` parses `@field(name:)` via `FieldSourceSigil.parseArgFieldNameRef` before the forbidden-directive loop. `UpstreamRoot` lifts `@field` off the forbidden list for this iteration (admitting the directive); `UnknownSigil` HardRejects with `FieldSourceSigil.unknownSigilMessage`; `BareName` / `Absent` flow into the existing forbidden-directive loop unchanged.
+- `FieldBuilder.classifyMutationField` (the `@service` `Resolved.Result` arm) runs `checkSourceSigilTypeMatch` against the producer's `MethodRef.returnType()`. The check fires here, not in `classifyCarrierField`, because the carrier walk is shape-only and doesn't have the producer's `MethodRef` in scope; the colocation principle is preserved by the shared `FieldSourceSigil.sourceSigilTypeMatches` callable. Rejection flows through `UnclassifiedField` → `ValidationError` per the documented path. (The `@mutation`-DML carrier paths route through the existing `MutationInputResolver` envelope unchanged.)
+- LSP snapshot extension: `LspSchemaSnapshot.Built.carrierDataFieldByType: Map<String, String>` (carrier-type-name → data-field-name). `CatalogBuilder.projectCarrierDataFields` populates it by walking `GraphitronSchema.fields()` for `ChildField.SingleRecord*` permits (the classifier's exhaustive carrier-walk output). Backwards-compatible: a two-arg `Built.Current` / `Built.Previous` constructor remains, defaulting the map to empty.
+- LSP `FieldCompletions.completionsFor` admits `$source` as a top-level completion when the enclosing field is a carrier data field (parent type's `carrierDataField(typeName)` matches the field name). At every other site, completions stay as today.
+- LSP `Diagnostics.validateFieldMember` emits `FieldSourceSigil.sourceSigilNotDefinedHereMessage` when `@field(name: "$source")` is at a site that's NOT a carrier data field AND the parent's TypeBackingShape is known. Snapshot-uncertainty: when the parent has no entry in `typesByName`, the diagnostic stays silent (the LSP defers to the build).
+- Tests:
+  - `FieldSourceSigilPipelineTest` (6 cases): admit / type-mismatch / unknown-sigil / bare-name regression / model-shape regression / non-carrier-site regression.
+  - `FieldSourceSigilValidationTest` (3 cases): unknown-sigil-at-carrier / type-mismatch-at-service-carrier / bare-name-at-non-carrier — each asserts `ValidationReport.errors()` contains the canonical `FieldSourceSigil` message.
+  - `FieldCompletionsTest` (3 R159 cases): completion at carrier data field / absent at non-carrier site / snapshot-uncertainty silent.
+  - `DiagnosticsTest` (3 R159 cases): admitted-site silent / non-carrier-site emits canonical message / snapshot-uncertainty silent.
+- Full build green: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`.
+
+### Deviation notes from spec
+
+The spec's Cross-surface invariant § step 1 wording "`BuildContext.classifyCarrierField` invokes `argFieldNameRef` and `sourceSigilTypeMatches`" was aspirational — the type-match check cannot fire in `classifyCarrierField` because the producer's `MethodRef` is bound at `FieldBuilder.classifyMutationField` time, not at the carrier walk's TypeBuilder / MutationInputResolver / GraphitronSchemaBuilder invocations (which are shape-only). The shipped split:
+
+1. `classifyCarrierField` runs `argFieldNameRef` to admit the directive (parser-side).
+2. `FieldBuilder.checkSourceSigilTypeMatch` runs `sourceSigilTypeMatches` at the consumer site (where the producer is known).
+
+The integrity property the spec calls out (shared callable owns the canonical messages) holds: both sites route through `FieldSourceSigil`. The execution-tier test (gated on R158) will exercise the producer-side end-to-end.
+
+The spec's note on the LSP carrier-data-field detection "may live in the snapshot or in a sibling helper" landed as a snapshot map (`carrierDataFieldByType`) computed by walking the classifier's `ChildField.SingleRecord*` outputs. This keeps the LSP detection in one cheap lookup; no new sealed permit on `TypeBackingShape`.
 
 # Root-value sigil `$source` on `@field(name:)` for carrier-payload sourcing
 

@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R39` | Validate that list fields on tables without a PK require explicit ordering | Spec | 2026-05-13 | [plan](validate-list-fields-require-ordering.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R159` | Root-value sigil $source on @field(name:) for carrier-payload sourcing | In Progress | 2026-05-13 | [plan](service-payload-intermediate-semantics.md) |
+| `R159` | Root-value sigil $source on @field(name:) for carrier-payload sourcing | In Review | 2026-05-14 <sub>created 2026-05-13</sub> | [plan](service-payload-intermediate-semantics.md) |
 | `R161` | Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | 2026-05-14 <sub>created 2026-05-13</sub> | [plan](unify-record-dml-on-carrier-walk.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | In Review | 2026-05-13 | [plan](tablemethod-child-table-bound.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
@@ -127,7 +127,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R159` [**Root-value sigil $source on @field(name:) for carrier-payload sourcing**](service-payload-intermediate-semantics.md) — In Progress, structural
+- `R159` [**Root-value sigil $source on @field(name:) for carrier-payload sourcing**](service-payload-intermediate-semantics.md) — In Review, structural
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
 - `R137` [**@service method return-type wrapper composition (Optional / CompletableFuture / Mono / DataFetcherResult)**](service-wrapper-composition.md) — Backlog, architecture
