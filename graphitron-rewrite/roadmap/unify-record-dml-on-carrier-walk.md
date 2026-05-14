@@ -20,10 +20,10 @@ The duplication is load-bearing for nothing structural. Both paths consume a pay
 
 - `FieldBuilder.classifyMutationField` (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java:2886`) routes to `MutationDmlRecordField` / `MutationBulkDmlRecordField` when `BuildContext.tryResolveSingleRecordCarrier(returnTypeName) == Ok` (`:2957-2999`).
 - Otherwise it falls through to `buildDmlField` which calls `buildDmlReturnExpression` (`:2724-2748`). The `ResultReturnType` branch (`:2739-2743`) constructs `new DmlReturnExpression.Payload(assembly)`, where `assembly` is the `PayloadAssembly` produced by `resolveDmlPayloadAssembly` (`:1991-2061`). The resulting `MutationInsertTableField` (or sibling) carries a `@record` return inside its `returnExpression`.
-- `MutationInputResolver.validateReturnType` (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java:169-260`) admits the `ResultReturnType` arm whenever `fqClassName != null`, or when `fqClassName == null` and the carrier walk says `Ok`. The "`fqClassName != null` but carrier walk rejected" sub-case is the live trigger for Path 2.
+- `MutationInputResolver.validateReturnType` (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java:169-260`) admits the `ResultReturnType` arm whenever `fqClassName != null`, or when `fqClassName == null` and the carrier walk says `Ok`. The "`fqClassName != null`" sub-case is the live trigger for Path 2; `fqClassName != null` always implies `PojoResultType.Backed`, which is non-candidate for the carrier walk by construction (`BuildContext.tryResolveSingleRecordCarrier` admits only `PlainObjectType` and `PojoResultType.NoBacking`).
 - `TypeFetcherGenerator` consumes `DmlReturnExpression.Payload` at `:2851` and `:2919`; the body emits the payload-class constructor call directly inside the DML emitter, using `PayloadAssembly.rowSlot` and `PayloadAssembly.defaultedSlots`.
 
-## Spec direction (to be confirmed Backlog → Spec)
+## Spec direction
 
 - **Add a sibling `MutationField` permit for the reflective row-slot shape.** Not a widening of `tryResolveSingleRecordCarrier`. The SDL-single-data-field case and the reflective-row-slot case are genuinely different at emit time (data-field handoff vs. inline constructor projection); collapsing them onto one permit would push the same N-way switch we're removing from `DmlReturnExpression` into the permit's body. Put the dispatch in the permit identity.
 
@@ -42,7 +42,7 @@ The duplication is load-bearing for nothing structural. Both paths consume a pay
   ) implements MutationField { ... }
   ```
 
-  Compact-constructor rejection of `DmlKind.DELETE` mirrors `MutationDmlRecordField` (the row is gone before the response SELECT can read it). The bulk-input question (whether this leaf admits `tableInputArg.list() == true`, or whether it splits into `MutationDmlPayloadField` / `MutationBulkDmlPayloadField` mirroring R141) is a Spec-time decision: take whichever shape the emit paths fork on, the principles-aligned default is "split if the emit shapes differ".
+  Single-input only; no bulk sibling. `tableInputArg.list() == true` paired with a `ResultReturnType` return is already rejected upstream by Invariant #15 in `MutationInputResolver.validateReturnType` (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/MutationInputResolver.java:252-257`: `listInput && !returnType.wrapper().isList()` surfaces the "TooManyRowsException" diagnostic), and the emit body at `TypeFetcherGenerator.emitPayload` (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java:3066-3090`) hard-codes `.returning().fetchOne()`. Compact-constructor rejects `DmlKind.DELETE` (mirrors `MutationDmlRecordField`: the row is gone before the response SELECT can read it) and `tableInputArg.list() == true` (mirrors Invariant #15 at the type level so a hypothetical schema-author bypass would still fail at construction).
 
 - **Reroute the classifier dispatch.** `classifyMutationField`'s current carrier-walk branch (`:2957-2999`) keeps its `Ok` arm. Add a second guard after that: if the return is `ResultReturnType` and `resolveDmlPayloadAssembly` returns `Assembly(assembly)`, route to `MutationDmlPayloadField`. Path 2's fall-through into `buildDmlField` for `ResultReturnType` goes away entirely; `buildDmlReturnExpression`'s `ResultReturnType` branch becomes unreachable and is deleted.
 
@@ -50,9 +50,20 @@ The duplication is load-bearing for nothing structural. Both paths consume a pay
 
 - **Move the emit logic.** The current `TypeFetcherGenerator` arms keyed on `DmlReturnExpression.Payload` (`:2851`, `:2919`) move onto a new `MutationField` switch arm keyed on `MutationDmlPayloadField`. The emit body itself (constructor call, row-slot binding, defaulted-slot handling) is preserved verbatim; the dispatch is at a different level.
 
-- **Validator mirrors classifier.** `MutationInputResolver.validateReturnType`'s `ResultReturnType` arm post-lift admits the return iff one of `(a) tryResolveSingleRecordCarrier == Ok`, `(b) resolveDmlPayloadAssembly == Assembly`. Today's per-arm rejection text composes naturally — if both probes reject, surface both reasons.
+- **Validator mirrors classifier; probes are structurally disjoint.** `MutationInputResolver.validateReturnType`'s `ResultReturnType` arm post-lift admits the return iff one of `(a) fqClassName == null` and `tryResolveSingleRecordCarrier == Ok`, `(b) fqClassName != null` and `resolveDmlPayloadAssembly == Assembly`. The two probes do not overlap: `tryResolveSingleRecordCarrier` admits only `PlainObjectType` or `PojoResultType.NoBacking` candidates (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/BuildContext.java:509-510`), and `@record(record: {className: ...})` produces `PojoResultType.Backed`, which falls through to `NotCandidate`. So the path is fully determined by `fqClassName`'s presence; the validator surfaces the carrier-walk reason when `fqClassName == null` and the reflective-assembly reason when `fqClassName != null`. No composition-of-both-reasons branch needed.
 
-- **Test migration.** Before the lift, identify tests under `graphitron-rewrite/graphitron/src/test/java` that today exercise Path 2 (the reflective-row-slot path). The pattern to grep for is `@record(record: {className: ...})` payloads whose SDL Object does not pass the single-data-field carrier walk. Each such test re-classifies post-lift; pipeline assertions on the `MutationField` permit identity update from `MutationInsertTableField` (etc.) to `MutationDmlPayloadField` (or its bulk sibling).
+- **Test migration.** Seven tests exercise Path 2 today and re-target on the lift. Four in `GraphitronSchemaBuilderTest`:
+  - `DML_RECORD_PAYLOAD_RETURN_HAPPY` (`graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java:5972`) — happy path with row + errors slots
+  - `DML_RECORD_PAYLOAD_ROW_ONLY_HAPPY` (`:6003`) — happy path with row slot only
+  - `DML_RECORD_PAYLOAD_LIST_REJECTED` (`:6022`) — list-of-payload rejection (Invariant #14)
+  - `DML_RECORD_PAYLOAD_NO_ROW_SLOT_REJECTED` (`:6039`) — constructor missing row-typed parameter
+
+  Three in `FetcherPipelineTest`:
+  - `dmlDeleteField_recordPayloadReturn_successArmConstructsPayloadAndCatchArmDispatches` (`graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/FetcherPipelineTest.java:412`)
+  - `dmlDeleteField_recordPayloadReturnNoErrorsField_successArmConstructsPayloadCatchArmRedacts` (`:433`)
+  - `dmlMutation_setterShapePayload_emitsSetterFactory` (`:367`) — setter-shape row slot variant
+
+  Classification assertions in `GraphitronSchemaBuilderTest` update from `(MutationField.MutationDeleteTableField) ... DmlReturnExpression.Payload` to `(MutationField.MutationDmlPayloadField) ... .assembly()`. Emitter assertions in `FetcherPipelineTest` keep their body checks (same `.deleteFrom`, `.returning()`, `.fetchOne()`, payload-ctor / payload-setter output) since the emit body is preserved verbatim; only the permit-identity entry point changes.
 
 ## Out of scope
 
@@ -66,10 +77,16 @@ R158 (`SourceKey.Reader` sub-taxonomy for `@service`-backed producers) and R159 
 
 The three can land in any order. R161 carries no `depends-on`.
 
-## Spec must address
+## Resolved positions on Backlog open questions
 
-- Whether `MutationDmlPayloadField` admits the bulk-input shape (`tableInputArg.list() == true`) or splits into `MutationDmlPayloadField` / `MutationBulkDmlPayloadField`. Check the emit paths: does the reflective row-slot construction differ between single-input and bulk-input today? `TypeFetcherGenerator`'s `:2851`/`:2919` arms tell.
-- Exact admission predicate for `MutationInputResolver.validateReturnType`'s post-lift `ResultReturnType` arm. The composition of carrier-walk and reflective-assembly probes is structurally clear; the wording when both reject needs care so the schema author gets the actionable hint (likely the carrier-walk reason if the payload looks SDL-shaped, the reflective-assembly reason if not).
-- The set of existing tests under `graphitron-rewrite/graphitron/src/test/java` that exercise Path 2 today. Inventory needed to size the test-migration work and confirm behavioural equivalence post-lift.
-- Whether a load-bearing classifier check (`@LoadBearingClassifierCheck`) covers the new permit-identity invariant (no `@record` ever reaches `MutationInsertTableField` etc.) or whether the structural narrowing (`MutationInsertTableField` records gain no `returnType: ResultReturnType` admission path) is itself the guarantee. The classifier-acceptance shape from `rewrite-design-principles.adoc:107-118` is the model.
-- Whether `DmlReturnExpression`'s remaining four arms should retain their dispatch role inside the cleanup, or whether a follow-up "collapse into permit identity" lift earns a separate Backlog item right now. Default position: leave as-is, file the follow-up if Spec review surfaces a real argument for collapse.
+The Backlog body left five questions for Spec to nail down. All five are resolved against the codebase as of `cb57133`.
+
+- **Bulk-input shape.** One permit. `MutationDmlPayloadField` admits `tableInputArg.list() == false` only. The bulk + reflective-payload cell is already rejected upstream by Invariant #15 (`validateReturnType:252-257`), and `TypeFetcherGenerator.emitPayload` (`:3066-3090`) hard-codes `.returning().fetchOne()` with an explicit comment that "list-payload returns rejected at validateReturnType, so .fetchOne() is the only shape here". A `MutationBulkDmlPayloadField` sibling would have no admitted SDL shape to classify and no emit body to differ on; declining the split is the principles-aligned move.
+
+- **Admission predicate for the post-lift `ResultReturnType` arm.** The two probes are structurally disjoint, so the predicate is a disjunction with non-overlapping arms keyed on `fqClassName`'s presence (see the "Validator mirrors classifier" Spec direction bullet above). The "compose both rejection reasons" worry the Backlog body called out doesn't trigger: only one probe is in scope per `fqClassName`-state, and that probe's reason is the actionable hint.
+
+- **Test inventory.** Seven tests, enumerated in the "Test migration" Spec direction bullet above. Four classification (`GraphitronSchemaBuilderTest.DML_RECORD_PAYLOAD_*`) plus three emit (`FetcherPipelineTest.dmlDeleteField_recordPayloadReturn_*` and `dmlMutation_setterShapePayload_*`). No other source file under `graphitron-rewrite/graphitron/src/test/java` references `DmlReturnExpression.Payload` or `PayloadAssembly` as the system under test (the dummy fixtures in `codereferences/dummyreferences/` are scaffolding, not Path 2 tests).
+
+- **Load-bearing classifier check vs. structural narrowing.** Structural narrowing carries the invariant; no `@LoadBearingClassifierCheck` annotation needed. Once the `Payload` arm is gone from `DmlReturnExpression`, the remaining four arms by construction admit only ID-encoded scalars (`Encoded*`) or `TableBoundReturnType` projections (`Projected*`) — there is no `ResultReturnType` admission path through the type system, so a `MutationInsertTableField` etc. literally cannot be constructed with a `@record`-payload return. This is the "make illegal states unrepresentable" recipe from `rewrite-design-principles.adoc` ("Narrow component types") rather than the classifier-acceptance shape. A `@DependsOnClassifierCheck` annotation on the deleted `buildDmlReturnExpression.ResultReturnType` branch may earn its keep as a tombstone (pointing the reader at the new admission site), but that's documentation, not a load-bearing invariant.
+
+- **DmlReturnExpression collapse follow-up.** Leave the four-arm sealed type as-is; do not file a follow-up Backlog item. Collapsing cardinality × projection-shape into permit identity would multiply the `MutationField` `DmlTableField` permits by four (`MutationInsertEncodedSingleField` / `EncodedList` / `ProjectedSingle` / `ProjectedList`, repeat for `Update`, `Delete`, `Upsert` — sixteen new permits to eliminate one orthogonal axis). The two axes (DML kind, output shape) are genuinely independent, and the 4-arm sealed type earns its keep dispatching the second axis in one place.
