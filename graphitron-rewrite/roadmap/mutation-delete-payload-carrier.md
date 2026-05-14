@@ -1,7 +1,7 @@
 ---
 id: R156
 title: "Payload-returning DELETE: carrier permits for PK-echo and PK-only RETURNING record"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 6
 theme: mutations-errors
@@ -837,3 +837,67 @@ the design (not just the docs) needs revisiting before implementation.
 - **Independent from R94 (`emit-input-records`).** R94 is about input-side
   validation seam; this item is about DELETE payload carrier shapes.
   No implementation dependency.
+
+## In Review → Ready (2026-05-14): rework feedback
+
+First In Review pass: implementation lands cleanly on the architectural axes
+(model additions, verb-aware carrier walk, two new `ChildField` siblings,
+`@LoadBearingClassifierCheck` producer + `@DependsOnClassifierCheck` consumer
+pair, DML emitter narrows RETURNING to PK on DELETE-with-carrier) and the L5
+sakila fixture + L6 end-to-end execution proof both pass against real
+PostgreSQL. `mvn install -Plocal-db` is green. The rework gap is in the
+spec-promised test coverage and spec housekeeping, not the implementation:
+
+1. **`PkResolutionEmitterReachabilityTest` is missing.** §Tests L3 audit and
+   §Acceptance criteria both name a reflective scan over `PkResolution`'s arms
+   plus a paired fixture that asserts `BuildContext.classifyDeleteTableProjection`
+   rejects a `PerFieldOutcome.ServiceField` classification before any
+   `ChildField.SingleRecordTableFieldFromReturning` is constructed. The
+   compiler-enforced sealed switch covers the static side, but the named
+   forward-protection test is the artefact future contributors (who add a third
+   `PkResolution` arm) will trip; ship the small reflection test next to
+   `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`.
+
+2. **`MutationDmlNodeIdClassificationTest` rows are missing.** §Tests L4 named
+   four admission cells of the cardinality × element matrix (bulk/single ×
+   Id/Table), with the composite-PK admission cell using the R130 reproducer
+   shape (`slettRegelverksamling`). The test file was not modified by R156.
+   Add the four rows; the R130 reproducer cell is the motivating fixture for
+   this whole item.
+
+3. **L3 admission-matrix is thin.** `MutationDeletePayloadCarrierCase` ships
+   four cases; §Tests named ~11. Missing rows: bulk DELETE + `[ID!]` implicit
+   admission, bulk DELETE + `[ID!] @nodeId` explicit admission, single DELETE
+   variants of both, UPDATE/UPSERT + `[ID!]` rejection, DELETE + `[Foo!]` with
+   non-null FK reference rejection, DELETE + `[Foo!]` with `@service` field
+   rejection, DELETE + `[ID!]` with no `@node`-backed input @table rejection,
+   DELETE + `[ID!] @nodeId` pinning to a different table rejection. The
+   canonical recommended pattern (`DataElement.Id`) has zero classifier-level
+   admission coverage today; L6 covers the happy path end-to-end but not the
+   classifier rejection messages authors hit first. `VariantCoverageTest`
+   currently lists `SingleRecordIdFieldFromReturning` as EXCUSED for
+   test-fixture-catalog reasons; the sakila SDL surface was extended fine for
+   L5/L6, the unit-test fixture catalog can be extended similarly (or extend
+   the `nodeidfixture` catalog `VariantCoverageTest` references).
+
+4. **Spec housekeeping.** Per workflow rule "Plan housekeeping", the spec body
+   should be marked up to reflect what shipped. Collapse the §Scope / §Design
+   phases that are done to one-line `shipped at <sha>` notes, capture the test
+   gaps above as named follow-up Backlog items (or fold them back into §Tests
+   so the next implementation pass closes them), and name the
+   `buildSingleRecordTableFromReturningFetcherValue` Record-synthesis approach
+   (with the same-Field-instance round-trip load-bearing assumption) so future
+   readers don't have to reconstruct it from the FetcherEmitter doc comment.
+
+5. **Minor: emit-time Record synthesis assumption.** `FetcherEmitter.java:467+`
+   synthesizes a fresh `Record` via `Tables.<TABLE>.newRecord()` and copies PK
+   fields, rather than passing the upstream RETURNING `Record` directly. The
+   load-bearing "source and target resolve to the same generated table class"
+   assumption is documented in the emitter doc comment but not in the spec.
+   A one-line spec amendment (or a §Runtime note) closes the gap.
+
+Implementation shipped at: `ba4697f` (Phase A model), `cbe4634` (Phase B
+verb-aware walk), `61ce2c8` (Phase C/D classifier rewire + MutationField
+admission), `8d88bb5` (Phase E/F emitters), `fe676bf` (Phase G partial L1/L3),
+`a869716` (Phase G L5 sakila), `160f102` (Phase G L6 execution-tier),
+`e08c439` (Phase H user docs), `424bc42` (doc sweep). Trunk: `424bc42`.
