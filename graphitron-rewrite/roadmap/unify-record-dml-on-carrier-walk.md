@@ -1,13 +1,13 @@
 ---
 id: R161
 title: "Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path"
-status: Backlog
+status: Spec
 bucket: structural
 priority: 3
 theme: mutations-errors
 depends-on: []
 created: 2026-05-13
-last-updated: 2026-05-13
+last-updated: 2026-05-14
 ---
 
 # Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path
