@@ -885,4 +885,79 @@ class DmlBulkMutationsExecutionTest {
             .returningResult(DSL.field("film_id", Integer.class))
             .fetchOne().value1();
     }
+
+    // ===== R156: payload-returning DELETE (DataElement.Id + DataElement.Table arms) =====
+    //
+    // deleteFilmsIdCarrier returns DeletedFilmsIdPayload { deletedIds: [ID!] }, where the
+    // carrier's data field classifies as ChildField.SingleRecordIdFieldFromReturning carrying
+    // the per-Film NodeId encoder. The fetcher emits `(env) -> { for r in source: __ids.add(
+    // encodeFilm(r.get(...))) }`, producing the list of encoded PKs in input order.
+    //
+    // deleteFilmsTableCarrier returns DeletedFilmsTablePayload { deleted: [DeletedFilmInfo!] },
+    // where the carrier's data field classifies as ChildField.SingleRecordTableFieldFromReturning
+    // carrying a List<PkResolution> with one PkRead arm over film_id. The fetcher synthesizes a
+    // new film Record per source row, copies film_id from the RETURNING source, and lets the
+    // per-field ColumnFetcher on DeletedFilmInfo project film_id back through .filmId.
+    //
+    // Both verify the @LoadBearingClassifierCheck producer-consumer pair (key
+    // mutation-delete-carrier.pk-resolution-projection-clean) and the end-to-end DELETE +
+    // RETURNING + per-field projection pipeline against real PostgreSQL.
+
+    @Test
+    void deleteFilmsIdCarrier_returnsEncodedNodeIdsOfDeletedRows() {
+        String m1 = randomMarker("R156-ID-a");
+        String m2 = randomMarker("R156-ID-b");
+        Integer id1 = insertFilm(m1);
+        Integer id2 = insertFilm(m2);
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    deleteFilmsIdCarrier(in: [
+                        { filmId: %d },
+                        { filmId: %d }
+                    ]) { deletedIds }
+                }
+                """.formatted(id1, id2));
+            Map<String, Object> payload = (Map<String, Object>) data.get("deleteFilmsIdCarrier");
+            List<String> deletedIds = (List<String>) payload.get("deletedIds");
+            String encoded1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", id1);
+            String encoded2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", id2);
+            assertThat(deletedIds).containsExactly(encoded1, encoded2);
+            int remaining = dsl.fetchCount(DSL.selectFrom(DSL.table("film"))
+                .where(DSL.field("film_id", Integer.class).in(id1, id2)));
+            assertThat(remaining).as("rows are actually deleted").isZero();
+        } finally {
+            // best-effort cleanup of rows that may have survived (shouldn't happen on success)
+            dsl.deleteFrom(DSL.table("film"))
+                .where(DSL.field("film_id", Integer.class).in(id1, id2)).execute();
+        }
+    }
+
+    @Test
+    void deleteFilmsTableCarrier_projectsPkColumnsFromReturningRecord() {
+        String m1 = randomMarker("R156-TBL-a");
+        String m2 = randomMarker("R156-TBL-b");
+        Integer id1 = insertFilm(m1);
+        Integer id2 = insertFilm(m2);
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    deleteFilmsTableCarrier(in: [
+                        { filmId: %d },
+                        { filmId: %d }
+                    ]) { deleted { filmId } }
+                }
+                """.formatted(id1, id2));
+            Map<String, Object> payload = (Map<String, Object>) data.get("deleteFilmsTableCarrier");
+            List<Map<String, Object>> deleted = (List<Map<String, Object>>) payload.get("deleted");
+            assertThat(deleted).hasSize(2);
+            assertThat(deleted).extracting(r -> r.get("filmId")).containsExactly(id1, id2);
+            int remaining = dsl.fetchCount(DSL.selectFrom(DSL.table("film"))
+                .where(DSL.field("film_id", Integer.class).in(id1, id2)));
+            assertThat(remaining).as("rows are actually deleted").isZero();
+        } finally {
+            dsl.deleteFrom(DSL.table("film"))
+                .where(DSL.field("film_id", Integer.class).in(id1, id2)).execute();
+        }
+    }
 }
