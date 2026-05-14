@@ -415,9 +415,14 @@ public final class FetcherEmitter {
         var body = CodeBlock.builder().add("($T env) -> {\n", DATA_FETCHING_ENV);
         if (isList) {
             var resultOfRecord = ParameterizedTypeName.get(jooqResult, jooqRecord);
+            var stringClass = ClassName.get("java.lang", "String");
+            var arrayListOfString = ParameterizedTypeName.get(
+                ClassName.get("java.util", "ArrayList"), stringClass);
+            var listOfString = ParameterizedTypeName.get(
+                ClassName.get("java.util", "List"), stringClass);
             body.add("    $T source = ($T) env.getSource();\n", resultOfRecord, resultOfRecord);
             body.add("    if (source == null) return null;\n");
-            body.add("    var __ids = new java.util.ArrayList<String>(source.size());\n");
+            body.add("    $T __ids = new $T(source.size());\n", listOfString, arrayListOfString);
             body.add("    for ($T __r : source) {\n", jooqRecord);
             body.add("        __ids.add($T.$L(", encoderClass, encoderMethod);
             for (int i = 0; i < pkColumns.size(); i++) {
@@ -488,36 +493,30 @@ public final class FetcherEmitter {
         var table = carrier.returnType().table();
         var jooqRecord = ClassName.get("org.jooq", "Record");
         var jooqResult = ClassName.get("org.jooq", "Result");
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
-        var graphitronContextClass = ClassName.get("graphql.schema", "DataFetchingEnvironment");
-        // Reuse the DSLContext lookup pattern from the existing R75 carrier path: pull the
-        // GraphitronContext off the env and ask it for the DSLContext. The synthesis uses
-        // dsl.newRecord(<Table>) which needs a configuration-bearing DSLContext.
-        var graphitronContextRealClass = ClassName.get("graphql.schema", "DataFetchingEnvironment");
         boolean isList = carrier.returnType().wrapper().isList();
         // PK column set, in declaration order (declaration-order matches the synthesized Record's
         // expected column ordering — jOOQ stores by index but is also addressable by Field<T>).
         var pkColumns = table.primaryKeyColumns();
         var body = CodeBlock.builder().add("($T env) -> {\n", DATA_FETCHING_ENV);
-        // We need a real DSLContext to construct new Records. The convention across the rewrite
-        // is to fetch it from the GraphitronContext on the env.
-        // GraphitronContext lives at <outputPackage>.schema.GraphitronContext but this method
-        // doesn't carry outputPackage; emit a fully-qualified reflective dsl-on-record fallback
-        // instead: jOOQ also offers a no-arg new Record via the table's record class.
-        // Simpler path: use DSL.using(...) only if needed; jOOQ's table.newRecord() is available
-        // on the table reference itself.
-        body.add("    $T __tbl = $T.$L;\n",
-            table.constantsClass(), table.constantsClass(), table.javaFieldName());
+        // Synthesize via the table's per-instance newRecord(). The static Tables.<TABLE> field
+        // is typed to the table's class (e.g. `Film`), which exposes the per-column accessors
+        // (`FILM.FILM_ID`) and the newRecord() factory.
+        var arrayListOfRecord = ParameterizedTypeName.get(
+            ClassName.get("java.util", "ArrayList"), jooqRecord);
+        var listOfRecord = ParameterizedTypeName.get(
+            ClassName.get("java.util", "List"), jooqRecord);
         if (isList) {
             var resultOfRecord = ParameterizedTypeName.get(jooqResult, jooqRecord);
             body.add("    $T source = ($T) env.getSource();\n", resultOfRecord, resultOfRecord);
             body.add("    if (source == null) return null;\n");
-            body.add("    var __out = new java.util.ArrayList<$T>(source.size());\n", jooqRecord);
+            body.add("    $T __out = new $T(source.size());\n", listOfRecord, arrayListOfRecord);
             body.add("    for ($T __src : source) {\n", jooqRecord);
-            body.add("        var __r = __tbl.newRecord();\n");
+            body.add("        $T __r = $T.$L.newRecord();\n",
+                jooqRecord, table.constantsClass(), table.javaFieldName());
             for (var pk : pkColumns) {
-                body.add("        __r.set(__tbl.$L, __src.get(__tbl.$L));\n",
-                    pk.javaName(), pk.javaName());
+                body.add("        __r.set($T.$L.$L, __src.get($T.$L.$L));\n",
+                    table.constantsClass(), table.javaFieldName(), pk.javaName(),
+                    table.constantsClass(), table.javaFieldName(), pk.javaName());
             }
             body.add("        __out.add(__r);\n");
             body.add("    }\n");
@@ -525,10 +524,12 @@ public final class FetcherEmitter {
         } else {
             body.add("    $T __src = ($T) env.getSource();\n", jooqRecord, jooqRecord);
             body.add("    if (__src == null) return null;\n");
-            body.add("    var __r = __tbl.newRecord();\n");
+            body.add("    $T __r = $T.$L.newRecord();\n",
+                jooqRecord, table.constantsClass(), table.javaFieldName());
             for (var pk : pkColumns) {
-                body.add("    __r.set(__tbl.$L, __src.get(__tbl.$L));\n",
-                    pk.javaName(), pk.javaName());
+                body.add("    __r.set($T.$L.$L, __src.get($T.$L.$L));\n",
+                    table.constantsClass(), table.javaFieldName(), pk.javaName(),
+                    table.constantsClass(), table.javaFieldName(), pk.javaName());
             }
             body.add("    return __r;\n");
         }

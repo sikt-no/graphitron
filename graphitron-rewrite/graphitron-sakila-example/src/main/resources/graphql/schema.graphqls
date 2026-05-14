@@ -1240,6 +1240,26 @@ type FilmsPayload {
     films: [Film!]
 }
 
+# R156 compilation-tier fixture (DataElement.Table on DELETE): @table-backed element type
+# whose fields are PK-only or nullable non-PK. The carrier walk's classifyDeleteTableProjection
+# step admits `DeletedFilmInfo` because film_id resolves to a PkRead (the SDL `filmId` field)
+# and `title` would be a NonPkNullable... but `title` in the sakila film table is NOT NULL.
+# Restrict to PK-only fields here so the projection admits cleanly.
+type DeletedFilmInfo @table(name: "film") {
+    filmId: Int! @field(name: "FILM_ID")
+}
+
+# R156 compilation-tier fixture (DataElement.Id on DELETE): the carrier's data field is the
+# encoded NodeId of each deleted film. Film is @node-backed (see line 623), so the implicit
+# encoder lookup against the input @table's @node registration resolves to encodeFilm.
+type DeletedFilmsIdPayload {
+    deletedIds: [ID!]
+}
+
+type DeletedFilmsTablePayload {
+    deleted: [DeletedFilmInfo!]
+}
+
 type Mutation {
     # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$fields>).fetchOne(r -> r)`.
@@ -1293,9 +1313,9 @@ type Mutation {
     # the data field as ChildField.SingleRecordTableField with a SourceKey (Reader.ResultRowWalk,
     # Wrap.Record, PK columns). The fetcher runs PK-only RETURNING inside a tight transaction;
     # the data field's fetcher runs the response SELECT outside it, so read errors during
-    # graphql-java's traversal cannot undo the DML. DELETE-with-carrier is rejected at classify
-    # time (the row is gone before the response SELECT can read it); use deleteFilms returning
-    # [ID!]! for that surface.
+    # graphql-java's traversal cannot undo the DML. R156 lifts DELETE-with-carrier via the
+    # DataElement.Id (encoded PK echo) and DataElement.Table (PK-only RETURNING projection)
+    # arms; see deleteFilmsIdCarrier / deleteFilmsTableCarrier below.
     createFilmPayload(in: FilmCreateInput!): FilmPayload @mutation(typeName: INSERT)
     updateFilmPayload(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE)
     # upsertFilmPayload retired under R144 (UPSERT lifts via R145).
@@ -1310,6 +1330,26 @@ type Mutation {
     # to R145 under R144's cardinality-safety regime.
     createFilmsPayload(in: [FilmCreateInput!]!): FilmsPayload @mutation(typeName: INSERT)
     updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE)
+
+    # R156 compilation-tier fixtures: payload-returning DELETE carriers. Two element-arm shapes:
+    #   - DataElement.Id: bulk DELETE returning [ID!] of encoded NodeIds. Classifies as
+    #     MutationBulkDmlRecordField with kind=DELETE; the carrier's `deletedIds` field
+    #     classifies as ChildField.SingleRecordIdFieldFromReturning with CallSiteCompaction.
+    #     NodeIdEncodeKeys carrying the Film encoder. Emitter: per-row deleteFrom(film).where(
+    #     row(film_id).in(...)).returningResult(film_id) inside transactionResult; data-field
+    #     fetcher reads film_id from each RETURNING Record and runs through encodeFilm.
+    #   - DataElement.Table: bulk DELETE returning a @table-backed element projection with PK-
+    #     only fields. Classifies as MutationBulkDmlRecordField + ChildField.
+    #     SingleRecordTableFieldFromReturning carrying List<PkResolution>. Emitter: same DML
+    #     chain; data-field fetcher synthesizes a Result<Record> over the film table with the
+    #     RETURNING PK columns set and non-PK slots null (the per-field ColumnFetcher on the
+    #     element type returns null for non-PK columns).
+    # Both lift R75 Phase 1's "DELETE-with-carrier rejected at classify time" rule (the
+    # FetcherEmitter cases for the new ChildField siblings consume PK columns directly off the
+    # RETURNING Record; no follow-up SELECT runs after the row is gone). R12 (error-handling-
+    # parity) and R145 (UPSERT) compose independently when they land.
+    deleteFilmsIdCarrier(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload @mutation(typeName: DELETE)
+    deleteFilmsTableCarrier(in: [FilmDeleteInput!]!): DeletedFilmsTablePayload @mutation(typeName: DELETE)
 
     # R12 fixture (error-handling-parity.md): mutation-side @error end-to-end. The
     # @service-backed mutation classifies as MutationServiceRecordField (same shape that
