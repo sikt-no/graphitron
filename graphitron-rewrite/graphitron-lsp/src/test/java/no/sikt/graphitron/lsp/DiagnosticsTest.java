@@ -120,8 +120,8 @@ class DiagnosticsTest {
                     new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("filmId", "Integer"),
                     new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("title", "String")
                 )
-            ))
-        );
+            )),
+        Map.of());
         var diags = compute(file, filmCatalog(), snapshot);
 
         assertThat(diags).hasSize(1);
@@ -141,8 +141,8 @@ class DiagnosticsTest {
             java.util.Map.of("FilmInput", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.RecordBacking(
                 "com.example.FilmDto",
                 java.util.List.of(new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.MemberSlot("title", "String"))
-            ))
-        );
+            )),
+        Map.of());
         var diags = compute(file, filmCatalog(), snapshot);
 
         assertThat(diags).isEmpty();
@@ -151,8 +151,8 @@ class DiagnosticsTest {
     private static LspSchemaSnapshot fooTableBacking(String tableName) {
         return new LspSchemaSnapshot.Built.Current(
             java.util.List.of(),
-            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking(tableName))
-        );
+            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking(tableName)),
+        Map.of());
     }
 
     // ===== R159 — $source sigil diagnostics =====
@@ -699,7 +699,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of()));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage()).contains("@tabel").contains("Unknown directive");
@@ -738,7 +738,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Previous(List.of(), Map.of()));
+            new LspSchemaSnapshot.Built.Previous(List.of(), Map.of(), Map.of()));
 
         assertThat(diags).isEmpty();
     }
@@ -763,7 +763,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(keyShape), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(keyShape), Map.of(), Map.of()));
 
         assertThat(diags).isEmpty();
     }
@@ -788,7 +788,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of(), Map.of()));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -972,7 +972,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of(), Map.of()));
 
         assertThat(diags).hasSize(2);
         assertThat(diags).extracting(d -> d.getMessage())
@@ -990,7 +990,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of(), Map.of()));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())
@@ -1007,7 +1007,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(authShape()), Map.of(), Map.of()));
 
         assertThat(diags).isEmpty();
     }
@@ -1037,7 +1037,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Previous(List.of(authShape()), Map.of()));
+            new LspSchemaSnapshot.Built.Previous(List.of(authShape()), Map.of(), Map.of()));
 
         assertThat(diags).isEmpty();
     }
@@ -1061,7 +1061,7 @@ class DiagnosticsTest {
             """);
 
         var diags = compute(file, filmCatalog(),
-            new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of()));
+            new LspSchemaSnapshot.Built.Current(List.of(shadowTable), Map.of(), Map.of()));
 
         assertThat(diags).hasSize(1);
         assertThat(diags.get(0).getMessage())

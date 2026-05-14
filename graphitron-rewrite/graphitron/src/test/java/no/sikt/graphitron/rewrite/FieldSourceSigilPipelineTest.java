@@ -7,17 +7,26 @@ import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * R159 pipeline-tier coverage for the {@code @field(name: "$source")} sigil on the
- * carrier-payload data field. SDL → classified model assertions: admit, type-mismatch
+ * carrier-payload data field. SDL → classified model assertions (admit, type-mismatch
  * reject, unknown-sigil reject, bare-name regression, model-shape regression, and the
  * non-carrier-site regression that the sigil-aware arm does not silently rewire the
- * non-carrier paths to learn about sigils.
+ * non-carrier paths to learn about sigils) plus validator-surface assertions on the
+ * three rejection cases — confirming the canonical {@link FieldSourceSigil} messages
+ * propagate end-to-end through {@link UnclassifiedField} to
+ * {@link GraphitronSchemaValidator}'s {@link ValidationError} output.
  */
 @PipelineTier
 class FieldSourceSigilPipelineTest {
+
+    private static List<ValidationError> validate(GraphitronSchema schema) {
+        return new GraphitronSchemaValidator().validate(schema);
+    }
 
     private static final String FILM_PAYLOAD_WITH_SOURCE = """
         type Film @table(name: "film") { title: String }
@@ -106,6 +115,15 @@ class FieldSourceSigilPipelineTest {
             .contains("getLanguages")
             .contains("LanguageRecord")
             .contains("FilmRecord");
+
+        // Validator-surface coverage: the classifier's rejection propagates through
+        // UnclassifiedField to GraphitronSchemaValidator's ValidationError output.
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .anyMatch(m -> m.contains(FieldSourceSigil.UPSTREAM_ROOT_LITERAL)
+                && m.contains("getLanguages")
+                && m.contains("LanguageRecord")
+                && m.contains("FilmRecord"));
     }
 
     /**
@@ -134,6 +152,12 @@ class FieldSourceSigilPipelineTest {
             .contains(FieldSourceSigil.UPSTREAM_ROOT_LITERAL);
         // The new parse-time arm fires before the forbidden-directive HardReject.
         assertThat(reason).doesNotContain("carries '@field'");
+
+        // Validator-surface coverage: the canonical unknown-sigil message reaches
+        // ValidationReport.errors() verbatim.
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .anyMatch(m -> m.contains(FieldSourceSigil.unknownSigilMessage("$bogus")));
     }
 
     /**
@@ -179,5 +203,13 @@ class FieldSourceSigilPipelineTest {
         // looking for an accessor named "$source", finds none, and surfaces an accessor-mismatch.
         // The literal '$source' string must remain attempt-token in the surfaced reason.
         assertThat(reason).contains("$source");
+
+        // Validator-surface coverage: the non-carrier path's existing accessor-mismatch
+        // rejection (today's text, NOT FieldSourceSigil.sourceSigilNotDefinedHereMessage)
+        // reaches ValidationReport.errors() unchanged. R159 intentionally leaves the
+        // non-carrier paths structurally identical to today.
+        assertThat(validate(schema))
+            .extracting(ValidationError::message)
+            .anyMatch(m -> m.contains("Foo.renamed") && m.contains(FieldSourceSigil.UPSTREAM_ROOT_LITERAL));
     }
 }

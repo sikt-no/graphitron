@@ -2735,9 +2735,11 @@ class FieldBuilder {
     /**
      * R159 — type-match check at the carrier-data-field {@code $source} admission site. Runs
      * when an @service mutation returns a single-record carrier whose data field opts into
-     * the {@code $source} sigil via {@code @field(name: "$source")}: compares the producer's
-     * reflected return {@link no.sikt.graphitron.javapoet.TypeName} against the SDL element's
-     * backing class through {@link FieldSourceSigil#sourceSigilTypeMatches}.
+     * the {@code $source} sigil (the carrier walk's
+     * {@link no.sikt.graphitron.rewrite.model.CarrierFieldRole.DataChannel#sourceSigil()}
+     * bit, set once at parse time): compares the producer's reflected return
+     * {@link no.sikt.graphitron.javapoet.TypeName} against the SDL element's backing class
+     * through {@link FieldSourceSigil#sourceSigilTypeMatches}.
      *
      * <p>Returns {@code null} when the check passes (or when no carrier shape / no
      * {@code $source} sigil applies); on mismatch, returns the canonical
@@ -2752,16 +2754,7 @@ class FieldBuilder {
             return null;
         }
         var dataChannel = ok.shape().data();
-        var carrierType = ctx.schema.getType(returnType.returnTypeName());
-        if (!(carrierType instanceof graphql.schema.GraphQLObjectType carrierObj)) {
-            return null;
-        }
-        var dataField = carrierObj.getFieldDefinition(dataChannel.fieldName());
-        if (dataField == null) return null;
-        var parsed = FieldSourceSigil.parseArgFieldNameRef(
-            dataField, BuildContext.DIR_FIELD, BuildContext.ARG_NAME);
-        if (!(parsed instanceof FieldSourceSigil.ParseResult.Ok parseOk)) return null;
-        if (!(parseOk.ref() instanceof FieldSourceSigil.FieldNameRef.UpstreamRoot)) return null;
+        if (!dataChannel.sourceSigil()) return null;
         var mismatch = FieldSourceSigil.sourceSigilTypeMatches(
             method.returnType(), method.className(), method.methodName(),
             dataChannel.element());

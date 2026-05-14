@@ -60,8 +60,8 @@ class FieldCompletionsTest {
 
         var snapshot = new LspSchemaSnapshot.Built.Current(
             List.of(),
-            Map.of("Foo", new TypeBackingShape.NoBacking.UnbackedResult())
-        );
+            Map.of("Foo", new TypeBackingShape.NoBacking.UnbackedResult()),
+        Map.of());
         var items = run(filmCatalog(), snapshot, source, cursor);
 
         assertThat(items).isEmpty();
@@ -164,8 +164,8 @@ class FieldCompletionsTest {
             Map.of("FilmInput", new TypeBackingShape.RecordBacking("com.example.FilmDto", List.of(
                 new TypeBackingShape.MemberSlot("filmId", "Integer"),
                 new TypeBackingShape.MemberSlot("title", "String")
-            )))
-        );
+            ))),
+        Map.of());
         var items = run(filmCatalog(), snapshot, source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
@@ -188,8 +188,8 @@ class FieldCompletionsTest {
             Map.of("FilmPojo", new TypeBackingShape.PojoBacking("com.example.FilmPojo", List.of(
                 new TypeBackingShape.MemberSlot("filmId", "Integer"),
                 new TypeBackingShape.MemberSlot("title", "String")
-            )))
-        );
+            ))),
+        Map.of());
         var items = run(filmCatalog(), snapshot, source, cursor);
 
         assertThat(items).extracting(c -> c.getLabel())
@@ -209,7 +209,7 @@ class FieldCompletionsTest {
         int col = source.split("\n")[line].indexOf('"') + 1;
         Point cursor = new Point(line, col);
 
-        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(), Map.of());
+        var snapshot = new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of());
         var items = run(filmCatalog(), snapshot, source, cursor);
 
         assertThat(items).isEmpty();
@@ -309,8 +309,8 @@ class FieldCompletionsTest {
     private static LspSchemaSnapshot tableSnapshot(String typeName, String tableName) {
         return new LspSchemaSnapshot.Built.Current(
             List.of(),
-            Map.of(typeName, new TypeBackingShape.TableBacking(tableName))
-        );
+            Map.of(typeName, new TypeBackingShape.TableBacking(tableName)),
+        Map.of());
     }
 
     private static List<org.eclipse.lsp4j.CompletionItem> run(

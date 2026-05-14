@@ -139,7 +139,7 @@ class ArgNameCompletionsTest {
         int col = lines[line].indexOf(", ") + 2;
 
         var items = runWithSnapshot(source, new Point(line, col),
-            new LspSchemaSnapshot.Built.Current(java.util.List.of(authShapeWithScope()), Map.of()));
+            new LspSchemaSnapshot.Built.Current(java.util.List.of(authShapeWithScope()), Map.of(), Map.of()));
 
         assertThat(items).extracting(i -> i.getLabel())
             .containsExactlyInAnyOrder("role", "scope");
@@ -160,7 +160,7 @@ class ArgNameCompletionsTest {
         int col = lines[line].indexOf("{ }") + 2;
 
         var items = runWithSnapshot(source, new Point(line, col),
-            new LspSchemaSnapshot.Built.Current(java.util.List.of(authShapeWithScope()), Map.of()));
+            new LspSchemaSnapshot.Built.Current(java.util.List.of(authShapeWithScope()), Map.of(), Map.of()));
 
         assertThat(items).isEmpty();
     }
@@ -207,7 +207,7 @@ class ArgNameCompletionsTest {
         int col = lines[line].indexOf(", ") + 2;
 
         var items = runWithSnapshot(source, new Point(line, col),
-            new LspSchemaSnapshot.Built.Current(java.util.List.of(shadow), Map.of()));
+            new LspSchemaSnapshot.Built.Current(java.util.List.of(shadow), Map.of(), Map.of()));
 
         // Bundled @table args are `name` (no `extraArg`); the shadow's
         // `extraArg` must not appear.
@@ -230,7 +230,7 @@ class ArgNameCompletionsTest {
         int col = lines[line].indexOf(", ") + 2;
 
         var items = runWithSnapshot(source, new Point(line, col),
-            new LspSchemaSnapshot.Built.Previous(java.util.List.of(authShapeWithScope()), Map.of()));
+            new LspSchemaSnapshot.Built.Previous(java.util.List.of(authShapeWithScope()), Map.of(), Map.of()));
 
         assertThat(items).extracting(i -> i.getLabel())
             .containsExactlyInAnyOrder("role", "scope");

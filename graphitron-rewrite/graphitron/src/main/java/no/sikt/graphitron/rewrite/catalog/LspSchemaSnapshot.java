@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.catalog;
 
+import no.sikt.graphitron.rewrite.FieldSourceSigil;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -62,10 +64,8 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
          * {@code DataChannel} role. Populated only for types whose classifier-side carrier walk
          * returns {@code Ok}; absent for everything else.
          *
-         * <p>The LSP's {@code @field(name: "$source")} arms (FieldCompletions admit,
-         * Diagnostics not-defined-here overlay) consume this to detect "is this site a carrier
-         * data field?" without a separate predicate evaluation: parent type name lookup plus
-         * field-name equality.
+         * <p>Backing data for {@link #siteContext(String, String)}; the LSP arms route through
+         * that method rather than evaluating the (typeName, fieldName) predicate themselves.
          */
         Map<String, String> carrierDataFieldByType();
 
@@ -82,11 +82,21 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         }
 
         /**
-         * R159 — convenience lookup returning the carrier's data-field name for {@code typeName},
-         * or {@link Optional#empty()} when {@code typeName} is not a classified carrier today.
+         * R159 — site-context classifier at LSP-time. Returns the
+         * {@link FieldSourceSigil.SiteContext} arm that
+         * {@link FieldSourceSigil#sourceSigilDefinedAt} dispatches on for the
+         * {@code (typeName, fieldName)} coordinate. The snapshot is the single source of truth
+         * for which coordinate is the carrier-data-field admit site today; LSP consumers route
+         * through this method rather than reimplementing the predicate against the underlying
+         * {@link #carrierDataFieldByType()} map, so a future broadening (a new admit site, a
+         * second sigil) flips the sealed answer in one place.
          */
-        default Optional<String> carrierDataField(String typeName) {
-            return Optional.ofNullable(carrierDataFieldByType().get(typeName));
+        default FieldSourceSigil.SiteContext siteContext(String typeName, String fieldName) {
+            var carrierField = carrierDataFieldByType().get(typeName);
+            if (carrierField != null && carrierField.equals(fieldName)) {
+                return new FieldSourceSigil.SiteContext.CarrierDataField();
+            }
+            return new FieldSourceSigil.SiteContext.Other();
         }
 
         record Current(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName,
@@ -96,10 +106,6 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
                 typesByName = Map.copyOf(typesByName);
                 carrierDataFieldByType = Map.copyOf(carrierDataFieldByType);
             }
-            /** Back-compat overload for callers that don't yet populate the carrier projection. */
-            public Current(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName) {
-                this(directives, typesByName, Map.of());
-            }
         }
 
         record Previous(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName,
@@ -108,10 +114,6 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
                 directives = List.copyOf(directives);
                 typesByName = Map.copyOf(typesByName);
                 carrierDataFieldByType = Map.copyOf(carrierDataFieldByType);
-            }
-            /** Back-compat overload for callers that don't yet populate the carrier projection. */
-            public Previous(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName) {
-                this(directives, typesByName, Map.of());
             }
         }
     }

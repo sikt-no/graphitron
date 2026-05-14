@@ -109,7 +109,8 @@ class CompletionTextEditTest {
             List.of(), List.of());
         var snapshot = new no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot.Built.Current(
             List.of(),
-            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film"))
+            java.util.Map.of("Foo", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
+            java.util.Map.of()
         );
         var items = runValueProvider(source, cursor,
             (ctx, dir, bytes) -> FieldCompletions.generate(VOCAB, data, snapshot, ctx, dir, bytes));

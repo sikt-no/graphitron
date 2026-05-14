@@ -513,15 +513,18 @@ public final class Diagnostics {
         var fieldName = TypeContext.enclosingFieldDefinition(directive.outer())
             .flatMap(fd -> TypeContext.fieldNameOf(fd, file.source()))
             .orElse(null);
-        // R159: if the value is the $source sigil, the diagnostic shape is sigil-aware. At an
-        // admitted carrier-data-field site, the sigil is valid — no diagnostic. Anywhere else,
-        // emit the canonical FieldSourceSigil.sourceSigilNotDefinedHereMessage(). Snapshot-
-        // uncertainty: when the parent type has no entry in the carrier projection at all
-        // (mid-edit / not-yet-classified), stay silent so we don't punish the user for a
-        // shape we cannot resolve.
+        // R159: if the value is the $source sigil, the diagnostic shape is sigil-aware. The
+        // snapshot owns the (typeName, fieldName) -> SiteContext classification through
+        // siteContext(); we route the predicate through sourceSigilDefinedAt rather than reading
+        // the underlying projection ourselves. At an admitted carrier-data-field site, the
+        // sigil is valid — no diagnostic. Anywhere else, emit the canonical
+        // FieldSourceSigil.sourceSigilNotDefinedHereMessage(). Snapshot-uncertainty: when the
+        // parent type has no entry in the type-backing projection at all (mid-edit / not-yet-
+        // classified), stay silent so we don't punish the user for a shape we cannot resolve.
         if (no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL.equals(memberName)) {
             boolean isCarrierDataField = fieldName != null
-                && built.carrierDataField(typeName.get()).filter(n -> n.equals(fieldName)).isPresent();
+                && no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilDefinedAt(
+                    built.siteContext(typeName.get(), fieldName));
             if (!isCarrierDataField && built.typesByName().containsKey(typeName.get())) {
                 out.add(diagnostic(file, valueNode, DiagnosticSeverity.Error,
                     no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilNotDefinedHereMessage()));
