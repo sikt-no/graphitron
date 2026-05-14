@@ -477,6 +477,18 @@ public final class FetcherEmitter {
      * {@link no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys} compaction
      * off its own slot and runs the encoder at fetch time. The synthesized Record carries the
      * raw PK column value; the encoder runs downstream.
+     *
+     * <p><b>Same-Field-instance round-trip.</b> The PK copy emits
+     * {@code __r.set(Tables.FILM.FILM_ID, __src.get(Tables.FILM.FILM_ID))}: the same
+     * {@code Field<T>} instance reads the source and writes the synthesized Record. This is
+     * what makes the copy type-erasure-free in the generated code — jOOQ's
+     * {@code Field<T>}-typed accessor returns and accepts the same {@code T}, so no cast or
+     * boxing widening is generated. The load-bearing assumption is therefore not only "the
+     * projection rejects FK / service / non-PK-non-null fields" (which lets the synthesis
+     * succeed) but also "source and target Records resolve to the same generated table class"
+     * (which lets the per-column copy compile). The verb-aware carrier walk pins the input
+     * {@code @table} on both sides; a future change that synthesizes a Record over a different
+     * jOOQ-generated class than the source RETURNING reads from would need to revisit this.
      */
     @DependsOnClassifierCheck(
         key = "mutation-delete-carrier.pk-resolution-projection-clean",
