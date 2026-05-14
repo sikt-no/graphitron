@@ -195,6 +195,12 @@ public final class Workspace {
      * for request callbacks that already hold a {@link Workspace}. Reads the
      * snapshot ref through the volatile field.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "snapshot-directive-roundtrip-faithful",
+        reliesOn = "returns the snapshot's DirectiveShape when bundled SDL lacks the name; "
+            + "callers (hover, arg-validation, the unknown-directive arm) trust the projected "
+            + "args / description to round-trip the producer's registry without loss."
+    )
     public DirectiveResolution resolveDirective(String name) {
         return DirectiveResolution.resolve(vocabulary, snapshot, name);
     }

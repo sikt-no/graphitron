@@ -4,7 +4,7 @@ title: LSP inlay hints and hover for inferred directives and field/type classifi
 status: Spec
 bucket: feature
 theme: lsp
-depends-on: [lsp-schema-snapshot-side-channel]
+depends-on: []
 created: 2026-05-13
 last-updated: 2026-05-13
 ---
