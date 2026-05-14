@@ -48,11 +48,12 @@ Sigil parsing is interposed at the one site that admits it, not at every directi
 - Any non-`$`-prefixed value produces `FieldNameRef.BareName(value)`.
 - Any `$`-prefixed value other than exactly `$source` rejects at parse time with `"Unknown sigil '$X'; allowed: $source"`.
 
-The helper is called from the one site that admits `UpstreamRoot`: `BuildContext.classifyCarrierField` (the per-field arm of `tryResolveSingleRecordCarrier`'s walk), interposed before the existing forbidden-directive `HardReject` check at `BuildContext.java:622-633`. The carrier walk currently lists `DIR_FIELD` in the `HardReject` set unconditionally; R159 changes that arm to consult `argFieldNameRef` first. The behavioural table after R159:
+The helper is called from the one site that admits `UpstreamRoot`: `BuildContext.classifyCarrierField` (the per-field arm of `tryResolveSingleRecordCarrier`'s walk), interposed before the existing forbidden-directive `HardReject` check at `BuildContext.java:622-633`. The carrier walk currently lists `DIR_FIELD` in the `HardReject` set unconditionally; R159 changes that arm to consult `argFieldNameRef` first. When the helper returns `UpstreamRoot`, the carrier walk runs `sourceSigilTypeMatches` (§ Type matching) against the producer's `MethodRef` and either admits or emits the type-mismatch `HardReject`. The behavioural table after R159:
 
-- `@field(name: "$source")` on the carrier data field: admit (sigil parses to `UpstreamRoot`; the directive is treated as a no-op confirmation of the implicit binding the carrier walk already produces).
-- `@field(name: "X")` non-sigil on the carrier data field: continues to `HardReject` with the existing message (bare-name `@field` on this site has never had a meaning).
-- `@field(name: "$X")` unknown sigil on the carrier data field: rejects at parse time with the `argFieldNameRef` message, which fires before the `HardReject` (so the author sees "Unknown sigil" rather than "forbidden directive").
+- `@field(name: "$source")` on the carrier data field, type matches: admit (sigil parses to `UpstreamRoot`; the directive is a no-op confirmation of the implicit binding the carrier walk already produces).
+- `@field(name: "$source")` on the carrier data field, type mismatches: `HardReject` with the canonical `FieldSourceSigil` type-mismatch message.
+- `@field(name: "X")` non-sigil on the carrier data field: continues to `HardReject` with the existing forbidden-directive message (bare-name `@field` on this site has never had a meaning).
+- `@field(name: "$X")` unknown sigil on the carrier data field: rejects at parse time with the `argFieldNameRef` message, which fires before the forbidden-directive `HardReject` (so the author sees "Unknown sigil" rather than "forbidden directive").
 
 The other eight existing `argString(field, DIR_FIELD, ARG_NAME)` call sites (`EnumMappingResolver` x2, `TypeBuilder.328`, `FieldBuilder.1097`, `FieldBuilder.3280`, `FieldBuilder.3300`, `FieldBuilder.4331`, `BuildContext.1385`) are not changed. Those sites continue to call `argString`, which returns the raw string including any `$`-prefixed text without parsing it; the new `argFieldNameRef` helper is a sibling, not a replacement, so a future refactor that rewrites `argString` to delegate through `argFieldNameRef` (and thereby silently rewire all eight sites to learn about sigils) is incorrect by construction of the two-helper split. A schema author who writes `@field(name: "$source")` at one of the eight sites surfaces today's existing "no such accessor / column / enum value" rejection unchanged, on the literal string `$source`. R159 does not add eight mechanical "I never accepted sigils" arms; the sites that never accepted sigils stay structurally identical to today, and the principle "Directives carry only what the SDL author needs to say" applies: the site already disambiguates whether sigils are meaningful.
 
@@ -66,40 +67,28 @@ The earlier draft proposed a `Binding.{NamedAccessor | UpstreamRoot}` sub-permit
 
 ### Sites where `$source` is defined
 
-The defined-at predicate is derived from R157's shipped `TypeBackingShape` projection on the field's parent, plus the carrier-payload data field admit.
+R159 admits `$source` at exactly one site: the carrier-payload data field on a `@service`-backed producer (the R158 admit). At every other site — including any field whose parent classifies as `TypeBackingShape.RecordBacking`, `PojoBacking`, `JooqRecordBacking.{WithTable | Standalone}`, `TableBacking`, or any sub-permit of `NoBacking` (`Root`, `UnclassifiedInterface`, `UnbackedResult` per `TypeBackingShape.java:108-134`) — the classifier does not admit the sigil.
 
-`$source` is defined at a field `F` of parent `P` iff one of:
+The `sourceSigilDefinedAt(SiteContext)` predicate (§ Cross-surface invariant) returns `true` only for the one admitted site today. Consumers (classifier admit, LSP completion, LSP diagnostic) ask one question and get one answer; broadening admit in a future item is a single-return-value change.
 
-- `F` is a carrier-payload data field on a `@service`-backed producer (the producer's reflected return value binds at `F`'s site). This is the R158 admit.
-- `P` classifies as `TypeBackingShape.RecordBacking` (`@record` parent: the bound domain object).
-- `P` classifies as `TypeBackingShape.PojoBacking` (the bound POJO).
-- `P` classifies as `TypeBackingShape.JooqRecordBacking` (sealed sub-taxonomy with permits `WithTable` and `Standalone`; both arms admit `$source`, since the binding takes the upstream Java value as a whole and needs no column metadata).
-- `P` classifies as `TypeBackingShape.TableBacking` (`@table` parent: the bound jOOQ record).
-- `P` is an interface whose implementing types all classify as one of the above (backed-interface admit, derived from the projection rather than enumerated), **and** whose implementer backing classes share a non-`Object` common upper bound. The Java upstream binds at the implementer-resolved type; `$source` is well-typed at the interface site by lub. The cross-product case — implementers backed by classes whose lub is `Object` (e.g. two unrelated jOOQ records and a `@record`-backed POJO) — is **not** admitted here; surfaces as a typed classify-time rejection "$source on interface with disjoint implementer backings", and is filed for a sibling item if a real fixture demands it. Pinning the lub to non-`Object` keeps the predicate decidable without introducing an interface-level lub algorithm.
-
-`$source` is **not** defined at any `P` classifying as `TypeBackingShape.NoBacking.*` (sealed sub-taxonomy with permits `Root`, `UnclassifiedInterface`, `UnbackedResult`, per `TypeBackingShape.java:108-134`):
-
-- Query, Mutation, and Subscription root fields (`NoBacking.Root`).
-- Plain (unbacked) interface members (`NoBacking.UnclassifiedInterface`).
-- `@error` types, unions, plain unbacked objects, and any other unbacked result (`NoBacking.UnbackedResult` — the projection's catch-all for "no backing class"; see `CatalogBuilder.projectType` at `CatalogBuilder.java:140-169`).
+`@field(name: "$source")` at any non-admitted site continues to surface today's existing classification rejection on the literal string `$source`: `Rejection.unknownColumn("$source")` at the table-backed paths (`FieldBuilder.java:4364-4386`) or `Rejection.accessorMismatch("...$source...")` at the record-backed paths (`FieldBuilder.java:3283-3286`). The build's rejection at those sites stays generic; the LSP overlays the canonical "`$source` is not defined at this site" diagnostic via the AST-level arm in § LSP, but the classifier does not rewire those paths in R159.
 
 `@enum` and `@scalar` types don't surface as parents in the projection at all; the carrier walk rejects them upstream.
 
-A `@splitQuery` child resolves through the projection like any other child: the parent's `TypeBackingShape` determines admit. R159 does not special-case it.
-
-`@field(name: "$source")` at an undefined site rejects at classify time with `"$source is not defined at this site"`.
+A `@splitQuery` child resolves through the projection like any other child; R159 does not special-case it.
 
 ### Type matching
 
-`@field(name: "$source")` binds the upstream Java value to the SDL field. The classifier checks the source's Java type against the SDL field's element type by the following predicate:
+`@field(name: "$source")` binds the upstream Java value to the SDL field. At admission (the one site: the carrier-payload data field), the classifier checks the producer's reflected return type against the SDL field's element type by the following predicate:
 
 - **`@table`-backed SDL element type**: require exact equality of the source type with the bound record class. List-wrapping is preserved on both sides (`List<XRecord>` source matches `[X!]` SDL element-of-list).
 - **Domain-object SDL element type** (`@record` / POJO backing): require Java assignability of the source type to the backing class.
-- **Interface SDL element type** with backed implementers: require Java assignability of the source type to the lub of the implementer backing classes.
+
+Interface element types are out of scope; the lub-of-implementers case is filed alongside the other future admit sites in § Out of scope.
 
 This is a *new* classifier check, not a refactor of an existing one: today's carrier walk in `BuildContext.classifyCarrierField` matches the data element by SDL type only (`TableBackedType` or `ResultType.fqClassName != null` at `BuildContext.java:600-603`); the Java-type match against the `@service` producer's reflected return happens separately in `ServiceCatalog.reflectServiceMethod` and is consumed elsewhere. R159 adds the predicate as a callable classifier-side check colocated with the sigil admission, so the unknown-Java-type case surfaces as a typed `Rejection` at classify time rather than a runtime cast failure downstream.
 
-**Data-flow boundary**: the predicate reads `ServiceCatalog`'s already-published `MethodRef` (the structural Java return shape `ServiceCatalog.reflectServiceMethod` reflected once at parse time per § "Classification belongs at the parse boundary"), *not* raw `java.lang.reflect.Type`. R159 introduces no new reflection read; it consumes the catalog's pre-classified return type. The predicate is callable from the validator mirror through the same `sourceSigilTypeMatches` entry point named in § "Validator mirror".
+**Data-flow boundary**: the predicate reads `ServiceCatalog`'s already-published `MethodRef` (the structural Java return shape `ServiceCatalog.reflectServiceMethod` reflected once at parse time per § "Classification belongs at the parse boundary"), *not* raw `java.lang.reflect.Type`. R159 introduces no new reflection read; it consumes the catalog's pre-classified return type.
 
 ### Internal-representation invariant
 
@@ -107,66 +96,80 @@ This is a *new* classifier check, not a refactor of an existing one: today's car
 
 ## Load-bearing classifier checks
 
-R159 introduces no new load-bearing classifier checks. The three classifier rejections (unknown sigil, `$source` undefined at the site, `$source` type mismatch) are hygiene: they fail authors fast at parse / classify time but no emitter today branches on their *acceptance* to read narrower shapes. Per § "Classifier guarantees shape emitter assumptions": producers without consumers are allowed but should not be declared with `@LoadBearingClassifierCheck`; the annotation is reserved for shapes an emitter actually relies on.
+R159 introduces no new load-bearing classifier checks. The classifier's two new rejections at the carrier data field (unknown sigil, `$source` type mismatch) and the LSP's one new AST diagnostic at other sites (`$source` not defined here) are hygiene: they fail authors fast but no emitter today branches on their *acceptance* to read narrower shapes. Per § "Classifier guarantees shape emitter assumptions": producers without consumers are allowed but should not be declared with `@LoadBearingClassifierCheck`; the annotation is reserved for shapes an emitter actually relies on.
 
 The natural home for a `$source`-pinned load-bearing key is R158's reader-variant work, where an emitter casts to a specific upstream Java type. R158 owns the producer / consumer pair for the cast-shape guarantee it relies on (one key per reader variant, per R158's own spec direction). R159 keeps the surface narrow: no future-proofing keys without the consumer in trunk.
 
 The existing `single-record-carrier-shape.roles-exhaustively-classified` key remains in place; R159 does not change `DataChannel`'s permit shape, so its existing producer (`BuildContext.tryResolveSingleRecordCarrier`, `BuildContext.java:497`), its existing consumers (`GraphitronSchemaBuilder.registerCarrierDataField` at line 274 and `TypeFetcherGenerator.buildMutationBulkDmlRecordFetcher` at line 3874), and the live audit test `CarrierFieldRoleCoverageTest` cover the new `$source` admission unchanged.
 
-## Validator mirror
+## Cross-surface invariant
 
-`GraphitronSchemaValidator` mirrors each classifier rejection with a validate-time arm:
+The original "validator mirror" framing (one classifier rejection ↔ one validator dispatch arm) does not apply here: the rejections emerge from the classifier's carrier walk and reach the validator's output (and through it the LSP) over the existing `UnclassifiedField` route. No new arm is added to `GraphitronSchemaValidator`.
 
-- Unknown-sigil rejection.
-- `$source`-undefined-at-this-site rejection.
-- `$source` type-mismatch rejection.
+The path:
 
-The mirror is pinned by three named callables shared between classifier and validator (per § "Validator mirrors classifier invariants" — both sides read the same dispatch surface):
+1. `BuildContext.classifyCarrierField` invokes `argFieldNameRef` and `sourceSigilTypeMatches`. If either fails, the carrier walk emits `CarrierFieldClassification.HardReject` carrying the canonical message from `FieldSourceSigil` (replacing the existing forbidden-directive `HardReject` only when the value is `$source`; see `BuildContext.java:622-633`).
+2. `tryResolveSingleRecordCarrier` packages the `HardReject` into `SingleRecordCarrierResolution.Rejected` (`BuildContext.java:543-544`).
+3. `MutationInputResolver` wraps the rejection text with the `"@mutation(typeName: X) return type 'Y': <reason>; or author a carrier with @record(...)"` envelope (`MutationInputResolver.java:178-181, 209-214`).
+4. `FieldBuilder` converts the wrapped rejection into an `UnclassifiedField` carrying `Rejection.structural(message)` (`FieldBuilder.java:2930-2931`).
+5. `GraphitronSchemaValidator.validateUnclassifiedField` surfaces the stored `Rejection` as a `ValidationError` on `ValidationReport.errors()` (`GraphitronSchemaValidator.java:893-898`).
+6. The LSP's `Diagnostics.compute` calls `validatorDiagnostics(report)`, which iterates `report.errors()` (`Diagnostics.java:159, 195-211`) and turns each into an LSP diagnostic at the artifact's coordinate. No LSP-side rewiring needed for the validator-surfaced cases.
 
-- `argFieldNameRef(field, DIR_FIELD, ARG_NAME) -> Optional<FieldNameRef>` — the parse helper. Used by `BuildContext.classifyCarrierField` (classifier) and `GraphitronSchemaValidator`'s `@field`-on-carrier-data-field arm (validator). Producer of the unknown-sigil rejection.
-- `sourceSigilDefinedAt(TypeBackingShape parentShape, boolean isCarrierDataField) -> boolean` — the defined-at predicate over the R157 projection. Producer of the undefined-at-site rejection. Used by classifier, validator, and the LSP `FieldCompletions`/`Diagnostics` arms.
-- `sourceSigilTypeMatches(JavaType sourceType, SdlElementType sdlElement) -> Optional<Rejection>` — the type-matching predicate (§ "Type matching" below). Used by classifier and validator.
+The integrity property the "mirror" framing was reaching for is preserved by the shared `FieldSourceSigil` utility: the canonical rejection messages — unknown sigil, `$source` not defined here, `$source` type mismatch — live there, so a refactor that changes a message in one consumer (say, the LSP's AST diagnostic) silently changes it at every other (the validator's surfaced text, the classifier's HardReject). The three shared callables are:
 
-These three callables live on a single classifier-side utility (working name `FieldSourceSigil`); the spec pins their *shared* use so a future refactor that inlines the `FieldNameRef` parse on the validator side, or re-derives the defined-at predicate from raw directive ASTs, fails its own audit. Validator-mirror coverage lives in a new `FieldSourceSigilValidationTest` under `graphitron/src/test/java/no/sikt/graphitron/rewrite/validation/`, following the per-aspect pattern of the existing tests in that package (`ServiceFieldValidationTest`, `RecordFieldAccessorValidationTest`, `ErrorTypeValidationTest`, …). The test runs each rejection's synthetic schema through both the classifier and the validator and asserts both surface the same message produced by the shared callable.
+- `argFieldNameRef(field, DIR_FIELD, ARG_NAME) -> Optional<FieldNameRef>` — parse helper, producer of the unknown-sigil rejection text.
+- `sourceSigilDefinedAt(SiteContext) -> boolean` — predicate over a R159-narrow site set (carrier data field today; one return value to change when a future item broadens admit). Producer of the canonical "not defined here" rejection text via a sibling accessor `sourceSigilNotDefinedHereMessage()`.
+- `sourceSigilTypeMatches(JavaType sourceType, SdlElementType sdlElement) -> Optional<Rejection>` — type-matching predicate at admission. Producer of the type-mismatch rejection text.
+
+`SiteContext` encapsulates whatever the predicate inspects today (the boolean "is this a carrier-payload data field on a `@service`-backed producer"); R159 keeps it abstract so future items broaden the predicate by adding inputs rather than reshaping the call sites. The carrier-data-field detection on the LSP side may live in the snapshot or in a sibling helper; R159's spec does not pin its placement.
+
+Shared-callables coverage lives in a new `FieldSourceSigilValidationTest` under `graphitron/src/test/java/no/sikt/graphitron/rewrite/validation/`, following the per-aspect pattern of the existing tests in that package (`ServiceFieldValidationTest`, `RecordFieldAccessorValidationTest`, `ErrorTypeValidationTest`, …). The test runs each rejection's synthetic schema end-to-end and asserts `ValidationReport.errors()` contains the canonical `FieldSourceSigil` message verbatim — covering classifier production + `UnclassifiedField` propagation + validator surfacing in one fixture per case.
 
 ## LSP
 
-`@field(name:)` autocomplete on sites where `$source` is defined suggests `$source` as a top-level value alongside the existing accessor / column suggestions. R157's shipped `typesByName` projection already supplies the site-classification signal the LSP needs: `TypeBackingShape.RecordBacking`, `PojoBacking`, `JooqRecordBacking` (both `WithTable` and `Standalone`), and `TableBacking` mark the defined sites; `NoBacking.{Root | UnclassifiedInterface | UnbackedResult}` marks the undefined sites. The new arm in `FieldCompletions.generate` adds the literal `$source` to the suggestion list on defined sites. `Diagnostics.validateFieldMember` mirrors the classifier rejections.
+`Diagnostics` and `FieldCompletions` consume the same `FieldSourceSigil` callables the classifier uses.
 
-**Snapshot-uncertainty semantics.** The LSP's `typesByName` projection from R157 is built per snapshot and includes only types whose parent has been classified. For mid-edit snapshots where the parent SDL type has just been renamed and its `TypeBackingShape` has not yet been published, the projection returns no entry for the parent. The LSP arm reads this absence as "shape unknown" and is silent: it neither offers `$source` as a completion nor emits the undefined-at-site diagnostic. Suppressing both halves on missing-snapshot-entry follows the principle "Validator mirrors classifier invariants" applied to LSP — the same `sourceSigilDefinedAt` callable named in § "Validator mirror" returns the same boolean to all three consumers (classifier, validator, LSP), and "shape unknown" maps to a fourth observable outcome (silent) only on the LSP side, where classification can lag the parse.
+`FieldCompletions.generate` (`graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/completions/FieldCompletions.java`, lines 71-87) gets a new arm: when `sourceSigilDefinedAt(siteContext)` returns true for the enclosing field, the suggestion list prepends `$source` as a top-level value. With R159's narrow predicate, the only site where this fires is a carrier-payload data field on a `@service`-backed producer. At every other site, completions stay as today (column / accessor names from the parent's `TypeBackingShape`, or empty for `NoBacking` and `JooqRecordBacking.Standalone`).
+
+`Diagnostics.validateFieldMember` (`graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/diagnostics/Diagnostics.java`, lines 502-527) gets a new arm: when `@field(name:)`'s argument is the literal `$source` and `sourceSigilDefinedAt(siteContext)` returns false, the LSP emits the canonical `FieldSourceSigil.sourceSigilNotDefinedHereMessage()` diagnostic at the directive's coordinate. This overlays a clearer message at the LSP layer than the build's eventual `accessorMismatch("$source")` / `unknownColumn("$source")` rejection at those sites; the build error is unchanged. The unknown-sigil case (`@field(name: "$bogus")` at the carrier data field) and the type-mismatch case are covered by validator-surfacing through `Diagnostics.validatorDiagnostics`; the LSP forwards them without re-deriving.
+
+**Snapshot-uncertainty semantics.** The LSP's `typesByName` projection from R157 is built per snapshot and includes only types whose parent has been classified. For mid-edit snapshots where the parent SDL type has just been renamed and the carrier-data-field detection cannot be resolved, the LSP arm reads this absence as "shape unknown" and is silent: it neither offers `$source` as a completion nor emits the undefined-at-site diagnostic. "Shape unknown" is a fourth observable outcome alongside the predicate's two and the missing-directive case, surfacing only on the LSP side where classification can lag the parse.
 
 ## Tests
 
-Pipeline-tier:
+Pipeline-tier (`BuildContext` end-to-end through `ValidationReport`):
 
 - `$source` admit on an OpprettRegelverksamlingPayload-shaped fixture: assert the carrier walk produces `DataChannel(fieldName, DataElement.Record(...))` with the directive admitted, identical in shape to the same fixture without the directive.
-- `$source` type-mismatch reject (source's Java type does not match the SDL element's backing class).
-- `$source`-at-Query-root reject (`NoBacking.Root`; "not defined at this site").
-- `$source`-at-unbacked-interface-member reject (`NoBacking.UnclassifiedInterface`).
-- `$source`-at-error-type-field reject (`NoBacking.UnbackedResult`; ensures the `@error` case is covered even though it shares a permit with other unbacked results).
-- `$source`-at-backed-interface admit (interface with uniformly backed implementers).
-- Unknown-sigil reject (`@field(name: "$bogus")`): assert the message names `$source` as the only allowed sigil and fires before the existing `DIR_FIELD` `HardReject` so the author sees the parse-time message, not the forbidden-directive one.
+- `$source` type-mismatch reject (the `@service` producer's reflected return type doesn't match the SDL element's backing class): assert `ValidationReport.errors()` contains the canonical `FieldSourceSigil` type-mismatch message.
+- Unknown-sigil reject (`@field(name: "$bogus")` at the carrier data field): assert the message names `$source` as the only allowed sigil and that the new parse-time arm fires before the existing `DIR_FIELD` `HardReject` (so the author sees the parse-time message, not the forbidden-directive one).
 - Bare-name `@field(name: "X")` on the carrier data field continues to `HardReject` with the existing forbidden-directive message: regression that the sigil-aware arm does not relax the long-standing rejection for non-sigil values at this site.
 - Carrier walk model-shape regression: fixtures that go through today's implicit element-type binding (no `@field` directive) continue to produce `DataChannel(fieldName, DataElement.Record(...))` / `DataChannel(fieldName, DataElement.Table(...))` byte-identical to today, confirming R159 reshapes no existing fixture.
+- Non-carrier-site behaviour regression: `@field(name: "$source")` on a `@record`-backed field and on a `@table`-backed field continues to surface today's `Rejection.accessorMismatch("$source")` / `Rejection.unknownColumn("$source")` unchanged — R159 does not silently rewire the non-carrier paths to learn about sigils.
+
+`FieldSourceSigilValidationTest` (under `graphitron/src/test/java/no/sikt/graphitron/rewrite/validation/`):
+
+- Per-aspect coverage for the rejection messages produced by `FieldSourceSigil`. Three synthetic schemas (unknown sigil at carrier data field; `$source` type mismatch; bare-name `$source` at a `@record`-backed non-carrier site as the regression marker). Each runs end-to-end through classifier + validator and asserts `ValidationReport.errors()` contains the canonical `FieldSourceSigil` message verbatim — pinning that the messages live on the utility and are not duplicated.
+
+LSP-tier:
+
+- `$source` appears in `FieldCompletions` suggestions on the carrier data field site; absent everywhere else (record-backed, table-backed, pojo-backed, root, unbacked-interface, error-type, jOOQ-standalone, all the same: no `$source` suggestion).
+- `Diagnostics.validateFieldMember` produces the canonical `sourceSigilNotDefinedHereMessage` diagnostic when `@field(name: "$source")` is written at any non-carrier-data-field site (covering each `TypeBackingShape` variant in turn).
+- Snapshot-uncertainty regression: when the snapshot has no entry for the parent (mid-edit rename), the LSP arm is silent — no completion, no diagnostic.
 
 Execution-tier:
 
 - End-to-end run of an OpprettRegelverksamlingPayload-shaped Sakila fixture with the `@field(name: "$source")` directive on the carrier data field. The test gates on R158 being in trunk (R159 by itself admits the directive but does not change runtime behaviour; R158 lands the consumer-side fetcher emission that resolves the runtime cast failure). The execution test exercises both halves; until R158 lands, R159's pipeline-tier coverage is the live signal.
-
-LSP-tier:
-
-- `$source` appears in `FieldCompletions` suggestions on defined sites, absent on undefined sites.
-- `Diagnostics.validateFieldMember` produces the three rejection messages on synthetic schemas.
 
 ## Relationship to other roadmap items
 
 - **R158** consumes the carrier-payload data field's binding via the producer-kind axis it introduces on `SourceKey.Reader`. R159 makes `$source` nameable at this site as the semantic contract R158 relies on, but produces no model-arm marker; R158's reader-variant discrimination is on producer kind (DML vs `@service`), classifier-pinned independent of `@field` syntax. Producer-kind is the right discriminator for R158 because it is *invariant under* the author's choice to write or omit `@field(name: "$source")`: the upstream Java cast that R158's emitter arm needs (`Result<RecordN<PK>>` vs `List<XRecord>`) is determined by which mutation classifier produced the carrier, not by the SDL author's directive choice; the `$source` directive is a no-op confirmation of an admit the carrier walk already makes from the SDL shape. Two consumers (R158's emitter, R159's defined-at predicate) evaluate *different* predicates over the model and stay independently auditable. R158 can ship in either order relative to R159; its execution-tier test gates on R159 being in trunk.
 - **R12** owns error-channel binding. R159 does not extend it; a future name-decoupled error binding has its own item if a consumer arises.
 - **R96** owns `@record` directive cleanup. R159 carries no defensive `@record`-on-payload rejection.
-- **R157** ships the `TypeBackingShape` projection R159 consumes for both the defined-at predicate (classifier and validator) and LSP completion site classification.
+- **R157** ships the `TypeBackingShape` projection. R159 consumes it lightly: the predicate `sourceSigilDefinedAt` is narrow today (carrier data field only), but its `SiteContext` shape leaves room for a future item to broaden admit to specific `TypeBackingShape` permits without reshaping consumers. The LSP also reads the projection for non-sigil completions and diagnostics it already runs; R159 adds no new dependency on the projection beyond the existing site walk.
 
 ## Out of scope
 
+- Admission of `$source` at sites other than the carrier-payload data field. The original spec sketched `$source` at `@record`-backed, `@table`-backed, POJO-backed, jOOQ-record-backed, and backed-interface parents as a single uniform predicate; R159 narrows admit to one site because that is the only motivated consumer (R158). Future items can broaden `sourceSigilDefinedAt` to additional `TypeBackingShape` permits; each broadening pulls along the LSP completion and diagnostic arms automatically through the shared predicate. The interface-element lub case (`$source` at an interface field with backed implementers, with the non-`Object` common-upper-bound restriction) is its own filing because the lub algorithm is a sibling design.
 - `$errors`, `$context`, any other sigil. Filed if and when a consumer arises.
 - Dotted paths in `@field(name:)`. Single-segment today; R159 does not lift.
 - Multi-step / path-expression grammar in any form. Filed if and when a consumer arises.
