@@ -1,11 +1,12 @@
 ---
 id: R12
 title: "Error-handling parity: emit per-fetcher error channels from `@error`"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 7
 theme: mutations-errors
 depends-on: []
+last-updated: 2026-05-14
 ---
 
 # Error-handling parity: emit per-fetcher error channels from `@error`
@@ -317,8 +318,10 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
 
 **Remaining work:**
 
-All five bullets below are R12 scope. The first three form a dependency chain
-(each enables the next); the last two are independent.
+All six bullets below are R12 scope. The first three form a dependency chain
+(each enables the next); the last three are independent. The carrier-walk
+wiring bullet is what unblocks R161 (`unify-record-dml-on-carrier-walk`); the
+rest of R12 is orthogonal.
 
 *Dependency chain (relaxation → accessor check → extensions wiring):*
 
@@ -379,6 +382,106 @@ All five bullets below are R12 scope. The first three form a dependency chain
   `ConstraintViolations` helper).
 
 *Independent:*
+
+- **Carrier-walk `ErrorChannelRole` wiring (unblocks R161).** *Not gated.*
+  R141 reserved the `CarrierFieldRole.ErrorChannelRole` permit in the type
+  system without a producer, and `MutationDmlRecordField` /
+  `MutationBulkDmlRecordField` already carry `Optional<ErrorChannel>` slots
+  that `FieldBuilder.classifyMutationField` populates from
+  `shape.errorChannel().map(...::binding)` at `FieldBuilder.java:3164-3165`.
+  The catch arm emit at `TypeFetcherGenerator.buildMutationDmlRecordFetcher`
+  already calls `catchArm(outputPackage, f.errorChannel())` at
+  `TypeFetcherGenerator.java:3688`. Three pieces are missing: the producer in
+  `BuildContext.classifyCarrierField`, the consumer dispatch in
+  `GraphitronSchemaBuilder.registerCarrierDataField`, and the source-value
+  contract for carriers that carry an `errors` field.
+
+  The source-value design uses graphql-java's `DataFetcherResult.localContext`
+  for the errors handoff rather than embedding errors in the source value.
+  Success-path source is the PK record as today
+  (`DataFetcherResult.<RecordN<PK>>newResult().data(pkRecord).build()`); the
+  catch arm returns `data(null).localContext(errorsList).build()` with the
+  same value type. `SingleRecordTableField`'s existing source-cast contract at
+  `FetcherEmitter.java:269,272` is preserved untouched, and the null-source
+  guard at `FetcherEmitter.java:273` (`if (source == null) return null;`)
+  already handles the catch-arm case cleanly: no follow-up SELECT runs, the
+  data field renders null, and the errors field reads errors out of
+  localContext. No developer payload class is consulted on the catch path; no
+  reflection, no `payloadClass` / `errorsSlot` / `defaultedSlots` are needed
+  for the carrier-walk binding.
+
+  The `ErrorChannel` record splits into a sealed type with two arms:
+  - **`ErrorChannel.PayloadClass`** carries today's full shape
+    (`mappedErrorTypes`, `payloadClass`, `errorsSlot`, `defaultedSlots`,
+    `mappingsConstantName`) and feeds the existing
+    `dispatchCatchArm` / `payloadFactoryLambda` machinery for callers that
+    construct a developer payload class on the catch path (`DmlTableField`
+    permits via Path 2, `MutationServiceTableField` /
+    `MutationServiceRecordField`, `QueryServiceTableField` /
+    `QueryServiceRecordField`, and the `@tableMethod` / child-`@service`
+    variants that landed above). Once R161 retires Path 2, this arm narrows
+    to the service-backed callers.
+  - **`ErrorChannel.LocalContext`** carries the minimal carrier-walk binding
+    (`mappedErrorTypes`, `errorsFieldName`, `mappingsConstantName`) for
+    `MutationDmlRecordField` and `MutationBulkDmlRecordField`. The
+    `errorsFieldName` is the SDL name of the carrier's errors field, used
+    only by the consumer dispatch to wire the per-field DataFetcher; the
+    catch arm itself reads from `mappingsConstantName` and ignores the field
+    name.
+
+  The catch arm in `TypeFetcherGenerator.catchArm` dispatches over the sealed
+  shape: the `PayloadClass` arm keeps emitting the existing
+  `ErrorRouter.dispatch(...)` call with `errors -> new <PayloadClass>(...)`;
+  the `LocalContext` arm emits a new pattern that walks the mapping table
+  inline (or via a new `ErrorRouter.dispatchToLocalContext` overload) and
+  returns `DataFetcherResult.<RecordN<PK>>newResult().data(null).localContext(List.of(t)).build()`
+  on first match, falling through to `ErrorRouter.redact` on no match.
+
+  `ChildField.ErrorsField` wiring in `FetcherEmitter.dataFetcherValue` grows
+  a second arm: when the parent carrier's `ErrorChannel` is `LocalContext`,
+  emit a custom `(env) -> env.getLocalContext()` DataFetcher instead of
+  `PropertyDataFetcher.fetching(name)`. The discriminator is the parent
+  field's classification, not a flag on `ErrorsField` itself; the per-field
+  classifier doesn't know its parent's channel shape, so the lookup happens
+  at emit time via `fieldRegistry.get((parentTypeName, parentDataFieldName))`
+  → check the resolved channel arm.
+
+  The producer side in `BuildContext.classifyCarrierField` (`BuildContext.java:862-913`)
+  gains a new branch before the existing `NoPermit` rejection: if the field
+  is errors-shaped (the `FieldBuilder.detectErrorsFieldShape` predicate
+  promoted out of `FieldBuilder` to a shared helper, or made
+  package-visible), build an `ErrorChannel.LocalContext` and return
+  `Role(new ErrorChannelRole(fieldName, binding))`. The §1 channel-level
+  reject rules (rule 7 multi-VALIDATION, rule 8 duplicate criteria) run here
+  too; rejections surface as `Rejected` on the unified walk so the carrier
+  classifier reports them with the offending channel named. Pre-R161 the
+  carrier walk admits only `PlainObjectType` / `PojoResultType.NoBacking`, so
+  the producer fires only for unbacked carriers with errors fields (zero
+  fixtures today reach this combination). Post-R161 it fires for backed
+  carriers too — the same wiring, no special-case for `Backed`.
+
+  The consumer side in `GraphitronSchemaBuilder.registerCarrierDataField`
+  (`GraphitronSchemaBuilder.java:329-333`) replaces the no-op
+  `ErrorChannelRole` arm with a registration that pins the localContext
+  DataFetcher on the errors field's coordinates, or — preferred — leaves
+  registration to the normal child-field schema walk and uses
+  `ErrorChannelRole` as the emit-time discriminator only. The choice falls
+  out of how `ErrorsField` wiring at `FetcherEmitter.dataFetcherValue` looks
+  up the parent channel; spec the lookup once and the registration side
+  follows.
+
+  *Test coverage.* R161's test-migration section enumerates four
+  `GraphitronSchemaBuilderTest` fixtures (`DML_RECORD_PAYLOAD_*`,
+  `GraphitronSchemaBuilderTest.java:5973-6062`) and two
+  `FetcherPipelineTest` cases (`:367`, `:412`, `:433`) whose Path-2
+  expectations migrate or delete when this bullet ships. The
+  carrier-walk-with-errors happy path lives in this item's coverage rather
+  than R161's: a `MutationDmlRecordField` with an `ErrorChannel.LocalContext`
+  binding, asserting (a) the classifier admits the wrapper, (b) the emitted
+  fetcher's catch arm builds `data(null).localContext(...)`, (c) the
+  errors-field DataFetcher reads from localContext at request time.
+  Sakila-tier execution coverage shape mirrors the
+  `MutationServiceTableField` validator-integration fixture pattern.
 
 - **Lift `errorChannel` onto child `@service` and `@tableMethod` variants:
   landed.** `ChildField.ServiceTableField` / `ChildField.ServiceRecordField`
