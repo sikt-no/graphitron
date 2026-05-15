@@ -1,7 +1,7 @@
 ---
 id: R167
 title: Unify schema file extension handling between schemaInputs and graphitron:dev
-status: In Progress
+status: In Review
 bucket: feature
 priority: 5
 depends-on: []

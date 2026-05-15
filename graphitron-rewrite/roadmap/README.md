@@ -19,7 +19,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R161` | Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | 2026-05-14 <sub>created 2026-05-13</sub> | [plan](unify-record-dml-on-carrier-walk.md) |
 | `R158` | Admit @service-backed producers for single-record DML carrier data fields | In Review | 2026-05-15 <sub>created 2026-05-13</sub> | [plan](carrier-data-field-values-join-unify.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
-| `R167` | Unify schema file extension handling between schemaInputs and graphitron:dev | In Progress | 2026-05-15 | [plan](schema-file-extensions-config.md) |
+| `R167` | Unify schema file extension handling between schemaInputs and graphitron:dev | In Review | 2026-05-15 | [plan](schema-file-extensions-config.md) |
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec |  | [plan](emit-input-records.md) |
