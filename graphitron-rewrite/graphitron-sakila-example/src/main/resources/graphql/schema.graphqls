@@ -1254,6 +1254,16 @@ type FilmsServicePayload {
     films: [Film!]
 }
 
+# R158 composite-PK execution-tier fixture: same Wrap.TableRecord(FilmActorRecord) shape as
+# FilmsServicePayload but on a two-PK data table (film_actor: actor_id + film_id). Forces the
+# new MANY-arm code paths in FetcherEmitter.buildSingleRecordTableFetcherValueTableRecordWrap
+# unique to the composite-PK case: the DSL.row(pk1, pk2).in(source.stream().map(r ->
+# DSL.row(r.get(pk1), r.get(pk2))).toList()) predicate emission and the
+# List.of(__r.get(pk1), __r.get(pk2)) map-key shape for the R141 order-preserving walk.
+type FilmActorsServicePayload {
+    filmActors: [FilmActor!]
+}
+
 # R156 compilation-tier fixture (DataElement.Table on DELETE): @table-backed element type
 # whose fields are PK-only or nullable non-PK. The carrier walk's classifyDeleteTableProjection
 # step admits `DeletedFilmInfo` because film_id resolves to a PkRead (the SDL `filmId` field)
@@ -1383,6 +1393,16 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
             method: "filmById"
+        })
+
+    # R158 composite-PK MANY-arm execution-tier surface: @service-backed mutation whose
+    # carrier payload's data field types as List<FilmActorRecord>, exercising the new
+    # composite-PK shapes in FetcherEmitter's Wrap.TableRecord MANY arm (typed
+    # row(pk1, pk2).in(...) predicate + List.of(r.get(pk1), r.get(pk2)) PK-keyed-map walk).
+    serviceFilmActorsByKeys(actorIds: [Int!]!, filmIds: [Int!]!): FilmActorsServicePayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmActorCarrierService",
+            method: "filmActorsByKeys"
         })
 
     # R12 fixture (error-handling-parity.md): mutation-side @error end-to-end. The

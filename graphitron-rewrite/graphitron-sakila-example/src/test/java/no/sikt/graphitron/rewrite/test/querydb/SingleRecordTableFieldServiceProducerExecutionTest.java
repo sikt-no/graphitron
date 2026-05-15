@@ -133,6 +133,42 @@ class SingleRecordTableFieldServiceProducerExecutionTest {
     }
 
     /**
+     * MANY-arm composite-PK end-to-end: the {@code @service} mutation returns
+     * {@code List<FilmActorRecord>} for the two-PK {@code film_actor} table. The data-field
+     * fetcher reads the typed PK pair off each record via
+     * {@code r.get(Tables.FILM_ACTOR.ACTOR_ID)} / {@code r.get(Tables.FILM_ACTOR.FILM_ID)},
+     * runs the response SELECT with the {@code row(actor_id, film_id).in(...)} predicate,
+     * and projects rows in input order via the R141 composite-PK-keyed map walk (map keys
+     * are {@code List.of(r.get(actor_id), r.get(film_id))}).
+     *
+     * <p>Covers the typed paths in
+     * {@code FetcherEmitter.buildSingleRecordTableFetcherValueTableRecordWrap} unique to the
+     * composite-PK case; the single-PK arm is covered by
+     * {@link #serviceFilmsByIds_returnsFilmsInInputOrder}, and the pipeline-tier
+     * {@code serviceProducer_many_compositePk_admitsAsWrapTableRecord} pins the registered
+     * {@code SourceKey.columns} shape but does not exercise the emitted code at request time.
+     */
+    @Test
+    void serviceFilmActorsByKeys_returnsRowsInInputOrder() {
+        // film_actor seed (init.sql:264): (1,1), (2,1), (1,2), (3,2), (1,3), (2,4), (3,5).
+        // Deliberately non-PK-ordered input: (3,5) before (1,1) before (2,4). The composite-
+        // PK-keyed map walks input order, so the response array follows the input pair order
+        // regardless of the SELECT's underlying scan order.
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceFilmActorsByKeys(actorIds: [3, 1, 2], filmIds: [5, 1, 4]) {
+                    filmActors { actorId filmId }
+                }
+            }
+            """);
+        var payload = (Map<String, Object>) data.get("serviceFilmActorsByKeys");
+        var rows = (List<Map<String, Object>>) payload.get("filmActors");
+        assertThat(rows).hasSize(3);
+        assertThat(rows).extracting(r -> List.of(r.get("actorId"), r.get("filmId")))
+            .containsExactly(List.of(3, 5), List.of(1, 1), List.of(2, 4));
+    }
+
+    /**
      * Empty source short-circuit: {@code @service} returns an empty {@code List<FilmRecord>};
      * the data-field fetcher's {@code source.isEmpty()} check returns the empty list
      * without running the response SELECT.
