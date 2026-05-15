@@ -50,6 +50,12 @@ public final class FetcherEmitter {
      * @param resultType    the parent type's {@code @record} backing, or {@code null}
      * @param outputPackage the base output package (e.g. {@code no.sikt.graphql})
      */
+    @DependsOnClassifierCheck(
+        key = "error-channel.local-context-transport",
+        reliesOn = "The Transport.LocalContext arm of the ErrorsField switch emits "
+            + "'env -> env.getLocalContext()'. That reader is only correct when the carrier's "
+            + "catch arm has populated env.getLocalContext() with the errors list, which is "
+            + "the contract BuildContext.classifyCarrierField pins as the load-bearing guarantee.")
     public static CodeBlock dataFetcherValue(
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
