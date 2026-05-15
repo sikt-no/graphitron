@@ -143,6 +143,94 @@ class SourceKeyTest {
     }
 
     @Test
+    void resultRowWalkAcceptsWrapRecord() {
+        var key = new SourceKey(
+            FILM_TABLE,
+            List.of(FILM_ID),
+            List.of(),
+            new SourceKey.Wrap.Record(),
+            SourceKey.Cardinality.MANY,
+            new SourceKey.Reader.ResultRowWalk());
+        assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ResultRowWalk.class);
+        assertThat(key.wrap()).isInstanceOf(SourceKey.Wrap.Record.class);
+    }
+
+    @Test
+    void resultRowWalkAcceptsWrapTableRecordMatchingTarget() {
+        // R158: ResultRowWalk admits Wrap.TableRecord whose className equals target.recordClass()
+        // (the @service carrier-payload producer's typed XRecord return).
+        var key = new SourceKey(
+            FILM_TABLE,
+            List.of(FILM_ID),
+            List.of(),
+            new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()),
+            SourceKey.Cardinality.MANY,
+            new SourceKey.Reader.ResultRowWalk());
+        assertThat(key.reader()).isInstanceOf(SourceKey.Reader.ResultRowWalk.class);
+        assertThat(key.wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
+    }
+
+    @Test
+    void resultRowWalkRejectsWrapTableRecordMismatchedTarget() {
+        // R158: target-aligned check — Wrap.TableRecord(other) where other != target.recordClass()
+        // would mean the @service produced a record of a different table than the data field
+        // resolves against. The compact-constructor rejects.
+        ClassName otherRecord = ClassName.bestGuess("com.example.OtherRecord");
+        assertThatThrownBy(() -> new SourceKey(
+                FILM_TABLE,
+                List.of(FILM_ID),
+                List.of(),
+                new SourceKey.Wrap.TableRecord(otherRecord),
+                SourceKey.Cardinality.ONE,
+                new SourceKey.Reader.ResultRowWalk()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("ResultRowWalk")
+            .hasMessageContaining("target.recordClass");
+    }
+
+    @Test
+    void resultRowWalkRejectsNonEmptyPathUnderRecordWrap() {
+        assertThatThrownBy(() -> new SourceKey(
+                FILM_TABLE,
+                List.of(FILM_ID),
+                List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "step_0")),
+                new SourceKey.Wrap.Record(),
+                SourceKey.Cardinality.MANY,
+                new SourceKey.Reader.ResultRowWalk()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("ResultRowWalk")
+            .hasMessageContaining("empty path");
+    }
+
+    @Test
+    void resultRowWalkRejectsNonEmptyPathUnderTableRecordWrap() {
+        // R158: even the admitted target-aligned TableRecord wrap must carry empty path.
+        assertThatThrownBy(() -> new SourceKey(
+                FILM_TABLE,
+                List.of(FILM_ID),
+                List.of(TestFixtures.liftedHop(FILM_TABLE, List.of(FILM_ID), "step_0")),
+                new SourceKey.Wrap.TableRecord(FILM_TABLE.recordClass()),
+                SourceKey.Cardinality.MANY,
+                new SourceKey.Reader.ResultRowWalk()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("ResultRowWalk")
+            .hasMessageContaining("empty path");
+    }
+
+    @Test
+    void resultRowWalkRejectsWrapRow() {
+        assertThatThrownBy(() -> new SourceKey(
+                FILM_TABLE,
+                List.of(FILM_ID),
+                List.of(),
+                new SourceKey.Wrap.Row(),
+                SourceKey.Cardinality.MANY,
+                new SourceKey.Reader.ResultRowWalk()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("ResultRowWalk");
+    }
+
+    @Test
     void columnsAndPathAreImmutable() {
         var mutableColumns = new java.util.ArrayList<ColumnRef>();
         mutableColumns.add(FILM_ID);
