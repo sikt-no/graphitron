@@ -1730,7 +1730,12 @@ class FieldBuilder {
                     + "Use [" + returnType.returnTypeName() + "] or [" + returnType.returnTypeName() + "!]"));
         }
 
-        return new ErrorsField(parentTypeName, name, location, errorTypes);
+        // Transport.PayloadAccessor is the only arm reachable today: the carrier-walk producer
+        // that emits ErrorChannel.LocalContext (and would in turn select Transport.LocalContext
+        // here) is not wired yet. When it lands, this default is replaced with a switch on the
+        // parent carrier's resolved ErrorChannel.
+        return new ErrorsField(parentTypeName, name, location, errorTypes,
+            new ChildField.Transport.PayloadAccessor());
     }
 
     // ===== Carrier classifier: ErrorChannel resolution =====

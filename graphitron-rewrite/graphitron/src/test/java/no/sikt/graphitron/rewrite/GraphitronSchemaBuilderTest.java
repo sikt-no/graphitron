@@ -4631,6 +4631,11 @@ class GraphitronSchemaBuilderTest {
                 assertThat(ef.errorTypes())
                     .extracting(et -> et.name())
                     .containsExactly("ValidationErr", "DbErr");
+                // Phase B round-trip pin: the lifted ErrorsField carries the Transport
+                // discriminator selected at classify time. Today's lift defaults to
+                // PayloadAccessor because no producer emits ErrorChannel.LocalContext yet.
+                assertThat(ef.transport())
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.PayloadAccessor.class);
             }),
 
         INTERFACE_IMPLEMENTED_BY_ALL_ERROR_TYPES_LIFTS_TO_ERRORS_FIELD(
