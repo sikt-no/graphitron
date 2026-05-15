@@ -6234,6 +6234,60 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
+        UPDATE_ID_CARRIER_REJECTS(
+            "UPDATE + [ID!] carrier → UnclassifiedField (DataElement.Id is the PK-echo permit; admitted only on DELETE)",
+            """
+            type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID! @nodeId title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String @value }
+            type UpdatedFilmsPayload { updatedIds: [ID!] }
+            type Query { x: String }
+            type Mutation { updateFilms(in: [FilmInput!]!): UpdatedFilmsPayload @mutation(typeName: UPDATE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "updateFilms");
+                assertThat(f.reason()).contains("element type ID", "PK-echo permit", "DELETE", "UPDATE");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        UPSERT_ID_CARRIER_REJECTS(
+            "UPSERT + [ID!] carrier → UnclassifiedField (DataElement.Id permit-verb rule fires before R144's UPSERT-defer)",
+            """
+            type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID! @nodeId title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String @value }
+            type UpsertedFilmsPayload { upsertedIds: [ID!] }
+            type Query { x: String }
+            type Mutation { upsertFilms(in: [FilmInput!]!): UpsertedFilmsPayload @mutation(typeName: UPSERT) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "upsertFilms");
+                // The rejection message comes from either the R156 permit-verb gate or
+                // R144's upstream UPSERT-defer (whichever fires first); both surface as
+                // UnclassifiedField, both name the verb.
+                assertThat(f.reason()).contains("UPSERT");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
+        DELETE_TABLE_SERVICE_FIELD_REJECTS(
+            "DELETE + [Foo!] with a @service-resolved field on the element type → UnclassifiedField pointing at DataElement.Id",
+            """
+            type Film @table(name: "film") {
+                title: String
+                computedThing: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+            }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type DeletedFilmsPayload { deleted: [Film!] }
+            type Query { x: String }
+            type Mutation { deleteFilms(in: [FilmInput!]!): DeletedFilmsPayload @mutation(typeName: DELETE) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteFilms");
+                assertThat(f.reason()).contains("computedThing", "@service", "DataElement.Id");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
         ;
 
         final String description;

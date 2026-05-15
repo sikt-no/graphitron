@@ -74,13 +74,14 @@ class VariantCoverageTest {
             + "paths). Add a NodeIdPipelineTest case when a composite-PK FK target lands.",
         ChildField.SingleRecordIdFieldFromReturning.class,
             "R156 — produced by the verb-aware carrier walk for @mutation(typeName: DELETE) "
-            + "carriers with DataElement.Id; needs a @node-backed input @table with "
-            + "KjerneJooqGenerator-synthesized __NODE_TYPE_ID metadata. The standard test "
-            + "catalog has only `film_actor` with that metadata; the explicit "
-            + "@node(typeId:, keyColumns:) SDL form doesn't synthesize a NodeType in the test "
-            + "harness. Add a MutationDeletePayloadCarrierCase admission case once the test "
-            + "fixture surface supports it (either via NodeIdPipelineTest's nodeidfixture "
-            + "catalog or via a film_actor-keyed DELETE-with-Id case)."
+            + "carriers with DataElement.Id. Covered structurally by the four "
+            + "MutationDmlNodeIdClassificationTest admission cells (bulk/single × implicit/"
+            + "explicit @nodeId on the nodeidfixture catalog) and end-to-end by "
+            + "DmlBulkMutationsExecutionTest#deleteFilmsIdCarrier_returnsEncodedNodeIdsOfDeletedRows. "
+            + "The GraphitronSchemaBuilderTest classification-case enum runs against the default "
+            + "Sakila catalog (no synthesized __NODE_TYPE_ID metadata), so the Id admission case "
+            + "lives in the pipeline-tier test that can swap to the nodeidfixture RewriteContext "
+            + "rather than in this enum."
     );
 
     private static final List<Class<?>> ROOTS = List.of(
