@@ -1,7 +1,7 @@
 ---
 id: R158
 title: Admit @service-backed producers for single-record DML carrier data fields
-status: Ready
+status: In Review
 bucket: structural
 priority: 3
 theme: mutations-errors
@@ -12,136 +12,28 @@ last-updated: 2026-05-15
 
 # Admit `@service`-backed producers for single-record DML carrier data fields
 
-## Rework requested (In Review → Ready, 2026-05-15)
-
-Implementation, unit tests, and pipeline tests (f35644f, da25606) all landed
-as specified. The execution-tier commit (129909c) is short of the spec's
-named test surface: the *MANY-arm composite-PK end-to-end* case (see "Test
-surface" below) did not ship. That case is the only thing that exercises the
-new typed composite-PK paths in `FetcherEmitter.buildSingleRecordTableFetcherValueTableRecordWrap`
-at runtime — specifically the `DSL.row(pk1, pk2).in(source.stream().map(r ->
-DSL.row(r.get(pk1), r.get(pk2))).toList())` predicate emission and the
-`List.of(__r.get(pk1), __r.get(pk2))` map-key shape for the R141 order-
-preserving walk. The pipeline tier's `serviceProducer_many_compositePk_admitsAsWrapTableRecord`
-pins the registered `SourceKey.columns` shape but does not exercise the
-emitted code at request time.
-
-Remaining work for this pass:
-
-1. Add a composite-PK `@service` carrier fixture under `graphitron-sakila-example`
-   / `graphitron-sakila-service` — `FilmActor` is the existing two-PK sakila
-   table (PK `(actor_id, film_id)`). The producer hand-runs a SELECT and
-   returns `List<FilmActorRecord>` in caller-specified order.
-2. Add the spec-named *MANY-arm composite-PK end-to-end* case to
-   `SingleRecordTableFieldServiceProducerExecutionTest`: assert the follow-up
-   SELECT runs with the `row(pk1, pk2).in(...)` predicate and projects rows
-   in input order across a deliberately-non-PK-ordered input. Mirrors the
-   shape of the existing `serviceFilmsByIds_returnsFilmsInInputOrder` case
-   but on the composite-key path.
-3. Collapse the Design / Test surface / Migration sections below to one-line
-   `shipped at <sha>` notes once (2) lands. The implementation commits are:
-   - core admit + helpers + emitter + R156 reclassify drop: `f35644f`
-   - unit + pipeline tests: `da25606`
-   - execution-tier (MANY/ONE single-PK + empty/null source): `129909c`
-
-   Phase (2) lands in a new commit; reference it in the collapsed note for
-   the execution tier alongside `129909c`.
-
 ## Problem
 
-`FetcherEmitter.buildSingleRecordTableFetcherValue` (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/FetcherEmitter.java:240-389`) reads the upstream value as `Result<RecordN<PK>>` (MANY) or `RecordN<PK>` (ONE) and pulls PK values through `source.getValues(<PK column>)` / `source.value1()`. That cast is satisfied exactly when the producer is a DML mutation whose two-step fetcher emits a `.returningResult(PK)` projection. A `@service` mutation feeding the same payload-shape carrier (admitted by R159's `$source` sigil) returns the developer's `List<XRecord>` (or `XRecord`) verbatim, and the cast throws `ArrayList cannot be cast to org.jooq.Result` at runtime. Reproducer: `OpprettRegelverksamlingPayload` + `opprettRegelverksamling` `@service` returning `List<RegelverksamlingRecord>`.
+`FetcherEmitter.buildSingleRecordTableFetcherValue` reads the upstream value as `Result<RecordN<PK>>` (MANY) or `RecordN<PK>` (ONE) and pulls PK values through `source.getValues(<PK column>)` / `source.value1()`. That cast is satisfied exactly when the producer is a DML mutation whose two-step fetcher emits a `.returningResult(PK)` projection. A `@service` mutation feeding the same payload-shape carrier (admitted by R159's `$source` sigil) returns the developer's `List<XRecord>` (or `XRecord`) verbatim, and the cast throws `ArrayList cannot be cast to org.jooq.Result` at runtime. Reproducer: `OpprettRegelverksamlingPayload` + `opprettRegelverksamling` `@service` returning `List<RegelverksamlingRecord>`.
 
 The producer-kind axis is a classifier fact, not a runtime tolerance. It lives in the model already, on the `Wrap` permit: `Wrap.Record` carries the DML's untyped `RecordN<...>` row shape; `Wrap.TableRecord(className)` carries the `@service` producer's typed `XRecord` row shape. R158 wires that existing discrimination through the carrier data field's classifier and emitter so the cast is typed correctly per producer.
 
-Builds on R159, which admitted the `@service` producer's return as the carrier data field's source via the `$source` sigil at `@field(name:)`. R159 is shipped; this item is no longer blocked.
+Builds on R159, which admitted the `@service` producer's return as the carrier data field's source via the `$source` sigil at `@field(name:)`.
 
-## Design
+## Design — shipped at `f35644f`
 
-**`SourceKey.Reader.ResultRowWalk` widens to admit both wrap shapes.** The current compact-constructor invariant in `SourceKey.java:169-182` pins `ResultRowWalk` to `Wrap.Record` + empty path; it loosens to admit `Wrap.TableRecord(recordClass)` as well, on the condition that `recordClass.equals(target.recordClass())`. The load-bearing key renames from `source-key.result-row-walk-wrap-record-empty-path` to `source-key.result-row-walk-target-aligned-empty-path` and pins:
+`SourceKey.Reader.ResultRowWalk` widens to admit both `Wrap.Record` and `Wrap.TableRecord(target.recordClass())`; the load-bearing key renames to `source-key.result-row-walk-target-aligned-empty-path`. `FetcherEmitter.buildSingleRecordTableFetcherValue` factors into a wrap-permit switch (the existing `Wrap.Record` arms preserved unchanged; new `Wrap.TableRecord` arms emit typed `(List<XRecord>) env.getSource()` / `(XRecord) env.getSource()` casts and read PKs via the typed `record.get(<XTable.<PK_FIELD>>)` accessors, with `List.of(r.get(pk1), r.get(pk2), ...)` for composite-PK map keying). Registration of the carrier data field moves from the verbless walk in `GraphitronSchemaBuilder.registerCarrierDataField` to two per-producer helpers in `FieldBuilder` (`registerDmlCarrierDataField`, `registerServiceCarrierDataField`); the `DataElement.Table` arm of `registerCarrierDataField` becomes a no-op. The `@service`-side helper does its own strict `method.returnType().equals(expectedReturnType)` check against the carrier walk's `target.recordClass()` (pinned by the new load-bearing key `carrier-data-field.service-producer-strict-return`). Carrier types are producer-kind-monomorphic, enforced at write time via `ctx.carrierProducerRegistry` and a compare-then-write check; mismatched second registration lands as `UnclassifiedField` + `Rejection.structural` (pinned by `carrier-data-field.single-producer-kind`). `FieldRegistry.reclassify`'s `expectedExistingClass` parameter loosens to admit `null`; R156's `registerDeleteCarrierDataField` Table arm passes `null` in lockstep because the verbless walk no longer pre-registers.
 
-> `Reader.ResultRowWalk` paired with anything other than `Wrap.Record` or `Wrap.TableRecord(target.recordClass())`, or with a non-empty path. The upstream producer (DML mutation fetcher or carrier-shaped `@service` method) emits target-aligned rows; the data-field fetcher's typed source read relies on `wrap` to type the row shape and on `path = empty` to pin the source row to the data table. The `recordClass == target.recordClass()` arm of the `Wrap.TableRecord` case mirrors the existing `source-key.service-table-record-target-aligned-empty-path` invariant for the same reason: the typed `XRecord` class names the same table the carrier is target-aligned to.
+## Test surface — shipped at `da25606` (pipeline + unit) and `129909c` + `34accf5` (execution)
 
-The single `@DependsOnClassifierCheck` annotation on `FetcherEmitter`'s `buildSingleRecordTableFetcherValue` names the renamed key once. The annotation's `reliesOn` text spells out that the typed-`XRecord` cast in the `Wrap.TableRecord` arm is licensed by *this* invariant — `Reader.ResultRowWalk` + target-alignment — not by `Wrap.TableRecord` in general. Other `Wrap.TableRecord` consumers (e.g. `GeneratorUtils.buildKeyExtraction`'s `((Record) env.getSource()).into(Tables.X)` posture) operate under different Reader invariants and read the source through the erased `Record` shape; the typed cast posture is carrier-specific.
+Pipeline-tier cases on `SingleRecordTableFieldServiceProducerPipelineTest`: ONE/single-PK admission, MANY/single-PK admission, MANY/composite-PK admission, wrong-element-type reject, Set/Iterable return reject, mixed-producer carrier reject (both registration orders). Execution-tier cases on `SingleRecordTableFieldServiceProducerExecutionTest`: MANY-arm end-to-end (single-PK; `129909c`), MANY-arm composite-PK end-to-end (`34accf5`, the typed `List.of(r.get(pk1), r.get(pk2))` map-key shape and `row(pk1, pk2).in(...)` predicate emission), ONE-arm end-to-end, empty source short-circuit. Unit-tier cases on `SourceKeyTest`: loosened `ResultRowWalk` admission (positive `Wrap.TableRecord(target.recordClass())` + empty path; cross-table mismatch reject; non-empty path reject).
 
-**`FetcherEmitter`'s MANY and ONE arms dispatch on `Wrap`.** Each arm types its cast and PK-extraction shape to the wrap permit:
+## Migration notes — shipped at `f35644f`
 
-- *`Wrap.Record` / MANY* (unchanged from today): cast `(Result<RecordN<...>>) env.getSource()`; `source.isEmpty()` short-circuit; PK-keyed map; `source.getValues(<PK column>)` to walk input order. R141's order-preservation is bit-identical.
-- *`Wrap.Record` / ONE* (unchanged): cast `(RecordN<...>) env.getSource()`; `source == null` short-circuit; `source.value1()` for single-PK, `source.get(<PK column>)` for composite.
-- *`Wrap.TableRecord(XRecord)` / MANY* (new): cast `(List<XRecord>) env.getSource()`; `source.isEmpty()` short-circuit; PK-keyed map; iterate `source` and read PK columns via the typed `record.get(<XTable.<PK_FIELD>>)` accessors. The `<XTable.<PK_FIELD>>` reference resolves through `SourceKey.target.constantsClass()` + `ColumnRef.javaName()`, the same path the `Wrap.Record` arm uses today (`FetcherEmitter.java:294-296`); the typed `XRecord.get(TableField<XRecord, T>)` overload returns the typed PK value directly. Composite-PK keying uses `List.of(r.get(pk1), r.get(pk2), …)` paralleling the `Wrap.Record` MANY arm's map-key shape. Same input-order projection shape, typed against `XRecord` instead of `RecordN`.
-- *`Wrap.TableRecord(XRecord)` / ONE* (new): cast `(XRecord) env.getSource()`; `source == null` short-circuit; `record.get(<XTable.<PK_FIELD>>)` for every PK column (same reference path as the MANY arm).
-
-The cardinality switch sits inside each wrap arm; the dispatch is two wrap-permit arms × cardinality, matching the existing `(Reader, cardinality)` 2×N pattern in the codebase.
-
-**Registration of the carrier data field moves to the per-producer site.** Today the verbless walk in `GraphitronSchemaBuilder.registerCarrierDataField` (`GraphitronSchemaBuilder.java:279-336`) registers `ChildField.SingleRecordTableField` with `Wrap.Record` + `Reader.ResultRowWalk` for every `DataElement.Table` carrier, independent of the producing mutation's kind. That switch arm becomes a no-op for `DataElement.Table`; registration lands at the per-mutation classification site in `FieldBuilder`, where the producer (DML kind or `@service` reflection result) is in scope. The other two switch arms are unchanged: `DataElement.Record` continues to register `SingleRecordIdentityField` (the identity-passthrough permit has no `SourceKey` at all — its fetcher is `env -> env.getSource()` — so the `Wrap`-axis producer-kind discrimination doesn't apply and the walk-time registration is structurally complete), and `DataElement.Id` continues to be a no-op (R156 lands the per-field permit from `FieldBuilder`).
-
-A fuller cleanup that hollows out `registerCarrierDataField` entirely — moving `DataElement.Record` registration into `FieldBuilder` as well — is a follow-up Backlog item, not part of R158. The asymmetry today is principled (registration runs where the producer-kind discrimination lives, and `Record` has none); the spec note above pins the reason so a next reader doesn't read it as drift.
-
-*Orphan-carrier reachability.* The verbless walk fires `registerCarrierDataField` for every SDL Object type that `tryResolveSingleRecordCarrier(typeName)` admits as a single-record carrier, independent of whether any mutation produces the type. After R158 the `DataElement.Table` arm registers nothing, so a carrier type with no producing mutation lands with no `(carrierType, dataFieldName)` entry in `fieldRegistry`. This is structurally safe: graphql-java only traverses fields whose parent value was produced by a fetcher, so an unproduced carrier's data field is never reached at runtime; `GraphitronSchemaValidator.validate` iterates `schema.fields().values()` (`GraphitronSchemaValidator.java:38`) and silently skips coords with no entry, so validation does not surface a missing-classification error either. No consumer reads the missing key. The "Validator mirrors classifier invariants" principle is satisfied vacuously here because no classifier *decision* was made for the orphan (no producer = no classification, not "rejected classification"); the principle targets unimplemented branches of made-decisions, not absent decisions on unreachable shapes.
-
-`FieldBuilder` lands two registration helpers, both following R156's `registerDeleteCarrierDataField` pattern (`FieldBuilder.java:2933-2992`):
-
-- `registerDmlCarrierDataField(BuildContext ctx, SingleRecordCarrierShape shape, TableRef inputTable, String mutationName)` runs for non-DELETE DML kinds (INSERT, UPDATE, UPSERT) of `MutationDmlRecordField` / `MutationBulkDmlRecordField`, after the existing `requireDataTableMatchesInputTable` check at `FieldBuilder.java:3289`. Registers `SingleRecordTableField` with `SourceKey(target, pkColumns, [], Wrap.Record, cardinality, ResultRowWalk)`.
-- `registerServiceCarrierDataField(BuildContext ctx, SingleRecordCarrierShape shape, MethodRef.Service method, String mutationName)` runs in the `Resolved.Result` arm of `@service` resolution (the arm that produces `MutationField.MutationServiceRecordField`) when the SDL field's return type resolves to a single-record carrier with a `DataElement.Table` data channel admitted by R159's `$source` sigil. The carrier-payload case has `ReturnTypeRef.ResultReturnType`, not `TableBoundReturnType`; the `Resolved.TableBound` arm (which produces `MutationServiceTableField` for direct-`@table` returns like `createFilm: Film`) is not the host. The helper registers `SingleRecordTableField` with `SourceKey(target, pkColumns, [], Wrap.TableRecord(target.recordClass()), cardinality, ResultRowWalk)`.
-
-Both helpers compare-then-write: if `ctx.fieldRegistry.get(coords)` already holds a `ChildField.SingleRecordTableField` whose `sourceKey().wrap()` differs from the incoming carrier's wrap, the helper reads the previously-registered mutation name from `ctx.carrierProducerRegistry.get(coords)` (a new `Map<FieldCoordinates, String>` on `BuildContext` mapping carrier coords to the first-writer's mutation name; see "Carrier types are producer-kind-monomorphic" below) and returns a rejection string naming both producers; the caller produces an `UnclassifiedField` with `Rejection.structural` and skips the registry write. The map carries only the first-writer's mutation name; the wrap shape lives on the existing `fieldRegistry` entry. Otherwise the helper writes its own mutation name to `ctx.carrierProducerRegistry` and calls `ctx.fieldRegistry.reclassify(coords, carrier, /* expectedExistingClass */ null)`. The verbless walk no longer registers `DataElement.Table` data fields, so the `null` admits both "no pre-existing entry" (first producer) and "matching-wrap pre-existing entry" (second producer with consistent wrap, which is the no-op overwrite path; the second producer's helper has just confirmed the wraps match). A non-`null` `expectedExistingClass` is reserved for R156's DELETE-overwrite path, where the pre-existing class is known to be the verbless walk's structural placeholder.
-
-The `FieldRegistry.reclassify` API loosens to admit `null` for `expectedExistingClass`: the `Objects.requireNonNull` guard drops, and the Javadoc gains the carrier-data-field registration path as a second admitted use alongside R156's DELETE-overwrite. With `null`, the method admits any pre-existing entry (or none); with a non-`null` class, the existing structural guard fires as today.
-
-**Carrier types are producer-kind-monomorphic.** A single-record carrier type returned by both a DML and a `@service` mutation would land both registrations at the same `(carrierType, dataFieldName)` coords with different `Wrap` shapes. New load-bearing key `carrier-data-field.single-producer-kind` declares the invariant:
-
-> For any `(carrierType, dataFieldName)` coords resolving to `ChildField.SingleRecordTableField`, at most one `SourceKey.wrap` shape is registered across all producer sites in the schema. The two producer-site helpers (`FieldBuilder.registerDmlCarrierDataField` and `FieldBuilder.registerServiceCarrierDataField`) enforce the rule at write time via the compare-then-write check described above. The consumer `FetcherEmitter.buildSingleRecordTableFetcherValue` wears `@DependsOnClassifierCheck` against this key (the wrap-permit dispatch in each arm relies on at most one wrap shape reaching the emitter per `(carrierType, dataFieldName)` coord).
-
-No separate validator-mirror site. The producer-side rejection lands as `UnclassifiedField` + `Rejection.structural`, which the existing `validateUnclassifiedField` path (`GraphitronSchemaValidator.java:118, 895`) surfaces as a `ValidationError` at validate time; `validateUnclassifiedField` *is* the validator-mirror for this invariant, taking the standard typed-rejection route rather than a parallel walk. The "Validator mirrors classifier invariants" principle (`rewrite-design-principles.adoc:101-105`) targets *unimplemented generator branches* that would otherwise escape to runtime; a carrier-coord conflict is not that shape — the classifier produces a typed rejection that already fails the build, so a carrier-specific validator walk would duplicate logic without adding a catchable case.
-
-The producer-side rejection names both mutations. The first producer to register for a given `(carrierType, dataFieldName)` writes its mutation name to `ctx.carrierProducerRegistry` alongside the `fieldRegistry.reclassify` call (see helper contract above). The second producer, on mismatched wrap, reads the previously-registered mutation name back out of the map and builds a diagnostic of the shape "@service mutation '`opprettRegelverksamling`' classifies '`OpprettRegelverksamlingPayload`.regelverksamlinger' with `Wrap.TableRecord(RegelverksamlingRecord)`, conflicting with previously-registered DML mutation '`insertRegelverksamling`' which classifies with `Wrap.Record`; split the carrier into two payload types (one per producer kind) or converge the producers." Order-dependence is only about which mutation hosts the `UnclassifiedField`; both producer names appear in the diagnostic regardless of registration order. `ctx.carrierProducerRegistry` is rejection-diagnostic-only — no generator or other classifier reads from it.
-
-
-## `@service` admission predicate
-
-`registerServiceCarrierDataField` runs its own `TypeName.equals` check against the resolved `method.returnType()` — it does not piggyback on `ServiceCatalog.reflectServiceMethod`'s strict-equality plumbing. The reason is concrete: `ServiceDirectiveResolver.computeExpectedServiceReturnType`'s `ResultReturnType` arm returns `null` for carrier-payload return types by design (Javadoc at `ServiceDirectiveResolver.java`'s `computeExpectedServiceReturnType`: the SDL payload class may or may not equal the developer's method return, depending on whether the service hands back the SDL payload or a domain object that fits one of its ctor params), so `reflectServiceMethod`'s `equals` check at resolution time would be unreachable for this site. The helper computes the expected type itself, at the only site where `target.recordClass()` from the carrier walk is in scope.
-
-The expected types:
-
-- `Cardinality.ONE` (carrier's data field wrapper is non-list): `expectedReturnType = ClassName.get(target.recordClass())`.
-- `Cardinality.MANY` (data field wrapper is list): `expectedReturnType = ParameterizedTypeName.get(ClassName.get(List.class), ClassName.get(target.recordClass()))`.
-
-The helper compares `method.returnType().equals(expectedReturnType)` and on mismatch returns a rejection string of the same shape `reflectServiceMethod` produces today (`"method '<m>' in class '<c>' must return '<expected>' to match the field's declared return type — got '<actual>'"`); the caller wraps it into `UnclassifiedField` + `Rejection.structural`, taking the standard typed-rejection route. The `equals`-based strictness rejects `Set<XRecord>`, `Collection<XRecord>`, `Iterable<XRecord>`, raw `List`, `List<? extends XRecord>`, and any list element other than the exact data table's record class.
-
-New load-bearing key `carrier-data-field.service-producer-strict-return` pins the helper-site check as a distinct producer from `service-catalog-strict-service-return`: same operator, different site, different derivation of the expected type (carrier walk's target table, not the SDL field's return). Per "Classifier guarantees shape emitter assumptions", the consumer wearing `@DependsOnClassifierCheck` on this key is `FetcherEmitter.buildSingleRecordTableFetcherValue`'s `Wrap.TableRecord` arm, whose `(List<XRecord>) env.getSource()` / `(XRecord) env.getSource()` casts rely on the strict equality. R159's `checkSourceSigilTypeMatch` is the precedent for "cross-checks on a resolved `@service` method's return that depend on carrier shape live in `FieldBuilder`, not the resolver".
-
-## Test surface
-
-Pipeline-tier (`PipelineTier`) cases on `SingleRecordTableFieldServiceProducerPipelineTest`:
-
-- *ONE / single-PK admission* — `@service` returning `XRecord` for a carrier with a non-list data field. Assert the registered `SourceKey` carries `Wrap.TableRecord(recordClass)`, `Reader.ResultRowWalk`, `Cardinality.ONE`.
-- *MANY / single-PK admission* — `@service` returning `List<XRecord>`. Assert the registered `SourceKey` carries `Wrap.TableRecord(recordClass)`, `Cardinality.MANY`. Runtime-shape assertions are the execution tier's job; the pipeline tier asserts the structural choice (which `Wrap` permit lands).
-- *MANY / composite-PK admission* — same with a two-PK table; assert the registered `SourceKey.columns` carries both PK columns in declaration order. Composite-PK keying shape is closed by the execution tier.
-- *Wrong element type reject* — `@service` returning `List<OtherRecord>` for a carrier whose data table is `Regelverksamling`; assert rejection cites the expected `List<RegelverksamlingRecord>`.
-- *Set / Iterable return reject* — `@service` returning `Set<XRecord>` and `Iterable<XRecord>`; assert structural rejection via the strict predicate.
-- *Mixed-producer carrier reject* — two mutations (one DML, one `@service`) returning the same carrier type, run in both registration orders (DML-first and `@service`-first); assert classification rejects the second registration with the typed `Rejection` naming both producer mutations in the diagnostic regardless of order.
-
-Execution-tier (`ExecutionTier`) cases on `SingleRecordTableFieldServiceProducerExecutionTest` (mirrors `DmlBulkMutationsExecutionTest`):
-
-- *MANY-arm end-to-end* — `@service` mutation returns `List<RegelverksamlingRecord>` (single-PK table); assert the data-field fetcher reads PKs off the record list, runs the follow-up SELECT, and projects rows in input order.
-- *MANY-arm composite-PK end-to-end* — `@service` mutation returns `List<XRecord>` for a two-PK table; assert the follow-up SELECT runs with the `row(pk1, pk2).in(...)` predicate and projects rows in input order via the composite-keyed map walk. Covers the new typed `List.of(r.get(pk1), r.get(pk2), ...)` map-key shape unique to the `Wrap.TableRecord` MANY arm; the ONE-arm composite shape is structurally exercised by the single-PK ONE case + compile tier (the emitted `record.get(<XTable.PK_FIELD>)` access is a per-column read with no map-key tuple construction).
-- *ONE-arm end-to-end* — `@service` mutation returns a single `RegelverksamlingRecord`; assert the follow-up SELECT runs and returns the expected row.
-- *Empty source short-circuit* — `@service` returns empty `List<XRecord>`; assert no SELECT runs and the data field returns an empty list.
-
-Unit-tier (`UnitTier`) cases added to the existing `SourceKeyTest` (no new test class):
-
-- Loosened `ResultRowWalk` admission: positive case for `Wrap.TableRecord(target.recordClass())` + empty path; rejection case for `Wrap.TableRecord(other)` (cross-table mismatch); rejection case for non-empty path under either wrap.
+`Reader.ResultRowWalk`'s compact-constructor invariant loosened; the renamed load-bearing key updated one `@LoadBearingClassifierCheck` on `SourceKey` and one `@DependsOnClassifierCheck` on `FetcherEmitter`, plus two javadoc references (`ChildField.java`, `SourceKey.java`). `GraphitronSchemaBuilder.registerCarrierDataField`'s `DataElement.Table` arm hollowed out. `FieldBuilder.classifyMutationField` gained the call to `registerDmlCarrierDataField` for non-DELETE DML kinds and the call to `registerServiceCarrierDataField` in the `Resolved.Result` arm of `@service` resolution. `FieldRegistry.reclassify`'s `expectedExistingClass` admits `null`; R156's `registerDeleteCarrierDataField` Table arm passes `null` in the same commit.
 
 ## Out of scope
 
-- **R141 PK-keyed-map → VALUES-idx-JOIN migration.** R141 is shipped working code with its own audit surface (`DmlBulkMutationsExecutionTest`); migrating its Java-side order preservation to a SQL-side `ORDER BY input.idx` against a derived VALUES table (the `@lookupKey` idiom in `InlineLookupTableFieldEmitter` / `LookupValuesJoinEmitter`) is a refactor of working code, not part of admitting the `@service` producer. A follow-up Backlog item names R158 as prereq and lifts every `Wrap` arm to the VALUES-idx-JOIN shape in one move, against its own pipeline + execution test surface.
+- **R141 PK-keyed-map → VALUES-idx-JOIN migration.** R141 is shipped working code with its own audit surface; migrating its Java-side order preservation to a SQL-side `ORDER BY input.idx` against a derived VALUES table is a refactor of working code, not part of admitting the `@service` producer.
 - **`Reader.ResultRowWalk` consumed outside `SingleRecordTableField`.** The widened invariant pairs only with the carrier data field's permit today; any future consumer must adopt the same wrap-dispatch pattern or split its own permit.
 - **`@service` producer with `DataElement.Record` data field.** Producer-kind discrimination is irrelevant for the identity-passthrough permit (`SingleRecordIdentityField`): the data field's value IS the parent's value regardless of producer. R96 alignment holds — no `@record` on the carrier is needed.
-
-## Migration notes
-
-- `Reader.ResultRowWalk`'s compact-constructor invariant loosens; the renamed load-bearing key updates one `@LoadBearingClassifierCheck` annotation on `SourceKey` and one `@DependsOnClassifierCheck` annotation on `FetcherEmitter`. Two javadoc references to the old key also revise in lockstep: `ChildField.java:46` (the `SingleRecordTableField` permit's "pinned by … to use `Reader.ResultRowWalk` with `Wrap.Record`" prose) and `SourceKey.java:317` (the `Reader.ResultRowWalk` Javadoc's "`wrap` is `Wrap.Record`" assertion); both name the new key and widen their wrap-shape prose to cover the `Wrap.TableRecord(target.recordClass())` arm.
-- `GraphitronSchemaBuilder.registerCarrierDataField`'s `DataElement.Table` switch arm becomes a no-op; the arm comment names the deferral and points at the two `FieldBuilder` registration helpers.
-- `FieldBuilder.classifyMutationField` gains the call to `registerDmlCarrierDataField` for non-DELETE DML kinds (next to the existing carrier-resolution path at `FieldBuilder.java:3285-3308`, alongside the `registerDeleteCarrierDataField` call already at line 3304), and the call to `registerServiceCarrierDataField` in the `Resolved.Result` arm of `@service` resolution (at `FieldBuilder.java:3217`, after the existing `checkSourceSigilTypeMatch` so the registration only runs on a successful type match). The Result arm produces `MutationServiceRecordField`; the carrier-payload case never reaches the `Resolved.TableBound` arm. Both helpers pass `expectedExistingClass = null` to `reclassify` after the compare-then-write check.
-- `FieldRegistry.reclassify`'s `expectedExistingClass` parameter loosens to admit `null`: drop the `Objects.requireNonNull(expectedExistingClass)` at `FieldRegistry.java:71` and revise the method Javadoc to name the carrier-data-field registration path alongside R156's DELETE-overwrite use. The structural-guard arm (non-`null` class, existing entry that doesn't match) is unchanged.
-- **R156's `registerDeleteCarrierDataField` Table arm needs an in-commit fix.** Today `FieldBuilder.java:2982` passes `ChildField.SingleRecordTableField.class` as `expectedExistingClass`, relying on the verbless walk's pre-registration. After R158 hollows out that walk arm, no prior registration exists for `DataElement.Table` carriers; R156's `reclassify` call drops to `expectedExistingClass = null` in the same commit. The migration step is one-line; the comment block at `FieldBuilder.java:2978-2981` revises in lockstep to reflect that the verbless walk no longer pre-registers.
-- `FetcherEmitter.buildSingleRecordTableFetcherValue` factors into a wrap-permit switch; the existing `Wrap.Record` arms move into the `case Wrap.Record` branch and the new `Wrap.TableRecord` arms land in a parallel branch. The cardinality switch sits inside each wrap arm.
