@@ -22,7 +22,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
-| `R154` | Admit setter-based mutable payload shape on @service returns | In Review | 2026-05-13 | [plan](service-return-setter-payload-shape.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec |  | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R74` | Row/Record return shapes for typed accessor batch keys | Spec |  | [plan](accessor-row-record-shapes.md) |
@@ -131,7 +130,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
 - `R137` [**@service method return-type wrapper composition (Optional / CompletableFuture / Mono / DataFetcherResult)**](service-wrapper-composition.md) — Backlog, architecture
-- `R154` [**Admit setter-based mutable payload shape on @service returns**](service-return-setter-payload-shape.md) — In Review, architecture
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [typed-context-value-registry](typed-context-value-registry.md)
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
