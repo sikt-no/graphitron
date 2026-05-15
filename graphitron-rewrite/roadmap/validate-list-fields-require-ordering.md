@@ -95,6 +95,26 @@ gate; resolver behaviour stays as documented in `OrderByResolver.java:132` (retu
 `OrderBySpec.None` when no `@defaultOrder` and no PK), and the validator now rejects schemas
 that would reach that branch on a list-returning field.
 
+### Relationship to `@LoadBearingClassifierCheck`
+
+The new validator method is a *hygiene-rejection* in the sense of
+`rewrite-design-principles.adoc` §"Classifier guarantees shape emitter assumptions": no
+emitter currently relies on it. `TypeFetcherGenerator.buildOrderByCode`
+(`TypeFetcherGenerator.java:3296`), `buildConnectionOrderingBlock`
+(`TypeFetcherGenerator.java:3244`), `buildBaseReturnExpr` (`TypeFetcherGenerator.java:3377`),
+and `InlineTableFieldEmitter` (`InlineTableFieldEmitter.java:145`) each defensively handle the
+`OrderBySpec.None` and `Fixed.columns().isEmpty()` arms (emitting an empty
+`List<SortField<?>>` or skipping the `orderBy(...)` call). With the new validator in place
+those branches become unreachable for list fields, but they remain reachable for `Single`
+returns and `Connection`-without-pagination shapes that the validator does not gate.
+
+Consequence: no `@LoadBearingClassifierCheck(key = "list-field.requires-deterministic-order")`
+producer is declared in this item, and no emitter is tagged with `@DependsOnClassifierCheck`.
+The principle explicitly permits this ("Producers without consumers are allowed: some
+classifier checks reject shapes for hygiene rather than because an emitter relies on them").
+A future cleanup that tightens the defensive emitter arms into load-bearing assumptions is
+the natural moment to add the annotation pair; that cleanup is out of scope here.
+
 ## Tests
 
 Add to
@@ -127,11 +147,23 @@ Cases to add:
 The new error string deliberately differs from the pagination error so failures point the
 author at the right remediation (PK vs `@orderBy`).
 
-A pipeline-tier test is not required: the validator runs in the standard pipeline, and the
-unit tests above hit the new branch directly. If an integration smoke is wanted, the existing
-`graphitron-fixtures-codegen` Sakila run already exercises every list field in the fixture
-schema; adding a no-PK list to that fixture would force the new check to fire and would catch
-regressions cheaply, but is a follow-up rather than a blocker for this item.
+### Pipeline-tier coverage (in scope)
+
+Per `rewrite-design-principles.adoc` §"Pipeline tests are the primary behavioural tier", this
+item is a behaviour change (a previously-accepted schema is now rejected), not a structural
+invariant. The unit cases above test the validator predicate in isolation; one pipeline-tier
+case proves the rejection survives SDL → classified model → assembled `GraphitronSchema` end
+to end. Add a `ValidateListRequiresOrderingPipelineTest` (or fold a case into an existing
+nearby pipeline test) following the shape of e.g. `SplitTableFieldPipelineTest`:
+
+- *Reject path:* SDL with a `Query`-rooted `[Foo]` field on a `@table`-backed no-PK type and
+  no ordering directives → assert the assembled schema reports the new error.
+- *Admit path (control):* the same SDL with `@defaultOrder` resolving to `OrderBySpec.Fixed`
+  → assert no error.
+
+The reject-path fixture is the minimum surface that distinguishes "the predicate fires
+in unit tests" from "the predicate fires when the full builder pipeline produces the
+field"; it pins both the classifier/validator wiring and the error-message contract.
 
 ## Non-goals
 
