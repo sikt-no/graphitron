@@ -146,17 +146,17 @@ class MappingsConstantNameDedupTest {
 
     // ===== Helpers =====
 
-    private static ErrorChannel filmPayloadChannel(ErrorType.Handler handler) {
+    private static ErrorChannel.PayloadClass filmPayloadChannel(ErrorType.Handler handler) {
         return channel(FILM_PAYLOAD_FQN, "FILM_PAYLOAD", handler);
     }
 
-    private static ErrorChannel createFilmPayloadChannel(ErrorType.Handler handler) {
+    private static ErrorChannel.PayloadClass createFilmPayloadChannel(ErrorType.Handler handler) {
         return channel(CREATE_FILM_PAYLOAD_FQN, "CREATE_FILM_PAYLOAD", handler);
     }
 
-    private static ErrorChannel channel(String payloadFqn, String constantName, ErrorType.Handler handler) {
+    private static ErrorChannel.PayloadClass channel(String payloadFqn, String constantName, ErrorType.Handler handler) {
         var errorType = new ErrorType("FilmErr", null, List.of(handler));
-        return new ErrorChannel(
+        return new ErrorChannel.PayloadClass(
             List.of(errorType),
             ClassName.bestGuess(payloadFqn),
             new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
@@ -184,7 +184,7 @@ class MappingsConstantNameDedupTest {
             Optional.empty());
     }
 
-    private static Map<FieldCoordinates, GraphitronField> oneFetcher(String fieldName, ErrorChannel channel) {
+    private static Map<FieldCoordinates, GraphitronField> oneFetcher(String fieldName, ErrorChannel.PayloadClass channel) {
         var field = mutationServiceRecordField(fieldName,
             channel.payloadClass().reflectionName(), Optional.of(channel));
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
@@ -192,8 +192,8 @@ class MappingsConstantNameDedupTest {
         return fields;
     }
 
-    private static Map<FieldCoordinates, GraphitronField> twoFetchers(String n0, ErrorChannel c0,
-                                                                      String n1, ErrorChannel c1) {
+    private static Map<FieldCoordinates, GraphitronField> twoFetchers(String n0, ErrorChannel.PayloadClass c0,
+                                                                      String n1, ErrorChannel.PayloadClass c1) {
         var f0 = mutationServiceRecordField(n0, c0.payloadClass().reflectionName(), Optional.of(c0));
         var f1 = mutationServiceRecordField(n1, c1.payloadClass().reflectionName(), Optional.of(c1));
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();

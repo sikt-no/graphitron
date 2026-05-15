@@ -801,12 +801,12 @@ class TypeFetcherGeneratorTest {
 
     // ===== R12 §3 try/catch wrapper: dispatch arm vs redact arm =====
 
-    private static ErrorChannel sakPayloadChannel() {
+    private static ErrorChannel.PayloadClass sakPayloadChannel() {
         // Mirrors the SakPayload(String data, List<?> errors) shape used by
         // ErrorChannelClassificationTest. The mappedErrorTypes list is empty here because the
         // catch-arm emission only walks errorsSlot + defaultedSlots + mappingsConstantName;
         // the channel's @error classes don't need to be resolved for the lambda print.
-        return new ErrorChannel(
+        return new ErrorChannel.PayloadClass(
             List.of(),
             ClassName.bestGuess("com.example.SakPayload"),
             new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
@@ -1022,7 +1022,7 @@ class TypeFetcherGeneratorTest {
             "SakValidationErr",
             null,
             List.of(new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler(Optional.empty())));
-        var channel = new ErrorChannel(
+        var channel = new ErrorChannel.PayloadClass(
             List.of(validationErr),
             ClassName.bestGuess("com.example.SakPayload"),
             new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),

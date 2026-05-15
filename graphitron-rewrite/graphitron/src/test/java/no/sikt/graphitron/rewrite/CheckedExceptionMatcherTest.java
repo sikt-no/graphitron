@@ -175,7 +175,7 @@ class CheckedExceptionMatcherTest {
 
     private static ErrorChannel channelWith(ErrorType.Handler handler) {
         var errorType = new ErrorType("Err", null, List.of(handler));
-        return new ErrorChannel(
+        return new ErrorChannel.PayloadClass(
             List.of(errorType),
             ClassName.bestGuess("com.example.Payload"),
             new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
