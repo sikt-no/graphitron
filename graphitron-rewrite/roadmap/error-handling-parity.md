@@ -422,6 +422,15 @@ rest of R12 is orthogonal.
     `CarrierFieldRole.ErrorChannelRole.fieldName()`; the binding does not
     double-encode it.
 
+  Helper signatures narrow with the split. `payloadFactoryLambda` and
+  `dispatchCatchArm` take `ErrorChannel.PayloadClass`, not the sealed
+  root; only `TypeFetcherGenerator.catchArm` dispatches on the root and
+  selects between `ErrorRouter.dispatch` and the new
+  `ErrorRouter.dispatchToLocalContext`. The type system carries the
+  variant-implies-fields certainty (e.g. `payloadClass`, `errorsSlot`,
+  `defaultedSlots` are non-null because the parameter type says so)
+  rather than re-asserting it through pattern matching at every call.
+
   *Producer.* `BuildContext.classifyCarrierField` gains a branch ahead of
   the `NoPermit` rejection: when the field is errors-shaped, build an
   `ErrorChannel.LocalContext` and return
@@ -443,21 +452,52 @@ rest of R12 is orthogonal.
   `PojoResultType.NoBacking`; post-R161 it also admits
   `PojoResultType.Backed`. The wiring is identical across all three.
 
+  *Load-bearing classifier check.* The producer wears
+  `@LoadBearingClassifierCheck(key = "error-channel.local-context-transport")`
+  declaring the guarantee that a carrier admitted with
+  `ErrorChannel.LocalContext` has a data field whose fetcher
+  short-circuits on null source (the existing guard at
+  `FetcherEmitter.java:273`, `if (source == null) return null;`). Three
+  consumers wear matching `@DependsOnClassifierCheck`: the new
+  `ErrorRouter.dispatchToLocalContext` arm in
+  `TypeFetcherGenerator.catchArm`, the `Transport.LocalContext` arm of
+  `FetcherEmitter.dataFetcherValue` (see *Transport discriminator*
+  below), and the null-source guard itself.
+  `LoadBearingGuaranteeAuditTest` then surfaces any relaxation of the
+  producer surface as orphaned consumers, matching the precedent set by
+  `error-channel.mappings-constant` (`FieldBuilder.java:1782` /
+  `ErrorMappingsClassGenerator.java:49`).
+
+  *Validator mirror.* A new arm in `GraphitronSchemaValidator` rejects
+  an `ErrorChannel.LocalContext` binding on a carrier whose data field's
+  fetcher does not honor the null-source short-circuit. Today only the
+  `SingleRecordTableField` cardinality variants are reachable via the
+  carrier walk and all honor it, so the rejection is preemptive
+  coverage; the principle "validator mirrors classifier invariants"
+  pins the rejection now so a future-added data-field shape fails at
+  validate time rather than at request time.
+
   *Consumer.* `GraphitronSchemaBuilder.registerCarrierDataField`
   (`GraphitronSchemaBuilder.java:329-333`) keeps its `ErrorChannelRole`
   arm as a no-op. The errors field's DataFetcher is registered through the
   normal per-field schema walk; the channel-arm discriminator is read at
   emit time, not registration time.
 
-  *Emit-time fork in `FetcherEmitter.dataFetcherValue`.* The
-  `ChildField.ErrorsField` arm (`FetcherEmitter.java:94-102`) grows a
-  discriminator: look up the parent carrier's resolved channel via
-  `fieldRegistry.get((parentTypeName, parentDataFieldName))`; when the
-  parent channel is `ErrorChannel.LocalContext`, emit
-  `(env) -> env.getLocalContext()`; otherwise emit the existing
-  `PropertyDataFetcher.fetching(name)`. The lookup is on the parent, not
-  on `ErrorsField` itself, so the per-field classifier carries no channel
-  state.
+  *Transport discriminator on `ChildField.ErrorsField`.* The errors-field
+  model (`ChildField.java:781`) grows a `Transport transport()` component,
+  where `Transport` is a sealed nested type with two permits:
+  `Transport.PayloadAccessor` (today's `PropertyDataFetcher.fetching(name)`
+  shape) and `Transport.LocalContext`. The arm is selected at classify
+  time: `FieldBuilder.liftToErrorsField` runs in the carrier walk's
+  per-field pass with the parent carrier's resolved `ErrorChannel` in
+  scope, so it picks the matching arm and passes it to the `ErrorsField`
+  constructor. `FetcherEmitter.dataFetcherValue`'s `ErrorsField` arm
+  (`FetcherEmitter.java:94-102`) then switches on `field.transport()`
+  with compiler-enforced exhaustiveness: `PayloadAccessor` emits the
+  existing `PropertyDataFetcher.fetching(name)`; `LocalContext` emits
+  `(env) -> env.getLocalContext()`. No emit-time parent lookup runs; the
+  resolved transport rides on the field-level model so a future arm
+  forces every consumer site to handle it by compiler check.
 
   *Emit-time fork in `TypeFetcherGenerator.catchArm`.* The catch arm
   dispatches on the sealed `ErrorChannel`:
@@ -483,7 +523,11 @@ rest of R12 is orthogonal.
   within each group. The `withResolvedChannel` switch
   (`MappingsConstantNameDedup.java:145-184`) gains arms for
   `MutationDmlRecordField` and `MutationBulkDmlRecordField`; today those
-  fall through to the throwing `default ->`.
+  fall through to the throwing `default ->`. After the sealed split the
+  `default -> throw` arm is no longer the only safety net; any future
+  `WithErrorChannel` carrying a `LocalContext` channel must update both
+  the grouping switch and the resolution-rewrite switch, and the
+  contract-comment on `apply` pins this dual-update obligation.
 
   *Test coverage.* The carrier-walk-with-errors happy path lives in this
   item (R161's migration deletes the Path-2 fixtures at
@@ -492,9 +536,16 @@ rest of R12 is orthogonal.
   an `ErrorChannel.LocalContext` binding asserts (a) the classifier admits
   the wrapper, (b) the emitted fetcher's catch arm builds
   `data(null).localContext(...)`, (c) the errors-field DataFetcher reads
-  from `env.getLocalContext()` at request time. Sakila execute-tier
-  coverage mirrors the `MutationServiceTableField` validator-integration
-  fixture pattern.
+  from `env.getLocalContext()` at request time, (d) the resulting
+  `ChildField.ErrorsField` carries `Transport.LocalContext` after
+  classify (a model-level round-trip pin so the discriminator-on-field
+  invariant doesn't drift). A new validator-arm test rejects a
+  synthesised shape where an `ErrorChannel.LocalContext` binds to a data
+  field whose fetcher cannot short-circuit on null source.
+  `LoadBearingGuaranteeAuditTest` picks up the new
+  `error-channel.local-context-transport` producer/consumer pair
+  automatically by annotation scan. Sakila execute-tier coverage mirrors
+  the `MutationServiceTableField` validator-integration fixture pattern.
 
 - **Lift `errorChannel` onto child `@service` and `@tableMethod` variants:
   landed.** `ChildField.ServiceTableField` / `ChildField.ServiceRecordField`
