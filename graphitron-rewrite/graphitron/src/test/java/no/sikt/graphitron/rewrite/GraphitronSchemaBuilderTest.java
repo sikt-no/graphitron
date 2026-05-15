@@ -1869,16 +1869,20 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
-        SINGLE_RECORD_CARRIER_DATA_FIELD(
-            "Plain Object carrier (no @record/@table) wrapping a single @table-element data field "
-                + "→ SingleRecordTableField on the carrier (R75 Phase 1)",
+        SINGLE_RECORD_CARRIER_DATA_FIELD_ORPHAN(
+            "Plain Object carrier (no @record/@table) wrapping a single @table-element data field, "
+                + "consumed by a Query field with no producing mutation → orphan carrier; the "
+                + "verbless walk's DataElement.Table arm is a no-op (R158), and no producer site "
+                + "registers the data field. graphql-java's never-traverse-unproduced-fields "
+                + "guarantee makes the missing registration structurally safe.",
             """
             type Film @table(name: "film") { title: String }
             type FilmPayload { films: [Film!] }
             type Query { wrappedFilms: FilmPayload }
             """,
             schema -> assertThat(schema.field("FilmPayload", "films"))
-                .isInstanceOf(ChildField.SingleRecordTableField.class)) {
+                .as("orphan-carrier data field has no fieldRegistry entry after R158")
+                .isNull()) {
             @Override public Set<Class<?>> variants() { return Set.of(ChildField.SingleRecordTableField.class); }
         },
 

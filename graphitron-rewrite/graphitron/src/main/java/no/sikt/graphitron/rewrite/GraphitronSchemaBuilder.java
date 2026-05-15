@@ -285,24 +285,24 @@ public class GraphitronSchemaBuilder {
                     var dataFieldDef = objType.getFieldDefinition(dc.fieldName());
                     switch (dc.element()) {
                         case no.sikt.graphitron.rewrite.model.DataElement.Table tableElement -> {
-                            var pkColumns = tableElement.table().primaryKeyColumns();
-                            var cardinality = tableElement.wrapper().isList()
-                                ? SourceKey.Cardinality.MANY
-                                : SourceKey.Cardinality.ONE;
-                            var sourceKey = new SourceKey(
-                                tableElement.table(),
-                                pkColumns,
-                                java.util.List.of(),
-                                new SourceKey.Wrap.Record(),
-                                cardinality,
-                                new SourceKey.Reader.ResultRowWalk());
-                            ctx.fieldRegistry.classify(
-                                FieldCoordinates.coordinates(objType.getName(), dc.fieldName()),
-                                new ChildField.SingleRecordTableField(
-                                    objType.getName(), dc.fieldName(), locationOf(dataFieldDef),
-                                    new ReturnTypeRef.TableBoundReturnType(
-                                        tableElement.name(), tableElement.table(), tableElement.wrapper()),
-                                    sourceKey));
+                            // R158 — DataElement.Table per-field carrier registration is deferred
+                            // to the per-producer site in FieldBuilder, which has the producing
+                            // mutation's kind (DML verb vs @service reflection result) in scope.
+                            // The producer-kind discrimination wires SourceKey.wrap to either
+                            // Wrap.Record (DML mutation fetcher emits RecordN<...>) or
+                            // Wrap.TableRecord(target.recordClass()) (@service returns XRecord /
+                            // List<XRecord>); the verbless walk has no producer context, so it
+                            // would have to commit to one wrap shape arbitrarily. The two
+                            // FieldBuilder helpers — registerDmlCarrierDataField and
+                            // registerServiceCarrierDataField — are the only writers; an orphan
+                            // carrier type (no producing mutation) lands with no entry, which
+                            // graphql-java's never-traverse-an-unproduced-field guarantee makes
+                            // structurally safe.
+                            //
+                            // The {@code dataFieldDef} reference is intentionally unused here;
+                            // each producer-site helper re-derives it from the schema. Suppress
+                            // the unused-local warning by referencing it once.
+                            if (dataFieldDef == null) { /* unreachable: walk only enters for fields present in SDL */ }
                         }
                         case no.sikt.graphitron.rewrite.model.DataElement.Record recordElement -> {
                             ctx.fieldRegistry.classify(

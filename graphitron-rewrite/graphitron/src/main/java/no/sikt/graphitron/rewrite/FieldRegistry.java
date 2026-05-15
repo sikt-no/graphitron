@@ -49,16 +49,32 @@ public final class FieldRegistry {
     }
 
     /**
-     * Replace an existing classification for {@code coords}. Used only by R156's DELETE
-     * carrier-walk path, where the verbless walk's {@code GraphitronSchemaBuilder.registerCarrierDataField}
-     * registers a {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField} on
-     * the carrier's data field before {@link no.sikt.graphitron.rewrite.FieldBuilder} knows the
-     * owning mutation's {@link no.sikt.graphitron.rewrite.model.DmlKind}; FieldBuilder reclassifies
-     * to {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning}
-     * (the DELETE-specific sibling with the {@link no.sikt.graphitron.rewrite.model.PkResolution}
-     * projection) once the verb is in scope. The {@code expectedExistingClass} parameter is the
-     * structural guard: if the verbless walk wrote something other than the expected sibling,
-     * the reclassification fails fast rather than silently overwriting a divergent shape.
+     * Replace an existing classification for {@code coords}. Used by carrier-walk paths whose
+     * verbless walk in {@code GraphitronSchemaBuilder.registerCarrierDataField} may pre-register
+     * a structural placeholder before {@link no.sikt.graphitron.rewrite.FieldBuilder} knows the
+     * owning mutation's producer kind:
+     *
+     * <ul>
+     *   <li>R156 DELETE carriers: the verbless walk wrote
+     *       {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField} (the
+     *       INSERT/UPDATE/UPSERT shape with follow-up SELECT); FieldBuilder reclassifies to
+     *       {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning}
+     *       (the DELETE sibling carrying the projection list). {@code expectedExistingClass} is
+     *       non-null and pins the structural guard.</li>
+     *   <li>R158 single-record DML carrier data-field registration: the verbless walk no longer
+     *       writes a placeholder for {@code DataElement.Table} carriers — the per-producer
+     *       helpers in {@code FieldBuilder} (DML kinds and {@code @service}) are the only writer.
+     *       {@code expectedExistingClass} is {@code null}; the method admits both "no
+     *       pre-existing entry" (first producer) and "matching pre-existing entry" (second
+     *       producer with consistent wrap, which the helper has already confirmed via
+     *       compare-then-write before calling here).</li>
+     * </ul>
+     *
+     * <p>When {@code expectedExistingClass} is non-null and an existing entry is present, the
+     * structural guard fires: if the existing entry is not an instance of the expected class
+     * the reclassification fails fast rather than silently overwriting a divergent shape. When
+     * {@code expectedExistingClass} is {@code null} the method admits any pre-existing entry
+     * (or none).
      *
      * <p>{@link #classify} stays the duplicate-rejecting entry point for every other call site;
      * this method is the explicit, named exception that the carrier-walk path is allowed to
@@ -68,17 +84,17 @@ public final class FieldRegistry {
                            Class<? extends GraphitronField> expectedExistingClass) {
         Objects.requireNonNull(coords, "coords");
         Objects.requireNonNull(field, "field");
-        Objects.requireNonNull(expectedExistingClass, "expectedExistingClass");
         var existing = fields.get(coords);
         if (existing == null) {
             // No pre-existing classification — admit; behave like classify(). This happens for
-            // DataElement.Id carriers where the verbless walk leaves the data field
-            // unregistered (encoder lookup needs the owning mutation's input @table).
+            // R156 DataElement.Id carriers (verbless walk leaves the data field unregistered)
+            // and for R158 DataElement.Table first-producer registrations (verbless walk hollowed
+            // out the arm; the first producer-site helper is the first writer).
             fields.put(coords, field);
             traceOutput(field);
             return;
         }
-        if (!expectedExistingClass.isInstance(existing)) {
+        if (expectedExistingClass != null && !expectedExistingClass.isInstance(existing)) {
             throw new IllegalStateException("reclassify(" + coords + "): expected existing "
                 + expectedExistingClass.getSimpleName() + " but got " + existing.getClass().getSimpleName());
         }

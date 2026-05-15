@@ -62,6 +62,7 @@ import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
+import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -2872,6 +2873,24 @@ class FieldBuilder {
     }
 
     /**
+     * R158 — @service-producer carrier registration entry point. Resolves the carrier shape from
+     * the resolved return type, then delegates to {@link #registerServiceCarrierDataField}. The
+     * helper is a no-op for non-carrier returns and for carriers whose data element is not
+     * {@link no.sikt.graphitron.rewrite.model.DataElement.Table}; both cases short-circuit to
+     * {@code null} (no rejection).
+     */
+    private String classifyServiceCarrierProducer(
+            no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType returnType,
+            no.sikt.graphitron.rewrite.model.MethodRef method,
+            String mutationName) {
+        var resolution = ctx.tryResolveSingleRecordCarrier(returnType.returnTypeName());
+        if (!(resolution instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok ok)) {
+            return null;
+        }
+        return registerServiceCarrierDataField(ctx, ok.shape(), method, mutationName);
+    }
+
+    /**
      * R156 — resolve the NodeId encoder for a {@link DataElement.Id} carrier field on a
      * DELETE mutation. Two recognition forms:
      * <ul>
@@ -2975,11 +2994,13 @@ class FieldBuilder {
                             tableElement.name(), tableElement.table(), tableElement.wrapper());
                         var carrier = new ChildField.SingleRecordTableFieldFromReturning(
                             carrierType, dataFieldName, dataFieldLocation, returnType, admitted.projection());
-                        // The verbless walk's registerCarrierDataField wrote SingleRecordTableField
-                        // (the INSERT/UPDATE/UPSERT carrier with follow-up SELECT) at this coord
-                        // before knowing the owning mutation's verb. R156's reclassify replaces
-                        // it with the DELETE-specific sibling carrying the PkResolution projection.
-                        ctx.fieldRegistry.reclassify(coords, carrier, ChildField.SingleRecordTableField.class);
+                        // R158 hollowed out the verbless walk's DataElement.Table arm; no prior
+                        // registration exists at this coord. The reclassify call admits both
+                        // "no pre-existing" (typical DELETE-with-Table path) and a hypothetical
+                        // pre-existing INSERT/UPDATE/UPSERT producer of the same carrier (which
+                        // would be rejected upstream by R158's single-producer-kind check before
+                        // ever reaching this DELETE registration site for the same coord).
+                        ctx.fieldRegistry.reclassify(coords, carrier, null);
                         yield null;
                     }
                     case BuildContext.DeleteTableProjection.Rejected rejected -> rejected.reason();
@@ -2988,6 +3009,211 @@ class FieldBuilder {
             case no.sikt.graphitron.rewrite.model.DataElement.Record ignored ->
                 "R156: DataElement.Record carrier on DELETE is not supported; use @service for "
                     + "record-element carriers or DataElement.Id / DataElement.Table for DML carriers";
+        };
+    }
+
+    /**
+     * R158 — register the carrier data field for a non-DELETE DML producer (INSERT, UPDATE,
+     * UPSERT). The verbless walk's {@link GraphitronSchemaBuilder#registerCarrierDataField}
+     * no longer writes a placeholder for {@link no.sikt.graphitron.rewrite.model.DataElement.Table}
+     * carriers; this site is the only writer for the DML producer kind. Writes
+     * {@link ChildField.SingleRecordTableField} with
+     * {@code SourceKey(target, pkColumns, [], Wrap.Record, cardinality, ResultRowWalk)}.
+     *
+     * <p>Compare-then-write enforces {@code carrier-data-field.single-producer-kind}: if the
+     * coord already holds a {@code SingleRecordTableField} whose {@code sourceKey().wrap()}
+     * differs from {@link SourceKey.Wrap.Record}, returns a rejection string naming both
+     * producers. The previously-registered mutation name is read from
+     * {@link BuildContext#carrierProducerRegistry}; the wrap shape lives on the
+     * {@link FieldRegistry} entry. On admit, writes this producer's mutation name to the
+     * producer registry and calls {@link FieldRegistry#reclassify} with
+     * {@code expectedExistingClass = null} (admits both "no pre-existing" and "matching wrap"
+     * — the helper has already confirmed wrap agreement before reaching the reclassify call).
+     *
+     * <p>Returns {@code null} on success; non-null rejection string on conflict.
+     */
+    @LoadBearingClassifierCheck(
+        key = "carrier-data-field.single-producer-kind",
+        description = "Two FieldBuilder helpers (registerDmlCarrierDataField, "
+            + "registerServiceCarrierDataField) compare-then-write SingleRecordTableField "
+            + "registrations at (carrierType, dataFieldName) coords; the second producer is "
+            + "rejected when its SourceKey.wrap shape differs from the first producer's "
+            + "registered wrap. A single carrier returned by both a DML and a @service "
+            + "mutation would otherwise classify under both Wrap.Record and "
+            + "Wrap.TableRecord(target.recordClass()) at the same coord, and the emitter's "
+            + "wrap-permit dispatch in FetcherEmitter.buildSingleRecordTableFetcherValue would "
+            + "have no way to choose. The producer-side rejection routes through the standard "
+            + "UnclassifiedField + Rejection.structural + validateUnclassifiedField path; no "
+            + "parallel validator-mirror walk is needed.")
+    private static String registerDmlCarrierDataField(
+            BuildContext ctx,
+            no.sikt.graphitron.rewrite.model.SingleRecordCarrierShape shape,
+            TableRef inputTable,
+            String mutationName) {
+        return registerCarrierDataFieldImpl(ctx, shape, inputTable, mutationName,
+            new SourceKey.Wrap.Record(), /* producerKind */ "DML");
+    }
+
+    /**
+     * R158 — register the carrier data field for a {@code @service} producer whose return
+     * type is a carrier payload admitted by R159's {@code $source} sigil. Runs in the
+     * {@code Resolved.Result} arm of {@code @service} resolution, after the existing
+     * {@link #checkSourceSigilTypeMatch} so the registration only runs on a successful type
+     * match. Writes {@link ChildField.SingleRecordTableField} with
+     * {@code SourceKey(target, pkColumns, [], Wrap.TableRecord(target.recordClass()),
+     * cardinality, ResultRowWalk)}.
+     *
+     * <p>The helper computes its own expected return type from the carrier walk's target table:
+     * {@code XRecord} for {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#ONE},
+     * {@code List<XRecord>} for {@link no.sikt.graphitron.rewrite.model.SourceKey.Cardinality#MANY}.
+     * The check is colocated here because
+     * {@code ServiceDirectiveResolver.computeExpectedServiceReturnType}'s {@code ResultReturnType}
+     * arm returns {@code null} for carrier-payload return types by design — the resolver-time
+     * strict check is unreachable for this site, and only here is the carrier-walk target's
+     * {@code recordClass} in scope.
+     *
+     * <p>Compare-then-write enforces {@code carrier-data-field.single-producer-kind} the same
+     * way {@link #registerDmlCarrierDataField} does.
+     *
+     * <p>Returns {@code null} on success; non-null rejection string on conflict or on strict-
+     * return mismatch.
+     */
+    @LoadBearingClassifierCheck(
+        key = "carrier-data-field.service-producer-strict-return",
+        description = "registerServiceCarrierDataField rejects @service methods whose return "
+            + "type does not equal exactly XRecord (Cardinality.ONE) or List<XRecord> "
+            + "(Cardinality.MANY), where XRecord is the carrier data field's target table's "
+            + "record class. The check is the same operator as "
+            + "service-catalog-strict-service-return but at a different site (carrier walk's "
+            + "target table, not the SDL field's return) — ServiceDirectiveResolver's "
+            + "computeExpectedServiceReturnType returns null for carrier-payload return types "
+            + "by design. FetcherEmitter.buildSingleRecordTableFetcherValue's Wrap.TableRecord "
+            + "arm's (List<XRecord>) / (XRecord) env.getSource() casts rely on the strict "
+            + "equality; without it the source cast would ClassCastException at runtime "
+            + "(Set/Collection/Iterable/raw List/wildcard List/other-table XRecord all reject).")
+    private static String registerServiceCarrierDataField(
+            BuildContext ctx,
+            no.sikt.graphitron.rewrite.model.SingleRecordCarrierShape shape,
+            no.sikt.graphitron.rewrite.model.MethodRef method,
+            String mutationName) {
+        var dataChannel = shape.data();
+        var element = dataChannel.element();
+        if (!(element instanceof no.sikt.graphitron.rewrite.model.DataElement.Table tableElement)) {
+            // The @service producer-kind discrimination is irrelevant for DataElement.Record
+            // (identity passthrough has no SourceKey) and DataElement.Id is DELETE-only and
+            // routes through registerDeleteCarrierDataField. The helper is only called from
+            // the carrier-payload-with-Table-element site.
+            return null;
+        }
+
+        var target = tableElement.table();
+        var cardinality = tableElement.wrapper().isList()
+            ? SourceKey.Cardinality.MANY
+            : SourceKey.Cardinality.ONE;
+
+        no.sikt.graphitron.javapoet.TypeName expectedReturnType = cardinality == SourceKey.Cardinality.ONE
+            ? target.recordClass()
+            : no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
+                ClassName.get(java.util.List.class), target.recordClass());
+        if (!expectedReturnType.equals(method.returnType())) {
+            return "method '" + method.methodName() + "' in class '" + method.className()
+                + "' must return '" + expectedReturnType + "' to match the field's declared return type"
+                + " — got '" + method.returnType() + "'";
+        }
+
+        return registerCarrierDataFieldImpl(ctx, shape, target, mutationName,
+            new SourceKey.Wrap.TableRecord(target.recordClass()), /* producerKind */ "@service");
+    }
+
+    /**
+     * Shared body for {@link #registerDmlCarrierDataField} and
+     * {@link #registerServiceCarrierDataField}: compare-then-write SingleRecordTableField
+     * registration at the carrier's data-field coord, with single-producer-kind enforcement
+     * via {@link BuildContext#carrierProducerRegistry}. {@code inputTable} is the producer's
+     * authoritative table — the DML's {@code @table} input table for DML producers, the
+     * carrier walk's target table for {@code @service} producers; both equal
+     * {@code shape.data().element().table()} by construction (DML through
+     * {@link #requireDataTableMatchesInputTable}; {@code @service} by the strict-return check
+     * in {@link #registerServiceCarrierDataField}). Returns {@code null} on success or a
+     * rejection string when wrap disagrees with a previously-registered producer.
+     */
+    private static String registerCarrierDataFieldImpl(
+            BuildContext ctx,
+            no.sikt.graphitron.rewrite.model.SingleRecordCarrierShape shape,
+            TableRef target,
+            String mutationName,
+            SourceKey.Wrap wrap,
+            String producerKindLabel) {
+        var dataChannel = shape.data();
+        if (!(dataChannel.element() instanceof no.sikt.graphitron.rewrite.model.DataElement.Table tableElement)) {
+            return null; // not a Table-element carrier; registration is a no-op
+        }
+        String carrierType = shape.carrierTypeName();
+        String dataFieldName = dataChannel.fieldName();
+        var carrierRaw = ctx.schema.getType(carrierType);
+        if (!(carrierRaw instanceof graphql.schema.GraphQLObjectType carrierObj)) {
+            return null; // walk only enters here for object types; defensive fallthrough
+        }
+        var dataFieldDef = carrierObj.getFieldDefinition(dataFieldName);
+        if (dataFieldDef == null) {
+            return null; // walk only enters for fields present in SDL
+        }
+        SourceLocation dataFieldLocation = locationOf(dataFieldDef);
+        var coords = graphql.schema.FieldCoordinates.coordinates(carrierType, dataFieldName);
+
+        var existing = ctx.fieldRegistry.get(coords);
+        if (existing instanceof ChildField.SingleRecordTableField existingCarrier) {
+            var existingWrap = existingCarrier.sourceKey().wrap();
+            if (!existingWrap.equals(wrap)) {
+                String otherMutation = ctx.carrierProducerRegistry.get(coords);
+                String otherKindLabel = describeWrapProducerKind(existingWrap);
+                return producerKindLabel + " mutation '" + mutationName + "' classifies '"
+                    + carrierType + "." + dataFieldName + "' with " + describeWrap(wrap)
+                    + ", conflicting with previously-registered " + otherKindLabel
+                    + " mutation '" + (otherMutation != null ? otherMutation : "<unknown>")
+                    + "' which classifies with " + describeWrap(existingWrap)
+                    + "; split the carrier into two payload types (one per producer kind) or "
+                    + "converge the producers";
+            }
+            // Same wrap — second producer with consistent shape. The compare-then-write
+            // confirmed agreement; the reclassify below is a no-op overwrite (same SourceKey
+            // shape, same carrier).
+        }
+
+        var pkColumns = target.primaryKeyColumns();
+        var cardinality = tableElement.wrapper().isList()
+            ? SourceKey.Cardinality.MANY
+            : SourceKey.Cardinality.ONE;
+        var sourceKey = new SourceKey(
+            target,
+            pkColumns,
+            java.util.List.of(),
+            wrap,
+            cardinality,
+            new SourceKey.Reader.ResultRowWalk());
+        var carrier = new ChildField.SingleRecordTableField(
+            carrierType, dataFieldName, dataFieldLocation,
+            new ReturnTypeRef.TableBoundReturnType(
+                tableElement.name(), tableElement.table(), tableElement.wrapper()),
+            sourceKey);
+        ctx.carrierProducerRegistry.putIfAbsent(coords, mutationName);
+        ctx.fieldRegistry.reclassify(coords, carrier, null);
+        return null;
+    }
+
+    private static String describeWrap(SourceKey.Wrap wrap) {
+        return switch (wrap) {
+            case SourceKey.Wrap.Record r -> "Wrap.Record";
+            case SourceKey.Wrap.TableRecord tr -> "Wrap.TableRecord(" + tr.className().simpleName() + ")";
+            case SourceKey.Wrap.Row r -> "Wrap.Row";
+        };
+    }
+
+    private static String describeWrapProducerKind(SourceKey.Wrap wrap) {
+        return switch (wrap) {
+            case SourceKey.Wrap.Record r -> "DML";
+            case SourceKey.Wrap.TableRecord tr -> "@service";
+            case SourceKey.Wrap.Row r -> "<lifter>"; // unreachable for SingleRecordTableField
         };
     }
 
@@ -3226,6 +3452,17 @@ class FieldBuilder {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                             Rejection.structural(sourceSigilError));
                     }
+                    // R158: register the carrier data field for the @service producer kind.
+                    // Runs only when the resolved return type is a single-record carrier with a
+                    // DataElement.Table data channel (other shapes fall through as no-ops).
+                    // Compares the producer's reflected return type against the carrier-walk
+                    // target's expected XRecord / List<XRecord> shape, then compare-then-writes
+                    // the SingleRecordTableField with Wrap.TableRecord(target.recordClass()).
+                    String serviceCarrierError = classifyServiceCarrierProducer(r.returnType(), r.method(), name);
+                    if (serviceCarrierError != null) {
+                        yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
+                            Rejection.structural(serviceCarrierError));
+                    }
                     yield buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, (ch, ra) ->
                         new MutationField.MutationServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), ch, ra));
                 }
@@ -3304,6 +3541,17 @@ class FieldBuilder {
                                 var deleteRegError = registerDeleteCarrierDataField(ctx, ok.shape(), tia.inputTable(), name);
                                 if (deleteRegError != null) {
                                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(deleteRegError));
+                                }
+                            } else {
+                                // R158: for non-DELETE DML carriers (INSERT, UPDATE, UPSERT) the
+                                // verbless walk no longer pre-registers the carrier data field;
+                                // this is the only writer for the DML producer kind. Writes
+                                // SingleRecordTableField with Wrap.Record. The compare-then-write
+                                // inside the helper rejects on producer-kind conflict (a @service
+                                // mutation already registered the same coord with Wrap.TableRecord).
+                                var dmlRegError = registerDmlCarrierDataField(ctx, ok.shape(), tia.inputTable(), name);
+                                if (dmlRegError != null) {
+                                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(dmlRegError));
                                 }
                             }
                             // R141 carrier-shape lift: the error channel binding lives on the shape's
