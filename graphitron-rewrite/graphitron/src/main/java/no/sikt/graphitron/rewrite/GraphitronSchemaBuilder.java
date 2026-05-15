@@ -227,6 +227,20 @@ public class GraphitronSchemaBuilder {
                 if (ctx.tryResolveSingleRecordCarrier(objType.getName())
                         instanceof SingleRecordCarrierResolution.Ok ok) {
                     registerCarrierDataField(ctx, objType, ok.shape());
+                    // R12: walk the carrier's non-data-channel fields (ErrorChannelRole today)
+                    // through the normal per-field classifier so liftToErrorsField materialises
+                    // the ChildField.ErrorsField with the Transport arm read from the parent's
+                    // resolved channel. The data-channel field is registered above by
+                    // registerCarrierDataField; we skip it here to avoid clobbering.
+                    Class<?> parentBackingClass0 = typeBuilder.recordBackingClasses().get(objType.getName());
+                    for (var role : ok.shape().roles()) {
+                        if (role instanceof no.sikt.graphitron.rewrite.model.CarrierFieldRole.ErrorChannelRole ecr) {
+                            var ef = objType.getFieldDefinition(ecr.fieldName());
+                            ctx.fieldRegistry.classify(
+                                FieldCoordinates.coordinates(objType.getName(), ecr.fieldName()),
+                                fieldBuilder.classifyField(ef, objType.getName(), parentType, parentBackingClass0));
+                        }
+                    }
                     return;
                 }
                 // Fields on plain SDL object types (no domain directive, no single-record-carrier

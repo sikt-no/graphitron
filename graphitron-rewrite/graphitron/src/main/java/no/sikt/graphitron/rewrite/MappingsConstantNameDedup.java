@@ -210,6 +210,12 @@ public final class MappingsConstantNameDedup {
             case ChildField.RecordTableMethodField f -> new ChildField.RecordTableMethodField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
                 f.sourceKey(), f.loaderRegistration(), present);
+            case MutationField.MutationDmlRecordField f -> new MutationField.MutationDmlRecordField(
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.tableInputArg(),
+                f.kind(), present);
+            case MutationField.MutationBulkDmlRecordField f -> new MutationField.MutationBulkDmlRecordField(
+                f.parentTypeName(), f.name(), f.location(), f.returnType(), f.tableInputArg(),
+                f.kind(), present);
             default -> throw new IllegalStateException(
                 "MappingsConstantNameDedup: unhandled WithErrorChannel variant "
                     + field.getClass().getName()
