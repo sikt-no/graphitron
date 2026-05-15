@@ -19,7 +19,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R165` | Filter empty-body entries out of the fetcher-registration keyset | In Review | 2026-05-15 | [plan](fetcher-registration-empty-body-filter.md) |
 | `R158` | Admit @service-backed producers for single-record DML carrier data fields | Spec | 2026-05-15 <sub>created 2026-05-13</sub> | [plan](carrier-data-field-values-join-unify.md) |
 | `R161` | Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | 2026-05-14 <sub>created 2026-05-13</sub> | [plan](unify-record-dml-on-carrier-walk.md) |
-| `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | In Review | 2026-05-13 | [plan](tablemethod-child-table-bound.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
@@ -164,7 +163,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R39` [**Validate that list fields on tables without a PK require explicit ordering**](validate-list-fields-require-ordering.md) — Spec, validation
 - `R163` [**Rename Record to Carrier across the carrier-walk model**](rename-record-to-carrier-model-wide.md) — Backlog, cleanup, blocked by [mutation-result-field-sealed-on-kind](mutation-result-field-sealed-on-kind.md)
-- `R43` [**Stub: child `@tableMethod` with table-bound return (`TableMethodField`)**](tablemethod-child-table-bound.md) — In Review, stubs
 - `R129` [**Stub: ConditionJoin path in @reference on ColumnReferenceField**](column-reference-on-scalar-field-condition-join.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
 - `R96` [**Deprecate @record (narrow scope; defer polymorphic-return case)**](deprecate-record-directive.md) — Spec, cleanup, blocked by [emit-input-records](emit-input-records.md)
