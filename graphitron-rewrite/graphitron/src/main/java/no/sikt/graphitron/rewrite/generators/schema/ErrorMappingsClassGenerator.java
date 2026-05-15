@@ -102,7 +102,7 @@ public final class ErrorMappingsClassGenerator {
                     Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
                 .initializer(initializer)
                 .addJavadoc("Dispatch table for fetchers returning {@code $L}.\n",
-                    channel.payloadClass().simpleName())
+                    channelLabel(channel))
                 .build());
         }
 
@@ -179,6 +179,19 @@ public final class ErrorMappingsClassGenerator {
     /** Renders a Java string literal or the bare {@code null} keyword. */
     private static CodeBlock literalOrNull(String value) {
         return value == null ? CodeBlock.of("null") : CodeBlock.of("$S", value);
+    }
+
+    /**
+     * Human-readable label for the channel used in the per-constant Javadoc.
+     * {@link ErrorChannel.PayloadClass} carries a payload-class simple name; the
+     * {@link ErrorChannel.LocalContext} arm has no payload class so we fall back to the
+     * constant name itself.
+     */
+    private static String channelLabel(ErrorChannel channel) {
+        return switch (channel) {
+            case ErrorChannel.PayloadClass p -> p.payloadClass().simpleName();
+            case ErrorChannel.LocalContext lc -> lc.mappingsConstantName();
+        };
     }
 
     /**

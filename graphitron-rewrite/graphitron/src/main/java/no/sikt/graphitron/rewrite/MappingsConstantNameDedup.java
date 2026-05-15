@@ -62,19 +62,24 @@ public final class MappingsConstantNameDedup {
      */
     public static Map<FieldCoordinates, GraphitronField> apply(
             Map<FieldCoordinates, GraphitronField> fields) {
-        // Group every classified channel by its payload class, preserving classification order.
-        Map<String, List<ErrorChannel>> byPayload = new LinkedHashMap<>();
+        // Group every classified channel under one key per payload-equivalent identity. The
+        // sealed split picks the grouping per arm so each consumer dedups within its own surface:
+        // PayloadClass arms collapse by payload-class binary name (developer-payload-equivalent);
+        // LocalContext arms collapse by their bare mappingsConstantName (the wrapper SDL type
+        // name) because no payload class is consulted on that catch path. Classification order
+        // is preserved within each key.
+        Map<String, List<ErrorChannel>> byGroup = new LinkedHashMap<>();
         for (var entry : fields.entrySet()) {
             var ch = channelOf(entry.getValue());
             if (ch == null) continue;
-            byPayload
-                .computeIfAbsent(ch.payloadClass().reflectionName(), k -> new ArrayList<>())
+            byGroup
+                .computeIfAbsent(groupKey(ch), k -> new ArrayList<>())
                 .add(ch);
         }
 
-        // For each payload class, compute the resolved name per ErrorChannel.
+        // For each group, compute the resolved name per ErrorChannel.
         Map<ErrorChannel, String> resolved = new IdentityHashMap<>();
-        for (var entry : byPayload.entrySet()) {
+        for (var entry : byGroup.entrySet()) {
             var channels = entry.getValue();
             // Group by canonical handler-list hash, preserving first-seen order.
             Map<String, List<ErrorChannel>> byHash = new LinkedHashMap<>();
@@ -116,12 +121,40 @@ public final class MappingsConstantNameDedup {
                 rewritten.put(entry.getKey(), field);
                 continue;
             }
-            var newChannel = new ErrorChannel(
-                ch.mappedErrorTypes(), ch.payloadClass(), ch.errorsSlot(),
-                ch.defaultedSlots(), resolvedName);
+            var newChannel = renameChannel(ch, resolvedName);
             rewritten.put(entry.getKey(), withResolvedChannel(field, newChannel));
         }
         return rewritten;
+    }
+
+    /**
+     * Returns the dedup grouping key for a channel: payload-class binary name for
+     * {@link ErrorChannel.PayloadClass}, bare {@code mappingsConstantName} for
+     * {@link ErrorChannel.LocalContext}. The two namespaces never collide at the dedup level:
+     * a {@code PayloadClass} group key contains dots ({@code com.example.FilmPayload}) while
+     * a {@code LocalContext} group key is a SCREAMING_SNAKE identifier
+     * ({@code FILM_PAYLOAD}); even so, the sealed switch keeps the contract explicit rather
+     * than relying on the namespace separation.
+     */
+    private static String groupKey(ErrorChannel ch) {
+        return switch (ch) {
+            case ErrorChannel.PayloadClass p -> p.payloadClass().reflectionName();
+            case ErrorChannel.LocalContext lc -> lc.mappingsConstantName();
+        };
+    }
+
+    /**
+     * Re-constructs a channel with {@code newName} swapped onto its
+     * {@code mappingsConstantName} slot, preserving the sealed arm.
+     */
+    private static ErrorChannel renameChannel(ErrorChannel ch, String newName) {
+        return switch (ch) {
+            case ErrorChannel.PayloadClass p -> new ErrorChannel.PayloadClass(
+                p.mappedErrorTypes(), p.payloadClass(), p.errorsSlot(),
+                p.defaultedSlots(), newName);
+            case ErrorChannel.LocalContext lc -> new ErrorChannel.LocalContext(
+                lc.mappedErrorTypes(), newName);
+        };
     }
 
     /**

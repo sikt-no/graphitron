@@ -1416,9 +1416,16 @@ public class TypeFetcherGenerator {
 
         // Pre-execution Jakarta validation. Emitted ahead of the try block so a Validator-side
         // throw still propagates to the wrapper's catch arm uniformly with the body's
-        // exceptions; the body is never invoked when violations exist.
-        if (errorChannel.isPresent() && hasValidationHandler(errorChannel.get())) {
-            builder.addCode(validatorPreStep(ctx, method, errorChannel.get(), valueType, outputPackage));
+        // exceptions; the body is never invoked when violations exist. Only the
+        // PayloadClass arm supports the validator pre-step today: it materialises an early
+        // payload class populated from the violations list, then short-circuits. The
+        // LocalContext arm has no payload class to construct; if a LocalContext channel ever
+        // declares a ValidationHandler the producer must wire a sibling pre-step that emits
+        // {@code data(null).localContext(violations)} instead.
+        if (errorChannel.isPresent()
+                && errorChannel.get() instanceof ErrorChannel.PayloadClass payloadChannel
+                && hasValidationHandler(payloadChannel)) {
+            builder.addCode(validatorPreStep(ctx, method, payloadChannel, valueType, outputPackage));
         }
 
         builder.beginControlFlow("try");
@@ -1508,11 +1515,16 @@ public class TypeFetcherGenerator {
                                                  no.sikt.graphitron.rewrite.model.ResultAssembly ra,
                                                  Optional<ErrorChannel> errorChannel,
                                                  String rowLocal) {
+        // The errors-slot peek into the channel is PayloadClass-only: LocalContext channels
+        // have no payload class to slot the errors list into. Drop straight to the
+        // no-channel arm when the channel is LocalContext (none today; preemptive coverage).
+        var payloadChannel = errorChannel
+            .flatMap(c -> c instanceof ErrorChannel.PayloadClass pc ? Optional.of(pc) : Optional.<ErrorChannel.PayloadClass>empty());
         return switch (ra.resultSlot()) {
             case no.sikt.graphitron.rewrite.model.ResultSlot.CtorParameterIndex resultCpi ->
-                buildSuccessPayloadCtor(valueType, ra, resultCpi.index(), errorChannel, rowLocal);
+                buildSuccessPayloadCtor(valueType, ra, resultCpi.index(), payloadChannel, rowLocal);
             case no.sikt.graphitron.rewrite.model.ResultSlot.SetterMethod sm ->
-                buildSuccessPayloadSetters(valueType, sm, errorChannel, rowLocal);
+                buildSuccessPayloadSetters(valueType, sm, payloadChannel, rowLocal);
         };
     }
 
@@ -1524,12 +1536,12 @@ public class TypeFetcherGenerator {
     private static CodeBlock buildSuccessPayloadSetters(
             TypeName valueType,
             no.sikt.graphitron.rewrite.model.ResultSlot.SetterMethod sm,
-            Optional<ErrorChannel> errorChannel,
+            Optional<ErrorChannel.PayloadClass> errorChannel,
             String rowLocal) {
         var b = CodeBlock.builder().add("$T payload = new $T();\n", valueType, valueType);
         b.add("payload.$L($L);\n", sm.boundSetter().getName(), rowLocal);
         java.lang.reflect.Method errorsSetter = errorChannel
-            .map(ErrorChannel::errorsSlot)
+            .map(ErrorChannel.PayloadClass::errorsSlot)
             .filter(s -> s instanceof no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod)
             .map(s -> ((no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod) s).boundSetter())
             .orElse(null);
@@ -1546,13 +1558,13 @@ public class TypeFetcherGenerator {
     private static CodeBlock buildSuccessPayloadCtor(TypeName valueType,
                                                      no.sikt.graphitron.rewrite.model.ResultAssembly ra,
                                                      int resultSlotIndex,
-                                                     Optional<ErrorChannel> errorChannel,
+                                                     Optional<ErrorChannel.PayloadClass> errorChannel,
                                                      String rowLocal) {
         int slotCount = 1 + ra.defaultedSlots().size();
         var defaultsByIndex = ra.defaultedSlots().stream()
             .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
         Integer errorsCtorIndex = errorChannel
-            .map(ErrorChannel::errorsSlot)
+            .map(ErrorChannel.PayloadClass::errorsSlot)
             .filter(s -> s instanceof no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex)
             .map(s -> ((no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex) s).index())
             .orElse(null);
@@ -1573,7 +1585,7 @@ public class TypeFetcherGenerator {
     }
 
     /** Whether any flattened handler on the channel is a {@code ValidationHandler}. */
-    private static boolean hasValidationHandler(ErrorChannel channel) {
+    private static boolean hasValidationHandler(ErrorChannel.PayloadClass channel) {
         return channel.mappedErrorTypes().stream()
             .flatMap(et -> et.handlers().stream())
             .anyMatch(h -> h instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler);
@@ -1587,7 +1599,8 @@ public class TypeFetcherGenerator {
      * short-circuits with the payload's errors-arm filled by the violations list when the
      * accumulator is non-empty.
      */
-    private static CodeBlock validatorPreStep(TypeFetcherEmissionContext ctx, MethodRef method, ErrorChannel channel,
+    private static CodeBlock validatorPreStep(TypeFetcherEmissionContext ctx, MethodRef method,
+                                              ErrorChannel.PayloadClass channel,
                                               TypeName valueType, String outputPackage) {
         var validator = ClassName.get("jakarta.validation", "Validator");
         var constraintViolation = ClassName.get("jakarta.validation", "ConstraintViolation");
@@ -1636,7 +1649,7 @@ public class TypeFetcherGenerator {
         reliesOn = "switch over errorsSlot is total because the classifier resolves "
             + "PayloadConstructionShape to either AllFieldsCtor (CtorParameterIndex) or "
             + "MutableBean (SetterMethod). No third arm.")
-    private static CodeBlock declareEarlyPayloadFromErrors(ErrorChannel channel, String errorsLocal) {
+    private static CodeBlock declareEarlyPayloadFromErrors(ErrorChannel.PayloadClass channel, String errorsLocal) {
         return switch (channel.errorsSlot()) {
             case no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex cpi ->
                 declareEarlyPayloadCtor(channel, cpi.index(), errorsLocal);
@@ -1650,7 +1663,7 @@ public class TypeFetcherGenerator {
         reliesOn = "prints setter names directly into the generated validator pre-step; the "
             + "classifier guarantees each name resolves to a real method on the payload class.")
     private static CodeBlock declareEarlyPayloadSetters(
-            ErrorChannel channel,
+            ErrorChannel.PayloadClass channel,
             no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod sm,
             String errorsLocal) {
         var b = CodeBlock.builder();
@@ -1662,7 +1675,7 @@ public class TypeFetcherGenerator {
         return b.build();
     }
 
-    private static CodeBlock declareEarlyPayloadCtor(ErrorChannel channel, int errorsCtorIndex,
+    private static CodeBlock declareEarlyPayloadCtor(ErrorChannel.PayloadClass channel, int errorsCtorIndex,
                                                       String errorsLocal) {
         return CodeBlock.builder()
             .add("$T __earlyPayload = ", channel.payloadClass())
@@ -1671,7 +1684,7 @@ public class TypeFetcherGenerator {
             .build();
     }
 
-    private static CodeBlock newPayloadFromErrorsCtor(ErrorChannel channel, int errorsCtorIndex,
+    private static CodeBlock newPayloadFromErrorsCtor(ErrorChannel.PayloadClass channel, int errorsCtorIndex,
                                                       String errorsLocal) {
         var args = CodeBlock.builder();
         int slotCount = 1 + channel.defaultedSlots().size();
@@ -4477,9 +4490,18 @@ public class TypeFetcherGenerator {
      * {@code return DataFetcherResult.<P>newResult().data(payload).build()}.
      */
     private static CodeBlock catchArm(String outputPackage, Optional<ErrorChannel> errorChannel) {
-        return errorChannel
-            .map(channel -> dispatchCatchArm(outputPackage, channel))
-            .orElseGet(() -> redactCatchArm(outputPackage));
+        if (errorChannel.isEmpty()) {
+            return redactCatchArm(outputPackage);
+        }
+        return switch (errorChannel.get()) {
+            case ErrorChannel.PayloadClass pc -> dispatchCatchArm(outputPackage, pc);
+            // LocalContext catch arm is wired in a later carrier-walk phase. No producer
+            // emits this arm yet, so reaching here means the sealed split's PayloadClass
+            // invariant has been violated upstream.
+            case ErrorChannel.LocalContext lc -> throw new IllegalStateException(
+                "ErrorChannel.LocalContext catch-arm emission is not yet wired (mappingsConstantName="
+                    + lc.mappingsConstantName() + "); see error-handling-parity.md §3 carrier-walk wiring");
+        };
     }
 
     /**
@@ -4495,7 +4517,7 @@ public class TypeFetcherGenerator {
      * with this channel's mapping-table constant and a synthesized payload factory lambda
      * that binds the errors slot per the channel's {@link ErrorChannel#errorsSlot()} arm.
      */
-    private static CodeBlock dispatchCatchArm(String outputPackage, ErrorChannel channel) {
+    private static CodeBlock dispatchCatchArm(String outputPackage, ErrorChannel.PayloadClass channel) {
         return CodeBlock.builder()
             .add("return $T.dispatch(\n", errorRouterClass(outputPackage))
             .add("    e,\n")
@@ -4518,7 +4540,7 @@ public class TypeFetcherGenerator {
         key = "payload-construction.shape-resolved",
         reliesOn = "switch over errorsSlot is total. CtorParameterIndex emits the positional "
             + "lambda; SetterMethod emits the no-arg-ctor + setters lambda body.")
-    private static CodeBlock payloadFactoryLambda(ErrorChannel channel) {
+    private static CodeBlock payloadFactoryLambda(ErrorChannel.PayloadClass channel) {
         return switch (channel.errorsSlot()) {
             case no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex cpi ->
                 payloadFactoryLambdaCtor(channel, cpi.index());
@@ -4540,7 +4562,7 @@ public class TypeFetcherGenerator {
         reliesOn = "prints boundSetter.getName() and each nonBoundSetter.setter().getName() "
             + "into the generated lambda body; the classifier guarantees each name resolves.")
     private static CodeBlock payloadFactoryLambdaSetters(
-            ErrorChannel channel,
+            ErrorChannel.PayloadClass channel,
             no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod sm) {
         var b = CodeBlock.builder().add("errors -> {\n").indent();
         b.add("$T p = new $T();\n", channel.payloadClass(), channel.payloadClass());
@@ -4552,7 +4574,7 @@ public class TypeFetcherGenerator {
         return b.build();
     }
 
-    private static CodeBlock payloadFactoryLambdaCtor(ErrorChannel channel, int errorsCtorIndex) {
+    private static CodeBlock payloadFactoryLambdaCtor(ErrorChannel.PayloadClass channel, int errorsCtorIndex) {
         var args = CodeBlock.builder();
         int slotCount = 1 + channel.defaultedSlots().size();
         var defaultsByIndex = channel.defaultedSlots().stream()
@@ -4590,16 +4612,25 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage,
                                            Optional<ErrorChannel> errorChannel) {
-        var routerCall = errorChannel
-            .map(channel -> CodeBlock.builder()
-                .add("$T.dispatch(t, $T.$L, env, ",
-                    errorRouterClass(outputPackage),
-                    errorMappingsClass(outputPackage),
-                    channel.mappingsConstantName())
-                .add(payloadFactoryLambda(channel))
-                .add(")")
-                .build())
-            .orElseGet(() -> CodeBlock.of("$T.redact(t, env)", errorRouterClass(outputPackage)));
+        CodeBlock routerCall;
+        if (errorChannel.isEmpty()) {
+            routerCall = CodeBlock.of("$T.redact(t, env)", errorRouterClass(outputPackage));
+        } else {
+            routerCall = switch (errorChannel.get()) {
+                case ErrorChannel.PayloadClass pc -> CodeBlock.builder()
+                    .add("$T.dispatch(t, $T.$L, env, ",
+                        errorRouterClass(outputPackage),
+                        errorMappingsClass(outputPackage),
+                        pc.mappingsConstantName())
+                    .add(payloadFactoryLambda(pc))
+                    .add(")")
+                    .build();
+                // LocalContext async-tail emission is wired in a later carrier-walk phase.
+                case ErrorChannel.LocalContext lc -> throw new IllegalStateException(
+                    "ErrorChannel.LocalContext async-tail emission is not yet wired (mappingsConstantName="
+                        + lc.mappingsConstantName() + ")");
+            };
+        }
         return CodeBlock.builder()
             .add(".thenApply(payload -> $T.<$T>newResult().data(payload).build())\n",
                 DATA_FETCHER_RESULT, boxed(valueType))

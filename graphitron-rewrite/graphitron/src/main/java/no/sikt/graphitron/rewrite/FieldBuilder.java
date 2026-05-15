@@ -1911,7 +1911,7 @@ class FieldBuilder {
         }
         var defaultedSlots = collectDefaultedSlots(parameters, genericParameterTypes, errorsFieldIndex);
         var errorsSlot = new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(errorsFieldIndex);
-        return new ErrorChannelResult.Channel(new ErrorChannel(
+        return new ErrorChannelResult.Channel(new ErrorChannel.PayloadClass(
             mappedErrorTypes, payloadClassName, errorsSlot, defaultedSlots, mappingsConstantName));
     }
 
@@ -1937,7 +1937,7 @@ class FieldBuilder {
             errorsSetter, nonBoundSetters);
         // defaultedSlots is the ctor-arm carrier; under the setter shape the non-bound
         // setters with their defaults travel on the slot variant, and the carrier list is empty.
-        return new ErrorChannelResult.Channel(new ErrorChannel(
+        return new ErrorChannelResult.Channel(new ErrorChannel.PayloadClass(
             mappedErrorTypes, payloadClassName, errorsSlot, java.util.List.of(),
             mappingsConstantName));
     }

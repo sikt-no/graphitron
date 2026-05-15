@@ -63,7 +63,7 @@ class ErrorChannelClassificationTest {
 
         var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "behandleSak");
         assertThat(f.errorChannel()).isPresent();
-        var ch = f.errorChannel().get();
+        var ch = (no.sikt.graphitron.rewrite.model.ErrorChannel.PayloadClass) f.errorChannel().get();
         assertThat(ch.payloadClass()).isEqualTo(ClassName.bestGuess(SAK_PAYLOAD_FQN));
         assertThat(ch.mappedErrorTypes())
             .extracting(et -> et.name())
@@ -95,7 +95,7 @@ class ErrorChannelClassificationTest {
             """.formatted(SERVICE_DECL));
 
         var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        var ch = f.errorChannel().orElseThrow();
+        var ch = (no.sikt.graphitron.rewrite.model.ErrorChannel.PayloadClass) f.errorChannel().orElseThrow();
         assertThat(ch.errorsSlot())
             .isEqualTo(new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1));
         assertThat(ch.defaultedSlots()).hasSize(1);
@@ -485,7 +485,7 @@ class ErrorChannelClassificationTest {
 
         var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
         assertThat(f.errorChannel()).isPresent();
-        var ch = f.errorChannel().get();
+        var ch = (no.sikt.graphitron.rewrite.model.ErrorChannel.PayloadClass) f.errorChannel().get();
         assertThat(ch.errorsSlot())
             .isEqualTo(new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1));
         assertThat(ch.defaultedSlots()).hasSize(1);

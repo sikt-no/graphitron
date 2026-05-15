@@ -262,18 +262,18 @@ class ErrorMappingsClassGeneratorTest {
         return new ErrorType(name, null, handlers);
     }
 
-    private static ErrorChannel channel(String payloadSimple, String payloadFqn, String constantName,
+    private static ErrorChannel.PayloadClass channel(String payloadSimple, String payloadFqn, String constantName,
                                         List<ErrorType> mappedErrorTypes) {
         var stringType = (TypeName) ClassName.get(String.class);
         var defaultedSlots = List.of(
             new DefaultedSlot(0, "data", stringType, "null"));
-        return new ErrorChannel(mappedErrorTypes, ClassName.bestGuess(payloadFqn),
+        return new ErrorChannel.PayloadClass(mappedErrorTypes, ClassName.bestGuess(payloadFqn),
             new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
             defaultedSlots, constantName);
     }
 
     /** Synthesises a minimal schema with one MutationServiceRecordField per channel supplied. */
-    private static GraphitronSchema synthesizeSchema(List<ErrorChannel> channels) {
+    private static GraphitronSchema synthesizeSchema(List<ErrorChannel.PayloadClass> channels) {
         Map<String, GraphitronType> types = new LinkedHashMap<>();
         types.put("Mutation", new GraphitronType.RootType("Mutation", null));
         Map<FieldCoordinates, GraphitronField> fields = new LinkedHashMap<>();
@@ -303,7 +303,7 @@ class ErrorMappingsClassGeneratorTest {
      * production schema-build flow where {@code MappingsConstantNameDedup} runs between
      * field classification and emitter invocation.
      */
-    private static GraphitronSchema synthesizeSchemaWithDedup(List<ErrorChannel> channels) {
+    private static GraphitronSchema synthesizeSchemaWithDedup(List<ErrorChannel.PayloadClass> channels) {
         var raw = synthesizeSchema(channels);
         var deduped = no.sikt.graphitron.rewrite.MappingsConstantNameDedup.apply(raw.fields());
         return new GraphitronSchema(raw.types(), deduped);
