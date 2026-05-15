@@ -23,7 +23,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R154` | Admit setter-based mutable payload shape on @service returns | In Review | 2026-05-13 | [plan](service-return-setter-payload-shape.md) |
-| `R156` | Payload-returning DELETE: carrier permits for PK-echo and PK-only RETURNING record | In Review | 2026-05-15 <sub>created 2026-05-13</sub> | [plan](mutation-delete-payload-carrier.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec |  | [plan](emit-input-records.md) |
 | `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Spec | 2026-05-15 | [plan](error-handling-parity.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
@@ -146,7 +145,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R161` [**Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path**](unify-record-dml-on-carrier-walk.md) — Spec, structural, blocked by [error-handling-parity](error-handling-parity.md)
 - `R158` [**SourceKey.Reader sub-taxonomy: admit @service-backed producers for carrier data fields**](carrier-data-field-values-join-unify.md) — Backlog, structural
 - `R162` [**Consolidate MutationField permits under verb-on-permit-identity**](mutation-result-field-sealed-on-kind.md) — Backlog, structural, blocked by [unify-record-dml-on-carrier-walk](unify-record-dml-on-carrier-walk.md)
-- `R156` [**Payload-returning DELETE: carrier permits for PK-echo and PK-only RETURNING record**](mutation-delete-payload-carrier.md) — In Review, architecture
 - `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Spec, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
