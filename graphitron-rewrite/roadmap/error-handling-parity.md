@@ -703,7 +703,7 @@ sealed interface Handler
 }
 
 record ExceptionHandler(
-    ClassName exceptionClass,        // resolved at classify time
+    String exceptionClassName,       // FQN; resolved+validated at classify time via Class.forName
     Optional<String> matches,
     Optional<String> description
 ) implements Handler {}
@@ -744,10 +744,16 @@ the chain; the first `SQLException` whose `getSQLState()` / `getErrorCode()` mat
 message contains the substring wins. `matches` on `ExceptionHandler` follows the same rule
 against the matched class instance's `getMessage()`. A null `matches` skips the substring step.
 
-`ExceptionHandler.exceptionClass` is required and validated at classify time. If the class
-cannot be resolved on the classifier classpath, the parent `ErrorType` becomes
-`UnclassifiedType` with a descriptive reason (mirrors how `@record(record: {className: ...})`
-already validates Java reflection at build time).
+`ExceptionHandler.exceptionClassName` is required and validated at classify time
+(`TypeBuilder.validateExceptionClass`, landed): the FQN is resolved via
+`Class.forName` on the classifier classpath and checked to extend
+`java.lang.Throwable`. A non-resolvable or non-`Throwable` className surfaces
+the parent `ErrorType` as `UnclassifiedType` with a descriptive reason, mirroring
+how `@record(record: {className: ...})` already validates Java reflection at
+build time. The slot stores the validated FQN as `String`; the consumer-side
+JavaPoet `ClassName` is reconstructed at emit time from that string (the round
+trip is cheap, and storing the typed form would require pulling JavaPoet into
+the model package).
 
 `ValidationHandler` is the schema-side marker that opts a channel into pre-execution
 Jakarta validation (§5). It carries no exception-matching criteria; the wrapper inserts
@@ -760,13 +766,6 @@ parse boundary; downstream code consumes the sealed `Handler` variants on
 `GraphitronType.ErrorType`. The legacy enum-with-shared-fields `Handler` record was
 deleted in the same edit that landed the sealed hierarchy; validators and in-tree
 references migrated in lockstep.
-
-The landed `ExceptionHandler` carries `String exceptionClassName` rather than
-the `ClassName exceptionClass` form this section's code block describes. The
-classify-time class-resolution check (the `Class.forName` against the classifier
-classpath, mirroring `@record` reflection) is part of `parseErrorHandler`'s remaining
-work; whether the resolved form is stored as a typed `ClassName` or a validated
-`String` is a tactical call for that follow-up.
 
 #### SDL grammar change: add `VALIDATION` to `ErrorHandlerType`
 
@@ -1411,12 +1410,12 @@ public final class ErrorRouter {
     public static <P> DataFetcherResult<P> redact(Throwable thrown, DataFetchingEnvironment env) { ... }
 
     public sealed interface Mapping
-            permits ExceptionMapping, SqlStateMapping, VendorCodeMapping, ValidationMapping {
+            permits ExceptionMapping, SqlStateMapping, VendorCodeMapping {
         boolean match(Throwable thrown);   // first match wins per the §3 source-order rule
         String description();              // when set, overrides the throwable's getMessage() at serialisation; otherwise null
         // No build() method: there's no construction step. The matched source object
-        // (the exception itself, or each GraphQLError for VALIDATION) goes straight
-        // into the errors list; graphql-java reads from the source directly.
+        // (the exception itself) goes straight into the errors list; graphql-java
+        // reads from the source directly.
     }
 }
 ```
@@ -1425,18 +1424,17 @@ public final class ErrorRouter {
 always return `DataFetcherResult<P>`; graphql-java unwraps that uniformly
 downstream regardless of whether the result was produced via a successful
 payload or a redacted error. `payloadFactory` is a `Function<List<?>, P>`
-because the source list is heterogeneous (exception instances + `GraphQLError`s)
-with no useful Java ancestor beyond `Object`; the catch-arm emitter prints the
-factory as `errors -> new Payload(null, ..., errors, ..., null)` with literal
-defaults at every non-errors slot.
+because the source list type is `Object` at the slot (the catch arm places a
+single matched `Throwable`; the validation pre-step in §5 places
+`GraphQLError`s and never reaches the dispatcher); the catch-arm emitter prints
+the factory as `errors -> new Payload(null, ..., errors, ..., null)` with
+literal defaults at every non-errors slot.
 
-`ValidationMapping` is in the sealed `Mapping` set so the dispatch arm can
-locate the channel's validation routing by exhaustive switch (see §5's
-fan-out). It is *not* iterated in the regular source-order match loop; the
-validation arm in "Validation arm precedes channel matching" runs ahead of
-`MAPPINGS` iteration and either passes the underlying `GraphQLError`s into
-the errors list verbatim or routes unhandled. Schema authors see it as one
-entry in the channel; the runtime contract is the special-case arm.
+`ValidationHandler` produces no `Mapping`; validation runs as a wrapper
+pre-execution step (§5) and never reaches the dispatcher. The `Mapping` sealed
+set therefore covers only the three exception-matching variants. Schema authors
+declaring `{handler: VALIDATION}` see it as an entry in their channel; the
+runtime contract is the pre-step in the wrapper, not a dispatcher arm.
 
 The `description` field on each `Mapping` is consulted by graphql-java's
 `PropertyDataFetcher` reading the `message` SDL field: when the schema author
@@ -1496,8 +1494,9 @@ pair, scanning the chain outermost-first per mapping, that satisfies the mapping
 This is a pure improvement over legacy's single-level unwrap and costs nothing.
 
 The async fetcher path matters here. Service-style fetchers in the rewrite return
-`CompletableFuture` from a DataLoader (`TypeFetcherGenerator.buildServiceDataFetcher`,
-`TypeFetcherGenerator.java:1463-1505`): the fetcher returns `loader.load(key, env)` and the
+`CompletableFuture` from a DataLoader (locate via
+`TypeFetcherGenerator.buildServiceDataFetcher`, by symbol search rather than
+line, since the file churns): the fetcher returns `loader.load(key, env)` and the
 batch lambda is registered with `DataLoaderFactory.newDataLoaderWithContext(...)`. The lambda
 body itself synchronously calls the rows method and wraps the result in
 `CompletableFuture.completedFuture(...)`; an exception thrown from the rows method therefore
