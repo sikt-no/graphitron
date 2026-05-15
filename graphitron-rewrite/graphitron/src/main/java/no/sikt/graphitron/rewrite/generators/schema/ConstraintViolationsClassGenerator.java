@@ -27,6 +27,14 @@ import java.util.List;
  *       prefix, then the SDL argument key, then each {@code Path.Node} in declaration order
  *       ({@code getName()} for {@code PROPERTY} / {@code BEAN}, {@code getIndex()} for
  *       {@code CONTAINER_ELEMENT}, {@code getKey()} for map entries).</li>
+ *   <li>{@code constraint} → {@code extensions["constraint"]}. The constraint annotation's
+ *       simple name (e.g. {@code "NotBlank"}, {@code "Size"}) is placed in the GraphQL error's
+ *       extensions map. Schema authors opt into client visibility by declaring an
+ *       {@code extensions}-shaped field on their VALIDATION-handled {@code @error} type; the
+ *       per-handler accessor reflection check on the carrier confirms
+ *       {@code GraphQLError.getExtensions()} satisfies the read at classify time. Schemas that
+ *       don't declare such a field never see it (graphql-java's {@code PropertyDataFetcher}
+ *       only reads SDL-declared fields).</li>
  * </ul>
  *
  * <p>Spec: {@code error-handling-parity.md} §5, "{@code ConstraintViolation} →
@@ -43,6 +51,8 @@ public final class ConstraintViolationsClassGenerator {
     private static final ClassName GRAPHQL_ERROR        = ClassName.get("graphql", "GraphQLError");
     private static final ClassName GRAPHQL_ERROR_BUILDER= ClassName.get("graphql", "GraphqlErrorBuilder");
     private static final ClassName ARRAY_LIST           = ClassName.get("java.util", "ArrayList");
+    private static final ClassName LINKED_HASH_MAP      = ClassName.get("java.util", "LinkedHashMap");
+    private static final ClassName MAP                  = ClassName.get("java.util", "Map");
 
     private ConstraintViolationsClassGenerator() {}
 
@@ -51,6 +61,8 @@ public final class ConstraintViolationsClassGenerator {
             CONSTRAINT_VIOLATION, WildcardTypeName.subtypeOf(Object.class));
         var listOfObject = ParameterizedTypeName.get(
             ClassName.get(List.class), ClassName.get(Object.class));
+        var mapOfStringObject = ParameterizedTypeName.get(
+            MAP, ClassName.get(String.class), ClassName.get(Object.class));
 
         var toGraphQLError = MethodSpec.methodBuilder("toGraphQLError")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -59,10 +71,12 @@ public final class ConstraintViolationsClassGenerator {
             .addParameter(ENV, "env")
             .addParameter(String.class, "argName")
             .addJavadoc("Translates a single {@link $T} into a {@link $T} carrying the\n"
-                + "violation's localised message and a response-path prefix that splices the\n"
+                + "violation's localised message, a response-path prefix that splices the\n"
                 + "field's execution path, the bound argument name, and the violation's bean\n"
-                + "property path. The wrapper emits this call once per violation produced by\n"
-                + "the pre-execution validator step.\n", CONSTRAINT_VIOLATION, GRAPHQL_ERROR)
+                + "property path, and an {@code extensions} map keyed by {@code \"constraint\"}\n"
+                + "with the violated annotation's simple name (e.g. {@code \"NotBlank\"}). The\n"
+                + "wrapper emits this call once per violation produced by the pre-execution\n"
+                + "validator step.\n", CONSTRAINT_VIOLATION, GRAPHQL_ERROR)
             .addStatement("$T path = new $T<>(env.getExecutionStepInfo().getPath().toList())",
                 listOfObject, ARRAY_LIST)
             .addStatement("path.add(argName)")
@@ -81,9 +95,17 @@ public final class ConstraintViolationsClassGenerator {
             .addStatement("path.add(node.getName())")
             .endControlFlow()
             .endControlFlow()
+            // Extensions: a single entry keyed by "constraint" with the constraint annotation's
+            // simple name. Allocated unconditionally; schemas that don't declare an
+            // extensions-shaped field on their @error type never expose it (graphql-java's
+            // PropertyDataFetcher only reads SDL-declared fields).
+            .addStatement("$T extensions = new $T<>()", mapOfStringObject, LINKED_HASH_MAP)
+            .addStatement("extensions.put(\"constraint\", violation.getConstraintDescriptor()"
+                + ".getAnnotation().annotationType().getSimpleName())")
             .addStatement("return $T.newError(env)\n"
                 + "        .message(violation.getMessage())\n"
                 + "        .path(path)\n"
+                + "        .extensions(extensions)\n"
                 + "        .build()", GRAPHQL_ERROR_BUILDER)
             .build();
 
