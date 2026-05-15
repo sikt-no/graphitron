@@ -1,13 +1,13 @@
 ---
 id: R156
 title: "Payload-returning DELETE: carrier permits for PK-echo and PK-only RETURNING record"
-status: Ready
+status: In Review
 bucket: architecture
 priority: 6
 theme: mutations-errors
 depends-on: []
 created: 2026-05-13
-last-updated: 2026-05-14
+last-updated: 2026-05-15
 ---
 
 # Payload-returning DELETE: carrier permits for PK-echo and PK-only RETURNING record
@@ -48,6 +48,75 @@ non-PK column has been removed; any non-nullable SDL field that depends on a
 non-PK column cannot resolve. RETURNING is narrowed to PK columns only;
 non-PK-resolvable fields on the projected SDL type are either nullable (resolve
 to null at runtime) or reject the carrier at classify time.
+
+## Shipped (as of 2026-05-15)
+
+- **Model.** `DataElement.Id`, `PkResolution` (two arms), package-private
+  `PerFieldOutcome` (five arms), `ChildField.SingleRecordIdFieldFromReturning`,
+  `ChildField.SingleRecordTableFieldFromReturning` ; `ba4697f`.
+- **Carrier walk.** Verb-aware
+  `BuildContext.tryResolveSingleRecordCarrier(String, DmlKind)` overload with
+  the `DataElement.Id` permit-verb rule and the `classifyDeleteTableProjection`
+  step wearing `@LoadBearingClassifierCheck(key =
+  "mutation-delete-carrier.pk-resolution-projection-clean")`. Verbless overload
+  preserved for the four non-DML callers ; `cbe4634`.
+- **FieldBuilder rewire.** Unconditional DELETE-with-carrier rejection at
+  `FieldBuilder.java:2960-2965` removed; DELETE admission decision now lives in
+  the carrier walk. `requireDataTableMatchesInputTable` extended to admit the
+  Id arm (table linkage via encoder NodeType). Per-field `ChildField` carrier
+  registration via `registerDeleteCarrierDataField` + new
+  `FieldRegistry.reclassify` exception-method ; `61ce2c8`.
+- **MutationField admission.** `MutationDmlRecordField` /
+  `MutationBulkDmlRecordField` compact constructors lift the DELETE
+  rejection ; `61ce2c8`.
+- **DML emission.** `TypeFetcherGenerator.buildRecordDeleteChain` (single) and
+  `buildBulkRecordPerRowDeleteBody` (bulk) emit the DELETE chain with PK-only
+  RETURNING projection ; `8d88bb5`.
+- **Per-field fetcher emission.** `FetcherEmitter` adds
+  `buildSingleRecordIdFromReturningFetcherValue` (PK column read + encoder
+  call) and `buildSingleRecordTableFromReturningFetcherValue` (PK-only Record
+  synthesis via `Tables.<TABLE>.newRecord()`; see §Runtime caveats below) with
+  a matching `@DependsOnClassifierCheck` pinning the producer-consumer
+  contract ; `8d88bb5`.
+- **Sakila L5 fixtures + L6 execution-tier proof.** `DeletedFilmsIdPayload`,
+  `DeletedFilmsTablePayload`, `DeletedFilmInfo` SDL types + `deleteFilmsIdCarrier`
+  / `deleteFilmsTableCarrier` mutations; `DmlBulkMutationsExecutionTest`'s two
+  new tests run end-to-end against PostgreSQL ; `a869716`, `160f102`.
+- **L1 invariants + L3 admission/rejection matrix (partial first pass).** ;
+  `fe676bf`.
+- **L3 audit `PkResolutionEmitterReachabilityTest`.** Four-test reflective
+  scan over `PkResolution` (emitter case per arm + dead-entry detection),
+  `PerFieldOutcome` rejection-arm sealedness, record-component symmetry across
+  the two sealed roots, and `@LoadBearingClassifierCheck` pin on
+  `classifyDeleteTableProjection` ; `<this commit>` (R156 In Review rework
+  pass).
+- **L3 admission-matrix expansion.** Four new
+  `MutationDeletePayloadCarrierCase` rows: UPDATE / UPSERT + `[ID!]` rejection
+  via the permit-verb rule, DELETE + `[Foo!]` with `@service`-resolved field
+  rejection ; `<this commit>`.
+- **L4 pipeline rows on `MutationDmlNodeIdClassificationTest`.** Six new
+  tests covering the four `DataElement.Id` admission cells (bulk/single ×
+  implicit/explicit @nodeId, using the `nodeidfixture` catalog's composite-PK
+  `Bar` and single-PK `Baz` tables) plus the wrong-encoder-table and
+  no-@node-backed-input-table rejection paths ; `<this commit>`.
+- **User documentation.** `docs/manual/reference/mutations.adoc`
+  Payload-returning DELETE sub-section ; `e08c439`.
+
+## Runtime caveats (post-implementation)
+
+- **PK-only Record synthesis.** The `DataElement.Table` data-fetcher
+  (`buildSingleRecordTableFromReturningFetcherValue`) does not pass the
+  RETURNING `Record` to the per-field `ColumnFetcher` directly; it synthesizes
+  a fresh Record via `Tables.<TABLE>.newRecord()` and copies the PK columns
+  from the source. Non-PK column slots remain null, which is what the
+  per-field `ColumnFetcher` consumes for `PkResolution.NonPkNullable` arms.
+  Load-bearing assumption: source and target Records resolve to the same
+  generated table class, so `__r.set(Tables.X.COL, __src.get(Tables.X.COL))`
+  uses one `Field<T>` instance on both ends and compiles without a cast.
+  A future change that synthesizes the Record over a different jOOQ-generated
+  class than the source RETURNING reads from would need to revisit the copy
+  shape. Documented inline in the emitter; named here so the contract is
+  visible alongside the rest of the design.
 
 ## Scope
 
@@ -838,66 +907,63 @@ the design (not just the docs) needs revisiting before implementation.
   validation seam; this item is about DELETE payload carrier shapes.
   No implementation dependency.
 
-## In Review → Ready (2026-05-14): rework feedback
+## Review history
 
-First In Review pass: implementation lands cleanly on the architectural axes
-(model additions, verb-aware carrier walk, two new `ChildField` siblings,
-`@LoadBearingClassifierCheck` producer + `@DependsOnClassifierCheck` consumer
-pair, DML emitter narrows RETURNING to PK on DELETE-with-carrier) and the L5
-sakila fixture + L6 end-to-end execution proof both pass against real
-PostgreSQL. `mvn install -Plocal-db` is green. The rework gap is in the
-spec-promised test coverage and spec housekeeping, not the implementation:
+### In Review → Ready (2026-05-14): first review pass
 
-1. **`PkResolutionEmitterReachabilityTest` is missing.** §Tests L3 audit and
-   §Acceptance criteria both name a reflective scan over `PkResolution`'s arms
-   plus a paired fixture that asserts `BuildContext.classifyDeleteTableProjection`
-   rejects a `PerFieldOutcome.ServiceField` classification before any
-   `ChildField.SingleRecordTableFieldFromReturning` is constructed. The
-   compiler-enforced sealed switch covers the static side, but the named
-   forward-protection test is the artefact future contributors (who add a third
-   `PkResolution` arm) will trip; ship the small reflection test next to
-   `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`.
+Reviewer flagged sound implementation but five gaps: missing
+`PkResolutionEmitterReachabilityTest`, missing `MutationDmlNodeIdClassificationTest`
+admission rows, thin L3 admission matrix (especially zero `DataElement.Id`
+classifier-level coverage), no shipped-at housekeeping in the spec body, and
+the Record-synthesis assumption in the emitter was not surfaced in the spec.
 
-2. **`MutationDmlNodeIdClassificationTest` rows are missing.** §Tests L4 named
-   four admission cells of the cardinality × element matrix (bulk/single ×
-   Id/Table), with the composite-PK admission cell using the R130 reproducer
-   shape (`slettRegelverksamling`). The test file was not modified by R156.
-   Add the four rows; the R130 reproducer cell is the motivating fixture for
-   this whole item.
+### Ready → In Progress → In Review (2026-05-15): rework pass
 
-3. **L3 admission-matrix is thin.** `MutationDeletePayloadCarrierCase` ships
-   four cases; §Tests named ~11. Missing rows: bulk DELETE + `[ID!]` implicit
-   admission, bulk DELETE + `[ID!] @nodeId` explicit admission, single DELETE
-   variants of both, UPDATE/UPSERT + `[ID!]` rejection, DELETE + `[Foo!]` with
-   non-null FK reference rejection, DELETE + `[Foo!]` with `@service` field
-   rejection, DELETE + `[ID!]` with no `@node`-backed input @table rejection,
-   DELETE + `[ID!] @nodeId` pinning to a different table rejection. The
-   canonical recommended pattern (`DataElement.Id`) has zero classifier-level
-   admission coverage today; L6 covers the happy path end-to-end but not the
-   classifier rejection messages authors hit first. `VariantCoverageTest`
-   currently lists `SingleRecordIdFieldFromReturning` as EXCUSED for
-   test-fixture-catalog reasons; the sakila SDL surface was extended fine for
-   L5/L6, the unit-test fixture catalog can be extended similarly (or extend
-   the `nodeidfixture` catalog `VariantCoverageTest` references).
+Each of the five review gaps is now closed; the §Shipped panel above lists
+the landing commits. Summary:
 
-4. **Spec housekeeping.** Per workflow rule "Plan housekeeping", the spec body
-   should be marked up to reflect what shipped. Collapse the §Scope / §Design
-   phases that are done to one-line `shipped at <sha>` notes, capture the test
-   gaps above as named follow-up Backlog items (or fold them back into §Tests
-   so the next implementation pass closes them), and name the
-   `buildSingleRecordTableFromReturningFetcherValue` Record-synthesis approach
-   (with the same-Field-instance round-trip load-bearing assumption) so future
-   readers don't have to reconstruct it from the FetcherEmitter doc comment.
+1. `PkResolutionEmitterReachabilityTest` shipped as a four-test reflective
+   audit alongside `GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus`.
+   The audit scans `PkResolution` arms against a `HANDLED_BY_EMITTER` set
+   (catches both forgotten-emitter-case and stale-allowlist drift), asserts
+   `PerFieldOutcome`'s rejection arms exist and do NOT leak into
+   `PkResolution`, asserts record-component symmetry across the two sealed
+   roots, and pins `BuildContext.classifyDeleteTableProjection`'s
+   `@LoadBearingClassifierCheck` key by reflection.
+2. `MutationDmlNodeIdClassificationTest` gained six new tests covering the
+   four cardinality × element-arm admission cells plus two rejection paths
+   (wrong-encoder-table, no-@node-backed-input-table). The composite-PK
+   admission cells use the R130 reproducer fixture (`Bar` with `id_1`,
+   `id_2`).
+3. `MutationDeletePayloadCarrierCase` gained UPDATE / UPSERT + `[ID!]`
+   permit-verb rejection rows and the DELETE + `[Foo!]` with @service-field
+   rejection row. Together with the L4 admission cells above, the
+   `DataElement.Id` and rejection paths are now exercised at both pipeline
+   tiers; the gaps the first review flagged (FK-reference rejection and
+   no-@node-backed-input-table rejection) are covered through the L4
+   pipeline tests where the nodeidfixture catalog makes the SDL shape
+   realisable.
+4. Spec body collapsed: a §Shipped panel up front lists the per-phase
+   landing commits; the design body stays as historical reference; the
+   review-history section captures both passes.
+5. A §Runtime caveats section names the PK-only Record-synthesis approach
+   and its load-bearing same-Field-instance assumption.
 
-5. **Minor: emit-time Record synthesis assumption.** `FetcherEmitter.java:467+`
-   synthesizes a fresh `Record` via `Tables.<TABLE>.newRecord()` and copies PK
-   fields, rather than passing the upstream RETURNING `Record` directly. The
-   load-bearing "source and target resolve to the same generated table class"
-   assumption is documented in the emitter doc comment but not in the spec.
-   A one-line spec amendment (or a §Runtime note) closes the gap.
+`VariantCoverageTest`'s `SingleRecordIdFieldFromReturning` allowlist entry
+was rewritten: the entry stays (because the GraphitronSchemaBuilderTest
+ClassificationCase enum runs against the default Sakila catalog and can't
+swap to `nodeidfixture` per-case), but it now points at the
+`MutationDmlNodeIdClassificationTest` admission cells and the
+`DmlBulkMutationsExecutionTest` execution proof as the structural and
+end-to-end coverage sources.
+
+`mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes;
+`mvn test -pl :graphitron` reports 1708 tests, 0 failures, 0 errors,
+0 skipped.
 
 Implementation shipped at: `ba4697f` (Phase A model), `cbe4634` (Phase B
 verb-aware walk), `61ce2c8` (Phase C/D classifier rewire + MutationField
 admission), `8d88bb5` (Phase E/F emitters), `fe676bf` (Phase G partial L1/L3),
 `a869716` (Phase G L5 sakila), `160f102` (Phase G L6 execution-tier),
-`e08c439` (Phase H user docs), `424bc42` (doc sweep). Trunk: `424bc42`.
+`e08c439` (Phase H user docs), `424bc42` (doc sweep). Review-rework pass:
+`<this commit>`.

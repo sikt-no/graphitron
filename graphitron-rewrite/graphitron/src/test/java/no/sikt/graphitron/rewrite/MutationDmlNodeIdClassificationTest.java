@@ -250,4 +250,138 @@ class MutationDmlNodeIdClassificationTest {
         assertThat(f.returnExpression())
             .isEqualTo(new DmlReturnExpression.ProjectedSingle("Qux"));
     }
+
+    // ===== R156 DELETE-payload-carrier admission matrix (cardinality × element) =====
+    //
+    // The four admission cells of §Tests L4 (R156). The composite-PK cells use Bar
+    // (id_1, id_2) — the R130 reproducer fixture the spec named as the motivating shape
+    // for the DataElement.Id arm. The single-PK cells use Baz (id) to round out the cardinality
+    // axis without composite-PK noise. Each cell asserts the parent mutation classifies as
+    // MutationDmlRecordField / MutationBulkDmlRecordField with kind=DELETE, AND the per-field
+    // carrier on the data field classifies as SingleRecordIdFieldFromReturning carrying the
+    // resolved NodeIdEncodeKeys encoder. Implicit and explicit @nodeId both admit.
+
+    @Test
+    void bulkDeleteIdCarrier_compositePk_implicit_admits() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
+                id: ID! @nodeId
+                name: String
+            }
+            input DeleteBarInput @table(name: "bar") { id: ID! @nodeId }
+            type DeletedBarsPayload { deletedIds: [ID!] }
+            type Query { x: String }
+            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE) }
+            """, NODEID_CTX);
+
+        var mut = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "deleteBars");
+        assertThat(mut.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.DELETE);
+        var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
+            schema.field("DeletedBarsPayload", "deletedIds");
+        assertThat(dataField.encode().encodeMethod().methodName()).isEqualTo("encodeBar");
+        assertThat(dataField.encode().encodeMethod().paramSignature())
+            .extracting(ColumnRef::sqlName)
+            .containsExactly("id_1", "id_2");
+    }
+
+    @Test
+    void bulkDeleteIdCarrier_compositePk_explicit_admits() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
+                id: ID! @nodeId
+                name: String
+            }
+            input DeleteBarInput @table(name: "bar") { id: ID! @nodeId }
+            type DeletedBarsPayload { deletedIds: [ID!] @nodeId(typeName: "Bar") }
+            type Query { x: String }
+            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE) }
+            """, NODEID_CTX);
+
+        var mut = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "deleteBars");
+        assertThat(mut.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.DELETE);
+        var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
+            schema.field("DeletedBarsPayload", "deletedIds");
+        assertThat(dataField.encode().encodeMethod().methodName()).isEqualTo("encodeBar");
+    }
+
+    @Test
+    void singleDeleteIdCarrier_singlePk_implicit_admits() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
+                id: ID! @nodeId
+            }
+            input DeleteBazInput @table(name: "baz") { id: ID! @nodeId }
+            type DeletedBazPayload { deletedId: ID }
+            type Query { x: String }
+            type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE) }
+            """, NODEID_CTX);
+
+        var mut = (MutationField.MutationDmlRecordField) schema.field("Mutation", "deleteBaz");
+        assertThat(mut.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.DELETE);
+        var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
+            schema.field("DeletedBazPayload", "deletedId");
+        assertThat(dataField.encode().encodeMethod().methodName()).isEqualTo("encodeBaz");
+        assertThat(dataField.encode().encodeMethod().paramSignature())
+            .extracting(ColumnRef::sqlName)
+            .containsExactly("id");
+    }
+
+    @Test
+    void singleDeleteIdCarrier_singlePk_explicit_admits() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
+                id: ID! @nodeId
+            }
+            input DeleteBazInput @table(name: "baz") { id: ID! @nodeId }
+            type DeletedBazPayload { deletedId: ID @nodeId(typeName: "Baz") }
+            type Query { x: String }
+            type Mutation { deleteBaz(in: DeleteBazInput!): DeletedBazPayload @mutation(typeName: DELETE) }
+            """, NODEID_CTX);
+
+        var mut = (MutationField.MutationDmlRecordField) schema.field("Mutation", "deleteBaz");
+        assertThat(mut.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.DELETE);
+        var dataField = (no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning)
+            schema.field("DeletedBazPayload", "deletedId");
+        assertThat(dataField.encode().encodeMethod().methodName()).isEqualTo("encodeBaz");
+    }
+
+    @Test
+    void bulkDeleteIdCarrier_explicitNodeIdToWrongTable_rejects() {
+        // R156 — @nodeId(typeName: "Baz") on a deleteBars carrier whose input @table is "bar"
+        // must reject: returning IDs of a different entity than the DML acted on would be a
+        // silent contract break.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Bar implements Node @table(name: "bar") @node(keyColumns: ["id_1", "id_2"]) {
+                id: ID! @nodeId
+                name: String
+            }
+            type Baz implements Node @table(name: "baz") @node(keyColumns: ["id"]) {
+                id: ID! @nodeId
+            }
+            input DeleteBarInput @table(name: "bar") { id: ID! @nodeId }
+            type DeletedBarsPayload { deletedIds: [ID!] @nodeId(typeName: "Baz") }
+            type Query { x: String }
+            type Mutation { deleteBars(in: [DeleteBarInput!]!): DeletedBarsPayload @mutation(typeName: DELETE) }
+            """, NODEID_CTX);
+
+        var f = (UnclassifiedField) schema.field("Mutation", "deleteBars");
+        assertThat(f.reason()).contains("@nodeId encoder pins to table", "baz", "does not match", "bar");
+    }
+
+    @Test
+    void deleteIdCarrier_inputTableNotNodeBacked_rejects() {
+        // R156 — implicit Id recognition needs the input @table to be @node-backed. Qux has no
+        // @node SDL declaration in this fixture, so the encoder lookup fails and the carrier
+        // rejects with the same diagnostic family as today's bare-ID DELETE return path.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Qux @table(name: "qux") { name: String }
+            input DeleteQuxInput @table(name: "qux") { name: String! }
+            type DeletedQuxPayload { deletedIds: [ID!] }
+            type Query { x: String }
+            type Mutation { deleteQux(in: [DeleteQuxInput!]!): DeletedQuxPayload @mutation(typeName: DELETE) }
+            """, NODEID_CTX);
+
+        var f = (UnclassifiedField) schema.field("Mutation", "deleteQux");
+        assertThat(f.reason()).contains("no @node type is declared for table 'qux'");
+    }
 }
