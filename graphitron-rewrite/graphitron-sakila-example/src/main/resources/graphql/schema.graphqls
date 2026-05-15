@@ -1240,6 +1240,20 @@ type FilmsPayload {
     films: [Film!]
 }
 
+# R158 execution-tier fixture: @service-backed carrier payload. The producer returns
+# List<FilmRecord> / FilmRecord verbatim; the carrier's data field classifies as
+# ChildField.SingleRecordTableField with SourceKey.Wrap.TableRecord(FilmRecord) (the
+# @service producer kind). FetcherEmitter's Wrap.TableRecord arm casts env.getSource() to
+# List<FilmRecord> (MANY) or FilmRecord (ONE) and reads PKs via record.get(Tables.FILM.
+# FILM_ID); the response SELECT runs outside the service call.
+type FilmServicePayload {
+    film: Film
+}
+
+type FilmsServicePayload {
+    films: [Film!]
+}
+
 # R156 compilation-tier fixture (DataElement.Table on DELETE): @table-backed element type
 # whose fields are PK-only or nullable non-PK. The carrier walk's classifyDeleteTableProjection
 # step admits `DeletedFilmInfo` because film_id resolves to a PkRead (the SDL `filmId` field)
@@ -1350,6 +1364,26 @@ type Mutation {
     # parity) and R145 (UPSERT) compose independently when they land.
     deleteFilmsIdCarrier(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload @mutation(typeName: DELETE)
     deleteFilmsTableCarrier(in: [FilmDeleteInput!]!): DeletedFilmsTablePayload @mutation(typeName: DELETE)
+
+    # R158 execution-tier surfaces: @service-backed mutations returning carrier-payload
+    # types whose data field is the @service producer's typed jOOQ record (List<FilmRecord>
+    # or FilmRecord). The classifier registers the carrier data field as
+    # ChildField.SingleRecordTableField with SourceKey.Wrap.TableRecord(FilmRecord); the
+    # FetcherEmitter's Wrap.TableRecord arm casts env.getSource() to the typed record /
+    # list and reads PKs via the typed record.get(Tables.FILM.FILM_ID) accessor. Mirrors
+    # the DML producer's Wrap.Record arm shape but typed against XRecord instead of
+    # RecordN. The service hand-runs a SELECT to produce the records so the data-field
+    # fetcher's response SELECT is the second JDBC round-trip in the test path.
+    serviceFilmsByIds(ids: [Int!]!): FilmsServicePayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+            method: "filmsByIds"
+        })
+    serviceFilmById(id: Int!): FilmServicePayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+            method: "filmById"
+        })
 
     # R12 fixture (error-handling-parity.md): mutation-side @error end-to-end. The
     # @service-backed mutation classifies as MutationServiceRecordField (same shape that
