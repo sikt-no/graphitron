@@ -9,12 +9,14 @@ import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 
 /**
@@ -57,6 +59,13 @@ public final class FetcherRegistrationsEmitter {
 
     private FetcherRegistrationsEmitter() {}
 
+    @LoadBearingClassifierCheck(
+        key = "fetcher-registrations.no-empty-bodies",
+        description = "Every entry in the returned map corresponds to a type for which "
+            + "ObjectTypeGenerator will emit a registerFetchers method: typeBody and nestedBody "
+            + "only contribute entries when they have a non-empty wiring body (gated at the "
+            + "Optional<CodeBlock> ifPresent put call sites), and connectionBody / edgeBody "
+            + "always produce a non-empty body.")
     public static Map<String, CodeBlock> emit(GraphitronSchema schema, String outputPackage) {
         String fetchersPackage = outputPackage + ".fetchers";
         String utilPackage     = outputPackage + ".util";
@@ -75,10 +84,12 @@ public final class FetcherRegistrationsEmitter {
                       // that needs a wired fetcher entry. They fall through this filter via the
                       // ResultType arm — no PlainObjectType widening required.
                       || e.getValue() instanceof GraphitronType.ResultType)
-            .forEach(e -> result.put(e.getKey(), typeBody(schema, e.getKey(), fetchersPackage, outputPackage)));
+            .forEach(e -> typeBody(schema, e.getKey(), fetchersPackage, outputPackage)
+                .ifPresent(body -> result.put(e.getKey(), body)));
 
         nestedTypeMap.values().forEach(ntw ->
-            result.put(ntw.nestedTypeName(), nestedBody(ntw, fetchersPackage, outputPackage)));
+            nestedBody(ntw, fetchersPackage, outputPackage)
+                .ifPresent(body -> result.put(ntw.nestedTypeName(), body)));
 
         // Connection / Edge wiring is driven by the classifier's first-class type entries
         // (populated for both directive-driven and structural carriers). Iterate the type map
@@ -94,27 +105,30 @@ public final class FetcherRegistrationsEmitter {
         return result;
     }
 
-    private static CodeBlock typeBody(GraphitronSchema schema, String typeName,
+    private static Optional<CodeBlock> typeBody(GraphitronSchema schema, String typeName,
             String fetchersPackage, String outputPackage) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
             .sorted(Comparator.comparing(GraphitronField::name))
             .toList();
+        if (fields.isEmpty()) {
+            return Optional.empty();
+        }
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
         ClassName fetchersClass = ClassName.get(fetchersPackage, typeName + "Fetchers");
-        return buildBody(typeName, fields, fetchersClass, parentTable, resultType, outputPackage);
+        return Optional.of(buildBody(typeName, fields, fetchersClass, parentTable, resultType, outputPackage));
     }
 
-    private static CodeBlock nestedBody(NestedTypeWiring ntw, String fetchersPackage, String outputPackage) {
+    private static Optional<CodeBlock> nestedBody(NestedTypeWiring ntw, String fetchersPackage, String outputPackage) {
+        if (ntw.fields().isEmpty()) {
+            return Optional.empty();
+        }
         ClassName nestedFetchersClass = ntw.fields().stream().anyMatch(f -> f instanceof BatchKeyField)
             ? ClassName.get(fetchersPackage, ntw.nestedTypeName() + "Fetchers") : null;
 
         var body = CodeBlock.builder();
-        if (ntw.fields().isEmpty()) {
-            return body.build();
-        }
         body.add("codeRegistry").indent();
         for (var field : ntw.fields()) {
             if (nestedFetchersClass != null && field instanceof BatchKeyField) {
@@ -127,7 +141,7 @@ public final class FetcherRegistrationsEmitter {
             }
         }
         body.add(";\n").unindent();
-        return body.build();
+        return Optional.of(body.build());
     }
 
     private static CodeBlock connectionBody(GraphitronType.ConnectionType connectionType, String utilPackage) {
@@ -164,9 +178,6 @@ public final class FetcherRegistrationsEmitter {
     private static CodeBlock buildBody(String typeName, List<GraphitronField> fields,
             ClassName fetchersClass, TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage) {
-        if (fields.isEmpty()) {
-            return CodeBlock.builder().build();
-        }
         var body = CodeBlock.builder().add("codeRegistry").indent();
         for (var field : fields) {
             body.add(registrationEntry(typeName, field, fetchersClass, parentTable, resultType, outputPackage));

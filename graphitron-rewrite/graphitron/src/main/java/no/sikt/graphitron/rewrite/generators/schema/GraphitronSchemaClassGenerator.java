@@ -8,6 +8,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
+import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
@@ -72,6 +73,11 @@ public final class GraphitronSchemaClassGenerator {
 
     private GraphitronSchemaClassGenerator() {}
 
+    @DependsOnClassifierCheck(
+        key = "fetcher-registrations.no-empty-bodies",
+        reliesOn = "Iterates the keyset and emits <Name>Type.registerFetchers(codeRegistry) "
+            + "once per entry; correct iff every key has a corresponding emitted method, which "
+            + "the emitter guarantees by withholding empty-body entries at construction.")
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
                                           Set<String> typesWithFetchers, String outputPackage,
                                           boolean federationLink) {

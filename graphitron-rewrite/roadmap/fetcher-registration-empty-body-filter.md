@@ -1,7 +1,7 @@
 ---
 id: R165
 title: Filter empty-body entries out of the fetcher-registration keyset
-status: Ready
+status: In Progress
 bucket: cleanup
 priority: 2
 theme: mutations-errors
