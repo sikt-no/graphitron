@@ -165,6 +165,39 @@ class SchemaWatcherTest {
         assertThat(watcher.watchedDirs()).contains(dir, createdViaDispatch, createdViaAddRoot);
     }
 
+    @Test
+    void dispatch_triggersOnDotGraphql_whenConfigured(@TempDir Path dir) throws Exception {
+        var latch = new CountDownLatch(1);
+        debounce = new DebounceExecutor(DEBOUNCE_MS);
+        watcher = new SchemaWatcher(Set.of(dir), debounce, latch::countDown,
+            Set.of(".graphqls", ".graphql"));
+
+        watcher.dispatch(dir, entryModifyEvent(Path.of("a.graphql")));
+
+        assertThat(latch.await(WAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
+    }
+
+    @Test
+    void dispatch_ignoresUnconfiguredSuffix(@TempDir Path dir) throws Exception {
+        var fired = new AtomicInteger();
+        debounce = new DebounceExecutor(DEBOUNCE_MS);
+        watcher = new SchemaWatcher(Set.of(dir), debounce, fired::incrementAndGet,
+            Set.of(".graphqls"));
+
+        watcher.dispatch(dir, entryModifyEvent(Path.of("a.graphql")));
+
+        Thread.sleep(WAIT_MS);
+        assertThat(fired.get()).isZero();
+    }
+
+    @Test
+    void constructor_emptySuffixSet_rejected(@TempDir Path dir) {
+        debounce = new DebounceExecutor(DEBOUNCE_MS);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+            () -> new SchemaWatcher(Set.of(dir), debounce, () -> {}, Set.<String>of())
+        ).isInstanceOf(IllegalArgumentException.class);
+    }
+
     private void startWatcher(Set<Path> roots, Runnable onTrigger) throws Exception {
         debounce = new DebounceExecutor(DEBOUNCE_MS);
         watcher = new SchemaWatcher(roots, debounce, onTrigger);
@@ -178,6 +211,14 @@ class SchemaWatcherTest {
             @Override public Kind<Object> kind() { return StandardWatchEventKinds.OVERFLOW; }
             @Override public int count() { return 1; }
             @Override public Object context() { return null; }
+        };
+    }
+
+    private static WatchEvent<?> entryModifyEvent(Path relative) {
+        return new WatchEvent<Path>() {
+            @Override public Kind<Path> kind() { return StandardWatchEventKinds.ENTRY_MODIFY; }
+            @Override public int count() { return 1; }
+            @Override public Path context() { return relative; }
         };
     }
 

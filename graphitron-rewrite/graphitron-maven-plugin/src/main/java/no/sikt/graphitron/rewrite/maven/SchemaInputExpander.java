@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Expands {@link SchemaInputBinding} glob patterns into resolved {@link SchemaInput} records.
@@ -18,8 +19,8 @@ class SchemaInputExpander {
 
     private SchemaInputExpander() {}
 
-    static List<SchemaInput> expand(List<SchemaInputBinding> bindings, Path basedir)
-            throws MojoExecutionException {
+    static List<SchemaInput> expand(List<SchemaInputBinding> bindings, Path basedir,
+            Set<String> schemaFileExtensions) throws MojoExecutionException {
         if (bindings == null || bindings.isEmpty()) {
             return List.of();
         }
@@ -35,8 +36,14 @@ class SchemaInputExpander {
                 throw new MojoExecutionException(
                     "<schemaInput pattern='" + b.pattern + "'> scanner error (entry #" + i + "): " + e.getMessage(), e);
             }
-            var matches = scanner.getIncludedFiles();
-            if (matches.length == 0) {
+            var rawMatches = scanner.getIncludedFiles();
+            var matches = new ArrayList<String>(rawMatches.length);
+            for (var rel : rawMatches) {
+                if (matchesExtension(rel, schemaFileExtensions)) {
+                    matches.add(rel);
+                }
+            }
+            if (matches.isEmpty()) {
                 throw new MojoExecutionException(
                     "<schemaInput pattern='" + b.pattern + "'> matched no files (entry #" + i + ")");
             }
@@ -48,5 +55,14 @@ class SchemaInputExpander {
             }
         }
         return expanded;
+    }
+
+    private static boolean matchesExtension(String relativePath, Set<String> schemaFileExtensions) {
+        int sep = Math.max(relativePath.lastIndexOf('/'), relativePath.lastIndexOf('\\'));
+        var filename = sep < 0 ? relativePath : relativePath.substring(sep + 1);
+        for (String ext : schemaFileExtensions) {
+            if (filename.endsWith(ext)) return true;
+        }
+        return false;
     }
 }

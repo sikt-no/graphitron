@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -19,7 +20,7 @@ class SchemaInputExpanderTest {
         Files.createFile(dir.resolve("schema.graphqls"));
         var binding = binding("schema.graphqls", null, null);
 
-        var result = SchemaInputExpander.expand(List.of(binding), dir);
+        var result = SchemaInputExpander.expand(List.of(binding), dir, java.util.Set.of(".graphqls", ".graphql"));
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).sourceName())
@@ -36,7 +37,7 @@ class SchemaInputExpanderTest {
         Files.createFile(sub.resolve("c.graphqls"));
         var binding = binding("graphql/**", "mytag", "my note");
 
-        var result = SchemaInputExpander.expand(List.of(binding), dir);
+        var result = SchemaInputExpander.expand(List.of(binding), dir, java.util.Set.of(".graphqls", ".graphql"));
 
         assertThat(result).hasSize(3);
         result.forEach(si -> {
@@ -49,7 +50,7 @@ class SchemaInputExpanderTest {
     void zeroMatchPattern_throwsMojoExecutionException(@TempDir Path dir) {
         var binding = binding("nonexistent/**/*.graphqls", null, null);
 
-        assertThatThrownBy(() -> SchemaInputExpander.expand(List.of(binding), dir))
+        assertThatThrownBy(() -> SchemaInputExpander.expand(List.of(binding), dir, java.util.Set.of(".graphqls", ".graphql")))
             .isInstanceOf(MojoExecutionException.class)
             .hasMessageContaining("nonexistent/**/*.graphqls")
             .hasMessageContaining("entry #0");
@@ -60,7 +61,7 @@ class SchemaInputExpanderTest {
         Files.createFile(dir.resolve("schema.graphqls"));
         var binding = binding("schema.graphqls", "", null);
 
-        var result = SchemaInputExpander.expand(List.of(binding), dir);
+        var result = SchemaInputExpander.expand(List.of(binding), dir, java.util.Set.of(".graphqls", ".graphql"));
 
         assertThat(result.get(0).tag()).isEmpty();
     }
@@ -70,9 +71,44 @@ class SchemaInputExpanderTest {
         Files.createFile(dir.resolve("schema.graphqls"));
         var binding = binding("schema.graphqls", null, "");
 
-        var result = SchemaInputExpander.expand(List.of(binding), dir);
+        var result = SchemaInputExpander.expand(List.of(binding), dir, java.util.Set.of(".graphqls", ".graphql"));
 
         assertThat(result.get(0).descriptionNote()).isEmpty();
+    }
+
+    @Test
+    void expand_filtersFilesNotMatchingConfiguredExtensions(@TempDir Path dir) throws Exception {
+        Files.createFile(dir.resolve("schema.graphqls"));
+        Files.createFile(dir.resolve("README.md"));
+        var binding = binding("**/*", null, null);
+
+        var result = SchemaInputExpander.expand(List.of(binding), dir, Set.of(".graphqls"));
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).sourceName())
+            .isEqualTo(dir.resolve("schema.graphqls").toAbsolutePath().normalize().toString());
+    }
+
+    @Test
+    void expand_dotGraphqlAccepted(@TempDir Path dir) throws Exception {
+        Files.createFile(dir.resolve("schema.graphqls"));
+        Files.createFile(dir.resolve("extras.graphql"));
+        var binding = binding("**/*", null, null);
+
+        var result = SchemaInputExpander.expand(List.of(binding), dir, Set.of(".graphqls", ".graphql"));
+
+        assertThat(result).extracting(si -> Path.of(si.sourceName()).getFileName().toString())
+            .containsExactlyInAnyOrder("schema.graphqls", "extras.graphql");
+    }
+
+    @Test
+    void expand_zeroMatchAfterExtensionFilter_throwsMojoExecutionException(@TempDir Path dir) throws Exception {
+        Files.createFile(dir.resolve("README.md"));
+        var binding = binding("**/*", null, null);
+
+        assertThatThrownBy(() -> SchemaInputExpander.expand(List.of(binding), dir, Set.of(".graphqls")))
+            .isInstanceOf(MojoExecutionException.class)
+            .hasMessageContaining("matched no files");
     }
 
     private static SchemaInputBinding binding(String pattern, String tag, String descriptionNote) {
