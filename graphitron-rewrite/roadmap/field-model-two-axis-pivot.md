@@ -1,6 +1,6 @@
 ---
 id: R164
-title: "Field model: DataFetcherBuilder and QueryBuilder pivot"
+title: "Field model: three-dimension pivot"
 status: Backlog
 bucket: structural
 priority: 3
@@ -10,9 +10,9 @@ created: 2026-05-14
 last-updated: 2026-05-15
 ---
 
-# Field model: DataFetcherBuilder and QueryBuilder pivot
+# Field model: three-dimension pivot
 
-The code graphitron emits today is close to what we want. The runtime DataFetchers and the jOOQ QueryBuilders both work and are recognisable; the trouble is the *model* describing them. This pivot reorganises the model into the two dimensions the emit already lives along: the DataFetcherBuilder dimension (runtime fetcher) and the QueryBuilder dimension (jOOQ SQL). Nothing about what gets emitted changes; the sealed hierarchy gets honest about what it's already saying.
+The code graphitron emits today is close to what we want. The runtime DataFetchers, the jOOQ QueryBuilders, and the validation / error wiring all work and are recognisable; the trouble is the *model* describing them. This pivot reorganises the model into the three dimensions the emit already lives along: the DataFetcherBuilder dimension (runtime fetcher), the QueryBuilder dimension (jOOQ SQL), and the ValidationBuilder dimension (validation steps and error routing). Nothing about what gets emitted changes; the sealed hierarchy gets honest about what it's already saying.
 
 ## What is
 
@@ -28,14 +28,15 @@ Each permit name packs several decisions:
 
 `RecordLookupTableField` collapses four of these onto one identifier; `QueryServiceRecordField` collapses three. The cross product is the permit set, and adding a value to any axis multiplies the permits below it.
 
-## What's to be: two dimensions
+## What's to be: three dimensions
 
-The emit splits along two dimensions, and the model should too:
+The emit splits along three dimensions, and the model should too:
 
 1. **DataFetcherBuilder dimension** describes the runtime fetcher: how it consumes source, what it does at request time, what shape it returns.
 2. **QueryBuilder dimension** describes the jOOQ SQL graphitron generates (or doesn't): which verb, target table, filter shape, value source.
+3. **ValidationBuilder dimension** describes the validation / error wiring: which validation steps wrap the body, where violations route, which column-derived constraints surface at the field's SDL directive surface.
 
-Each dimension has its own sealed hierarchy, and `Field` carries one slot per dimension plus a small `Modifiers` bag.
+Each dimension has its own sealed hierarchy, and `Field` carries one slot per dimension.
 
 ```java
 sealed interface Field permits QueryField, MutationField, ChildField {
@@ -44,11 +45,11 @@ sealed interface Field permits QueryField, MutationField, ChildField {
     ReturnTypeRef returnType();
     DataFetcherBuilder dataFetcher();
     QueryBuilder builder();
-    Modifiers modifiers();
+    ValidationBuilder validation();
 }
 ```
 
-The `QueryField` / `MutationField` / `ChildField` sub-seals survive as authoring-scope organisation. The permit-per-combination internals do not: each consolidates to a small number of records carrying the two-dimension slots plus the existing identity components (name, location, return type).
+The `QueryField` / `MutationField` / `ChildField` sub-seals survive as authoring-scope organisation. The permit-per-combination internals do not: each consolidates to a small number of records carrying the three-dimension slots plus the existing identity components (name, location, return type).
 
 ## DataFetcherBuilder dimension
 
@@ -166,21 +167,40 @@ record Upsert(
 
 `Filter` is the same sealed family as on `Select`. `InsertRows`, `SetSource`, `ConflictTarget`, and `ReturnShape` are sealed payload families pinned at Spec.
 
+## ValidationBuilder dimension
+
+The validator-wrapper machinery R12 §5 and R92 already emit is a coherent third artifact, with its own sub-shape and its own choices. Three sub-components describe what the wrapper around each fetcher invocation does:
+
+- **Stages**: which `Validator.validate(...)` calls bracket the body. `None`, `OnInput` (R12 §5's pre-body `validate(input)`), `OnRecord` (R92's post-body `validate(record)`), or `OnBoth` (canonical mutation shape with R12 + R92 wired).
+- **Error channel**: where `ConstraintViolation` translations route, and where any other field-level errors aggregate. The post-R164 home of the current `WithErrorChannel` mixin.
+- **Surfaced constraints**: the column-derived constraints the field exposes at its SDL directive surface (for frontend introspection) and that the emitter ties into R92's `ConstraintMapping`. A derived view, projected from the field's `ColumnRef` at classify time; the source of truth stays on `TableType.columnConstraints` per R92.
+
+```java
+sealed interface ValidationBuilder permits
+        ValidationBuilder.None,
+        ValidationBuilder.OnInput,
+        ValidationBuilder.OnRecord,
+        ValidationBuilder.OnBoth {
+    Optional<ErrorChannel> errorChannel();
+    List<ColumnConstraint> surfacedConstraints();
+}
+```
+
+(Final arm-vs-payload split settled at Spec; the snippet shows what the dimension carries.)
+
+Pairings with the other two dimensions are constraint-by-construction rather than type-level invariants. The classifier infers the arm from the (`DataFetcherBuilder`, `QueryBuilder`) pair and the field's input shape: a `Trivial` root constant has `None`; a mutation with a typed input bean and a constructed record has `OnBoth`; a query with a typed input filter has `OnInput`; a `@service` field whose method takes a validated input bean has `OnInput` (and possibly `OnRecord` if the service returns a record graphitron then re-validates). The slot makes the choice explicit, so the wrapper emitter dispatches on identity rather than recomputing the decision mid-emit.
+
 ## Other dimensions
 
-The two main dimensions absorb most cross-cutting concerns into their payloads. What's left for `Modifiers` is small:
+With the three main dimensions accounting for fetcher, SQL, and validation / error wiring, the cross-cutting `Modifiers` bag earlier drafts proposed shrinks to near-zero. The only remaining candidate slot is `ConditionJoinReportable` (the existing emit-time diagnostic axis); Spec decides whether it lives as a sibling slot, as a sub-component of one of the three Builders, or retires altogether.
 
-- error-channel routing (the `errorChannel` slot)
-- the derived `ColumnConstraint` view projected from the field's `ColumnRef` at classify time (R92's vocabulary; the field-level surface for SDL constraint directives and Hibernate `ConstraintMapping` entries)
-- condition-join reportability (the existing `ConditionJoinReportable` axis)
+What earlier drafts pushed into `Modifiers` and where it now lives:
 
-What earlier drafts pushed into `Modifiers` and which now lives elsewhere:
-
-- `@splitQuery` is the `Projection` → `Select` lever, not a modifier
-- `@lookupKey` is a `SourceKey` variant inside `Projection.sourceKey` / `Select.sourceJoin`
-- `@condition`, `@reference` are sub-components of `SourceKey` / `Filter`
-
-Validation is not a `Field` axis. Column constraints live on `TableType` (R92), surface on fields via the SDL-directive emit path that reads the field's `ColumnRef`, and at runtime via the wrapper-emission paths R12 §5 and R92 specify. The Field-level interaction is the derived `ColumnConstraint` view in `Modifiers`.
+- `@splitQuery` is the `Projection` → `Select` lever on `QueryBuilder`, not a modifier.
+- `@lookupKey` is a `SourceKey` variant inside `Projection.sourceKey` / `Select.sourceJoin`.
+- `@condition`, `@reference` are sub-components of `SourceKey` / `Filter`.
+- `errorChannel` is the `ValidationBuilder.errorChannel` slot.
+- The derived `ColumnConstraint` view is `ValidationBuilder.surfacedConstraints`.
 
 Polymorphism is a sub-component of the `Projection` and `Select` arms, not its own dimension. Final placement (sub-component vs. its own slot) settles at Spec; the cross product doesn't change either way.
 
@@ -188,7 +208,7 @@ More dimensions may surface once the pivot lands and gets exercised against the 
 
 ## Mixin retirement
 
-The five mixin interfaces collapse into pattern matches on the two main dimensions:
+The five SQL / runtime mixin interfaces collapse into pattern matches on the three main dimensions:
 
 - `BatchKeyField` → `dataFetcher() instanceof Query q && q.loader().isPresent()` (paired with `builder() instanceof Select`).
 - `SqlGeneratingField` → `builder() instanceof Projection | Select | Insert | Update | Delete | Upsert`.
@@ -196,7 +216,7 @@ The five mixin interfaces collapse into pattern matches on the two main dimensio
 - `LookupField` → `Projection.sourceKey()` / `Select.sourceJoin().sourceKey()` is the `@lookupKey` variant.
 - `TableTargetField` → `Projection.target` / `Select.target` carry the table.
 
-`WithErrorChannel` survives as the `errorChannel` slot on `Modifiers`. `ConditionJoinReportable` survives as a sibling interface or `Modifiers` slot.
+`WithErrorChannel` retires onto `ValidationBuilder.errorChannel`. `ConditionJoinReportable` survives as a sibling interface, a `ValidationBuilder` sub-component, or its own slot; final placement settles at Spec.
 
 ## Consumer-side refactor scope
 
@@ -207,6 +227,8 @@ The five mixin interfaces collapse into pattern matches on the two main dimensio
 - `QueryConditionsGenerator` consumes the SQL-generating `QueryBuilder` arms.
 - `MultiTablePolymorphicEmitter` reads `Polymorphism` sub-components on `Projection` / `Select`.
 - `SplitRowsMethodEmitter` reads the `LoaderRegistration` payload on `DataFetcherBuilder.Query`.
+- `TypeFetcherGenerator`'s wrapper-emission sites (R12 §5's `validatorPreStep`, R92's `validate(record)` insertion site) dispatch on `ValidationBuilder` arms instead of computing the stage choice from channel + classifier data mid-emit.
+- `GeneratedConstraintMappingGenerator` (R92) walks `ValidationBuilder.surfacedConstraints` across classified fields when emitting the `ConstraintMapping`. The future SDL constraint-directive emitter reads the same slot.
 - `GraphitronSchemaValidator` replaces per-permit-identity dispatch with per-axis validation rules.
 - Mixin retirements (above).
 - `GraphitronSchemaBuilderTest`, `TypeFetcherGeneratorTest`, and every test that switches on permit type. Full enumeration is Spec work.
@@ -216,4 +238,4 @@ The five mixin interfaces collapse into pattern matches on the two main dimensio
 - **Supersedes R162 and R163.** R162's verb-on-permit-identity becomes the verb-per-arm flattening on `QueryBuilder` (`Insert` / `Update` / `Delete` / `Upsert`) with `ReturnShape` as a per-arm sub-component. R163's `Record → Carrier` rename evaporates because the carrier-walk plumbing types decompose onto `Select` with appropriate `SourceJoin` shapes. Both Discardable once R164 enters Spec.
 - **Depends on R161** (`unify-record-dml-on-carrier-walk`). The carrier-walk unification must settle in code before the model rewrites onto it.
 - Touches every emitter, validator, and a substantial portion of the test surface. Likely 2-4 weeks of focused work; should land before further model evolution to avoid rebasing on a moving target.
-- Recommended sequencing inside R164: (1) introduce `DataFetcherBuilder` and `QueryBuilder` as sealed slots on `Field` alongside the existing permits; (2) populate them from existing permit data via a transitional adapter; (3) migrate consumers one at a time; (4) retire old permits and mixins; (5) delete the adapter. Each step verifiable and reversible.
+- Recommended sequencing inside R164: (1) introduce `DataFetcherBuilder`, `QueryBuilder`, and `ValidationBuilder` as sealed slots on `Field` alongside the existing permits; (2) populate them from existing permit data via a transitional adapter; (3) migrate consumers one at a time; (4) retire old permits and mixins; (5) delete the adapter. Each step verifiable and reversible.
