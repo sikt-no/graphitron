@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R39` | Validate that list fields on tables without a PK require explicit ordering | Spec | 2026-05-13 | [plan](validate-list-fields-require-ordering.md) |
+| `R39` | Validate that list fields on tables without a PK require explicit ordering | Spec | 2026-05-15 | [plan](validate-list-fields-require-ordering.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R161` | Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | 2026-05-14 <sub>created 2026-05-13</sub> | [plan](unify-record-dml-on-carrier-walk.md) |
 | `R158` | Admit @service-backed producers for single-record DML carrier data fields | In Review | 2026-05-15 <sub>created 2026-05-13</sub> | [plan](carrier-data-field-values-join-unify.md) |

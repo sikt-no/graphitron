@@ -6,18 +6,18 @@ bucket: validation
 priority: 2
 theme: model-cleanup
 depends-on: []
-last-updated: 2026-05-13
+last-updated: 2026-05-15
 ---
 
 # Validate that list fields on tables without a PK require explicit ordering
 
 ## Problem
 
-`FieldBuilder.resolveDefaultOrderSpec()` falls back to `OrderBySpec.Fixed([pk ASC])` when a
-list field has no `@defaultOrder` or `@orderBy` and the table has a PK. For tables without a
-PK, it returns `OrderBySpec.None` instead, which the generators faithfully emit as an empty
-`List.of()` — no `ORDER BY` clause. The result is a non-deterministic list every time the
-query runs.
+`OrderByResolver.resolveDefaultOrderSpec()` (`OrderByResolver.java:123`) falls back to
+`OrderBySpec.Fixed([pk ASC])` when a list field has no `@defaultOrder` or `@orderBy` and the
+table has a PK. For tables without a PK, it returns `OrderBySpec.None` instead
+(`OrderByResolver.java:132`), which the generators faithfully emit as an empty `List.of()` ;
+no `ORDER BY` clause. The result is a non-deterministic list every time the query runs.
 
 The current validator does not catch this. `validateQueryTableField` only calls
 `validateCardinality`. The existing "ordering required" checks are narrowly scoped:
@@ -49,12 +49,12 @@ This mirrors the pagination check and catches the gap at build time rather than 
 
 Three checks now cover three disjoint shapes:
 
-- `validatePaginationRequiresOrdering` (`GraphitronSchemaValidator.java:126`) — fires when
+- `validatePaginationRequiresOrdering` (`GraphitronSchemaValidator.java:129`) — fires when
   `pagination() != null && orderBy() instanceof OrderBySpec.None`. Catches paginated fields,
   including Connection wrappers (connections always carry pagination).
-- `validateSplitTableField` connection branch (`GraphitronSchemaValidator.java:546`) — fires
-  for `@splitQuery` connections with empty or `None` ordering. Narrower message
-  ("@splitQuery connections require a non-empty ORDER BY") justifies its existence.
+- `validateSplitTableField` connection branch (`GraphitronSchemaValidator.java:549`, body at
+  line 555) — fires for `@splitQuery` connections with empty or `None` ordering. Narrower
+  message ("@splitQuery connections require a non-empty ORDER BY") justifies its existence.
 - *New:* list-without-ordering — fires when `wrapper instanceof FieldWrapper.List` (plain
   `[T]`, not `Connection`) and `orderBy() instanceof OrderBySpec.None`. Plain list wrappers
   do not carry `PaginationSpec`, so this is the residual gap.
@@ -70,7 +70,7 @@ guarantees no fourth case slips through.
 One file: `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java`.
 
 - Add a new `validateListRequiresOrdering(GraphitronField field, List<ValidationError> errors)`
-  method modelled on `validatePaginationRequiresOrdering` (same file, lines 126–137). Body:
+  method modelled on `validatePaginationRequiresOrdering` (same file, lines 129–140). Body:
 
   [source,java]
   ----
@@ -86,8 +86,9 @@ One file: `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrit
       ));
   }
   ----
-- Invoke it from `validateField` immediately after `validatePaginationRequiresOrdering` at line
-  117. Order in the file is "pagination check → list check → variant-implemented check".
+- Invoke it from `validateField` immediately after `validatePaginationRequiresOrdering` (call
+  site at `GraphitronSchemaValidator.java:120`). Order in the file is "pagination check → list
+  check → variant-implemented check".
 
 No changes to `OrderByResolver`, `FieldBuilder`, or any generator. The check is a build-time
 gate; resolver behaviour stays as documented in `OrderByResolver.java:132` (returns
@@ -99,7 +100,17 @@ that would reach that branch on a list-returning field.
 Add to
 `graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/validation/`, following
 the parametrised "case enum + helper" pattern in
-`QueryTableFieldValidationTest.java:24-133`. Two surfaces need coverage:
+`QueryTableFieldValidationTest.java:24-133`.
+
+The check is cross-cutting on the `SqlGeneratingField` capability (gated only on
+`FieldWrapper.List` and `OrderBySpec.None`); it does not branch on leaf identity. Per
+`rewrite-design-principles.adoc` §"Pipeline tests are the primary behavioural tier", per-variant
+repetition of the same predicate across all five affected leaves (`QueryTableField`,
+`QueryTableInterfaceField`, `TableField`, `TableInterfaceField`, non-connection
+`SplitTableField`) would be bookkeeping. One Query-rooted surface and one child-position
+surface exercise both halves of the `validateField` dispatch path; that pair is sufficient.
+
+Cases to add:
 
 - A `Query`-rooted list field returning a no-PK table: expect the new error.
 - The same field with `@defaultOrder` resolving to `OrderBySpec.Fixed`: expect no error.
