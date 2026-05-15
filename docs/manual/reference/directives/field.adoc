@@ -16,7 +16,7 @@ directive @field(name: String!) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPU
 [cols="1,1,1,3",options="header"]
 |===
 | Name | Type | Default | Description
-| `name` | `String!` | (required) | The target identifier. Resolves as a column name on `FIELD_DEFINITION`, `ARGUMENT_DEFINITION`, and `INPUT_FIELD_DEFINITION`; resolves as the database string (or, where applicable, the Java enum constant) on `ENUM_VALUE`.
+| `name` | `String!` | (required) | The target identifier. Resolves as a column name on `FIELD_DEFINITION`, `ARGUMENT_DEFINITION`, and `INPUT_FIELD_DEFINITION`; resolves as the database string (or, where applicable, the Java enum constant) on `ENUM_VALUE`. The literal value `$source` is also admitted at one specific site; see <<root-value-sigil>>.
 |===
 
 == Canonical example
@@ -60,6 +60,35 @@ The `INSERT` writes `title` and `language_id`; the GraphQL camelCase never reach
 
 On an *enum value*, `@field` maps the GraphQL value to the database string the value should encode as. See xref:../../how-to/map-types-to-tables.adoc[the mapping how-to] for the enum case.
 
+[[root-value-sigil]]
+== Root-value sigil: `$source`
+
+In addition to a column or accessor name, the `name` argument admits one sigil literal: `$source`. It binds the SDL field to the upstream Java value taken as a whole, rather than to a member of it.
+
+The sigil is admitted at exactly one site: the data field of a carrier-payload type returned by a xref:service.adoc[`@service`]-backed mutation. Anywhere else, `@field(name: "$source")` is rejected.
+
+[source,graphql]
+----
+type Film @table(name: "film") {
+    title: String
+}
+
+type FilmListPayload {
+    films: [Film!] @field(name: "$source")
+}
+
+type Mutation {
+    runFilms: FilmListPayload
+        @service(service: {className: "com.example.FilmService", method: "getFilms"})
+}
+----
+
+If `FilmService.getFilms` returns `List<FilmRecord>` (or `Result<FilmRecord>`), the `films` data field on the carrier payload is bound to that return value directly. The directive is a no-op confirmation of a binding the generator would otherwise infer implicitly; writing it makes the intent explicit and decouples the SDL slot name from the producer method's signature.
+
+The producer's reflected return type must match the SDL element's backing class. For a table-backed element, the producer must return the table's record class (or `List<RecordClass>` / `Result<RecordClass>` when the SDL field is list-shaped); for a `@record`-backed element, the producer must return the declared record class with the same list-shape discipline. Mismatches fail the build with a typed message naming the producer and both types.
+
+Unknown sigils are rejected at parse time: `@field(name: "$foo")` fails with `Unknown sigil '$foo' on @field(name:); allowed: $source`. The sigil at a non-admitted site fails with a message naming the only valid site.
+
 == Constraints
 
 * The `name` parameter is required; graphql-java rejects a no-arg `@field` at parse time.
@@ -71,6 +100,7 @@ On an *enum value*, `@field` maps the GraphQL value to the database string the v
 * xref:../../tutorial/02-first-schema.adoc[Tutorial page 2: The starter schema] for `@field` on regular type fields.
 * xref:../../tutorial/03-first-query.adoc[Tutorial page 3: Running your first query] explains the `@field` argument-collision case.
 * xref:table.adoc[`@table`] establishes the jOOQ table context that `@field` resolves against.
+* xref:service.adoc[`@service`] for the mutation form that produces a carrier-payload type whose data field admits `$source`.
 * xref:../../how-to/map-types-to-tables.adoc[How-to: Map types to tables] for enum-value mappings and other patterns.
 
 xref:../index.adoc[← Reference index]
