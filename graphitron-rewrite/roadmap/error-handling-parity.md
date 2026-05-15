@@ -268,7 +268,7 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
   unique parameter typed as the DML's table record (resolved through
   `JooqCatalog.findRecordClass(tableSqlName)`); that parameter is the row slot. A
   missing or duplicate row slot rejects the carrier with a descriptive reason.
-  The new `PayloadAssembly` record (`payloadClass: ClassName`, `params: List<PayloadConstructorParam>`,
+  A `PayloadAssembly` record (`payloadClass: ClassName`, `params: List<PayloadConstructorParam>`,
   `rowSlotIndex: int`) is held in a new `Optional<PayloadAssembly> payloadAssembly()`
   slot on every `DmlTableField` permit; channel resolution is symmetric and
   independent (a payload with a row slot but no errors-shaped GraphQL field carries
@@ -296,7 +296,7 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
   contract holds for GENERIC/DATABASE handlers whose source class lacks a
   `getPath()` accessor.
 
-- `ResultAssembly` carrier (R12 §2c, §5) — service-side counterpart of
+- `ResultAssembly` carrier (R12 §2c, §5): service-side counterpart of
   `PayloadAssembly`. The classifier reflects the developer-supplied payload
   class's canonical constructor and looks for a parameter whose
   {@code TypeName} matches the service method's reflected return type; that
@@ -422,14 +422,18 @@ rest of R12 is orthogonal.
     `CarrierFieldRole.ErrorChannelRole.fieldName()`; the binding does not
     double-encode it.
 
-  Helper signatures narrow with the split. `payloadFactoryLambda` and
-  `dispatchCatchArm` take `ErrorChannel.PayloadClass`, not the sealed
-  root; only `TypeFetcherGenerator.catchArm` dispatches on the root and
-  selects between `ErrorRouter.dispatch` and the new
-  `ErrorRouter.dispatchToLocalContext`. The type system carries the
-  variant-implies-fields certainty (e.g. `payloadClass`, `errorsSlot`,
-  `defaultedSlots` are non-null because the parameter type says so)
-  rather than re-asserting it through pattern matching at every call.
+  Helper signatures narrow with the split:
+
+  - `payloadFactoryLambda(ErrorChannel.PayloadClass) -> CodeBlock`
+  - `dispatchCatchArm(String, ErrorChannel.PayloadClass) -> CodeBlock`
+  - `catchArm(String, Optional<ErrorChannel>) -> CodeBlock` (the only site
+    that takes the sealed root; dispatches on it and selects between
+    `ErrorRouter.dispatch` and `ErrorRouter.dispatchToLocalContext`).
+
+  The type system carries the variant-implies-fields certainty
+  (`payloadClass`, `errorsSlot`, `defaultedSlots` are non-null because the
+  parameter type says so) rather than re-asserting it through pattern
+  matching at every call.
 
   *Producer.* `BuildContext.classifyCarrierField` gains a branch ahead of
   the `NoPermit` rejection: when the field is errors-shaped, build an
@@ -529,23 +533,25 @@ rest of R12 is orthogonal.
   the grouping switch and the resolution-rewrite switch, and the
   contract-comment on `apply` pins this dual-update obligation.
 
-  *Test coverage.* The carrier-walk-with-errors happy path lives in this
-  item (R161's migration deletes the Path-2 fixtures at
-  `GraphitronSchemaBuilderTest.java:5973-6062` and
-  `FetcherPipelineTest.java:367,412,433`). A `MutationDmlRecordField` with
-  an `ErrorChannel.LocalContext` binding asserts (a) the classifier admits
-  the wrapper, (b) the emitted fetcher's catch arm builds
-  `data(null).localContext(...)`, (c) the errors-field DataFetcher reads
-  from `env.getLocalContext()` at request time, (d) the resulting
-  `ChildField.ErrorsField` carries `Transport.LocalContext` after
-  classify (a model-level round-trip pin so the discriminator-on-field
-  invariant doesn't drift). A new validator-arm test rejects a
-  synthesised shape where an `ErrorChannel.LocalContext` binds to a data
-  field whose fetcher cannot short-circuit on null source.
-  `LoadBearingGuaranteeAuditTest` picks up the new
-  `error-channel.local-context-transport` producer/consumer pair
-  automatically by annotation scan. Sakila execute-tier coverage mirrors
-  the `MutationServiceTableField` validator-integration fixture pattern.
+  *Test coverage.* Four tiers cover the wiring:
+
+  - *Pipeline.* A `MutationDmlRecordField` with an `ErrorChannel.LocalContext`
+    binding asserts (a) the classifier admits the wrapper, (b) the emitted
+    fetcher's catch arm builds `data(null).localContext(...)`, (c) the
+    errors-field DataFetcher reads from `env.getLocalContext()` at request
+    time, (d) the resulting `ChildField.ErrorsField` carries
+    `Transport.LocalContext` after classify (a model-level round-trip pin so
+    the discriminator-on-field invariant doesn't drift). R161's migration
+    deletes the Path-2 fixtures at `GraphitronSchemaBuilderTest.java:5973-6062`
+    and `FetcherPipelineTest.java:367,412,433`.
+  - *Validator.* A new arm-test rejects a synthesised shape where an
+    `ErrorChannel.LocalContext` binds to a data field whose fetcher cannot
+    short-circuit on null source.
+  - *Audit.* `LoadBearingGuaranteeAuditTest` picks up the
+    `error-channel.local-context-transport` producer/consumer pair
+    automatically by annotation scan.
+  - *Execute.* Sakila coverage mirrors the `MutationServiceTableField`
+    validator-integration fixture pattern.
 
 - **Lift `errorChannel` onto child `@service` and `@tableMethod` variants:
   landed.** `ChildField.ServiceTableField` / `ChildField.ServiceRecordField`
@@ -580,7 +586,7 @@ rest of R12 is orthogonal.
   not express the runtime add-into-list contract). The `MultiCtorSakPayload`
   fixture and the `ErrorChannelClassificationTest` /
   `TestServiceStub` doc references track the same shape. No SDL fixture
-  uses `@record` co-locations on `@error` types — the source-direct
+  uses `@record` co-locations on `@error` types; the source-direct
   contract precludes a developer-supplied data class for an `@error` type
   and the existing fixture set already complies.
 
@@ -601,7 +607,7 @@ rest of R12 is orthogonal.
     path. *Blocked at execute tier on
     [`emit-input-records.md`](emit-input-records.md) (R94).* The pre-step
     today calls `validator.validate(env.getArgument(name))`, which receives
-    a `Map<?, ?>` (or a raw scalar) — neither carries Jakarta annotations,
+    a `Map<?, ?>` (or a raw scalar); neither carries Jakarta annotations,
     so the validator returns no violations and the wire path is a no-op
     end-to-end. R94 emits each SDL `input` type as a graphitron-internal
     Java record under `<outputPackage>.inputs`, coerces the map at the
@@ -771,7 +777,7 @@ DATABASE-with-no-discriminator, below).
 
 `TypeBuilder.parseErrorHandler` lifts each entry into one of the four model variants by
 inspecting which fields are present, and rejects combinations that are ambiguous,
-vendor-conflicting, or contradict the new VALIDATION semantic:
+vendor-conflicting, or contradict the VALIDATION semantic:
 
 | SDL entry                                              | Model variant                                |
 |--------------------------------------------------------|----------------------------------------------|
@@ -893,6 +899,10 @@ survive into the model; downstream the carrier-side `ErrorChannel` consumes `err
 uniformly. (Earlier drafts modelled three variants; collapsed once it became clear no
 consumer branched on the distinction. Same precedent as the `ErrorChannel` flatness in §2c.)
 
+Remaining work in *Carrier-walk wiring* (above) adds a `Transport transport()` component
+to this record so the `FetcherEmitter.dataFetcherValue` `ErrorsField` arm can dispatch on
+the localContext-vs-passthrough fork with compiler-enforced exhaustiveness.
+
 The emission for an `ErrorsField` is a passthrough fetcher: at request time the parent's
 payload object already carries the `errors` list (the carrier's `ErrorRouter.dispatch`
 produced it, or the service-method body did), so the fetcher reads it directly.
@@ -955,22 +965,23 @@ record DefaultedSlot(
 ) {}
 ```
 
-DML fields keep a sibling slot — `Optional<RowAssembly> rowAssembly()` — that
-captures the DML row-slot index against the same payload class:
+DML fields keep a sibling slot, `Optional<PayloadAssembly> payloadAssembly()`, that
+captures the DML success-arm wiring against the same payload class:
 
 ```java
-record RowAssembly(
+record PayloadAssembly(
     ClassName payloadClass,
-    int rowSlotIndex,
-    List<DefaultedSlot> defaultedSlots   // every parameter except the row slot
+    RowSlot rowSlot,                     // sealed: ctor-parameter-index or setter-method
+    TypeName rowSlotType,                // resolved jOOQ row record type
+    List<DefaultedSlot> defaultedSlots   // every constructor parameter except the row slot
 ) {}
 ```
 
 A DML field with both an errors-shaped GraphQL field and a row slot carries both
-`ErrorChannel` and `RowAssembly`; they reference the same payload class and
+`ErrorChannel` and `PayloadAssembly`; they reference the same payload class and
 together cover every constructor parameter (the errors slot and the row slot
 must be distinct indices, which the classifier verifies). A DML field without
-an errors-shaped field carries only `RowAssembly`. A service field carries only
+an errors-shaped field carries only `PayloadAssembly`. A service field carries only
 `ErrorChannel`. There's no shared "PayloadShape" abstraction because the
 catch-arm and success-arm emitters have different per-slot needs (the
 catch arm binds the errors slot to the dispatched list; the DML success arm
@@ -982,7 +993,7 @@ classified as `ErrorsField` (§2a) has an index in the payload type's field
 declaration order, and the canonical constructor's parameters follow that order
 (records preserve declaration order; SDL→constructor parameter binding by index
 is the documented contract). The classifier records that index plus
-per-non-errors-slot `defaultLiteral`. The slot's element type is `Object` —
+per-non-errors-slot `defaultLiteral`. The slot's element type is `Object`:
 sources placed in the list are heterogeneous (matched exceptions, `GraphQLError`
 violations) so the only universal supertype is `Object`. Consumer payload
 constructors should declare the slot as `List<?>` or `List<Object>`.
@@ -1009,7 +1020,7 @@ when they need to know whether to dispatch via the generated `ErrorRouter`. Conc
 The capability is non-structural: each variant lists `WithErrorChannel` alongside
 `MethodBackedField` etc., and the carrier classifier produces `Optional.of(channel)` /
 `Optional.empty()` per call site. Same pattern as `encodeReturn: Optional<HelperRef.Encode>`
-on `DmlTableField` (introduced by R50, `lift-nodeid-out-of-model` — shipped):
+on `DmlTableField` (introduced by R50, `lift-nodeid-out-of-model`; shipped):
 classifier resolves once into a typed slot, emitter dispatches over a settled shape.
 
 The carrier classifier walks the field's payload return type, identifies the `errors` field by
@@ -1147,7 +1158,7 @@ everything else.
 
 For each fetcher-emitting field with an `ErrorChannel`, the classifier resolves:
 
-- `errorsSlotIndex: int` — the SDL field that §2a classifies as `ErrorsField`
+- `errorsSlotIndex: int`: the SDL field that §2a classifies as `ErrorsField`
   has an index in the payload type's field declaration order; the canonical
   constructor's parameter at that same index is the errors slot. Records
   preserve declaration order; hand-rolled POJOs are expected to expose a
@@ -1155,7 +1166,7 @@ For each fetcher-emitting field with an `ErrorChannel`, the classifier resolves:
   (sources mix matched exceptions and `GraphQLError`s; the channel's source
   classes share only `Object`). Consumer payload classes should declare the
   slot as `List<?>` or `List<Object>`.
-- `resultSlotIndex: int` (DML and service-backed both) — the constructor
+- `resultSlotIndex: int` (DML and service-backed both): the constructor
   parameter typed as the result type:
   - For DML, the result type is the jOOQ table record class
     (`JooqCatalog.findRecordClass(tableSqlName)`). The wrapper binds the row
@@ -1227,7 +1238,7 @@ The lambda body is the synthesized payload factory: at the errors-slot index
 (known to the catch-arm emitter from `ErrorChannel.errorsSlotIndex`) it prints
 the lambda parameter; at every other index it prints the slot's pre-resolved
 `defaultLiteral`. The list passed in is whatever the dispatcher built for the
-match — a single matched exception for `GENERIC` / `DATABASE`, or
+match: a single matched exception for `GENERIC` / `DATABASE`, or
 `vve.getUnderlyingErrors()` for VALIDATION fan-out. graphql-java's
 PropertyDataFetcher reads each declared `@error` field directly off whatever
 source object happens to be in the slot, with the channel's TypeResolver
@@ -1930,7 +1941,7 @@ design needs revision before implementation.
 Graphitron routes exceptions thrown inside a generated fetcher into typed GraphQL
 error payloads. Declare an `@error` type and list its handlers; the runtime maps
 the matched exception (or each underlying validation violation) to the SDL type.
-**You don't write a Java class for the `@error` type itself** — the consumer
+**You don't write a Java class for the `@error` type itself**; the consumer
 exception classes you already throw are the runtime sources, and graphql-java
 reads each declared SDL field directly off them.
 
