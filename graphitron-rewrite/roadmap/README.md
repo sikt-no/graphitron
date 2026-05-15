@@ -25,7 +25,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R156` | Payload-returning DELETE: carrier permits for PK-echo and PK-only RETURNING record | Ready | 2026-05-14 <sub>created 2026-05-13</sub> | [plan](mutation-delete-payload-carrier.md) |
 | `R154` | Admit setter-based mutable payload shape on @service returns | In Review | 2026-05-13 | [plan](service-return-setter-payload-shape.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec |  | [plan](emit-input-records.md) |
-| `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Spec | 2026-05-14 | [plan](error-handling-parity.md) |
+| `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Spec | 2026-05-15 | [plan](error-handling-parity.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R74` | Row/Record return shapes for typed accessor batch keys | Spec |  | [plan](accessor-row-record-shapes.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
