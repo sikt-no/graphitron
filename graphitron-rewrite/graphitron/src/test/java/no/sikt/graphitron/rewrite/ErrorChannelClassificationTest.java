@@ -548,6 +548,61 @@ class ErrorChannelClassificationTest {
             .containsExactly("SimpleErr");
     }
 
+    // ===== Carrier-walk LocalContext binding (R12 Phase C) =====
+
+    private static final String CARRIER_WALK_ERROR_SDL = """
+            type SimpleErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union CarrierError = SimpleErr
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            """;
+
+    @Test
+    void carrierWalkErrorsField_classifiesAsErrorsFieldWithLocalContextTransport() {
+        // R12 Phase C: a plain SDL Object carrier (PojoResultType.NoBacking after promotion)
+        // with an errors-shaped field admits at the carrier walk. The errors field classifies
+        // as ChildField.ErrorsField carrying Transport.LocalContext (the discriminator FetcherEmitter
+        // reads at emit time). MutationBulkDmlRecordField still classifies as today; R161 wires
+        // the channel onto the mutation field's Optional<ErrorChannel> slot.
+        var schema = TestSchemaHelper.buildSchema(CARRIER_WALK_ERROR_SDL + """
+            type FilmPayload { films: [Film!] errors: [CarrierError!] }
+            type Query { x: String }
+            type Mutation { createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
+            """);
+
+        var errorsField = schema.field("FilmPayload", "errors");
+        assertThat(errorsField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
+        var ef = (no.sikt.graphitron.rewrite.model.ChildField.ErrorsField) errorsField;
+        assertThat(ef.transport())
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.LocalContext.class);
+        assertThat(ef.errorTypes()).extracting(et -> et.name()).containsExactly("SimpleErr");
+    }
+
+    @Test
+    void carrierWalkErrorsField_rejectsMultipleValidationHandlers() {
+        // Rule 7 (§1): a carrier with two VALIDATION-handler @error types in its errors channel
+        // is rejected at the carrier walk with the offending channel named (NoPermit surfaces
+        // through the unified walk as Rejected).
+        var schema = TestSchemaHelper.buildSchema("""
+            type V1 @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
+            type V2 @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            union DoubleVal = V1 | V2
+            type FilmPayload { films: [Film!] errors: [DoubleVal!] }
+            type Query { x: String }
+            type Mutation { createFilm(in: [FilmInput!]!): FilmPayload @mutation(typeName: INSERT) }
+            """);
+
+        var mutField = schema.field("Mutation", "createFilm");
+        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
+        var reason = ((UnclassifiedField) mutField).rejection().message();
+        assertThat(reason).contains("errors-shaped carrier field 'errors'", "more than one", "VALIDATION");
+    }
+
     private GraphitronSchema build(String schemaText) {
         return TestSchemaHelper.buildSchema(schemaText);
     }
