@@ -1,7 +1,7 @@
 ---
 id: R158
 title: Admit @service-backed producers for single-record DML carrier data fields
-status: Spec
+status: Ready
 bucket: structural
 priority: 3
 theme: mutations-errors
