@@ -4495,13 +4495,30 @@ public class TypeFetcherGenerator {
         }
         return switch (errorChannel.get()) {
             case ErrorChannel.PayloadClass pc -> dispatchCatchArm(outputPackage, pc);
-            // LocalContext catch arm is wired in a later carrier-walk phase. No producer
-            // emits this arm yet, so reaching here means the sealed split's PayloadClass
-            // invariant has been violated upstream.
-            case ErrorChannel.LocalContext lc -> throw new IllegalStateException(
-                "ErrorChannel.LocalContext catch-arm emission is not yet wired (mappingsConstantName="
-                    + lc.mappingsConstantName() + "); see error-handling-parity.md §3 carrier-walk wiring");
+            case ErrorChannel.LocalContext lc -> dispatchToLocalContextCatchArm(outputPackage, lc);
         };
+    }
+
+    /**
+     * Builds the carrier-walk catch arm: routes the throw through
+     * {@code ErrorRouter.dispatchToLocalContext} with this channel's mapping-table constant.
+     * No payload-factory lambda is needed: the matched throwable is placed into
+     * {@code DataFetcherResult.localContext}; the carrier's errors-field DataFetcher reads
+     * it via {@code env.getLocalContext()}, and the data field's null-source guard
+     * short-circuits the data side of the response.
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "error-channel.local-context-transport",
+        reliesOn = "BuildContext.classifyCarrierField only emits ErrorChannel.LocalContext "
+            + "when the carrier's data field's fetcher honors the null-source short-circuit "
+            + "guard at FetcherEmitter.java:273. The emitted dispatchToLocalContext call sets "
+            + "data=null on match, relying on that guard to keep the data side of the response "
+            + "render coherent.")
+    private static CodeBlock dispatchToLocalContextCatchArm(String outputPackage, ErrorChannel.LocalContext channel) {
+        return CodeBlock.of("return $T.dispatchToLocalContext(e, $T.$L, env);\n",
+            errorRouterClass(outputPackage),
+            errorMappingsClass(outputPackage),
+            channel.mappingsConstantName());
     }
 
     /**
@@ -4625,10 +4642,11 @@ public class TypeFetcherGenerator {
                     .add(payloadFactoryLambda(pc))
                     .add(")")
                     .build();
-                // LocalContext async-tail emission is wired in a later carrier-walk phase.
-                case ErrorChannel.LocalContext lc -> throw new IllegalStateException(
-                    "ErrorChannel.LocalContext async-tail emission is not yet wired (mappingsConstantName="
-                        + lc.mappingsConstantName() + ")");
+                case ErrorChannel.LocalContext lc -> CodeBlock.of(
+                    "$T.dispatchToLocalContext(t, $T.$L, env)",
+                    errorRouterClass(outputPackage),
+                    errorMappingsClass(outputPackage),
+                    lc.mappingsConstantName());
             };
         }
         return CodeBlock.builder()

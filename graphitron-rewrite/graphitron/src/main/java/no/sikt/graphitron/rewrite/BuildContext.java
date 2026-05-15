@@ -912,6 +912,18 @@ class BuildContext {
         return errorTypes;
     }
 
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "error-channel.local-context-transport",
+        description = "A carrier admitted with ErrorChannel.LocalContext has a data field whose "
+            + "fetcher honors the null-source short-circuit guard "
+            + "(FetcherEmitter.java:273, 'if (source == null) return null;'). The catch arm "
+            + "emits 'data(null).localContext(List.of(t)).build()'; the data side of the "
+            + "response renders coherently only because the data-field fetcher refuses to "
+            + "run on a null source. Today only SingleRecordTableField cardinality variants are "
+            + "reachable via the carrier walk and all honor this guard; the producer above is "
+            + "the load-bearing site for the guarantee, and a future data-field shape that "
+            + "doesn't short-circuit on null must be rejected at this classifier (or at the "
+            + "validator mirror in GraphitronSchemaValidator) before reaching the emitter.")
     private CarrierFieldClassification classifyCarrierField(String carrierTypeName, GraphQLFieldDefinition dataField) {
         // R12 producer arm: errors-shaped fields admit as CarrierFieldRole.ErrorChannelRole with
         // an ErrorChannel.LocalContext binding. The arm runs ahead of the DataChannel resolution
