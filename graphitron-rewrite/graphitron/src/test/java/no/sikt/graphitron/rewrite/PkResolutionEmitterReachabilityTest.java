@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R156 — forward-protection scan for the model-facing {@link PkResolution} sealed root and its
+ * R156 forward-protection scan for the model-facing {@link PkResolution} sealed root and its
  * companion builder-internal {@code PerFieldOutcome} root.
  *
  * <p>Two invariants:
@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       emitter pattern-matches both directly. A future change that adds a third arm without an
  *       emitter case must surface as a test failure here, not as a silent generator hole. The
  *       sealed-switch compiler error catches the case where the emitter is updated, but doesn't
- *       catch a fresh arm whose handler is missing entirely — the type-pattern dispatch falls
+ *       catch a fresh arm whose handler is missing entirely; the type-pattern dispatch falls
  *       through to the synthesizing path that doesn't reference the arm at all.</li>
  *   <li><b>Producer-side rejection enforcement on {@link PerFieldOutcome}.</b> The builder-
  *       internal classifier outcome has five arms: two admissible ({@code PkRead},
@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code UnsupportedField}). The {@code BuildContext.classifyDeleteTableProjection}
  *       projection step must produce a {@code Rejected} resolution before constructing any
  *       {@link PkResolution} when any element-type field classifies into a rejecting arm. The
- *       audit asserts the producer rejects a synthesised {@code ServiceField} classification —
+ *       audit asserts the producer rejects a synthesised {@code ServiceField} classification;
  *       paired with the {@code @LoadBearingClassifierCheck(key =
  *       "mutation-delete-carrier.pk-resolution-projection-clean", ...)} on the producer and the
  *       matching {@code @DependsOnClassifierCheck} on the emitter, this closes the classifier-
@@ -46,7 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * (reflective scan over a sealed root, fail on the first orphan).
  */
 @UnitTier
-public class PkResolutionEmitterReachabilityTest {
+class PkResolutionEmitterReachabilityTest {
 
     /**
      * The set of arms {@link FetcherEmitter#buildSingleRecordTableFromReturningFetcherValue}
@@ -107,7 +107,7 @@ public class PkResolutionEmitterReachabilityTest {
             .collect(Collectors.toSet());
         assertThat(pkResolutionArms)
             .as("PkResolution must not gain a ServiceField / NonPkNonNullable / UnsupportedField "
-                + "sibling — the rejection arms exist on PerFieldOutcome (builder-internal) only, "
+                + "sibling; the rejection arms exist on PerFieldOutcome (builder-internal) only, "
                 + "so the projection step's rejection cannot be observed downstream by type")
             .doesNotContainAnyElementsOf(Set.of(
                 PerFieldOutcome.ServiceField.class,

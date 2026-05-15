@@ -88,17 +88,17 @@ to null at runtime) or reject the carrier at classify time.
   scan over `PkResolution` (emitter case per arm + dead-entry detection),
   `PerFieldOutcome` rejection-arm sealedness, record-component symmetry across
   the two sealed roots, and `@LoadBearingClassifierCheck` pin on
-  `classifyDeleteTableProjection` ; `<this commit>` (R156 In Review rework
+  `classifyDeleteTableProjection` ; `b5209a9` (R156 In Review rework
   pass).
 - **L3 admission-matrix expansion.** Four new
   `MutationDeletePayloadCarrierCase` rows: UPDATE / UPSERT + `[ID!]` rejection
   via the permit-verb rule, DELETE + `[Foo!]` with `@service`-resolved field
-  rejection ; `<this commit>`.
+  rejection ; `b5209a9`.
 - **L4 pipeline rows on `MutationDmlNodeIdClassificationTest`.** Six new
   tests covering the four `DataElement.Id` admission cells (bulk/single ×
   implicit/explicit @nodeId, using the `nodeidfixture` catalog's composite-PK
   `Bar` and single-PK `Baz` tables) plus the wrong-encoder-table and
-  no-@node-backed-input-table rejection paths ; `<this commit>`.
+  no-@node-backed-input-table rejection paths ; `b5209a9`.
 - **User documentation.** `docs/manual/reference/mutations.adoc`
   Payload-returning DELETE sub-section ; `e08c439`.
 
@@ -958,7 +958,7 @@ swap to `nodeidfixture` per-case), but it now points at the
 end-to-end coverage sources.
 
 `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes;
-`mvn test -pl :graphitron` reports 1708 tests, 0 failures, 0 errors,
+`mvn test -pl :graphitron` reports 1714 tests, 0 failures, 0 errors,
 0 skipped.
 
 Implementation shipped at: `ba4697f` (Phase A model), `cbe4634` (Phase B
@@ -966,4 +966,4 @@ verb-aware walk), `61ce2c8` (Phase C/D classifier rewire + MutationField
 admission), `8d88bb5` (Phase E/F emitters), `fe676bf` (Phase G partial L1/L3),
 `a869716` (Phase G L5 sakila), `160f102` (Phase G L6 execution-tier),
 `e08c439` (Phase H user docs), `424bc42` (doc sweep). Review-rework pass:
-`<this commit>`.
+`b5209a9`.
