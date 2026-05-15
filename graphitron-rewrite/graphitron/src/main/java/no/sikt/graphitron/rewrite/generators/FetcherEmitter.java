@@ -91,14 +91,21 @@ public final class FetcherEmitter {
             // synthesis, no SELECT.
             return CodeBlock.of("($T env) -> env.getSource()", DATA_FETCHING_ENV);
         }
-        if (field instanceof ChildField.ErrorsField) {
-            // Passthrough off the parent payload's errors accessor. PropertyDataFetcher reflects
-            // through record-style accessor → JavaBean getter → field, which covers every payload
-            // backing class shape (JavaRecordType / PojoResultType / untyped). The runtime carrier
-            // lives on the payload as the SDL field name; per-error dispatch and try/catch
-            // wrapping ship later in error-handling-parity.md (carrier classifier + dispatch arm).
-            var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
-            return CodeBlock.of("$T.fetching($S)", propertyDataFetcher, field.name());
+        if (field instanceof ChildField.ErrorsField ef) {
+            // Switch on the field's resolved Transport: PayloadAccessor reads the errors list
+            // off the parent payload via graphql-java's PropertyDataFetcher (record accessor /
+            // JavaBean getter / field); LocalContext reads it off the env's local-context slot,
+            // populated by the catch arm of an ErrorChannel.LocalContext-bound carrier. The
+            // discriminator rides on the field-level model (resolved at classify time with the
+            // parent carrier's channel in scope) so this emission never re-walks the parent.
+            return switch (ef.transport()) {
+                case ChildField.Transport.PayloadAccessor ignored -> {
+                    var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
+                    yield CodeBlock.of("$T.fetching($S)", propertyDataFetcher, field.name());
+                }
+                case ChildField.Transport.LocalContext ignored ->
+                    CodeBlock.of("($T env) -> env.getLocalContext()", DATA_FETCHING_ENV);
+            };
         }
         if (field instanceof ChildField.PropertyField pf && resultType != null) {
             return propertyOrRecordValue(pf.columnName(), pf.column(), resultType, pf.accessor(), outputPackage);

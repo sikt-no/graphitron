@@ -776,20 +776,61 @@ public sealed interface ChildField extends GraphitronField
      * not survive into the model; downstream the carrier-side
      * {@link ErrorChannel} consumes this list uniformly.
      *
-     * <p>Emission is a passthrough fetcher: at request time the parent's payload object
-     * already carries the list (the carrier's try/catch wrapper produced it, or the
-     * service-method body did), so the fetcher reads it directly via graphql-java's default
-     * {@code PropertyDataFetcher}.
+     * <p>{@code transport} discriminates at emit time between the two ways graphql-java can
+     * surface the errors list to the field's data fetcher: a property accessor off the
+     * parent payload (the catch-arm built a developer payload class and slotted the list in)
+     * or {@link graphql.execution.DataFetcherResult#getLocalContext()} (the catch arm shipped
+     * {@code data(null).localContext(errors).build()}). The arm is selected by
+     * {@code FieldBuilder.liftToErrorsField} at classify time with the parent carrier's
+     * resolved {@link ErrorChannel} in scope, then printed by
+     * {@code FetcherEmitter.dataFetcherValue} via an exhaustive switch on
+     * {@link Transport}. Today only the {@link Transport.PayloadAccessor} arm is reachable
+     * because no producer emits {@link ErrorChannel.LocalContext} channels yet; the
+     * {@link Transport.LocalContext} arm is wired so the carrier-walk producer in a follow-up
+     * phase has the field-level model ready.
      */
     record ErrorsField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        List<GraphitronType.ErrorType> errorTypes
+        List<GraphitronType.ErrorType> errorTypes,
+        Transport transport
     ) implements ChildField {
 
         public ErrorsField {
             errorTypes = List.copyOf(errorTypes);
+            if (transport == null) {
+                throw new IllegalArgumentException("ErrorsField: transport must be non-null");
+            }
         }
+    }
+
+    /**
+     * Where the errors-field data fetcher reads its value from at request time. Sealed so
+     * {@code FetcherEmitter.dataFetcherValue}'s {@code ErrorsField} arm dispatches with
+     * compiler-enforced exhaustiveness; a future third arm forces every consumer site to
+     * acknowledge it.
+     *
+     * <ul>
+     *   <li>{@link PayloadAccessor} : the parent payload exposes the errors list as a
+     *       property reachable via graphql-java's default {@code PropertyDataFetcher}
+     *       (record accessor, JavaBean getter, or public field). Today's only arm.</li>
+     *   <li>{@link LocalContext} : the fetcher reads from
+     *       {@code env.getLocalContext()}. Pairs with an
+     *       {@link ErrorChannel.LocalContext} catch arm that ships
+     *       {@code DataFetcherResult.<R>newResult().data(null).localContext(errors).build()};
+     *       the parent payload is bypassed entirely.</li>
+     * </ul>
+     */
+    sealed interface Transport {
+        /** The errors list rides on the parent payload's errors-named property. */
+        record PayloadAccessor() implements Transport {}
+
+        /**
+         * The errors list rides on graphql-java's {@code DataFetcherResult.localContext} slot.
+         * The parent's data field's fetcher must short-circuit on a null source so the
+         * catch path renders {@code data: null, errors: [...]} at the SDL level.
+         */
+        record LocalContext() implements Transport {}
     }
 }
