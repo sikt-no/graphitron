@@ -116,6 +116,7 @@ public final class ErrorRouterClassGenerator {
             .build();
 
         var dispatch = buildDispatchMethod(typeP, resultOfP);
+        var dispatchToLocalContext = buildDispatchToLocalContextMethod(typeP, resultOfP);
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
@@ -127,6 +128,14 @@ public final class ErrorRouterClassGenerator {
                 + "or, in the no-channel case, to a redacted {@code DataFetcherResult} carrying\n"
                 + "only a correlation ID ({@code redact}).\n"
                 + "\n"
+                + "<p>{@code dispatchToLocalContext} is the carrier-walk counterpart of\n"
+                + "{@code dispatch}: instead of constructing a developer payload class, it returns\n"
+                + "a {@code DataFetcherResult} with {@code data=null} and the matched exception in\n"
+                + "{@code localContext}, so the carrier's errors-field DataFetcher can read it via\n"
+                + "{@code env.getLocalContext()} and the data field's null-source guard short-\n"
+                + "circuits. Used by {@code MutationDmlRecordField} / {@code MutationBulkDmlRecordField}\n"
+                + "wrappers post-R161.\n"
+                + "\n"
                 + "<p>Generated alongside {@code ErrorMappings}; preserves the rewrite's\n"
                 + "no-runtime-jar invariant.\n")
             .addField(loggerField)
@@ -137,6 +146,7 @@ public final class ErrorRouterClassGenerator {
             .addType(vendorCodeMapping)
             .addMethod(redact)
             .addMethod(dispatch)
+            .addMethod(dispatchToLocalContext)
             .build();
 
         return List.of(spec);
@@ -352,6 +362,48 @@ public final class ErrorRouterClassGenerator {
             .endControlFlow()
             .endControlFlow()
             // ----- Unmatched: redact -----
+            .addCode("\n// Unmatched: log + redacted DataFetcherResult.\n")
+            .addStatement("return redact(thrown, env)")
+            .build();
+    }
+
+    private static MethodSpec buildDispatchToLocalContextMethod(
+            TypeVariableName typeP,
+            ParameterizedTypeName resultOfP) {
+        var mapping = ClassName.get("", MAPPING_INTERFACE);
+        var mappingArray = ArrayTypeName.of(mapping);
+
+        return MethodSpec.methodBuilder("dispatchToLocalContext")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addTypeVariable(typeP)
+            .returns(resultOfP)
+            .addParameter(THROWABLE, "thrown")
+            .addParameter(mappingArray, "mappings")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addJavadoc("Channel-mapped dispatch on the carrier-walk catch path. For each mapping in\n"
+                + "source-declaration order, walks the cause chain outermost-first; the first match\n"
+                + "returns a {@code DataFetcherResult} with {@code data=null} and the matched\n"
+                + "{@code Throwable} placed into {@code localContext} as a single-element list. The\n"
+                + "carrier's errors-field DataFetcher reads that list via {@code env.getLocalContext()}\n"
+                + "and feeds graphql-java's {@code PropertyDataFetcher}s for the declared\n"
+                + "{@code @error} fields. The data field's fetcher short-circuits on the null source\n"
+                + "(the existing {@code if (source == null) return null;} guard).\n"
+                + "\n"
+                + "<p>Falls through to {@link #redact} on no match: the privacy contract is the same\n"
+                + "as the no-channel disposition.\n"
+                + "\n"
+                + "<p>Used by carrier-walk-admitted wrappers post-R161; the binding lives on\n"
+                + "{@code ErrorChannel.LocalContext}, produced by\n"
+                + "{@code BuildContext.classifyCarrierField}.\n")
+            .addCode("// Source-order match: first (mapping, cause) pair that satisfies the predicate.\n")
+            .beginControlFlow("for ($T mapping : mappings)", mapping)
+            .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
+            .beginControlFlow("if (mapping.match(t))")
+            .addStatement("return $T.<P>newResult().data(null).localContext($T.of(t)).build()",
+                DATA_FETCHER_RESULT, LIST_CN)
+            .endControlFlow()
+            .endControlFlow()
+            .endControlFlow()
             .addCode("\n// Unmatched: log + redacted DataFetcherResult.\n")
             .addStatement("return redact(thrown, env)")
             .build();
