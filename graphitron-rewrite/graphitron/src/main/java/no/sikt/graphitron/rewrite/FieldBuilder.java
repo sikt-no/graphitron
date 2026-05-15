@@ -1730,12 +1730,35 @@ class FieldBuilder {
                     + "Use [" + returnType.returnTypeName() + "] or [" + returnType.returnTypeName() + "!]"));
         }
 
-        // Transport.PayloadAccessor is the only arm reachable today: the carrier-walk producer
-        // that emits ErrorChannel.LocalContext (and would in turn select Transport.LocalContext
-        // here) is not wired yet. When it lands, this default is replaced with a switch on the
-        // parent carrier's resolved ErrorChannel.
-        return new ErrorsField(parentTypeName, name, location, errorTypes,
-            new ChildField.Transport.PayloadAccessor());
+        // Transport selection: when the parent is a carrier admitted by the carrier walk with an
+        // ErrorChannelRole bound to a LocalContext channel, the errors-field DataFetcher reads
+        // from env.getLocalContext() (Transport.LocalContext). Otherwise the errors slot lives on
+        // the developer payload class and graphql-java's PropertyDataFetcher walks the accessor
+        // (Transport.PayloadAccessor). The carrier walk's per-field result is the source of truth;
+        // re-running tryResolveSingleRecordCarrier here is idempotent (pure structural walk over
+        // the parent's SDL fields).
+        var transport = transportForParent(parentTypeName);
+        return new ErrorsField(parentTypeName, name, location, errorTypes, transport);
+    }
+
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "error-channel.local-context-transport",
+        reliesOn = "Selects Transport.LocalContext on the ErrorsField when the parent carrier was "
+            + "admitted with ErrorChannel.LocalContext; this is the discriminator the emitter "
+            + "reads at FetcherEmitter.dataFetcherValue. The producer in BuildContext."
+            + "classifyCarrierField is the load-bearing site for the binding; this query reads "
+            + "it back through the same carrier walk so the two views agree.")
+    private ChildField.Transport transportForParent(String parentTypeName) {
+        var resolution = ctx.tryResolveSingleRecordCarrier(parentTypeName);
+        if (resolution instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok ok) {
+            for (var role : ok.shape().roles()) {
+                if (role instanceof no.sikt.graphitron.rewrite.model.CarrierFieldRole.ErrorChannelRole ecr
+                    && ecr.binding() instanceof ErrorChannel.LocalContext) {
+                    return new ChildField.Transport.LocalContext();
+                }
+            }
+        }
+        return new ChildField.Transport.PayloadAccessor();
     }
 
     // ===== Carrier classifier: ErrorChannel resolution =====
