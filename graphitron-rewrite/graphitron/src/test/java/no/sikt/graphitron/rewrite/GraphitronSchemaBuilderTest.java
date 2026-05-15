@@ -4433,19 +4433,19 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
                 .contains("message")),
 
-        REJECT_EXTRA_FIELD(
-            "@error type with field beyond path/message → UnclassifiedType",
+        ADMIT_EXTRA_FIELD(
+            "@error type with field beyond path/message → ErrorType (per-handler accessor check fires on the carrier, not the type)",
             """
             enum Severity { LOW HIGH }
-            type BadError @error(handlers: [{handler: GENERIC, className: "com.example.Ex"}]) {
+            type SomeError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
                 path: [String!]!
                 message: String!
                 severity: Severity!
             }
             type Query { x: String }
             """,
-            schema -> assertThat(((UnclassifiedType) schema.type("BadError")).reason())
-                .contains("severity")),
+            schema -> assertThat(schema.type("SomeError"))
+                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.class)),
 
         REJECT_WRONG_PATH_SHAPE(
             "@error type with path: String (not [String!]!) → UnclassifiedType",

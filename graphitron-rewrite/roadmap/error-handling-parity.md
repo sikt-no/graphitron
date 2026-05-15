@@ -336,53 +336,34 @@ rest of R12 is orthogonal.
 
 *Dependency chain (relaxation → accessor check → extensions wiring):*
 
-- **Relax `TypeBuilder.buildErrorType` rule 6 to admit fields beyond
-  `path` and `message`.** *Not gated; precondition for the next two bullets.*
-  Today rule 6 of §1's "Reject" table (the `path` / `message` structural
-  contract enforced in `TypeBuilder.buildErrorType`) rejects any `@error` type
-  that declares a field other than `path: [String!]!` or `message: String!`. The
-  rewrite emits a synthesized per-@error-type `DataFetcher` for each of those
-  two fields (landed alongside the TypeResolver wiring); extras would route
-  through graphql-java's `PropertyDataFetcher`, reading directly from the
-  matched source object. Loosening the rule entails: (a) keep `path` and
-  `message` mandatory and shape-checked (every legacy and rewrite fixture
-  declares both, and the synthesized fetchers depend on the contract);
-  (b) admit any scalar/enum-shaped declared field beyond those two, matching
-  what `classifyChildFieldOnErrorType` already permits at the field level;
-  (c) drop the explicit "extra-field" reject branch in
-  `TypeBuilder.buildErrorType`. Until the accessor reflection check below
-  lands, an extra field that the source class can't populate would surface
-  only as a runtime `null` on serialisation, so this bullet ships paired with
-  the next rather than ahead of it.
-
-- **Per-(channel, @error type, handler) source-class accessor reflection
-  check (§2c).** *Gated on the rule-6 relaxation above.* Per §2c "Classifier
-  check: source class can populate every declared SDL field": for each
-  `(channel, @error type, handler)` triple, walk every field declared on the
-  `@error` SDL type; for each field, verify the handler's source class
-  (`handlers[i].className` for GENERIC, `java.sql.SQLException` for DATABASE,
-  `graphql.GraphQLError` for VALIDATION) exposes a PropertyDataFetcher-visible
-  accessor (`fieldName()` / `getFieldName()` / public field of that name)
-  whose return type is compatible with the SDL field's type. Mismatch
-  surfaces as `UnclassifiedField` on the carrier with a reason naming the
-  missing or wrong-typed accessor. The two synthesized-fetcher fields
-  (`path`, `message`) are exempt from the per-field check on the same
-  triple: they are populated by the rewrite's own per-@error-type
-  `DataFetcher`s, not by the source class.
-
-  *Use `ClassAccessorResolver` from R88* (shipped; see
-  [`changelog.md`](changelog.md), landing SHAs
-  `0bcb6ebe + b2d798a9 + e5f2dd2e + 863d90c5`) rather than rolling a parallel
-  reflective lookup here. R88 ships the generalised
-  `AccessorResolution.{Resolved | Rejected}` resolver covering the same lookup
-  order (`get<Camel>` / `is<Camel>` for boolean / bare `<camel>` / public field
-  of that name), matching graphql-java's `PropertyDataFetcher` conventions and
-  the same return-type-compatibility rule §2c describes. The R12 caller is the
-  per-handler iteration; the per-(channel, @error type, handler) loop calls
-  `ClassAccessorResolver.resolve(handlerSourceClass, sdlFieldName, sdlFieldJavaType, NO_ARGS)`
-  per declared SDL field and converts `Rejected` into the
-  `UnclassifiedField` reason. The R88 dependency is now resolved; this bullet
-  is unblocked.
+- **Rule 6 relaxation + per-(channel, @error type, handler) source-class
+  accessor reflection check: landed.** `TypeBuilder.buildErrorType` keeps
+  `path: [String!]!` and `message: String!` mandatory and shape-checked, and
+  admits any further scalar/enum-shaped field (the field-level guard remains
+  `FieldBuilder.classifyChildFieldOnErrorType`, which already rejects
+  non-scalar/non-enum field types on `@error` parents). The carrier-side
+  accessor check ships paired with the lift:
+  `FieldBuilder.checkErrorTypeSourceAccessors` runs in `resolveErrorChannel`
+  after the duplicate-criteria check and walks each `(channel, @error type,
+  handler)` triple. For every declared SDL field other than `path` /
+  `message` (those are populated by the synthesised per-@error-type
+  DataFetchers and exempt), the check looks up an accessor on the handler's
+  source class via R88's `ClassAccessorResolver`. The source class per
+  handler kind: `ExceptionHandler.exceptionClassName` for GENERIC,
+  `java.sql.SQLException` for DATABASE
+  (`SqlStateHandler` / `VendorCodeHandler`), `graphql.GraphQLError` for
+  VALIDATION. A `Rejected` resolution surfaces the carrier as
+  `UnclassifiedField` with a reason naming the offending `@error` type, the
+  handler discriminator (`{handler: GENERIC, className: …}` /
+  `{handler: DATABASE, sqlState: …}` / `{handler: VALIDATION}`), the
+  declared SDL field, and the resolved source-class FQN. The
+  `LoadBearingClassifierCheck(key = "error-type.path-message-fields")`
+  annotation on `buildErrorType` now scopes to the path/message contract
+  only (extras travel on the carrier-side check, which is the runtime
+  guarantee for `PropertyDataFetcher` reads). Direct unit coverage in
+  `ErrorChannelClassificationTest.extraField_*`;
+  `GraphitronSchemaBuilderTest.ErrorTypeCase.ADMIT_EXTRA_FIELD` pins the
+  parse-time admit.
 
 - **§5 `extensions.constraint` field population.** *Gated on the accessor
   check above.* When the SDL `@error` type for a VALIDATION-handled channel

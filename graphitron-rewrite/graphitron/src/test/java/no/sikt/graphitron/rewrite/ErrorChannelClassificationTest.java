@@ -492,6 +492,62 @@ class ErrorChannelClassificationTest {
         assertThat(ch.defaultedSlots().get(0).name()).isEqualTo("data");
     }
 
+    @Test
+    void extraField_missingAccessorOnGenericSourceClass_rejectsCarrier() {
+        // An @error type with a field beyond path/message classifies cleanly (rule 6 relaxed),
+        // but the carrier's per-(channel, @error type, handler) accessor check rejects when the
+        // handler's source class can't populate the field. IllegalArgumentException has no
+        // getSeverity() / severity() / public field, so the carrier surfaces UnclassifiedField.
+        var schema = build("""
+            enum Severity { LOW HIGH }
+            type RichErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+                path: [String!]!
+                message: String!
+                severity: Severity!
+            }
+            union SakError = RichErr
+            type SakPayload @record(record: {className: "%s"}) {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+
+        var field = schema.field("Query", "sak");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        var u = (UnclassifiedField) field;
+        assertThat(u.reason())
+            .contains("RichErr")
+            .contains("severity")
+            .contains("java.lang.IllegalArgumentException");
+    }
+
+    @Test
+    void extraField_pathAndMessageStaySynthesized_noAccessorCheckOnThem() {
+        // path and message are populated by per-@error-type synthesised DataFetchers, not by the
+        // source class's accessors. The accessor check exempts them so an @error type with only
+        // path + message classifies cleanly even when the handler's source class lacks getPath().
+        // (IllegalArgumentException has neither getPath() nor a path() / public path field.)
+        var schema = build("""
+            type SimpleErr @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = SimpleErr
+            type SakPayload @record(record: {className: "%s"}) {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SAK_PAYLOAD_FQN, SERVICE_DECL));
+
+        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
+        assertThat(f.errorChannel()).isPresent();
+        assertThat(f.errorChannel().get().mappedErrorTypes())
+            .extracting(et -> et.name())
+            .containsExactly("SimpleErr");
+    }
+
     private GraphitronSchema build(String schemaText) {
         return TestSchemaHelper.buildSchema(schemaText);
     }
