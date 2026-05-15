@@ -14,8 +14,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R165` | Filter empty-body entries out of the fetcher-registration keyset | Spec | 2026-05-15 | [plan](fetcher-registration-empty-body-filter.md) |
 | `R39` | Validate that list fields on tables without a PK require explicit ordering | Spec | 2026-05-13 | [plan](validate-list-fields-require-ordering.md) |
+| `R165` | Filter empty-body entries out of the fetcher-registration keyset | Ready | 2026-05-15 | [plan](fetcher-registration-empty-body-filter.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R161` | Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | 2026-05-14 <sub>created 2026-05-13</sub> | [plan](unify-record-dml-on-carrier-walk.md) |
 | `R43` | Stub: child `@tableMethod` with table-bound return (`TableMethodField`) | In Review | 2026-05-13 | [plan](tablemethod-child-table-bound.md) |
@@ -141,7 +141,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R165` [**Filter empty-body entries out of the fetcher-registration keyset**](fetcher-registration-empty-body-filter.md) — Spec, cleanup
+- `R165` [**Filter empty-body entries out of the fetcher-registration keyset**](fetcher-registration-empty-body-filter.md) — Ready, cleanup
 - `R161` [**Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path**](unify-record-dml-on-carrier-walk.md) — Spec, structural, blocked by [error-handling-parity](error-handling-parity.md)
 - `R158` [**SourceKey.Reader sub-taxonomy: admit @service-backed producers for carrier data fields**](carrier-data-field-values-join-unify.md) — Backlog, structural
 - `R162` [**Consolidate MutationField permits under verb-on-permit-identity**](mutation-result-field-sealed-on-kind.md) — Backlog, structural, blocked by [unify-record-dml-on-carrier-walk](unify-record-dml-on-carrier-walk.md)
