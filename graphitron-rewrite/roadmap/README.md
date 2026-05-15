@@ -28,7 +28,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R74` | Row/Record return shapes for typed accessor batch keys | Spec |  | [plan](accessor-row-record-shapes.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
-| `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | Ready | 2026-05-15 | [plan](error-handling-parity.md) |
+| `R12` | Error-handling parity: emit per-fetcher error channels from `@error` | In Progress | 2026-05-15 | [plan](error-handling-parity.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
@@ -146,7 +146,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R161` [**Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path**](unify-record-dml-on-carrier-walk.md) — Spec, structural, blocked by [error-handling-parity](error-handling-parity.md)
 - `R162` [**Consolidate MutationField permits under verb-on-permit-identity**](mutation-result-field-sealed-on-kind.md) — Backlog, structural, blocked by [unify-record-dml-on-carrier-walk](unify-record-dml-on-carrier-walk.md)
 - `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture
-- `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — Ready, architecture
+- `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — In Progress, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
 - `R63` [**Type UPSERT dialect requirement on the model**](dml-dialect-requirement-on-model.md) — Spec, architecture
 - `R122` [**Compound mutations: parent entity row + child normalised rows in one INSERT**](compound-entity-mutations.md) — Backlog, architecture
