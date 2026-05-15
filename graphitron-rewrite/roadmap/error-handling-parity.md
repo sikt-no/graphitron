@@ -365,13 +365,18 @@ rest of R12 is orthogonal.
   `GraphitronSchemaBuilderTest.ErrorTypeCase.ADMIT_EXTRA_FIELD` pins the
   parse-time admit.
 
-- **§5 `extensions.constraint` field population.** *Gated on the accessor
-  check above.* When the SDL `@error` type for a VALIDATION-handled channel
-  declares an `extensions` field, the source-class accessor reflection check
-  detects the SDL signal automatically and the runtime populates
-  `extensions.constraint` from the violation's constraint descriptor
-  (`getAnnotation().annotationType().getSimpleName()`, per the §5
-  `ConstraintViolations` helper).
+- **§5 `extensions.constraint` field population: landed.**
+  `ConstraintViolationsClassGenerator.toGraphQLError` now allocates a
+  `LinkedHashMap<String, Object>`, puts `"constraint" ->
+  violation.getConstraintDescriptor().getAnnotation().annotationType().getSimpleName()`,
+  and routes it through `GraphqlErrorBuilder.extensions(...)`. The write is
+  unconditional; SDL `@error` types that don't declare an `extensions` field
+  never expose it (graphql-java's `PropertyDataFetcher` only reads
+  SDL-declared fields), and types that do see the constraint annotation's
+  simple name (e.g. `"NotBlank"`, `"Size"`) at the wire boundary. The accessor
+  reflection check from the bullet above pins the SDL-side admission against
+  `graphql.GraphQLError.getExtensions()` at classify time. Direct unit
+  coverage in `ConstraintViolationsClassGeneratorTest`.
 
 *Independent:*
 
