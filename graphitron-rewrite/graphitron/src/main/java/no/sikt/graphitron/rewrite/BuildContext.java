@@ -26,6 +26,7 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.DataElement;
 import no.sikt.graphitron.rewrite.model.DmlKind;
+import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.HelperRef;
@@ -558,7 +559,7 @@ class BuildContext {
         // and tighten this walk.
         var roles = new ArrayList<CarrierFieldRole>(fields.size());
         for (var field : fields) {
-            var rolesResult = classifyCarrierField(field);
+            var rolesResult = classifyCarrierField(typeName, field);
             switch (rolesResult) {
                 case CarrierFieldClassification.Role r -> roles.add(r.role());
                 case CarrierFieldClassification.NoPermit np -> {
@@ -876,7 +877,66 @@ class BuildContext {
         record HardReject(String reason) implements CarrierFieldClassification {}
     }
 
-    private CarrierFieldClassification classifyCarrierField(GraphQLFieldDefinition dataField) {
+    /**
+     * Lightweight predicate for "this GraphQL field is an {@code errors}-shaped field" (a
+     * polymorphic-of-all-{@code @error} list with the nullability shape §2b allows). Returns
+     * the resolved {@code List<ErrorType>} when the shape matches, {@code null} otherwise.
+     *
+     * <p>Mirrors the lift rules in {@code FieldBuilder.liftToErrorsField}; the carrier-walk
+     * producer below and {@code FieldBuilder.resolveErrorChannel} consume it through the same
+     * port so the two classifier paths agree on what counts as an errors-shaped field.
+     */
+    List<GraphitronType.ErrorType> detectErrorsFieldShape(GraphQLFieldDefinition fieldDef) {
+        var returnType = resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
+        if (!(returnType instanceof ReturnTypeRef.PolymorphicReturnType poly)) {
+            return null;
+        }
+        var schemaType = schema.getType(poly.returnTypeName());
+        List<String> memberNames = switch (schemaType) {
+            case GraphQLUnionType union -> union.getTypes().stream().map(GraphQLNamedType::getName).toList();
+            case GraphQLInterfaceType iface ->
+                schema.getImplementations(iface).stream().map(GraphQLObjectType::getName).toList();
+            case null, default -> List.of();
+        };
+        if (memberNames.isEmpty()) return null;
+        var errorTypes = new ArrayList<GraphitronType.ErrorType>();
+        for (String memberName : memberNames) {
+            if (!(types.get(memberName) instanceof GraphitronType.ErrorType et)) {
+                return null;
+            }
+            errorTypes.add(et);
+        }
+        if (!(poly.wrapper() instanceof FieldWrapper.List list) || !list.listNullable()) {
+            return null;
+        }
+        return errorTypes;
+    }
+
+    private CarrierFieldClassification classifyCarrierField(String carrierTypeName, GraphQLFieldDefinition dataField) {
+        // R12 producer arm: errors-shaped fields admit as CarrierFieldRole.ErrorChannelRole with
+        // an ErrorChannel.LocalContext binding. The arm runs ahead of the DataChannel resolution
+        // (which would otherwise reject the polymorphic union/interface element as NoPermit).
+        // The §1 channel-level reject rules surface here as NoPermit so the unified walk names the
+        // offending channel; the shared shape predicate (detectErrorsFieldShape) gates entry so
+        // non-errors-shaped fields fall through to the DataChannel resolution unchanged.
+        var errorTypes = detectErrorsFieldShape(dataField);
+        if (errorTypes != null) {
+            String rule7 = FieldBuilder.checkChannelLevelHandlerRules(errorTypes);
+            if (rule7 != null) {
+                return new CarrierFieldClassification.NoPermit(
+                    "errors-shaped carrier field '" + dataField.getName() + "': " + rule7);
+            }
+            String rule8 = FieldBuilder.checkDuplicateMatchCriteria(errorTypes);
+            if (rule8 != null) {
+                return new CarrierFieldClassification.NoPermit(
+                    "errors-shaped carrier field '" + dataField.getName() + "': " + rule8);
+            }
+            var binding = new ErrorChannel.LocalContext(
+                errorTypes, toScreamingSnake(carrierTypeName));
+            return new CarrierFieldClassification.Role(
+                new CarrierFieldRole.ErrorChannelRole(dataField.getName(), binding));
+        }
+
         String dataFieldName = dataField.getName();
         String dataElementName = baseTypeName(dataField);
 
@@ -983,6 +1043,24 @@ class BuildContext {
 
         return new CarrierFieldClassification.Role(
             new CarrierFieldRole.DataChannel(dataFieldName, dataElement, fieldIsSourceSigil));
+    }
+
+    /**
+     * Converts a CamelCase identifier to SCREAMING_SNAKE_CASE. Used by the carrier-walk
+     * producer to derive {@code ErrorChannel.LocalContext.mappingsConstantName} from the
+     * wrapper SDL type name (e.g. {@code FilmPayload} -&gt; {@code FILM_PAYLOAD}).
+     */
+    static String toScreamingSnake(String s) {
+        if (s == null || s.isEmpty()) return s;
+        var sb = new StringBuilder(s.length() + 4);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (i > 0 && Character.isUpperCase(c) && !Character.isUpperCase(s.charAt(i - 1))) {
+                sb.append('_');
+            }
+            sb.append(Character.toUpperCase(c));
+        }
+        return sb.toString();
     }
 
     // ===== Error-message helpers =====
