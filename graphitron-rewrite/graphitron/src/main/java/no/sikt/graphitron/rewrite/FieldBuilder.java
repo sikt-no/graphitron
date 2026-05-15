@@ -1818,7 +1818,7 @@ class FieldBuilder {
         int errorsFieldIndex = -1;
         var sdlFields = payloadObj.getFieldDefinitions();
         for (int i = 0; i < sdlFields.size(); i++) {
-            var detected = detectErrorsFieldShape(sdlFields.get(i), result.returnTypeName());
+            var detected = ctx.detectErrorsFieldShape(sdlFields.get(i));
             if (detected != null) {
                 mappedErrorTypes = detected;
                 errorsFieldIndex = i;
@@ -2298,42 +2298,6 @@ class FieldBuilder {
     }
 
     /**
-     * Lightweight predicate for "this GraphQL field is an {@code errors}-shaped field" used by
-     * the carrier classifier to walk a payload's fields without materialising a full
-     * {@link ErrorsField} or {@link UnclassifiedField}. Returns the resolved
-     * {@code List<ErrorType>} when the field's return type is a polymorphic-of-all-{@code @error}
-     * list with the nullability shape §2b allows; returns {@code null} otherwise.
-     *
-     * <p>Mirrors the lift rules in {@link #liftToErrorsField}: every member of the polymorphic
-     * type must be {@code @error}, and the field itself must be a nullable list.
-     */
-    private List<ErrorType> detectErrorsFieldShape(GraphQLFieldDefinition fieldDef, String parentTypeName) {
-        var returnType = ctx.resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
-        if (!(returnType instanceof ReturnTypeRef.PolymorphicReturnType poly)) {
-            return null;
-        }
-        var schemaType = ctx.schema.getType(poly.returnTypeName());
-        java.util.List<String> memberNames = switch (schemaType) {
-            case GraphQLUnionType union -> union.getTypes().stream().map(GraphQLNamedType::getName).toList();
-            case GraphQLInterfaceType iface ->
-                ctx.schema.getImplementations(iface).stream().map(GraphQLObjectType::getName).toList();
-            case null, default -> java.util.List.of();
-        };
-        if (memberNames.isEmpty()) return null;
-        var errorTypes = new java.util.ArrayList<ErrorType>();
-        for (String memberName : memberNames) {
-            if (!(ctx.types.get(memberName) instanceof ErrorType et)) {
-                return null;
-            }
-            errorTypes.add(et);
-        }
-        if (!(poly.wrapper() instanceof FieldWrapper.List list) || !list.listNullable()) {
-            return null;
-        }
-        return errorTypes;
-    }
-
-    /**
      * Channel-level reject rules from §1's parse-time table that span multiple {@code @error}
      * types in the same channel. Runs after the carrier classifier has resolved
      * {@code mappedErrorTypes}; returns a non-null reason string when a rule fires, or
@@ -2356,7 +2320,7 @@ class FieldBuilder {
      * with the native Jakarta validation chunk: validation runs as a wrapper pre-execution
      * step (§5) and never reaches the dispatch arm, so no shadowing window remains.)
      */
-    private static String checkChannelLevelHandlerRules(List<ErrorType> mappedErrorTypes) {
+    static String checkChannelLevelHandlerRules(List<ErrorType> mappedErrorTypes) {
         // Rule 7: multiple VALIDATION handlers in the same channel.
         var validationCarriers = new java.util.ArrayList<String>();
         for (var et : mappedErrorTypes) {
@@ -2398,7 +2362,7 @@ class FieldBuilder {
      * duplicate is within one type's {@code handlers} array). Closes the legacy gap where
      * {@code ExceptionStrategyConfigurationGenerator} silently allowed duplicates.
      */
-    private static String checkDuplicateMatchCriteria(List<ErrorType> mappedErrorTypes) {
+    static String checkDuplicateMatchCriteria(List<ErrorType> mappedErrorTypes) {
         record CriteriaKey(String variant, String discriminator, java.util.Optional<String> matches) {}
         var seen = new java.util.LinkedHashMap<CriteriaKey, String>();
         for (var et : mappedErrorTypes) {
