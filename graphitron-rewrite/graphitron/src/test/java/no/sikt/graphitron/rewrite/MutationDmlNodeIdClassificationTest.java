@@ -254,7 +254,7 @@ class MutationDmlNodeIdClassificationTest {
     // ===== R156 DELETE-payload-carrier admission matrix (cardinality × element) =====
     //
     // The four admission cells of §Tests L4 (R156). The composite-PK cells use Bar
-    // (id_1, id_2) — the R130 reproducer fixture the spec named as the motivating shape
+    // (id_1, id_2); the R130 reproducer fixture the spec named as the motivating shape
     // for the DataElement.Id arm. The single-PK cells use Baz (id) to round out the cardinality
     // axis without composite-PK noise. Each cell asserts the parent mutation classifies as
     // MutationDmlRecordField / MutationBulkDmlRecordField with kind=DELETE, AND the per-field
@@ -347,7 +347,7 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void bulkDeleteIdCarrier_explicitNodeIdToWrongTable_rejects() {
-        // R156 — @nodeId(typeName: "Baz") on a deleteBars carrier whose input @table is "bar"
+        // R156: @nodeId(typeName: "Baz") on a deleteBars carrier whose input @table is "bar"
         // must reject: returning IDs of a different entity than the DML acted on would be a
         // silent contract break.
         var schema = TestSchemaHelper.buildSchema("""
@@ -370,7 +370,7 @@ class MutationDmlNodeIdClassificationTest {
 
     @Test
     void deleteIdCarrier_inputTableNotNodeBacked_rejects() {
-        // R156 — implicit Id recognition needs the input @table to be @node-backed. Qux has no
+        // R156: implicit Id recognition needs the input @table to be @node-backed. Qux has no
         // @node SDL declaration in this fixture, so the encoder lookup fails and the carrier
         // rejects with the same diagnostic family as today's bare-ID DELETE return path.
         var schema = TestSchemaHelper.buildSchema("""
