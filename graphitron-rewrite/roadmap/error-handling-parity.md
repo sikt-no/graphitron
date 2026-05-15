@@ -151,22 +151,27 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
   service variants).
 - Carrier classifier (§2c continued): `FieldBuilder.resolveErrorChannel` walks the
   payload's GraphQL field set looking for an `errors`-shaped field, reflects on the
-  developer-supplied payload class's canonical (all-fields) constructor, identifies the
-  unique errors-slot parameter, captures each non-error slot's language default literal,
-  and resolves the `mappingsConstantName` (SCREAMING_SNAKE on the payload class simple
-  name; the §3 dedup hash-suffix lands with `ErrorMappings` emission). Wired into the
-  five `WithErrorChannel` construction sites (`MutationServiceTableField`,
+  developer-supplied payload class via the resolved `PayloadConstructionShape`
+  (`AllFieldsCtor` or `MutableBean`), identifies the unique errors binding,
+  captures each non-error slot's language default literal, and resolves the
+  `mappingsConstantName` (SCREAMING_SNAKE on the payload class simple name; the
+  §3 dedup hash-suffix lands with `ErrorMappings` emission). Wired into the
+  `WithErrorChannel` construction sites (`MutationServiceTableField`,
   `MutationServiceRecordField`, `MutationInsertTableField`,
   `MutationUpdateTableField`, `MutationDeleteTableField`,
   `MutationUpsertTableField`, `QueryServiceTableField`,
   `QueryServiceRecordField`) so the slot is populated whenever the payload qualifies.
   Currently gated on `ResultReturnType` payloads (`@record`); `@table`-returning
   fetchers carry an empty channel pending a payload-factory shape for jOOQ Record
-  returns. The errors-slot is identified by SDL-to-record-component index: the
-  SDL field that classifies as `ErrorsField` has an index in the payload type's
-  field declaration order; the constructor parameter at that same index is the
-  errors slot. The slot's element type is `Object`; the classifier records the
-  slot's index and per-other-slot `defaultLiteral`.
+  returns. The errors binding is captured in a sealed `ErrorsSlot`
+  (`CtorParameterIndex | SetterMethod`): `AllFieldsCtor` payloads resolve to a
+  `CtorParameterIndex` (the SDL `ErrorsField`'s position in the payload type's
+  field declaration order, matched to the constructor parameter at the same
+  index); `MutableBean` payloads resolve to a `SetterMethod` carrying the
+  errors-bound setter plus a `NonBoundSetter` list for the other SDL fields. The
+  slot's element type is `Object`; the classifier records the binding and the
+  per-other-slot defaults (`DefaultedSlot` list for the ctor arm,
+  `NonBoundSetter` list for the setter arm).
 - §1 channel-level reject rule 7 in the carrier classifier:
   `FieldBuilder.checkChannelLevelHandlerRules` rejects a channel that carries more
   than one `ValidationHandler` across its flattened handler list (a channel has at
@@ -264,23 +269,29 @@ wrapper + dispatch arm lands; phasing within is the implementer's call.
   `FieldBuilder.validateMutationReturnType`: a `@record`-typed payload return is
   accepted as long as its wrapper is single (list-of-payload remains rejected with
   a follow-up message). A new sibling resolver `resolveDmlPayloadAssembly` reflects
-  the developer-supplied payload class's canonical constructor and looks for the
-  unique parameter typed as the DML's table record (resolved through
-  `JooqCatalog.findRecordClass(tableSqlName)`); that parameter is the row slot. A
-  missing or duplicate row slot rejects the carrier with a descriptive reason.
-  A `PayloadAssembly` record (`payloadClass: ClassName`, `params: List<PayloadConstructorParam>`,
-  `rowSlotIndex: int`) is held in a new `Optional<PayloadAssembly> payloadAssembly()`
-  slot on every `DmlTableField` permit; channel resolution is symmetric and
-  independent (a payload with a row slot but no errors-shaped GraphQL field carries
-  an assembly without a channel and falls back to `redact`). The delete emitter
+  the developer-supplied payload class via the resolved `PayloadConstructionShape`
+  and looks for the unique slot typed as the DML's table record (resolved through
+  `JooqCatalog.findRecordClass(tableSqlName)`); that slot is the row binding. A
+  missing or duplicate row binding rejects the carrier with a descriptive reason.
+  A `PayloadAssembly` record (`payloadClass: ClassName`, `rowSlot: RowSlot`,
+  `rowSlotType: TypeName`, `defaultedSlots: List<DefaultedSlot>`) is held in a new
+  `Optional<PayloadAssembly> payloadAssembly()` slot on every `DmlTableField`
+  permit; `RowSlot` is the sealed `CtorParameterIndex | SetterMethod` sibling of
+  `ErrorsSlot`. Channel resolution is symmetric and independent (a payload with a
+  row binding but no errors-shaped GraphQL field carries an assembly without a
+  channel and falls back to `redact`). The delete emitter
   (`buildMutationDeleteFetcher`) gains a third branch: when `payloadAssembly` is
   present, capture the row record from `dsl.deleteFrom(...).where(...).returning().fetchOne()`
-  in a typed local, then construct `new PayloadClass(...)` walking
-  `payloadAssembly.params()` (row local at `rowSlotIndex`, `null` at the errors
-  slot, `defaultLiteral` elsewhere); wrap in `DataFetcherResult<PayloadClass>` and
-  route the catch arm through `catchArm(outputPackage, errorChannel)` so dispatch
-  fires when the channel is populated. Insert/update/upsert remain stubs; they
-  inherit the slot and the emit machinery once they un-stub.
+  in a typed local, then dispatch on `rowSlot`: `CtorParameterIndex` constructs
+  `new PayloadClass(...)` walking the ctor positionally (row local at the bound
+  index, the errors slot's `defaultLiteral` when the channel is absent, every
+  other slot's `defaultLiteral` elsewhere); `SetterMethod` no-arg-constructs the
+  payload, calls the bound setter with the row local, and calls every
+  `NonBoundSetter` with its `defaultLiteral`. Either arm wraps in
+  `DataFetcherResult<PayloadClass>` and routes the catch arm through
+  `catchArm(outputPackage, errorChannel)` so dispatch fires when the channel is
+  populated. Insert/update/upsert remain stubs; they inherit the slot and the
+  emit machinery once they un-stub.
 - Source-direct dispatch (R12 §2c "@error is TypeResolver wiring"): **landed**.
   `ErrorType` carries no `classFqn` slot; the `Mapping` interface has no `build`
   factory; `ErrorRouter.dispatch` places the matched throwable directly into the
@@ -591,8 +602,10 @@ rest of R12 is orthogonal.
   and the existing fixture set already complies.
 
   *Open: new end-to-end coverage.* Two new fixtures, both at sakila
-  execute-tier (the `GraphQLQueryTest:3556-3559` comment defers
-  DATABASE / VALIDATION end-to-end to here):
+  execute-tier (the `===== R12 @error end-to-end =====` block comment in
+  `GraphQLQueryTest` explicitly defers DATABASE / VALIDATION end-to-end
+  coverage to this work; locate it by symbol search rather than line, since
+  the file churns):
   - **Service-method-returns-domain-object shape**
     (`ResultAssembly.Assembly` arm): a `@service` field whose method
     returns the domain object directly, exercising the carrier-side
@@ -953,15 +966,23 @@ the `WithErrorChannel` capability interface:
 record ErrorChannel(
     List<GraphitronType.ErrorType> mappedErrorTypes,  // resolved; union members or list-element type, in source order
     ClassName payloadClass,                           // the developer-supplied payload class (e.g. FilmPayload)
-    int errorsSlotIndex,                              // index in the canonical constructor's parameter list
-    List<DefaultedSlot> defaultedSlots,               // every parameter except the errors slot, with its pre-resolved default literal
+    ErrorsSlot errorsSlot,                            // sealed: CtorParameterIndex | SetterMethod; how the catch arm binds the errors list
+    List<DefaultedSlot> defaultedSlots,               // every other constructor parameter, with its pre-resolved default literal
     String mappingsConstantName                       // resolved at classify time, including any collision suffix; see §3 dedup rule
 ) {}
 
+sealed interface ErrorsSlot permits ErrorsSlot.CtorParameterIndex, ErrorsSlot.SetterMethod {
+    record CtorParameterIndex(int index) implements ErrorsSlot {}
+    // Mutable-bean shape: boundSetter receives the errors list; every other SDL field's setter
+    // is printed with its defaultLiteral. Sibling RowSlot / ResultSlot taxonomies use the same shape.
+    record SetterMethod(java.lang.reflect.Method boundSetter, List<NonBoundSetter> nonBoundSetters) implements ErrorsSlot {}
+}
+
 record DefaultedSlot(
     int index,
+    String name,             // constructor parameter name, recorded for diagnostics
     TypeName type,           // resolved JavaPoet type, recorded for diagnostics
-    String defaultLiteral    // pre-resolved: "null" / "0" / "0L" / "false" / "'\\0'"
+    String defaultLiteral    // pre-resolved: "null" / "0" / "0L" / "0.0" / "false" / "'\\0'"
 ) {}
 ```
 
@@ -979,24 +1000,37 @@ record PayloadAssembly(
 
 A DML field with both an errors-shaped GraphQL field and a row slot carries both
 `ErrorChannel` and `PayloadAssembly`; they reference the same payload class and
-together cover every constructor parameter (the errors slot and the row slot
-must be distinct indices, which the classifier verifies). A DML field without
+together cover every payload field (the errors binding and the row binding must
+target distinct fields, which the classifier verifies). A DML field without
 an errors-shaped field carries only `PayloadAssembly`. A service field carries only
 `ErrorChannel`. There's no shared "PayloadShape" abstraction because the
 catch-arm and success-arm emitters have different per-slot needs (the
 catch arm binds the errors slot to the dispatched list; the DML success arm
 binds the row slot to the captured row record); each carrier holds exactly the
-indices its emitter consumes.
+bindings its emitter consumes.
 
-The errors slot's index is identified positionally: the SDL field that
-classified as `ErrorsField` (§2a) has an index in the payload type's field
-declaration order, and the canonical constructor's parameters follow that order
-(records preserve declaration order; SDL→constructor parameter binding by index
-is the documented contract). The classifier records that index plus
-per-non-errors-slot `defaultLiteral`. The slot's element type is `Object`:
+The errors slot is identified by SDL→constructor-parameter index on the
+all-fields-ctor shape and by SDL→setter name on the mutable-bean shape; the
+sealed `ErrorsSlot` (`CtorParameterIndex | SetterMethod`) keeps the two emit
+contracts on the type rather than mixing them at every consumer site.
+`PayloadConstructionShape` on the payload class drives which arm is produced:
+`AllFieldsCtor` resolves the SDL `ErrorsField` (§2a) to its index in the payload
+type's field declaration order (records preserve declaration order;
+SDL→constructor parameter binding by index is the documented contract) and
+records per-non-errors-slot `DefaultedSlot` for the emitter; `MutableBean`
+resolves the SDL `ErrorsField` to its `setErrors(...)`-shaped setter on the
+backing class and records every other SDL field's setter as a `NonBoundSetter`
+paired with its language-default literal. The slot's element type is `Object`:
 sources placed in the list are heterogeneous (matched exceptions, `GraphQLError`
 violations) so the only universal supertype is `Object`. Consumer payload
-constructors should declare the slot as `List<?>` or `List<Object>`.
+constructors / setters should declare the parameter as `List<?>` or
+`List<Object>`.
+
+`RowSlot` and `ResultSlot` on `PayloadAssembly` and `ResultAssembly` follow the
+same `CtorParameterIndex | SetterMethod` shape: each role carries its own sealed
+type rather than folding the three roles onto a shared `Slot` interface, so every
+consumer site dispatches on the role-specific data without a downstream
+`instanceof` widening.
 
 The flattened handler list, used by the §3 duplicate-criteria check and the
 `mappingsConstantName` dedup-suffix derivation, is a derived view: walk
@@ -1158,16 +1192,21 @@ everything else.
 
 For each fetcher-emitting field with an `ErrorChannel`, the classifier resolves:
 
-- `errorsSlotIndex: int`: the SDL field that §2a classifies as `ErrorsField`
-  has an index in the payload type's field declaration order; the canonical
-  constructor's parameter at that same index is the errors slot. Records
-  preserve declaration order; hand-rolled POJOs are expected to expose a
-  canonical constructor matching SDL order. Slot's element type is `Object`
-  (sources mix matched exceptions and `GraphQLError`s; the channel's source
-  classes share only `Object`). Consumer payload classes should declare the
-  slot as `List<?>` or `List<Object>`.
-- `resultSlotIndex: int` (DML and service-backed both): the constructor
-  parameter typed as the result type:
+- `errorsSlot: ErrorsSlot`: the errors binding on the payload class, captured by
+  the sealed `CtorParameterIndex | SetterMethod` sub-taxonomy. The `AllFieldsCtor`
+  shape resolves to `CtorParameterIndex`: the SDL `ErrorsField` (§2a) has an index
+  in the payload type's field declaration order, and the canonical constructor's
+  parameter at that same index is the errors slot (records preserve declaration
+  order; hand-rolled POJOs are expected to expose a canonical constructor
+  matching SDL order). The `MutableBean` shape resolves to `SetterMethod`: the
+  errors-bound setter on the backing class plus a `NonBoundSetter` list paired
+  with language-default literals for every other SDL field. Slot's element type
+  is `Object` (sources mix matched exceptions and `GraphQLError`s; the channel's
+  source classes share only `Object`). Consumer payload classes should declare
+  the parameter as `List<?>` or `List<Object>`.
+- `resultSlot: ResultSlot` (DML and service-backed both): the constructor
+  parameter, or setter, typed as the result type. Sealed parallel to
+  `ErrorsSlot` and `RowSlot`:
   - For DML, the result type is the jOOQ table record class
     (`JooqCatalog.findRecordClass(tableSqlName)`). The wrapper binds the row
     captured from `RETURNING ... fetchOne()` here.
@@ -1234,15 +1273,17 @@ public static DataFetcherResult<FilmPayload> createFilm(DataFetchingEnvironment 
 }
 ```
 
-The lambda body is the synthesized payload factory: at the errors-slot index
-(known to the catch-arm emitter from `ErrorChannel.errorsSlotIndex`) it prints
-the lambda parameter; at every other index it prints the slot's pre-resolved
-`defaultLiteral`. The list passed in is whatever the dispatcher built for the
-match: a single matched exception for `GENERIC` / `DATABASE`, or
-`vve.getUnderlyingErrors()` for VALIDATION fan-out. graphql-java's
-PropertyDataFetcher reads each declared `@error` field directly off whatever
-source object happens to be in the slot, with the channel's TypeResolver
-dispatching each one to the right SDL `@error` type.
+The lambda body is the synthesized payload factory. The catch-arm emitter
+dispatches on `ErrorChannel.errorsSlot`: `CtorParameterIndex` prints `new
+PayloadClass(...)` walking the ctor, printing the lambda parameter at the bound
+index and each `DefaultedSlot`'s `defaultLiteral` elsewhere; `SetterMethod`
+prints `var p = new PayloadClass(); p.setErrors(errors); ...; return p;` with
+one `p.setX(<defaultLiteral>);` per `NonBoundSetter`. The list passed in is
+whatever the dispatcher built for the match: a single matched exception for
+`GENERIC` / `DATABASE`, or `vve.getUnderlyingErrors()` for VALIDATION fan-out.
+graphql-java's PropertyDataFetcher reads each declared `@error` field directly
+off whatever source object happens to be in the slot, with the channel's
+TypeResolver dispatching each one to the right SDL `@error` type.
 
 For a fetcher without an `ErrorChannel` (no `@error` types declared on the payload, or no
 payload, e.g. a query field returning a scalar):
