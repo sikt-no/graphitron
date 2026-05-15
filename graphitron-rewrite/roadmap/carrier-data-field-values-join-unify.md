@@ -5,7 +5,7 @@ status: Backlog
 bucket: structural
 priority: 3
 theme: mutations-errors
-depends-on: [service-payload-intermediate-semantics]
+depends-on: []
 created: 2026-05-13
 last-updated: 2026-05-13
 ---
