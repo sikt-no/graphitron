@@ -247,6 +247,42 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    // ===== R158 @service carrier-data-field fixtures =====
+
+    /**
+     * Returns {@code List<FilmActorRecord>} — used by R158 MANY / composite-PK admission tests.
+     * {@code FilmActorRecord} is the typed jOOQ record for the {@code film_actor} junction table
+     * with composite PK {@code (actor_id, film_id)}.
+     */
+    public static java.util.List<FilmActorRecord> getFilmActorsAsList() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Returns {@code List<LanguageRecord>} — used by R158 wrong-element-type reject tests.
+     * Pointed at a carrier whose data field's element table is {@code film}; the
+     * service-producer-strict-return check rejects.
+     */
+    public static java.util.List<LanguageRecord> getLanguagesAsList() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Returns {@code Set<FilmRecord>} — used by R158 Set / Iterable return reject tests. The
+     * service-producer-strict-return check requires exactly {@code List<XRecord>} or
+     * {@code XRecord}; {@code Set} is rejected.
+     */
+    public static java.util.Set<FilmRecord> getFilmsAsSet() {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Returns {@code Iterable<FilmRecord>} — used by R158 Set / Iterable return reject tests.
+     */
+    public static Iterable<FilmRecord> getFilmsAsIterable() {
+        throw new UnsupportedOperationException();
+    }
+
     // ===== ErrorChannel carrier-classifier fixtures (R12 §2c) =====
 
     /**
