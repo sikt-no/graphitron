@@ -150,7 +150,7 @@ public final class ObjectTypeGenerator {
                 .addCode(body.build())
                 .build());
 
-        if (fetcherBody != null && !fetcherBody.isEmpty()) {
+        if (fetcherBody != null) {
             classBuilder.addMethod(MethodSpec.methodBuilder("registerFetchers")
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                 .addParameter(CODE_REGISTRY_BLDR, "codeRegistry")
