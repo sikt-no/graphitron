@@ -1,7 +1,7 @@
 ---
 id: R158
 title: Admit @service-backed producers for single-record DML carrier data fields
-status: In Review
+status: Ready
 bucket: structural
 priority: 3
 theme: mutations-errors
@@ -11,6 +11,41 @@ last-updated: 2026-05-15
 ---
 
 # Admit `@service`-backed producers for single-record DML carrier data fields
+
+## Rework requested (In Review → Ready, 2026-05-15)
+
+Implementation, unit tests, and pipeline tests (f35644f, da25606) all landed
+as specified. The execution-tier commit (129909c) is short of the spec's
+named test surface: the *MANY-arm composite-PK end-to-end* case (see "Test
+surface" below) did not ship. That case is the only thing that exercises the
+new typed composite-PK paths in `FetcherEmitter.buildSingleRecordTableFetcherValueTableRecordWrap`
+at runtime — specifically the `DSL.row(pk1, pk2).in(source.stream().map(r ->
+DSL.row(r.get(pk1), r.get(pk2))).toList())` predicate emission and the
+`List.of(__r.get(pk1), __r.get(pk2))` map-key shape for the R141 order-
+preserving walk. The pipeline tier's `serviceProducer_many_compositePk_admitsAsWrapTableRecord`
+pins the registered `SourceKey.columns` shape but does not exercise the
+emitted code at request time.
+
+Remaining work for this pass:
+
+1. Add a composite-PK `@service` carrier fixture under `graphitron-sakila-example`
+   / `graphitron-sakila-service` — `FilmActor` is the existing two-PK sakila
+   table (PK `(actor_id, film_id)`). The producer hand-runs a SELECT and
+   returns `List<FilmActorRecord>` in caller-specified order.
+2. Add the spec-named *MANY-arm composite-PK end-to-end* case to
+   `SingleRecordTableFieldServiceProducerExecutionTest`: assert the follow-up
+   SELECT runs with the `row(pk1, pk2).in(...)` predicate and projects rows
+   in input order across a deliberately-non-PK-ordered input. Mirrors the
+   shape of the existing `serviceFilmsByIds_returnsFilmsInInputOrder` case
+   but on the composite-key path.
+3. Collapse the Design / Test surface / Migration sections below to one-line
+   `shipped at <sha>` notes once (2) lands. The implementation commits are:
+   - core admit + helpers + emitter + R156 reclassify drop: `f35644f`
+   - unit + pipeline tests: `da25606`
+   - execution-tier (MANY/ONE single-PK + empty/null source): `129909c`
+
+   Phase (2) lands in a new commit; reference it in the collapsed note for
+   the execution tier alongside `129909c`.
 
 ## Problem
 

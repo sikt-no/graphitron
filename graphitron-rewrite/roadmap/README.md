@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R39` | Validate that list fields on tables without a PK require explicit ordering | Spec | 2026-05-13 | [plan](validate-list-fields-require-ordering.md) |
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R161` | Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Spec | 2026-05-14 <sub>created 2026-05-13</sub> | [plan](unify-record-dml-on-carrier-walk.md) |
-| `R158` | Admit @service-backed producers for single-record DML carrier data fields | In Review | 2026-05-15 <sub>created 2026-05-13</sub> | [plan](carrier-data-field-values-join-unify.md) |
+| `R158` | Admit @service-backed producers for single-record DML carrier data fields | Ready | 2026-05-15 <sub>created 2026-05-13</sub> | [plan](carrier-data-field-values-join-unify.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
@@ -138,7 +138,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutations-errors
 
-- `R158` [**Admit @service-backed producers for single-record DML carrier data fields**](carrier-data-field-values-join-unify.md) — In Review, structural
+- `R158` [**Admit @service-backed producers for single-record DML carrier data fields**](carrier-data-field-values-join-unify.md) — Ready, structural
 - `R161` [**Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path**](unify-record-dml-on-carrier-walk.md) — Spec, structural, blocked by [error-handling-parity](error-handling-parity.md)
 - `R162` [**Consolidate MutationField permits under verb-on-permit-identity**](mutation-result-field-sealed-on-kind.md) — Backlog, structural, blocked by [unify-record-dml-on-carrier-walk](unify-record-dml-on-carrier-walk.md)
 - `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture
