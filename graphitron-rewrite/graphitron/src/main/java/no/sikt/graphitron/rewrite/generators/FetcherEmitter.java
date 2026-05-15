@@ -239,19 +239,57 @@ public final class FetcherEmitter {
      */
     @DependsOnClassifierCheck(
         key = "mutation-dml-record-field.data-table-equals-input-table",
-        reliesOn = "The response SELECT's WHERE predicate reads source.getValues(<DataTable.PK>) "
-            + "/ source.value1() against the upstream Result's row type. That row type is the "
-            + "DML's input @table PK columns (the mutation fetcher's RETURNING clause), which "
-            + "the load-bearing classifier check forces to equal the data field's element table "
-            + "PK columns. Without that equality the source.getValues call would request a "
-            + "column the upstream Result does not carry.")
+        reliesOn = "The response SELECT's WHERE predicate reads PK column values off the "
+            + "upstream source against the data table. The load-bearing classifier check "
+            + "forces the data field's element table PK columns to equal the DML input "
+            + "@table PK columns, so source records carry the columns the SELECT predicate "
+            + "names; without the equality the read would request a column the upstream did "
+            + "not project. (Applies to the Wrap.Record arm; the Wrap.TableRecord arm reads "
+            + "PKs off the typed XRecord, where the producer-strict-return check pins the "
+            + "record class to the data table by construction.)")
     @DependsOnClassifierCheck(
-        key = "source-key.result-row-walk-wrap-record-empty-path",
+        key = "source-key.result-row-walk-target-aligned-empty-path",
         reliesOn = "The SingleRecordTableField permit's compact constructor requires "
             + "Reader.ResultRowWalk, and SourceKey's compact constructor pins ResultRowWalk to "
-            + "Wrap.Record with empty path. The emitted source cast (Result<RecordN<...>> for "
-            + "MANY, RecordN<...> for ONE) reads SourceKey.wrap × columns directly.")
+            + "Wrap.Record or Wrap.TableRecord(target.recordClass()) with empty path. Each "
+            + "wrap-permit arm types the source cast accordingly: Wrap.Record reads "
+            + "Result<RecordN<...>> / RecordN<...>; Wrap.TableRecord reads List<XRecord> / "
+            + "XRecord, where the typed cast is licensed by this invariant (the typed XRecord "
+            + "class names the same table the carrier is target-aligned to). Other "
+            + "Wrap.TableRecord consumers (e.g. GeneratorUtils.buildKeyExtraction's "
+            + "((Record) env.getSource()).into(Tables.X) posture) operate under different "
+            + "Reader invariants and read the source through the erased Record shape; the "
+            + "typed cast posture here is carrier-specific.")
+    @DependsOnClassifierCheck(
+        key = "carrier-data-field.single-producer-kind",
+        reliesOn = "The wrap-permit dispatch in this method relies on at most one wrap shape "
+            + "reaching the emitter per (carrierType, dataFieldName) coord. The FieldBuilder "
+            + "producer-site helpers (registerDmlCarrierDataField, registerServiceCarrierDataField) "
+            + "compare-then-write and reject the second producer on mismatched wrap; without "
+            + "that the same coord could classify under two wrap shapes whose source casts "
+            + "would conflict at request time.")
     private static CodeBlock buildSingleRecordTableFetcherValue(
+            ChildField.SingleRecordTableField srtf, String outputPackage) {
+        var sk = srtf.sourceKey();
+        return switch (sk.wrap()) {
+            case SourceKey.Wrap.Record r -> buildSingleRecordTableFetcherValueRecordWrap(srtf, outputPackage);
+            case SourceKey.Wrap.TableRecord tr -> buildSingleRecordTableFetcherValueTableRecordWrap(srtf, tr, outputPackage);
+            case SourceKey.Wrap.Row r -> throw new IllegalStateException(
+                "SingleRecordTableField: SourceKey.Wrap.Row is rejected by the compact "
+                + "constructor for Reader.ResultRowWalk; this case is unreachable.");
+        };
+    }
+
+    /**
+     * R75 Phase 1 / R141 — Wrap.Record arm of {@link #buildSingleRecordTableFetcherValue}. The
+     * upstream DML mutation fetcher produced {@code Result<RecordN<PK>>} (MANY) or
+     * {@code RecordN<PK>} (ONE) with the PK columns from {@code RETURNING}; the source cast is
+     * typed against {@code RecordN<...>}. The MANY WHERE uses {@code source.getValues(<PK>)}
+     * and the ONE WHERE uses {@code source.value1()} — both jOOQ {@code Result} /
+     * {@code RecordN} APIs that the {@code Wrap.TableRecord} arm replaces with positional
+     * {@code record.get(<Table.PK>)} reads.
+     */
+    private static CodeBlock buildSingleRecordTableFetcherValueRecordWrap(
             ChildField.SingleRecordTableField srtf, String outputPackage) {
         var table = srtf.returnType().table();
         var typeClass = ClassName.get(outputPackage + ".types", srtf.returnType().returnTypeName());
@@ -265,7 +303,7 @@ public final class FetcherEmitter {
         var body = CodeBlock.builder().add("($T env) -> {\n", DATA_FETCHING_ENV);
         if (many) {
             var resultClass = ClassName.get("org.jooq", "Result");
-            var resultOfRow = no.sikt.graphitron.javapoet.ParameterizedTypeName.get(resultClass, rowType);
+            var resultOfRow = ParameterizedTypeName.get(resultClass, rowType);
             body.add("    $T source = ($T) env.getSource();\n", resultOfRow, resultOfRow);
             body.add("    if (source.isEmpty()) return source;\n");
         } else {
@@ -365,6 +403,154 @@ public final class FetcherEmitter {
             if (pkColumns.size() == 1) {
                 var col = pkColumns.get(0);
                 body.add("$T.$L.$L.eq(source.value1())",
+                    table.constantsClass(), table.javaFieldName(), col.javaName());
+            } else {
+                body.add("$T.row(", DSL);
+                for (int i = 0; i < pkColumns.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkColumns.get(i);
+                    body.add("$T.$L.$L", table.constantsClass(), table.javaFieldName(), col.javaName());
+                }
+                body.add(").eq($T.row(", DSL);
+                for (int i = 0; i < pkColumns.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkColumns.get(i);
+                    body.add("source.get($T.$L.$L)", table.constantsClass(), table.javaFieldName(), col.javaName());
+                }
+                body.add("))");
+            }
+            body.add(")\n");
+            body.add("        .fetchOne();\n");
+        }
+        body.add("}");
+        return body.build();
+    }
+
+    /**
+     * R158 — Wrap.TableRecord arm of {@link #buildSingleRecordTableFetcherValue}. The upstream
+     * {@code @service} mutation method returned {@code List<XRecord>} (MANY) or {@code XRecord}
+     * (ONE) verbatim; the source cast is typed against the developer-declared {@code XRecord}
+     * class (pinned by the {@code carrier-data-field.service-producer-strict-return} check to
+     * the data table's record class). PK extraction goes through the typed
+     * {@code record.get(<Table.PK_FIELD>)} accessors, paralleling the {@code Wrap.Record} arm's
+     * map-key shape but typed against {@code XRecord} instead of {@code RecordN}.
+     */
+    private static CodeBlock buildSingleRecordTableFetcherValueTableRecordWrap(
+            ChildField.SingleRecordTableField srtf,
+            SourceKey.Wrap.TableRecord tableRecordWrap,
+            String outputPackage) {
+        var table = srtf.returnType().table();
+        var typeClass = ClassName.get(outputPackage + ".types", srtf.returnType().returnTypeName());
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
+        var graphitronContextClass = ClassName.get(outputPackage + ".schema", "GraphitronContext");
+        var sk = srtf.sourceKey();
+        var recordType = tableRecordWrap.className();
+        var pkColumns = sk.columns();
+        boolean many = sk.cardinality() == SourceKey.Cardinality.MANY;
+        var javaUtilList = ClassName.get("java.util", "List");
+
+        var body = CodeBlock.builder().add("($T env) -> {\n", DATA_FETCHING_ENV);
+        if (many) {
+            var listOfRecord = ParameterizedTypeName.get(javaUtilList, recordType);
+            body.add("    $T source = ($T) env.getSource();\n", listOfRecord, listOfRecord);
+            body.add("    if (source.isEmpty()) return source;\n");
+        } else {
+            body.add("    $T source = ($T) env.getSource();\n", recordType, recordType);
+            body.add("    if (source == null) return null;\n");
+        }
+        body.add("    $T dsl = (($T) env.getGraphQlContext().get($T.class)).getDslContext(env);\n",
+            dslContextClass, graphitronContextClass, graphitronContextClass);
+        if (many) {
+            var orgJooqRecord = ClassName.get("org.jooq", "Record");
+            var javaUtilMap = ClassName.get("java.util", "Map");
+            var javaUtilHashMap = ClassName.get("java.util", "HashMap");
+            var javaUtilArrayList = ClassName.get("java.util", "ArrayList");
+            var keyType = pkColumns.size() == 1
+                ? ClassName.bestGuess(pkColumns.get(0).columnClass())
+                : ParameterizedTypeName.get(javaUtilList, WildcardTypeName.subtypeOf(Object.class));
+            var orgJooqResult = ClassName.get("org.jooq", "Result");
+            var resultOfRecord = ParameterizedTypeName.get(orgJooqResult, orgJooqRecord);
+            body.add("    $T __fetched = dsl.select($T.$$fields(env.getSelectionSet(), $T.$L, env))\n",
+                resultOfRecord, typeClass, table.constantsClass(), table.javaFieldName());
+            body.add("        .from($T.$L)\n", table.constantsClass(), table.javaFieldName());
+            body.add("        .where(");
+            if (pkColumns.size() == 1) {
+                var col = pkColumns.get(0);
+                body.add("$T.$L.$L.in(source.stream().map(r -> r.get($T.$L.$L)).toList())",
+                    table.constantsClass(), table.javaFieldName(), col.javaName(),
+                    table.constantsClass(), table.javaFieldName(), col.javaName());
+            } else {
+                body.add("$T.row(", DSL);
+                for (int i = 0; i < pkColumns.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkColumns.get(i);
+                    body.add("$T.$L.$L", table.constantsClass(), table.javaFieldName(), col.javaName());
+                }
+                body.add(").in(source.stream().map(r -> $T.row(", DSL);
+                for (int i = 0; i < pkColumns.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkColumns.get(i);
+                    body.add("r.get($T.$L.$L)", table.constantsClass(), table.javaFieldName(), col.javaName());
+                }
+                body.add(")).toList())");
+            }
+            body.add(")\n");
+            body.add("        .fetch();\n");
+            // R141 order-preservation: PK-keyed-map indirection. Mirrors the Wrap.Record arm
+            // exactly; only the source row type differs (XRecord vs RecordN), and the PK
+            // accessors are positional record.get(<Table.PK>) reads in both arms.
+            body.add("    $T<$T, $T> __byPk = new $T<>(__fetched.size());\n",
+                javaUtilMap, keyType, orgJooqRecord, javaUtilHashMap);
+            body.add("    for ($T __r : __fetched) __byPk.put(",
+                orgJooqRecord);
+            if (pkColumns.size() == 1) {
+                var col = pkColumns.get(0);
+                body.add("__r.get($T.$L.$L)",
+                    table.constantsClass(), table.javaFieldName(), col.javaName());
+            } else {
+                body.add("$T.of(", javaUtilList);
+                for (int i = 0; i < pkColumns.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkColumns.get(i);
+                    body.add("__r.get($T.$L.$L)",
+                        table.constantsClass(), table.javaFieldName(), col.javaName());
+                }
+                body.add(")");
+            }
+            body.add(", __r);\n");
+            body.add("    $T<$T> __ordered = new $T<>(source.size());\n",
+                javaUtilList, orgJooqRecord, javaUtilArrayList);
+            body.add("    for ($T __src : source) {\n",
+                recordType);
+            body.add("        $T __key = ", keyType);
+            if (pkColumns.size() == 1) {
+                var col = pkColumns.get(0);
+                body.add("__src.get($T.$L.$L)",
+                    table.constantsClass(), table.javaFieldName(), col.javaName());
+            } else {
+                body.add("$T.of(", javaUtilList);
+                for (int i = 0; i < pkColumns.size(); i++) {
+                    if (i > 0) body.add(", ");
+                    var col = pkColumns.get(i);
+                    body.add("__src.get($T.$L.$L)",
+                        table.constantsClass(), table.javaFieldName(), col.javaName());
+                }
+                body.add(")");
+            }
+            body.add(";\n");
+            body.add("        $T __match = __byPk.get(__key);\n", orgJooqRecord);
+            body.add("        if (__match != null) __ordered.add(__match);\n");
+            body.add("    }\n");
+            body.add("    return __ordered;\n");
+        } else {
+            body.add("    return dsl.select($T.$$fields(env.getSelectionSet(), $T.$L, env))\n",
+                typeClass, table.constantsClass(), table.javaFieldName());
+            body.add("        .from($T.$L)\n", table.constantsClass(), table.javaFieldName());
+            body.add("        .where(");
+            if (pkColumns.size() == 1) {
+                var col = pkColumns.get(0);
+                body.add("$T.$L.$L.eq(source.get($T.$L.$L))",
+                    table.constantsClass(), table.javaFieldName(), col.javaName(),
                     table.constantsClass(), table.javaFieldName(), col.javaName());
             } else {
                 body.add("$T.row(", DSL);

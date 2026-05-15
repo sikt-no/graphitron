@@ -67,11 +67,12 @@ import java.util.Objects;
  *   <li>{@link Reader.ServiceTableRecord} with {@code recordType} equal to
  *       {@code target().recordClass()} → {@link #path()} empty. Walking past target is
  *       structurally redundant when the service produced a target-aligned record.</li>
- *   <li>{@link Reader.ResultRowWalk} → {@link Wrap#RECORD} and {@link #path()} empty.
- *       The upstream DML mutation fetcher produces {@code RecordN<...>} rows directly
- *       on the DML's input table; cardinality determines whether the consumer sees a
- *       single {@code RecordN} ({@link Cardinality#ONE}) or a {@code Result<RecordN>}
- *       ({@link Cardinality#MANY}).</li>
+ *   <li>{@link Reader.ResultRowWalk} → {@link Wrap.Record} or
+ *       {@link Wrap.TableRecord} whose {@code className} equals {@code target.recordClass()},
+ *       and {@link #path()} empty. The upstream producer (DML mutation fetcher or
+ *       carrier-shaped {@code @service} method) emits target-aligned rows; cardinality
+ *       determines whether the consumer sees a single row ({@link Cardinality#ONE}) or a
+ *       list / {@code Result} ({@link Cardinality#MANY}).</li>
  * </ul>
  */
 @LoadBearingClassifierCheck(
@@ -93,13 +94,16 @@ import java.util.Objects;
         + "already produced a target-aligned record; walking past target is structurally "
         + "redundant.")
 @LoadBearingClassifierCheck(
-    key = "source-key.result-row-walk-wrap-record-empty-path",
+    key = "source-key.result-row-walk-target-aligned-empty-path",
     description = "SourceKey's compact constructor rejects Reader.ResultRowWalk paired with "
-        + "anything other than Wrap.Record or with a non-empty path. The upstream DML "
-        + "mutation fetcher emits Record_N_<...> rows (cardinality ONE -> single RecordN, "
-        + "cardinality MANY -> Result<RecordN>); the data-field fetcher's typed source read "
-        + "via SourceKey.wrap x columns relies on wrap=Record to type the source value, and "
-        + "path=empty pins the source row shape to the DML's input table.")
+        + "anything other than Wrap.Record or Wrap.TableRecord(target.recordClass()), or with "
+        + "a non-empty path. The upstream producer (DML mutation fetcher or carrier-shaped "
+        + "@service method) emits target-aligned rows; the data-field fetcher's typed source "
+        + "read relies on wrap to type the row shape and on path=empty to pin the source row "
+        + "to the data table. The Wrap.TableRecord arm requires className to match the "
+        + "target's recordClass for the same reason the source-key.service-table-record-"
+        + "target-aligned-empty-path invariant pins ServiceTableRecord to its target — the "
+        + "typed XRecord class names the same table the carrier is target-aligned to.")
 public record SourceKey(
     TableRef target,
     List<ColumnRef> columns,
@@ -167,17 +171,21 @@ public record SourceKey(
                 + "target-aligned record; walking past target is structurally redundant).");
         }
         if (reader instanceof Reader.ResultRowWalk) {
-            if (!(wrap instanceof Wrap.Record)) {
+            boolean wrapOk = wrap instanceof Wrap.Record
+                || (wrap instanceof Wrap.TableRecord tr
+                    && target != null
+                    && Objects.equals(tr.className(), target.recordClass()));
+            if (!wrapOk) {
                 throw new IllegalArgumentException(
-                    "SourceKey: Reader.ResultRowWalk requires Wrap.Record (upstream DML emit "
-                    + "produces Record_N_<...> rows; cardinality determines whether the rows-"
-                    + "method consumer sees a single RecordN (ONE) or a Result<RecordN> (MANY)); "
-                    + "got " + wrap);
+                    "SourceKey: Reader.ResultRowWalk requires Wrap.Record or "
+                    + "Wrap.TableRecord(target.recordClass()) (upstream producer emits "
+                    + "target-aligned rows; the data-field fetcher's typed source read relies "
+                    + "on wrap to type the row shape); got " + wrap);
             }
             if (!path.isEmpty()) {
                 throw new IllegalArgumentException(
                     "SourceKey: Reader.ResultRowWalk requires empty path (target-aligned by "
-                    + "construction; the DML's input table IS the source row shape).");
+                    + "construction; the producer's row shape IS the data table).");
             }
         }
     }
@@ -307,14 +315,16 @@ public record SourceKey(
          * DataLoader-batched, so the paired {@link LoaderRegistration} is absent at the
          * field record level.
          *
-         * <p>{@link SourceKey#path()} is empty by construction (target-aligned: the DML's
-         * input table IS the source row shape); {@link SourceKey#wrap()} is
-         * {@link Wrap.Record} (upstream emit produces {@code RecordN<...>}). Cardinality
-         * matches the mutation's input cardinality (single {@code TableInputArg} →
-         * {@link Cardinality#ONE}; list → {@link Cardinality#MANY}). The structural
-         * invariants are enforced by {@link SourceKey}'s compact constructor under the
-         * load-bearing key
-         * {@code source-key.result-row-walk-wrap-record-empty-path}.
+         * <p>{@link SourceKey#path()} is empty by construction (target-aligned: the
+         * producer's row shape IS the data table); {@link SourceKey#wrap()} is either
+         * {@link Wrap.Record} (DML mutation fetcher producer emits {@code RecordN<...>})
+         * or {@link Wrap.TableRecord} whose {@code className} equals
+         * {@code target.recordClass()} ({@code @service} carrier-payload producer returns
+         * a typed {@code XRecord} or {@code List<XRecord>} verbatim). Cardinality matches
+         * the producer's output cardinality (single → {@link Cardinality#ONE}; list →
+         * {@link Cardinality#MANY}). The structural invariants are enforced by
+         * {@link SourceKey}'s compact constructor under the load-bearing key
+         * {@code source-key.result-row-walk-target-aligned-empty-path}.
          */
         record ResultRowWalk() implements Reader {}
     }

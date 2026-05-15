@@ -278,17 +278,21 @@ class SingleRecordCarrierPipelineTest {
     // ===== Cross-paths =====
 
     @Test
-    void carrier_returnedFromQueryField_resolvesUniformly() {
+    void carrier_returnedFromQueryField_isOrphanWithNoRegistration() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmPayload { films: [Film!] }
             type Query { wrappedFilms: FilmPayload }
             """);
 
-        // Query-side use: the data field still classifies as SingleRecordTableField via the
-        // schema-builder's NoBacking arm; the trigger is consumer-agnostic.
+        // R158: Query-side carriers have no producing mutation, so the per-producer
+        // registration site in FieldBuilder is never reached. The verbless walk's
+        // DataElement.Table arm is a no-op after R158, so the data field carries no
+        // fieldRegistry entry. graphql-java only traverses fields whose parent was
+        // produced by a fetcher; an unproduced carrier's data field is never reached at
+        // runtime, so a missing registration is structurally safe.
         var dataField = schema.field("FilmPayload", "films");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
+        assertThat(dataField).isNull();
     }
 
     @ParameterizedTest
