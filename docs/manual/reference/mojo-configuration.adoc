@@ -24,7 +24,7 @@ This page is the parameter-by-parameter reference. The xref:../tutorial/01-prere
 
 | `dev`
 | (none; CLI-only)
-| Run the LSP server on `127.0.0.1:8487` and watch `<schemaInputs>` for `.graphqls` writes plus the consumer's compiled jOOQ output for `.class` changes. Re-runs the generator on every save (debounced) and rebuilds the in-process catalog atomically. Stop with Ctrl+C.
+| Run the LSP server on `127.0.0.1:8487` and watch `<schemaInputs>` for writes matching `<schemaFileExtensions>` (default `.graphqls` / `.graphql`) plus the consumer's compiled jOOQ output for `.class` changes. Re-runs the generator on every save (debounced) and rebuilds the in-process catalog atomically. Stop with Ctrl+C.
 | `<outputPackage>`, `<jooqPackage>`
 |===
 
@@ -56,12 +56,17 @@ The following parameters apply to every goal:
 | `schemaInputs`
 | `List<SchemaInputBinding>`
 | empty
-| List of `<schemaInput>` entries pointing at `.graphqls` files (or globs that expand to `.graphqls` files) the loader assembles into one schema. Order matters when two files declare the same type with overlapping fields; later entries win. See xref:#schemainput-binding[`<schemaInput>` binding] for the per-entry shape.
+| List of `<schemaInput>` entries pointing at schema files (or globs that expand to schema files) the loader assembles into one schema. By default schema files are those ending in `.graphqls` or `.graphql`; the `<schemaFileExtensions>` parameter narrows or extends that set. Order matters when two files declare the same type with overlapping fields; later entries win. See xref:#schemainput-binding[`<schemaInput>` binding] for the per-entry shape.
 
 | `namedReferences`
 | `List<NamedReferenceBinding>`
 | empty
 | Reusable `name` → `className` mappings the SDL refers to via `ExternalCodeReference.name:` instead of repeating a fully qualified class name at every directive site. Each entry carries `<name>` and `<className>` children. Empty by default; populated only when the same external class is referenced from many places.
+
+| `schemaFileExtensions`
+| `List<String>`
+| `[".graphqls", ".graphql"]`
+| File-name suffixes that count as GraphQL schema files. Drives three places at once: the `<schemaInputs>` post-scan filter (matches are kept only when the filename ends in a configured suffix), the `graphitron:dev` watcher's trigger filter (only writes matching a configured suffix fire a regenerate), and the orphan-file scanner that runs when schema validation fails (only files with a configured suffix can be reported as orphans). Leading dots are optional (`graphqls` normalises to `.graphqls`); case is preserved. A configured but empty list is rejected at Mojo execute; omit the parameter to accept the default.
 |===
 
 == `dev`-goal parameters

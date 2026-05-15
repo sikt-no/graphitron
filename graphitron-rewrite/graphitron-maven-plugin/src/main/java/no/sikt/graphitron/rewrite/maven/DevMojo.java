@@ -34,8 +34,9 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li>Binds {@code 127.0.0.1:8487} (override via
  *       {@code -Dgraphitron.dev.port=N}) and serves the LSP to whoever
  *       connects.</li>
- *   <li>Watches {@code <schemaInputs>} for {@code .graphqls} writes and
- *       re-runs the generator on every save (debounced).</li>
+ *   <li>Watches {@code <schemaInputs>} for writes matching the configured
+ *       {@code <schemaFileExtensions>} (default {@code .graphqls} /
+ *       {@code .graphql}) and re-runs the generator on every save (debounced).</li>
  *   <li>Watches every reactor project's {@code target/classes} for
  *       {@code .class} changes and rebuilds the in-process catalog
  *       atomically. Both jOOQ output (tables / columns / FKs) and
@@ -151,7 +152,8 @@ public class DevMojo extends AbstractRewriteMojo {
         }
         this.schemaDebounce = new DebounceExecutor(debounceMs);
         try {
-            this.schemaWatcher = new SchemaWatcher(roots, schemaDebounce, () -> regenerate(workspace));
+            this.schemaWatcher = new SchemaWatcher(
+                roots, schemaDebounce, () -> regenerate(workspace), ctx.schemaFileExtensions());
         } catch (IOException e) {
             cleanup();
             throw new MojoExecutionException(

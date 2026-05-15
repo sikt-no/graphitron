@@ -23,7 +23,8 @@ class SchemaProblemDiagnosticTest {
         var msg = SchemaProblemDiagnostic.format(
             problem("A schema MUST have a 'query' operation defined"),
             List.of(loaded.toString()),
-            basedir);
+            basedir,
+            java.util.Set.of(".graphqls", ".graphql"));
 
         assertThat(msg)
             .contains("GraphQL schema validation failed:")
@@ -37,7 +38,8 @@ class SchemaProblemDiagnosticTest {
         var msg = SchemaProblemDiagnostic.format(
             problem("A schema MUST have a 'query' operation defined"),
             List.of(),
-            basedir);
+            basedir,
+            java.util.Set.of(".graphqls", ".graphql"));
 
         assertThat(msg).contains("Hint: declare a 'type Query");
     }
@@ -47,7 +49,8 @@ class SchemaProblemDiagnosticTest {
         var msg = SchemaProblemDiagnostic.format(
             problem("'Foo' [@10:1] tried to use an undeclared directive 'key'"),
             List.of(),
-            basedir);
+            basedir,
+            java.util.Set.of(".graphqls", ".graphql"));
 
         assertThat(msg)
             .contains("Hint: graphql-java does not bundle Apollo Federation directives.")
@@ -59,7 +62,8 @@ class SchemaProblemDiagnosticTest {
         var msg = SchemaProblemDiagnostic.format(
             problem("Some other graphql-java schema error"),
             List.of(),
-            basedir);
+            basedir,
+            java.util.Set.of(".graphqls", ".graphql"));
 
         assertThat(msg).doesNotContain("Hint:");
     }
@@ -75,7 +79,8 @@ class SchemaProblemDiagnosticTest {
         var msg = SchemaProblemDiagnostic.format(
             problem("A schema MUST have a 'query' operation defined"),
             List.of(loaded.toString()),
-            basedir);
+            basedir,
+            java.util.Set.of(".graphqls", ".graphql"));
 
         assertThat(msg)
             .contains("Found under src" + java.io.File.separator + "main"
@@ -88,7 +93,8 @@ class SchemaProblemDiagnosticTest {
         var msg = SchemaProblemDiagnostic.format(
             problem("A schema MUST have a 'query' operation defined"),
             List.of(),
-            basedir);
+            basedir,
+            java.util.Set.of(".graphqls", ".graphql"));
 
         assertThat(msg)
             .contains("Schema files loaded by Graphitron (0)")
@@ -105,7 +111,7 @@ class SchemaProblemDiagnosticTest {
         Files.createDirectories(generated);
         Files.createFile(generated.resolve("b.graphqls"));
 
-        var orphans = SchemaProblemDiagnostic.findOrphanSchemaFiles(java.util.Set.of(), basedir);
+        var orphans = SchemaProblemDiagnostic.findOrphanSchemaFiles(java.util.Set.of(), basedir, java.util.Set.of(".graphqls", ".graphql"));
 
         assertThat(orphans).extracting(Path::toString)
             .anyMatch(s -> s.endsWith("a.graphqls"))
@@ -120,7 +126,7 @@ class SchemaProblemDiagnosticTest {
         Files.createFile(srcMain.resolve("long.graphqls"));
         Files.createFile(srcMain.resolve("README.md"));
 
-        var orphans = SchemaProblemDiagnostic.findOrphanSchemaFiles(java.util.Set.of(), basedir);
+        var orphans = SchemaProblemDiagnostic.findOrphanSchemaFiles(java.util.Set.of(), basedir, java.util.Set.of(".graphqls", ".graphql"));
 
         assertThat(orphans).extracting(p -> p.getFileName().toString())
             .containsExactlyInAnyOrder("short.graphql", "long.graphqls");
@@ -136,15 +142,34 @@ class SchemaProblemDiagnosticTest {
         Files.createFile(notLoaded);
 
         var orphans = SchemaProblemDiagnostic.findOrphanSchemaFiles(
-            java.util.Set.of(loaded.toAbsolutePath().normalize()), basedir);
+            java.util.Set.of(loaded.toAbsolutePath().normalize()), basedir,
+            java.util.Set.of(".graphqls", ".graphql"));
 
         assertThat(orphans).extracting(p -> p.getFileName().toString())
             .containsExactly("not-loaded.graphqls");
     }
 
     @Test
+    void findOrphanSchemaFiles_respectsConfiguredExtensions(@TempDir Path basedir) throws Exception {
+        var srcMain = basedir.resolve("src/main");
+        Files.createDirectories(srcMain);
+        Files.createFile(srcMain.resolve("short.graphql"));
+        Files.createFile(srcMain.resolve("long.graphqls"));
+
+        var strict = SchemaProblemDiagnostic.findOrphanSchemaFiles(
+            java.util.Set.of(), basedir, java.util.Set.of(".graphqls"));
+        assertThat(strict).extracting(p -> p.getFileName().toString())
+            .containsExactly("long.graphqls");
+
+        var lenient = SchemaProblemDiagnostic.findOrphanSchemaFiles(
+            java.util.Set.of(), basedir, java.util.Set.of(".graphqls", ".graphql"));
+        assertThat(lenient).extracting(p -> p.getFileName().toString())
+            .containsExactlyInAnyOrder("short.graphql", "long.graphqls");
+    }
+
+    @Test
     void findOrphanSchemaFiles_missingSrcMain_returnsEmpty(@TempDir Path basedir) {
-        var orphans = SchemaProblemDiagnostic.findOrphanSchemaFiles(java.util.Set.of(), basedir);
+        var orphans = SchemaProblemDiagnostic.findOrphanSchemaFiles(java.util.Set.of(), basedir, java.util.Set.of(".graphqls", ".graphql"));
         assertThat(orphans).isEmpty();
     }
 

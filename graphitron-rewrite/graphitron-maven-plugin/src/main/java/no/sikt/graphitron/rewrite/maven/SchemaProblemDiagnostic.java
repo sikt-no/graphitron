@@ -29,9 +29,10 @@ final class SchemaProblemDiagnostic {
 
     private SchemaProblemDiagnostic() {}
 
-    static String format(SchemaProblem problem, List<String> loadedSourceNames, Path basedir) {
+    static String format(SchemaProblem problem, List<String> loadedSourceNames, Path basedir,
+            Set<String> schemaFileExtensions) {
         var loadedAbs = normaliseLoaded(loadedSourceNames, basedir);
-        var orphans = findOrphanSchemaFiles(loadedAbs, basedir);
+        var orphans = findOrphanSchemaFiles(loadedAbs, basedir, schemaFileExtensions);
 
         var sb = new StringBuilder();
         sb.append("GraphQL schema validation failed:");
@@ -110,7 +111,8 @@ final class SchemaProblemDiagnostic {
         }
     }
 
-    static List<Path> findOrphanSchemaFiles(Set<Path> loadedAbs, Path basedir) {
+    static List<Path> findOrphanSchemaFiles(Set<Path> loadedAbs, Path basedir,
+            Set<String> schemaFileExtensions) {
         Path scanRoot = basedir.resolve(SRC_MAIN);
         if (!Files.isDirectory(scanRoot)) return List.of();
 
@@ -118,10 +120,7 @@ final class SchemaProblemDiagnostic {
         var orphans = new TreeSet<String>();
         try (Stream<Path> walk = Files.walk(scanRoot)) {
             walk.filter(Files::isRegularFile)
-                .filter(p -> {
-                    String n = p.getFileName().toString();
-                    return n.endsWith(".graphql") || n.endsWith(".graphqls");
-                })
+                .filter(p -> matchesExtension(p.getFileName().toString(), schemaFileExtensions))
                 .map(p -> p.toAbsolutePath().normalize())
                 .filter(p -> !p.startsWith(targetAbs))
                 .filter(p -> !loadedAbs.contains(p))
@@ -130,5 +129,12 @@ final class SchemaProblemDiagnostic {
             return List.of();
         }
         return orphans.stream().map(Path::of).toList();
+    }
+
+    private static boolean matchesExtension(String filename, Set<String> schemaFileExtensions) {
+        for (String ext : schemaFileExtensions) {
+            if (filename.endsWith(ext)) return true;
+        }
+        return false;
     }
 }

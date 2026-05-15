@@ -40,6 +40,21 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     @Parameter
     List<SchemaInputBinding> schemaInputs;
 
+    /**
+     * File-name suffixes that count as GraphQL schema files. Drives the
+     * {@code <schemaInputs>} post-scan filter, the {@code graphitron:dev} watcher's trigger
+     * filter, and the {@code SchemaProblemDiagnostic} orphan scan. Suffixes are matched with
+     * {@link String#endsWith} on the file-name component; leading dots are optional (both
+     * {@code .graphqls} and {@code graphqls} normalise to {@code .graphqls}). Case-sensitive
+     * on case-sensitive filesystems; Graphitron does not lower-case.
+     *
+     * <p>Omit (or leave empty in the POM, which Maven binds as {@code null}) to accept the
+     * default {@code [".graphqls", ".graphql"]}. A configured but empty list is rejected at
+     * Mojo execute.
+     */
+    @Parameter
+    List<String> schemaFileExtensions;
+
     @Parameter(defaultValue = "${project.build.directory}/generated-sources/graphitron")
     String outputDirectory;
 
@@ -104,8 +119,10 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             effectiveJooq = jooqPackage != null ? jooqPackage : VALIDATE_ONLY_PACKAGE;
         }
 
+        var extensions = effectiveSchemaFileExtensions();
         return new RewriteContext(
-            SchemaInputExpander.expand(schemaInputs, basedir),
+            SchemaInputExpander.expand(schemaInputs, basedir, extensions),
+            extensions,
             basedir,
             outAbs,
             effectiveOutput,
@@ -114,6 +131,33 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             resolveClasspathRoots(),
             codegenLoader
         );
+    }
+
+    /**
+     * Normalises the {@code <schemaFileExtensions>} parameter into the set threaded through the
+     * pipeline. Each entry is trimmed; entries missing a leading dot get one prepended; case is
+     * preserved. A configured but empty list is rejected with a clear message. Returns the
+     * default {@link RewriteContext#DEFAULT_SCHEMA_FILE_EXTENSIONS} when the field is null
+     * (parameter omitted from the POM).
+     */
+    Set<String> effectiveSchemaFileExtensions() throws MojoExecutionException {
+        if (schemaFileExtensions == null) {
+            return RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS;
+        }
+        var normalised = new LinkedHashSet<String>();
+        for (String raw : schemaFileExtensions) {
+            if (raw == null) continue;
+            String trimmed = raw.trim();
+            if (trimmed.isEmpty()) continue;
+            normalised.add(trimmed.startsWith(".") ? trimmed : "." + trimmed);
+        }
+        if (normalised.isEmpty()) {
+            throw new MojoExecutionException(
+                "<schemaFileExtensions> must contain at least one entry; "
+                    + "omit the parameter to accept the default ["
+                    + String.join(", ", RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS) + "]");
+        }
+        return Set.copyOf(normalised);
     }
 
     /**
@@ -164,7 +208,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
                 // ("errors=[...]") to our formatted diagnostic. The original
                 // SchemaProblem stays on the cause chain for `-e` / `-X` consumers.
                 throw new MojoExecutionException(
-                    SchemaProblemDiagnostic.format(e, loaded, ctx.basedir()),
+                    SchemaProblemDiagnostic.format(e, loaded, ctx.basedir(), ctx.schemaFileExtensions()),
                     new RuntimeException((String) null, e));
             } catch (RuntimeException e) {
                 throw new MojoExecutionException(e.getMessage(), e);

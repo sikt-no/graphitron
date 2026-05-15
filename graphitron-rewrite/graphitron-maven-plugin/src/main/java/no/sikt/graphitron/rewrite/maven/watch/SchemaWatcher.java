@@ -18,17 +18,17 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 /**
- * Watches a set of directories for {@code .graphqls} changes and routes a debounced trigger to
- * the supplied callback on every relevant event.
+ * Watches a set of directories for filename-suffix-matching changes and routes a debounced
+ * trigger to the supplied callback on every relevant event.
  *
  * <p>Event-loop thread:
  * <ol>
  *   <li>{@link #run()} blocks on {@link WatchService#take()} until the service is closed.</li>
- *   <li>Each {@link WatchKey}'s events are inspected. Events whose context ends in
- *       {@code .graphqls} schedule a debounced trigger. {@code OVERFLOW} also schedules a
- *       trigger so a burst of events does not silently skip a regeneration. Newly-created
- *       directories are registered on the fly so subtrees added during the watch session are
- *       observed.</li>
+ *   <li>Each {@link WatchKey}'s events are inspected. Events whose context ends in one of the
+ *       configured filename suffixes schedule a debounced trigger. {@code OVERFLOW} also
+ *       schedules a trigger so a burst of events does not silently skip a regeneration.
+ *       Newly-created directories are registered on the fly so subtrees added during the watch
+ *       session are observed.</li>
  *   <li>Closing the watcher (via {@link #close()}) cancels {@code take()} with
  *       {@link ClosedWatchServiceException}, which {@link #run()} treats as graceful exit.</li>
  * </ol>
@@ -43,7 +43,7 @@ public final class SchemaWatcher implements AutoCloseable {
     private final WatchService watchService;
     private final DebounceExecutor debounce;
     private final Runnable onTrigger;
-    private final String filenameSuffix;
+    private final Set<String> filenameSuffixes;
     /**
      * Shared between the watch-loop thread (reads in {@link #run()}, writes from
      * {@link #dispatch} on directory-create) and the debounce-executor thread
@@ -55,19 +55,30 @@ public final class SchemaWatcher implements AutoCloseable {
     private final Map<WatchKey, Path> registry = new ConcurrentHashMap<>();
 
     public SchemaWatcher(Set<Path> roots, DebounceExecutor debounce, Runnable onTrigger) throws IOException {
-        this(roots, debounce, onTrigger, GRAPHQLS_SUFFIX);
+        this(roots, debounce, onTrigger, Set.of(GRAPHQLS_SUFFIX));
     }
 
     /**
-     * Same watch contract, parameterised by filename suffix. Used by the
-     * dev goal's catalog-refresh watcher to listen on {@code .class} files
-     * under the consumer's compiled jOOQ output.
+     * Single-suffix variant. Used by the dev goal's catalog-refresh watcher to listen on
+     * {@code .class} files under the consumer's compiled jOOQ output.
      */
     public SchemaWatcher(Set<Path> roots, DebounceExecutor debounce, Runnable onTrigger, String filenameSuffix) throws IOException {
+        this(roots, debounce, onTrigger, Set.of(filenameSuffix));
+    }
+
+    /**
+     * Same watch contract, parameterised by a set of filename suffixes. An event fires when the
+     * filename ends in any one of the configured suffixes. Used by the schema-input watcher to
+     * accept the configured set of schema file extensions.
+     */
+    public SchemaWatcher(Set<Path> roots, DebounceExecutor debounce, Runnable onTrigger, Set<String> filenameSuffixes) throws IOException {
+        if (filenameSuffixes == null || filenameSuffixes.isEmpty()) {
+            throw new IllegalArgumentException("filenameSuffixes must contain at least one entry");
+        }
         this.watchService = FileSystems.getDefault().newWatchService();
         this.debounce = debounce;
         this.onTrigger = onTrigger;
-        this.filenameSuffix = filenameSuffix;
+        this.filenameSuffixes = Set.copyOf(filenameSuffixes);
         for (Path root : roots) {
             registerRecursive(root);
         }
@@ -159,8 +170,12 @@ public final class SchemaWatcher implements AutoCloseable {
             }
             return;
         }
-        if (relative.toString().endsWith(filenameSuffix)) {
-            debounce.schedule(onTrigger);
+        String name = relative.toString();
+        for (String suffix : filenameSuffixes) {
+            if (name.endsWith(suffix)) {
+                debounce.schedule(onTrigger);
+                return;
+            }
         }
     }
 

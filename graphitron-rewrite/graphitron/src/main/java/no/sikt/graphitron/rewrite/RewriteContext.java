@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Per-invocation configuration the rewrite generator runs against.
@@ -21,6 +22,11 @@ import java.util.Objects;
  *                       inside Maven; empty for unit-tier callers that don't ship classes.
  *                       External jars (from {@code ~/.m2}) are not scanned: services live in
  *                       reactor source, not third-party libraries.
+ * @param schemaFileExtensions file-name suffixes (with leading dot) that count as GraphQL
+ *                       schema files. Drives the {@code <schemaInputs>} post-scan filter,
+ *                       the {@code graphitron:dev} watcher's trigger filter, and the
+ *                       {@code SchemaProblemDiagnostic} orphan scan. Always at least one
+ *                       entry; the Mojo seam rejects empty configuration.
  * @param codegenLoader  classloader the reflection path uses to resolve consumer-declared
  *                       service / record / condition / jOOQ-catalog classes. The Mojo builds a
  *                       {@link java.net.URLClassLoader} over the project's compile classpath
@@ -31,6 +37,7 @@ import java.util.Objects;
  */
 public record RewriteContext(
     List<SchemaInput> schemaInputs,
+    Set<String> schemaFileExtensions,
     Path basedir,
     Path outputDirectory,
     String outputPackage,
@@ -39,8 +46,12 @@ public record RewriteContext(
     List<Path> classpathRoots,
     ClassLoader codegenLoader
 ) {
+    /** Standard schema file extensions accepted out of the box. */
+    public static final Set<String> DEFAULT_SCHEMA_FILE_EXTENSIONS = Set.of(".graphqls", ".graphql");
+
     public RewriteContext {
         Objects.requireNonNull(schemaInputs, "schemaInputs");
+        Objects.requireNonNull(schemaFileExtensions, "schemaFileExtensions");
         Objects.requireNonNull(basedir, "basedir");
         Objects.requireNonNull(outputDirectory, "outputDirectory");
         Objects.requireNonNull(outputPackage, "outputPackage");
@@ -48,7 +59,11 @@ public record RewriteContext(
         Objects.requireNonNull(namedReferences, "namedReferences");
         Objects.requireNonNull(classpathRoots, "classpathRoots");
         Objects.requireNonNull(codegenLoader, "codegenLoader");
+        if (schemaFileExtensions.isEmpty()) {
+            throw new IllegalArgumentException("schemaFileExtensions must contain at least one entry");
+        }
         schemaInputs = List.copyOf(schemaInputs);
+        schemaFileExtensions = Set.copyOf(schemaFileExtensions);
         namedReferences = Map.copyOf(namedReferences);
         classpathRoots = List.copyOf(classpathRoots);
     }
@@ -67,14 +82,15 @@ public record RewriteContext(
         Map<String, String> namedReferences,
         List<Path> classpathRoots
     ) {
-        this(schemaInputs, basedir, outputDirectory, outputPackage, jooqPackage,
+        this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory, outputPackage, jooqPackage,
             namedReferences, classpathRoots, Thread.currentThread().getContextClassLoader());
     }
 
     /**
      * Six-arg overload for unit-tier callers that don't care about classpath
-     * scanning. Defaults {@code classpathRoots} to the empty list and
-     * {@code codegenLoader} to the current thread's context classloader.
+     * scanning. Defaults {@code classpathRoots} to the empty list,
+     * {@code codegenLoader} to the current thread's context classloader, and
+     * {@code schemaFileExtensions} to {@link #DEFAULT_SCHEMA_FILE_EXTENSIONS}.
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
@@ -84,7 +100,7 @@ public record RewriteContext(
         String jooqPackage,
         Map<String, String> namedReferences
     ) {
-        this(schemaInputs, basedir, outputDirectory, outputPackage, jooqPackage,
+        this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory, outputPackage, jooqPackage,
             namedReferences, List.of(), Thread.currentThread().getContextClassLoader());
     }
 }
