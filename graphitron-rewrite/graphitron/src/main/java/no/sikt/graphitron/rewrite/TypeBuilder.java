@@ -750,22 +750,20 @@ class TypeBuilder {
 
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "error-type.path-message-fields",
-        description = "Every @error type declares exactly path: [String!]! and message: String!; "
-            + "extras and structural mismatches are rejected as UnclassifiedType. The matched "
-            + "throwable itself is placed into the payload's errors list and graphql-java's "
-            + "PropertyDataFetcher reads each declared SDL field directly from the source at "
-            + "serialisation time. The per-(channel, @error type, handler) source-class accessor "
-            + "reflection check is the runtime-side guarantee; this schema-level rule is the "
-            + "SDL-side anchor.")
+        description = "Every @error type declares path: [String!]! and message: String!; missing "
+            + "or wrong-shape declarations are rejected as UnclassifiedType. Fields beyond those "
+            + "two are permitted and route through graphql-java's PropertyDataFetcher at runtime; "
+            + "the per-(channel, @error type, handler) source-class accessor reflection check on "
+            + "the carrier guarantees each such field can be populated from the matched source.")
     private GraphitronType buildErrorType(GraphQLObjectType objType) {
         String name = objType.getName();
         SourceLocation location = locationOf(objType);
 
-        // Structural field check (rule 6 + path/message contract):
-        // every @error type declares exactly path: [String!]! and message: String!.
-        // Producer side of the load-bearing classifier check
-        // "error-type.path-message-fields"; the consumer is the per-(channel, @error type,
-        // handler) source-class accessor check that lands in step 5.
+        // Structural field check: every @error type declares path: [String!]! and message: String!.
+        // Extras are admitted here and validated against each handler's source class by the
+        // per-(channel, @error type, handler) accessor check on the carrier (FieldBuilder).
+        // Producer side of "error-type.path-message-fields"; the per-(channel, @error type,
+        // handler) accessor check is "error-channel.source-class-accessors".
         List<String> rejectReasons = new ArrayList<>();
         var pathField = objType.getFieldDefinition("path");
         if (pathField == null) {
@@ -780,14 +778,6 @@ class TypeBuilder {
         } else if (!isStringNonNull(messageField.getType())) {
             rejectReasons.add("'message' must be declared as String! (got '"
                 + GraphQLTypeUtil.simplePrint(messageField.getType()) + "')");
-        }
-        var extraFields = objType.getFieldDefinitions().stream()
-            .map(GraphQLFieldDefinition::getName)
-            .filter(n -> !"path".equals(n) && !"message".equals(n))
-            .toList();
-        if (!extraFields.isEmpty()) {
-            rejectReasons.add("@error types may only declare 'path' and 'message'; additional fields not allowed: "
-                + String.join(", ", extraFields));
         }
 
         var dir = objType.getAppliedDirective(DIR_ERROR);

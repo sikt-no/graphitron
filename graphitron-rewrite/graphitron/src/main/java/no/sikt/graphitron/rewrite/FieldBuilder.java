@@ -1835,6 +1835,14 @@ class FieldBuilder {
         if (dupReject != null) {
             return new ErrorChannelResult.Reject(dupReject);
         }
+        // §2c: per-(channel, @error type, handler) source-class accessor reflection check.
+        // Walks each declared SDL field on each @error type and verifies the handler's source
+        // class exposes a PropertyDataFetcher-visible accessor. path and message are populated
+        // by per-@error-type synthesised DataFetchers and are exempt.
+        String accessorReject = checkErrorTypeSourceAccessors(mappedErrorTypes);
+        if (accessorReject != null) {
+            return new ErrorChannelResult.Reject(accessorReject);
+        }
 
         Class<?> payloadCls;
         try {
@@ -2422,6 +2430,108 @@ class FieldBuilder {
 
     private static String matchesSuffix(java.util.Optional<String> matches) {
         return matches.isPresent() ? ", matches=\"" + matches.get() + "\"" : "";
+    }
+
+    /**
+     * Per-(channel, @error type, handler) source-class accessor reflection check (§2c).
+     *
+     * <p>For each {@code (mappedErrorType, handler)} pair in the channel, looks up each
+     * declared SDL field on the {@code @error} type against the handler's source class via
+     * {@link ClassAccessorResolver}. The source class is determined by handler kind:
+     *
+     * <ul>
+     *   <li>{@link ErrorType.ExceptionHandler}: the resolved Java class named by
+     *       {@code exceptionClassName}.</li>
+     *   <li>{@link ErrorType.SqlStateHandler} / {@link ErrorType.VendorCodeHandler}:
+     *       {@code java.sql.SQLException} (the universal supertype these variants match in
+     *       the cause chain).</li>
+     *   <li>{@link ErrorType.ValidationHandler}: {@code graphql.GraphQLError} (the wrapper's
+     *       pre-execution Jakarta validation step produces one per violation).</li>
+     * </ul>
+     *
+     * <p>{@code path} and {@code message} are exempt: the rewrite emits a synthesised
+     * per-{@code @error}-type {@code DataFetcher} for each, so they don't route through the
+     * source class's accessors. Every other declared field must resolve through
+     * {@code PropertyDataFetcher} convention on the source class; an unresolved field surfaces
+     * the carrier as {@code UnclassifiedField} naming the offending {@code @error} type,
+     * handler discriminator, field, and source class.
+     *
+     * <p>Returns the first reject reason encountered, or {@code null} when every field on
+     * every handler resolves cleanly. The classifier source classes ({@code SQLException},
+     * {@code GraphQLError}, the {@code ExceptionHandler} className) are resolved at parse time
+     * via {@code Class.forName} on {@code ctx.codegenLoader()}; a load failure on a
+     * {@code GENERIC} className was already rejected at parse time by
+     * {@code TypeBuilder.validateExceptionClass}, so this check trusts those classes to load.
+     */
+    private String checkErrorTypeSourceAccessors(List<ErrorType> mappedErrorTypes) {
+        for (ErrorType errorType : mappedErrorTypes) {
+            var sdlType = ctx.schema.getType(errorType.name());
+            if (!(sdlType instanceof GraphQLObjectType errorObj)) {
+                continue;
+            }
+            var extraFields = errorObj.getFieldDefinitions().stream()
+                .filter(f -> !"path".equals(f.getName()) && !"message".equals(f.getName()))
+                .toList();
+            if (extraFields.isEmpty()) {
+                continue;
+            }
+            for (var handler : errorType.handlers()) {
+                Class<?> sourceClass = resolveHandlerSourceClass(handler);
+                if (sourceClass == null) {
+                    continue;
+                }
+                for (var sdlField : extraFields) {
+                    var expectedReturn = mapGraphQLTypeToReflectType(sdlField.getType());
+                    var resolution = ClassAccessorResolver.resolve(
+                        sourceClass,
+                        sdlField.getName(),
+                        expectedReturn,
+                        new ClassAccessorResolver.PerArgument(java.util.List.of()),
+                        ClassAccessorResolver.CandidateOrder.POJO_FIRST);
+                    if (resolution instanceof AccessorResolution.Rejected r) {
+                        return "@error type '" + errorType.name() + "' field '"
+                            + sdlField.getName() + "' cannot be populated from handler "
+                            + describeHandler(handler) + " source class '"
+                            + sourceClass.getName() + "': " + r.reason();
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The runtime source class for an {@code @error} {@link ErrorType.Handler} variant. Returns
+     * {@code null} when the source class cannot be loaded on the codegen classloader (a
+     * {@code GENERIC} className would have been rejected at parse time by
+     * {@code TypeBuilder.validateExceptionClass}, so this path is only reached for the
+     * fixed-FQN cases where a missing class indicates a broken classifier classpath).
+     */
+    private Class<?> resolveHandlerSourceClass(ErrorType.Handler handler) {
+        String fqn = switch (handler) {
+            case ErrorType.ExceptionHandler eh -> eh.exceptionClassName();
+            case ErrorType.SqlStateHandler ignored -> "java.sql.SQLException";
+            case ErrorType.VendorCodeHandler ignored -> "java.sql.SQLException";
+            case ErrorType.ValidationHandler ignored -> "graphql.GraphQLError";
+        };
+        try {
+            return Class.forName(fqn, false, ctx.codegenLoader());
+        } catch (ClassNotFoundException e) {
+            return null;
+        }
+    }
+
+    /** Short fingerprint for a {@link ErrorType.Handler} used in reject reasons. */
+    private static String describeHandler(ErrorType.Handler handler) {
+        return switch (handler) {
+            case ErrorType.ExceptionHandler eh -> "{handler: GENERIC, className: \""
+                + eh.exceptionClassName() + "\"}";
+            case ErrorType.SqlStateHandler sh -> "{handler: DATABASE, sqlState: \""
+                + sh.sqlState() + "\"}";
+            case ErrorType.VendorCodeHandler vh -> "{handler: DATABASE, code: \""
+                + vh.vendorCode() + "\"}";
+            case ErrorType.ValidationHandler ignored -> "{handler: VALIDATION}";
+        };
     }
 
     /**
