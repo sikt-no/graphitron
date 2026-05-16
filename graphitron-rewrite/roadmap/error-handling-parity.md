@@ -380,24 +380,51 @@ rest of R12 is orthogonal.
 
 *Independent:*
 
-- **Carrier-walk `ErrorChannelRole` wiring (unblocks R161).** *Not gated.*
-  `BuildContext.classifyCarrierField` (`BuildContext.java:862-913`) has no
-  producer for the `CarrierFieldRole.ErrorChannelRole` permit. Wrappers
-  shaped `{ data: X, errors: [SomeError!] }` reject at the `NoPermit` arm
-  because the `errors` field classifies to nothing. R161 needs that shape
-  to admit so it can route `@record`-returning DML through the carrier walk
-  and retire `DmlReturnExpression.Payload`.
+- **Carrier-walk `ErrorChannelRole` wiring (unblocks R161): landed.**
+  Phase A split `ErrorChannel` into a sealed `PayloadClass | LocalContext`
+  pair (eb590ef); Phase B added the `Transport` discriminator on
+  `ChildField.ErrorsField` (c8731c9); Phase C wired the producer and emit
+  paths across five build-green increments (676ff72, 04799b8, d7d1c55,
+  9cce63f, a96766d). Validator mirror landed at 093779c. Execute-tier
+  testing surfaced a runtime bug in the original `data(null)` design
+  (graphql-java's `completeValueForObject` skips children on a null parent
+  value, so the carrier rendered as `{carrier: null}` rather than
+  traversing to the errors field); the fix threads a typed
+  `P sentinel` through `ErrorRouter.dispatchToLocalContext` (f3ddcd426). The
+  validator allow-list's reverse link to each null-source-guarded emitter
+  arm in `FetcherEmitter` landed at b87eeb8 as
+  `@DependsOnClassifierCheck(key = "error-channel.local-context-transport")`
+  annotations the audit harness scans. The narrative below is the design
+  reference, not pending work.
+
+  *Original framing.* `BuildContext.classifyCarrierField` had no producer
+  for the `CarrierFieldRole.ErrorChannelRole` permit. Wrappers shaped
+  `{ data: X, errors: [SomeError!] }` rejected at the `NoPermit` arm
+  because the `errors` field classified to nothing. R161 needed that shape
+  to admit so it could route `@record`-returning DML through the carrier
+  walk and retire `DmlReturnExpression.Payload`.
 
   *Source-value contract.* The catch path uses graphql-java's
   `DataFetcherResult.localContext` to ferry errors out of band. Success
   emits `DataFetcherResult.<RecordN<PK>>newResult().data(pkRecord).build()`
-  as today; the catch arm emits `data(null).localContext(errorsList).build()`
-  with the same value type. `SingleRecordTableField`'s source-cast contract
-  at `FetcherEmitter.java:269,272` and the null-source guard at
-  `FetcherEmitter.java:273` (`if (source == null) return null;`) handle the
-  catch case as-is: the follow-up SELECT short-circuits, the data field
-  renders null, and the errors field reads errors out of localContext. No
-  developer payload class is consulted on the catch path.
+  as today; the catch arm emits
+  `data(sentinel).localContext(errorsList).build()` where `sentinel` is a
+  non-null structurally-valid source whose every column is null —
+  `DSL.using(SQLDialect.DEFAULT).newRecord(<pk fields>)` for the single-record
+  arm, `DSL.using(SQLDialect.DEFAULT).newResult(<pk fields>)` for the bulk
+  arm. The non-null source is load-bearing: graphql-java's
+  `completeValueForObject` short-circuits children on a null parent value, so
+  `data(null)` would prevent the carrier's `errors` field from resolving at
+  all. With the sentinel in place the carrier's children traverse; the data
+  field's emitted `if (source == null) return null;` guard at
+  `FetcherEmitter.java` (anchored on each
+  `LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS` arm by
+  `@DependsOnClassifierCheck(key = "error-channel.local-context-transport")`)
+  is the *data-side render coherence* check: the response SELECT sees null
+  PK columns, `WHERE pk = null` resolves to no row, `fetchOne()` returns
+  null, and the SDL data field renders null. The errors field reads its list
+  via `env.getLocalContext()`. No developer payload class is consulted on the
+  catch path.
 
   *Sealed `ErrorChannel`.* The record splits into a sealed type with two
   arms:
@@ -457,15 +484,22 @@ rest of R12 is orthogonal.
   `@LoadBearingClassifierCheck(key = "error-channel.local-context-transport")`
   declaring the guarantee that a carrier admitted with
   `ErrorChannel.LocalContext` has a data field whose fetcher
-  short-circuits on null source (the existing guard at
-  `FetcherEmitter.java:273`, `if (source == null) return null;`). Three
-  consumers wear matching `@DependsOnClassifierCheck`: the new
-  `ErrorRouter.dispatchToLocalContext` arm in
-  `TypeFetcherGenerator.catchArm`, the `Transport.LocalContext` arm of
-  `FetcherEmitter.dataFetcherValue` (see *Transport discriminator*
-  below), and the null-source guard itself.
-  `LoadBearingGuaranteeAuditTest` then surfaces any relaxation of the
-  producer surface as orphaned consumers, matching the precedent set by
+  short-circuits on null source. Consumers wear matching
+  `@DependsOnClassifierCheck`: `TypeFetcherGenerator.dispatchToLocalContextCatchArm`
+  (emits the `ErrorRouter.dispatchToLocalContext` call); the
+  `Transport.LocalContext` arm of `FetcherEmitter.dataFetcherValue` (emits
+  the `(env) -> env.getLocalContext()` reader); the validator mirror
+  `GraphitronSchemaValidator.validateLocalContextErrorsFieldGuards`; and the
+  four per-variant emitter sites
+  (`FetcherEmitter.buildSingleRecordTableFetcherValueRecordWrap` /
+  `...TableRecordWrap`, `buildSingleRecordIdFromReturningFetcherValue`,
+  `buildSingleRecordTableFromReturningFetcherValue`,
+  `buildSingleRecordIdentityFetcherValue`) that emit the per-variant
+  null-source-coherent shape (explicit `if (source == null) return null;`
+  guard for the three Record-cast arms; identity-passthrough lambda's
+  null-in-null-out semantic for `SingleRecordIdentityField`).
+  `LoadBearingGuaranteeAuditTest` surfaces any relaxation of the producer
+  surface as orphaned consumers, matching the precedent set by
   `error-channel.mappings-constant` (`FieldBuilder.java:1782` /
   `ErrorMappingsClassGenerator.java:49`).
 
@@ -505,10 +539,24 @@ rest of R12 is orthogonal.
   - `PayloadClass` keeps emitting `ErrorRouter.dispatch(...)` with
     `errors -> new <PayloadClass>(...)`.
   - `LocalContext` emits a new pattern that consults the channel's mapping
-    table (via a new `ErrorRouter.dispatchToLocalContext` overload) and
-    returns
-    `DataFetcherResult.<RecordN<PK>>newResult().data(null).localContext(List.of(t)).build()`
+    table (via `ErrorRouter.dispatchToLocalContext`) and returns
+    `DataFetcherResult.<RecordN<PK>>newResult().data(sentinel).localContext(List.of(t)).build()`
     on first match, falling through to `ErrorRouter.redact` on no match.
+    The `sentinel` is a non-null structurally-valid source for the carrier's
+    children, emitted at the per-fetcher catch arm from the producer's
+    known PK metadata: `singleRecordSentinelFor` /
+    `bulkRecordSentinelFor` in `TypeFetcherGenerator` produce
+    `DSL.using(SQLDialect.DEFAULT).newRecord(<pk fields>)` (single) or
+    `DSL.using(SQLDialect.DEFAULT).newResult(<pk fields>)` (bulk). The
+    sentinel's null PK columns let graphql-java traverse the carrier's
+    children while the data field's null-source / null-PK guard renders the
+    SDL data field as null naturally; without a non-null sentinel
+    graphql-java's `completeValueForObject` short-circuits the carrier and
+    the errors field never resolves. `catchArm` carries a 3-arg overload
+    that accepts the sentinel `CodeBlock` and throws on a `LocalContext`
+    callsite that passes `null` for the sentinel — a generator-internal
+    belt-and-braces around the classifier+validator pair already pinning
+    that only `LocalContext`-safe sites reach this arm.
 
   *`mappingsConstantName` for `LocalContext`.* The bare name comes from
   `SCREAMING_SNAKE(wrapperSdlTypeName)` (e.g. `FilmPayload` →
@@ -532,23 +580,40 @@ rest of R12 is orthogonal.
 
   *Test coverage.* Four tiers cover the wiring:
 
-  - *Pipeline.* A `MutationDmlRecordField` with an `ErrorChannel.LocalContext`
-    binding asserts (a) the classifier admits the wrapper, (b) the emitted
-    fetcher's catch arm builds `data(null).localContext(...)`, (c) the
-    errors-field DataFetcher reads from `env.getLocalContext()` at request
-    time, (d) the resulting `ChildField.ErrorsField` carries
-    `Transport.LocalContext` after classify (a model-level round-trip pin so
-    the discriminator-on-field invariant doesn't drift). R161's migration
-    deletes the Path-2 fixtures at `GraphitronSchemaBuilderTest.java:5973-6062`
-    and `FetcherPipelineTest.java:367,412,433`.
-  - *Validator.* A new arm-test rejects a synthesised shape where an
-    `ErrorChannel.LocalContext` binds to a data field whose fetcher cannot
-    short-circuit on null source.
-  - *Audit.* `LoadBearingGuaranteeAuditTest` picks up the
-    `error-channel.local-context-transport` producer/consumer pair
-    automatically by annotation scan.
-  - *Execute.* Sakila coverage mirrors the `MutationServiceTableField`
-    validator-integration fixture pattern.
+  - *Pipeline.* A `MutationDmlRecordField` and a `MutationBulkDmlRecordField`
+    with an `ErrorChannel.LocalContext` binding assert (a) the classifier
+    admits the wrapper with `errorChannel = Optional.of(LocalContext)`, (b)
+    the emitted fetcher's catch arm constructs the sentinel via
+    `DSL.using(SQLDialect.DEFAULT).newRecord(<pk>)` (or `newResult(<pk>)`
+    for bulk) and routes it through `ErrorRouter.dispatchToLocalContext`,
+    (c) the errors-field DataFetcher's emitted wiring reads from
+    `env.getLocalContext()` at request time, (d) the resulting
+    `ChildField.ErrorsField` carries `Transport.LocalContext` after classify
+    (a model-level round-trip pin so the discriminator-on-field invariant
+    doesn't drift). Tests live in `SingleRecordCarrierPipelineTest` under
+    the "Carrier-walk LocalContext error channel" section; R161's migration
+    deleted the Path-2 fixtures at the legacy `GraphitronSchemaBuilderTest`
+    and `FetcherPipelineTest` rows.
+  - *Validator.* `LocalContextErrorsFieldValidationTest` walks three cases
+    against `GraphitronSchemaValidator.validateLocalContextErrorsFieldGuards`:
+    a guarded sibling passes, an unguarded sibling rejects with a structural
+    error pointing at the offending allow-list shape, and a
+    `Transport.PayloadAccessor` ErrorsField with the same unguarded sibling
+    is untouched by the pass.
+  - *Audit.* `LoadBearingGuaranteeAuditTest` picks up the producer
+    (`BuildContext.classifyCarrierField`) plus all consumers
+    (`TypeFetcherGenerator.dispatchToLocalContextCatchArm`,
+    `FetcherEmitter.dataFetcherValue`, the four per-variant emitter sites,
+    and the validator-mirror method) automatically via the annotation scan.
+  - *Execute.* Sakila SDL adds `FilmCreateLocalContextPayload` (plain SDL
+    Object — no `@record`) with a `FilmCreateConstraintViolation` `@error`
+    type whose `GENERIC` handler matches
+    `org.jooq.exception.IntegrityConstraintViolationException`. The new
+    `createFilmWithErrors` mutation drives two `GraphQLQueryTest` paths:
+    valid `languageId=1` round-trips with `{film: {...}, errors: null}`;
+    `languageId=99999` trips PostgreSQL FK 23503, the catch arm routes
+    through `ErrorRouter.dispatchToLocalContext`, and the response renders
+    `{film: null, errors: [{__typename, path, message}]}`.
 
 - **Lift `errorChannel` onto child `@service` and `@tableMethod` variants:
   landed.** `ChildField.ServiceTableField` / `ChildField.ServiceRecordField`
@@ -571,9 +636,8 @@ rest of R12 is orthogonal.
   `ServiceRecordField` payload returns; the table-bound variants get the
   uniform shape so the §4 check is no longer blanket-rejecting.
 
-- **Test fixture updates for source-direct dispatch.** *Not gated.* Two
-  parts: the fixture-shape unwind (landed) and new end-to-end coverage
-  (still open).
+- **Test fixture updates for source-direct dispatch: fixture-shape unwind
+  landed; the two extra execute-tier fixtures split out to follow-ups.**
 
   *Fixture-shape unwind (landed).* `SakPayload` and `DeleteFilmPayload`
   errors slots are `List<Object>` (source-direct: the per-fetcher catch arm
@@ -587,35 +651,17 @@ rest of R12 is orthogonal.
   contract precludes a developer-supplied data class for an `@error` type
   and the existing fixture set already complies.
 
-  *Open: new end-to-end coverage.* Two new fixtures, both at sakila
-  execute-tier (the `===== R12 @error end-to-end =====` block comment in
-  `GraphQLQueryTest` explicitly defers DATABASE / VALIDATION end-to-end
-  coverage to this work; locate it by symbol search rather than line, since
-  the file churns):
-  - **Service-method-returns-domain-object shape**
-    (`ResultAssembly.Assembly` arm): a `@service` field whose method
-    returns the domain object directly, exercising the carrier-side
-    `ResultAssembly` resolution and the emitter's success-arm payload
-    construction (currently covered at unit tier in
-    `TypeFetcherGeneratorTest` only).
-  - **Validator integration** (`ValidationHandler` channel + Jakarta
-    pre-step): a `@service` mutation whose input declares Jakarta
-    constraints, an `@error` type with `{handler: VALIDATION}`, and an
-    execute-tier driver covering the violation path (constraint produces
-    a typed error via `ConstraintViolations.toGraphQLError`) and the happy
-    path. *Blocked at execute tier on
-    [`emit-input-records.md`](emit-input-records.md) (R94).* The pre-step
-    today calls `validator.validate(env.getArgument(name))`, which receives
-    a `Map<?, ?>` (or a raw scalar); neither carries Jakarta annotations,
-    so the validator returns no violations and the wire path is a no-op
-    end-to-end. R94 emits each SDL `input` type as a graphitron-internal
-    Java record under `<outputPackage>.inputs`, coerces the map at the
-    fetcher boundary, and gives the validator a real annotated bean to
-    inspect; once that seam is in place this fixture becomes a one-line
-    addition to the sakila execute-tier driver. R92 phase 3's input-side
-    `mapping.type(InputRecord.class).field(...)` chain shares the same
-    target. Pipeline-tier coverage of the emit shape is already pinned
-    (`TypeFetcherGeneratorTest:1033`, `FetcherPipelineTest:212+`).
+  *Split out to follow-up Backlog items.* Two pieces of execute-tier
+  coverage are orthogonal to the carrier-walk deliverable that closes R12
+  and have been split into independent Backlog items so R12 closes on the
+  carrier-walk story:
+  - **R169** ([`service-domain-object-execute-coverage.md`](service-domain-object-execute-coverage.md))
+    — Sakila execute-tier coverage for the `@service` `ResultAssembly.Assembly`
+    arm (method returns a domain object, not the SDL payload type). Not
+    blocked.
+  - **R170** ([`validator-integration-execute-coverage.md`](validator-integration-execute-coverage.md))
+    — Sakila execute-tier coverage for the `ValidationHandler` channel and
+    the Jakarta pre-step. Blocked on R94 (`emit-input-records`).
 - Resolve `mappingsConstantName` collision suffix at classify time
   (subsumes the standalone §3 hash-suffix dedup follow-up): **landed**.
   The per-field classifier (`FieldBuilder.resolveErrorChannel`) stamps every
