@@ -5,7 +5,7 @@ status: Backlog
 bucket: structural
 priority: 3
 theme: structural-refactor
-depends-on: [unify-record-dml-on-carrier-walk]
+depends-on: []
 created: 2026-05-14
 last-updated: 2026-05-15
 ---
