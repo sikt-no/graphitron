@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R39` | Validate that list fields on tables without a PK require explicit ordering | In Review | 2026-05-16 | [plan](validate-list-fields-require-ordering.md) |
-| `R161` | Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | Ready | 2026-05-16 <sub>created 2026-05-13</sub> | [plan](unify-record-dml-on-carrier-walk.md) |
+| `R161` | Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path <sub>blocked by: [error-handling-parity](error-handling-parity.md)</sub> | In Progress | 2026-05-16 <sub>created 2026-05-13</sub> | [plan](unify-record-dml-on-carrier-walk.md) |
 | `R158` | Admit @service-backed producers for single-record DML carrier data fields | In Review | 2026-05-15 <sub>created 2026-05-13</sub> | [plan](carrier-data-field-values-join-unify.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
 | `R167` | Unify schema file extension handling between schemaInputs and graphitron:dev | In Review | 2026-05-15 | [plan](schema-file-extensions-config.md) |
@@ -140,7 +140,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### mutations-errors
 
 - `R158` [**Admit @service-backed producers for single-record DML carrier data fields**](carrier-data-field-values-join-unify.md) — In Review, structural
-- `R161` [**Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path**](unify-record-dml-on-carrier-walk.md) — Ready, structural, blocked by [error-handling-parity](error-handling-parity.md)
+- `R161` [**Retire DmlReturnExpression.Payload: unify @record-returning DML on the carrier-walk path**](unify-record-dml-on-carrier-walk.md) — In Progress, structural, blocked by [error-handling-parity](error-handling-parity.md)
 - `R162` [**Consolidate MutationField permits under verb-on-permit-identity**](mutation-result-field-sealed-on-kind.md) — Backlog, structural, blocked by [unify-record-dml-on-carrier-walk](unify-record-dml-on-carrier-walk.md)
 - `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture
 - `R12` [**Error-handling parity: emit per-fetcher error channels from `@error`**](error-handling-parity.md) — In Progress, architecture
