@@ -4255,6 +4255,97 @@ class GraphQLQueryTest {
         payload.extractingByKey("errors", as(LIST)).isEmpty();
     }
 
+    // ===== R12 + R161 carrier-walk DML LocalContext error channel end-to-end =====
+    //
+    // Mirrors the @service-backed submitFilmReview tests on the DML pillar. The
+    // createFilmWithErrors mutation classifies as MutationDmlRecordField (R161's widening admits
+    // ResultType carriers) with errorChannel = Optional.of(ErrorChannel.LocalContext) (R12 Phase
+    // C's carrier-walk ErrorChannelRole admission). The catch arm dispatches through
+    // ErrorRouter.dispatchToLocalContext, which packs the matched throwable into
+    // env.getLocalContext() as a single-element list and returns data: null; the carrier's
+    // errors field reads that list back via env.getLocalContext(), and the data field (Film)
+    // short-circuits on the null source so the SDL response renders { film: null, errors: [{
+    // __typename, path, message }] }.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmWithErrors_validLanguage_returnsHappyPathPayload() {
+        // Happy path: valid language_id round-trips through the carrier-walk DML fetcher. The
+        // catch arm doesn't fire; the data field's follow-up SELECT projects the inserted row.
+        // errors slot resolves to an empty list (graphql-java treats absent localContext as
+        // null and the SDL-level errors-field resolver returns []). Confirms the LocalContext
+        // wiring doesn't perturb non-error returns.
+        String title = "R12-LC-HAPPY-" + java.util.UUID.randomUUID();
+        try {
+            var rawResult = executeRaw("""
+                mutation {
+                    createFilmWithErrors(in: { title: "%s", languageId: 1 }) {
+                        film { filmId title languageId }
+                        errors { __typename }
+                    }
+                }
+                """.formatted(title));
+            assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+            Map<String, Object> data = rawResult.getData();
+            var payload = assertThat(data).extractingByKey("createFilmWithErrors", as(MAP));
+            payload.extractingByKey("film", as(MAP))
+                .containsEntry("title", title)
+                .containsEntry("languageId", 1);
+            // graphql-java renders an absent localContext as null for the nullable
+            // [FilmCreateError] list; on the happy path no exception fires, so localContext is
+            // never set.
+            payload.containsEntry("errors", null);
+        } finally {
+            // Inserted rows would otherwise drift the totalCount / ordering assertions in the
+            // sibling films-connection tests against the seeded Sakila set.
+            dsl.deleteFrom(DSL.table("film"))
+                .where(DSL.field("title", String.class).eq(title))
+                .execute();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmWithErrors_invalidLanguageId_routesThroughLocalContextErrorChannel() {
+        // Invalid FK reference: language_id 99999 doesn't exist in `language`. PostgreSQL raises
+        // SQLSTATE 23503 (foreign_key_violation); jOOQ surfaces it as
+        // org.jooq.exception.IntegrityConstraintViolationException, which the @error
+        // GENERIC-handler mapping on FilmCreateConstraintViolation matches.
+        // ErrorRouter.dispatchToLocalContext packs the throwable into env.getLocalContext();
+        // the data field (Film) short-circuits on the null source and the errors field reads the
+        // list back. graphql-java's source-class TypeResolver dispatches the union arm.
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                createFilmWithErrors(in: { title: "R12-LC-FK-ERR", languageId: 99999 }) {
+                    film { title }
+                    errors {
+                        __typename
+                        ... on FilmCreateConstraintViolation { path message }
+                    }
+                }
+            }
+            """);
+        // No top-level errors: the catch arm produced a DataFetcherResult; the field error
+        // surfaces inside `data.createFilmWithErrors.errors` instead.
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var payload = assertThat(data).extractingByKey("createFilmWithErrors", as(MAP));
+        payload.containsEntry("film", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmCreateConstraintViolation");
+        // Path follows the same convention as the @service mutation tests: full coordinate path
+        // through the union element.
+        only.extractingByKey("path", as(LIST))
+            .containsExactly("createFilmWithErrors", "errors", "0", "path");
+        // Message routes through Throwable.getMessage(); jOOQ wraps the PG message which names
+        // the violated FK constraint. Liberal contains() check insulates against PG-version
+        // formatting drift.
+        only.extractingByKey("message", as(STRING))
+            .containsIgnoringCase("foreign key");
+    }
+
     // ===== R154 mutable-bean payload shape end-to-end =====
     //
     // submitSetterShapeFilmReview returns a SetterShapeFilmReviewPayload (no-arg ctor +

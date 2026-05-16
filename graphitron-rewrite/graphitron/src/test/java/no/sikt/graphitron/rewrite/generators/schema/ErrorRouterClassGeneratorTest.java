@@ -127,9 +127,12 @@ class ErrorRouterClassGeneratorTest {
         var router = generate();
         var dispatch = method(router, "dispatchToLocalContext");
         assertThat(dispatch.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        // The sentinel parameter is a non-null structurally-valid source for the carrier's
+        // children — required because graphql-java's completeValueForObject skips children
+        // on a null parent value (so data: null would never render the errors field).
         assertThat(dispatch.parameters()).extracting(p -> p.name())
-            .containsExactly("thrown", "mappings", "env");
-        // Generic on P; returns DataFetcherResult<P> (data=null, localContext carries errors).
+            .containsExactly("thrown", "mappings", "env", "sentinel");
+        // Generic on P; returns DataFetcherResult<P> (data=sentinel, localContext carries errors).
         assertThat(dispatch.returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<P>");
     }
@@ -139,8 +142,8 @@ class ErrorRouterClassGeneratorTest {
         var router = generate();
         var dispatch = method(router, "dispatchToLocalContext");
         String body = dispatch.code().toString();
-        // Matched arm: data(null).localContext(List.of(t)).build()
-        assertThat(body).contains("data(null)");
+        // Matched arm: data(sentinel).localContext(List.of(t)).build()
+        assertThat(body).contains("data(sentinel)");
         assertThat(body).contains("localContext");
         assertThat(body).contains("mapping.match(t)");
         // Unmatched arm: redact(thrown, env)

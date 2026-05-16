@@ -380,14 +380,23 @@ public final class ErrorRouterClassGenerator {
             .addParameter(THROWABLE, "thrown")
             .addParameter(mappingArray, "mappings")
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(typeP, "sentinel")
             .addJavadoc("Channel-mapped dispatch on the carrier-walk catch path. For each mapping in\n"
                 + "source-declaration order, walks the cause chain outermost-first; the first match\n"
-                + "returns a {@code DataFetcherResult} with {@code data=null} and the matched\n"
-                + "{@code Throwable} placed into {@code localContext} as a single-element list. The\n"
-                + "carrier's errors-field DataFetcher reads that list via {@code env.getLocalContext()}\n"
-                + "and feeds graphql-java's {@code PropertyDataFetcher}s for the declared\n"
-                + "{@code @error} fields. The data field's fetcher short-circuits on the null source\n"
-                + "(the existing {@code if (source == null) return null;} guard).\n"
+                + "returns a {@code DataFetcherResult} whose data is the caller-supplied non-null\n"
+                + "{@code sentinel} and whose {@code localContext} carries the matched\n"
+                + "{@code Throwable} as a single-element list. The non-null sentinel is required\n"
+                + "because graphql-java's {@code completeValueForObject} short-circuits on a null\n"
+                + "field value: returning {@code data=null} would prevent the carrier's children\n"
+                + "from being fetched at all, so the {@code errors} field would never resolve. The\n"
+                + "sentinel must be a structurally-valid source for the carrier's children but\n"
+                + "carry null content (typically a jOOQ {@code Record1}/{@code Result} with all\n"
+                + "fields null), so the data field's null-source guard renders the SDL response as\n"
+                + "{@code data: null}.\n"
+                + "\n"
+                + "<p>The carrier's errors-field DataFetcher reads the throwable list via\n"
+                + "{@code env.getLocalContext()} and feeds graphql-java's {@code PropertyDataFetcher}s\n"
+                + "for the declared {@code @error} fields.\n"
                 + "\n"
                 + "<p>Falls through to {@link #redact} on no match: the privacy contract is the same\n"
                 + "as the no-channel disposition.\n"
@@ -399,7 +408,7 @@ public final class ErrorRouterClassGenerator {
             .beginControlFlow("for ($T mapping : mappings)", mapping)
             .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
             .beginControlFlow("if (mapping.match(t))")
-            .addStatement("return $T.<P>newResult().data(null).localContext($T.of(t)).build()",
+            .addStatement("return $T.<P>newResult().data(sentinel).localContext($T.of(t)).build()",
                 DATA_FETCHER_RESULT, LIST_CN)
             .endControlFlow()
             .endControlFlow()
