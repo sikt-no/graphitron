@@ -5,7 +5,7 @@ status: Backlog
 bucket: cleanup
 priority: 7
 theme: docs
-depends-on: [docs-site-asciidoc]
+depends-on: []
 ---
 
 # Annotated walkthrough of a generated file

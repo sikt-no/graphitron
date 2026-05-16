@@ -85,7 +85,7 @@ type FilmCardWrapper @record(record: {className: "com.example.services.FilmCardD
 * `argMapping:` on the `reference` is structurally inert and rejected at parse time. `@externalField` consumes no GraphQL-argument-bound parameters.
 * The static method must return `Field<T>` where `T` matches the GraphQL scalar, or one of the lift forms (`Field<TableRecord<?>>`, `Field<CustomJavaRecord>`) when the field's GraphQL type is an xref:record.adoc[`@record`].
 * `className:` must be a fully-qualified class name reachable on the rewrite Maven plugin's classpath (declare the carrying artifact under `<dependencies>` of the plugin's `<plugin>` block). Reflection failures surface as `external field reference could not be resolved — <reflection error>`.
-* Combining `@externalField` with a `@reference` path (the condition-join lift form) is not yet supported, the build rejects this with a deferred-validation error pointing at the `computed-field-with-reference.md` roadmap item.
+* Combining `@externalField` with a `@reference` path (the condition-join lift form) is not yet supported; the build rejects this with a deferred-validation error.
 
 == See also
 
