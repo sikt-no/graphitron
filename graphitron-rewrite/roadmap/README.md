@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
-| `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec |  | [plan](emit-input-records.md) |
+| `R94` | Emit SDL input types as graphitron-internal Java records (validation target) | Spec |  | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
@@ -136,7 +136,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R162` [**Consolidate MutationField permits under verb-on-permit-identity**](mutation-result-field-sealed-on-kind.md) — Backlog, structural
 - `R169` [**Sakila execute-tier fixture for the @service domain-object payload-assembly arm**](service-domain-object-execute-coverage.md) — Backlog, testing
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R94-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing, blocked by [emit-input-records](emit-input-records.md)
-- `R94` [**Emit SDL input types as graphitron-internal Java records (validation seam)**](emit-input-records.md) — Spec, architecture
+- `R94` [**Emit SDL input types as graphitron-internal Java records (validation target)**](emit-input-records.md) — Spec, architecture
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
 - `R63` [**Type UPSERT dialect requirement on the model**](dml-dialect-requirement-on-model.md) — Spec, architecture
 - `R122` [**Compound mutations: parent entity row + child normalised rows in one INSERT**](compound-entity-mutations.md) — Backlog, architecture
