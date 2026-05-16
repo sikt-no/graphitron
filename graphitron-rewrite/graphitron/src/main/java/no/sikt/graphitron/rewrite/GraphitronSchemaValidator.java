@@ -150,10 +150,15 @@ public class GraphitronSchemaValidator {
      *
      * <p>Gated on {@link FieldWrapper.List} (not {@link FieldWrapper#isList()}, which also covers
      * connections) so the message stays disjoint from {@link #validatePaginationRequiresOrdering}
-     * — connections always carry pagination and are caught there.
+     * — connections always carry pagination and are caught there. Excludes permits bearing
+     * {@link no.sikt.graphitron.rewrite.model.OrderingOwnedByProducer}: those (carrier-walk
+     * data fields and {@code @service}-backed child fields) have an upstream producer that
+     * determines visible result ordering, so the "list-shaped + {@code None}" signal does not
+     * imply non-determinism for them.
      */
     private void validateListRequiresOrdering(GraphitronField field, List<ValidationError> errors) {
         if (field instanceof SqlGeneratingField sgf
+                && !(field instanceof no.sikt.graphitron.rewrite.model.OrderingOwnedByProducer)
                 && sgf.returnType().wrapper() instanceof FieldWrapper.List
                 && sgf.orderBy() instanceof OrderBySpec.None) {
             errors.add(new ValidationError(

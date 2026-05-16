@@ -67,9 +67,24 @@ guarantees no fourth case slips through.
 
 ## Implementation
 
-Two files.
+Three files.
 
-1. `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java`:
+1. *New marker:*
+`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/OrderingOwnedByProducer.java`.
+
+- Sealed marker capability `OrderingOwnedByProducer` permitting
+  `ChildField.SingleRecordTableField` and `ChildField.ServiceTableField`. The contract: "the
+  visible result ordering of this field is owned by an upstream producer, not by the field's
+  own `orderBy()` component." For `SingleRecordTableField` the producer is the
+  `FetcherEmitter` PK-keyed-map walk that re-orders the response SELECT to the upstream
+  source list (`FetcherEmitter.java:512-557`); for `ServiceTableField` the producer is the
+  developer's `@service` method, whose return is forwarded verbatim with no follow-up SELECT
+  (`TypeFetcherGenerator.buildServiceRowsMethod`, line 4238). Sealed so a future permit with
+  the same semantics must opt in deliberately — find-usages from either permit lands on the
+  validator's exclusion below.
+
+2. *Validator:*
+`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java`.
 
 - Add a new `validateListRequiresOrdering(GraphitronField field, List<ValidationError> errors)`
   method modelled on `validatePaginationRequiresOrdering` (same file, lines 129–140). Body:
@@ -77,6 +92,7 @@ Two files.
   [source,java]
   ----
   if (field instanceof SqlGeneratingField sgf
+          && !(field instanceof OrderingOwnedByProducer)
           && sgf.returnType().wrapper() instanceof FieldWrapper.List
           && sgf.orderBy() instanceof OrderBySpec.None) {
       errors.add(new ValidationError(
@@ -92,26 +108,48 @@ Two files.
   site at `GraphitronSchemaValidator.java:120`). Order in the file is "pagination check → list
   check → variant-implemented check".
 
-2. `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ChildField.java`:
+3. *Marker implementations:*
+`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ChildField.java`.
 
-- Replace `SingleRecordTableField.orderBy()`'s hard-coded `OrderBySpec.None` override
-  (`ChildField.java:74`) with a PK-derived default computed from `sourceKey.columns()`. When the
-  source-key carries PK columns, return `Fixed([pk ASC])`; only when the target is genuinely
-  unkeyed does the override fall back to `None`. This brings the carrier permit in line with the
-  "schema with no explicit ordering implies PK ordering" default that
-  `OrderByResolver.resolveDefaultOrderSpec` already applies to every other SQL-generating field.
-  The carrier emitter (`FetcherEmitter.buildSingleRecordTableFetcherValueTableRecordWrap`,
-  `FetcherEmitter.java:451`) does not consume `orderBy()`, so the generated SQL is unchanged
-  and the visible result ordering — driven by the upstream source list via the PK-keyed-map
-  walk at `FetcherEmitter.java:512-557` — is preserved bit-for-bit. Without this change, R141 /
-  R158 carrier data fields would falsely classify as "non-deterministic list" and trip the
-  validator despite the walk owning ordering.
+- `SingleRecordTableField` adds `implements ... OrderingOwnedByProducer`. Its existing
+  hard-coded `orderBy() = OrderBySpec.None` override stays — the marker, not a synthetic
+  PK-derived value, is what tells the validator the permit owns its own ordering. Doc-comment
+  refresh: pair the "structurally empty" framing with a pointer to the marker so a reader
+  arriving from either direction sees the coupling.
+- `ServiceTableField` adds `implements ... OrderingOwnedByProducer` to its existing capabilities
+  list. The record itself is unchanged structurally — the `orderBy` component still exists and
+  still carries whatever the `FieldBuilder` construction sites pass it (today: always
+  `OrderBySpec.None`, because `OrderByResolver` is not invoked at those sites). The marker
+  re-classifies the type-level "this permit is exempt from the list-ordering check"; the
+  remediation message stays accurate for everywhere else.
 
 No changes to `OrderByResolver`, `FieldBuilder`, the carrier emitter, or any other generator.
 The validator is a build-time gate; resolver behaviour stays as documented in
 `OrderByResolver.java:132` (returns `OrderBySpec.None` when no `@defaultOrder` and no PK), and
 the validator now rejects schemas that would reach that branch on a list-returning field that
-does not own its own ordering.
+does not bear the `OrderingOwnedByProducer` marker.
+
+### Why a marker, not a derived `orderBy()` value
+
+An earlier draft of this item had `SingleRecordTableField.orderBy()` compute a PK-fixed
+default from `sourceKey.columns()` so the validator's "list + `None`" predicate didn't trip
+on the carrier. That approach has two problems flagged by the principles-architect self-check:
+
+- The PK-default projection duplicates `OrderByResolver.resolveDefaultOrderSpec`'s no-directive
+  branch (same shape, different inputs, written by two different bodies). Two consumers
+  evaluating the same predicate is the principle's "the branch belongs in the model"
+  invitation; if either drifts, the validator's correctness drifts with it.
+- The validator's correctness depended on the model derivation's invariant
+  ({code}`sourceKey.columns()` is non-empty for any constructible `SingleRecordTableField`),
+  which is itself a classifier guarantee from {code}`FieldBuilder.java:3175`. Three files
+  coupled by an invariant that none of them name. A future producer of the permit with an
+  empty source-key — perfectly legal at the type level — would surface as a misleading
+  "add a primary key" rejection in the validator.
+
+The marker interface moves the carrier-walk exemption into the type system, where
+{code}`ServiceTableField`'s same-semantics exemption lives naturally beside it, and the
+validator predicate becomes self-contained ("list-shaped and unorderable AND no producer owns
+ordering"). One axis, one site, sealed so additions are deliberate.
 
 ### Relationship to `@LoadBearingClassifierCheck`
 
@@ -132,6 +170,13 @@ The principle explicitly permits this ("Producers without consumers are allowed:
 classifier checks reject shapes for hygiene rather than because an emitter relies on them").
 A future cleanup that tightens the defensive emitter arms into load-bearing assumptions is
 the natural moment to add the annotation pair; that cleanup is out of scope here.
+
+The `OrderingOwnedByProducer` marker is sealed and the validator's exclusion is a direct
+{code}`instanceof` against it: the validator's correctness does not depend on a classifier
+guarantee about any permit's internal shape (e.g. whether `SingleRecordTableField`'s
+`sourceKey.columns()` is non-empty). Find-usages from either permit lands directly on the
+validator site, and adding a new permit to the marker's permits list is the explicit
+deliberation point.
 
 ## Tests
 
@@ -162,6 +207,15 @@ Cases to add:
 - A child-position list `TableField` on a no-PK table: expect the new error. Mirrors the
   child-field side of the same gap.
 
+The `OrderingOwnedByProducer` marker exemption (carrier-walk / `@service` patterns) is
+exercised end-to-end by the existing R141 / R158 sakila-example fixtures (`FilmsPayload`,
+`FilmsServicePayload`, `FilmActorsServicePayload`): each declares a list-shaped data field
+with no `@defaultOrder`, the validator must admit them, and their execution-tier tests in
+`graphitron-sakila-example` would fail downstream if the marker were removed or the validator
+predicate broadened. A dedicated unit case is not added: marker membership is sealed and the
+{code}`instanceof OrderingOwnedByProducer` exclusion is a one-line predicate that does not
+benefit from leaf-specific unit cases.
+
 The new error string deliberately differs from the pagination error so failures point the
 author at the right remediation (PK vs `@orderBy`).
 
@@ -186,16 +240,11 @@ field"; it pins both the classifier/validator wiring and the error-message contr
 ## Non-goals
 
 - Requiring ordering on single-value fields (ordering is a no-op there).
-- Requiring ordering on `@service`, `@tableMethod`, or other fields where the developer's
-  method owns the result set and Graphitron doesn't generate the SQL. Most such permits
-  (`ServiceRecordField`, `TableMethodField`, …) do not implement `SqlGeneratingField`, so the
-  cast in the new check excludes them by type. The permits that *do* implement
-  `SqlGeneratingField` while still carrying the "result set is owned upstream" semantics
-  (today: `SingleRecordTableField`, the R141 bulk-DML and R158 service-carrier data field) keep
-  their PK-derived default ordering computed from `sourceKey.columns()` rather than the
-  hard-coded `None` they used to return; the carrier emitter's PK-keyed-map walk still owns
-  the visible result ordering, so the SQL is unchanged and the visible order matches the
-  upstream source list either way.
+- Requiring ordering on fields where the visible result order is owned by an upstream
+  producer (the carrier-walk and `@service`-method patterns). Permits opt into the
+  `OrderingOwnedByProducer` sealed marker; the validator excludes them by type. Permits that
+  decline `SqlGeneratingField` entirely (`ServiceRecordField`, `TableMethodField`, the
+  carrier-as-returning siblings) are excluded by the cast and need no marker.
 - Changing `OrderByResolver` to refuse to produce `OrderBySpec.None`. The resolver's contract
   (total projection over all classified shapes) stays intact; the validator is the right
   layer for "this shape is legal in the model but illegal as authored schema."
