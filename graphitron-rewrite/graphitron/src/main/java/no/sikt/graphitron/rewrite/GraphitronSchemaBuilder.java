@@ -228,17 +228,15 @@ public class GraphitronSchemaBuilder {
                 // R161: the carrier-walk admission was widened so the className-carrying arms
                 // (Backed / JavaRecordType / JooqRecordType / JooqTableRecordType) route through
                 // MutationDmlRecordField at mutation-classification time. The type-level
-                // early-return here stays narrowly scoped to NoBacking carriers — the
-                // className-carrying arms have developer-supplied classes whose per-field
-                // accessor-resolution semantics (R88) must run; the mutation classifier's
+                // short-circuit fires only on Ok.NoBacking — the model sub-arm where there is no
+                // developer class for R88's per-field accessor-resolution pass to inspect.
+                // Ok.ClassBacked falls through to normal per-type classification so R88
+                // diagnostics surface on developer-supplied classes; the mutation classifier's
                 // producer-site helpers (registerDmlCarrierDataField / registerServiceCarrier
                 // DataField) reclassify the data field via compare-then-write when the carrier
-                // is used as a DML or @service return. A carrier walk Ok for a className-arm
-                // type used in non-mutation context (e.g. Query.result: TestType) flows through
-                // normal classification, surfacing R88 diagnostics on its fields.
-                if (parentType instanceof no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType.NoBacking
-                        && ctx.tryResolveSingleRecordCarrier(objType.getName())
-                            instanceof SingleRecordCarrierResolution.Ok ok) {
+                // is used as a DML or @service return.
+                if (ctx.tryResolveSingleRecordCarrier(objType.getName())
+                        instanceof SingleRecordCarrierResolution.Ok.NoBacking ok) {
                     registerCarrierDataField(ctx, objType, ok.shape());
                     // R12: walk the carrier's non-data-channel fields (ErrorChannelRole today)
                     // through the normal per-field classifier so liftToErrorsField materialises

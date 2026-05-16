@@ -586,7 +586,18 @@ class BuildContext {
                 + " DataChannel-shaped fields; require exactly one (a future Backlog item may "
                 + "admit multi-data carriers behind a new CarrierFieldRole permit)");
         }
-        return new SingleRecordCarrierResolution.Ok(new SingleRecordCarrierShape(typeName, roles));
+        var shape = new SingleRecordCarrierShape(typeName, roles);
+        // The sub-arm tag carries the carrier-class-category fork into the model rather than
+        // forcing each consumer to re-classify the parent GraphitronType arm. ClassBacked
+        // covers every ResultType arm with a developer-supplied className (Backed,
+        // JavaRecordType, JooqRecordType, JooqTableRecordType); NoBacking covers
+        // PlainObjectType (pre-promotion) and PojoResultType.NoBacking (post-promotion).
+        // The split is the model-side counterpart to the R161 candidate-set widening.
+        boolean classBacked = target instanceof GraphitronType.ResultType
+            && !(target instanceof GraphitronType.PojoResultType.NoBacking);
+        return classBacked
+            ? new SingleRecordCarrierResolution.Ok.ClassBacked(shape)
+            : new SingleRecordCarrierResolution.Ok.NoBacking(shape);
     }
 
     /**
