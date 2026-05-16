@@ -48,10 +48,15 @@ public sealed interface ChildField extends GraphitronField
      * (DML mutation producer) or {@link SourceKey.Wrap.TableRecord} whose {@code className}
      * matches {@code target.recordClass()} ({@code @service} carrier-payload producer).
      * {@link #joinPath()},
-     * {@link #filters()}, {@link #orderBy()}, and {@link #pagination()} are structurally empty/None
-     * for this permit (no navigation, no WHERE, no ordering, no pagination); accessor methods return
-     * empty/{@code None}/{@code null} rather than storing the values, encoding the invariant in the
-     * type system per the "narrow component types" principle.
+     * {@link #filters()}, and {@link #pagination()} are structurally empty/None for this permit
+     * (no navigation, no WHERE, no pagination); accessor methods return empty/{@code null} rather
+     * than storing the values, encoding the invariant in the type system per the "narrow component
+     * types" principle. {@link #orderBy()} likewise has no record component, but derives the
+     * "schema with no explicit ordering implies PK ordering" default from
+     * {@code sourceKey.columns()} so the validator's cross-cutting list-requires-ordering check
+     * lines up with the resolver-side default ordering produced by
+     * {@code OrderByResolver.resolveDefaultOrderSpec}; the {@code FetcherEmitter} carrier walk
+     * still owns the visible result ordering by re-keying the response SELECT to the source list.
      */
     record SingleRecordTableField(
         String parentTypeName,
@@ -71,7 +76,27 @@ public sealed interface ChildField extends GraphitronField
 
         @Override public List<JoinStep> joinPath() { return List.of(); }
         @Override public List<WhereFilter> filters() { return List.of(); }
-        @Override public OrderBySpec orderBy() { return new OrderBySpec.None(); }
+        /**
+         * Derives the default ordering from the source-key's PK columns when the target has a
+         * primary key; falls back to {@link OrderBySpec.None} only when the target is genuinely
+         * unkeyed. The {@code FetcherEmitter} carrier walk does not consume this value (it
+         * re-orders the response SELECT to match the upstream source list via a PK-keyed map),
+         * so the visible result order is unchanged either way. The PK-derived value is exposed
+         * so that {@code GraphitronSchemaValidator.validateListRequiresOrdering} sees the same
+         * "schema with no explicit ordering implies PK ordering" default that
+         * {@code OrderByResolver.resolveDefaultOrderSpec} applies to every other SQL-generating
+         * field; without it, list-shaped carriers would falsely classify as "non-deterministic
+         * list" and trip the validator despite the walk owning ordering.
+         */
+        @Override public OrderBySpec orderBy() {
+            var pkCols = sourceKey.columns();
+            if (pkCols.isEmpty()) return new OrderBySpec.None();
+            return new OrderBySpec.Fixed(
+                pkCols.stream()
+                    .map(c -> new OrderBySpec.ColumnOrderEntry(c, null))
+                    .toList(),
+                "ASC");
+        }
         @Override public PaginationSpec pagination() { return null; }
     }
 
