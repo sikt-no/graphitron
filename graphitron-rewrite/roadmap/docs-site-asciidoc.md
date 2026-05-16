@@ -1,11 +1,12 @@
 ---
 id: R9
-title: "Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages)"
-status: In Progress
+title: Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages)
+status: In Review
 bucket: architecture
 priority: 20
 theme: docs
 depends-on: []
+last-updated: 2026-05-16
 ---
 
 # Plan: AsciiDoc docs site, built by Maven, published via GitHub Pages
@@ -378,45 +379,13 @@ Out-of-scope per the original plan: `integrasjonstester` (Norwegian-only, not li
 
 `roadmap-tool` got a new `render-adoc <roadmap-dir> <output-dir>` subcommand emitting `index.adoc` (status board), `by-theme.adoc`, `changelog.adoc`, and `plans/<slug>.adoc` (one per Active or Backlog item, attribute box plus mechanically-converted markdown body). Per-plan pages use `:doctype: book` to absorb source markdown's looser heading-level discipline; the body converter normalises ordered-list markers and rewrites cross-tree links so plans link cleanly to architecture pages and sibling plans. `/docs/pom.xml` adds a reactor-only `provided` dep on `graphitron-roadmap-tool` plus an `exec-maven-plugin` execution. Nav: `/docs/index.adoc` adds a Roadmap row, and `architecture/README.adoc`'s rewrite-roadmap pointer rewrites from a GitHub URL to `xref:../roadmap/index.adoc`.
 
-### Phase 5a: Cutover (custom domain flip, old infra still warm)
+### Phase 5a: Cutover (custom domain flip, old infra still warm) — shipped at `7abec54`
 
-End state: `https://graphitron.sikt.no/` serves the new Maven-built AsciiDoc site from GitHub Pages. The old Sikt K8s deployment and GitLab CI are paused but **still rebuildable** for a defined buffer window. The `alf/graphitron-landingsside` repo is **not yet** archived.
-
-Deliverables (Claude-side, in this repo):
-
-- Add `/docs/CNAME` containing `graphitron.sikt.no`.
-- Update root `README.md` to keep the "Online documentation" link (URL doesn't change).
-- Matomo decision: reattach via `<script>` injection in the AsciiDoctor template, or drop. Whatever's decided lands as part of this phase; a small follow-up roadmap item is fine if reattaching turns into more than a 5-line edit.
-
-Deliverables (Sikt platform / DNS team, coordinated, **not** Claude-driven):
-
-- Configure custom domain in repo Pages settings (Settings → Pages → Custom domain: `graphitron.sikt.no`, enforce HTTPS). Requires repo admin.
-- DNS update on `sikt.no`: `graphitron` → `sikt-no.github.io`.
-- **Pause** (don't dismantle) the GitLab CI pipeline and scale the Sikt K8s deployment to 0. Keep the manifests so a redeploy is one `kubectl apply` away.
-
-Buffer window: at least one full working week with the new site live. Watch for broken links, missing pages, regressions, Matomo data discontinuities, and any internal Sikt links that turn out to point at old-site paths the new site doesn't have.
-
-Verification: hit `https://graphitron.sikt.no/`, confirm HTTPS valid, confirm content matches Phase 4 deploy, run an external-link checker against the deployed site.
-
-**Rollback during 5a:** flip DNS back; bring K8s deployment back to its prior replica count; the old site is again serving. The new site continues to live at `sikt-no.github.io/graphitron/` while the issue is investigated.
+`https://graphitron.sikt.no/` serves the new Maven-built AsciiDoc site from GitHub Pages. Sikt platform team flipped DNS and configured the custom domain in Pages settings; the Claude-side path-prefix edit (drop `/graphitron/` from header/footer absolute URLs) shipped at `7abec54`. No `/docs/CNAME` file was added: the custom domain is configured via Pages settings, which is the standard mechanism when `actions/deploy-pages` is used. Matomo was dropped (no `<script>` injection in the AsciiDoctor template); the live site has no analytics today, which the user has not flagged as a regression.
 
 ### Phase 5b: Decommission
 
-End state: the old Sikt K8s deployment is gone, `alf/graphitron-landingsside` is archived with a README pointing here, and the cutover is irreversible-by-default.
-
-Preconditions: Phase 5a's buffer window has elapsed without rollback; site is stable; no outstanding issues attributed to the cutover.
-
-Deliverables (Sikt platform team):
-
-- Remove the K8s Deployment/Service/Ingress objects.
-- Decommission the GitLab CI pipeline.
-
-Deliverables (Claude-driven, in `alf/graphitron-landingsside`):
-
-- Add a redirect README pointing to `https://graphitron.sikt.no/`.
-- Archive the repo (a maintainer action; not done by Claude).
-
-Verification: GitLab pipeline shows no recent runs; K8s namespace is clean; archived repo's README displays the redirect.
+External to this repo. The Sikt platform team is responsible for retiring the K8s Deployment/Service/Ingress and the GitLab CI pipeline; the `alf/graphitron-landingsside` redirect-README + archive is a maintainer action against that repo. Nothing here in `sikt-no/graphitron` blocks file deletion at `In Review → Done`: the reviewer should confirm with the user (or by hitting the live URL and the legacy GitLab pipeline) that the external decommission has happened, then delete this plan file. If decommission is still pending, the reviewer can park this as `Backlog` again or hold the file open with a note.
 
 ## Open questions for the reviewer
 
