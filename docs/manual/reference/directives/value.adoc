@@ -36,7 +36,7 @@ type Mutation {
 
 * `@mutation(typeName: DELETE)`: rejected. DELETE has no assignment clause.
 * `@mutation(typeName: INSERT)`: rejected. INSERT does not partition its input fields; every input field is a value column for the INSERT VALUES list.
-* `@mutation(typeName: UPSERT)`: rejected under the current cardinality-safety regime (UPSERT generation is deferred to a follow-up roadmap item).
+* `@mutation(typeName: UPSERT)`: rejected under the current cardinality-safety regime. UPSERT generation is deferred.
 
 `@value` is mutually exclusive with `@condition` on the same input field.
 

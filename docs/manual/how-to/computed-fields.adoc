@@ -149,7 +149,7 @@ When the value is not a column-shaped expression at all (a network call, request
 * `argMapping:` on the reference is structurally inert and is rejected at parse time. `@externalField` consumes no GraphQL-argument-bound parameters, the method's only formal parameter is the parent table.
 * The static method must return `Field<T>` where `T` matches the GraphQL scalar, or one of the lift forms (`Field<TableRecord<?>>`, `Field<CustomJavaRecord>`) when the field's GraphQL type is a xref:../reference/directives/record.adoc[`@record`].
 * The carrying class must be on the rewrite Maven plugin's classpath, not the consumer module's compile classpath. Reflection failures surface as `external field reference could not be resolved -- <reflection error>`. xref:external-code.adoc[How-to: Wire external Java code] covers the plugin-classpath setup.
-* Combining `@externalField` with a `@reference` path (the condition-join lift form) is not yet supported; the build rejects this with a deferred-validation error pointing at the `computed-field-with-reference.md` roadmap item.
+* Combining `@externalField` with a `@reference` path (the condition-join lift form) is not yet supported; the build rejects this with a deferred-validation error.
 
 == See also
 

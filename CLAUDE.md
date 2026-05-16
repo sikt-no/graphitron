@@ -71,15 +71,13 @@ Prefer many small `Edit` calls over one large `Write` when trimming or rewriting
 
 ## Documentation site
 
-`/docs/` is a Maven module (`graphitron-docs`, packaging `pom`) that renders an AsciiDoc site to `docs/target/generated-docs/` and gets deployed to GitHub Pages by `.github/workflows/deploy-docs.yml`. The rewrite-internal docs under `/graphitron-rewrite/docs/` and the roadmap under `/graphitron-rewrite/roadmap/` also render into the site (Phases 2 and 4 of plan R9). Doc changes ship through the same trunk-based flow as code; PR breakage on `.adoc` files fails CI.
+`/docs/` is a Maven module (`graphitron-docs`, packaging `pom`) that renders an AsciiDoc site to `docs/target/generated-docs/` and gets deployed to GitHub Pages by the `docs-build` / `docs-deploy` jobs in `.github/workflows/rewrite-build.yml` (trunk pushes only). The rewrite-internal docs under `/graphitron-rewrite/docs/` and the roadmap under `/graphitron-rewrite/roadmap/` also render into the site. PR preview builds run through `.github/workflows/preview-docs.yml` and upload `target/generated-docs/` as a workflow artifact. Doc changes ship through the same trunk-based flow as code; PR breakage on `.adoc` files fails CI.
 
 To skip the AsciiDoctor render in a local build (saves ~10s of JRuby startup):
 
 ```bash
 mvn -f graphitron-rewrite/pom.xml install -P!docs -Plocal-db
 ```
-
-If you're working on the docs migration itself, the plan is roadmap item `R9` (`graphitron-rewrite/roadmap/docs-site-asciidoc.md`).
 
 ## Development Workflow
 

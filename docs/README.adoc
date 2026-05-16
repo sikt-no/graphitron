@@ -3,7 +3,7 @@
 
 This folder is the source for the Graphitron documentation site at https://graphitron.sikt.no/.
 
-The site is built by Maven via the `graphitron-docs` module (this directory) and deployed to GitHub Pages by `.github/workflows/deploy-docs.yml`.
+The site is built by Maven via the `graphitron-docs` module (this directory) and deployed to GitHub Pages by the `docs-build` / `docs-deploy` jobs in `.github/workflows/rewrite-build.yml` (trunk pushes only). PR preview builds run through `.github/workflows/preview-docs.yml` and upload `target/generated-docs/` as a workflow artifact.
 
 toc::[]
 
@@ -30,7 +30,7 @@ toc::[]
 | Build output. Gitignored.
 |===
 
-The rewrite-specific architecture docs live under `/graphitron-rewrite/docs/` and the roadmap under `/graphitron-rewrite/roadmap/`. Both render into this site (Phases 2 and 4 of plan R9), but their authoring conventions stay in their own folders.
+The rewrite-specific architecture docs live under `/graphitron-rewrite/docs/` and the roadmap under `/graphitron-rewrite/roadmap/`. Both render into this site, but their authoring conventions stay in their own folders.
 
 == Building locally
 
@@ -64,7 +64,3 @@ GitHub renders `.adoc` natively in the web UI, so in-repo browsing works for pla
 == Errors-vs-warnings
 
 The AsciiDoctor build is configured `failIf severity=WARN`: missing xrefs, missing includes, and unresolved attributes fail the build. We don't tolerate "warnings" in docs the way we sometimes do in compiler output; a missing xref is doc rot.
-
-== Plan
-
-The migration is tracked as roadmap item `R9` (`/graphitron-rewrite/roadmap/docs-site-asciidoc.md`).
