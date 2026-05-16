@@ -41,7 +41,6 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
-import no.sikt.graphitron.rewrite.model.PayloadAssembly;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
@@ -450,18 +449,18 @@ class FieldBuilder {
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "payload-construction.shape-resolved",
-        description = "Every ErrorChannel, ResultAssembly, and PayloadAssembly carries a "
-            + "PayloadConstructionShape arm (AllFieldsCtor or MutableBean) the emitter "
-            + "dispatches on. The three TypeFetcherGenerator payload-factory emit sites "
-            + "(catch-arm payload-factory lambda, service-result buildSuccessPayload, "
-            + "DML-row emitPayload) wear @DependsOnClassifierCheck on this key.")
+        description = "Every ErrorChannel and ResultAssembly carries a PayloadConstructionShape "
+            + "arm (AllFieldsCtor or MutableBean) the emitter dispatches on. The two "
+            + "TypeFetcherGenerator payload-factory emit sites (catch-arm payload-factory "
+            + "lambda, service-result buildSuccessPayload) wear @DependsOnClassifierCheck on "
+            + "this key.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "payload-construction.setter-name-matches-sdl-field",
         description = "Every MutableBean SetterBinding's setter method name matches the SDL "
             + "field name under Java-bean conversion (sdl field 'rating' -> 'setRating'). "
-            + "The catch-arm payload-factory and analogous service-result / DML-row emit "
-            + "sites call setter.getName() directly into the generated source; the binding "
-            + "guarantees that name resolves to a real method on the payload class.")
+            + "The catch-arm payload-factory and analogous service-result emit sites call "
+            + "setter.getName() directly into the generated source; the binding guarantees "
+            + "that name resolves to a real method on the payload class.")
     static PayloadConstructionShapeResult resolvePayloadConstructionShape(
             Class<?> payloadCls, java.util.List<String> sdlFieldNames) {
         var ctors = payloadCls.getDeclaredConstructors();
@@ -1984,157 +1983,6 @@ class FieldBuilder {
         return out;
     }
 
-    // ===== Carrier classifier: DML PayloadAssembly resolution =====
-
-    /**
-     * Outcome of the carrier-side {@code PayloadAssembly} resolution. Three terminal states,
-     * symmetric with {@link ErrorChannelResult}:
-     *
-     * <ul>
-     *   <li>{@link NoAssembly} — the return type isn't a {@code @record} payload; the DML
-     *       fetcher takes the raw-row emission path (existing behaviour for {@code @table}
-     *       and {@code ID} returns).</li>
-     *   <li>{@link Assembly} — the payload class's canonical constructor exposes one
-     *       parameter typed as the DML's table record; the emitter constructs the payload by
-     *       binding that slot to the SQL row record.</li>
-     *   <li>{@link Reject} — the payload is a {@code @record} type but the constructor doesn't
-     *       expose a single matching row slot; the field surfaces as {@code UnclassifiedField}
-     *       on the carrier with the carried reason.</li>
-     * </ul>
-     */
-    private sealed interface DmlPayloadAssemblyResult {
-        record NoAssembly() implements DmlPayloadAssemblyResult {}
-        record Assembly(PayloadAssembly assembly) implements DmlPayloadAssemblyResult {}
-        record Reject(String reason) implements DmlPayloadAssemblyResult {}
-    }
-
-    private static final DmlPayloadAssemblyResult NO_ASSEMBLY = new DmlPayloadAssemblyResult.NoAssembly();
-
-    /**
-     * Resolves a DML mutation field's success-arm payload-construction recipe. The
-     * caller passes the field's return type and the SQL name of the table its single
-     * {@code @table} input argument drives ({@code tia.inputTable().tableName()}); the resolver
-     * looks up the table's record class on the jOOQ catalog, then walks the developer-supplied
-     * payload class's canonical constructor to find the unique parameter typed as that record
-     * class. That parameter is the row slot; the emitter binds the SQL row record there at the
-     * success arm.
-     *
-     * <p>Symmetric with {@link #resolveErrorChannel}: the two reflect on the same payload class
-     * for the same kind of return type, but resolve different concerns. Both run from
-     * {@link #buildDmlField} so a misconfigured payload surfaces on its own terms regardless of
-     * which side caught it first. They share the {@link #collectDefaultedSlots} helper for
-     * capturing per-non-bound-slot defaults; each owns its bound-slot index resolution.
-     */
-    private DmlPayloadAssemblyResult resolveDmlPayloadAssembly(
-            ReturnTypeRef returnType, String dmlTableSqlName) {
-        if (!(returnType instanceof ReturnTypeRef.ResultReturnType result)) {
-            return NO_ASSEMBLY;
-        }
-        if (result.fqClassName() == null) {
-            return NO_ASSEMBLY;
-        }
-
-        var tableResolution = ctx.catalog.findTable(dmlTableSqlName);
-        if (!(tableResolution instanceof JooqCatalog.TableResolution.Resolved tableResolved)) {
-            return new DmlPayloadAssemblyResult.Reject(
-                "DML target table '" + dmlTableSqlName + "' resolution failed ("
-                    + ctx.unknownTableRejection(tableResolution, dmlTableSqlName).message()
-                    + "); cannot resolve a row-slot type for payload class '" + result.fqClassName() + "'");
-        }
-        Class<?> tableRecordClass = tableResolved.entry().table().getRecordType();
-
-        Class<?> payloadCls;
-        try {
-            payloadCls = Class.forName(result.fqClassName(), false, ctx.codegenLoader());
-        } catch (ClassNotFoundException e) {
-            return new DmlPayloadAssemblyResult.Reject(
-                "payload class '" + result.fqClassName() + "' could not be loaded");
-        }
-
-        var sdlFieldNames = sdlFieldNames(result.returnTypeName());
-        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFieldNames);
-        if (shapeResult instanceof PayloadConstructionShapeResult.Reject r) {
-            return new DmlPayloadAssemblyResult.Reject(r.reason());
-        }
-        var shape = ((PayloadConstructionShapeResult.Resolved) shapeResult).shape();
-        if (shape instanceof no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean mb) {
-            return buildDmlPayloadAssemblyBeanArm(mb, result, tableRecordClass, dmlTableSqlName);
-        }
-        var ctor = ((no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor) shape).ctor();
-        var parameters = ctor.getParameters();
-        var genericParameterTypes = ctor.getGenericParameterTypes();
-
-        // The row slot is identified by class-equality against the jOOQ table record class.
-        // No errors-slot disambiguation needed: the errors-slot's element type is Object
-        // (source-direct dispatch), so it can't accidentally match the typed jOOQ Record class.
-        int rowSlotIndex = -1;
-        for (int i = 0; i < parameters.length; i++) {
-            var p = parameters[i];
-            if (p.getType().equals(tableRecordClass)) {
-                if (rowSlotIndex >= 0) {
-                    return new DmlPayloadAssemblyResult.Reject(
-                        "payload class '" + result.fqClassName()
-                            + "' has multiple parameters typed as " + tableRecordClass.getName()
-                            + " on its constructor; the DML's table '" + dmlTableSqlName
-                            + "' requires exactly one row-slot parameter");
-                }
-                rowSlotIndex = i;
-            }
-        }
-        if (rowSlotIndex < 0) {
-            return new DmlPayloadAssemblyResult.Reject(
-                "payload class '" + result.fqClassName()
-                    + "' has no parameter typed as " + tableRecordClass.getName()
-                    + " on its constructor; the DML's table '" + dmlTableSqlName
-                    + "' requires exactly one row-slot parameter assignable from this record class");
-        }
-
-        var defaultedSlots = collectDefaultedSlots(parameters, genericParameterTypes, rowSlotIndex);
-        var payloadClassName = ClassName.bestGuess(result.fqClassName());
-        var rowSlotType = no.sikt.graphitron.javapoet.TypeName.get(genericParameterTypes[rowSlotIndex]);
-        var rowSlot = new no.sikt.graphitron.rewrite.model.RowSlot.CtorParameterIndex(rowSlotIndex);
-        return new DmlPayloadAssemblyResult.Assembly(new PayloadAssembly(
-            payloadClassName, rowSlot, rowSlotType, defaultedSlots));
-    }
-
-    private static DmlPayloadAssemblyResult buildDmlPayloadAssemblyBeanArm(
-            no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean mb,
-            ReturnTypeRef.ResultReturnType result,
-            Class<?> tableRecordClass,
-            String dmlTableSqlName) {
-        var bindings = mb.bindings();
-        int boundIndex = -1;
-        for (int i = 0; i < bindings.size(); i++) {
-            var setter = bindings.get(i).setter();
-            if (setter.getParameterTypes()[0].equals(tableRecordClass)) {
-                if (boundIndex >= 0) {
-                    return new DmlPayloadAssemblyResult.Reject(
-                        "payload class '" + result.fqClassName()
-                            + "' has multiple setters typed as " + tableRecordClass.getName()
-                            + "; the DML's table '" + dmlTableSqlName
-                            + "' requires exactly one row-slot setter");
-                }
-                boundIndex = i;
-            }
-        }
-        if (boundIndex < 0) {
-            return new DmlPayloadAssemblyResult.Reject(
-                "payload class '" + result.fqClassName()
-                    + "' has no setter typed as " + tableRecordClass.getName()
-                    + "; the DML's table '" + dmlTableSqlName
-                    + "' requires exactly one row-slot setter assignable from this record class");
-        }
-        var boundSetter = bindings.get(boundIndex).setter();
-        var nonBoundSetters = collectNonBoundSetters(bindings, boundIndex);
-        var rowSlot = new no.sikt.graphitron.rewrite.model.RowSlot.SetterMethod(
-            boundSetter, nonBoundSetters);
-        var rowSlotType = no.sikt.graphitron.javapoet.TypeName.get(
-            boundSetter.getGenericParameterTypes()[0]);
-        var payloadClassName = ClassName.bestGuess(result.fqClassName());
-        return new DmlPayloadAssemblyResult.Assembly(new PayloadAssembly(
-            payloadClassName, rowSlot, rowSlotType, java.util.List.of()));
-    }
-
     /**
      * SDL field names for the named GraphQL object type in declaration order, or {@code null}
      * when the schema doesn't resolve to an object type. Used by
@@ -2153,7 +2001,7 @@ class FieldBuilder {
 
     /**
      * Outcome of the carrier-side {@code ResultAssembly} resolution for a service-backed field.
-     * Three terminal states, symmetric with {@link DmlPayloadAssemblyResult}:
+     * Three terminal states:
      *
      * <ul>
      *   <li>{@link NoAssembly} — the service method returns the SDL payload class directly
@@ -2183,10 +2031,8 @@ class FieldBuilder {
      * canonical constructor for a parameter assignable from the service return type (the new
      * domain-object shape).
      *
-     * <p>Symmetric with {@link #resolveDmlPayloadAssembly}: same reflection over the same
-     * payload class but the bound-slot identity differs : the row slot binds by jOOQ
-     * record-class equality, the result slot binds by full {@link no.sikt.graphitron.javapoet.TypeName}
-     * equality against the service method's reflected return type.
+     * <p>The result slot binds by full {@link no.sikt.graphitron.javapoet.TypeName} equality
+     * against the service method's reflected return type.
      */
     private ResultAssemblyResult resolveServiceResultAssembly(
             ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method) {
@@ -2529,9 +2375,9 @@ class FieldBuilder {
 
     /**
      * Builds the {@link no.sikt.graphitron.rewrite.model.DefaultedSlot} list for every
-     * constructor parameter except the bound slot at {@code boundSlotIndex}. Used by both
-     * {@link #resolveErrorChannel} (errors slot) and {@link #resolveDmlPayloadAssembly} (row
-     * slot) to capture per-non-bound-slot default literals from one reflection pass.
+     * constructor parameter except the bound slot at {@code boundSlotIndex}. Used by
+     * {@link #resolveErrorChannel} (errors slot) and {@link #resolveServiceResultAssembly}
+     * (result slot) to capture per-non-bound-slot default literals from one reflection pass.
      */
     private static List<no.sikt.graphitron.rewrite.model.DefaultedSlot> collectDefaultedSlots(
             java.lang.reflect.Parameter[] parameters,
@@ -2717,36 +2563,30 @@ class FieldBuilder {
 
     /**
      * Variant of {@link #buildWithChannel} used by {@code DmlTableField} construction sites:
-     * resolves the {@link PayloadAssembly} (DML success-arm payload-construction recipe) and
-     * the {@link ErrorChannel} (catch-arm dispatch recipe), folds the assembly into the
-     * pre-resolved {@link DmlReturnExpression} arm, and forwards both to {@code builder}.
-     * A rejection on either side surfaces as {@code UnclassifiedField}; a {@code NoAssembly}
-     * (the return type isn't a {@code @record} payload) or {@code NoChannel} (the payload has
-     * no errors-shaped field) yields a non-{@code Payload} arm or an empty channel respectively.
+     * resolves the {@link ErrorChannel} (catch-arm dispatch recipe), folds the pre-resolved
+     * {@link DmlReturnExpression} arm, and forwards both to {@code builder}. A rejection on the
+     * channel side surfaces as {@code UnclassifiedField}; {@code NoChannel} yields an empty
+     * channel.
      *
-     * <p>The two resolutions are independent: a DML field can carry an assembly without a
-     * channel (payload constructs on success, {@code redact} on catch) or a channel without an
-     * assembly (impossible today since channel resolution requires {@code ResultReturnType}
-     * and so does assembly resolution, but kept symmetric for the model's clarity).
+     * <p>Post-R161, the {@code DmlTableField} permits never carry a {@code @record} return — every
+     * {@code ResultReturnType} routes through the carrier-walk permits via {@code BuildContext
+     * .tryResolveSingleRecordCarrier}, or rejects at {@code MutationInputResolver.validateReturnType}
+     * before reaching this builder. {@code resolveErrorChannel} therefore returns {@code NoChannel}
+     * by construction here; the call is preserved so the model's slot stays uniformly wired.
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "dml-mutation-shape-guarantees",
-        description = "Resolves DmlReturnExpression to one of five arms (EncodedSingle / "
-            + "EncodedList / ProjectedSingle / ProjectedList / Payload), so DML emitters "
-            + "pattern-match a single sealed dispatch with no instanceof ScalarReturnType, no "
-            + "wrapper().isList() lookup, no Optional.orElseThrow() on the encode helper, and "
-            + "no payloadAssembly().isPresent() predicate. Combined with the input-shape "
-            + "invariants (Invariants #1 and #7-#13), the entire DML emitter "
-            + "branch is total without defensive checks.")
+        description = "Resolves DmlReturnExpression to one of four arms (EncodedSingle / "
+            + "EncodedList / ProjectedSingle / ProjectedList), so DML emitters pattern-match a "
+            + "single sealed dispatch with no instanceof ScalarReturnType, no wrapper().isList() "
+            + "lookup, and no Optional.orElseThrow() on the encode helper. Combined with the "
+            + "input-shape invariants (Invariants #1 and #7-#13), the entire DML emitter branch "
+            + "is total without defensive checks.")
     private GraphitronField buildDmlField(
             ReturnTypeRef returnType, String parentTypeName, String fieldName,
-            SourceLocation location, GraphQLFieldDefinition fieldDef, String dmlTableSqlName,
+            SourceLocation location, GraphQLFieldDefinition fieldDef,
             java.util.function.BiFunction<DmlReturnExpression, Optional<ErrorChannel>, GraphitronField> builder,
             Optional<HelperRef.Encode> encodeReturn) {
-        // Channel and DML payload assembly are independent under the source-direct contract:
-        // the row slot is identified by jOOQ table-record class equality, and the errors slot
-        // (if present) by the SDL ErrorsField's declaration index in resolveErrorChannel. They
-        // share the payload class but resolve different concerns from one reflection pass each.
         Optional<ErrorChannel> channel;
         switch (resolveErrorChannel(returnType)) {
             case ErrorChannelResult.NoChannel ignored -> channel = Optional.empty();
@@ -2755,25 +2595,10 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(r.reason()));
             }
         }
-        Optional<PayloadAssembly> assembly;
-        switch (resolveDmlPayloadAssembly(returnType, dmlTableSqlName)) {
-            case DmlPayloadAssemblyResult.NoAssembly ignored -> assembly = Optional.empty();
-            case DmlPayloadAssemblyResult.Assembly a -> assembly = Optional.of(a.assembly());
-            case DmlPayloadAssemblyResult.Reject r -> {
-                return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(r.reason()));
-            }
-        }
-        DmlReturnExpression returnExpression = buildDmlReturnExpression(returnType, encodeReturn, assembly);
+        DmlReturnExpression returnExpression = buildDmlReturnExpression(returnType, encodeReturn);
         return builder.apply(returnExpression, channel);
     }
 
-    /**
-     * Folds the pre-validated {@code returnType}, {@code encodeReturn} (populated for ID returns
-     * that resolve to a {@code @node} type), and {@code payloadAssembly} (populated for
-     * {@code @record} payload returns) into the single {@link DmlReturnExpression} arm the
-     * DML emitter pattern-matches on. Total over Invariant #14's admitted return-type set;
-     * unreachable on anything else (Invariant #14 already rejected it).
-     */
     /**
      * Load-bearing classifier check (R75 Phase 1): when a {@code @mutation} field returns a
      * single-record DML carrier, the data field's {@code @table} must equal the DML target
@@ -3252,10 +3077,17 @@ class FieldBuilder {
         return null;
     }
 
+    /**
+     * Folds the pre-validated {@code returnType} and {@code encodeReturn} (populated for ID
+     * returns that resolve to a {@code @node} type) into the single {@link DmlReturnExpression}
+     * arm the DML emitter pattern-matches on. Total over the post-R161 admitted return-type set
+     * (Scalar-ID / TableBound, single or list); unreachable on anything else
+     * ({@code MutationInputResolver.validateReturnType} already rejected list-payload returns
+     * and the carrier walk routes {@code @record} returns to {@code MutationDmlRecordField}).
+     */
     private static DmlReturnExpression buildDmlReturnExpression(
             ReturnTypeRef returnType,
-            Optional<HelperRef.Encode> encodeReturn,
-            Optional<PayloadAssembly> payloadAssembly) {
+            Optional<HelperRef.Encode> encodeReturn) {
         boolean isList = returnType.wrapper().isList();
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             HelperRef.Encode enc = encodeReturn.orElseThrow(() -> new AssertionError(
@@ -3266,12 +3098,6 @@ class FieldBuilder {
             return isList
                 ? new DmlReturnExpression.ProjectedList(tb.returnTypeName())
                 : new DmlReturnExpression.ProjectedSingle(tb.returnTypeName());
-        }
-        if (returnType instanceof ReturnTypeRef.ResultReturnType) {
-            PayloadAssembly assembly = payloadAssembly.orElseThrow(() -> new AssertionError(
-                "DML mutation with @record return type missing payload assembly; "
-                    + "classifier should have rejected this"));
-            return new DmlReturnExpression.Payload(assembly);
         }
         throw new AssertionError(
             "DML mutation return type '" + returnType.returnTypeName()
@@ -3600,18 +3426,17 @@ class FieldBuilder {
                 }
 
                 Optional<HelperRef.Encode> enc = encodeReturn;
-                String dmlTableSqlName = tia.inputTable().tableName();
                 return switch (kind) {
-                    case INSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                    case INSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef,
                         (rex, ch) -> new MutationField.MutationInsertTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
-                    case UPDATE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                    case UPDATE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef,
                         (rex, ch) -> new MutationField.MutationUpdateTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
-                    case DELETE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                    case DELETE -> buildDmlField(returnType, parentTypeName, name, location, fieldDef,
                         (rex, ch) -> new MutationField.MutationDeleteTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
-                    case UPSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef, dmlTableSqlName,
+                    case UPSERT -> buildDmlField(returnType, parentTypeName, name, location, fieldDef,
                         (rex, ch) -> new MutationField.MutationUpsertTableField(parentTypeName, name, location, rex, tia, ch),
                         enc);
                 };

@@ -7,11 +7,8 @@ import java.util.List;
 
 /**
  * Carrier-side recipe for emitting a typed payload-class constructor call on the success arm of
- * a service-backed fetcher. Where {@link PayloadAssembly} captures the analogous recipe for DML
- * fetchers (binding the row record to the payload's row slot), this record captures the
- * success-arm wiring for service fetchers: the service method returns the domain object the
- * payload's <em>result slot</em> expects, and the wrapper assembles the payload around that
- * return value.
+ * a service-backed fetcher. The service method returns the domain object the payload's
+ * <em>result slot</em> expects, and the wrapper assembles the payload around that return value.
  *
  * <p>Populated by the carrier classifier when a service-backed field's payload class has a
  * resolved {@link PayloadConstructionShape} exposing exactly one slot assignable from the

@@ -16,8 +16,8 @@ import java.util.List;
  *       return p;}). Pairs with {@link PayloadConstructionShape.MutableBean}.</li>
  * </ul>
  *
- * <p>Sibling of {@link ErrorsSlot} and {@link RowSlot}. See {@link ErrorsSlot} for the rationale
- * on keeping these three role-specific seals separate rather than folding them together.
+ * <p>Sibling of {@link ErrorsSlot}. See {@link ErrorsSlot} for the rationale on keeping these
+ * two role-specific seals separate rather than folding them together.
  */
 public sealed interface ResultSlot
         permits ResultSlot.CtorParameterIndex, ResultSlot.SetterMethod {

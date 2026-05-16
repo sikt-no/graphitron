@@ -2870,7 +2870,6 @@ public class TypeFetcherGenerator {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle ps -> RECORD;
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList pl ->
                 ParameterizedTypeName.get(ClassName.get(List.class), RECORD);
-            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload p -> p.assembly().payloadClass();
         };
         var builder = MethodSpec.methodBuilder(fetcherName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -2916,8 +2915,7 @@ public class TypeFetcherGenerator {
      * the pre-resolved {@link no.sikt.graphitron.rewrite.model.DmlReturnExpression} arm. Verb-
      * neutral: takes a pre-built {@code dmlChain} (e.g. {@code .deleteFrom(filmTable).where(...)}
      * or {@code .insertInto(filmTable, cols...).values(...)}) and appends
-     * {@code .returningResult(...).fetchOne(...)} (or {@code .returning().fetchOne()} +
-     * payload-class constructor for the {@code Payload} arm).
+     * {@code .returningResult(...).fetchOne(...)}.
      */
     private static CodeBlock emitDmlReturnExpression(
             no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
@@ -2938,8 +2936,6 @@ public class TypeFetcherGenerator {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList pl ->
                 emitProjected(pl.returnTypeName(), valueType, tableRef, tablesOnly, outputPackage,
                     tableLocal, dmlChain, /*isList=*/ true);
-            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload p ->
-                emitPayload(p.assembly(), valueType, dmlChain);
         };
     }
 
@@ -3083,68 +3079,6 @@ public class TypeFetcherGenerator {
             body.add(")\n").add("    .fetchOne(r -> r);\n");
         }
         return body.build();
-    }
-
-    private static CodeBlock emitPayload(
-            no.sikt.graphitron.rewrite.model.PayloadAssembly assembly,
-            TypeName valueType,
-            CodeBlock dmlChain) {
-        // ResultReturnType payload: capture the row record from .returning().fetchOne(), then
-        // construct the payload by dispatching on assembly.rowSlot(). The all-fields-ctor arm
-        // walks constructor slots positionally (row local at the row-ctor-index, defaultLiteral
-        // at every defaultedSlot; the errors slot, if any, appears in defaultedSlots with a
-        // "null" literal). The phase-2 setter arm lands as a new case. The payload-shape
-        // classifier guarantees one row slot exists and rejects list-payload returns at
-        // validateReturnType, so .fetchOne() is the only shape here.
-        var dml = CodeBlock.builder()
-            .add("$T row = dsl\n", assembly.rowSlotType()).indent()
-            .add(dmlChain)
-            .add(".returning()\n")
-            .add(".fetchOne();\n").unindent();
-
-        var payload = switch (assembly.rowSlot()) {
-            case no.sikt.graphitron.rewrite.model.RowSlot.CtorParameterIndex rowCpi ->
-                emitPayloadCtor(assembly, valueType, rowCpi.index());
-            case no.sikt.graphitron.rewrite.model.RowSlot.SetterMethod sm ->
-                emitPayloadSetters(assembly, valueType, sm);
-        };
-        return dml.add(payload).build();
-    }
-
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "payload-construction.setter-name-matches-sdl-field",
-        reliesOn = "prints boundSetter.getName() and nonBoundSetter.setter().getName() into "
-            + "the generated DML-success body; the classifier guarantees each Method resolves.")
-    private static CodeBlock emitPayloadSetters(
-            no.sikt.graphitron.rewrite.model.PayloadAssembly assembly,
-            TypeName valueType,
-            no.sikt.graphitron.rewrite.model.RowSlot.SetterMethod sm) {
-        var b = CodeBlock.builder().add("$T payload = new $T();\n", valueType, valueType);
-        b.add("payload.$L(row);\n", sm.boundSetter().getName());
-        for (var nbs : sm.nonBoundSetters()) {
-            b.add("payload.$L($L);\n", nbs.setter().getName(), nbs.defaultLiteral());
-        }
-        return b.build();
-    }
-
-    private static CodeBlock emitPayloadCtor(
-            no.sikt.graphitron.rewrite.model.PayloadAssembly assembly,
-            TypeName valueType,
-            int rowSlotIndex) {
-        var ctor = CodeBlock.builder().add("$T payload = new $T(", valueType, valueType);
-        int slotCount = 1 + assembly.defaultedSlots().size();
-        var defaultsByIndex = assembly.defaultedSlots().stream()
-            .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
-        for (int i = 0; i < slotCount; i++) {
-            if (i > 0) ctor.add(", ");
-            if (i == rowSlotIndex) {
-                ctor.add("row");
-            } else {
-                ctor.add(defaultsByIndex.get(i));
-            }
-        }
-        ctor.add(");\n");
-        return ctor.build();
     }
 
     /**
@@ -3645,6 +3579,17 @@ public class TypeFetcherGenerator {
      * is gone before the response SELECT can read it. Bulk-input + single-payload combinations
      * are rejected upstream by {@code MutationInputResolver.validateReturnType} (Invariant
      * #15); only single-cardinality input + single-cardinality payload reaches this fetcher.
+     *
+     * <p><b>Design decision: {@code .returningResult(pkCols)} not {@code .returning(*)}.</b>
+     * The PK-only RETURNING keeps the write transaction minimal: the data-field projection
+     * (potentially many columns, joined tables, computed expressions) runs in a separate
+     * read-only SELECT after {@code transactionResult} returns. Switching to
+     * {@code .returning(*)} and projecting the captured row directly would conflate two
+     * concerns — the write transaction would carry the full read-projection's locking
+     * footprint, and partial-projection cases (the response selection is a subset of the table)
+     * would still need the follow-up SELECT for joined or computed fields. The PK echo is the
+     * narrowest payload the carrier walk needs and lives inside the smallest possible
+     * transaction window.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "mutation-dml-record-field.data-table-equals-input-table",
@@ -3903,6 +3848,13 @@ public class TypeFetcherGenerator {
      * <p>DELETE-with-payload-return is rejected at the compact-constructor on
      * {@link MutationField.MutationBulkDmlRecordField}; UPSERT is deferred to R145 under R144's
      * cardinality-safety regime, also rejected at the compact-constructor.
+     *
+     * <p><b>Design decision: per-row {@code .returningResult(pkCols)} not {@code .returning(*)}.</b>
+     * Same rationale as {@link #buildMutationDmlRecordFetcher}: minimise the transaction window
+     * by returning only the PK echo, and project the data-field response in a separate read-only
+     * SELECT after {@code transactionResult} returns. {@code .returning(*)} would multiply the
+     * transaction's locking footprint per input row and still need the follow-up SELECT for any
+     * field that joins or computes.
      *
      * @see MutationField.MutationBulkDmlRecordField
      */

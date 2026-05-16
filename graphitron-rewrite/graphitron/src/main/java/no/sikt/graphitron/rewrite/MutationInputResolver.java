@@ -192,26 +192,23 @@ final class MutationInputResolver {
                 yield null;
             }
             case ReturnTypeRef.ResultReturnType r -> {
-                // DML accepts a @record payload return when the payload class exposes a canonical
-                // constructor with one row-slot parameter (typed as the DML's table record) plus
-                // optional defaulted slots and an optional errors slot. The shape check runs in
-                // FieldBuilder.resolveDmlPayloadAssembly during construction; this validator only
-                // screens for the wrapper shape (single, not list/connection).
+                // DML accepts a @record carrier return when the SDL type classifies through the
+                // carrier walk (one DataChannel field, optional ErrorChannelRole field). The
+                // validator only screens for the wrapper shape (single, not list/connection)
+                // and surfaces the carrier walk's per-condition rejection reason.
                 if (r.wrapper().isList()) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + r.returnTypeName() + "' (list of @record) is not yet supported; "
                         + "use a single @record payload, an ID, or a @table type";
                 }
-                // R75 Phase 1: PojoResultType.NoBacking candidates that fail a trigger condition
-                // land here (not in ScalarReturnType, because the classifier still recognises the
-                // type as a ResultType). Surface the per-condition reason, same shape as the
-                // ScalarReturnType arm above; an authored carrier with className is the redirect.
-                if (r.fqClassName() == null && ctx != null
+                // R161: the carrier walk's candidate predicate admits every ResultType arm, so
+                // the probe runs unconditionally — one probe keyed off the SDL shape, not two
+                // probes composing on `fqClassName == null` vs `!= null`.
+                if (ctx != null
                         && ctx.tryResolveSingleRecordCarrier(r.returnTypeName())
                             instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Rejected rej) {
                     yield "@mutation(typeName: " + kind + ") return type '"
-                        + r.returnTypeName() + "': " + rej.reason()
-                        + "; or author a carrier with @record(record: {className: ...})";
+                        + r.returnTypeName() + "': " + rej.reason();
                 }
                 yield null;
             }

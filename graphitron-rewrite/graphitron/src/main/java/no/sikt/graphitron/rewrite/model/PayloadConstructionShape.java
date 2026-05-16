@@ -9,8 +9,8 @@ import java.util.List;
  * the emitter forks on: the canonical all-fields constructor (records always present this shape;
  * hand-rolled POJOs may too), and the Java-bean shape (no-arg constructor plus per-SDL-field
  * setter methods). The shape is resolved once at classify time and carried on the assembly
- * carriers ({@link ErrorChannel}, {@link ResultAssembly}, {@link PayloadAssembly}); each emit
- * site dispatches on the arm directly, with no per-instance branching.
+ * carriers ({@link ErrorChannel}, {@link ResultAssembly}); each emit site dispatches on the arm
+ * directly, with no per-instance branching.
  *
  * <p>Variant identity tracks construction shape, per the rule applied four times already (R61 /
  * R70 / R71 / R74): two structurally distinct ways of building the same artifact are modelled as

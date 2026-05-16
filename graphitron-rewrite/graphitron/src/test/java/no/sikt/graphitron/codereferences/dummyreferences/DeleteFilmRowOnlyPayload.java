@@ -3,10 +3,10 @@ package no.sikt.graphitron.codereferences.dummyreferences;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 
 /**
- * Test fixture record used by the DML payload-assembly classifier for the shape where the
- * payload exposes a row slot but no errors slot. Surfaces as
- * {@link no.sikt.graphitron.rewrite.model.PayloadAssembly} populated and
- * {@link no.sikt.graphitron.rewrite.model.ErrorChannel} empty: the success arm constructs the
- * payload, the catch arm falls back to {@code ErrorRouter.redact}.
+ * Test fixture record used by the carrier-walk classifier for a {@code @record}-wrapped DML
+ * return whose wrapper exposes a data channel only (no errors channel). Used as
+ * {@code @record(record: {className: "...DeleteFilmRowOnlyPayload"})} on a {@code @mutation
+ * (typeName: DELETE)}; admits via {@code BuildContext.tryResolveSingleRecordCarrier} after
+ * R161 widening (JavaRecordType arm is now an admissible carrier wrapper).
  */
 public record DeleteFilmRowOnlyPayload(FilmRecord film) {}

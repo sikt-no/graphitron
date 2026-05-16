@@ -5979,8 +5979,8 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.reason()).contains("list-typed input field is not supported");
             }),
 
-        DML_RECORD_PAYLOAD_RETURN_HAPPY(
-            "DML returning a @record payload with row+errors slots → MutationDeleteTableField with PayloadAssembly + ErrorChannel populated",
+        DML_RECORD_CARRIER_WITH_ERRORS_HAPPY(
+            "DML returning a @record carrier with film+errors → MutationDmlRecordField via carrier walk (R161 widening: @record(record:{className:}) on a Java-record-backed wrapper)",
             """
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
                 path: [String!]!
@@ -6001,17 +6001,13 @@ class GraphitronSchemaBuilderTest {
             type Mutation { deleteFilm(in: FilmInput!): DeleteFilmPayload @mutation(typeName: DELETE) }
             """,
             schema -> {
-                var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilm");
-                var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload) f.returnExpression();
-                assertThat(rex.assembly().payloadClass().reflectionName())
-                    .isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmPayload");
-                assertThat(rex.assembly().rowSlot())
-                    .isEqualTo(new no.sikt.graphitron.rewrite.model.RowSlot.CtorParameterIndex(0));
+                var f = (MutationField.MutationDmlRecordField) schema.field("Mutation", "deleteFilm");
+                assertThat(f.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.DELETE);
                 assertThat(f.errorChannel()).isPresent();
             }),
 
-        DML_RECORD_PAYLOAD_ROW_ONLY_HAPPY(
-            "DML returning a @record payload with row slot but no errors slot → PayloadAssembly populated, ErrorChannel empty",
+        DML_RECORD_CARRIER_ROW_ONLY_HAPPY(
+            "DML returning a @record carrier with film only → MutationDmlRecordField via carrier walk (R161 widening: bare carrier on JavaRecordType wrapper, no errors channel)",
             """
             type Film @table(name: "film") { title: String }
             type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
@@ -6022,15 +6018,13 @@ class GraphitronSchemaBuilderTest {
             type Mutation { deleteFilm(in: FilmInput!): DeleteFilmPayload @mutation(typeName: DELETE) }
             """,
             schema -> {
-                var f = (MutationField.MutationDeleteTableField) schema.field("Mutation", "deleteFilm");
-                var rex = (no.sikt.graphitron.rewrite.model.DmlReturnExpression.Payload) f.returnExpression();
-                assertThat(rex.assembly().rowSlot())
-                    .isEqualTo(new no.sikt.graphitron.rewrite.model.RowSlot.CtorParameterIndex(0));
+                var f = (MutationField.MutationDmlRecordField) schema.field("Mutation", "deleteFilm");
+                assertThat(f.kind()).isEqualTo(no.sikt.graphitron.rewrite.model.DmlKind.DELETE);
                 assertThat(f.errorChannel()).isEmpty();
             }),
 
         DML_RECORD_PAYLOAD_LIST_REJECTED(
-            "DML returning a list of @record payloads → UnclassifiedField (Invariant #14, list-payload not yet supported)",
+            "DML returning a list of @record payloads → UnclassifiedField (validateReturnType, list-payload not yet supported)",
             """
             type Film @table(name: "film") { title: String }
             type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
@@ -6046,8 +6040,8 @@ class GraphitronSchemaBuilderTest {
                     .contains("(list of @record) is not yet supported");
             }),
 
-        DML_RECORD_PAYLOAD_NO_ROW_SLOT_REJECTED(
-            "DML returning a @record payload whose constructor has no FilmRecord parameter → UnclassifiedField",
+        DML_RECORD_CARRIER_NO_DATA_CHANNEL_REJECTED(
+            "R161: DML returning a @record carrier with no DataChannel-shaped field → UnclassifiedField (the carrier walk rejects 'data: String' as no-permit since String is neither @table nor ID; user's developer-supplied class is no longer inspected)",
             """
             type Film @table(name: "film") { title: String }
             type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SakPayload"}) {
@@ -6065,9 +6059,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
                 assertThat(f.reason())
-                    .contains("no parameter typed as")
-                    .contains("FilmRecord")
-                    .contains("requires exactly one row-slot parameter");
+                    .contains("resolves to no CarrierFieldRole permit");
             }),
 
         // ===== R144 new admission and rejection cases =====
