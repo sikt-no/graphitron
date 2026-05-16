@@ -119,6 +119,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
         }
         validatePaginationRequiresOrdering(field, errors);
+        validateListRequiresOrdering(field, errors);
         validateVariantIsImplemented(field, errors);
     }
 
@@ -135,6 +136,31 @@ public class GraphitronSchemaValidator {
                 field.qualifiedName(),
             Rejection.structural("Field '" + field.qualifiedName() + "': paginated fields must have ordering "
                     + "(add @defaultOrder or @orderBy)"),
+                field.location()
+            ));
+        }
+    }
+
+    /**
+     * Cross-cutting check: any SQL-generating list field must have a deterministic order. The
+     * resolver lands on {@link OrderBySpec.None} only when no {@code @defaultOrder}/{@code @orderBy}
+     * is present and the target table has no primary key; in that case the generated SQL emits
+     * no {@code ORDER BY} clause and rows return in catalog order, producing visibly different
+     * results every run. Reject at build time rather than ship a latent non-determinism bug.
+     *
+     * <p>Gated on {@link FieldWrapper.List} (not {@link FieldWrapper#isList()}, which also covers
+     * connections) so the message stays disjoint from {@link #validatePaginationRequiresOrdering}
+     * — connections always carry pagination and are caught there.
+     */
+    private void validateListRequiresOrdering(GraphitronField field, List<ValidationError> errors) {
+        if (field instanceof SqlGeneratingField sgf
+                && sgf.returnType().wrapper() instanceof FieldWrapper.List
+                && sgf.orderBy() instanceof OrderBySpec.None) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+                Rejection.structural("Field '" + field.qualifiedName() + "': list fields must have a "
+                        + "deterministic order. Add a primary key to the target table, or use "
+                        + "@defaultOrder or @orderBy."),
                 field.location()
             ));
         }
