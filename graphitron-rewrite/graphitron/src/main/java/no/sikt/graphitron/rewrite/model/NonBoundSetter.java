@@ -5,15 +5,14 @@ import java.lang.reflect.Method;
 /**
  * One non-bound SDL field on the setter shape: the setter to invoke and the literal default
  * value the emitter prints at the call site. Carried inside {@code SetterMethod} arms of
- * {@link ErrorsSlot}, {@link ResultSlot}, and {@link RowSlot} so each emit site has all the
- * data it needs to print {@code p.setX(<default>);} statements for non-bound SDL fields,
- * symmetric with the all-fields-ctor arm's {@link DefaultedSlot} list.
+ * {@link ErrorsSlot} and {@link ResultSlot} so each emit site has all the data it needs to
+ * print {@code p.setX(<default>);} statements for non-bound SDL fields, symmetric with the
+ * all-fields-ctor arm's {@link DefaultedSlot} list.
  *
  * <p>The mutable-bean emit walks the surrounding SDL field list in declaration order and prints
  * one {@code p.setX(...);} per binding: the bound slot's setter receives the runtime value
- * (errors lambda parameter / service-return local / row-record local) and every
- * {@code NonBoundSetter} prints its {@code defaultLiteral} as the argument. After all setters,
- * the emit returns {@code p}.
+ * (errors lambda parameter / service-return local) and every {@code NonBoundSetter} prints its
+ * {@code defaultLiteral} as the argument. After all setters, the emit returns {@code p}.
  *
  * @param setter         the Java-bean setter for the SDL field (e.g. {@code setData})
  * @param defaultLiteral the language-default literal to print as the setter argument

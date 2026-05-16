@@ -17,11 +17,10 @@ import java.util.List;
  *       {@link PayloadConstructionShape.MutableBean}.</li>
  * </ul>
  *
- * <p>Sibling of {@link ResultSlot} and {@link RowSlot} in form but lives in its own sealed
- * hierarchy : folding the three onto one broad {@code Slot} interface would force every
- * consumer to widen and reach back through {@code instanceof} for the role-specific data
- * ({@code ErrorChannel}, {@code ResultAssembly}, {@code PayloadAssembly} each carry their own
- * slot type).
+ * <p>Sibling of {@link ResultSlot} in form but lives in its own sealed hierarchy : folding the
+ * two onto one broad {@code Slot} interface would force every consumer to widen and reach back
+ * through {@code instanceof} for the role-specific data ({@code ErrorChannel} and
+ * {@code ResultAssembly} each carry their own slot type).
  */
 public sealed interface ErrorsSlot
         permits ErrorsSlot.CtorParameterIndex, ErrorsSlot.SetterMethod {

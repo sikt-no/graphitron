@@ -107,8 +107,8 @@ public sealed interface ErrorChannel {
      * shaped {@code { data: X, errors: [SomeError!]! }} binds the errors-field side of the
      * carrier directly to this arm, and the data-field's fetcher short-circuits on null source
      * so the catch path renders {@code data: null, errors: [...]}. After R161 this arm is the
-     * one used by {@code MutationDmlRecordField} / {@code MutationBulkDmlRecordField}, replacing
-     * the pre-R161 {@code DmlReturnExpression.Payload} path.
+     * unified DML error-channel transport used by {@code MutationDmlRecordField} /
+     * {@code MutationBulkDmlRecordField}.
      *
      * <p>The catch arm emits a new pattern that consults the channel's mapping table via
      * {@code ErrorRouter.dispatchToLocalContext} and returns

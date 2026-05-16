@@ -529,10 +529,13 @@ class BuildContext {
             + "CarrierFieldRoleCoverageTest.")
     SingleRecordCarrierResolution tryResolveSingleRecordCarrier(String typeName) {
         GraphitronType target = types.get(typeName);
-        // Condition #1: registered as PlainObjectType (pre-promotion), or
-        // PojoResultType.NoBacking (post-promotion / @record-without-className case).
+        // Condition #1: registered as PlainObjectType (pre-promotion), or any ResultType arm
+        // (@record-declared type, with or without a developer-supplied className). R161 widened
+        // the candidate set from {PlainObjectType, PojoResultType.NoBacking} to {PlainObjectType,
+        // ResultType}: every ResultType arm exposes the same SDL field shape the carrier walk
+        // dispatches on, so the className informs nothing the post-R161 codegen consumes.
         boolean isCandidate = target instanceof GraphitronType.PlainObjectType
-            || target instanceof GraphitronType.PojoResultType.NoBacking;
+            || target instanceof GraphitronType.ResultType;
         if (!isCandidate) {
             return new SingleRecordCarrierResolution.NotCandidate();
         }
