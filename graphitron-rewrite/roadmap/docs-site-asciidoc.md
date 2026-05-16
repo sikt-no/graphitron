@@ -1,13 +1,46 @@
 ---
 id: R9
 title: Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages)
-status: In Review
+status: Ready
 bucket: architecture
 priority: 20
 theme: docs
 depends-on: []
 last-updated: 2026-05-16
 ---
+
+## In Review → Ready rework feedback (independent reviewer, session_011jbm5PpFDrqu3WjhtXDFB4)
+
+Phases 1-5a are shipped and the build is green under the WARN-fails policy on Java 25 (`mvn -f graphitron-rewrite/pom.xml -pl :graphitron-docs -am package` succeeds). The architectural shape — staging tree, three-plugin chain in `/docs/pom.xml`, `download-maven-plugin` against the npm registry tarball with antrun flattening, roadmap-tool `render-adoc` subcommand, `:docs` profile with WARN-fails — matches what the spec promised and respects the rewrite's "single Maven build catches doc rot" principle. Three blockers for Done, plus housekeeping the Done commit can resolve.
+
+### Blocking findings
+
+1. **`docs/index.adoc:69` leaks a roadmap-internal marker onto the rendered homepage.** The Documentation table's "User Manual" row reads "Currently scaffold-only while pages are authored under roadmap item `R68`." This is the exact pattern the user-facing-doc check in `graphitron-rewrite/docs/workflow.adoc:32` forbids (named `R<n>` reference in user-facing prose). It also reads as stale: R68 is shipped (see `graphitron-rewrite/roadmap/changelog.md:84`), the manual is fully authored, the row's prose actively misinforms visitors who land on the homepage. Confirmed it makes it into `docs/target/generated-docs/index.html`. Fix: drop the second sentence ("Currently scaffold-only...") entirely; the first sentence already describes the manual.
+
+2. **Plan-slug references in user-facing directive prose.** Two adjacent leaks of the same shape:
+   - `docs/manual/reference/directives/externalField.adoc:88` ("deferred-validation error pointing at the `computed-field-with-reference.md` roadmap item")
+   - `docs/manual/how-to/computed-fields.adoc:152` (same wording)
+   Workflow rule names "references to plans by slug" explicitly. Reframe as a feature-status note ("not yet supported; the build rejects with a deferred-validation error") without naming the plan file. The `planSlug:` mechanism in the rejection diagnostic is legitimate user-facing surface; the *prose* mentioning a specific slug isn't.
+
+3. **Phase 5b decommission signal not confirmed.** The In Review commit (`b824207`) and §Phase 5b in the spec body explicitly defer this to the In Review → Done reviewer: confirm the K8s deployment is torn down, the GitLab CI pipeline is retired, and `alf/graphitron-landingsside` is archived before deleting this spec file. From this session's sandbox the live `graphitron.sikt.no` URL is unreachable (network policy returns 403 `host_not_allowed`), and there is no commit-side signal of the external work. Recommend the next implementation pass either: (a) gets the user's confirmation that 5b has landed and folds it into the same commit that clears findings 1-2, or (b) carves Phase 5b into its own Backlog item ("R9 follow-up: decommission legacy infra") and treats this file as Done once 1-2 are clear.
+
+### Non-blocking housekeeping the rework / Done commit can fold in
+
+- The spec's `## Open questions for the reviewer` section (lines 390-401) is pre-Phase-5a stale. Pages-settings owner, DNS contact, Matomo continuity are all resolved by the 5a cutover (Matomo dropped per `b824207` body). Collapse into the Resolved section or delete.
+- `CLAUDE.md:74` and `docs/README.adoc:6` both still reference `.github/workflows/deploy-docs.yml` for the deploy, but deploy lives in `rewrite-build.yml`'s `docs-build` / `docs-deploy` jobs. Pre-existing drift; one-line fix in each.
+- `docs/manual/reference/directives/value.adoc:39` ("deferred to a follow-up roadmap item") is the softer variant of finding 2 — no slug, but the "roadmap item" framing is still project-management vocabulary. Worth a sweep alongside the two slug leaks.
+
+### What stays as-shipped
+
+- The deviation from the spec on SDS fetch (npm tarball + antrun flatten instead of JSDelivr direct-file) is correctly documented inline in the Phase 1 shipped note and produces the same effective semantics. No rework owed.
+- The `graphitron-roadmap-tool` reactor-only `<scope>provided</scope>` dep + exec-maven-plugin shape is the recommended option-1 coupling in §Roadmap rendering. The dep+exec choice keeps everything in one Maven invocation, no nested mvn, as the spec recommended.
+- `_theme/docinfo-header.html` / `docinfo-footer.html` + the per-subdir copy-to-css fan-out in `docs/pom.xml` is heavier antrun than the spec sketched, but it's a real consequence of AsciiDoctor's per-page resource resolution and the fan-out is mechanical. No principles issue.
+- WARN-fails policy is wired (`<logHandler><failIf><severity>WARN</severity></failIf></logHandler>` at `docs/pom.xml:350`); the build refuses warnings, matching the spec's errors-vs-warnings stance.
+
+Reviewer rule satisfied: this rework note was authored by `session_011jbm5PpFDrqu3WjhtXDFB4`, distinct from `session_014b7p788HzzbXJDUJscU1CL` (implementation) and `session_01EJnLmya1jAYedi9rwSdBa1` (prior spec authoring). Next implementation pass can use any session.
+
+---
+
 
 # Plan: AsciiDoc docs site, built by Maven, published via GitHub Pages
 

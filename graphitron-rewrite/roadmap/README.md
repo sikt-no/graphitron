@@ -24,7 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
-| `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | In Review | 2026-05-16 | [plan](docs-site-asciidoc.md) |
+| `R9` | Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages) | Ready | 2026-05-16 | [plan](docs-site-asciidoc.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R160` | LSP inlay hints and hover for inferred directives and field/type classification | Spec | 2026-05-13 | [plan](lsp-display-inference-and-classification.md) |
@@ -186,7 +186,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R17` [**Annotated walkthrough of a generated file**](generated-output-walkthrough.md) — Backlog, cleanup, blocked by [docs-site-asciidoc](docs-site-asciidoc.md)
 - `R35` [**Class-level Javadoc and `package-info.java` sweep**](source-orientation-javadocs.md) — Backlog, cleanup
 - `R8` [**Docs as an index into classification tests**](docs-as-index-into-tests.md) — Ready
-- `R9` [**Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages)**](docs-site-asciidoc.md) — In Review, architecture
+- `R9` [**Fold graphitron.sikt.no into the Maven build (AsciiDoc + GitHub Pages)**](docs-site-asciidoc.md) — Ready, architecture
 - `R168` [**Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec stage**](effort-blast-radius-classification.md) — Backlog, cleanup
 
 ### testing
