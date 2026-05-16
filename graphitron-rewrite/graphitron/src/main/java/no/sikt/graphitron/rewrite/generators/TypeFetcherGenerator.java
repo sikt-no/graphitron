@@ -3643,9 +3643,51 @@ public class TypeFetcherGenerator {
 
         builder.addCode(returnSyncSuccess(payloadType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(catchArm(outputPackage, f.errorChannel()));
+        builder.addCode(catchArm(outputPackage, f.errorChannel(),
+            singleRecordSentinelFor(tableRef, tablesOnly, pkCols)));
         builder.endControlFlow();
         return builder.build();
+    }
+
+    /**
+     * Builds the {@code DSL.using(SQLDialect.DEFAULT).newRecord(<pk fields>)} CodeBlock used as
+     * the non-null sentinel source for the {@link ErrorChannel.LocalContext} catch arm of a
+     * {@link MutationField.MutationDmlRecordField} fetcher. The sentinel is a structurally-valid
+     * {@code Record1}/{@code Record2}/... whose every column is null, so the data field's
+     * null-PK SELECT short-circuits to {@code null} (jOOQ's {@code WHERE pk = null} resolves to
+     * no row) and graphql-java traverses the carrier into the errors field. The sentinel never
+     * touches a real connection: {@link org.jooq.SQLDialect#DEFAULT} keeps construction pure.
+     */
+    private static CodeBlock singleRecordSentinelFor(no.sikt.graphitron.rewrite.model.TableRef tableRef,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols) {
+        var sql = ClassName.get("org.jooq", "SQLDialect");
+        var b = CodeBlock.builder().add("$T.using($T.DEFAULT).newRecord(", GeneratorUtils.DSL, sql);
+        for (int i = 0; i < pkCols.size(); i++) {
+            if (i > 0) b.add(", ");
+            b.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), pkCols.get(i).javaName());
+        }
+        b.add(")");
+        return b.build();
+    }
+
+    /**
+     * Bulk variant of {@link #singleRecordSentinelFor}: emits
+     * {@code DSL.using(SQLDialect.DEFAULT).newResult(<pk fields>)}. The empty {@code Result}
+     * source feeds the {@code SourceKey.Cardinality.MANY} data fetcher, which projects no rows
+     * and renders the SDL data field as an empty list. The errors field reads localContext.
+     */
+    private static CodeBlock bulkRecordSentinelFor(no.sikt.graphitron.rewrite.model.TableRef tableRef,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            java.util.List<no.sikt.graphitron.rewrite.model.ColumnRef> pkCols) {
+        var sql = ClassName.get("org.jooq", "SQLDialect");
+        var b = CodeBlock.builder().add("$T.using($T.DEFAULT).newResult(", GeneratorUtils.DSL, sql);
+        for (int i = 0; i < pkCols.size(); i++) {
+            if (i > 0) b.add(", ");
+            b.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), pkCols.get(i).javaName());
+        }
+        b.add(")");
+        return b.build();
     }
 
     /** Pair: the DML chain (everything from {@code .insertInto(...)} through {@code .doUpdate()....}) plus any pre-DML guard statements (e.g. dynamic SET-map construction). */
@@ -3928,7 +3970,8 @@ public class TypeFetcherGenerator {
 
         builder.addCode(returnSyncSuccess(resultType, "payload"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(catchArm(outputPackage, f.errorChannel()));
+        builder.addCode(catchArm(outputPackage, f.errorChannel(),
+            bulkRecordSentinelFor(tableRef, tablesOnly, pkCols)));
         builder.endControlFlow();
         return builder.build();
     }
@@ -4442,12 +4485,34 @@ public class TypeFetcherGenerator {
      * {@code return DataFetcherResult.<P>newResult().data(payload).build()}.
      */
     private static CodeBlock catchArm(String outputPackage, Optional<ErrorChannel> errorChannel) {
+        return catchArm(outputPackage, errorChannel, null);
+    }
+
+    /**
+     * Overload accepting the LocalContext sentinel source. Non-null sentinel is required for the
+     * {@link ErrorChannel.LocalContext} arm because graphql-java's
+     * {@code completeValueForObject} short-circuits children on a null parent value. Pass
+     * {@code null} for the sentinel when the call site cannot reach a {@code LocalContext}
+     * channel (every site reachable by today's classifier except
+     * {@code buildMutationDmlRecordFetcher} and {@code buildMutationBulkDmlRecordFetcher} is in
+     * this category).
+     */
+    private static CodeBlock catchArm(String outputPackage, Optional<ErrorChannel> errorChannel,
+                                      CodeBlock localContextSentinel) {
         if (errorChannel.isEmpty()) {
             return redactCatchArm(outputPackage);
         }
         return switch (errorChannel.get()) {
             case ErrorChannel.PayloadClass pc -> dispatchCatchArm(outputPackage, pc);
-            case ErrorChannel.LocalContext lc -> dispatchToLocalContextCatchArm(outputPackage, lc);
+            case ErrorChannel.LocalContext lc -> {
+                if (localContextSentinel == null) {
+                    throw new IllegalStateException(
+                        "catchArm reached ErrorChannel.LocalContext without a sentinel source; "
+                        + "every emitter that may produce a LocalContext-bound channel must call "
+                        + "the 3-arg overload of catchArm");
+                }
+                yield dispatchToLocalContextCatchArm(outputPackage, lc, localContextSentinel);
+            }
         };
     }
 
@@ -4466,11 +4531,13 @@ public class TypeFetcherGenerator {
             + "guard at FetcherEmitter.java:273. The emitted dispatchToLocalContext call sets "
             + "data=null on match, relying on that guard to keep the data side of the response "
             + "render coherent.")
-    private static CodeBlock dispatchToLocalContextCatchArm(String outputPackage, ErrorChannel.LocalContext channel) {
-        return CodeBlock.of("return $T.dispatchToLocalContext(e, $T.$L, env);\n",
+    private static CodeBlock dispatchToLocalContextCatchArm(String outputPackage,
+            ErrorChannel.LocalContext channel, CodeBlock sentinel) {
+        return CodeBlock.of("return $T.dispatchToLocalContext(e, $T.$L, env, $L);\n",
             errorRouterClass(outputPackage),
             errorMappingsClass(outputPackage),
-            channel.mappingsConstantName());
+            channel.mappingsConstantName(),
+            sentinel);
     }
 
     /**

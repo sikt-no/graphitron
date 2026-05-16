@@ -429,6 +429,29 @@ type SetterShapeFilmReviewPayload @record(record: {className: "no.sikt.graphitro
     errors: [FilmReviewError]
 }
 
+# R12 + R161 fixture: carrier-walk DML mutation with a LocalContext error channel. The payload
+# is a plain SDL Object (no @record(record:{className:})), so the carrier classifier admits via
+# BuildContext.tryResolveSingleRecordCarrier and ErrorChannelRole binds to
+# ErrorChannel.LocalContext (R12 Phase C). MutationDmlRecordField carries the channel; the
+# catch arm dispatches through ErrorRouter.dispatchToLocalContext, packing the matched
+# Throwable into env.getLocalContext(). The errors field on the carrier reads via
+# env.getLocalContext(), and the data field (Film) short-circuits on null source so the SDL
+# response renders { film: null, errors: [{ __typename, path, message }] }.
+type FilmCreateConstraintViolation @error(handlers: [{
+        handler: GENERIC,
+        className: "org.jooq.exception.IntegrityConstraintViolationException"
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+union FilmCreateError = FilmCreateConstraintViolation
+
+type FilmCreateLocalContextPayload {
+    film: Film
+    errors: [FilmCreateError]
+}
+
 type Customer implements Node @table(name: "customer") @node {
     id:         ID!      @nodeId
     customerId: Int!     @field(name: "CUSTOMER_ID")
@@ -1354,6 +1377,15 @@ type Mutation {
     # to R145 under R144's cardinality-safety regime.
     createFilmsPayload(in: [FilmCreateInput!]!): FilmsPayload @mutation(typeName: INSERT)
     updateFilmsPayload(in: [FilmUpdateInput!]!): FilmsPayload @mutation(typeName: UPDATE)
+
+    # R12 + R161 execute-tier fixture: carrier-walk DML mutation that returns a payload with an
+    # errors slot binding to ErrorChannel.LocalContext. Happy path mirrors createFilmPayload
+    # (PK-only RETURNING in a transaction, follow-up SELECT for the data field); error path is
+    # exercised by passing an out-of-range languageId, which trips PostgreSQL FK 23503 against
+    # public.language → jOOQ IntegrityConstraintViolationException. The catch arm dispatches
+    # through ErrorRouter.dispatchToLocalContext into env.getLocalContext(); the errors field
+    # reads it back. See R12LocalContextDmlExecutionTest in the execution tier.
+    createFilmWithErrors(in: FilmCreateInput!): FilmCreateLocalContextPayload @mutation(typeName: INSERT)
 
     # R156 compilation-tier fixtures: payload-returning DELETE carriers. Two element-arm shapes:
     #   - DataElement.Id: bulk DELETE returning [ID!] of encoded NodeIds. Classifies as

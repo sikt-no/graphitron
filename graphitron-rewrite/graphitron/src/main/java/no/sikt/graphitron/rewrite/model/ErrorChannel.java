@@ -105,15 +105,23 @@ public sealed interface ErrorChannel {
      * The catch arm hands errors back through graphql-java's {@code DataFetcherResult.localContext}.
      * Wired by the carrier-walk producer in {@code BuildContext.classifyCarrierField}: a wrapper
      * shaped {@code { data: X, errors: [SomeError!]! }} binds the errors-field side of the
-     * carrier directly to this arm, and the data-field's fetcher short-circuits on null source
-     * so the catch path renders {@code data: null, errors: [...]}. After R161 this arm is the
-     * unified DML error-channel transport used by {@code MutationDmlRecordField} /
-     * {@code MutationBulkDmlRecordField}.
+     * carrier directly to this arm. After R161 this arm is the unified DML error-channel
+     * transport used by {@code MutationDmlRecordField} / {@code MutationBulkDmlRecordField}.
      *
-     * <p>The catch arm emits a new pattern that consults the channel's mapping table via
-     * {@code ErrorRouter.dispatchToLocalContext} and returns
-     * {@code DataFetcherResult.<R>newResult().data(null).localContext(List.of(t)).build()} on
-     * the first match, falling through to {@code ErrorRouter.redact} on no match.
+     * <p>The catch arm emits a pattern that consults the channel's mapping table via
+     * {@code ErrorRouter.dispatchToLocalContext(throwable, mappings, env, sentinel)} and returns
+     * {@code DataFetcherResult.<R>newResult().data(sentinel).localContext(List.of(t)).build()}
+     * on the first match, falling through to {@code ErrorRouter.redact} on no match.
+     *
+     * <p>The {@code sentinel} is a non-null structurally-valid source whose every column is
+     * null (a jOOQ {@code Record1}/{@code Record2}/{@code Result} constructed via
+     * {@code DSL.using(SQLDialect.DEFAULT).newRecord(...)} or {@code newResult(...)}). The
+     * non-null source is required because graphql-java's {@code completeValueForObject}
+     * short-circuits children on a null parent value: {@code data: null} would prevent the
+     * carrier's children from being fetched at all, so the {@code errors} field would never
+     * resolve. With the sentinel in place the data field's null-PK SELECT naturally renders
+     * {@code null} (jOOQ's {@code WHERE pk = null} resolves to no row) and the errors-field
+     * DataFetcher reads the throwable list via {@code env.getLocalContext()}.
      *
      * <p>The bare {@code mappingsConstantName} comes from
      * {@code SCREAMING_SNAKE(wrapperSdlTypeName)} (e.g. {@code FilmPayload} →
