@@ -37,6 +37,7 @@ public class GraphitronSchemaValidator {
         types.values().forEach(type -> validateType(type, types, errors));
         schema.fields().values().forEach(field -> validateField(field, types, errors));
         validateNestingParentCompat(schema, errors);
+        validateLocalContextErrorsFieldGuards(schema, errors);
         return List.copyOf(errors);
     }
 
@@ -917,4 +918,70 @@ public class GraphitronSchemaValidator {
     private void validateReferencePath(String fieldName, SourceLocation location, List<JoinStep> path, List<ValidationError> errors) {
         // All elements are resolved — builder rejects unresolved paths at classification time.
     }
+
+    /**
+     * {@link ChildField.ErrorsField} variants carry their data through either
+     * {@link ChildField.Transport.PayloadAccessor} (the parent payload's errors-named property) or
+     * {@link ChildField.Transport.LocalContext} (graphql-java's {@code DataFetcherResult.localContext}
+     * slot). The latter pairs with an {@link no.sikt.graphitron.rewrite.model.ErrorChannel.LocalContext}
+     * catch arm in {@code TypeFetcherGenerator} that ships
+     * {@code data(null).localContext(errors).build()}: the parent payload is bypassed entirely and
+     * the sibling data-channel field's fetcher fires against a {@code null} source.
+     *
+     * <p>The fetcher emitted for that sibling must short-circuit on {@code null} source and return
+     * {@code null}; otherwise the catch path renders {@code data} as a corrupt half-payload instead
+     * of the SDL-level {@code data: null, errors: [...]} shape. Today's carrier-walk admission set
+     * in {@code BuildContext.classifyCarrierField} ({@link CarrierFieldRole.ErrorChannelRole}) keeps
+     * the data-channel role's variants within {@link #LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS} by
+     * construction. R161 widens that admission to mutation DML record fields, and any future
+     * widening that admits a non-guarded variant must extend the allow-list along with the
+     * matching fetcher's null-source guard. This validator pass is the cross-check that turns a
+     * silently-broken admission into a build-time {@link Rejection.AuthorError.Structural}.
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "error-channel.local-context-transport",
+        reliesOn = "The validator mirrors BuildContext.classifyCarrierField's invariant that a "
+            + "carrier admitted with ErrorChannel.LocalContext has a data field whose fetcher "
+            + "honors the null-source short-circuit guard. Rejects schemas whose ErrorsField "
+            + "carries Transport.LocalContext but whose sibling data-channel field is not on "
+            + "the LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS allow-list as "
+            + "Rejection.structural so emit-time consumers (TypeFetcherGenerator's catch arm "
+            + "and asyncWrapTail) can assume the guard without a runtime branch.")
+    private void validateLocalContextErrorsFieldGuards(GraphitronSchema schema, List<ValidationError> errors) {
+        for (var f : schema.fields().values()) {
+            if (!(f instanceof ChildField.ErrorsField ef)) continue;
+            if (!(ef.transport() instanceof ChildField.Transport.LocalContext)) continue;
+            for (var sib : schema.fieldsOf(ef.parentTypeName())) {
+                if (sib == ef) continue;
+                if (sib instanceof ChildField.ErrorsField) continue;
+                if (!LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS.contains(sib.getClass())) {
+                    errors.add(new ValidationError(
+                        ef.qualifiedName(),
+                        Rejection.structural("Field '" + ef.qualifiedName()
+                            + "': LocalContext errors transport requires the carrier's data-channel "
+                            + "fetcher to short-circuit on a null source, but sibling field '"
+                            + sib.qualifiedName() + "' classifies as " + sib.getClass().getSimpleName()
+                            + " which is not on the LocalContext-safe allow-list"),
+                        ef.location()
+                    ));
+                }
+            }
+        }
+    }
+
+    /**
+     * Field variants whose generated fetcher honors the null-source short-circuit guard
+     * ({@code if (source == null) return null;}) at emit time, making them safe siblings for an
+     * {@link ChildField.ErrorsField} with {@link ChildField.Transport.LocalContext}. Verified by
+     * inspection of {@code FetcherEmitter}; each entry has a matching {@code source == null} guard
+     * before any dereference. Adding a variant here without the matching guard breaks the
+     * {@code error-channel.local-context-transport} invariant; removing the guard from an emitter
+     * arm must remove the variant from this set.
+     */
+    private static final java.util.Set<Class<? extends GraphitronField>> LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS = java.util.Set.of(
+        ChildField.SingleRecordTableField.class,
+        ChildField.SingleRecordIdentityField.class,
+        ChildField.SingleRecordIdFieldFromReturning.class,
+        ChildField.SingleRecordTableFieldFromReturning.class
+    );
 }
