@@ -90,12 +90,7 @@ public final class FetcherEmitter {
             return buildSingleRecordTableFromReturningFetcherValue(tableCarrier);
         }
         if (field instanceof ChildField.SingleRecordIdentityField) {
-            // R75 Phase 2: data field on a single-record carrier whose element type is
-            // record-backed. The parent operation (@service mutation, after wrapper unwrap)
-            // produced a domain record that graphql-java is now traversing; the data field's
-            // value IS that source value verbatim. Identity passthrough — no SourceKey
-            // synthesis, no SELECT.
-            return CodeBlock.of("($T env) -> env.getSource()", DATA_FETCHING_ENV);
+            return buildSingleRecordIdentityFetcherValue();
         }
         if (field instanceof ChildField.ErrorsField ef) {
             // Switch on the field's resolved Transport: PayloadAccessor reads the errors list
@@ -225,6 +220,28 @@ public final class FetcherEmitter {
     }
 
     /**
+     * R75 Phase 2 — identity passthrough for a {@link ChildField.SingleRecordIdentityField}.
+     * The parent operation (an {@code @service} mutation, after wrapper unwrap) produced a
+     * domain record that graphql-java is now traversing; the data field's value IS that source
+     * value verbatim. Null source becomes null value naturally (the lambda evaluates
+     * {@code env.getSource()} which returns null), and graphql-java surfaces the field as
+     * null without dereferencing.
+     */
+    @DependsOnClassifierCheck(
+        key = "error-channel.local-context-transport",
+        reliesOn = "Identity passthrough: env.getSource() returns the upstream value verbatim. "
+            + "A null source returns null without dereferencing, satisfying the validator "
+            + "allow-list's null-source short-circuit invariant for SingleRecordIdentityField. "
+            + "No LocalContext-bound producer routes to this arm today (the carrier-walk "
+            + "producer only admits DataElement.Record carriers under @service today, and "
+            + "@service catch arms use ErrorChannel.PayloadClass not LocalContext); the "
+            + "annotation pre-emptively pins the invariant so a future @service LocalContext "
+            + "producer or a relaxed identity-passthrough lambda surfaces as an audit signal.")
+    private static CodeBlock buildSingleRecordIdentityFetcherValue() {
+        return CodeBlock.of("($T env) -> env.getSource()", DATA_FETCHING_ENV);
+    }
+
+    /**
      * R75 Phase 1 / R141: data-fetcher value for a {@link ChildField.SingleRecordTableField}.
      * Reads {@code env.getSource()} typed by {@code SourceKey.wrap × columns} and runs the
      * response SELECT keyed by the PK columns. The upstream value is whatever the mutation's
@@ -302,6 +319,14 @@ public final class FetcherEmitter {
      * {@code RecordN} APIs that the {@code Wrap.TableRecord} arm replaces with positional
      * {@code record.get(<Table.PK>)} reads.
      */
+    @DependsOnClassifierCheck(
+        key = "error-channel.local-context-transport",
+        reliesOn = "Emits 'if (source == null) return null' before any source.value1()/getValues() "
+            + "read. Pairs with the validator allow-list's inclusion of SingleRecordTableField: a "
+            + "LocalContext-bound carrier's sentinel source whose PK columns are null reaches this "
+            + "fetcher, the guard short-circuits, and the SDL data field renders null while the "
+            + "errors field reads env.getLocalContext(). Removing the guard would dereference the "
+            + "sentinel's null PK and NPE at request time.")
     private static CodeBlock buildSingleRecordTableFetcherValueRecordWrap(
             ChildField.SingleRecordTableField srtf, String outputPackage) {
         var table = srtf.returnType().table();
@@ -448,6 +473,14 @@ public final class FetcherEmitter {
      * {@code record.get(<Table.PK_FIELD>)} accessors, paralleling the {@code Wrap.Record} arm's
      * map-key shape but typed against {@code XRecord} instead of {@code RecordN}.
      */
+    @DependsOnClassifierCheck(
+        key = "error-channel.local-context-transport",
+        reliesOn = "Emits 'if (source == null) return null' before any record.get(<Table.PK>) "
+            + "read. Pairs with the validator allow-list's inclusion of SingleRecordTableField: a "
+            + "LocalContext-bound carrier's sentinel source whose PK columns are null reaches this "
+            + "fetcher, the guard short-circuits, and the SDL data field renders null while the "
+            + "errors field reads env.getLocalContext(). Removing the guard would dereference the "
+            + "sentinel's null record state and NPE at request time.")
     private static CodeBlock buildSingleRecordTableFetcherValueTableRecordWrap(
             ChildField.SingleRecordTableField srtf,
             SourceKey.Wrap.TableRecord tableRecordWrap,
@@ -602,6 +635,15 @@ public final class FetcherEmitter {
      * slot directly. No follow-up SELECT runs — the deleted row's PK is the entire post-image
      * and lives in the upstream Record.
      */
+    @DependsOnClassifierCheck(
+        key = "error-channel.local-context-transport",
+        reliesOn = "Emits 'if (source == null) return null' before any record.get(<PK column>) "
+            + "read in both single-shaped and list-shaped wrapper arms. Pairs with the validator "
+            + "allow-list's inclusion of SingleRecordIdFieldFromReturning: a LocalContext-bound "
+            + "carrier's sentinel source whose PK columns are null reaches this fetcher, the "
+            + "guard short-circuits, and the SDL data field renders null while the errors field "
+            + "reads env.getLocalContext(). Removing the guard would feed null PKs into the "
+            + "NodeId encoder and NPE at request time.")
     private static CodeBlock buildSingleRecordIdFromReturningFetcherValue(
             ChildField.SingleRecordIdFieldFromReturning carrier) {
         var encoder = carrier.encode().encodeMethod();
@@ -699,6 +741,15 @@ public final class FetcherEmitter {
             + "(FK references, @service-resolved fields, child collections) cannot resolve from "
             + "a synthesized PK-only Record; relaxing the classifier rejection surfaces here as "
             + "per-field ColumnFetcher errors at request time.")
+    @DependsOnClassifierCheck(
+        key = "error-channel.local-context-transport",
+        reliesOn = "Emits 'if (source == null) return null' before any __src.get(<PK Field>) "
+            + "read in both single-shaped and list-shaped wrapper arms. Pairs with the validator "
+            + "allow-list's inclusion of SingleRecordTableFieldFromReturning: a LocalContext-bound "
+            + "carrier's sentinel source whose PK columns are null reaches this fetcher, the "
+            + "guard short-circuits, and the SDL data field renders null while the errors field "
+            + "reads env.getLocalContext(). Removing the guard would dereference the sentinel's "
+            + "null record and NPE on the PK copy at request time.")
     private static CodeBlock buildSingleRecordTableFromReturningFetcherValue(
             ChildField.SingleRecordTableFieldFromReturning carrier) {
         var table = carrier.returnType().table();

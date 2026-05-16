@@ -1001,13 +1001,32 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * Field variants whose generated fetcher honors the null-source short-circuit guard
-     * ({@code if (source == null) return null;}) at emit time, making them safe siblings for an
-     * {@link ChildField.ErrorsField} with {@link ChildField.Transport.LocalContext}. Verified by
-     * inspection of {@code FetcherEmitter}; each entry has a matching {@code source == null} guard
-     * before any dereference. Adding a variant here without the matching guard breaks the
-     * {@code error-channel.local-context-transport} invariant; removing the guard from an emitter
-     * arm must remove the variant from this set.
+     * Field variants whose generated fetcher honors the null-source short-circuit guard at emit
+     * time, making them safe siblings for an {@link ChildField.ErrorsField} with
+     * {@link ChildField.Transport.LocalContext}. Each entry's matching emitter method in
+     * {@code FetcherEmitter} carries a {@code @DependsOnClassifierCheck(key =
+     * "error-channel.local-context-transport")} pinning the guarantee:
+     *
+     * <ul>
+     *   <li>{@code SingleRecordTableField} → {@code buildSingleRecordTableFetcherValueRecordWrap}
+     *       + {@code buildSingleRecordTableFetcherValueTableRecordWrap} (explicit
+     *       {@code if (source == null) return null;} before any
+     *       {@code source.value1()} / {@code record.get(<PK>)} read).</li>
+     *   <li>{@code SingleRecordIdentityField} → {@code buildSingleRecordIdentityFetcherValue}
+     *       (identity passthrough {@code env -> env.getSource()}; null source becomes null
+     *       value without dereferencing).</li>
+     *   <li>{@code SingleRecordIdFieldFromReturning} → {@code buildSingleRecordIdFromReturningFetcherValue}
+     *       (explicit guard before encoder dispatch).</li>
+     *   <li>{@code SingleRecordTableFieldFromReturning} → {@code buildSingleRecordTableFromReturningFetcherValue}
+     *       (explicit guard before PK copy onto the synthesised Record).</li>
+     * </ul>
+     *
+     * <p>The audit harness {@code LoadBearingGuaranteeAuditTest} surfaces a missing producer if
+     * the {@code @LoadBearingClassifierCheck} on {@code BuildContext.classifyCarrierField} is
+     * relaxed below the consumer count. Adding a variant to this set without anchoring the
+     * matching emitter site annotation orphans the new consumer; removing the guard from an
+     * existing emitter arm must remove the variant from this set so the consumer-side annotation
+     * stops referencing a no-longer-honored invariant.
      */
     private static final java.util.Set<Class<? extends GraphitronField>> LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS = java.util.Set.of(
         ChildField.SingleRecordTableField.class,
