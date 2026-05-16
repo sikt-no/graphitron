@@ -5,7 +5,7 @@ status: Backlog
 bucket: structural
 priority: 4
 theme: mutations-errors
-depends-on: [unify-record-dml-on-carrier-walk]
+depends-on: []
 created: 2026-05-14
 last-updated: 2026-05-14
 ---
