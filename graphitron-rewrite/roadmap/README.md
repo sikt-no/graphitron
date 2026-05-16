@@ -21,7 +21,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec |  | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
-| `R74` | Row/Record return shapes for typed accessor batch keys | Spec |  | [plan](accessor-row-record-shapes.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
@@ -132,7 +131,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [typed-context-value-registry](typed-context-value-registry.md)
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
-- `R74` [**Row/Record return shapes for typed accessor batch keys**](accessor-row-record-shapes.md) — Spec, architecture
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
 
 ### mutations-errors
