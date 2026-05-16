@@ -1,12 +1,12 @@
 ---
 id: R12
 title: "Error-handling parity: emit per-fetcher error channels from `@error`"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 7
 theme: mutations-errors
 depends-on: []
-last-updated: 2026-05-15
+last-updated: 2026-05-16
 ---
 
 # Error-handling parity: emit per-fetcher error channels from `@error`
