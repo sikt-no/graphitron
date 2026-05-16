@@ -38,6 +38,8 @@ class RecordLookupTableFieldValidationTest {
     private static final ReturnTypeRef.TableBoundReturnType RT_SINGLE = filmReturn(new FieldWrapper.Single(true));
     private static final ReturnTypeRef.TableBoundReturnType RT_LIST = filmReturn(new FieldWrapper.List(true, true));
     private static final ReturnTypeRef.TableBoundReturnType RT_CONN = filmReturn(new FieldWrapper.Connection(true, 100));
+    private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
+        List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null)), "ASC");
     private static final SourceKey SOURCE_KEY_SINGLE = TestFixtures.recordParentRowSourceKey(FILM_TABLE, PARENT_KEY_COLS, false);
     private static final SourceKey SOURCE_KEY_LIST = TestFixtures.recordParentRowSourceKey(FILM_TABLE, PARENT_KEY_COLS, true);
     private static final SourceKey SOURCE_KEY_CONN = TestFixtures.recordParentRowSourceKey(FILM_TABLE, PARENT_KEY_COLS, true);
@@ -68,13 +70,13 @@ class RecordLookupTableFieldValidationTest {
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
             new RecordLookupTableField("Language", "films", null, RT_LIST,
                 List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
-                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP),
+                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP),
             List.of(CONDITION_JOIN_STUB)),
 
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
             new RecordLookupTableField("Language", "films", null, RT_LIST,
                 List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
-                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP),
+                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP),
             List.of()),
 
         CONNECTION_BLOCKED("connection return — lookup-field rejection",

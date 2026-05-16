@@ -1,12 +1,12 @@
 ---
 id: R39
 title: Validate that list fields on tables without a PK require explicit ordering
-status: Ready
+status: In Progress
 bucket: validation
 priority: 2
 theme: model-cleanup
 depends-on: []
-last-updated: 2026-05-15
+last-updated: 2026-05-16
 ---
 
 # Validate that list fields on tables without a PK require explicit ordering

@@ -30,6 +30,8 @@ class QueryLookupTableFieldValidationTest {
     private static final ColumnRef FILM_ID_COL = new ColumnRef("film_id", "FILM_ID", "java.lang.Integer");
     private static final TableRef FILM_TABLE = TestFixtures.tableRef("film", "FILM", "Film", List.of());
     private static final LookupMapping EMPTY_LOOKUP = new LookupMapping.ColumnMapping(List.of(), FILM_TABLE);
+    private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
+        List.of(new OrderBySpec.ColumnOrderEntry(FILM_ID_COL, null)), "ASC");
 
     private static GeneratedConditionFilter columnFilter(String name, boolean nonNull, boolean list) {
         BodyParam bodyParam = list
@@ -59,7 +61,7 @@ class QueryLookupTableFieldValidationTest {
         VALID_WITH_LIST_COLUMN_ARG("GeneratedConditionFilter list — valid with list return",
             new QueryLookupTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, new FieldWrapper.List(true, true)),
-                List.of(columnFilter("id", false, true)), new OrderBySpec.None(), null, EMPTY_LOOKUP),
+                List.of(columnFilter("id", false, true)), PK_ORDER, null, EMPTY_LOOKUP),
             List.of()),
 
         VALID_WITH_TABLE_INPUT_TYPE_ARG("table-bound input type arg — skipped, empty filters, valid with single return",
@@ -69,7 +71,7 @@ class QueryLookupTableFieldValidationTest {
         LIST_RETURN_NO_LIST_ARG("list return with no list filter — cardinality mismatch",
             new QueryLookupTableField("Query", "filmById", null,
                 new ReturnTypeRef.TableBoundReturnType("Film", TestFixtures.tableRef("film", "FILM", "Film", List.of()), new FieldWrapper.List(true, true)),
-                List.of(), new OrderBySpec.None(), null, EMPTY_LOOKUP),
+                List.of(), PK_ORDER, null, EMPTY_LOOKUP),
             List.of("Field 'Query.filmById': result type does not match input cardinality")),
 
         SINGLE_RETURN_LIST_ARG("single return with list filter — cardinality mismatch",
