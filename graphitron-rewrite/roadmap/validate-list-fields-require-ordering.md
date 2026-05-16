@@ -1,7 +1,7 @@
 ---
 id: R39
 title: Validate that list fields on tables without a PK require explicit ordering
-status: In Progress
+status: In Review
 bucket: validation
 priority: 2
 theme: model-cleanup
@@ -67,7 +67,9 @@ guarantees no fourth case slips through.
 
 ## Implementation
 
-One file: `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java`.
+Two files.
+
+1. `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java`:
 
 - Add a new `validateListRequiresOrdering(GraphitronField field, List<ValidationError> errors)`
   method modelled on `validatePaginationRequiresOrdering` (same file, lines 129–140). Body:
@@ -90,10 +92,26 @@ One file: `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrit
   site at `GraphitronSchemaValidator.java:120`). Order in the file is "pagination check → list
   check → variant-implemented check".
 
-No changes to `OrderByResolver`, `FieldBuilder`, or any generator. The check is a build-time
-gate; resolver behaviour stays as documented in `OrderByResolver.java:132` (returns
-`OrderBySpec.None` when no `@defaultOrder` and no PK), and the validator now rejects schemas
-that would reach that branch on a list-returning field.
+2. `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ChildField.java`:
+
+- Replace `SingleRecordTableField.orderBy()`'s hard-coded `OrderBySpec.None` override
+  (`ChildField.java:74`) with a PK-derived default computed from `sourceKey.columns()`. When the
+  source-key carries PK columns, return `Fixed([pk ASC])`; only when the target is genuinely
+  unkeyed does the override fall back to `None`. This brings the carrier permit in line with the
+  "schema with no explicit ordering implies PK ordering" default that
+  `OrderByResolver.resolveDefaultOrderSpec` already applies to every other SQL-generating field.
+  The carrier emitter (`FetcherEmitter.buildSingleRecordTableFetcherValueTableRecordWrap`,
+  `FetcherEmitter.java:451`) does not consume `orderBy()`, so the generated SQL is unchanged
+  and the visible result ordering — driven by the upstream source list via the PK-keyed-map
+  walk at `FetcherEmitter.java:512-557` — is preserved bit-for-bit. Without this change, R141 /
+  R158 carrier data fields would falsely classify as "non-deterministic list" and trip the
+  validator despite the walk owning ordering.
+
+No changes to `OrderByResolver`, `FieldBuilder`, the carrier emitter, or any other generator.
+The validator is a build-time gate; resolver behaviour stays as documented in
+`OrderByResolver.java:132` (returns `OrderBySpec.None` when no `@defaultOrder` and no PK), and
+the validator now rejects schemas that would reach that branch on a list-returning field that
+does not own its own ordering.
 
 ### Relationship to `@LoadBearingClassifierCheck`
 
@@ -168,9 +186,16 @@ field"; it pins both the classifier/validator wiring and the error-message contr
 ## Non-goals
 
 - Requiring ordering on single-value fields (ordering is a no-op there).
-- Requiring ordering on `@service` or `@tableMethod` fields (the developer's method owns the
-  result set; Graphitron doesn't generate the SQL). Service/method-backed fields do not
-  implement `SqlGeneratingField`, so the cast in the new check already excludes them.
+- Requiring ordering on `@service`, `@tableMethod`, or other fields where the developer's
+  method owns the result set and Graphitron doesn't generate the SQL. Most such permits
+  (`ServiceRecordField`, `TableMethodField`, …) do not implement `SqlGeneratingField`, so the
+  cast in the new check excludes them by type. The permits that *do* implement
+  `SqlGeneratingField` while still carrying the "result set is owned upstream" semantics
+  (today: `SingleRecordTableField`, the R141 bulk-DML and R158 service-carrier data field) keep
+  their PK-derived default ordering computed from `sourceKey.columns()` rather than the
+  hard-coded `None` they used to return; the carrier emitter's PK-keyed-map walk still owns
+  the visible result ordering, so the SQL is unchanged and the visible order matches the
+  upstream source list either way.
 - Changing `OrderByResolver` to refuse to produce `OrderBySpec.None`. The resolver's contract
   (total projection over all classified shapes) stays intact; the validator is the right
   layer for "this shape is legal in the model but illegal as authored schema."
