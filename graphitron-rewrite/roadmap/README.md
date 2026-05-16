@@ -16,7 +16,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
-| `R167` | Unify schema file extension handling between schemaInputs and graphitron:dev | In Review | 2026-05-15 | [plan](schema-file-extensions-config.md) |
 | `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation seam) | Spec |  | [plan](emit-input-records.md) |
@@ -222,7 +221,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
-- `R167` [**Unify schema file extension handling between schemaInputs and graphitron:dev**](schema-file-extensions-config.md)
 
 
 ---
