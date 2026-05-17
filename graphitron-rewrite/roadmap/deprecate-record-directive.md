@@ -29,96 +29,114 @@ That class is already discoverable on the root-producer side: an
 `@service` method's return type, a `@table`-resolved jOOQ record, or a
 `@tableMethod` return all name the same class the directive restates.
 R96 makes reflection the source of the SDL → backing-class binding for
-types reachable from a root producer, keeps the directive as an
-override-with-equality-check during the transition, and once the two
-agree the directive's only signal is "this is redundant", which the
-validator surfaces as a warning. Types reachable only as nested
-children classify via a directive-only fallback that R96 instruments
-with a tree-wide info signal so the directive declaration's eventual
-retirement has a measured surface to chase.
+every reachable type, walking root producers and parent accessor return
+types together. The directive stays as an override-with-equality-check
+during the transition; once reflection and the directive agree on every
+reachable type, the directive's only signal is "this is redundant",
+which the validator surfaces as a warning. Retirement of the directive
+declaration is then a pure author-cleanup path: drive the redundancy
+warning count to zero, then the declaration at
+`directives.graphqls:290` can land in a separate item.
 
 ## Scope
 
-Four checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
+Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
 
-1. **Reflection-derived binding from root producers.** Extend
-   `recordBackingClasses` population so the map is filled from the
-   reflected producer class whenever a root producer is identifiable
-   for an SDL type. Root producers are `@service` method returns,
-   `@table` resolution, and `@tableMethod` returns: these are
-   addressable at schema-build time independent of any other type's
-   classification. For result types, this means `buildResultType` and
-   the dispatch at line 386 stop being directive-gated for the
-   classification decision; a type with a reflectable root producer
-   classifies into the appropriate backed variant on the result axis
-   (one of `JavaRecordType`, `JooqRecordType`, `JooqTableRecordType`,
-   `PojoResultType.Backed`) without the directive. The input side does
-   the same through `buildNonTableInputType` against the consuming
-   `@service` parameter, producing one of `JavaRecordInputType`,
-   `JooqRecordInputType`, `JooqTableRecordInputType`, `PojoInputType`.
+1. **Reflection-derived binding from root producers and parent
+   accessors.** Extend `recordBackingClasses` population so the map is
+   filled from the reflected producer class for every reachable SDL
+   type. The walk has two grounding sources, one inductive step, and
+   one cross-source agreement rule:
 
-   Parent-accessor return types are *not* a reflection source in R96.
-   Resolving a child type's binding from the parent's accessor return
-   would depend on the parent's own binding already being resolved, an
-   ordering hazard with no termination argument in the current writer
-   path. Types reachable only as nested children classify via the
-   directive-only fallback at checkpoint 4. A separate item can replace
-   that fallback with an explicit fixpoint once a termination argument
-   is in hand.
+   - **Root producers** ground the walk. An SDL type with a `@service`
+     method return, a `@table` resolution, or a `@tableMethod` return
+     resolves directly: the producer's reflected class is the binding.
+     These are addressable at schema-build time independent of any
+     other type's classification. For result types, this means
+     `buildResultType` and the dispatch at line 386 are now gated on
+     the reflected producer's discoverability instead of on the
+     `@record` directive; a type with a reflectable root producer
+     classifies into the appropriate backed variant on the result axis
+     (one of `JavaRecordType`, `JooqRecordType`, `JooqTableRecordType`,
+     `PojoResultType.Backed`) without the directive. The input side
+     does the same through `buildNonTableInputType` against the
+     consuming `@service` parameter, producing one of
+     `JavaRecordInputType`, `JooqRecordInputType`,
+     `JooqTableRecordInputType`, `PojoInputType`.
+
+   - **Parent accessor returns** carry the walk inductively. For an
+     SDL type T with no root producer, if a parent P with an accessor
+     field F returning T is already resolved, T's binding is the
+     reflected return type of P's accessor method. The walk is a
+     fixpoint over `recordBackingClasses`: seed with root-producer
+     bindings, then iterate parent accessors. Each iteration resolves
+     at least one previously-unresolved type or terminates. Termination
+     is finite because the SDL type set is finite. Types unreached at
+     the fixpoint are unreachable by construction (no root producer in
+     their reverse-accessor cone) and classify as `PlainObjectType`
+     per the existing baseline; their generated code is dead and not
+     consulted at runtime, so any `@record` they carry is a silent
+     no-op under R96.
+
+   - **Multi-producer agreement.** An SDL type can be reached by more
+     than one producer (two `@service` methods returning it, `@service`
+     plus `@table`, or a root producer plus an inbound parent accessor
+     that reflects). The set of reflected `Class<?>` values for the
+     SDL type must agree; disagreement is the same classifier-tier
+     rejection as the directive-vs-reflection check at checkpoint 2,
+     naming the SDL type and the disagreeing producer-class pairs.
 
 2. **Load-bearing equality check.** When `@record` is present and a
-   reflected class is also discoverable for the same type from a root
-   producer, the two must resolve to the same class. Mismatch is a
-   classifier-tier error with a message naming the SDL type, the
-   directive's `className`, and the reflected class, surfaced through
-   `ValidationReport.errors()` so the build halts.
+   reflected class is also discoverable for the same type (root
+   producer or parent accessor), the two must resolve to the same
+   class. Mismatch is a classifier-tier rejection: R96 adds a
+   `Rejection.recordBindingMismatch(sdlType, directiveClass,
+   reflectedClass)` variant to the existing sealed taxonomy, surfaced
+   through `ValidationReport.errors()` so the build halts. The
+   multi-producer agreement check at checkpoint 1 produces the same
+   rejection shape with the disagreeing reflected-class pair.
 
    The check carries the `@LoadBearingClassifierCheck` /
    `@DependsOnClassifierCheck` annotation pair under the key
    `record-binding.directive-matches-reflection`. The producer site is
    the population path inside `buildResultType` (`TypeBuilder.java:696`)
-   and `buildNonTableInputType` (`TypeBuilder.java:887`); the consumer
-   site is `FieldBuilder.resolveRecordAccessor`
-   (`FieldBuilder.java:3808`), which assumes the resolved `Class<?>`
-   the binding produces is the class field accessors will be emitted
-   against. `LoadBearingGuaranteeAuditTest` enforces the pair, so the
-   spec lands the annotations together with the equality check itself.
+   plus the population path R96 adds inside `buildNonTableInputType`
+   (`TypeBuilder.java:887`, currently has no `recordBackingClasses`
+   population); the consumer site is
+   `FieldBuilder.resolveRecordAccessor` (`FieldBuilder.java:3808`),
+   which assumes the resolved `Class<?>` the binding produces is the
+   class field accessors will be emitted against.
+   `LoadBearingGuaranteeAuditTest` enforces the pair, so the spec lands
+   the annotations together with the equality check itself.
 
-   The equality compares the resolved `Class<?>` only. For
-   `JooqTableRecordType`, the existing path derives the `TableRef` slot
-   via `svc.resolveTableByRecordClass(cls)` at
-   `TypeBuilder.java:719`; that resolution is a pure function of the
-   class, so agreement on `cls` implies agreement on `TableRef` and no
-   separate equality on the `TableRef` slot is required. If
-   `resolveTableByRecordClass` is ever generalised to take additional
-   inputs, this commitment must be revisited as part of that change.
+   The equality compares the resolved `Class<?>` only. Two pure-function
+   commitments ride under it:
 
-3. **Redundancy warning.** When `@record` is present, a reflected class
-   is discoverable from a root producer, and the two agree, the
-   validator emits a `ValidationReport.warnings()` entry telling the
-   author the directive restates information graphitron already
-   derived and can be removed. Example:
+   - For `JooqTableRecordType`, the existing path derives the
+     `TableRef` slot via `svc.resolveTableByRecordClass(cls)` at
+     `TypeBuilder.java:719`. That resolution is a pure function of the
+     class, so agreement on `cls` implies agreement on `TableRef`.
+   - For `JavaRecordType` / `JavaRecordInputType`, the record's
+     component list (the basis for accessor mapping) is a pure function
+     of `cls`.
+
+   If either resolution is ever generalised to take additional inputs,
+   the corresponding commitment must be revisited as part of that
+   change.
+
+3. **Redundancy warning.** When `@record` is present, reflection
+   resolves the same class (root producer or parent-accessor walk),
+   and the two agree, the validator emits a
+   `ValidationReport.warnings()` entry telling the author the directive
+   restates information graphitron already derived and can be removed.
+   Because reflection covers every reachable type after checkpoint 1,
+   this warning fires on every reachable `@record` that survives the
+   equality check. Example:
 
    > Type 'FilmReviewPayload' carries `@record(record: { className:
    > "com.example.FilmReviewPayloadRecord" })`. Graphitron derives the
    > same backing class from the producing field's reflected return
    > type. The directive is redundant; remove it.
-
-4. **Directive-only fallback with a tree-wide info signal.** When
-   `@record` is present and no reflected class is discoverable from a
-   root producer (e.g. an isolated payload type with no `@service`
-   producer reachable at schema-build time, or a nested child reached
-   only through a parent accessor), the directive remains the source
-   of the binding. No warning fires; the directive is doing real work.
-   This branch exists to keep R96 additive: nothing that classifies as
-   backed today loses its classification.
-
-   The validator emits a `ValidationReport.info()` entry at each
-   directive-only-fallback site so the retirement of the directive
-   declaration (a downstream item) has a tree-wide signal to chase.
-   The retirement item lands when the info-entry set is empty across
-   the test schema corpus; until then, the fallback is a measured
-   surface, not an unbounded escape hatch.
 
 The `@table + @record` shadow rule at `TypeBuilder.java:820-826`
 continues to apply unchanged: when both are present on the same
@@ -132,10 +150,10 @@ incompatible with `@error`) continues to apply unchanged.
 ## Out of scope
 
 - Retiring the directive declaration at `directives.graphqls:290`.
-  R96 makes the directive redundant on every type with a discoverable
-  producer; once consumers have removed those declarations and the
-  directive-only fallback ceases to fire in tree-wide tests, a later
-  item retires the declaration itself.
+  R96 makes the directive redundant on every reachable type; once
+  consumers have removed those declarations and the redundancy
+  warning count drops to zero across the corpus, a later item retires
+  the declaration itself.
 - Retiring any of the eight backed model variants (the four result
   variants and the four input variants named in the preamble). These
   remain the produced classifications; R96 changes the source of the
@@ -153,7 +171,10 @@ incompatible with `@error`) continues to apply unchanged.
   binds the *external* backing class for accessor resolution. The two
   slots ride on orthogonal axes (graphitron-emitted validation record
   vs. author-supplied accessor target) and coexist on the same input
-  type without conflict.
+  type without conflict. R94 is currently in Spec, so this is a
+  forward commitment on R96's side: whichever lands first, the
+  input-side population path R96 adds inside `buildNonTableInputType`
+  must not write to the `recordShape` slot.
 
 ## Tests
 
@@ -165,16 +186,21 @@ Validator-tier (`GraphitronSchemaValidator` test surface):
 - Positive: `INPUT_OBJECT` carrying `@record` whose `className`
   matches the consuming `@service` parameter type emits the same
   warning shape.
-- Negative: a type without `@record` and with a discoverable root
-  producer emits no warning.
-- Fallback signal: a type with `@record` and no discoverable root
-  producer (isolated payload or nested-child-only reachable) emits a
-  `ValidationReport.info()` entry naming the type and the directive,
-  and no warning. The info entry is the forcing function the
-  retirement item chases.
-- Error: `OBJECT` carrying `@record` whose `className` disagrees with
-  the reflected root producer surfaces a classifier error on
-  `ValidationReport.errors()`; the build halts.
+- Positive: nested child `OBJECT` reached only through a parent
+  accessor, carrying `@record` whose `className` matches the parent's
+  accessor return type, emits the redundancy warning (exercises the
+  parent-accessor inductive step).
+- Negative: a type without `@record` and with a discoverable producer
+  (root or parent accessor) emits no warning.
+- Error (directive vs reflection): `OBJECT` carrying `@record` whose
+  `className` disagrees with the reflected producer surfaces a
+  `Rejection.recordBindingMismatch` on `ValidationReport.errors()`;
+  the build halts.
+- Error (multi-producer disagreement): an SDL type reached by two
+  producers whose reflected classes disagree (e.g. two `@service`
+  methods returning different classes for the same SDL type) surfaces
+  the same rejection variant with the disagreeing class pair; the
+  build halts.
 - Shadow-rule precedence: an input carrying both `@table` and `@record`
   fires the existing shadow-rule warning, not the redundancy warning.
 
@@ -193,34 +219,45 @@ Pipeline-tier (classifier output), split across producer sources:
   the pure-function commitment at checkpoint 2.
 - `INPUT_OBJECT` consumed by an `@service` method classifies
   symmetrically through `buildNonTableInputType`.
-- Parent-accessor fallback: a nested child type reached only as a
-  parent's accessor return type, carrying `@record`, classifies via
-  the directive-only fallback (binding sourced from the directive,
-  info entry recorded at the validator). Without `@record`, the same
-  type classifies as `PlainObjectType` (unchanged baseline; R96 does
-  not promote child types reachable only through parent accessors).
-- A type with no root producer and no `@record` continues to classify
-  as `PlainObjectType` (unchanged baseline).
+- Parent-accessor inductive step: a nested child type reached only as
+  a parent's accessor return type classifies as the backed variant
+  matching the reflected return-type class, with or without `@record`.
+  Without `@record`, this is the change R96 introduces; with
+  `@record`, the classification must match the with-directive
+  baseline. This replaces the pre-R96 PlainObjectType baseline for
+  nested-child-only types carrying `@record`.
+- A type with no producer anywhere in its reverse-accessor cone, with
+  or without `@record`, continues to classify as `PlainObjectType`
+  (unchanged baseline). `@record` on such an unreachable type is a
+  silent no-op; the generated code is dead.
+- Corpus-level additive assertion: across the sakila and fixture
+  schemas, the multiset of `(reachable SDL type → backed variant)`
+  bindings is a superset of the with-directive baseline. The
+  invariant scope is reachable types only; unreachable types whose
+  backed classification depends solely on the directive (no producer
+  anywhere in the reverse-accessor cone) lose their backed
+  classification under R96 by design, but their generated code is
+  dead, so no runtime path is affected.
 
 No compile-tier or execution-tier coverage is needed: the produced
-variants are unchanged, so generated code shape and runtime behaviour
-are unchanged.
+variants are unchanged on every reachable type, so generated code
+shape and runtime behaviour are unchanged where any code path can run.
 
 ## Risk
 
-The substantive risk sits in checkpoint 1: making reflection the source
-on the result and input sides without `@record` requires that
-root-producer discovery (`@service` / `@table` / `@tableMethod`) is
-total enough at schema-build time to cover every type that today
-classifies as backed via the directive *and* is reachable from a root
-producer. The directive-only fallback at checkpoint 4 bounds this on
-both ends: any type the new path fails to reach but the directive does
-reach continues to classify exactly as today, and the
-`ValidationReport.info()` entry at each fallback site is the tree-wide
-signal that producer discovery did not cover it. The retirement of
-the directive declaration depends on driving that info-entry set to
-empty across the corpus; until it is empty, the fallback remains a
-measured surface.
+The substantive risk sits in checkpoint 1's fixpoint walk. The walk
+is correct iff every reachable SDL type ends up with exactly one
+resolved class, which decomposes into three sub-claims: (a) the walk
+terminates (finite SDL type set, each iteration resolves at least one
+previously-unresolved type or halts); (b) the walk reaches every type
+with a producer somewhere in its reverse-accessor cone (no
+premature termination, no missed parent edge); (c) the
+multi-producer agreement rule pins disagreement as an error rather
+than letting one producer silently win. The corpus-level additive
+assertion in Tests is the witness for (b): if the with-directive
+baseline carries a reachable backed type the new walk misses, the
+assertion fails. Disagreement under (c) is auditable through the
+`Rejection.recordBindingMismatch` variant.
 
 The equality check at checkpoint 2 is the load-bearing classifier
 invariant. The `@LoadBearingClassifierCheck` /
@@ -229,7 +266,8 @@ invariant. The `@LoadBearingClassifierCheck` /
 the check never fires on the existing schema corpus, the directive has
 been carrying truth and the migration is safe; if it fires, the
 surfaced mismatch is the cleanup item authors must address before the
-directive can be retired. The `TableRef` pure-function commitment
-nested under checkpoint 2 is the one assumption the check carries
-unstated and must be revisited if `svc.resolveTableByRecordClass` is
-ever generalised.
+directive can be retired. The two pure-function commitments nested
+under checkpoint 2 (`TableRef` derivation and `JavaRecordType`
+component-list derivation) are the assumptions the check carries
+unstated and must be revisited if either underlying resolution is
+generalised.
