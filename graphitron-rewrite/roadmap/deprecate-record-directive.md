@@ -11,10 +11,12 @@ depends-on: []
 # Derive backing-class binding from reflection; warn on redundant @record
 
 Graphitron classifies an SDL `OBJECT` or `INPUT_OBJECT` against a Java
-backing class to drive accessor resolution and the `JavaRecordType`,
-`JooqRecordType`, `JooqTableRecordType`, `PojoResultType.Backed`, and
-`PojoInputType` variants. Today the binding from SDL type to backing
-class is sourced entirely from the `@record(record:
+backing class to drive accessor resolution and eight sealed variants:
+four on the result axis (`JavaRecordType`, `JooqRecordType`,
+`JooqTableRecordType`, `PojoResultType.Backed`) and four on the input
+axis (`JavaRecordInputType`, `JooqRecordInputType`,
+`JooqTableRecordInputType`, `PojoInputType`). Today the binding from
+SDL type to backing class is sourced entirely from the `@record(record:
 ExternalCodeReference)` directive's `className` argument: `TypeBuilder`
 reads the directive at line 386 to dispatch into `buildResultType`
 (line 696), populates `recordBackingClasses` from `dir.getArgument(
@@ -37,7 +39,7 @@ retirement has a measured surface to chase.
 
 ## Scope
 
-Three checkpoints in `TypeBuilder` and one in `GraphitronSchemaValidator`:
+Four checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
 
 1. **Reflection-derived binding from root producers.** Extend
    `recordBackingClasses` population so the map is filled from the
@@ -48,10 +50,12 @@ Three checkpoints in `TypeBuilder` and one in `GraphitronSchemaValidator`:
    classification. For result types, this means `buildResultType` and
    the dispatch at line 386 stop being directive-gated for the
    classification decision; a type with a reflectable root producer
-   classifies into the appropriate backed variant (`JavaRecordType` /
-   `JooqRecordType` / `JooqTableRecordType` / `PojoResultType.Backed`)
-   without the directive. The input side does the same through
-   `buildNonTableInputType` against the consuming `@service` parameter.
+   classifies into the appropriate backed variant on the result axis
+   (one of `JavaRecordType`, `JooqRecordType`, `JooqTableRecordType`,
+   `PojoResultType.Backed`) without the directive. The input side does
+   the same through `buildNonTableInputType` against the consuming
+   `@service` parameter, producing one of `JavaRecordInputType`,
+   `JooqRecordInputType`, `JooqTableRecordInputType`, `PojoInputType`.
 
    Parent-accessor return types are *not* a reflection source in R96.
    Resolving a child type's binding from the parent's accessor return
@@ -132,10 +136,10 @@ incompatible with `@error`) continues to apply unchanged.
   producer; once consumers have removed those declarations and the
   directive-only fallback ceases to fire in tree-wide tests, a later
   item retires the declaration itself.
-- Retiring the model variants `JavaRecordType`, `JooqRecordType`,
-  `JooqTableRecordType`, `PojoResultType.Backed`, `PojoInputType`.
-  These remain the produced classifications; R96 changes the source of
-  the binding, not the destination.
+- Retiring any of the eight backed model variants (the four result
+  variants and the four input variants named in the preamble). These
+  remain the produced classifications; R96 changes the source of the
+  binding, not the destination.
 - The `@service`-payload error-construction surface
   (`payloadFactoryLambda`, `ResultAssembly`, the `PayloadAccessor` arm
   of `Transport`). Separate concern; whatever drives those today drives
@@ -143,7 +147,13 @@ incompatible with `@error`) continues to apply unchanged.
 - Retiring the `@table + @record` shadow rule at
   `TypeBuilder.java:820-826`. That rule's existence is a separate
   redundancy signal and is its own cleanup item.
-- Anything R94 owns on the input-side classifier rework.
+- R94's input-record validation seam. R94 emits one
+  graphitron-internal Java record per reachable SDL input type and
+  attaches it to every classified input as a `recordShape` slot; R96
+  binds the *external* backing class for accessor resolution. The two
+  slots ride on orthogonal axes (graphitron-emitted validation record
+  vs. author-supplied accessor target) and coexist on the same input
+  type without conflict.
 
 ## Tests
 
@@ -219,10 +229,7 @@ invariant. The `@LoadBearingClassifierCheck` /
 the check never fires on the existing schema corpus, the directive has
 been carrying truth and the migration is safe; if it fires, the
 surfaced mismatch is the cleanup item authors must address before the
-directive can be retired.
-
-The `TableRef` pure-function commitment in checkpoint 2 is the one
-assumption that survives the equality check unstated. If
-`svc.resolveTableByRecordClass` is ever generalised to take inputs
-beyond the class, the check becomes incomplete; that change must
-revisit this commitment together with checkpoint 2.
+directive can be retired. The `TableRef` pure-function commitment
+nested under checkpoint 2 is the one assumption the check carries
+unstated and must be revisited if `svc.resolveTableByRecordClass` is
+ever generalised.
