@@ -1,7 +1,7 @@
 ---
 id: R94
 title: Emit SDL input types as graphitron-internal Java classes (validation target; eventually records via R174)
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 7
 theme: mutations-errors
