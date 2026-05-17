@@ -23,59 +23,98 @@ ARG_RECORD)` at lines 715 and 725, and the map is consumed by
 result types fall through to `PlainObjectType` at line 391 and
 field-level accessor resolution is skipped.
 
-That class is already discoverable from the producer side: an `@service`
-method's return type, a `@table`-resolved jOOQ record, or a parent
-field's accessor return type all name the same class the directive
-restates. R96 makes reflection the source of the SDL → backing-class
-binding, keeps the directive as an override-with-equality-check during
-the transition, and once the two agree the directive's only signal is
-"this is redundant", which the validator surfaces as a warning.
+That class is already discoverable on the root-producer side: an
+`@service` method's return type, a `@table`-resolved jOOQ record, or a
+`@tableMethod` return all name the same class the directive restates.
+R96 makes reflection the source of the SDL → backing-class binding for
+types reachable from a root producer, keeps the directive as an
+override-with-equality-check during the transition, and once the two
+agree the directive's only signal is "this is redundant", which the
+validator surfaces as a warning. Types reachable only as nested
+children classify via a directive-only fallback that R96 instruments
+with a tree-wide info signal so the directive declaration's eventual
+retirement has a measured surface to chase.
 
 ## Scope
 
 Three checkpoints in `TypeBuilder` and one in `GraphitronSchemaValidator`:
 
-1. **Reflection-derived binding.** Extend `recordBackingClasses`
-   population so the map is filled from the reflected producer class
-   whenever a producer is identifiable for an SDL type (`@service` /
-   `@table` root, parent-accessor return), independent of `@record`.
-   For result types, this means `buildResultType` and the dispatch at
-   line 386 stop being directive-gated for the classification decision:
-   a type with a reflectable producer classifies into the appropriate
-   backed variant (`JavaRecordType` / `JooqRecordType` /
-   `JooqTableRecordType` / `PojoResultType.Backed`) without the
-   directive. Types with no reflectable producer still fall through to
-   `PlainObjectType`. The input side does the same through
+1. **Reflection-derived binding from root producers.** Extend
+   `recordBackingClasses` population so the map is filled from the
+   reflected producer class whenever a root producer is identifiable
+   for an SDL type. Root producers are `@service` method returns,
+   `@table` resolution, and `@tableMethod` returns: these are
+   addressable at schema-build time independent of any other type's
+   classification. For result types, this means `buildResultType` and
+   the dispatch at line 386 stop being directive-gated for the
+   classification decision; a type with a reflectable root producer
+   classifies into the appropriate backed variant (`JavaRecordType` /
+   `JooqRecordType` / `JooqTableRecordType` / `PojoResultType.Backed`)
+   without the directive. The input side does the same through
    `buildNonTableInputType` against the consuming `@service` parameter.
 
+   Parent-accessor return types are *not* a reflection source in R96.
+   Resolving a child type's binding from the parent's accessor return
+   would depend on the parent's own binding already being resolved, an
+   ordering hazard with no termination argument in the current writer
+   path. Types reachable only as nested children classify via the
+   directive-only fallback at checkpoint 4. A separate item can replace
+   that fallback with an explicit fixpoint once a termination argument
+   is in hand.
+
 2. **Load-bearing equality check.** When `@record` is present and a
-   reflected class is also discoverable for the same type, the two must
-   resolve to the same class. Mismatch is a classifier-tier error with
-   a message naming the SDL type, the directive's `className`, and the
-   reflected class, surfaced through `ValidationReport.errors()` so the
-   build halts. This is the `@LoadBearingClassifierCheck` discipline:
-   it expresses an invariant the classifier guarantees for downstream
-   consumers, and any violation is a contradiction the author must
-   resolve.
+   reflected class is also discoverable for the same type from a root
+   producer, the two must resolve to the same class. Mismatch is a
+   classifier-tier error with a message naming the SDL type, the
+   directive's `className`, and the reflected class, surfaced through
+   `ValidationReport.errors()` so the build halts.
+
+   The check carries the `@LoadBearingClassifierCheck` /
+   `@DependsOnClassifierCheck` annotation pair under the key
+   `record-binding.directive-matches-reflection`. The producer site is
+   the population path inside `buildResultType` (`TypeBuilder.java:696`)
+   and `buildNonTableInputType` (`TypeBuilder.java:887`); the consumer
+   site is `FieldBuilder.resolveRecordAccessor`
+   (`FieldBuilder.java:3808`), which assumes the resolved `Class<?>`
+   the binding produces is the class field accessors will be emitted
+   against. `LoadBearingGuaranteeAuditTest` enforces the pair, so the
+   spec lands the annotations together with the equality check itself.
+
+   The equality compares the resolved `Class<?>` only. For
+   `JooqTableRecordType`, the existing path derives the `TableRef` slot
+   via `svc.resolveTableByRecordClass(cls)` at
+   `TypeBuilder.java:719`; that resolution is a pure function of the
+   class, so agreement on `cls` implies agreement on `TableRef` and no
+   separate equality on the `TableRef` slot is required. If
+   `resolveTableByRecordClass` is ever generalised to take additional
+   inputs, this commitment must be revisited as part of that change.
 
 3. **Redundancy warning.** When `@record` is present, a reflected class
-   is discoverable, and the two agree, the validator emits a
-   `ValidationReport.warnings()` entry telling the author the directive
-   restates information graphitron already derived and can be removed.
-   Example:
+   is discoverable from a root producer, and the two agree, the
+   validator emits a `ValidationReport.warnings()` entry telling the
+   author the directive restates information graphitron already
+   derived and can be removed. Example:
 
    > Type 'FilmReviewPayload' carries `@record(record: { className:
    > "com.example.FilmReviewPayloadRecord" })`. Graphitron derives the
    > same backing class from the producing field's reflected return
    > type. The directive is redundant; remove it.
 
-4. **Directive-only fallback.** When `@record` is present and no
-   reflected class is discoverable (e.g. an isolated payload type with
-   no `@service` producer reachable at schema-build time), the
-   directive remains the source of the binding. No warning fires; the
-   directive is doing real work. This branch exists to keep R96
-   additive: nothing that classifies as backed today loses its
-   classification.
+4. **Directive-only fallback with a tree-wide info signal.** When
+   `@record` is present and no reflected class is discoverable from a
+   root producer (e.g. an isolated payload type with no `@service`
+   producer reachable at schema-build time, or a nested child reached
+   only through a parent accessor), the directive remains the source
+   of the binding. No warning fires; the directive is doing real work.
+   This branch exists to keep R96 additive: nothing that classifies as
+   backed today loses its classification.
+
+   The validator emits a `ValidationReport.info()` entry at each
+   directive-only-fallback site so the retirement of the directive
+   declaration (a downstream item) has a tree-wide signal to chase.
+   The retirement item lands when the info-entry set is empty across
+   the test schema corpus; until then, the fallback is a measured
+   surface, not an unbounded escape hatch.
 
 The `@table + @record` shadow rule at `TypeBuilder.java:820-826`
 continues to apply unchanged: when both are present on the same
@@ -111,31 +150,47 @@ incompatible with `@error`) continues to apply unchanged.
 Validator-tier (`GraphitronSchemaValidator` test surface):
 
 - Positive: `OBJECT` carrying `@record` whose `className` matches the
-  reflected producer return type emits the redundancy warning naming
-  the type and both classes.
-- Positive: `INPUT_OBJECT` carrying `@record` whose `className` matches
-  the consuming `@service` parameter type emits the same warning
-  shape.
-- Negative: a type with `@record` and no discoverable producer emits no
-  warning (directive-only fallback). A type without `@record` and with
-  a discoverable producer emits no warning.
+  reflected root-producer return type emits the redundancy warning
+  naming the type and both classes.
+- Positive: `INPUT_OBJECT` carrying `@record` whose `className`
+  matches the consuming `@service` parameter type emits the same
+  warning shape.
+- Negative: a type without `@record` and with a discoverable root
+  producer emits no warning.
+- Fallback signal: a type with `@record` and no discoverable root
+  producer (isolated payload or nested-child-only reachable) emits a
+  `ValidationReport.info()` entry naming the type and the directive,
+  and no warning. The info entry is the forcing function the
+  retirement item chases.
 - Error: `OBJECT` carrying `@record` whose `className` disagrees with
-  the reflected producer surfaces a classifier error on
+  the reflected root producer surfaces a classifier error on
   `ValidationReport.errors()`; the build halts.
 - Shadow-rule precedence: an input carrying both `@table` and `@record`
   fires the existing shadow-rule warning, not the redundancy warning.
 
-Pipeline-tier (classifier output):
+Pipeline-tier (classifier output), split across producer sources:
 
-- An `OBJECT` reached as the return of an `@service` method classifies
-  as the backed variant matching the reflected class, with or without
-  `@record`. Without `@record`, this is the change R96 introduces;
-  with `@record`, the classification must match the with-directive
-  baseline.
-- An `INPUT_OBJECT` consumed by an `@service` method classifies
+- `@service`-return path: an `OBJECT` reached as the return of an
+  `@service` method classifies as the backed variant matching the
+  reflected class, with or without `@record`. Without `@record`, this
+  is the change R96 introduces; with `@record`, the classification
+  must match the with-directive baseline.
+- `@table` / `@tableMethod`-resolved path: an `OBJECT` reached through
+  `@table` (or a `@tableMethod` return) classifies as
+  `JooqTableRecordType` with both `cls` and `TableRef` populated,
+  without `@record`. With `@record`, classification matches the
+  with-directive baseline; the `TableRef` slot is identical, exercising
+  the pure-function commitment at checkpoint 2.
+- `INPUT_OBJECT` consumed by an `@service` method classifies
   symmetrically through `buildNonTableInputType`.
-- A type with no discoverable producer and no `@record` continues to
-  classify as `PlainObjectType` (unchanged baseline).
+- Parent-accessor fallback: a nested child type reached only as a
+  parent's accessor return type, carrying `@record`, classifies via
+  the directive-only fallback (binding sourced from the directive,
+  info entry recorded at the validator). Without `@record`, the same
+  type classifies as `PlainObjectType` (unchanged baseline; R96 does
+  not promote child types reachable only through parent accessors).
+- A type with no root producer and no `@record` continues to classify
+  as `PlainObjectType` (unchanged baseline).
 
 No compile-tier or execution-tier coverage is needed: the produced
 variants are unchanged, so generated code shape and runtime behaviour
@@ -144,20 +199,30 @@ are unchanged.
 ## Risk
 
 The substantive risk sits in checkpoint 1: making reflection the source
-on the input side and the result side without `@record` requires that
-producer discovery (`@service` / `@table` / parent-accessor) is
+on the result and input sides without `@record` requires that
+root-producer discovery (`@service` / `@table` / `@tableMethod`) is
 total enough at schema-build time to cover every type that today
-classifies as backed via the directive. If a type that today is backed
-loses its classification because its producer is not discoverable in
-the new path, downstream emitters that assume a backed variant will
-fail at pipeline tier. The directive-only fallback at checkpoint 4
-exists to bound this: any type the new path fails to reach but the
-directive does reach continues to classify exactly as today, and the
-absence of the redundancy warning is the signal that producer
-discovery did not cover it.
+classifies as backed via the directive *and* is reachable from a root
+producer. The directive-only fallback at checkpoint 4 bounds this on
+both ends: any type the new path fails to reach but the directive does
+reach continues to classify exactly as today, and the
+`ValidationReport.info()` entry at each fallback site is the tree-wide
+signal that producer discovery did not cover it. The retirement of
+the directive declaration depends on driving that info-entry set to
+empty across the corpus; until it is empty, the fallback remains a
+measured surface.
 
 The equality check at checkpoint 2 is the load-bearing classifier
-invariant. If it never fires on the existing schema corpus, the
-directive has been carrying truth and the migration is safe; if it
-fires, the surfaced mismatch is the cleanup item authors must address
-before the directive can be retired.
+invariant. The `@LoadBearingClassifierCheck` /
+`@DependsOnClassifierCheck` pair under
+`record-binding.directive-matches-reflection` makes it auditable; if
+the check never fires on the existing schema corpus, the directive has
+been carrying truth and the migration is safe; if it fires, the
+surfaced mismatch is the cleanup item authors must address before the
+directive can be retired.
+
+The `TableRef` pure-function commitment in checkpoint 2 is the one
+assumption that survives the equality check unstated. If
+`svc.resolveTableByRecordClass` is ever generalised to take inputs
+beyond the class, the check becomes incomplete; that change must
+revisit this commitment together with checkpoint 2.
