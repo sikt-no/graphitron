@@ -341,8 +341,9 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         String fqClassName,
-        GraphQLInputObjectType schemaType
-    ) implements InputType {}
+        GraphQLInputObjectType schemaType,
+        InputRecordShape recordShape
+    ) implements InputType, HasInputRecordShape {}
 
     /**
      * A non-table input type backed by a plain Java class (POJO), or one whose backing class
@@ -352,8 +353,9 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         String fqClassName,
-        GraphQLInputObjectType schemaType
-    ) implements InputType {}
+        GraphQLInputObjectType schemaType,
+        InputRecordShape recordShape
+    ) implements InputType, HasInputRecordShape {}
 
     /**
      * A non-table input type backed by a jOOQ {@code Record<?>} (not table-bound).
@@ -363,8 +365,9 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         String fqClassName,
-        GraphQLInputObjectType schemaType
-    ) implements InputType {}
+        GraphQLInputObjectType schemaType,
+        InputRecordShape recordShape
+    ) implements InputType, HasInputRecordShape {}
 
     /**
      * A non-table input type backed by a jOOQ {@code TableRecord<?>}.
@@ -378,8 +381,9 @@ public sealed interface GraphitronType
         SourceLocation location,
         String fqClassName,
         TableRef table,
-        GraphQLInputObjectType schemaType
-    ) implements InputType {}
+        GraphQLInputObjectType schemaType,
+        InputRecordShape recordShape
+    ) implements InputType, HasInputRecordShape {}
 
     /**
      * A GraphQL input object type annotated with {@code @table}.
@@ -399,8 +403,9 @@ public sealed interface GraphitronType
         SourceLocation location,
         TableRef table,
         List<InputField> inputFields,
-        GraphQLInputObjectType schemaType
-    ) implements GraphitronType {}
+        GraphQLInputObjectType schemaType,
+        InputRecordShape recordShape
+    ) implements GraphitronType, HasInputRecordShape {}
 
     /**
      * A plain SDL object type — no {@code @table}, {@code @record}, {@code @error}, or other

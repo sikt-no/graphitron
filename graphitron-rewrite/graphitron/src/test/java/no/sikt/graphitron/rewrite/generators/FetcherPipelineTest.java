@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
+import no.sikt.graphitron.rewrite.generators.schema.InputRecordGenerator;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions.DataFetcherKind;
 import org.junit.jupiter.api.Test;
@@ -719,6 +720,149 @@ class FetcherPipelineTest {
         return TypeFetcherGenerator.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
             .map(TypeSpec::name)
             .toList();
+    }
+
+    // ===== R94: graphitron-emitted input classes =====
+
+    @Test
+    void inputRecord_scalar_emitsFromMapAndValidatesAgainstRecord() {
+        // Pipeline-tier R94: a single-scalar input type produces one input class with one
+        // component and a static fromMap factory keyed by the SDL field name.
+        var sdl = """
+            input FilmIdInput { filmId: Int! }
+            type Query { dummy(in: FilmIdInput): String }
+            """;
+        var spec = inputRecordSpec("FilmIdInput", sdl);
+        assertThat(spec.methodSpecs())
+            .extracting(MethodSpec::name)
+            .contains("fromMap", "filmId");
+        var fromMap = method(spec, "fromMap");
+        // The factory dispatches on the scalar component by SDL field name.
+        assertThat(fromMap.code().toString()).contains("\"filmId\"");
+    }
+
+    @Test
+    void inputRecord_list_emitsListComponent() {
+        // Pipeline-tier R94: a list-of-scalar input emits a List<Integer>-shaped component
+        // and the fromMap factory streams element-wise (pass-through cast).
+        var sdl = """
+            input FilmIdsInput { filmIds: [Int!]! }
+            type Query { dummy(in: FilmIdsInput): String }
+            """;
+        var spec = inputRecordSpec("FilmIdsInput", sdl);
+        // The emitted accessor's declared return type proves the List<Integer> shape.
+        var accessor = method(spec, "filmIds");
+        assertThat(accessor.returnType().toString())
+            .isEqualTo("java.util.List<java.lang.Integer>");
+    }
+
+    @Test
+    void inputRecord_nested_recursesCoercer() {
+        // Pipeline-tier R94: a nested-input component emits a List<FilmIdItem>-shaped
+        // accessor on the parent, and the parent's fromMap recurses FilmIdItem.fromMap.
+        var sdl = """
+            input FilmIdItem { filmId: Int! }
+            input FilmsByPathInput { films: [FilmIdItem!]! }
+            type Query { dummy(in: FilmsByPathInput): String }
+            """;
+        var parentSpec = inputRecordSpec("FilmsByPathInput", sdl);
+        // The List element type lifts to the sibling class's ClassName.
+        var accessor = method(parentSpec, "films");
+        assertThat(accessor.returnType().toString())
+            .isEqualTo("java.util.List<" + DEFAULT_OUTPUT_PACKAGE + ".inputs.FilmIdItem>");
+        var fromMap = method(parentSpec, "fromMap");
+        // The recursion is structural — the parent's factory references the sibling class.
+        assertThat(fromMap.code().toString())
+            .contains(DEFAULT_OUTPUT_PACKAGE + ".inputs.FilmIdItem")
+            .contains(".fromMap(");
+    }
+
+    @Test
+    void inputRecord_unreachable_emitsNoRecord() {
+        // Pipeline-tier R94: an SDL input type not reachable from any field argument is dead
+        // schema; the closure walker (with the assembled schema in hand) ignores it, so no
+        // class is emitted. The unreachable case requires the assembled schema since the
+        // closure walk reads SDL field arguments off the assembled GraphQLObjectType.
+        var sdl = """
+            input ReachedInput { id: Int! }
+            input UnreachedInput { id: Int! }
+            type Query { dummy(in: ReachedInput): String }
+            """;
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        var classes = InputRecordGenerator.generate(bundle.model(), bundle.assembled(), DEFAULT_OUTPUT_PACKAGE)
+            .stream().map(TypeSpec::name).toList();
+        assertThat(classes).contains("ReachedInput");
+        assertThat(classes).doesNotContain("UnreachedInput");
+    }
+
+    @Test
+    void inputRecord_validatorPreStep_receivesTypedRecordNotMap() {
+        // Pipeline-tier R94 regression guard: the rewired validator pre-step on a mutation
+        // service field with a ValidationHandler-bearing @error type materialises the
+        // graphitron-emitted class via <InputName>.fromMap(...) and walks the typed local
+        // through validator.validate(...). Drifting the pre-step back to a raw Map walk
+        // (validate(env.getArgument(...))) fails the contains assertion. Uses TestInputBean
+        // + runWithInputBean (the canonical R150 service-input-bean classification path) so
+        // the SDL classifies cleanly; the validator pre-step then runs on top.
+        var sdl = """
+            enum TestInputBeanEnum { LOW HIGH }
+            input TestInputNested { key: String, value: String }
+            input TestInputBean { title: String, rating: TestInputBeanEnum, nested: [TestInputNested!] }
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = ValidationErr | DbErr
+            type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SakPayload"}) {
+                data: String
+                errors: [SakError]
+            }
+            type Query { x: String }
+            type Mutation {
+                runWithInputBean(input: TestInputBean): SakPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithInputBean"})
+            }
+            """;
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        var specs = TypeFetcherGenerator.generate(bundle.model(), bundle.assembled(), DEFAULT_OUTPUT_PACKAGE);
+        var mutationFetchers = specs.stream()
+            .filter(t -> t.name().equals("MutationFetchers"))
+            .findFirst()
+            .orElseThrow();
+        var run = method(mutationFetchers, "runWithInputBean");
+        var body = run.code().toString();
+        // The validator pre-step walks the typed instance, not the raw Map.
+        assertThat(body)
+            .contains(DEFAULT_OUTPUT_PACKAGE + ".inputs.TestInputBean")
+            .contains(".fromMap(")
+            .contains("__validator.validate");
+        // Negative half of the regression guard: the typed local feeds validate, not the raw
+        // Map. The pre-step's "Object __arg_input = env.getArgument(...)" raw-coerce shape
+        // belongs to the legacy fallback (used only when the assembled schema is missing).
+        assertThat(body)
+            .doesNotContain("Object __arg_input = env.getArgument");
+    }
+
+    /**
+     * Helper for the four R94 SDL → input-class pipeline cases: produces the {@code TypeSpec}
+     * the R94 generator emits for {@code typeName}, asserting the class is present in the
+     * emitted set. The model-only build path is enough for the input-class shape; the
+     * regression-guard case above uses {@code buildBundle} because the validator pre-step
+     * resolution needs the assembled graphql-java schema.
+     */
+    private TypeSpec inputRecordSpec(String typeName, String sdl) {
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        var specs = InputRecordGenerator.generate(bundle.model(), bundle.assembled(), DEFAULT_OUTPUT_PACKAGE);
+        return specs.stream()
+            .filter(t -> t.name().equals(typeName))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "Input class '" + typeName + "' not emitted; got: "
+                    + specs.stream().map(TypeSpec::name).toList()));
     }
 
     private TypeSpec findSpec(String className, String sdl) {

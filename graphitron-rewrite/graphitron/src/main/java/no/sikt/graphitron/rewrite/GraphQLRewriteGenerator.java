@@ -23,6 +23,7 @@ import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronFacadeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.InputRecordGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.InputTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ObjectTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
@@ -59,7 +60,7 @@ public class GraphQLRewriteGenerator {
     static final Logger LOGGER = LoggerFactory.getLogger(GraphQLRewriteGenerator.class);
 
     private static final List<String> OWNED_SUBPACKAGES =
-        List.of("", "util", "schema", "types", "conditions", "fetchers");
+        List.of("", "util", "schema", "types", "conditions", "fetchers", "inputs");
 
     private final RewriteContext ctx;
 
@@ -174,7 +175,7 @@ public class GraphQLRewriteGenerator {
 
         String outputPackage = ctx.outputPackage();
 
-        var fetcherClasses = TypeFetcherGenerator.generate(schema, outputPackage);
+        var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage);
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage);
 
         Set<Path> emittedThisRun = new LinkedHashSet<>();
@@ -192,6 +193,7 @@ public class GraphQLRewriteGenerator {
         write(ErrorMappingsClassGenerator.generate(schema, outputPackage),                        "schema",     emittedThisRun);
         write(EnumTypeGenerator.generate(schema),                                                 "schema",     emittedThisRun);
         write(InputTypeGenerator.generate(schema),                                                "schema",     emittedThisRun);
+        write(InputRecordGenerator.generate(schema, assembled, outputPackage),                    "inputs",     emittedThisRun);
         write(ObjectTypeGenerator.generate(schema, assembled, fetcherBodies),                     "schema",     emittedThisRun);
         write(GraphitronSchemaClassGenerator.generate(schema, assembled, fetcherBodies.keySet(), outputPackage, federationLink), "schema", emittedThisRun);
         write(GraphitronFacadeGenerator.generate(outputPackage, federationLink),                  "",           emittedThisRun);

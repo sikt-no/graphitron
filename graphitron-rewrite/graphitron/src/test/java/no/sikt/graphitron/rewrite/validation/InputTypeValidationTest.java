@@ -1,11 +1,15 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PojoInputType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
+import no.sikt.graphitron.rewrite.model.InputRecordShape;
+import no.sikt.graphitron.rewrite.model.InputRecordShape.InputComponent;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -32,15 +36,28 @@ class InputTypeValidationTest {
         return validateInputType(type, Map.of());
     }
 
+    /**
+     * Minimal {@link InputRecordShape} for tests that construct input types directly: the
+     * validator under test reads only the validator-relevant slots, but the InputType records
+     * require a non-null shape (load-bearing for the {@code input-record.shape-from-input-type}
+     * classifier check). A single placeholder component satisfies the compact constructor.
+     */
+    private static InputRecordShape placeholderShape(String typeName) {
+        return new InputRecordShape(
+            ClassName.get("test.inputs", typeName),
+            List.of(new InputComponent("placeholder", "placeholder", TypeName.get(String.class), true))
+        );
+    }
+
     enum Case {
 
         VALID("valid input type — no errors",
-            new PojoInputType("FilmInput", null, null, null),
+            new PojoInputType("FilmInput", null, null, null, placeholderShape("FilmInput")),
             List.of()),
 
         KNOWN_INPUT_TYPE_NO_ERROR("input field referencing another InputType in the schema — no error",
-            new PojoInputType("CreateFilmInput", null, null, null),
-            Map.of("TranslationInput", new PojoInputType("TranslationInput", null, null, null)),
+            new PojoInputType("CreateFilmInput", null, null, null, placeholderShape("CreateFilmInput")),
+            Map.of("TranslationInput", new PojoInputType("TranslationInput", null, null, null, placeholderShape("TranslationInput"))),
             List.of());
 
         private final String description;
