@@ -66,26 +66,45 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
      `JavaRecordInputType`, `JooqRecordInputType`,
      `JooqTableRecordInputType`, `PojoInputType`.
 
-   - **Parent accessor returns** carry the walk recursively. For an
-     SDL type T with no root producer, the resolver finds a parent P
-     with an SDL accessor field F returning T, recursively resolves
-     P's binding, then reflects through P's class to find F's accessor
-     method (the candidate-name walk: `getX` / `isX` / `x` /
-     field-read). F's reflected return type is T's binding. Cycle
-     protection: an in-progress set tracks types currently being
-     resolved; if the descent re-enters T while T is still
-     in-progress, T has no grounding in this branch and the resolver
-     tries the next parent (or, if exhausted, returns no binding).
+   - **Parent accessor returns** extend the walk. For every SDL
+     parent P with an SDL accessor field F whose declared return type
+     is T, the resolver recursively resolves P's binding, then
+     reflects through P's class to find F's accessor method (the
+     candidate-name walk: `getX` / `isX` / `x` / field-read). F's
+     reflected return type contributes a binding for T. The walk
+     enumerates every such parent in-edge; it does not stop at the
+     first parent that grounds T, because multi-producer disagreement
+     detection at checkpoint 2 requires every in-edge that can reach
+     T to be observed.
 
-   - **Memoization** uses `recordBackingClasses` as a cache: the first
-     resolution writes the result, subsequent calls return from cache.
-     Termination is trivially finite (each call either returns from
-     cache or completes a resolution; the SDL type set is finite).
-     The substantive property is *completeness*: if any path through
-     accessor edges from a root producer reaches T, the walk resolves
-     T. The synthetic-graph unit test under Tests is the algorithmic
-     witness; the corpus-level additive assertion is the integration
-     witness.
+     Cycle protection: an in-progress set scoped per descent chain
+     blocks the chain from re-entering a type already being resolved
+     on the same chain. The in-progress set bounds termination only;
+     it does not stop sibling enumeration. A descent chain that
+     re-enters T contributes nothing through that path; sibling
+     in-edges and root producers still contribute their bindings to
+     T's collection set.
+
+   - **Per-type collection and post-fold memoization.** The walk
+     accumulates every observed binding for T into a per-type
+     collection set keyed by SDL type (a multimap during the walk,
+     not a first-write-wins cache). Root producers and parent-accessor
+     in-edges both write into this set. After T's walk completes, the
+     set is folded: empty resolves to no binding (T classifies as
+     `PlainObjectType`); singleton writes the agreed `Class<?>` to
+     `recordBackingClasses` and classifies T into the appropriate
+     backed variant; two or more distinct classes surface
+     `Rejection.AuthorError.RecordBindingMismatch.MultiProducer` per
+     checkpoint 2 with every disagreeing site listed.
+     `recordBackingClasses` is the *post-agreement* slot: subsequent
+     callers asking for T's binding read directly from it without
+     re-walking. Termination is trivially finite (the per-descent-chain
+     in-progress set blocks re-entry; the chain is finite; the SDL
+     type set is finite). The substantive property is *completeness*:
+     every reachable in-edge contributes to T's collection set, so a
+     disagreement on any in-edge is observable. The synthetic
+     accessor-graph unit test under Tests pins the algorithmic claim;
+     the corpus-level additive assertion is the integration witness.
 
    - **Reflection at the parse boundary.** The accessor-method probe
      this checkpoint introduces mirrors the disambiguation
@@ -97,11 +116,12 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
      `TypeBuilder.buildTypes()` before field classification, so it
      does not depend on `FieldBuilder.classifyField` having run.
 
-   - **Multi-producer agreement.** An SDL type can be reached by more
-     than one producer (two `@service` methods returning it, `@service`
-     plus `@table`, or a root producer plus an inbound parent accessor
-     that reflects to a different return type). The set of reflected
-     `Class<?>` values for the SDL type must agree; disagreement is
+   - **Multi-producer reach is expected and observed.** An SDL type
+     can legitimately be reached by more than one producer (two
+     `@service` methods returning it, `@service` plus `@table`, or a
+     root producer plus an inbound parent accessor). The per-type
+     collection set above accumulates every observed `Class<?>`;
+     agreement is folded at the end of T's walk and disagreement is
      handled at checkpoint 2.
 
    Types unreached at the end of the walk are unreachable by
@@ -113,29 +133,43 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
 2. **Multi-producer agreement check.** When the recursive walk at
    checkpoint 1 reaches the same SDL type through more than one
    producer, every reached `Class<?>` for that type must agree.
-   Disagreement is a classifier-tier rejection: R96 adds a sealed
-   `Rejection.RecordBindingMismatch` permit to the existing taxonomy
-   with one arm, `MultiProducer(sdlType, List<ProducerBinding>
-   bindings)`, where `ProducerBinding` is a sealed sub-taxonomy over
+   Disagreement is a classifier-tier rejection: R96 adds a
+   `RecordBindingMismatch` permit to the existing sealed
+   `Rejection.AuthorError` taxonomy with one arm,
+   `MultiProducer(sdlType, List<ProducerBinding> bindings)`, where
+   `ProducerBinding` is a sealed sub-taxonomy over
    `RootService(serviceClass, methodName)` /
    `RootTable(tableRefName)` / `RootTableMethod(holderClass,
    methodName)` / `ParentAccessor(parentTypeName, fieldName)`, each
    carrying source location and the reflected `Class<?>`. The
    diagnostic names every disagreeing site concretely. The rejection
    surfaces through `ValidationReport.errors()` so the build halts.
+   Placement under `AuthorError` (rather than a new top-level
+   `Rejection` permit) reflects that the diagnostic is
+   author-correctable through the same rename / retype / split
+   toolbox as the existing `AuthorError` arms; the typed
+   `List<ProducerBinding>` payload follows the existing pattern of
+   structured sub-data on `AuthorError`.
 
    The check carries the `@LoadBearingClassifierCheck` /
    `@DependsOnClassifierCheck` annotation pair under the key
    `record-binding.producer-agreement`. The producer site is the
-   memoization write inside the recursive walk (in `buildResultType`
-   at `TypeBuilder.java:696` and the new input-side population path
-   R96 adds inside `buildNonTableInputType` at `TypeBuilder.java:887`,
-   which currently has no `recordBackingClasses` population); the
-   consumer site is `FieldBuilder.resolveRecordAccessor`
+   post-fold write to `recordBackingClasses` at the end of T's walk
+   (the write happens once per SDL type, after the per-type
+   collection set has been folded to a single agreed `Class<?>`; the
+   write occurs in `buildResultType` at `TypeBuilder.java:696` for
+   result types and in the new input-side population path R96 adds
+   inside `buildNonTableInputType` at `TypeBuilder.java:887`, which
+   currently has no `recordBackingClasses` population); the consumer
+   site is `FieldBuilder.resolveRecordAccessor`
    (`FieldBuilder.java:3808`), which assumes the resolved `Class<?>`
    the binding produces is the class field accessors will be emitted
    against. `LoadBearingGuaranteeAuditTest` enforces the pair, so the
-   spec lands the annotations together with the agreement check itself.
+   spec lands the annotations together with the agreement check
+   itself. The annotation's `description` argument enumerates the two
+   pure-function commitments below inline (`TableRef` derivation,
+   `JavaRecord` component list) so a future relaxation of either
+   surfaces in find-usages on the annotation key.
 
    Two pure-function commitments ride under the agreement check:
 
@@ -172,6 +206,15 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
      > producing field's reflected return type and uses that; the
      > directive is ignored. Remove it.
 
+   The two variants carry different data (the `Matches` variant has
+   no extra class; the `Disagrees` variant carries the reflected
+   class graphitron actually used). R96 emits both through the
+   existing `BuildWarning` prose surface and interpolates the
+   reflected class name into the disagrees message rather than
+   carrying a typed slot. Lifting `BuildWarning` into a sealed
+   sub-taxonomy on the strength of R96 alone is premature; a later
+   refactor can do so once a second case forces the abstraction.
+
    Both variants are warnings, not errors. Reflection is the sole
    source of truth; the directive's claim is informational only.
 
@@ -181,9 +224,14 @@ flips semantics under R96 while keeping its message intact. Today
 directive does not write to `recordBackingClasses` at all, so
 `@table`-driven reflection wins by default and the directive is
 ignored like every other `@record` declaration. The shadow-rule
-warning continues to fire as a cleanup signal; R96's directive-ignored
-warning is suppressed on the shadow combination so the two messages
-do not contradict each other.
+warning continues to fire as a cleanup signal; R96's
+directive-ignored warning is suppressed on the shadow combination
+so the two messages do not contradict each other. The two warnings
+unify cleanly into one emission with context-derived message text
+once the shadow rule itself retires; R96 keeps the existing
+suppression rule as deliberate transitional cooperation, and the
+shadow-rule retirement item (named in Out of scope) is the natural
+place to fold both emissions back together.
 
 The mutual-exclusion check at `TypeBuilder.java:1134-1141` (`@record`
 incompatible with `@error`) continues to apply unchanged.
@@ -242,7 +290,7 @@ Validator-tier (`GraphitronSchemaValidator` test surface):
   producers whose reflected classes disagree (two `@service` methods,
   `@service` plus `@table`, or root producer plus an inbound parent
   accessor that reflects to a different return type) surfaces
-  `Rejection.RecordBindingMismatch.MultiProducer` on
+  `Rejection.AuthorError.RecordBindingMismatch.MultiProducer` on
   `ValidationReport.errors()`; the diagnostic names every disagreeing
   `ProducerBinding` site; the build halts.
 - Shadow-rule precedence: an input carrying both `@table` and `@record`
@@ -293,15 +341,19 @@ Pipeline-tier (classifier output), split across producer sources:
   flip is the correct behaviour; only the "still backed, not
   demoted to `PlainObjectType`" property is asserted on reachable
   types.
-- Drop-manifest assertion: the validator emits a log of every SDL
-  type that today's directive-driven path classifies as backed but
-  R96's reflection-driven path does not. Each entry names the type
-  and the reason: unreachable (no producer in reverse-accessor
-  cone), or the `@record` was the sole binding source. This is the
-  paper trail for future schema-edit-induced reachability flips: if
-  an author later adds a producer reaching one of these types, they
-  can grep the manifest to find the classification flip the new
-  reachability triggers.
+- Drop-manifest assertion (pipeline-tier, golden-file): the test
+  computes the set of SDL types that today's directive-driven
+  baseline classifies as backed but R96's reflection-driven path
+  does not, across the sakila and fixture schemas. The diff is
+  asserted against a checked-in golden file. Each entry names the
+  type and the reason: unreachable (no producer in reverse-accessor
+  cone), or the `@record` was the sole binding source. The golden
+  file is the paper trail for future schema-edit-induced
+  reachability flips: if an author later adds a producer reaching
+  one of these types, the test's diff diverges from the golden,
+  surfacing the classification flip. No validator runtime artefact
+  is involved; this is a build-time invariant captured in the test
+  corpus.
 
 No compile-tier or execution-tier coverage is needed: the produced
 variants are unchanged on every reachable type whose directive was
@@ -315,8 +367,9 @@ additive invariant).
 The substantive risk sits in checkpoint 1's recursive walk. The
 load-bearing property is **completeness over reachable types**: if
 any path through accessor edges from a root producer reaches SDL
-type T, the walk resolves T. Termination is trivial (each call
-returns from cache or completes a resolution; finite SDL type set).
+type T, the walk resolves T. Termination is trivial (the
+per-descent-chain in-progress set blocks re-entry; the chain is
+finite; the SDL type set is finite).
 The synthetic accessor-graph unit test under Tests is the
 algorithmic witness; it exercises diamond, deep chain, grounded
 cycle, and ungrounded cycle shapes against the resolver directly,
@@ -324,15 +377,16 @@ so a bug in the descent fails the unit test independent of corpus
 contents. The corpus-level additive assertion is the integration
 witness against the sakila and fixture schemas.
 
-R96 names the reachability predicate as live code:
-`TypeReachability.fromAnyProducer(sdlType)` returns true iff the
-recursive walk produced a binding. Both the walk and the
-additive/drop-manifest assertions consult this one predicate, so
-the witness in Tests and the algorithm under test are pinned to the
-same definition of "reachable". The drop manifest then names every
-SDL type the predicate excludes that today's directive-driven path
-classifies as backed; that log is the paper trail for future
-schema-edit-induced reachability flips.
+R96 introduces the reachability predicate as live code: checkpoint
+1 adds `TypeReachability.fromAnyProducer(sdlType)` (returns true iff
+the recursive walk produced a binding) as a package-private
+predicate exposed by the recursive walk's host. Both the walk and
+the additive / drop-manifest assertions consult this one predicate,
+so the witness in Tests and the algorithm under test are pinned to
+the same definition of "reachable". The drop manifest's golden-file
+diff then captures every SDL type the predicate excludes that
+today's directive-driven path classifies as backed; that golden is
+the paper trail for future schema-edit-induced reachability flips.
 
 The multi-producer agreement check at checkpoint 2 is the
 load-bearing classifier invariant during the transition. The
@@ -344,8 +398,10 @@ is safe; if it fires, the diagnostic names the disagreeing
 `ProducerBinding` sites so the author can resolve the conflict.
 The two pure-function commitments nested under checkpoint 2
 (`TableRef` derivation and `JavaRecordType` component-list
-derivation) are the assumptions the check carries unstated and must
-be revisited if either underlying resolution is generalised.
+derivation) are the assumptions the check carries; they sit inline
+in the `@LoadBearingClassifierCheck` annotation's `description`
+argument so a future relaxation of either resolution surfaces in
+find-usages on the annotation key.
 
 The directive-disagreement case is not a risk surface under R96:
 the directive does not participate in classification, so a lying
