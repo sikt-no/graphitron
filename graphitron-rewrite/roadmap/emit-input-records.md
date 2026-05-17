@@ -1,7 +1,7 @@
 ---
 id: R94
-title: Emit SDL input types as graphitron-internal Java records (validation target)
-status: Ready
+title: Emit SDL input types as graphitron-internal Java classes (validation target; eventually records via R174)
+status: In Progress
 bucket: architecture
 priority: 7
 theme: mutations-errors
@@ -9,7 +9,7 @@ depends-on: []
 last-updated: 2026-05-17
 ---
 
-# Emit SDL input types as graphitron-internal Java records (validation target)
+# Emit SDL input types as graphitron-internal Java classes (validation target; eventually records via R174)
 
 Today the rewrite has no Java-level seam for "this is what an SDL input
 type looks like": `env.getArgument("in")` returns a `LinkedHashMap` and
@@ -35,21 +35,39 @@ provide a per-SDL-input-type Java class: the consumer bean is keyed on
 consumer class, and multiple `@service`s can consume the same SDL
 input via different beans.
 
-This item emits one **graphitron-internal record per SDL input type**
-under `<outputPackage>.inputs` and uses it solely as a **Jakarta
-Validator walk target** at the fetcher boundary. The record carries
+This item emits one **graphitron-internal Java class per SDL input
+type** under `<outputPackage>.inputs` and uses it solely as a **Jakarta
+Validator walk target** at the fetcher boundary. The class carries
 SDL-derived constraint annotations registered programmatically via
 R98's merged `ConstraintSet` once R98 lands; today, registered empty.
 It is materialized via a generated `fromMap` factory, validated, and
 discarded. Value flow stays as it is today: DML keeps reading the
 Map; `@service` keeps R150's consumer-bean path.
 
-Hibernate Validator 9.0.1 (already pinned) supports record validation:
-component annotations propagate to accessors,
-`ConstraintViolation.getPropertyPath()` returns the SDL component name
-verbatim, and programmatic
-`ConstraintMapping.type(MyRecord.class).field("rating")` works exactly
-the same as on a regular bean.
+The class form (not a Java `record`) is a deliberate concession to
+the emit framework: `graphitron-javapoet` does not currently support
+records, sealed types/`permits` clauses, or `package-info.java`
+emission (`TypeSpec.Kind` covers only `CLASS`, `INTERFACE`, `ENUM`,
+`ANNOTATION`). R174 (`javapoet-record-sealed-package-info-support`,
+Backlog) tracks the framework upgrade; once it ships, the emitted
+classes can be re-emitted as actual records plus a sealed marker
+plus `package-info.java`. For now: plain classes with private
+fields, public accessors, and a static `fromMap` factory. Hibernate
+Validator 9.0.1 (already pinned) walks records and beans the same
+way — `ConstraintViolation.getPropertyPath()` returns the SDL
+component name verbatim regardless of whether the carrier is a
+record or a bean-style class, and programmatic
+`ConstraintMapping.type(MyClass.class).field("rating")` works
+identically on either form. The validator-walk function R94 needs
+is preserved; only the rendered source form differs from the eventual
+shape.
+
+The internal model continues to call these "input records" /
+`InputRecordShape` / `InputRecordGenerator`. Those names name the
+graphitron-internal concept (per-SDL-input-type carrier emitted into
+`<outputPackage>.inputs`), not the Java-language `record` keyword.
+When R174 lands, the emitted source form converges with the internal
+name and the terminology stops being overloaded.
 
 ## Why a graphitron-emitted record (not the consumer bean)
 
@@ -79,14 +97,14 @@ the `mapping.type(...)` target. R150's consumer bean is the wrong unit:
   stricter than the DB's CHECK (or covering fields with no CHECK at
   all) silently accept invalid input.
 
-The graphitron-internal record is the per-SDL-input-type Java
-identity that the validator walks. R98's `ConstraintSet` registers
-against it; the rendered schema emit reads the same set independently.
+The graphitron-internal class is the per-SDL-input-type Java identity
+that the validator walks. R98's `ConstraintSet` registers against it;
+the rendered schema emit reads the same set independently.
 
 ## Architectural principle
 
-**The emitted record is a validation target, not a value carrier.**
-Once `validator.validate(record)` returns, the record is discarded.
+**The emitted class is a validation target, not a value carrier.**
+Once `validator.validate(record)` returns, the carrier is discarded.
 Value flow stays as it is today:
 
 - DML emitters keep reading `(Map<?,?>) env.getArgument("in")` and
@@ -108,10 +126,17 @@ all retired. R150 already owns `@service` value flow; DML never
 needed a typed read because the existing Map.get pattern composes
 correctly with R12's DB-violation routing.
 
-The "no service-side reference to emitted records" rule remains.
-Generated input records live under `<outputPackage>.inputs`, behind
-a sealed `GraphitronInternalInput` marker; services consume R150's
-consumer bean, never the graphitron record. The seam stays one-way.
+The "no service-side reference to emitted classes" rule remains.
+Generated input classes live under `<outputPackage>.inputs`; services
+consume R150's consumer bean, never the graphitron-emitted class.
+The seam stays one-way. The structural enforcement (originally a
+sealed `GraphitronInternalInput` marker plus a `package-info.java`
+plus an audit) reduces to **package boundary + per-class Javadoc**
+for R94; the **audit** half lifts to R172
+(`inputs-package-internal-use-audit`, Backlog) as a follow-on. R174
+(`javapoet-record-sealed-package-info-support`, Backlog) brings back
+the sealed marker and package-info once graphitron-javapoet supports
+them.
 
 ## What lifts cleanly off this seam
 
@@ -209,27 +234,35 @@ non-`String` component, or a numeric constraint on a component
 whose `Coercing` could return the wrong boxed type), the failure
 mode is no longer hypothetical and the typed surface gets filed.
 
-### Emitted-record visibility: sealed marker interface
+### Emitted-class visibility: package boundary + per-class Javadoc
 
-Every emitted input record implements a graphitron-emitted sealed
-marker interface, `<outputPackage>.inputs.GraphitronInternalInput`,
-whose `permits` clause is generated alongside the records and lists
-exactly the per-project emitted record types. Records are public
-(the fetcher boundary calls `FilmInput.fromMap(...)` from the
-generated fetcher class, and the validator's reflection requires
-public visibility) but the seal documents intent and prevents
-consumer code from extending or co-locating in the same hierarchy.
-Combined with a generated `package-info.java` whose Javadoc states
-"Graphitron-internal validation targets; do not reference from
-service code" and a `LoadBearingClassifierCheck`-style audit (see
-*Classifier invariants* below) that flags any service-side reference
-to `<outputPackage>.inputs.*` from outside the emitted code, the
-"graphitron-internal" principle is structurally carried.
+Every emitted input class is `public` (the fetcher boundary calls
+`FilmInput.fromMap(...)` from the generated fetcher class, and the
+validator's reflection requires public visibility). The
+"graphitron-internal" intent is carried by:
 
-The package-private + facade alternative was rejected: the records
+- The package boundary: every emitted class lives under
+  `<outputPackage>.inputs`, a graphitron-owned subpackage on the
+  emitter's owned-subpackages list. A reader navigating into the
+  package sees only graphitron-emitted code.
+- A per-class Javadoc on each emitted carrier stating the class is
+  a graphitron-internal validation target and must not be
+  referenced from service code.
+
+The structural enforcement (a sealed `GraphitronInternalInput`
+marker, a generated `package-info.java`, and an audit that flags
+service-side references to `<outputPackage>.inputs.*`) was the
+original spec shape but lifted out of R94 once it became clear that
+`graphitron-javapoet` does not support records, `sealed`/`permits`
+on `TypeSpec`, or `package-info.java` emission. R174 brings the
+sealed marker and `package-info.java` back when the framework
+upgrade lands; R172 ships the audit independently. R94 ships with
+the lightweight enforcement shape: package + per-class Javadoc.
+
+The package-private + facade alternative was rejected: the carriers
 have to be reflectively visible to Hibernate Validator, which means
-at minimum the validator factory needs cross-package access, and the
-resulting facade-only API would not strengthen the principle
+at minimum the validator factory needs cross-package access, and
+the resulting facade-only API would not strengthen the principle
 (consumers who want to bypass it do so via reflection regardless).
 
 ### Classify-time carrier: `InputRecordShape` via capability interface
@@ -445,19 +478,23 @@ compile and pipeline tiers from the moment R94 ships.
   variant-selection and shadow-rule logic at those sites is
   unchanged; only the new slot is added.
 
-**Emitted record + sealed marker.**
+**Emitted class.**
 
 - New generator class
   `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/InputRecordGenerator.java`
-  emits one Java record per reachable SDL `input` type into
-  `<outputPackage>.inputs`, plus the sealed marker
-  `<outputPackage>.inputs.GraphitronInternalInput` whose `permits`
-  clause lists every emitted record. A `package-info.java` carries
-  the "Graphitron-internal validation targets; do not reference from
-  service code" Javadoc.
-- Each emitted record carries a `static Self fromMap(Map<String,
-  Object>)` factory returning the populated record; nested input
-  components recurse the same factory. Runtime type mismatches
+  emits one Java class per reachable SDL `input` type into
+  `<outputPackage>.inputs`. Each emitted class is `public`, carries
+  a per-class Javadoc tagging it as a graphitron-internal validation
+  target, has one private field per SDL component plus a public
+  accessor, and a static `fromMap(Map<String,Object>)` factory.
+- The sealed marker `GraphitronInternalInput` and the
+  `package-info.java` are deferred to R174 (graphitron-javapoet
+  records + sealed + package-info support). The
+  service-side-reference audit lifts to R172
+  (`inputs-package-internal-use-audit`, Backlog).
+- Each emitted class carries a `static Self fromMap(Map<String,
+  Object>)` factory returning the populated class instance; nested
+  input components recurse the same factory. Runtime type mismatches
   throw (handled by graphql-java's default error pipeline); a typed
   wire surface is its own additive item if the failure mode
   materialises in practice.
@@ -485,16 +522,16 @@ compile and pipeline tiers from the moment R94 ships.
 
 ### Acceptance
 
-- Every reachable SDL `input` type produces a compiling record at
+- Every reachable SDL `input` type produces a compiling Java class at
   `<outputPackage>.inputs.<InputName>`; sakila's compile picks up
   the package without warnings.
 - Every classified `InputType` leaf and the `TableInputType`
   variant implement `HasInputRecordShape` and return a populated
   `InputRecordShape`. Existing variants survive unchanged.
-- Pipeline-tier covers the SDL → record-emit shape, including the
+- Pipeline-tier covers the SDL → class-emit shape, including the
   unreachable-input no-emit case (see *Tests*).
 - The validator pre-step at fetcher emit calls
-  `validator.validate(<typed record>)` instead of
+  `validator.validate(<typed instance>)` instead of
   `validator.validate(<Map>)` for input-typed args. The regression
   guard test pins this against drift back to the Map.
 - No value-flow behavior changes: DML keeps Map.get; `@service`
@@ -590,7 +627,7 @@ pre-step emitter can regress). It is pinned by the
 case (see *Tests*).
 
 R98 will land additional keys when it attaches constraints to the
-emitted records. R101 (`ScalarTypeResolver`, Done) already pins the
+emitted classes. R101 (`ScalarTypeResolver`, Done) already pins the
 component-type derivation via its existing
 `scalar-resolver.coercing-non-erased` key;
 `InputComponent.javaType` recovers the concrete `I` type parameter
@@ -644,17 +681,19 @@ method bodies are banned at every tier"
 
 ### Unit-tier (1 case, structural invariants)
 
-`InputRecordGeneratorTest` (new) covers the record-emit shape only:
-the package is `<outputPackage>.inputs`, the record implements
-`GraphitronInternalInput`, the `fromMap` factory has the expected
-signature.
+`InputRecordGeneratorTest` (new) covers the class-emit shape only:
+the package is `<outputPackage>.inputs`, each emitted class is
+public, and the `fromMap` factory has the expected signature.
+(Marker-implementation and `package-info.java` assertions are
+deferred to R174; the `GraphitronInternalInput` marker is not part
+of the R94-shipped form.)
 
 ### Compilation-tier
 
 The existing `mvn -f graphitron-rewrite/pom.xml install -Plocal-db`
 builds sakila against real jOOQ classes; this picks up
 `<outputPackage>.inputs` and verifies that every emitted
-`InputRecord.fromMap` compiles. No new test class.
+`<InputName>.fromMap` compiles. No new test class.
 
 ### Execution-tier
 
@@ -697,10 +736,26 @@ pipeline tiers.
   additive item if the failure mode materialises in practice.
   graphql-java's upstream coercion catches the common cases
   (missing-required, unknown-key) before `fromMap` runs.
-- **Hibernate Validator record-walk behaviour changes between
-  versions.** R94 leans on 9.0.1's record support: component
-  annotations propagate to accessors, `getPropertyPath()` returns
-  SDL component names verbatim, programmatic `ConstraintMapping`
-  works the same on records as on beans. The version is pinned in
-  `graphitron-rewrite/pom.xml`; a future major-version upgrade
-  becomes a load-bearing review item rather than a routine bump.
+- **Hibernate Validator class-walk behaviour changes between
+  versions.** R94 leans on 9.0.1's reflective walk of public
+  fields/accessors. `getPropertyPath()` returns the field name
+  (which the emitter aligns with the SDL component name) verbatim,
+  and programmatic `ConstraintMapping.type(MyClass.class).field(...)`
+  works the same on a bean-style class as on a record. The version
+  is pinned in `graphitron-rewrite/pom.xml`; a future major-version
+  upgrade becomes a load-bearing review item rather than a routine
+  bump. When R174 lands and the emitter switches to records, the
+  walk semantics carry over since Hibernate Validator 9 already
+  treats records and beans identically for the
+  property-path-from-component-name purpose R94 needs.
+- **Reverting to records when R174 ships.** R94's emit form is
+  beans; R174 upgrades graphitron-javapoet to support records,
+  sealed marker, and `package-info.java`. The migration is a
+  source-form change with no model-side ripple: `InputRecordShape`
+  / `InputRecordGenerator` keep their names and semantics; only
+  the rendered `TypeSpec` shape changes. Consumer-side: there
+  should be no consumer side (the audit lifted to R172 enforces
+  that). The risk is that some service code reaches into
+  `<outputPackage>.inputs.*` between R94 shipping and R172
+  shipping; the audit then surfaces a deferred regression that the
+  consumer has to fix before R174's emit-shape change lands.
