@@ -190,8 +190,8 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
    entry telling the author the directive is ignored and should be
    removed. The directive's `className` is informational only; it does
    not participate in classification under R96, so the warning fires
-   regardless of whether the directive agrees with reflection. Two
-   message variants:
+   regardless of whether the directive agrees with reflection. Three
+   message variants, selected by context at the single emission site:
 
    - **Matches** (`className` equals the reflected class):
      > Type 'FilmReviewPayload' carries `@record(record: { className:
@@ -206,32 +206,46 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
      > producing field's reflected return type and uses that; the
      > directive is ignored. Remove it.
 
-   The two variants carry different data (the `Matches` variant has
-   no extra class; the `Disagrees` variant carries the reflected
-   class graphitron actually used). R96 emits both through the
-   existing `BuildWarning` prose surface and interpolates the
-   reflected class name into the disagrees message rather than
-   carrying a typed slot. Lifting `BuildWarning` into a sealed
-   sub-taxonomy on the strength of R96 alone is premature; a later
-   refactor can do so once a second case forces the abstraction.
+   - **Shadowed by `@table`** (the type also carries `@table`, so the
+     binding comes from `@table`-driven reflection rather than the
+     parent-accessor or root-producer chain that the prior two
+     variants describe):
+     > Type 'Film' carries both `@table` and `@record(record: {
+     > className: "com.example.X" })`. Graphitron derives the backing
+     > class from `@table`; the `@record` directive is ignored.
+     > Remove it.
 
-   Both variants are warnings, not errors. Reflection is the sole
-   source of truth; the directive's claim is informational only.
+   The three variants carry different data (the `Matches` variant
+   has no extra class; the `Disagrees` variant carries the reflected
+   class graphitron actually used; the `Shadowed by @table` variant
+   carries no extra class because the message is keyed on the
+   `@table` co-occurrence, not on a specific reflected class). R96
+   emits all three through the existing `BuildWarning` prose surface
+   and interpolates the reflected class name into the disagrees
+   message rather than carrying a typed slot. Lifting `BuildWarning`
+   into a sealed sub-taxonomy on the strength of R96 alone is
+   premature; a later refactor can do so once a second case forces
+   the abstraction.
+
+   All three variants are warnings, not errors. Reflection is the
+   sole source of truth; the directive's claim is informational only.
 
 The `@table + @record` shadow rule at `TypeBuilder.java:820-826`
-flips semantics under R96 while keeping its message intact. Today
-`@record` overrides `@table` on the combination; under R96 the
-directive does not write to `recordBackingClasses` at all, so
-`@table`-driven reflection wins by default and the directive is
-ignored like every other `@record` declaration. The shadow-rule
-warning continues to fire as a cleanup signal; R96's
-directive-ignored warning is suppressed on the shadow combination
-so the two messages do not contradict each other. The two warnings
-unify cleanly into one emission with context-derived message text
-once the shadow rule itself retires; R96 keeps the existing
-suppression rule as deliberate transitional cooperation, and the
-shadow-rule retirement item (named in Out of scope) is the natural
-place to fold both emissions back together.
+flips semantics under R96 while folding its emission into R96's
+single directive-ignored warning. Today `@record` overrides `@table`
+on the combination, and a separate validator emission at
+`TypeBuilder.java:820-826` surfaces the redundancy as its own
+warning. Under R96 the directive does not write to
+`recordBackingClasses` at all, so `@table`-driven reflection wins by
+default and the directive is ignored like every other `@record`
+declaration; the legacy emission at `TypeBuilder.java:820-826` is
+removed as part of R96, and the redundancy signal is carried by the
+`Shadowed by @table` variant of the directive-ignored warning above.
+One emission point, three message variants, context-derived
+selection: the shadow case is no longer a separate warning that has
+to be suppressed against R96's emission, it is the same emission
+with a different message because the directive's effect is
+shadowed by `@table` rather than by the reflection chain.
 
 The mutual-exclusion check at `TypeBuilder.java:1134-1141` (`@record`
 incompatible with `@error`) continues to apply unchanged.
@@ -251,9 +265,6 @@ incompatible with `@error`) continues to apply unchanged.
   (`payloadFactoryLambda`, `ResultAssembly`, the `PayloadAccessor` arm
   of `Transport`). Separate concern; whatever drives those today drives
   them after R96.
-- Retiring the `@table + @record` shadow rule at
-  `TypeBuilder.java:820-826`. That rule's existence is a separate
-  redundancy signal and is its own cleanup item.
 - R94's input-record validation seam. R94 emits one
   graphitron-internal Java record per reachable SDL input type and
   attaches it to every classified input as a `recordShape` slot; R96
@@ -293,9 +304,12 @@ Validator-tier (`GraphitronSchemaValidator` test surface):
   `Rejection.AuthorError.RecordBindingMismatch.MultiProducer` on
   `ValidationReport.errors()`; the diagnostic names every disagreeing
   `ProducerBinding` site; the build halts.
-- Shadow-rule precedence: an input carrying both `@table` and `@record`
-  fires the existing shadow-rule warning, not the directive-ignored
-  warning.
+- Shadowed-by-table: a type carrying both `@table` and `@record`
+  emits the directive-ignored warning's `Shadowed by @table`
+  variant (one emission, message keyed on the `@table`
+  co-occurrence). The legacy emission at
+  `TypeBuilder.java:820-826` is removed; no separate shadow-rule
+  warning fires.
 
 Pipeline-tier (classifier output), split across producer sources:
 
