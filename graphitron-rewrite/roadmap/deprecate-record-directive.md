@@ -122,41 +122,46 @@ Removing `@record` removes the class of misconfigurations entirely.
 The deprecation has natural phase boundaries; each phase is
 independently shippable.
 
-### Phase 1 (parallel with R94): drop `@record` on input types
+### Phase 1: drop `@record` on input types (delivered by R94 Phase 2)
 
 R94 emits a graphitron-internal record per SDL `input` type, which
-makes `@record` on `INPUT_OBJECT` redundant. The two items share a
-border; this section names what each owns so neither double-books
-nor drops the work.
+makes `@record` on `INPUT_OBJECT` redundant. The input-side classifier
+rework R94 needs touches the same `buildNonTableInputType` arm and
+the same `@table + @record` shadow rule that a separate R96 Phase 1
+would, so the input-side deprecation is bundled into R94 Phase 2
+rather than maintained as a parallel work item. This section names
+the surfaces and points at R94 for the canonical plan.
 
-R94 owns:
+Surfaces R94 Phase 2 covers (see `emit-input-records.md` for the
+authoritative line citations and acceptance criteria):
 
 - The graphitron-internal record emitter and the seam it introduces.
 - Removal of the `@record`-driven arm in
-  `TypeBuilder.buildNonTableInputType` (line 868–907).
-- Removal of `GraphitronType.JavaRecordInputType` (line 340–350) and
-  the input-side `Pojo/Java-record/JavaPlain` classifier split.
-- Migration of the unit-test fixtures at
-  `GraphitronSchemaBuilderTest.java:3234–3284` (the only SDL input
-  fixtures using `@record`).
-
-R96 Phase 1 owns:
-
-- Narrowing the directive declaration `directives.graphqls:252` from
-  `on OBJECT | INPUT_OBJECT` to `on OBJECT`. Lands after R94 removes
-  the input-side classifier branch so the narrowing is a no-op for
-  the model.
+  `TypeBuilder.buildNonTableInputType` (currently line 887, body
+  through ~line 922).
+- Removal of `GraphitronType.JavaRecordInputType`,
+  `JooqRecordInputType`, `JooqTableRecordInputType`, and the
+  input-side `Pojo/Java-record/JavaPlain` classifier split.
+- Narrowing the `@record` directive declaration at
+  `directives.graphqls:290` from `on OBJECT | INPUT_OBJECT` to
+  `on OBJECT`.
 - Removal of the `@table + @record` shadow rule
-  (`TypeBuilder.java:801–807` + the warning + the changelog
+  (`TypeBuilder.java:815-824` plus the warning and the changelog
   back-reference). The branch becomes unreachable once `INPUT_OBJECT`
   is off the directive's scope.
 - A **validator rule** that rejects `@record` on `INPUT_OBJECT` at
   schema build time, fronted by a `@LoadBearingClassifierCheck` key
-  so a future regression — someone re-adding the input scope — is
+  so a future regression (someone re-adding the input scope) is
   caught by the validator that already mirrors classifier
   invariants. Without this, the deprecation window admits the
   "two sources of truth" misconfigurations the directive is
   supposed to remove (see [Misconfiguration risk](#misconfiguration-risk)).
+- Migration of the input-side unit-test fixtures at
+  `GraphitronSchemaBuilderTest.java:3443-3520` from happy-path
+  classification to a rejection cluster.
+
+R96 carries no independent Phase 1 work: R94 closes both items'
+input-side surface in a single deliverable.
 
 ### Phase 2 (depends on R75): drop `@record` on DML payload types
 
@@ -281,13 +286,11 @@ Per-phase test tiers (so a reviewer can evaluate coverage at the
 Spec → Ready gate, without having to wait for the implementation
 audit):
 
-- **Phase 1 (input-side).** Validator rule lives at unit-tier
-  (`GraphitronSchemaBuilderTest`). One positive test per legacy
-  fixture pattern (the four shapes in
-  `GraphitronSchemaBuilderTest.java:3234–3284`) asserting they now
-  reject; one negative test asserting `@record` on `OBJECT` still
-  classifies. Pipeline-tier coverage falls out of R94's tests
-  re-running with `@record` removed from the input fixtures.
+- **Phase 1 (input-side).** Owned by R94 Phase 2. The validator-rule
+  test against the migrated `GraphitronSchemaBuilderTest.java:3443-3520`
+  cluster (now positive-rejection cases) plus a negative control on
+  `@record`-on-`OBJECT` ships with R94; see
+  `emit-input-records.md` Tests.
 - **Phase 2 (DML payloads).** Covered by R75's existing
   identity-passthrough test surface; this item adds no new tests in
   Phase 2 beyond the fixture migrations.
