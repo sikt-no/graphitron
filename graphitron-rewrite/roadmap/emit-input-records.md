@@ -114,7 +114,7 @@ consumer bean, never the graphitron record. The seam stays one-way.
 
 ## What lifts cleanly off this seam
 
-Three follow-ons unblock once the record exists:
+Two follow-ons unblock once the record exists:
 
 1. **R170 (`validator-integration-execute-coverage`, Backlog).** R12's
    pre-step gains a real annotated walk target. R170's sakila
@@ -129,15 +129,20 @@ Three follow-ons unblock once the record exists:
    The rendered-directive consumer (R98 Phase 2) reads the same set
    independently and is not blocked by R94, but the two-consumer
    architecture is what R94's seam enables.
-3. **`@record` narrowing on `INPUT_OBJECT`.** Delivered here. The
-   input-side classifier rework needed to admit graphitron records
-   collapses the `@record`-driven arm in `buildNonTableInputType`;
-   the directive declaration follows the arm into `on OBJECT`-only
-   scope (see *Implementation* below). R96 (now reshaped on trunk
-   into a build-time warning that `@record` is ignored) is a
-   separate, orthogonal concern; R96's warning fires on the
-   remaining `OBJECT`-side declarations regardless of whether R94
-   has shipped.
+
+R96 (`Derive backing-class binding from reflection; warn on
+redundant @record`, Spec on trunk) is an orthogonal item that owns
+the `@record` deprecation: R96 migrates the SDL → backing-class
+binding to reflection and warns when the directive is redundant.
+R94 does not narrow, deprecate, or remove `@record`; the graphitron
+record R94 emits lives at a separate Java identity
+(`<outputPackage>.inputs.<InputName>`) from any consumer class
+`@record` (or its reflected replacement) binds to. Both coexist on
+`InputType`; R96 evolves the consumer-binding slot, R94 adds the
+graphitron-emitted-record slot. The two slots answer different
+questions (what consumer class does this input map to? vs. what
+validation target does graphitron emit for this input?) and have
+independent lifecycles.
 
 ## Decisions settled in Spec
 
@@ -407,80 +412,68 @@ keep the emitter's coerce-then-validate contract straight.
   `ConstraintSet` machinery that attaches constraints to the
   emitted records. R94 only emits the record; constraints land on it
   via R98.
-- **`@record` on SDL `input` types.** Dropped as part of this item;
-  see *Implementation → Directive scope narrowing* below. The
-  broader argument for why `@record` carries no information
-  graphitron can't get elsewhere lives in R96 (which warns at
-  schema-build time on remaining `OBJECT`-side declarations).
+- **Narrowing, deprecating, or removing the `@record` directive on
+  `INPUT_OBJECT`.** R96 (Spec on trunk) owns the migration from
+  `@record`-sourced backing-class binding to reflection-derived
+  binding; the directive stays on `OBJECT | INPUT_OBJECT` after R94
+  ships. R94's graphitron-emitted record at
+  `<outputPackage>.inputs.<InputName>` lives at a separate Java
+  identity from whatever consumer class `@record` (or its reflected
+  replacement) binds the input type to; the two slots on
+  `InputType` are independent.
+- **Retiring the input-side `GraphitronType.InputType` variants
+  (`PojoInputType`, `JavaRecordInputType`, `JooqRecordInputType`,
+  `JooqTableRecordInputType`).** R96 keeps these as the produced
+  classifications and reshapes how they get populated (reflection
+  vs. directive). R94 adds a sibling slot on `InputType` for the
+  graphitron-emitted record; the variants survive unchanged.
+- **The `@table + @record` shadow rule at
+  `TypeBuilder.java:815-824`.** Whatever drives that rule today
+  drives it after R94. R96's out-of-scope is explicit on this
+  point.
 
 ## Implementation
 
-A single phase: emit graphitron records for every reachable SDL input
-type, rewire the validator pre-step to walk them, narrow `@record` to
-`OBJECT`-only, and migrate the existing `@record`-on-input test
-fixtures to a rejection cluster. The
-`@record`-narrowing forces every reachable input through the new
-emitter from day one, so the seam is exercised end-to-end by the
-classifier rework that ships with R94, rather than waiting on R98
-(`multi-source-input-validation`, Backlog) for a consumer of the
-emitted shape.
+A single phase. R94 ships orthogonal to R96 and to the existing
+input-side classification: it adds a sibling slot on `InputType`
+carrying the graphitron-emitted record, emits one record per
+reachable SDL input type, and rewires R12's validator pre-step at
+`TypeFetcherGenerator:1602-1637` to walk the emitted record instead
+of the raw `Map`. The four existing input-side variants
+(`PojoInputType`, `JavaRecordInputType`, `JooqRecordInputType`,
+`JooqTableRecordInputType`), the `@record` directive declaration,
+and the `@table + @record` shadow rule are untouched. R96 (Spec on
+trunk) reshapes how the variants get populated (reflection vs.
+directive); the two items compose on `InputType`.
 
-An earlier draft of this spec split the work into two phases: Phase
-1 emitted the record as a parallel surface (no consumer; the
-validator walked an empty record), and Phase 2 narrowed `@record`
-and wired the classifier rework. That split was rejected during
-Spec self-review: Phase 1 would have shipped a public emitted
-surface under `<outputPackage>.inputs` with no exercise of the shape
-beyond pipeline-tier emit assertions, leaving R98 to discover late
-that the shape needs to bend. Collapsing the phases pins the surface
-on day one: every input that flows through `buildNonTableInputType`
-(no longer branching on `@record`) is a live exercise.
+The shape of the emitted record is exercised end-to-end on day one
+by the rewired pre-step: every fetcher whose SDL args include an
+input type materializes the record via `fromMap` and walks it
+through `validator.validate(...)`. The walk produces zero
+violations until R98 (Backlog) attaches programmatic
+`ConstraintMapping` entries, but the record's component shape,
+`fromMap` signature, `FromMapResult` arms, and `CoercionFailures`
+routing are all live at compile and pipeline tiers from the moment
+R94 ships.
 
 ### Deliverables
 
-**Directive scope narrowing.**
+**Type-side carrier slot.**
 
-- Narrow the directive declaration at
-  `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls:290`
-  from `on OBJECT | INPUT_OBJECT` to `on OBJECT`.
-- Add a validator rule that rejects `@record` on `INPUT_OBJECT` at
-  schema build time, fronted by the
-  `input-object.no-record-directive` `@LoadBearingClassifierCheck`
-  key so a future regression (someone re-adding the input scope) is
-  caught by the validator that already mirrors classifier
-  invariants.
-
-**Classifier rework on the type-side.**
-
-- Rewrite `TypeBuilder.buildNonTableInputType` (`:887-920`) to
-  unconditionally produce an `InputType` carrying the typed
-  `InputRecordShape` carrier; the `@record`-driven branching at the
-  site is gone. The `JavaRecordInputType` / `JooqRecordInputType` /
-  `JooqTableRecordInputType` variants of `GraphitronType.InputType`
-  are removed. The variants are switched on today only at
-  `CatalogBuilder.projectType` (`:170 / :176 / :178`); each
-  input-side line shares its projection helper with the output-side
-  sibling on the line above (e.g. `:170` reuses the `projectRecord`
-  call from `:169`). The rework has two responsibilities for the
-  catalog:
-
-  | Retired input variant      | Catalog switch arm | Disposition                                                                                                                                  |
-  |----------------------------|---------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
-  | `JavaRecordInputType`      | `CatalogBuilder:170` | Delete the input-side line. The output sibling `JavaRecordType` keeps its `projectRecord(...)` helper. The new graphitron-emitted record gets a catalog projection (one arm; see below). |
-  | `JooqRecordInputType`      | `CatalogBuilder:176` | Delete the input-side line. Output sibling `JooqRecordType` keeps its `JooqRecordBacking.Standalone` arm.                                    |
-  | `JooqTableRecordInputType` | `CatalogBuilder:178` | Delete the input-side line. Output sibling `JooqTableRecordType` keeps `jooqRecordWithTable(fqClassName, table)`. The `TableRef` the variant carried on the input side is dead: input fields with column-resolution needs route through `@field(name: ...)` on the consuming output (R92's CHECK-recognition path already uses that, not the input-side `TableRef`). |
-
-  Add a single new catalog arm for the post-R94 input shape: the
-  graphitron-emitted record at `<outputPackage>.inputs.<InputName>`
-  gets a `TypeBackingShape` projection (the exact shape,
-  `GraphitronInternalRecord` or a reuse of `projectRecord`, is an
-  implementation detail; the audit table above pins *which*
-  consumer arms have to land somewhere, not *which*
-  `TypeBackingShape` arm absorbs them).
-
-- Remove the `@table + @record` shadow rule
-  (`TypeBuilder.java:815-824`); the branch becomes unreachable once
-  `INPUT_OBJECT` is off the directive's scope.
+- Every classified SDL input type carries an `InputRecordShape`
+  slot. Both the `InputType` sealed family (`PojoInputType`,
+  `JavaRecordInputType`, `JooqRecordInputType`,
+  `JooqTableRecordInputType`) and the `TableInputType` variant
+  expose the slot, since R98 needs a validation target for
+  `@table`-backed inputs too. The slot is populated for every
+  classified input type and is independent of the variant choice
+  (which R96 reshapes via reflection).
+- Populate the slot at every code path in `TypeBuilder` that
+  produces an input-type classification:
+  `buildNonTableInputType` (line 887), `buildTableInputType` (the
+  `@table` branch), and the `@table + @record` shadow case at
+  `:815-824`. The variant-selection and shadow-rule logic at
+  those sites is unchanged; only the new slot is added.
 
 **Emitted record + sealed marker + coercion failures.**
 
@@ -509,48 +502,28 @@ on day one: every input that flows through `buildNonTableInputType`
   `CoercionFailures.toGraphQLError`, and pass `Ok.record()` to
   `validator.validate(...)`. The record local goes out of scope
   immediately after the pre-step.
-- `LoadBearingClassifierCheck` keys land on the producer side (see
+- `LoadBearingClassifierCheck` key lands on the producer side (see
   *Classifier invariants* below); the pre-step wears
   `@DependsOnClassifierCheck`.
 - No constraint annotations on the emitted records yet. R98
   (Backlog) attaches them programmatically once it lands; today the
   validator pre-step produces zero violations on the empty record.
-  Acceptable: the load-bearing piece is the seam (one record per
-  input type, walked by the classifier rework on day one), and R170
-  picks up the live fixture the moment R98 ships its first SDL
-  constraint.
-
-**Fixture migration.**
-
-- `GraphitronSchemaBuilderTest`'s `@record`-on-input cluster
-  (currently at `:3443-3520`, six cases: `NO_CLASS`, `POJO_CLASS`,
-  `JAVA_RECORD_CLASS`, `JOOQ_TABLE_RECORD_CLASS`, `UNKNOWN_CLASS`,
-  `TABLE_PLUS_RECORD`) becomes a rejection cluster: assert each
-  fixture now classifies as `UnclassifiedType` with the new
-  "`@record` is not permitted on INPUT_OBJECT; use SDL fields"
-  message.
-- LSP fixtures (`HoversTest`, `ClassNameCompletionsTest`,
-  `DiagnosticsTest`, `DirectiveShapeSmokeTest`) migrate to plain
-  (non-`@record`) inputs.
-
-**Documentation.**
-
-- Update `graphitron-rewrite/docs/code-generation-triggers.adoc`:
-  drop the `@table + @record`-on-input shadow-rule row at `:139`,
-  narrow the runtime-wiring summary at `:48`, and narrow the
-  `@record` directive-trigger row at `:132` so each reflects the
-  post-R94 `on OBJECT`-only scope.
+  Acceptable: the shape of the record is fully exercised by the
+  pre-step on every fetcher with an input arg, and R170 picks up
+  the live invalid-input round-trip the moment R98 ships its first
+  SDL constraint.
 
 ### Acceptance
 
-- SDL with `@record` on an input rejects at classify time with the
-  new "not permitted on INPUT_OBJECT" message; the four input-side
-  `GraphitronType.InputType` variants collapse to the post-R94
-  shape; `directives.graphqls:290` reads `on OBJECT`.
-- Every reachable SDL `input` type produces a compiling record;
-  sakila's compile picks up the `<outputPackage>.inputs` package
-  without warnings; pipeline-tier covers the SDL → record-emit
-  shape and the unreachable-input no-emit case (see *Tests*).
+- Every reachable SDL `input` type produces a compiling record at
+  `<outputPackage>.inputs.<InputName>`; sakila's compile picks up
+  the package without warnings.
+- `GraphitronType.InputType` carries a populated `recordShape` slot
+  on every classified input type; the existing variants
+  (`PojoInputType`, `JavaRecordInputType`, `JooqRecordInputType`,
+  `JooqTableRecordInputType`) survive unchanged.
+- Pipeline-tier covers the SDL → record-emit shape, including the
+  unreachable-input no-emit case (see *Tests*).
 - The validator pre-step at fetcher emit calls
   `validator.validate(<typed record>)` instead of
   `validator.validate(<Map>)`; coercion failures route through
@@ -560,10 +533,11 @@ on day one: every input that flows through `buildNonTableInputType`
   `buildMutation{Delete,Insert,Update,Upsert}Fetcher` methods at
   `TypeFetcherGenerator:1736/1782/2025/2291` and the R75/R161
   record-payload paths are untouched.
-- R96 (build-time warning that `@record` is ignored, now scoped to
-  `OBJECT`-only after this item narrows the directive) is
-  unaffected; R96's warning fires on the remaining `OBJECT`
-  declarations regardless of R94's ship order.
+- The `@record` directive, its declaration at
+  `directives.graphqls:290`, the `@table + @record` shadow rule
+  (`TypeBuilder.java:815-824`), and existing fixtures in
+  `GraphitronSchemaBuilderTest:3443-3520` are untouched. R96 owns
+  any further evolution of those surfaces.
 
 ### Forward reference: R164 (`field-model-two-axis-pivot`, Backlog)
 
@@ -594,32 +568,32 @@ R162/R163 but not R94 or R98.
 
 **Files modified:**
 
+- `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronType.java`:
+  add `recordShape: InputRecordShape` so every classified SDL
+  input type carries the slot. Both the `InputType` sealed family
+  (`PojoInputType`, `JavaRecordInputType`, `JooqRecordInputType`,
+  `JooqTableRecordInputType`) and the `TableInputType` variant
+  expose the slot, since R98's downstream consumer needs a
+  validation target for `@table`-backed inputs too (DML inputs are
+  exactly the use case that motivates server-side enforcement of
+  SDL `@Range` etc.). The exact Java surface (new shared sealed
+  parent, sibling interface, or per-leaf accessor) is an
+  implementation detail.
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/TypeBuilder.java`:
-  rewrite `buildNonTableInputType` (currently line 887) to
-  unconditionally produce the typed `InputRecordShape` carrier; the
-  `@record` arm (`:888-922`) and the `@table + @record` shadow rule
-  (`:815-824`) are removed.
+  populate the new `recordShape` slot at every code path that
+  produces an input-type classification. The relevant sites today
+  are `buildInputType` (line 812, the top-level dispatch),
+  `buildNonTableInputType` (line 887), and `buildTableInputType`
+  (the `@table` branch). The variant-selection and shadow-rule
+  logic at those sites is unchanged; only the new slot is added.
+  R96's reflection-derived binding work at the same sites composes
+  alongside.
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java`:
   rewire the validator pre-step at `:1602-1637` to walk the
   materialized graphitron record (no other emit changes; the four
   `buildMutation{Delete,Insert,Update,Upsert}Fetcher` methods at
   `:1736/1782/2025/2291` and the R75/R161 record-payload paths stay
   on the Map).
-- `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronType.java`:
-  add `recordShape: InputRecordShape` to `InputType` and collapse
-  the input-side variant set (`JavaRecordInputType`,
-  `JooqRecordInputType`, `JooqTableRecordInputType` retire).
-- `graphitron/src/main/java/no/sikt/graphitron/rewrite/catalog/CatalogBuilder.java`:
-  remove the three input-side switch arms at `:170 / :176 / :178`
-  and add the new arm for the graphitron-emitted record's
-  `TypeBackingShape` (see *Implementation → Classifier rework*
-  audit table).
-- `graphitron/src/main/resources/no/sikt/graphitron/rewrite/schema/directives.graphqls`:
-  narrow `@record` at line 290 from `on OBJECT | INPUT_OBJECT` to
-  `on OBJECT`.
-- `graphitron/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java`:
-  migrate the `:3443-3520` cluster from happy-path classification
-  to rejection-cluster.
 - `graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/FetcherPipelineTest.java`:
   add five cases covering scalar / nullable / list / nested /
   unreachable input shapes (see *Tests* below).
@@ -632,17 +606,9 @@ Per *Validator mirrors classifier invariants*
 - `input-record.shape-from-input-type`: every classified SDL
   `input` type produces an `InputRecordShape` with components
   matching its SDL fields. Producer:
-  `TypeBuilder.buildNonTableInputType`. Consumer:
-  `InputRecordGenerator`,
+  `TypeBuilder.buildNonTableInputType` (and the `@table`-branch
+  site at `:815-824`). Consumer: `InputRecordGenerator`,
   `TypeFetcherGenerator.validatorPreStep`.
-- `input-object.no-record-directive`: `@record` does not appear on
-  any `INPUT_OBJECT`. Producer: the schema-build validator rule
-  this item adds. Consumers: the rewritten
-  `buildNonTableInputType` (now unconditionally producing the
-  `InputRecordShape`-bearing variant rather than branching on `dir
-  == null`), and the `@table` branch at `TypeBuilder:815-824` (the
-  shadow-rule code path becomes unreachable). Both sites wear
-  `@DependsOnClassifierCheck` on this key.
 
 An earlier draft listed a third key,
 `input-record.is-record-not-map`, asserting that the validator
@@ -738,28 +704,20 @@ addable as soon as R98 ships its first SDL constraint. No new
 execute-tier fixture in R94: the seam is verified at compile and
 pipeline tiers.
 
-### Validator-rule test (alongside the migrated fixture cluster)
-
-`GraphitronSchemaBuilderTest` rejects `@record` on `INPUT_OBJECT`
-across the migrated `:3443-3520` cluster (now positive-rejection
-cases) and continues to accept `@record` on `OBJECT` (negative
-control), pinning the `input-object.no-record-directive`
-classifier-check producer.
-
 ## Risk
 
 - **R98 delay leaves the validator walk producing zero violations.**
   R94 ships the emitted record and the rewired pre-step; constraint
   annotations come from R98. The pre-step still runs against every
   input arg; it just produces zero violations on the empty record.
-  Acceptable: the seam is the load-bearing piece, the empty walk is
-  dead code rather than wrong code. The classifier-rework
-  (`@record`-narrowing + `buildNonTableInputType` rewrite) exercises
-  the surface from day one even without R98's constraints, so the
-  shape of the emitted record is pinned by the pipeline-tier tests
-  on every reachable input rather than waiting on R98 for exercise.
-  R170 picks up the live execute-tier fixture the moment R98 lands
-  its first SDL constraint.
+  Acceptable: the *shape* of the record (components, `fromMap`
+  signature, `FromMapResult` arms, `CoercionFailures` routing) is
+  exercised end-to-end on day one by the pre-step on every fetcher
+  with an input arg, so R98's later content-attachment (adding
+  programmatic `ConstraintMapping` entries) doesn't have to reshape
+  the record. The empty walk is dead content, not wrong shape. R170
+  picks up the live execute-tier fixture the moment R98 lands its
+  first SDL constraint.
 - **Two adapters decoding the same wire shape can drift.** R150's
   `createBean(Map)` and R94's `InputRecord.fromMap(Map)` are two
   typed adapters for one boundary (see *Validate-only record* for
