@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
-| `R96` | Deprecate @record (narrow scope; defer polymorphic-return case) <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
+| `R96` | Drop output-DTO construction; traverse producer returns directly <sub>blocked by: [emit-input-records](emit-input-records.md)</sub> | Spec |  | [plan](deprecate-record-directive.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R94` | Emit SDL input types as graphitron-internal Java records (validation target) | Spec |  | [plan](emit-input-records.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
@@ -155,8 +155,8 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R163` [**Rename Record to Carrier across the carrier-walk model**](rename-record-to-carrier-model-wide.md) — Backlog, cleanup, blocked by [mutation-result-field-sealed-on-kind](mutation-result-field-sealed-on-kind.md)
 - `R129` [**Stub: ConditionJoin path in @reference on ColumnReferenceField**](column-reference-on-scalar-field-condition-join.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
-- `R96` [**Deprecate @record (narrow scope; defer polymorphic-return case)**](deprecate-record-directive.md) — Spec, cleanup, blocked by [emit-input-records](emit-input-records.md)
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture, blocked by [emit-input-records](emit-input-records.md), [deprecate-record-directive](deprecate-record-directive.md)
+- `R96` [**Drop output-DTO construction; traverse producer returns directly**](deprecate-record-directive.md) — Spec, cleanup, blocked by [emit-input-records](emit-input-records.md)
 - `R23` [**Multi-parent `NestingField` sharing: `TableField` arm**](nestingfield-multiparent-tablefield.md) — Spec
 - `R120` [**Drop or wire FkJoin.alias dead storage**](fkjoin-alias-dead-storage.md) — Backlog, cleanup
 - `R126` [**Scrub residual BatchKey.X references from sakila-service / sakila-example prose**](scrub-stale-batchkey-prose.md) — Backlog, cleanup
