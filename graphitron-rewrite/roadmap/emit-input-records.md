@@ -200,7 +200,13 @@ broken `Coercing` already is. A typed wire surface for this case
 symmetric with R12's `ConstraintViolations`) is its own additive
 item if the failure mode materialises in practice; graphql-java's
 upstream coercion catches the common cases (missing-required,
-unknown-key) before `fromMap` runs.
+unknown-key) before `fromMap` runs. Concrete trip-wire for filing
+the typed-wire follow-on: if R98 (or any subsequent constraint
+work) attaches a validation whose violation is shaped like a
+component-type mismatch (for example an `@Pattern` regex on a
+non-`String` component, or a numeric constraint on a component
+whose `Coercing` could return the wrong boxed type), the failure
+mode is no longer hypothetical and the typed surface gets filed.
 
 ### Emitted-record visibility: sealed marker interface
 
@@ -270,8 +276,12 @@ on the four `InputType` leaves (`PojoInputType`, `JavaRecordInputType`,
 `TableInputType`. The capability is additive: it doesn't reshape the
 existing sealed hierarchy. The slot-on-both-`InputType`-and-
 `TableInputType` requirement is a signal that the sibling structure
-between those two could fold into a sealed parent `InputLikeType`;
-that's its own cleanup item, deferred from R94. The compact
+between those two could fold into a sealed parent `InputLikeType`,
+tracked as **R171** (`input-like-type-sealed-parent`, Backlog);
+deferring it keeps R94 narrow. Until R171 lands, a future sixth
+input-like variant added to `GraphitronType.permits` will not get a
+compile-time miss for `HasInputRecordShape`; R171 closes that gap by
+relocating the capability onto the sealed root. The compact
 constructor on `InputRecordShape` is the producer-side rejection
 backing the LBCC key (see *Classifier invariants*); a `TypeBuilder`
 site that fails to construct a shape surfaces as `UnclassifiedType`
@@ -420,7 +430,9 @@ compile and pipeline tiers from the moment R94 ships.
   `TableInputType`, exposing `InputRecordShape recordShape()`.
   Additive; doesn't reshape the existing sealed hierarchy. Folding
   `InputType` ∪ `TableInputType` under a sealed `InputLikeType`
-  parent is deferred to its own cleanup item.
+  parent (so the capability declaration becomes one site instead
+  of five) is tracked as R171
+  (`input-like-type-sealed-parent`, Backlog).
 - `InputRecordShape` carries a compact constructor that rejects
   null `recordClass` and empty `components`. That non-null
   guarantee at producer-side is the rejection backing the LBCC
@@ -457,9 +469,11 @@ compile and pipeline tiers from the moment R94 ships.
   materialize the graphitron record via `fromMap` for input-typed
   args and pass the record to `validator.validate(...)`. The
   record local goes out of scope immediately after the pre-step.
-- The pre-step's consumer site wears `@DependsOnClassifierCheck`
-  pointing at the producer's LBCC key (see *Classifier
-  invariants*).
+- Both consumers of `HasInputRecordShape.recordShape()`,
+  `InputRecordGenerator` (record-emission) and the validator
+  pre-step site in `TypeFetcherGenerator` (post-rewire at
+  `:1602-1637`), wear `@DependsOnClassifierCheck` pointing at the
+  producer's LBCC key. See *Classifier invariants*.
 - No constraint annotations on the emitted records yet. R98
   (Backlog) attaches them programmatically once it lands; today the
   validator pre-step produces zero violations on the empty record.
@@ -560,9 +574,12 @@ Per *Validator mirrors classifier invariants*
   `components`); a `TypeBuilder` site that fails to construct a
   shape surfaces as `UnclassifiedType` via the existing fail-mode.
   Producer: `TypeBuilder.buildNonTableInputType` (and the
-  `@table`-branch site at `:815-824`). Consumer:
-  `InputRecordGenerator`, `TypeFetcherGenerator.validatorPreStep`,
-  both via `HasInputRecordShape.recordShape()`.
+  `@table`-branch site at `:815-824`). Consumers (each
+  `@DependsOnClassifierCheck`-annotated, both reaching the slot
+  via `HasInputRecordShape.recordShape()`):
+  `InputRecordGenerator` (per-input-type record emission) and
+  `TypeFetcherGenerator.validatorPreStep` (pre-step rewire at
+  `:1602-1637`).
 
 The emitter invariant that the pre-step's `validator.validate(...)`
 argument is the typed record local (not the raw `Map`) is *not* a
@@ -595,10 +612,10 @@ is the integration cover. Execution-tier rests with R170.
 - `inputRecord_scalar_emitsFromMapAndValidatesAgainstRecord`: SDL
   with a single-scalar input (`input FilmIdInput { filmId: Int! }`)
   → emitted fetcher body calls
-  `FilmIdInput.fromMap(env.getArgument("in"))` and passes
-  `result.record()` to `validator.validate(...)`. Value reads on
-  the Map remain unchanged; structural assertion confirms both
-  shapes coexist.
+  `FilmIdInput.fromMap(env.getArgument("in"))` and passes the
+  returned record to `validator.validate(...)`. Value reads on the
+  Map remain unchanged; structural assertion confirms both shapes
+  coexist.
 - `inputRecord_list_emitsListComponent`: SDL with a list input
   (`films: [FilmIdItem!]!`) → emitted body uses
   `List<FilmIdItem>` component reads.
