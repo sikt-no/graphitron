@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
+import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.javapoet.CodeBlock;
 
 import java.util.EnumSet;
@@ -15,6 +16,12 @@ import java.util.EnumSet;
  * {@code graphitronContext(env)} call but the gating predicate doesn't enumerate that field
  * variant ; becomes structurally impossible: the call only exists as the return value of
  * {@link #graphitronContextCall()}, which records the dependency on the way out.
+ *
+ * <p>R94 added {@link #assembledSchema()} so the validator pre-step can resolve each SDL arg's
+ * input-type-ness without re-walking the schema from the entry point each call. {@code null}
+ * when the caller did not provide an assembled schema (some unit-tier tests use the
+ * model-only build via {@code TestSchemaHelper.buildSchema}); the validator pre-step falls
+ * back to the legacy Map-based walk in that case.
  */
 final class TypeFetcherEmissionContext {
 
@@ -25,6 +32,23 @@ final class TypeFetcherEmissionContext {
     }
 
     private final EnumSet<HelperKind> requested = EnumSet.noneOf(HelperKind.class);
+    private final GraphQLSchema assembledSchema;
+    private final String parentTypeName;
+
+    TypeFetcherEmissionContext(GraphQLSchema assembledSchema, String parentTypeName) {
+        this.assembledSchema = assembledSchema;
+        this.parentTypeName = parentTypeName;
+    }
+
+    /**
+     * Convenience no-arg overload for callers that emit out-of-band (helpers, inline
+     * subqueries, etc.) and don't need the schema-aware machinery the {@code R94} validator
+     * pre-step requires. The assembled schema and parent-type name accessors return
+     * {@code null} for such contexts.
+     */
+    TypeFetcherEmissionContext() {
+        this(null, null);
+    }
 
     /**
      * Returns the literal {@code graphitronContext(env)} call expression and records that the
@@ -38,5 +62,19 @@ final class TypeFetcherEmissionContext {
 
     boolean isRequested(HelperKind kind) {
         return requested.contains(kind);
+    }
+
+    /**
+     * The graphql-java assembled schema this fetcher class is being emitted for. {@code null}
+     * when the caller provided no assembled schema; consumers must fall back to a schema-free
+     * code path in that case.
+     */
+    GraphQLSchema assembledSchema() {
+        return assembledSchema;
+    }
+
+    /** The SDL parent type name (the type whose fields are being emitted as fetchers). */
+    String parentTypeName() {
+        return parentTypeName;
     }
 }

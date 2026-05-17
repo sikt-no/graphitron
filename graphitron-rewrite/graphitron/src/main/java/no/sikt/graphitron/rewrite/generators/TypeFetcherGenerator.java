@@ -74,7 +74,24 @@ import java.util.Set;
  */
 public class TypeFetcherGenerator {
 
+    /**
+     * Legacy two-arg overload used by unit-tier tests that build only the model (no assembled
+     * schema). The validator pre-step falls back to the legacy Map-based walk when the
+     * assembled schema is unavailable; tests that need the typed-record pre-step shape rely on
+     * the three-arg overload below.
+     */
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
+        return generate(schema, null, outputPackage);
+    }
+
+    /**
+     * Full entry point. The {@code assembled} parameter is the graphql-java
+     * {@link graphql.schema.GraphQLSchema} the rewrite is being generated against; the
+     * validator pre-step reads it via {@link TypeFetcherEmissionContext#assembledSchema()} to
+     * resolve each SDL arg's input-type-ness and switch input-typed args to the typed-record
+     * walk target ({@code <InputName>.fromMap(...)}).
+     */
+    public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled, String outputPackage) {
         var result = new ArrayList<TypeSpec>(schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof GraphitronType.TableType
                       || e.getValue() instanceof GraphitronType.NodeType
@@ -82,7 +99,7 @@ public class TypeFetcherGenerator {
                       || e.getValue() instanceof GraphitronType.ResultType)
             .map(Map.Entry::getKey)
             .sorted()
-            .map(typeName -> generateForType(schema, typeName, outputPackage))
+            .map(typeName -> generateForType(schema, typeName, assembled, outputPackage))
             .toList());
 
         // Walk NestingField descendants of TableBackedType roots; emit a narrow Fetchers class
@@ -94,14 +111,14 @@ public class TypeFetcherGenerator {
             .sorted(Map.Entry.comparingByKey())
             .forEach(e -> schema.fieldsOf(e.getKey()).forEach(f -> {
                 if (f instanceof ChildField.NestingField nf) {
-                    collectNestedFetcherClasses(nf, seenNestedTypes, result, outputPackage);
+                    collectNestedFetcherClasses(nf, seenNestedTypes, result, assembled, outputPackage);
                 }
             }));
         return result;
     }
 
     private static void collectNestedFetcherClasses(ChildField.NestingField nf,
-            Set<String> seen, List<TypeSpec> out, String outputPackage) {
+            Set<String> seen, List<TypeSpec> out, graphql.schema.GraphQLSchema assembled, String outputPackage) {
         var nestedTypeName = nf.returnType().returnTypeName();
         if (seen.add(nestedTypeName)) {
             var batchKeyFields = nf.nestedFields().stream()
@@ -110,17 +127,17 @@ public class TypeFetcherGenerator {
                 .sorted(Comparator.comparing(GraphitronField::name))
                 .toList();
             if (!batchKeyFields.isEmpty()) {
-                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, batchKeyFields, outputPackage));
+                out.add(generateTypeSpec(nestedTypeName, nf.returnType().table(), null, batchKeyFields, assembled, outputPackage));
             }
         }
         for (var nested : nf.nestedFields()) {
             if (nested instanceof ChildField.NestingField innerNf) {
-                collectNestedFetcherClasses(innerNf, seen, out, outputPackage);
+                collectNestedFetcherClasses(innerNf, seen, out, assembled, outputPackage);
             }
         }
     }
 
-    private static TypeSpec generateForType(GraphitronSchema schema, String typeName, String outputPackage) {
+    private static TypeSpec generateForType(GraphitronSchema schema, String typeName, graphql.schema.GraphQLSchema assembled, String outputPackage) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -128,7 +145,7 @@ public class TypeFetcherGenerator {
             .toList();
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
-        return generateTypeSpec(typeName, parentTable, resultType, fields, outputPackage);
+        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage);
     }
 
     // Fetcher-specific constants (cross-generator constants come from GeneratorUtils via static import)
@@ -277,7 +294,17 @@ public class TypeFetcherGenerator {
      * Delegates to the 6-arg form with {@code resultType = null} and empty package strings.
      */
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable, List<GraphitronField> fields) {
-        return generateTypeSpec(typeName, parentTable, null, fields, "");
+        return generateTypeSpec(typeName, parentTable, null, fields, null, "");
+    }
+
+    /**
+     * Backward-compat overload for unit-tier tests that built the model only (no assembled
+     * schema) before R94. The validator pre-step falls back to its legacy Map-walk shape.
+     */
+    static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
+            GraphitronType.ResultType resultType, List<GraphitronField> fields,
+            String outputPackage) {
+        return generateTypeSpec(typeName, parentTable, resultType, fields, null, outputPackage);
     }
 
     /**
@@ -297,6 +324,7 @@ public class TypeFetcherGenerator {
             + "not guard elision.")
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
             GraphitronType.ResultType resultType, List<GraphitronField> fields,
+            graphql.schema.GraphQLSchema assembled,
             String outputPackage) {
         var className = typeName + "Fetchers";
         var builder = TypeSpec.classBuilder(className)
@@ -307,7 +335,7 @@ public class TypeFetcherGenerator {
         // which records the dependency; class assembly drains the set below to decide which
         // helper methods to materialise. Replaces a previous post-scan that string-grepped
         // method bodies for the literal "graphitronContext(env)".
-        var ctx = new TypeFetcherEmissionContext();
+        var ctx = new TypeFetcherEmissionContext(assembled, typeName);
 
         for (var field : fields) {
             switch (field) {
@@ -1425,7 +1453,7 @@ public class TypeFetcherGenerator {
         if (errorChannel.isPresent()
                 && errorChannel.get() instanceof ErrorChannel.PayloadClass payloadChannel
                 && hasValidationHandler(payloadChannel)) {
-            builder.addCode(validatorPreStep(ctx, method, payloadChannel, valueType, outputPackage));
+            builder.addCode(validatorPreStep(ctx, method, fieldName, payloadChannel, valueType, outputPackage));
         }
 
         builder.beginControlFlow("try");
@@ -1598,8 +1626,25 @@ public class TypeFetcherGenerator {
      * {@code GraphQLError} via the generated {@code ConstraintViolations.toGraphQLError}, and
      * short-circuits with the payload's errors-arm filled by the violations list when the
      * accumulator is non-empty.
+     *
+     * <p>R94: input-typed SDL args materialise through the graphitron-emitted class's
+     * {@code fromMap(Map<String,Object>)} factory before the validator walks them. The
+     * fetcher boundary feeds the typed instance into
+     * {@code validator.validate(<typed>)}; the empty walk produces zero violations until R98
+     * attaches programmatic {@code ConstraintMapping} entries. Scalar / enum SDL args stay on
+     * the raw value path. When the assembled schema is unavailable (some unit-tier tests
+     * build the model only), the pre-step falls back to validating against the raw value for
+     * every arg, mirroring pre-R94 behaviour.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "input-record.shape-from-input-type",
+        reliesOn = "Materialises the graphitron-emitted input class via <InputName>.fromMap(...) "
+            + "without null-guarding the recordShape() return on the HasInputRecordShape "
+            + "carrier; TypeBuilder.buildInputRecordShape's compact-ctor producer-side "
+            + "rejection plus the UnclassifiedType routing guarantees every classified input "
+            + "type carries a populated shape with a non-empty components list.")
     private static CodeBlock validatorPreStep(TypeFetcherEmissionContext ctx, MethodRef method,
+                                              String fieldName,
                                               ErrorChannel.PayloadClass channel,
                                               TypeName valueType, String outputPackage) {
         var validator = ClassName.get("jakarta.validation", "Validator");
@@ -1611,6 +1656,8 @@ public class TypeFetcherGenerator {
             ConstraintViolationsClassGenerator.CLASS_NAME);
         var violationWildcard = ParameterizedTypeName.get(constraintViolation,
             WildcardTypeName.subtypeOf(Object.class));
+        var mapStringObject = ParameterizedTypeName.get(
+            ClassName.get(Map.class), ClassName.get(String.class), ClassName.get(Object.class));
 
         var b = CodeBlock.builder();
         b.addStatement("$T __validator = $L.getValidator(env)", validator, ctx.graphitronContextCall());
@@ -1619,7 +1666,19 @@ public class TypeFetcherGenerator {
             if (!(p.source() instanceof ParamSource.Arg arg)) continue;
             String argName = arg.graphqlArgName();
             String local = "__arg_" + sanitizeIdent(argName);
-            b.addStatement("$T $L = env.getArgument($S)", Object.class, local, argName);
+            ClassName inputClass = resolveInputArgClass(ctx, fieldName, argName, outputPackage);
+            if (inputClass != null) {
+                // Input-typed SDL arg: materialise the graphitron-emitted class via fromMap
+                // and walk the typed instance. The local is the validator's target (typed),
+                // not the raw Map. The class goes out of scope after the pre-step; downstream
+                // value reads route through R150's bean path or the existing Map.get pattern.
+                b.addStatement("$T $L_raw = ($T) env.getArgument($S)",
+                    mapStringObject, local, mapStringObject, argName);
+                b.addStatement("$T $L = $L_raw == null ? null : $T.fromMap($L_raw)",
+                    inputClass, local, local, inputClass, local);
+            } else {
+                b.addStatement("$T $L = env.getArgument($S)", Object.class, local, argName);
+            }
             b.beginControlFlow("if ($L != null)", local);
             b.beginControlFlow("for ($T __v : __validator.validate($L))", violationWildcard, local);
             b.addStatement("__violations.add($T.toGraphQLError(__v, env, $S))",
@@ -1634,6 +1693,28 @@ public class TypeFetcherGenerator {
         b.addStatement("    .build()");
         b.endControlFlow();
         return b.build();
+    }
+
+    /**
+     * Resolves an SDL arg name to the graphitron-emitted input-class {@link ClassName} when the
+     * arg's SDL type unwraps to an {@code GraphQLInputObjectType}. Returns {@code null} for
+     * scalar / enum args, for unresolved fields, and when the assembled schema isn't available
+     * (model-only build path).
+     */
+    private static ClassName resolveInputArgClass(TypeFetcherEmissionContext ctx,
+                                                  String fieldName, String argName,
+                                                  String outputPackage) {
+        var assembled = ctx.assembledSchema();
+        if (assembled == null) return null;
+        var parent = assembled.getType(ctx.parentTypeName());
+        if (!(parent instanceof graphql.schema.GraphQLObjectType obj)) return null;
+        var field = obj.getFieldDefinition(fieldName);
+        if (field == null) return null;
+        var argument = field.getArgument(argName);
+        if (argument == null) return null;
+        var base = graphql.schema.GraphQLTypeUtil.unwrapAll(argument.getType());
+        if (!(base instanceof graphql.schema.GraphQLInputObjectType in)) return null;
+        return ClassName.get(outputPackage + ".inputs", in.getName());
     }
 
     /**

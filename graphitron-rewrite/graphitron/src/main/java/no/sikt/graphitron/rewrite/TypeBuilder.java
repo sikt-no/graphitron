@@ -15,12 +15,18 @@ import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
+import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.HelperRef;
+import no.sikt.graphitron.rewrite.model.InputRecordShape;
+import no.sikt.graphitron.rewrite.model.InputRecordShape.InputComponent;
+import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
@@ -878,18 +884,28 @@ class TypeBuilder {
                 "mapped to table '" + tableRef.tableName() + "' — bad @condition on fields: "
                 + String.join("; ", conditionErrors)));
         }
-        return new TableInputType(name, location, tableRef, List.copyOf(resolvedFields), inputType);
+        var shape = buildInputRecordShape(name, inputType);
+        if (shape == null) {
+            return new UnclassifiedType(name, location, Rejection.structural(
+                "mapped to table '" + tableRef.tableName() + "' — input-record component types could not be resolved"));
+        }
+        return new TableInputType(name, location, tableRef, List.copyOf(resolvedFields), inputType, shape);
     }
 
     /**
      * Reflects on the backing Java class and constructs the appropriate {@link InputType} sub-type.
      */
     private GraphitronType buildNonTableInputType(GraphQLInputObjectType inputType, String name, SourceLocation location) {
+        var shape = buildInputRecordShape(name, inputType);
+        if (shape == null) {
+            return new UnclassifiedType(name, location, Rejection.structural(
+                "input-record component types could not be resolved for '" + name + "'"));
+        }
         var dir = inputType.getAppliedDirective(DIR_RECORD);
-        if (dir == null) return new GraphitronType.PojoInputType(name, location, null, inputType);
+        if (dir == null) return new GraphitronType.PojoInputType(name, location, null, inputType, shape);
         var recordArg = dir.getArgument(ARG_RECORD);
         if (recordArg == null || recordArg.getValue() == null) {
-            return new GraphitronType.PojoInputType(name, location, null, inputType);
+            return new GraphitronType.PojoInputType(name, location, null, inputType, shape);
         }
         Map<String, Object> ref = asMap(recordArg.getValue());
         String inertness = checkArgMappingInert(ref, "record");
@@ -898,25 +914,137 @@ class TypeBuilder {
         }
         String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
         if (className == null) {
-            return new GraphitronType.PojoInputType(name, location, null, inputType);
+            return new GraphitronType.PojoInputType(name, location, null, inputType, shape);
         }
         try {
             Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
             if (cls.isRecord()) {
-                return new GraphitronType.JavaRecordInputType(name, location, className, inputType);
+                return new GraphitronType.JavaRecordInputType(name, location, className, inputType, shape);
             }
             if (org.jooq.TableRecord.class.isAssignableFrom(cls)) {
                 TableRef table = svc.resolveTableByRecordClass(cls).orElse(null);
-                return new GraphitronType.JooqTableRecordInputType(name, location, className, table, inputType);
+                return new GraphitronType.JooqTableRecordInputType(name, location, className, table, inputType, shape);
             }
             if (org.jooq.Record.class.isAssignableFrom(cls)) {
-                return new GraphitronType.JooqRecordInputType(name, location, className, inputType);
+                return new GraphitronType.JooqRecordInputType(name, location, className, inputType, shape);
             }
-            return new GraphitronType.PojoInputType(name, location, className, inputType);
+            return new GraphitronType.PojoInputType(name, location, className, inputType, shape);
         } catch (ClassNotFoundException e) {
             return new UnclassifiedType(name, location, Rejection.structural(
                 "record backing class '" + className + "' could not be loaded"));
         }
+    }
+
+    /**
+     * Derives the graphitron-emitted record shape for one SDL input type, walking each declared
+     * field and resolving its Java type. SDL scalar fields lift via R101's
+     * {@link no.sikt.graphitron.rewrite.ScalarTypeResolver}; SDL enum fields lift to
+     * {@code String} (graphql-java delivers enum values as their name string); SDL list wraps
+     * compose {@code List<X>}; nested input refs resolve to the emitted record's
+     * {@link ClassName} (forward-declared — javapoet does not require the class to exist at
+     * codegen). An SDL field whose scalar fails to classify surfaces as a {@code null} return,
+     * causing the caller to route the input type through {@link UnclassifiedType}.
+     *
+     * <p>Producer-side rejection backing the {@code input-record.shape-from-input-type}
+     * load-bearing classifier check: empty {@code components} fails the compact constructor on
+     * {@link InputRecordShape} (an SDL input type without fields is structurally rejected by
+     * graphql-java earlier in the pipeline, so the guard is defence in depth).
+     */
+    @LoadBearingClassifierCheck(
+        key = "input-record.shape-from-input-type",
+        description = "Every classified SDL input type produces a non-null InputRecordShape with a non-empty components list. A site that fails to construct the shape returns UnclassifiedType.")
+    @DependsOnClassifierCheck(
+        key = "scalar-resolver.coercing-non-erased",
+        reliesOn = "Pulls the JavaPoet TypeName for each scalar component from ScalarTypeResolver.resolveBuiltIn; non-built-in scalars fall back to consumer-declared resolutions surfaced on GraphitronType.ScalarType.")
+    private InputRecordShape buildInputRecordShape(String name, GraphQLInputObjectType inputType) {
+        ClassName recordClass = ClassName.get(ctx.ctx.outputPackage() + ".inputs", name);
+        var fields = inputType.getFieldDefinitions();
+        if (fields.isEmpty()) {
+            return null;
+        }
+        var components = new ArrayList<InputComponent>(fields.size());
+        for (var f : fields) {
+            var resolution = resolveInputFieldJavaType(f.getType());
+            if (resolution == null) {
+                return null;
+            }
+            components.add(new InputComponent(
+                f.getName(),
+                f.getName(),
+                resolution.javaType(),
+                resolution.nullable()
+            ));
+        }
+        return new InputRecordShape(recordClass, components);
+    }
+
+    private record InputFieldTypeResolution(TypeName javaType, boolean nullable) {}
+
+    /**
+     * Walks an SDL {@code GraphQLInputType} (with its non-null and list wrappers) into a Java
+     * {@link TypeName} for an {@link InputComponent}. Returns {@code null} when a leaf type
+     * cannot be resolved (scalar with no classification, etc.); the caller maps that into
+     * {@link UnclassifiedType} on the parent input type.
+     *
+     * <p>List wrapping always boxes in {@code java.util.List}; the {@code nullable} flag tracks
+     * the outermost non-null wrap on the field declaration, not on the list element.
+     */
+    private InputFieldTypeResolution resolveInputFieldJavaType(GraphQLType type) {
+        boolean nullable = true;
+        GraphQLType current = type;
+        if (current instanceof GraphQLNonNull nn) {
+            nullable = false;
+            current = nn.getWrappedType();
+        }
+        TypeName javaType = resolveInputElementJavaType(current);
+        if (javaType == null) {
+            return null;
+        }
+        return new InputFieldTypeResolution(javaType, nullable);
+    }
+
+    private TypeName resolveInputElementJavaType(GraphQLType type) {
+        GraphQLType current = type;
+        if (current instanceof GraphQLNonNull nn) {
+            current = nn.getWrappedType();
+        }
+        if (current instanceof GraphQLList list) {
+            TypeName elem = resolveInputElementJavaType(list.getWrappedType());
+            if (elem == null) return null;
+            return ParameterizedTypeName.get(ClassName.get(List.class), elem);
+        }
+        if (current instanceof GraphQLInputObjectType nested) {
+            // Forward reference to the sibling emitted record; javapoet does not require the
+            // referenced class to exist at codegen, so mutually recursive input types resolve
+            // cleanly without a topological sort over input types.
+            return ClassName.get(ctx.ctx.outputPackage() + ".inputs", nested.getName());
+        }
+        if (current instanceof graphql.schema.GraphQLEnumType) {
+            // graphql-java delivers enum values as their declared name string at the
+            // argument-binding seam; the record component stores the raw String so the
+            // validator's reflection walks a stable Java type. The actual enum semantics ride
+            // at jOOQ-bind time via DSL.val(rawValue, col.getDataType()).
+            return ClassName.get(String.class);
+        }
+        if (current instanceof GraphQLScalarType scalar) {
+            var resolution = ScalarTypeResolver.resolveBuiltIn(scalar.getName());
+            if (resolution instanceof ScalarResolution.Resolved r) {
+                return r.javaType();
+            }
+            // Consumer-declared scalar that didn't resolve as a spec built-in: defer to whatever
+            // the ScalarType classifier produced, if any. The classifier has either succeeded
+            // (the entry is a GraphitronType.ScalarType on ctx.typeRegistry) or rejected the
+            // type; if it rejected, the surrounding input type would already be UnclassifiedType
+            // by reachable-closure on the input field. Treat absence as Object so the validator
+            // walk still works; jOOQ rebinds at value-set time via getDataType().
+            var classified = ctx.typeRegistry.get(scalar.getName());
+            if (classified instanceof GraphitronType.ScalarType st
+                && st.resolution() instanceof ScalarResolution.Resolved sr) {
+                return sr.javaType();
+            }
+            return ClassName.get(Object.class);
+        }
+        return null;
     }
 
     /**
