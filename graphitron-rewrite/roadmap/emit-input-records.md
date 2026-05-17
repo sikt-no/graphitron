@@ -162,46 +162,45 @@ already taken the `@service` value-flow role and works against
 consumer-authored beans, and DML never had a typed-read motivation
 once R12 routed DB constraint violations through typed errors.
 
-Two adapters at one wire boundary, not two materializations of the
-same thing. Per *Wire boundaries are typed adapter / composer pairs*
-(`rewrite-design-principles.adoc:91`), the `Map<String,Object>` that
-`env.getArgument(...)` returns is the wire shape both sides decode
-from; the graphitron record is the validator's adapter target
-(decode → typed → discard), and R150's consumer bean is the service's
-adapter target (decode → typed → flow into business logic). They
-serve different boundary crossings and answer different questions:
-the record asks "does this input conform to the SDL contract?" and
-is discarded once answered; the bean asks "what value does the
-service operate on?" and lives the lifetime of the fetcher call. The
-SDL-named path segments in
+Two distinct boundary crossings share the same wire shape
+(`Map<String,Object>` from `env.getArgument(...)`): the validator's
+crossing reifies the SDL contract as a Java type so Hibernate
+Validator's reflection can walk it; the service's crossing
+materializes a typed value that flows into business logic. The
+graphitron record answers "does this input conform to the SDL
+contract?" and is discarded once answered; R150's bean answers "what
+value does the service operate on?" and lives the lifetime of the
+fetcher call. The SDL-named path segments in
 `ConstraintViolation.getPropertyPath()` (R12) and the
 `mapping.type(InputRecord.class).field(componentName)` registration
-target (R98) both need the record, not the bean; the service
-ergonomics R150 owns need the bean, not the record.
-
-Converging onto a single adapter would mean either reopening R150 to
-take `createBean(InputRecord)` (regressing R150's consumer-bean
-contract) or routing the validator through R150's bean (regressing
-the SDL-named property path R12 already produces). Two adapters is
-the shape the principle is comfortable with; the cost is a single
-shared wire shape decoded twice, which the pipeline tests on each
-decoder pin against drift.
+target (R98) need the record, not the bean; the service ergonomics
+R150 owns need the bean, not the record. Pipeline-tier coverage on
+each side pins against drift.
 
 ### Map → record coercion: emitted `fromMap` factory per input
 
-Each emitted record gets a `static FromMapResult<FilmInput>
-fromMap(Map<String,Object>)` factory; the fetcher boundary calls it
-once and hands `Ok.record()` to the validator (or routes `TypeMismatch`
-through `CoercionFailures.toGraphQLError`; see *Coercion failure*
-below). Per *Wire-format encoding is a boundary concern*
-(`rewrite-design-principles.adoc:81`), the decode site lives in
-graphitron's emitted code, symmetric with
+Each emitted record gets a `static MyInput fromMap(Map<String,Object>)`
+factory returning the populated record; the fetcher boundary calls it
+once and hands the result to the validator. Per *Wire-format encoding
+is a boundary concern* (`rewrite-design-principles.adoc:81`), the
+decode site lives in graphitron's emitted code, symmetric with
 `ConnectionHelper.encodeCursor` / `decodeCursor` and
 `EntityFetcherDispatch.resolveByReps`. Registering graphql-java
 `Coercing<FilmInput, Map, Map>` was the alternative; it pushes decode
 into graphql-java's argument-binding pipeline and breaks the boundary
 symmetry (the decode site moves out of graphitron's emission), so
 it's rejected.
+
+Runtime type mismatches at `fromMap` (typically a broken custom-scalar
+`Coercing` returning a value whose runtime type doesn't match the
+component's Java type) surface as a thrown `ClassCastException`,
+handled by graphql-java's default error pipeline the same way a
+broken `Coercing` already is. A typed wire surface for this case
+(sealed `FromMapResult` plus a `CoercionFailures` translator
+symmetric with R12's `ConstraintViolations`) is its own additive
+item if the failure mode materialises in practice; graphql-java's
+upstream coercion catches the common cases (missing-required,
+unknown-key) before `fromMap` runs.
 
 ### Emitted-record visibility: sealed marker interface
 
@@ -226,7 +225,7 @@ at minimum the validator factory needs cross-package access, and the
 resulting facade-only API would not strengthen the principle
 (consumers who want to bypass it do so via reflection regardless).
 
-### Classify-time carrier: `InputRecordShape` only
+### Classify-time carrier: `InputRecordShape` via capability interface
 
 The classifier produces one carrier per SDL input type. The
 service-call / destructuring side that an earlier draft tied to this
@@ -239,7 +238,15 @@ item is owned by R150 (`CallSiteExtraction.InputBean`,
 record InputRecordShape(
     ClassName recordClass,                  // e.g. com.example.inputs.SubmitReviewInput
     List<InputComponent> components
-)
+) {
+    public InputRecordShape {
+        Objects.requireNonNull(recordClass);
+        if (components.isEmpty()) {
+            throw new IllegalStateException(
+                "InputRecordShape must have at least one component");
+        }
+    }
+}
 record InputComponent(
     String sdlFieldName,                    // e.g. "filmId"
     String javaComponentName,               // e.g. "filmId"
@@ -255,82 +262,26 @@ key. An SDL field whose scalar doesn't classify surfaces as
 `UnclassifiedField` via the existing fail-mode and never reaches the
 input-record emitter.
 
+The slot reaches consumers via a capability interface
+`HasInputRecordShape` (per *Capability interfaces and sealed switches
+serve different roles*, `rewrite-design-principles.adoc:43`) declared
+on the four `InputType` leaves (`PojoInputType`, `JavaRecordInputType`,
+`JooqRecordInputType`, `JooqTableRecordInputType`) and on
+`TableInputType`. The capability is additive: it doesn't reshape the
+existing sealed hierarchy. The slot-on-both-`InputType`-and-
+`TableInputType` requirement is a signal that the sibling structure
+between those two could fold into a sealed parent `InputLikeType`;
+that's its own cleanup item, deferred from R94. The compact
+constructor on `InputRecordShape` is the producer-side rejection
+backing the LBCC key (see *Classifier invariants*); a `TypeBuilder`
+site that fails to construct a shape surfaces as `UnclassifiedType`
+via the existing fail-mode.
+
 R98 (Backlog) will later extend `InputComponent` (or sibling-attach)
 with `ConstraintSet`; that's R98's design fork, not this item's. The
 validator pre-step in R94 walks the empty record (no constraints
 yet); R98 then attaches programmatic `ConstraintMapping` entries and
 violations start firing.
-
-### Coercion failure: two-arm sealed `FromMapResult` + emitted `CoercionFailures`
-
-graphql-java's runtime input coercion enforces SDL non-null
-(`MissingRequired` is dead in practice) and rejects unknown fields
-(`UnknownKey` is dead in practice). The remaining failure mode at the
-`fromMap` boundary is a runtime type mismatch (typically a broken
-custom-scalar `Coercing` implementation, or an edge case in nested
-input materialization) where the coerced map value's runtime type
-doesn't match the graphitron-record component's Java type. Rare but
-not impossible, and a runtime failure deserves a typed wire surface
-rather than redaction.
-
-Per *Builder-step results are sealed*
-(`rewrite-design-principles.adoc:69`), the runtime coercion produces a
-sealed `FromMapResult`:
-
-```java
-sealed interface FromMapResult<R> permits Ok, TypeMismatch {
-    record Ok<R>(R record) implements FromMapResult<R> {}
-    record TypeMismatch<R>(
-        List<String> path,        // dot-segment path into the input, e.g. ["input", "rating"]
-        Class<?> expectedType,    // e.g. Integer.class
-        Class<?> actualType       // e.g. String.class
-    ) implements FromMapResult<R> {}
-}
-```
-
-The carriers are `Class<?>` rather than JavaPoet `TypeName` because
-`FromMapResult` lives in *emitted* code (the generated `fromMap`
-factory instantiates `TypeMismatch` at runtime). JavaPoet's `TypeName`
-is a code-generation type and has no business in the generated
-artifact; the runtime decode site needs the runtime java class.
-
-`MissingRequired` and `UnknownKey` are dropped from v1 since
-graphql-java's upstream coercion makes them unreachable; they can be
-added back as new arms if real cases surface (the seal forces
-matching emitter handling, so adding an arm is a controlled change).
-
-Symmetric with R12's already-shipped
-`<outputPackage>.schema.ConstraintViolations.toGraphQLError`
-(`ConstraintViolationsClassGenerator`), a new graphitron-emitted
-artifact translates `TypeMismatch` to a `GraphQLError`:
-
-```java
-package <outputPackage>.schema;
-
-public final class CoercionFailures {
-    private CoercionFailures() {}
-
-    /** Translate a TypeMismatch FromMapResult arm into a GraphQLError
-     *  with stable extensions.classification = "InputCoercion.TypeMismatch". */
-    public static GraphQLError toGraphQLError(
-        FromMapResult.TypeMismatch<?> failure,
-        DataFetchingEnvironment env,
-        String argName
-    ) { ... }
-}
-```
-
-`extensions.classification` for `TypeMismatch`:
-`"InputCoercion.TypeMismatch"`. Distinct from
-`ConstraintViolation`'s classification (the constraint annotation's
-simple name) so frontends can route the two kinds of input failures
-separately.
-
-The fetcher emit catches `TypeMismatch` from `fromMap` and dispatches
-through `CoercionFailures.toGraphQLError` directly, joining the same
-violation list R12's pre-step populates. Coercion failures and
-validation violations both flow through R12's ErrorChannel-aware
-catch arm and surface in the typed `errors` slot of the payload.
 
 ### Per-arg validator pre-step shape (unchanged from R12)
 
@@ -340,11 +291,15 @@ independently and emits one `validator.validate(...)` call per arg.
 R94 only changes the *target* of that call for input-typed args:
 
 - **Input-typed SDL args** materialize via `fromMap` to the
-  graphitron record (`Ok` arm); the record is the validator target.
-  `TypeMismatch` routes through `CoercionFailures.toGraphQLError`
-  and joins the same violation list.
+  graphitron record; the record is the validator target. Runtime
+  type mismatch at `fromMap` throws (see *Map → record coercion*).
 - **Scalar SDL args** stay unchanged: `env.getArgument(name)` raw
-  coerced scalar, defensive no-op `validator.validate(...)` call.
+  coerced scalar, `validator.validate(...)` call retained as
+  forward-compat for a hypothetical follow-on that attaches
+  SDL-level validation directives to scalar args (R98 attaches to
+  input types only). Today the call returns zero violations and is
+  removable once that forward-compat is either ruled out or owned
+  by a follow-on item.
 
 Violations from all per-arg calls accumulate before short-circuit,
 identical to R12's existing behavior. The graphitron record local
@@ -451,31 +406,33 @@ by the rewired pre-step: every fetcher whose SDL args include an
 input type materializes the record via `fromMap` and walks it
 through `validator.validate(...)`. The walk produces zero
 violations until R98 (Backlog) attaches programmatic
-`ConstraintMapping` entries, but the record's component shape,
-`fromMap` signature, `FromMapResult` arms, and `CoercionFailures`
-routing are all live at compile and pipeline tiers from the moment
-R94 ships.
+`ConstraintMapping` entries, but the record's component shape, the
+`fromMap` signature, and the validator walk-target are live at
+compile and pipeline tiers from the moment R94 ships.
 
 ### Deliverables
 
 **Type-side carrier slot.**
 
-- Every classified SDL input type carries an `InputRecordShape`
-  slot. Both the `InputType` sealed family (`PojoInputType`,
-  `JavaRecordInputType`, `JooqRecordInputType`,
-  `JooqTableRecordInputType`) and the `TableInputType` variant
-  expose the slot, since R98 needs a validation target for
-  `@table`-backed inputs too. The slot is populated for every
-  classified input type and is independent of the variant choice
-  (which R96 reshapes via reflection).
+- Capability interface `HasInputRecordShape` declared on the four
+  `InputType` leaves (`PojoInputType`, `JavaRecordInputType`,
+  `JooqRecordInputType`, `JooqTableRecordInputType`) and on
+  `TableInputType`, exposing `InputRecordShape recordShape()`.
+  Additive; doesn't reshape the existing sealed hierarchy. Folding
+  `InputType` ∪ `TableInputType` under a sealed `InputLikeType`
+  parent is deferred to its own cleanup item.
+- `InputRecordShape` carries a compact constructor that rejects
+  null `recordClass` and empty `components`. That non-null
+  guarantee at producer-side is the rejection backing the LBCC
+  key.
 - Populate the slot at every code path in `TypeBuilder` that
-  produces an input-type classification:
-  `buildNonTableInputType` (line 887), `buildTableInputType` (the
-  `@table` branch), and the `@table + @record` shadow case at
-  `:815-824`. The variant-selection and shadow-rule logic at
-  those sites is unchanged; only the new slot is added.
+  produces an input-type classification: `buildNonTableInputType`
+  (line 887), `buildTableInputType` (the `@table` branch), and the
+  `@table + @record` shadow case at `:815-824`. The
+  variant-selection and shadow-rule logic at those sites is
+  unchanged; only the new slot is added.
 
-**Emitted record + sealed marker + coercion failures.**
+**Emitted record + sealed marker.**
 
 - New generator class
   `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/InputRecordGenerator.java`
@@ -485,26 +442,24 @@ R94 ships.
   clause lists every emitted record. A `package-info.java` carries
   the "Graphitron-internal validation targets; do not reference from
   service code" Javadoc.
-- Each emitted record carries a `static FromMapResult<Self>
-  fromMap(Map<String, Object>)` factory.
-- New emitted artifact
-  `<outputPackage>.schema.CoercionFailures.toGraphQLError(...)`
-  symmetric with R12's `ConstraintViolationsClassGenerator` /
-  `<outputPackage>.schema.ConstraintViolations`.
+- Each emitted record carries a `static Self fromMap(Map<String,
+  Object>)` factory returning the populated record; nested input
+  components recurse the same factory. Runtime type mismatches
+  throw (handled by graphql-java's default error pipeline); a typed
+  wire surface is its own additive item if the failure mode
+  materialises in practice.
 
 **Validator pre-step rewiring.**
 
 - `TypeFetcherGenerator`'s validator pre-step (currently at
   `:1602-1637`, looping over each input arg and calling
-  `validator.validate(env.getArgument(name))`) is rewired to:
-  materialize the graphitron record via `fromMap`, branch on
-  `FromMapResult`, route `TypeMismatch` through
-  `CoercionFailures.toGraphQLError`, and pass `Ok.record()` to
-  `validator.validate(...)`. The record local goes out of scope
-  immediately after the pre-step.
-- `LoadBearingClassifierCheck` key lands on the producer side (see
-  *Classifier invariants* below); the pre-step wears
-  `@DependsOnClassifierCheck`.
+  `validator.validate(env.getArgument(name))`) is rewired to
+  materialize the graphitron record via `fromMap` for input-typed
+  args and pass the record to `validator.validate(...)`. The
+  record local goes out of scope immediately after the pre-step.
+- The pre-step's consumer site wears `@DependsOnClassifierCheck`
+  pointing at the producer's LBCC key (see *Classifier
+  invariants*).
 - No constraint annotations on the emitted records yet. R98
   (Backlog) attaches them programmatically once it lands; today the
   validator pre-step produces zero violations on the empty record.
@@ -518,16 +473,15 @@ R94 ships.
 - Every reachable SDL `input` type produces a compiling record at
   `<outputPackage>.inputs.<InputName>`; sakila's compile picks up
   the package without warnings.
-- `GraphitronType.InputType` carries a populated `recordShape` slot
-  on every classified input type; the existing variants
-  (`PojoInputType`, `JavaRecordInputType`, `JooqRecordInputType`,
-  `JooqTableRecordInputType`) survive unchanged.
+- Every classified `InputType` leaf and the `TableInputType`
+  variant implement `HasInputRecordShape` and return a populated
+  `InputRecordShape`. Existing variants survive unchanged.
 - Pipeline-tier covers the SDL → record-emit shape, including the
   unreachable-input no-emit case (see *Tests*).
 - The validator pre-step at fetcher emit calls
   `validator.validate(<typed record>)` instead of
-  `validator.validate(<Map>)`; coercion failures route through
-  `CoercionFailures.toGraphQLError`.
+  `validator.validate(<Map>)` for input-typed args. The regression
+  guard test pins this against drift back to the Map.
 - No value-flow behavior changes: DML keeps Map.get; `@service`
   keeps R150's consumer-bean path; the four
   `buildMutation{Delete,Insert,Update,Upsert}Fetcher` methods at
@@ -559,26 +513,20 @@ R162/R163 but not R94 or R98.
 **New files:**
 
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/InputRecordGenerator.java`
-- `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/CoercionFailuresClassGenerator.java`
-  (symmetric with R12's `ConstraintViolationsClassGenerator`)
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/InputRecordShape.java`
-- `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/FromMapResult.java`
+  (with sibling `InputComponent`; compact constructors enforce
+  non-null `recordClass` and non-empty `components`)
+- `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/HasInputRecordShape.java`
+  (capability interface)
 - `graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/schema/InputRecordGeneratorTest.java`
-- `graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/schema/CoercionFailuresClassGeneratorTest.java`
 
 **Files modified:**
 
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronType.java`:
-  add `recordShape: InputRecordShape` so every classified SDL
-  input type carries the slot. Both the `InputType` sealed family
-  (`PojoInputType`, `JavaRecordInputType`, `JooqRecordInputType`,
-  `JooqTableRecordInputType`) and the `TableInputType` variant
-  expose the slot, since R98's downstream consumer needs a
-  validation target for `@table`-backed inputs too (DML inputs are
-  exactly the use case that motivates server-side enforcement of
-  SDL `@Range` etc.). The exact Java surface (new shared sealed
-  parent, sibling interface, or per-leaf accessor) is an
-  implementation detail.
+  the four `InputType` leaves (`PojoInputType`, `JavaRecordInputType`,
+  `JooqRecordInputType`, `JooqTableRecordInputType`) and the
+  `TableInputType` variant declare `HasInputRecordShape`. Additive;
+  the sealed hierarchy is not reshaped.
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/TypeBuilder.java`:
   populate the new `recordShape` slot at every code path that
   produces an input-type classification. The relevant sites today
@@ -590,13 +538,14 @@ R162/R163 but not R94 or R98.
   alongside.
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java`:
   rewire the validator pre-step at `:1602-1637` to walk the
-  materialized graphitron record (no other emit changes; the four
+  materialized graphitron record for input-typed args (no other
+  emit changes; the four
   `buildMutation{Delete,Insert,Update,Upsert}Fetcher` methods at
   `:1736/1782/2025/2291` and the R75/R161 record-payload paths stay
   on the Map).
 - `graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/FetcherPipelineTest.java`:
-  add five cases covering scalar / nullable / list / nested /
-  unreachable input shapes (see *Tests* below).
+  add five cases covering scalar / list / nested / unreachable
+  shapes and the validator-pre-step regression guard (see *Tests*).
 
 ## Classifier invariants (`@LoadBearingClassifierCheck` keys)
 
@@ -604,21 +553,23 @@ Per *Validator mirrors classifier invariants*
 (`rewrite-design-principles.adoc:101`):
 
 - `input-record.shape-from-input-type`: every classified SDL
-  `input` type produces an `InputRecordShape` with components
-  matching its SDL fields. Producer:
-  `TypeBuilder.buildNonTableInputType` (and the `@table`-branch
-  site at `:815-824`). Consumer: `InputRecordGenerator`,
-  `TypeFetcherGenerator.validatorPreStep`.
+  `input` type produces a non-null `InputRecordShape` whose
+  `components` are non-empty and correspond to the SDL fields.
+  Producer-side rejection is the compact constructor on
+  `InputRecordShape` (rejects null `recordClass` and empty
+  `components`); a `TypeBuilder` site that fails to construct a
+  shape surfaces as `UnclassifiedType` via the existing fail-mode.
+  Producer: `TypeBuilder.buildNonTableInputType` (and the
+  `@table`-branch site at `:815-824`). Consumer:
+  `InputRecordGenerator`, `TypeFetcherGenerator.validatorPreStep`,
+  both via `HasInputRecordShape.recordShape()`.
 
-An earlier draft listed a third key,
-`input-record.is-record-not-map`, asserting that the validator
-pre-step's input argument is the graphitron record rather than a
-`Map`. That is an *emitter* invariant, not a classifier one (no
-schema input rejects on its violation; only the pre-step emitter
-itself can regress), and is covered by the pipeline-tier assertion
-that the pre-step's `validator.validate(...)` argument is the typed
-record local. Tagging it as a classifier check would dilute the
-audit's "producer rejects on shape" semantics.
+The emitter invariant that the pre-step's `validator.validate(...)`
+argument is the typed record local (not the raw `Map`) is *not* a
+classifier key (no schema input rejects on its violation; only the
+pre-step emitter can regress). It is pinned by the
+`inputRecord_validatorPreStep_receivesTypedRecordNotMap` pipeline
+case (see *Tests*).
 
 R98 will land additional keys when it attaches constraints to the
 emitted records. R101 (`ScalarTypeResolver`, Done) already pins the
@@ -648,13 +599,6 @@ is the integration cover. Execution-tier rests with R170.
   `result.record()` to `validator.validate(...)`. Value reads on
   the Map remain unchanged; structural assertion confirms both
   shapes coexist.
-- `inputRecord_nullable_collapsesAbsentAndExplicitNull`: SDL with a
-  nullable input field → both an absent key and an explicit `null`
-  value materialize the *same* generated component value (`null`) and
-  the *same* surface to the validator. The test asserts the equality
-  to pin the symmetric-handling decision (see *Nested input records
-  recurse the coercer*); a future regression that branches on
-  absent-vs-explicit fails here.
 - `inputRecord_list_emitsListComponent`: SDL with a list input
   (`films: [FilmIdItem!]!`) → emitted body uses
   `List<FilmIdItem>` component reads.
@@ -668,6 +612,11 @@ is the integration cover. Execution-tier rests with R170.
   that type. Pins the *Reachable-closure scope* decision; a future
   closure-walker regression that starts emitting (or stops emitting)
   the unreachable input fails this case.
+- `inputRecord_validatorPreStep_receivesTypedRecordNotMap`: for
+  every fetcher with an input-typed arg, the `validator.validate(...)`
+  argument is the emitted record (`ClassName` matches the generated
+  record), not the raw `Map`. Regression guard against drifting the
+  pre-step back to `validator.validate(Map)`.
 
 Assertions are structural per "Code-string assertions on generated
 method bodies are banned at every tier"
@@ -675,17 +624,12 @@ method bodies are banned at every tier"
 `TypeSpecAssertions.wiringFor(...)` or token-kind walks on
 `MethodSpec.code()`.
 
-### Unit-tier (1-2 cases, structural invariants)
+### Unit-tier (1 case, structural invariants)
 
 `InputRecordGeneratorTest` (new) covers the record-emit shape only:
 the package is `<outputPackage>.inputs`, the record implements
 `GraphitronInternalInput`, the `fromMap` factory has the expected
 signature.
-
-`CoercionFailuresClassGeneratorTest` (new) covers the two-arm sealed
-result: `Ok` and `TypeMismatch` each produce the expected output
-shape, with `extensions.classification = "InputCoercion.TypeMismatch"`
-on the failure arm.
 
 ### Compilation-tier
 
@@ -711,28 +655,30 @@ pipeline tiers.
   annotations come from R98. The pre-step still runs against every
   input arg; it just produces zero violations on the empty record.
   Acceptable: the *shape* of the record (components, `fromMap`
-  signature, `FromMapResult` arms, `CoercionFailures` routing) is
-  exercised end-to-end on day one by the pre-step on every fetcher
-  with an input arg, so R98's later content-attachment (adding
-  programmatic `ConstraintMapping` entries) doesn't have to reshape
-  the record. The empty walk is dead content, not wrong shape. R170
-  picks up the live execute-tier fixture the moment R98 lands its
-  first SDL constraint.
-- **Two adapters decoding the same wire shape can drift.** R150's
-  `createBean(Map)` and R94's `InputRecord.fromMap(Map)` are two
-  typed adapters for one boundary (see *Validate-only record* for
-  the principle framing). Both ultimately call into graphql-java's
-  upstream coercion via the same `env.getArgument(...)` Map and
-  share the same `ScalarTypeResolver` (R101) for component-type
-  derivation, so the decoders' building blocks are common; but
-  edge cases (nested null handling, list element coercion failure
-  surfacing) live in `fromMap` and `createBean` independently and
-  could diverge. Mitigation: the pipeline-tier nested / nullable
-  cases (see *Tests*) cover the record side; R150's existing
-  pipeline coverage covers the bean side; the
-  `inputRecord_nullable_collapsesAbsentAndExplicitNull` case
-  specifically pins the symmetric-null contract that both decoders
-  must honor.
+  signature, validator walk-target) is exercised end-to-end on day
+  one by the pre-step on every fetcher with an input arg, so R98's
+  later content-attachment (adding programmatic `ConstraintMapping`
+  entries) doesn't have to reshape the record. The empty walk is
+  dead content, not wrong shape. R170 picks up the live execute-tier
+  fixture the moment R98 lands its first SDL constraint.
+- **Two decoders for one wire shape can drift.** R150's
+  `createBean(Map)` and R94's `InputRecord.fromMap(Map)` both decode
+  `env.getArgument(...)` (Map) but feed different consumers
+  (service vs validator). Both share `ScalarTypeResolver` (R101) for
+  component-type derivation, so the building blocks are common;
+  edge cases (nested null handling, list-element coercion surfacing)
+  live in `fromMap` and `createBean` independently and could
+  diverge. Mitigation: pipeline-tier coverage on each side; if a
+  real divergence ever surfaces, unifying the decoders is its own
+  item.
+- **Runtime type mismatch at `fromMap` surfaces untyped.** R94 v1
+  throws on mismatch; graphql-java's default error pipeline handles
+  it the same way a broken `Coercing` already is. A typed wire
+  surface (sealed `FromMapResult` plus a `CoercionFailures`
+  translator symmetric with R12's `ConstraintViolations`) is its own
+  additive item if the failure mode materialises in practice.
+  graphql-java's upstream coercion catches the common cases
+  (missing-required, unknown-key) before `fromMap` runs.
 - **Hibernate Validator record-walk behaviour changes between
   versions.** R94 leans on 9.0.1's record support: component
   annotations propagate to accessors, `getPropertyPath()` returns
