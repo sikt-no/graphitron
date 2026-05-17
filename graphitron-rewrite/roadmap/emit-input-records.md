@@ -1,11 +1,12 @@
 ---
 id: R94
-title: "Emit SDL input types as graphitron-internal Java records (validation target)"
-status: Spec
+title: Emit SDL input types as graphitron-internal Java records (validation target)
+status: Ready
 bucket: architecture
 priority: 7
 theme: mutations-errors
 depends-on: []
+last-updated: 2026-05-17
 ---
 
 # Emit SDL input types as graphitron-internal Java records (validation target)
