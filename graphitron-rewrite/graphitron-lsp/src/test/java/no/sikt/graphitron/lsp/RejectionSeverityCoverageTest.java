@@ -104,6 +104,13 @@ class RejectionSeverityCoverageTest {
         if (permit == Rejection.AuthorError.AccessorMismatch.class) {
             return new Rejection.AuthorError.AccessorMismatch("reason");
         }
+        if (permit == Rejection.AuthorError.RecordBindingMultiProducer.class) {
+            return new Rejection.AuthorError.RecordBindingMultiProducer(
+                "FilmDetails",
+                List.of(new no.sikt.graphitron.rewrite.model.ProducerBinding.RootService(
+                    String.class, "Query", "filmDetails",
+                    "com.example.FilmService", "getFilm", new SourceLocation(1, 1))));
+        }
         if (permit == Rejection.InvalidSchema.Structural.class) {
             return new Rejection.InvalidSchema.Structural("reason");
         }

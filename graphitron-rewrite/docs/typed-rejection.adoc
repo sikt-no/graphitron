@@ -22,7 +22,8 @@ Rejection
 ├─ AuthorError                  ← the schema author can correct this
 │   ├─ UnknownName              ← name that didn't resolve against a closed set
 │   ├─ Structural               ← rule violation carrying prose only
-│   └─ AccessorMismatch         ← @record-Java-backed parent's class doesn't expose the accessor
+│   ├─ AccessorMismatch         ← @record-Java-backed parent's class doesn't expose the accessor
+│   └─ RecordBindingMultiProducer ← multiple producers reach one SDL type with disagreeing classes
 ├─ InvalidSchema                ← the schema can't accept this combination at all
 │   ├─ DirectiveConflict        ← two directives co-occur in a rejected combination
 │   └─ Structural               ← rule violation carrying prose only
@@ -34,6 +35,8 @@ Rejection
 `AuthorError.Structural` and `InvalidSchema.Structural` are the prose-majority arms. They carry one `String reason` and exist because most rule violations are not name-against-closed-set lookups; they're "this combination cannot work, period" or "this rule was broken." Two arms instead of one because the diagnostic surface treats `AUTHOR_ERROR` and `INVALID_SCHEMA` differently: the first prompts the author to edit; the second prompts the author to drop or replace a directive entirely.
 
 `AuthorError.AccessorMismatch` is the third `AuthorError` arm because the `@record`-Java-backed accessor-resolution surface produces uniform diagnostics with a uniform fix shape (`@field(name: "...")`); a single arm with the hint baked into `message()` lets the resolver hand the validator the same typed value every site produces.
+
+`AuthorError.RecordBindingMultiProducer` is the fourth `AuthorError` arm, surfacing R96's producer-agreement check: when two or more producers (root producers or parent-accessor chains) reach the same SDL type with disagreeing reflected backing classes, the validator halts with a typed payload naming the SDL type and every disagreeing `ProducerBinding` site. The arm sits under `AuthorError` because the fix is author-correctable (align the producers on a single backing class via the same rename / retype / split toolbox the rest of `AuthorError` supports); the typed `List<ProducerBinding>` payload follows the sub-data pattern that `UnknownName` established.
 
 `InvalidSchema.DirectiveConflict` carries the bare directive names (no leading `@`) plus the prose. The names ride as typed data so an LSP fix-it can offer "remove this directive" without scraping the prose for which one to remove.
 
@@ -59,7 +62,7 @@ The diagnostic surface that consumers see, what each rejection class renders as,
 
 == Drift protection
 
-The chapter prose above enumerates `Rejection`'s permits: `AuthorError.{UnknownName | Structural | AccessorMismatch}`, `InvalidSchema.{DirectiveConflict | Structural}`, and `Deferred`. A new permit on the sealed hierarchy must land with a corresponding mention in this page; otherwise the prose silently goes stale. `SealedHierarchyDocCoverageTest` walks `Rejection.permits()` transitively and asserts each permit name appears in `typed-rejection.adoc`: bidirectional, tied to a closed set the compiler already exhaustivity-checks. A new permit added without a paragraph here fails the test; a permit removed without removing its mention fails too.
+The chapter prose above enumerates `Rejection`'s permits: `AuthorError.UnknownName`, `AuthorError.Structural`, `AuthorError.AccessorMismatch`, `AuthorError.RecordBindingMultiProducer`, `InvalidSchema.DirectiveConflict`, `InvalidSchema.Structural`, and `Deferred`. A new permit on the sealed hierarchy must land with a corresponding mention in this page; otherwise the prose silently goes stale. `SealedHierarchyDocCoverageTest` walks `Rejection.permits()` transitively and asserts each permit name appears in `typed-rejection.adoc`: bidirectional, tied to a closed set the compiler already exhaustivity-checks. A new permit added without a paragraph here fails the test; a permit removed without removing its mention fails too.
 
 The sealed-`Resolved` pattern across the thirteen sibling resolvers is described above shape-only; per-resolver arm enumerations (e.g. `LookupKeyDirectiveResolver.Resolved.{Ok, Rejected}`, `ServiceDirectiveResolver.Resolved.{Success.{TableBound | Result | Scalar} | ErrorsLifted | Rejected}`) live as javadoc on each `*DirectiveResolver.Resolved` declaration. There is no single `Resolved` parent class to walk, and the chapter does not pin per-resolver permits.
 
@@ -92,6 +95,10 @@ classDiagram
     class AccessorMismatch {
         +String reason
     }
+    class RecordBindingMultiProducer {
+        +String sdlTypeName
+        +List~ProducerBinding~ bindings
+    }
     class DirectiveConflict {
         +List~String~ directives
         +String reason
@@ -111,6 +118,7 @@ classDiagram
     AuthorError <|-- UnknownName
     AuthorError <|-- Structural_AE
     AuthorError <|-- AccessorMismatch
+    AuthorError <|-- RecordBindingMultiProducer
     InvalidSchema <|-- DirectiveConflict
     InvalidSchema <|-- Structural_IS
 

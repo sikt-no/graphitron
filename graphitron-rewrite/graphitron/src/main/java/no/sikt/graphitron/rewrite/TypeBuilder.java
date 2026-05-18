@@ -361,7 +361,7 @@ class TypeBuilder {
     /**
      * R96: for every multi-producer disagreement the resolver reported, demote the SDL type to
      * {@link UnclassifiedType} carrying the typed
-     * {@link Rejection.AuthorError.RecordBindingMismatch.MultiProducer} payload. The validator
+     * {@link Rejection.AuthorError.RecordBindingMultiProducer} payload. The validator
      * picks the demotion up through its standard {@link UnclassifiedType} pass.
      */
     private void surfaceMultiProducerRejections() {
