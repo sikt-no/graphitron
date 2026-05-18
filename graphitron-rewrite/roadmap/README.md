@@ -18,6 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
+| `R178` | Retire single-record carrier walk; collapse to SourceKey + R96 reflection | Spec | 2026-05-18 | [plan](retire-single-record-carrier-walk.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
@@ -139,6 +140,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R169` [**Sakila execute-tier fixture for the @service domain-object payload-assembly arm**](service-domain-object-execute-coverage.md) — Backlog, testing
 - `R170` [**Sakila execute-tier fixture for the Jakarta ValidationHandler channel (R94-blocked)**](validator-integration-execute-coverage.md) — Backlog, testing
 - `R98` [**Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema**](multi-source-input-validation.md) — Backlog, architecture, blocked by [catalog-check-constraint-validation](catalog-check-constraint-validation.md)
+- `R178` [**Retire single-record carrier walk; collapse to SourceKey + R96 reflection**](retire-single-record-carrier-walk.md) — Spec, architecture
 - `R63` [**Type UPSERT dialect requirement on the model**](dml-dialect-requirement-on-model.md) — Spec, architecture
 - `R172` [**Audit: forbid service-side references to <outputPackage>.inputs.***](inputs-package-internal-use-audit.md) — Backlog, architecture
 - `R122` [**Compound mutations: parent entity row + child normalised rows in one INSERT**](compound-entity-mutations.md) — Backlog, architecture
