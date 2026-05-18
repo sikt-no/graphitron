@@ -129,8 +129,21 @@ One classification path for every field on a payload-returning mutation:
 3. **Each SDL field has its own DataFetcher**, classified through the
    standard `FieldBuilder.classifyField` path against the resolved
    parent backing shape, with a `SourceKey` + `LoaderRegistration`
-   describing the read. Name-based lookup; `@field(name:)` overrides the
-   lookup name. No DTOs are generated.
+   describing the read. Resolution is name-based: an SDL field's name
+   (or its `@field(name:)` override) looks up an accessor / column on
+   the parent row's reflected shape. Two reserved sigils carry the
+   cases where no name lookup applies: `@field(name: "$source")` reads
+   `env.getSource()` directly (identity passthrough of the producer's
+   reflected return value, used when the SDL field's value is the whole
+   source - e.g. `svar: [KvoteSporsmalSvar!]!` against an `@service`
+   returning `List<SakKvotesporsmalSvarRecord>`), and
+   `@field(name: "$errors")` reads `env.getLocalContext()` (per the
+   `ErrorChannel.LocalContext` contract under §"What stays" below).
+   Default auto-wires: a field whose SDL name matches a source-row name
+   binds to that name; a field named `errors` whose payload has an
+   active error channel binds to localContext. The sigils are the
+   explicit form when the default name doesn't match what the schema
+   author needs. No DTOs are generated.
 4. **The `@record` directive is irrelevant**. R96 already makes it
    informational; the deprecate-record-directive item retires it from
    the codegen surface entirely. R178 removes the last classifier
@@ -191,9 +204,14 @@ Emitters:
 - `carrier-data-field.service-producer-strict-return`
 - `source-key.result-row-walk-target-aligned-empty-path`
 
-R159's `$source` sigil retires alongside (the sigil exists only to
-confirm the carrier-walk's implicit binding; under R178 the binding is
-named-by-default through `@field(name:)`).
+R159's `$source` sigil stays as the explicit identity-passthrough
+mechanism (see §"Target model" #3 above). What retires from R159 is the
+carrier walk's binding-confirmation role for the sigil
+(`FieldBuilder.checkSourceSigilTypeMatch`,
+`FieldSourceSigil.sourceSigilTypeMatches` against
+`CarrierFieldRole.DataChannel.sourceSigil()`); under R178 the sigil
+classifies through the standard field-classifier Reader arm with
+type-match enforced uniformly with every other field.
 
 ## What stays / consolidates
 
@@ -217,6 +235,27 @@ named-by-default through `@field(name:)`).
   invariant of `ColumnRead` is already a vestige (FKs are one concrete
   case of "named columns on the parent row"); widening makes both
   consumers structurally identical.
+- **Error channel mechanism survives; only the carrier-walk wrapper
+  retires.** The runtime contract is unchanged: the mutation wrapper
+  emits `DataFetcherResult.newResult().data(<producerResult>).localContext(<mappedErrors>).build()`
+  on every dispatch arm - empty list on the success arm, the
+  per-handler-resolved error-type instances on the mapped-exception
+  arm, the violation-derived error types on the validation arm. The
+  payload's errors SDL field reads from `env.getLocalContext()`. The
+  `ErrorChannel.LocalContext` model arm and the
+  `ChildField.Transport.LocalContext` per-field arm both survive R178
+  unchanged; what retires is `CarrierFieldRole.ErrorChannelRole`, the
+  carrier-walk wrapper that binds them to the carrier shape. Each
+  payload field is classified independently through
+  `FieldBuilder.classifyField`: a field marked
+  `@field(name: "$errors")` (or one named `errors` by default, when the
+  payload has an active error channel) classifies into a Reader arm
+  reading from `env.getLocalContext()`; sibling SDL fields read from
+  `env.getSource()` via `$source` or name-matched lookup. The handler-
+  resolution permits (`ErrorType.ExceptionHandler`,
+  `SqlStateHandler`, `ValidationHandler`), the mappings-constant
+  dedup (`MappingsConstantNameDedup`), and the wrapper-side dispatch
+  through `ErrorRouter.dispatch` / `ErrorRouter.redact` all stay.
 - **R96's `RecordBindingResolver`** gains one new producer: DML
   mutation fetcher reflection. The walk already accepts producer
   bindings from `@service` methods, `@table` resolutions, and
