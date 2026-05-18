@@ -537,10 +537,14 @@ class TypeBuilder {
             if (objType.hasAppliedDirective(DIR_ERROR)) {
                 return buildErrorType(objType);
             }
-            // R96: reflection-derived binding from the resolver, not the directive's className.
-            // A reachable type with a resolved binding classifies into the appropriate backed
-            // variant; an unreachable type falls through to PlainObjectType.
-            if (bindings.resolveResult(name).isPresent()) {
+            // R96: reflection-derived binding from the resolver. A reachable type with a
+            // resolved binding classifies into the appropriate backed variant. The dispatch
+            // also fires on @record (with or without className) for transitional compatibility
+            // with fixtures predating the producer-required regime; the directive-ignored
+            // warning surfaces this for reachable types and the directive's className acts as
+            // a fallback class source for unreached types.
+            if (bindings.resolveResult(name).isPresent()
+                    || objType.hasAppliedDirective(DIR_RECORD)) {
                 return buildResultType(objType, name, location);
             }
             return new PlainObjectType(name, location, objType);
@@ -845,16 +849,39 @@ class TypeBuilder {
     }
 
     /**
-     * Constructs the appropriate {@link ResultType} sub-type from the reflection-resolved
-     * backing class produced by R96's {@link RecordBindingResolver}. The {@code @record}
-     * directive's {@code className} no longer participates in the binding; the directive is
-     * read only by {@link #emitDirectiveIgnoredWarnings} to surface a "directive ignored"
-     * warning. Pre-condition: {@code bindings.resolveResult(name).isPresent()}.
+     * Constructs the appropriate {@link ResultType} sub-type from the resolved backing class.
+     * R96's {@link RecordBindingResolver} is the primary source; a transitional directive
+     * fallback covers types declared with {@code @record(record:{className:})} but unreached
+     * by any real producer (pending fixture migration). The directive-ignored warning at
+     * {@link #emitDirectiveIgnoredWarnings} surfaces both arms for reachable types.
      */
     private GraphitronType buildResultType(GraphQLObjectType objType, String name, SourceLocation location) {
-        Class<?> cls = bindings.resolveResult(name).orElseThrow(
-            () -> new IllegalStateException("buildResultType called for '" + name
-                + "' without a resolved binding"));
+        Class<?> cls = bindings.resolveResult(name).orElse(null);
+        if (cls == null) {
+            // Transitional fallback: directive's className when reflection finds nothing.
+            String declared = readRecordClassName(objType);
+            if (declared == null) {
+                return new GraphitronType.PojoResultType.NoBacking(name, location);
+            }
+            try {
+                cls = Class.forName(declared, false, ctx.codegenLoader());
+                // Validate the directive's argMapping inertness before falling back.
+                var dir = objType.getAppliedDirective(DIR_RECORD);
+                if (dir != null) {
+                    var recordArg = dir.getArgument(ARG_RECORD);
+                    if (recordArg != null && recordArg.getValue() != null) {
+                        String inertness = checkArgMappingInert(asMap(recordArg.getValue()), "record");
+                        if (inertness != null) {
+                            return new UnclassifiedType(name, location, Rejection.structural(inertness));
+                        }
+                    }
+                }
+                recordBackingClasses.put(name, cls);
+            } catch (ClassNotFoundException e) {
+                return new UnclassifiedType(name, location, Rejection.structural(
+                    "record backing class '" + declared + "' could not be loaded"));
+            }
+        }
         String className = cls.getName();
         if (cls.isRecord()) {
             return new GraphitronType.JavaRecordType(name, location, className);
@@ -1018,12 +1045,9 @@ class TypeBuilder {
     }
 
     /**
-     * Constructs the appropriate {@link InputType} sub-type from the reflection-resolved
-     * backing class produced by R96's {@link RecordBindingResolver}. The {@code @record}
-     * directive's {@code className} no longer participates in the binding; the directive is
-     * read only by {@link #emitDirectiveIgnoredWarnings} to surface a "directive ignored"
-     * warning. When the resolver finds no binding (an unreached input type), the input
-     * classifies as {@link GraphitronType.PojoInputType} with a {@code null} className.
+     * Constructs the appropriate {@link InputType} sub-type from the resolved backing class.
+     * Symmetric with {@link #buildResultType}: walker is the primary source, directive is a
+     * transitional fallback for unreached types.
      */
     private GraphitronType buildNonTableInputType(GraphQLInputObjectType inputType, String name, SourceLocation location) {
         var shape = buildInputRecordShape(name, inputType);
@@ -1033,7 +1057,27 @@ class TypeBuilder {
         }
         Class<?> cls = bindings.resolveInput(name).orElse(null);
         if (cls == null) {
-            return new GraphitronType.PojoInputType(name, location, null, inputType, shape);
+            // Transitional fallback: directive's className when reflection finds nothing.
+            String declared = readRecordClassName(inputType);
+            if (declared == null) {
+                return new GraphitronType.PojoInputType(name, location, null, inputType, shape);
+            }
+            try {
+                cls = Class.forName(declared, false, ctx.codegenLoader());
+                var dir = inputType.getAppliedDirective(DIR_RECORD);
+                if (dir != null) {
+                    var recordArg = dir.getArgument(ARG_RECORD);
+                    if (recordArg != null && recordArg.getValue() != null) {
+                        String inertness = checkArgMappingInert(asMap(recordArg.getValue()), "record");
+                        if (inertness != null) {
+                            return new UnclassifiedType(name, location, Rejection.structural(inertness));
+                        }
+                    }
+                }
+            } catch (ClassNotFoundException e) {
+                return new UnclassifiedType(name, location, Rejection.structural(
+                    "record backing class '" + declared + "' could not be loaded"));
+            }
         }
         String className = cls.getName();
         if (cls.isRecord()) {

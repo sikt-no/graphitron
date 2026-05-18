@@ -3504,7 +3504,8 @@ class GraphitronSchemaBuilderTest {
         },
 
         TABLE_PLUS_RECORD(
-            "@table + @record on an input → @record wins, @table shadowed with build warning",
+            "@table + @record on an input → R96: @table wins; @record's className is ignored; "
+                + "Shadowed-by-@table directive-ignored warning fires at the post-classification site.",
             """
             input FilmInput
                 @table(name: "film")
@@ -3513,13 +3514,14 @@ class GraphitronSchemaBuilderTest {
             type Query { x: String }
             """,
             schema -> {
-                // @record dispatches first — classification ignores @table entirely.
-                var t = (JooqTableRecordInputType) schema.type("FilmInput");
-                assertThat(t.fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
-                // Warning emitted naming the shadowed directive.
+                // R96: @table wins. With `id` failing to resolve as a film column, the @table
+                // path produces UnclassifiedType — the Shadowed-by-@table warning still fires.
                 assertThat(schema.warnings())
                     .extracting(BuildWarning::message)
-                    .anyMatch(m -> m.contains("FilmInput") && m.contains("@table is shadowed by @record"));
+                    .anyMatch(m -> m.contains("FilmInput")
+                        && m.contains("carries both @table and")
+                        && m.contains("@record")
+                        && m.contains("the @record directive is ignored"));
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(); }
         };
@@ -6642,8 +6644,9 @@ class GraphitronSchemaBuilderTest {
                     .contains("FilmRecord");
             }),
 
-        SERVICE_WITH_RECORD_BACKING_CLASS_MISMATCH_REJECTED(
-            "@service at root: @record-backed return type whose method returns the wrong concrete class → UnclassifiedField",
+        SERVICE_WITH_RECORD_BACKING_CLASS_MISMATCH_SILENT_CORRECT(
+            "R96: @service at root: @record-declared className disagrees with the method's reflected "
+                + "return — reflection wins silently; directive-ignored 'Disagrees' warning fires.",
             """
             type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) {
                 title: String
@@ -6654,12 +6657,15 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> {
-                var f = schema.field("Query", "filmDetails");
-                assertThat(f).isInstanceOf(UnclassifiedField.class);
-                assertThat(((UnclassifiedField) f).reason())
-                    .contains("must return")
-                    .contains("FilmRecord")
-                    .contains("LanguageRecord");
+                // R96: the directive's claim ("FilmRecord") is informational only; the walker's
+                // reflection-derived class ("LanguageRecord") wins. FilmDetails classifies as
+                // JooqTableRecordType backed by LanguageRecord, and the directive-ignored
+                // warning's Disagrees variant surfaces the lie.
+                assertThat(schema.warnings())
+                    .extracting(BuildWarning::message)
+                    .anyMatch(m -> m.contains("FilmDetails")
+                        && m.contains("derives a different backing class")
+                        && m.contains("LanguageRecord"));
             }),
 
         MUTATION_SERVICE_WITH_WRONG_RETURN_TYPE_REJECTED(
