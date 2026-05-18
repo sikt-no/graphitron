@@ -217,27 +217,29 @@ type-match enforced uniformly with every other field.
 
 - **The "PK columns off the source row, projected SELECT keyed by those
   PKs" fetcher logic** is the only emit work the carrier walk did that
-  isn't already present elsewhere. Under R178 it lands by generalizing
-  `Reader.ColumnRead`: scope widens from "catalog-FK column on a
-  `@table`-backed parent" to "read these columns off the parent row,
-  whatever the parent is." The DML payload case becomes a `ColumnRead`
-  against the producer-emitted `RecordN<...>`; the existing `@table`-
-  parent FK case is one concrete subset of the widened contract.
+  isn't already present elsewhere - and it already exists, under
+  `@splitQuery`. The `@splitQuery`-shaped derivation
+  (`FieldBuilder.deriveSplitQuerySource` at FieldBuilder.java:3956)
+  produces `SourceKey(Wrap.Row, Reader.ColumnRead)` +
+  `LoaderRegistration(POSITIONAL_LIST, LOAD_ONE)` against a parent
+  exposing the PK columns; the DataLoader runs the projected SELECT.
+  The DML payload case is a *new producer* for this existing consumer:
+  the parent is a sparse `RecordN<PK>` from a DML-emitted source
+  instead of a full `@table`-rooted record, but `ColumnRead`'s body
+  (`parent.get(<column>)`) is shape-agnostic - a `RecordN<PK>` exposes
+  the PK columns the reader needs. No `Reader` arm changes; no Reader
+  axis widens; the `source-key.result-row-walk-target-aligned-empty-
+  path` invariant deleted alongside `ResultRowWalk` does **not** migrate
+  to a new key (its guarantee falls out of the existing
+  `@splitQuery`-shaped emit).
 
-  The alternative considered and rejected was a new
-  `Reader.UpstreamSourceColumns(columns)` permit reading from
-  `env.getSource()` directly. Rejected as principle-violating: it
-  re-introduces a *producer-axis fork* on the consumer side
-  (`UpstreamSourceColumns` for the DML-emitted producer, `ColumnRead`
-  for the `@table`-parent producer), encoding two readers for the same
-  downstream value - exactly the duplication the rest of R178 deletes.
-  The producer axis is `RecordBindingResolver`'s job; replicating it
-  on `Reader` would re-create the two-producer reconciliation R178
-  retires. The `source-key.result-row-walk-target-aligned-empty-path`
-  invariant deleted alongside `ResultRowWalk` does **not** migrate to
-  a new key under the widened `ColumnRead`: its guarantee (target-
-  aligned, empty path) falls out of `ColumnRead`'s existing compact-
-  constructor shape, which already requires columns on the parent row.
+  A new `Reader.UpstreamSourceColumns(columns)` permit reading from
+  `env.getSource()` directly is **not** introduced. Such a permit
+  would re-encode "parent row exposing named columns" as a separate
+  reader axis distinguished only by producer kind - exactly the
+  duplication R178 is deleting elsewhere. The producer axis is
+  `RecordBindingResolver`'s job; replicating it on `Reader` would
+  re-create the two-producer reconciliation R178 retires.
 - **Error channel mechanism survives; only the carrier-walk wrapper
   retires.** The runtime contract is unchanged: the mutation wrapper
   emits `DataFetcherResult.newResult().data(<producerResult>).localContext(<mappedErrors>).build()`
@@ -288,14 +290,57 @@ type-match enforced uniformly with every other field.
 ## Bulk DML reference (model alignment)
 
 For `[Film!]` payload cardinality: today `env.getSource()` at the
-payload-level fetcher is `Result<RecordN<PK>>` and the `films` data
-field's fetcher walks it. Under R178 the producer (DML fetcher) leaves
-exactly the same `Result<RecordN<PK>>` in source, the `films` SDL
-field's SourceKey describes "read PK columns off the rows, projected
-SELECT for Film," and the `Film` child fields then read off the
-projected `FilmRecord` instances via the standard `@table`-parent path.
-No generated payload class; no runtime behavior change; one
-classification path instead of two.
+payload-level fetcher is `Result<RecordN<PK>>` and the carrier walk
+emits a custom `films` DataFetcher that iterates the source list,
+extracts PKs, runs one projected SELECT against the Film table, and
+returns the result. Under R178 the producer (DML fetcher) leaves
+exactly the same `Result<RecordN<PK>>` in source - the producer side is
+unchanged - but the `films` field is classified through the existing
+`@splitQuery`-shaped path rather than a bespoke carrier emitter.
+
+The encoding chains existing machinery without adding a model axis:
+
+1. **Payload `films` field** classifies through the standard
+   `@splitQuery`-style derivation (`FieldBuilder.deriveSplitQuerySource`
+   at FieldBuilder.java:3956): `SourceKey(target = Film table,
+   columns = Film PK columns, wrap = Wrap.Row, reader =
+   Reader.ColumnRead, cardinality = MANY)` paired with
+   `LoaderRegistration(POSITIONAL_LIST, LOAD_ONE)`. The DataFetcher
+   reads PK columns off each `RecordN<PK>` in `env.getSource()`, returns
+   the DataLoader-batched future projected on the SelectionSet, same
+   shape today's `@splitQuery` field on a `@table` parent uses.
+2. **graphql-java unwraps** the returned `List<FilmRecord>` (spike V3
+   confirms: an explicit DataFetcher returning a list is walked
+   element-wise; the unwrap is graphql-java's own contract, not
+   graphitron's).
+3. **Per-Film child fields** read directly off each projected
+   `FilmRecord` via the standard `@table`-parent inline-subselect path,
+   identical to a Query-rooted Film child.
+
+The only thing the consumer site widens is which **producer shape** of
+`env.getSource()` is admissible at the parent role: today's
+`@splitQuery` parent is a `@table`-rooted record (or a `@record`-class
+parent); R178 adds the DML-emitted `RecordN<PK>` as a third producer
+shape. `Reader.ColumnRead`'s contract (`parent.get(<column>)`) does not
+change - a sparse `RecordN<PK>` exposes the PK columns ColumnRead
+reads. The widening lives entirely in `RecordBindingResolver`'s
+producer set (the `ProducerBinding.DmlEmitted` permit under §"What
+stays" #2), not on the SourceKey or Reader axes.
+
+There is no iteration logic in the films DataFetcher; no internal
+SELECT; no new Reader arm; no `SourceShape.SINGLE | ITERABLE` axis on
+SourceKey. The bulk-DML case is a new *producer* for the existing
+`@splitQuery`-shaped consumer site. The single-record DML case
+(`film: Film` rather than `films: [Film!]`) is the `Cardinality.ONE`
+arm of the same derivation; no separate branch.
+
+`graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/ListSourceBehaviorSpike.java`
+pins the graphql-java behavior the encoding depends on (V3: a
+DataFetcher returning a list-shaped source identity-passthrough is
+walked element-wise; V5: without an explicit DataFetcher on the
+list-typed payload field, the default `PropertyDataFetcher` rejects the
+list source and the field renders null). The spike stays in-tree as a
+behavioral contract pin under the `UnitTier`.
 
 ## Test plan
 
