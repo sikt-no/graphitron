@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 7
 theme: mutations-errors
-depends-on: [emit-input-records, catalog-check-constraint-validation]
+depends-on: [catalog-check-constraint-validation]
 ---
 
 # Multi-source input validation: SDL directives + DB CHECK + Jakarta on a unified rendered schema

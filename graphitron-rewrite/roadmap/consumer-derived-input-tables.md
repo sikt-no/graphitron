@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: model-cleanup
-depends-on: [emit-input-records, deprecate-record-directive]
+depends-on: [deprecate-record-directive]
 ---
 
 # Deprecate `@table` on input types; consumer-derived tables + `argMapping` grouping

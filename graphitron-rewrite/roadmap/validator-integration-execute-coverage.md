@@ -5,7 +5,7 @@ status: Backlog
 bucket: testing
 priority: 4
 theme: mutations-errors
-depends-on: [emit-input-records]
+depends-on: []
 created: 2026-05-16
 last-updated: 2026-05-16
 ---
