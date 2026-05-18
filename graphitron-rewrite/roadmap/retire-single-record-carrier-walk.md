@@ -1,7 +1,7 @@
 ---
 id: R178
 title: Retire single-record carrier walk; collapse to SourceKey + R96 reflection
-status: Spec
+status: Ready
 bucket: architecture
 priority: 7
 theme: mutations-errors
