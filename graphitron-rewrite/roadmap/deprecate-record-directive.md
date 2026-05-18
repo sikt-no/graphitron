@@ -18,11 +18,11 @@ axis (`JavaRecordInputType`, `JooqRecordInputType`,
 `JooqTableRecordInputType`, `PojoInputType`). Today the binding from
 SDL type to backing class is sourced entirely from the `@record(record:
 ExternalCodeReference)` directive's `className` argument: `TypeBuilder`
-reads the directive at line 386 to dispatch into `buildResultType`
-(line 696), populates `recordBackingClasses` from `dir.getArgument(
-ARG_RECORD)` at lines 715 and 725, and the map is consumed by
+reads the directive at line 392 to dispatch into `buildResultType`
+(line 702), populates `recordBackingClasses` from `dir.getArgument(
+ARG_RECORD)` at lines 721 and 731, and the map is consumed by
 `FieldBuilder.resolveRecordAccessor` (line 3808). Without `@record`,
-result types fall through to `PlainObjectType` at line 391 and
+result types fall through to `PlainObjectType` at line 397 and
 field-level accessor resolution is skipped.
 
 That class is already discoverable on the root-producer side: an
@@ -55,11 +55,12 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
      producer's reflected class is the binding. These are addressable
      at schema-build time independent of any other type's
      classification. For result types, this means `buildResultType`
-     and the dispatch at line 386 are gated on the reflected
-     producer's discoverability instead of on the `@record` directive;
-     a type with a reflectable root producer classifies into the
-     appropriate backed variant on the result axis (one of
-     `JavaRecordType`, `JooqRecordType`, `JooqTableRecordType`,
+     and its dispatch gate (`hasAppliedDirective(DIR_RECORD)` at
+     `TypeBuilder.java:392`, dispatching at line 393) are recast to
+     trigger on reflected-producer discoverability instead of on the
+     `@record` directive; a type with a reflectable root producer
+     classifies into the appropriate backed variant on the result axis
+     (one of `JavaRecordType`, `JooqRecordType`, `JooqTableRecordType`,
      `PojoResultType.Backed`) without the directive. The input side
      does the same through `buildNonTableInputType` against the
      consuming `@service` parameter, producing one of
@@ -83,7 +84,15 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
      it does not stop sibling enumeration. A descent chain that
      re-enters T contributes nothing through that path; sibling
      in-edges and root producers still contribute their bindings to
-     T's collection set.
+     T's collection set. The set must be per-chain rather than global:
+     a global "currently resolving" set would let the order of
+     in-edge enumeration determine which siblings contribute, so a
+     diamond `P1 → T` / `P2 → T` could observe only one in-edge if
+     the visit order placed the second arrival inside the first's
+     resolution. The synthetic diamond test under Tests is the
+     witness for this property; under a global set it would surface
+     only one of the two parent bindings and fail the per-type
+     collection-set claim.
 
    - **Per-type collection and post-fold memoization.** The walk
      accumulates every observed binding for T into a per-type
@@ -157,9 +166,9 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
    post-fold write to `recordBackingClasses` at the end of T's walk
    (the write happens once per SDL type, after the per-type
    collection set has been folded to a single agreed `Class<?>`; the
-   write occurs in `buildResultType` at `TypeBuilder.java:696` for
+   write occurs in `buildResultType` at `TypeBuilder.java:702` for
    result types and in the new input-side population path R96 adds
-   inside `buildNonTableInputType` at `TypeBuilder.java:887`, which
+   inside `buildNonTableInputType` at `TypeBuilder.java:898`, which
    currently has no `recordBackingClasses` population); the consumer
    site is `FieldBuilder.resolveRecordAccessor`
    (`FieldBuilder.java:3808`), which assumes the resolved `Class<?>`
@@ -173,10 +182,13 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
 
    Two pure-function commitments ride under the agreement check:
 
-   - For `JooqTableRecordType`, the existing path derives the
-     `TableRef` slot via `svc.resolveTableByRecordClass(cls)` at
-     `TypeBuilder.java:719`. That resolution is a pure function of the
-     class, so agreement on `cls` implies agreement on `TableRef`.
+   - For `JooqTableRecordType` (and `JooqTableRecordInputType` on the
+     input axis), the existing path derives the `TableRef` slot via
+     `svc.resolveTableByRecordClass(cls)` at `TypeBuilder.java:725`
+     (result-axis) and `TypeBuilder.java:925` (input-axis); the same
+     resolver call rides both axes. That resolution is a pure function
+     of the class, so agreement on `cls` implies agreement on `TableRef`
+     on either axis.
    - For `JavaRecordType` / `JavaRecordInputType`, the record's
      component list (the basis for accessor mapping) is a pure function
      of `cls`.
@@ -209,11 +221,20 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
    - **Shadowed by `@table`** (the type also carries `@table`, so the
      binding comes from `@table`-driven reflection rather than the
      parent-accessor or root-producer chain that the prior two
-     variants describe):
-     > Type 'Film' carries both `@table` and `@record(record: {
-     > className: "com.example.X" })`. Graphitron derives the backing
-     > class from `@table`; the `@record` directive is ignored.
-     > Remove it.
+     variants describe). This variant fires only on `INPUT_OBJECT`
+     types: on `OBJECT` types, `detectTypeDirectiveConflict`
+     (`TypeBuilder.java:1260-1275`, called from line 382 on the OBJECT
+     branch only) already rejects the `@table` + `@record` combination
+     as `Rejection.InvalidSchema.DirectiveConflict` before
+     classification reaches the `@record` arm, so the variant is
+     unreachable on result types. R96 does not relax that check; an
+     OBJECT-side author with both directives is still asked to remove
+     one before the build proceeds (and dropping `@record` is the
+     correct resolution under R96):
+     > Input type 'FilmFilterInput' carries both `@table` and
+     > `@record(record: { className: "com.example.X" })`. Graphitron
+     > derives the backing class from `@table`; the `@record` directive
+     > is ignored. Remove it.
 
    The three variants carry different data (the `Matches` variant
    has no extra class; the `Disagrees` variant carries the reflected
@@ -230,25 +251,44 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
    All three variants are warnings, not errors. Reflection is the
    sole source of truth; the directive's claim is informational only.
 
-The `@table + @record` shadow rule at `TypeBuilder.java:820-826`
-flips semantics under R96 while folding its emission into R96's
-single directive-ignored warning. Today `@record` overrides `@table`
-on the combination, and a separate validator emission at
-`TypeBuilder.java:820-826` surfaces the redundancy as its own
-warning. Under R96 the directive does not write to
+The `@table` + `@record` shadow rule on `INPUT_OBJECT` types at
+`TypeBuilder.java:818-832` (warning emission at lines 826-831, inside
+`buildInputType`) flips semantics under R96 while folding its emission
+into R96's single directive-ignored warning. Today on input types
+`@record` overrides `@table` on the combination (the legacy comment at
+lines 821-825 spells out the routing: warn, then route through
+`buildNonTableInputType`), and that emission surfaces the redundancy
+as its own warning. Under R96 the directive does not write to
 `recordBackingClasses` at all, so `@table`-driven reflection wins by
 default and the directive is ignored like every other `@record`
-declaration; the legacy emission at `TypeBuilder.java:820-826` is
+declaration; the legacy emission at `TypeBuilder.java:826-831` is
 removed as part of R96, and the redundancy signal is carried by the
 `Shadowed by @table` variant of the directive-ignored warning above.
 One emission point, three message variants, context-derived
 selection: the shadow case is no longer a separate warning that has
 to be suppressed against R96's emission, it is the same emission
 with a different message because the directive's effect is
-shadowed by `@table` rather than by the reflection chain.
+shadowed by `@table` rather than by the reflection chain. The
+INPUT_OBJECT restriction noted on the variant above carries through:
+the only path where `@table` + `@record` survives long enough to
+classify is the INPUT_OBJECT path, so `Shadowed by @table` fires
+exclusively there.
 
-The mutual-exclusion check at `TypeBuilder.java:1134-1141` (`@record`
-incompatible with `@error`) continues to apply unchanged.
+**Variant precedence at the single emission site.** When more than
+one variant predicate matches the same type, `Shadowed by @table`
+takes precedence over `Matches` and `Disagrees`: the `@table`
+co-occurrence is the proximate cause of the directive being ignored
+and supersedes any in-edge-derived comparison. Between `Matches` and
+`Disagrees`, the comparison is exact `Class<?>` equality against the
+single agreed reflected class (post-fold from checkpoint 1). A type
+that reaches a `MultiProducer` rejection at checkpoint 2 does not
+emit a directive-ignored warning at all; the error supersedes the
+warning at the same site.
+
+The mutual-exclusion check `detectTypeDirectiveConflict` at
+`TypeBuilder.java:1260-1275` (the pairwise rejection of `@table` /
+`@record` / `@error` on `OBJECT` types, called from line 382)
+continues to apply unchanged.
 
 ## Out of scope
 
@@ -304,12 +344,15 @@ Validator-tier (`GraphitronSchemaValidator` test surface):
   `Rejection.AuthorError.RecordBindingMismatch.MultiProducer` on
   `ValidationReport.errors()`; the diagnostic names every disagreeing
   `ProducerBinding` site; the build halts.
-- Shadowed-by-table: a type carrying both `@table` and `@record`
-  emits the directive-ignored warning's `Shadowed by @table`
-  variant (one emission, message keyed on the `@table`
+- Shadowed-by-table: an `INPUT_OBJECT` carrying both `@table` and
+  `@record` emits the directive-ignored warning's `Shadowed by
+  @table` variant (one emission, message keyed on the `@table`
   co-occurrence). The legacy emission at
-  `TypeBuilder.java:820-826` is removed; no separate shadow-rule
-  warning fires.
+  `TypeBuilder.java:826-831` is removed; no separate shadow-rule
+  warning fires. Companion negative: an `OBJECT` carrying both
+  directives still produces the existing `InvalidSchema.DirectiveConflict`
+  rejection from `detectTypeDirectiveConflict`; no directive-ignored
+  warning is emitted in that case (error supersedes warning).
 
 Pipeline-tier (classifier output), split across producer sources:
 
