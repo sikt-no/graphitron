@@ -365,10 +365,17 @@ final class ServiceDirectiveResolver {
         key = "service-directive-resolver-strict-child-service-return",
         description = "The strict TypeName.equals arm rejects child @service developer methods "
             + "whose declared return type doesn't structurally match the rows-method's "
-            + "Map<K, V>/List<List<V>>/List<V> shape derived from (returnType, sourced shape). "
-            + "Lets buildServiceRowsMethod emit `return ServiceClass.method(...)` without a "
-            + "defensive cast or wildcard, and surfaces author errors at classify time rather "
-            + "than as javac errors on the generated source.")
+            + "Map<K, V>/List<List<V>>/List<V> shape derived from (returnType, sourced shape), "
+            + "with V = tb.table().recordClass() for TableBoundReturnType. Two emitter "
+            + "consumers depend on this check: (1) buildServiceRowsMethod's `.returns(...)` "
+            + "lets the body emit `return ServiceClass.method(...)` without a defensive cast "
+            + "or wildcard; (2) buildServiceDataFetcher types DataLoader<K, V> with that same "
+            + "narrow V (so newMappedDataLoader / newDataLoader overload resolution against "
+            + "the rows-method lambda compiles without wildcards). Java generics invariance "
+            + "means the typed loader cannot be populated from a wider rows-method, so the "
+            + "check is load-bearing for compile, not just structural symmetry. Surfaces "
+            + "author errors at classify time rather than as javac errors on the generated "
+            + "source.")
     private static String validateChildServiceReturnType(ReturnTypeRef returnType, MethodRef method) {
         MethodRef.Param.Sourced sourced = method.params().stream()
             .filter(MethodRef.Param.Sourced.class::isInstance)

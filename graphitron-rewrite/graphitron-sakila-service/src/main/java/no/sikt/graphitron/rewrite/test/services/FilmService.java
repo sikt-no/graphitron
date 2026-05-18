@@ -1,7 +1,9 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 import no.sikt.graphitron.rewrite.test.jooq.tables.Film;
+import no.sikt.graphitron.rewrite.test.jooq.tables.Language;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord;
 import org.jooq.DSLContext;
 import org.jooq.Record1;
 import org.jooq.Row1;
@@ -98,6 +100,39 @@ public final class FilmService {
      * returns the title-case rendition. No SQL fetch is required because the typed record
      * already carries every column on the parent table.
      */
+    /**
+     * R177 fixture: child {@code @service} with a {@link no.sikt.graphitron.rewrite.model.ReturnTypeRef.TableBoundReturnType}
+     * return ({@code Language}). Post-R177 the rows-method's {@code V} is
+     * {@code tb.table().recordClass()} (here {@link LanguageRecord}), so the structurally-
+     * required signature is {@code Map<Record1<Integer>, LanguageRecord>}. Pre-R177 {@code V}
+     * was raw {@code org.jooq.Record} and this signature would have been rejected by the
+     * validator's strict {@code TypeName.equals}; the fixture compiles (and classifies)
+     * only post-R177, making {@code mvn compile -pl :graphitron-sakila-example} the load-
+     * bearing guarantee against future re-widening of the emit site.
+     *
+     * <p>Body looks up each film's language by joining {@code film} to {@code language} on the
+     * {@code film_language_id_fkey} FK and returns the per-film {@link LanguageRecord}.
+     */
+    public static Map<Record1<Integer>, LanguageRecord> languageByService(Set<Record1<Integer>> filmIds, DSLContext dsl) {
+        List<Integer> ids = filmIds.stream().map(Record1::value1).toList();
+        Map<Integer, Integer> langIdByFilmId = dsl
+            .select(Film.FILM.FILM_ID, Film.FILM.LANGUAGE_ID)
+            .from(Film.FILM)
+            .where(Film.FILM.FILM_ID.in(ids))
+            .fetchMap(Film.FILM.FILM_ID, Film.FILM.LANGUAGE_ID);
+        Map<Integer, LanguageRecord> recordByLangId = dsl
+            .selectFrom(Language.LANGUAGE)
+            .where(Language.LANGUAGE.LANGUAGE_ID.in(langIdByFilmId.values()))
+            .fetchMap(Language.LANGUAGE.LANGUAGE_ID);
+
+        Map<Record1<Integer>, LanguageRecord> result = new LinkedHashMap<>();
+        for (Record1<Integer> key : filmIds) {
+            Integer langId = langIdByFilmId.get(key.value1());
+            result.put(key, langId == null ? null : recordByLangId.get(langId));
+        }
+        return result;
+    }
+
     public static Map<FilmRecord, String> titleTitlecase(Set<FilmRecord> films) {
         Map<FilmRecord, String> result = new LinkedHashMap<>();
         for (FilmRecord film : films) {

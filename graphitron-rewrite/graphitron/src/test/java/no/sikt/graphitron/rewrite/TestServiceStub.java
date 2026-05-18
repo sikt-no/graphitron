@@ -327,11 +327,13 @@ class TestServiceStub {
     // ===== R32 child-@service strict-return-type fixtures =====
 
     /**
-     * Child {@code @service} fixture exercising the rejection arm of
+     * Child {@code @service} fixture exercising the outer-shape rejection arm of
      * {@code ServiceDirectiveResolver.validateChildServiceReturnType}: a {@code @table}-bound
-     * child field with a {@code List<Row1<Integer>>} Sources param + single cardinality
-     * structurally requires {@code List<org.jooq.Record>} per the rows-method shape. This
-     * stub declares {@code LanguageRecord} instead, so classification rejects.
+     * child field returning {@code Language} (single) with a {@code List<Row1<Integer>>}
+     * Sources param structurally requires {@code List<LanguageRecord>} per the rows-method
+     * shape (post-R177: {@code V = tb.table().recordClass() = LanguageRecord}). This stub
+     * declares scalar {@code LanguageRecord} instead of {@code List<LanguageRecord>}, so
+     * classification rejects on the outer-shape mismatch (scalar vs {@code List<V>}).
      */
     public static no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord childServiceRowKeyedWrongReturn(java.util.List<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
@@ -345,6 +347,41 @@ class TestServiceStub {
      * to deliberately mismatch the per-key element type.
      */
     public static java.util.Map<org.jooq.Record1<Integer>, Integer> childServiceMappedRecordKeyedWrongScalarValue(java.util.Set<org.jooq.Record1<Integer>> keys) {
+        throw new UnsupportedOperationException();
+    }
+
+    // ===== R177 child-@service TableBoundReturnType V-narrowing fixtures =====
+
+    /**
+     * R177 migration arm: a list-cardinality {@code @table}-bound child field with a
+     * {@code List<Row1<Integer>>} Sources param post-R177 structurally requires
+     * {@code List<List<LanguageRecord>>} (V = {@code tb.table().recordClass()}). Pre-R177 it
+     * required {@code List<List<Record>>}, so this signature was accepted. Post-R177 the
+     * raw {@code Record} on V mismatches the narrowed expectation.
+     */
+    public static java.util.List<java.util.List<org.jooq.Record>> childServiceRowKeyedRawRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R177 acceptance arm: the same list-cardinality child field, declaring
+     * {@code List<List<LanguageRecord>>}. Pre-R177 this was rejected (expected
+     * {@code List<List<Record>>}); post-R177 this is the canonical accepted shape because
+     * V = {@code tb.table().recordClass() = LanguageRecord}.
+     */
+    public static java.util.List<java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.LanguageRecord>> childServiceRowKeyedSpecificRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R177 cross-record regression arm: same list-cardinality {@code Language}-typed child
+     * field, but the declared per-key record class is the wrong jOOQ record
+     * ({@code FilmRecord} instead of {@code LanguageRecord}). Always rejected by
+     * {@code TypeName.equals}: pre-R177 against {@code List<List<Record>>}, post-R177
+     * against {@code List<List<LanguageRecord>>}. Pins the diagnostic-wording change to
+     * the narrowed expected type without re-litigating the axis.
+     */
+    public static java.util.List<java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>> childServiceRowKeyedWrongRecordList(java.util.List<org.jooq.Row1<Integer>> keys) {
         throw new UnsupportedOperationException();
     }
 

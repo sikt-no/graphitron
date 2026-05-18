@@ -6543,7 +6543,53 @@ class GraphitronSchemaBuilderTest {
                 var f = schema.field("Film", "language");
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
-                    .contains("must return 'List<Record>'");
+                    .contains("must return 'List<LanguageRecord>'");
+            }),
+
+        CHILD_SERVICE_TABLE_BOUND_RAW_RECORD_REJECTED(
+            "R177 migration arm: child @service declaring raw List<Record> for a List<TableBound> field → UnclassifiedField post-R177 (was accepted pre-R177)",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                languages: [Language] @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "childServiceRowKeyedRawRecordList"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "languages");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("must return 'List<List<LanguageRecord>>'");
+            }),
+
+        CHILD_SERVICE_TABLE_BOUND_SPECIFIC_RECORD_ACCEPTED(
+            "R177 acceptance arm: child @service declaring List<List<LanguageRecord>> for a List<TableBound> field → classified (was rejected pre-R177)",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                languages: [Language] @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "childServiceRowKeyedSpecificRecordList"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "languages");
+                assertThat(f).isNotInstanceOf(UnclassifiedField.class);
+            }),
+
+        CHILD_SERVICE_TABLE_BOUND_WRONG_RECORD_REJECTED(
+            "R177 cross-record regression arm: child @service declaring List<List<FilmRecord>> for a List<Language> field → UnclassifiedField (wrong jOOQ record class)",
+            """
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                languages: [Language] @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "childServiceRowKeyedWrongRecordList"})
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "languages");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("must return 'List<List<LanguageRecord>>'");
             }),
 
         CHILD_SERVICE_SCALAR_WRONG_VALUE_TYPE_REJECTED(
