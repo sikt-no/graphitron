@@ -113,6 +113,13 @@ class TypeBuilder {
     private final BuildContext ctx;
     private final ServiceCatalog svc;
     private final Map<String, Class<?>> recordBackingClasses = new LinkedHashMap<>();
+    /**
+     * R96: the reflection-driven SDL → backing-class binding resolver. Constructed and
+     * populated by {@link #buildTypes()} before per-type classification; consulted by
+     * {@link #buildResultType} and {@link #buildNonTableInputType} to decide the backed
+     * variant. The directive's {@code className} no longer participates.
+     */
+    private RecordBindingResolver bindings;
 
     TypeBuilder(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = ctx;
@@ -120,11 +127,12 @@ class TypeBuilder {
     }
 
     /**
-     * Backing classes for {@code @record}-typed result types, keyed by GraphQL type name. Populated
-     * as a side-effect of {@link #buildResultType}; the schema builder threads each loaded class
+     * Backing classes for {@code @record}-typed result types and input types, keyed by GraphQL
+     * type name. Populated by R96's {@link RecordBindingResolver} via the recursive reflection
+     * walk before per-type classification runs. The schema builder threads each loaded class
      * through {@link FieldBuilder#classifyField} so the per-field accessor resolver does not
-     * re-load. Per the rewrite design principles, the class is classifier-time scratch state and
-     * does not survive into the persisted model.
+     * re-load. Per the rewrite design principles, the class is classifier-time scratch state
+     * and does not survive into the persisted model.
      */
     Map<String, Class<?>> recordBackingClasses() {
         return recordBackingClasses;
@@ -133,6 +141,20 @@ class TypeBuilder {
     // ===== Two-pass type map construction =====
 
     Map<String, GraphitronType> buildTypes() {
+        // R96: derive SDL → backing-class bindings from reflection before per-type classification
+        // runs. The directive-driven path inside buildResultType / buildNonTableInputType is gone;
+        // both consult the resolver for the variant decision.
+        bindings = new RecordBindingResolver(ctx, svc);
+        bindings.resolveAll();
+        // Side-effect: populate recordBackingClasses for downstream field-classification threading.
+        for (var named : ctx.schema.getAllTypesAsList()) {
+            if (named.getName().startsWith("__")) continue;
+            bindings.resolveResult(named.getName()).ifPresent(cls ->
+                recordBackingClasses.put(named.getName(), cls));
+            bindings.resolveInput(named.getName()).ifPresent(cls ->
+                recordBackingClasses.putIfAbsent(named.getName(), cls));
+        }
+
         ctx.schema.getAllTypesAsList().stream()
             .filter(t -> !t.getName().startsWith("__"))
             .forEach(namedType -> {
@@ -141,6 +163,11 @@ class TypeBuilder {
                     ctx.typeRegistry.classify(namedType.getName(), gType);
                 }
             });
+
+        // R96: emit the directive-ignored warning for every reachable type carrying @record, and
+        // surface multi-producer rejections as UnclassifiedType.
+        emitDirectiveIgnoredWarnings();
+        surfaceMultiProducerRejections();
 
         // Second pass: enrich interface / union variants with their resolved participants.
         // Snapshot the names so the iteration is independent of registry mutation; the
@@ -227,6 +254,127 @@ class TypeBuilder {
                     Rejection.structural("typeId '" + typeId + "' is declared on multiple types (" + others
                     + ") — Query.node dispatch would be nondeterministic; pick one via @node(typeId:)")));
             }
+        }
+    }
+
+    /**
+     * R96: emit the directive-ignored warning for every reachable SDL type carrying
+     * {@code @record}. Single emission site, three message variants selected by context:
+     *
+     * <ul>
+     *   <li><b>Shadowed by @table</b> (input types only): the type also carries {@code @table},
+     *     so the binding comes from {@code @table}-driven reflection. Variant precedence: this
+     *     variant takes precedence over Matches/Disagrees.</li>
+     *   <li><b>Matches</b>: the directive's {@code className} equals the reflected class, or
+     *     the directive carries no {@code className}. The no-{@code className} case is
+     *     equivalent to having no {@code @record} at all under R96 (the directive's
+     *     {@code className} is the only field that ever participated in binding); it folds
+     *     into Matches by definition.</li>
+     *   <li><b>Disagrees</b>: the directive's {@code className} differs from the reflected
+     *     class. R96 uses reflection's class; the directive's claim is informational only.</li>
+     * </ul>
+     *
+     * <p>Types whose reflection walk produced a multi-producer rejection do not emit the
+     * directive-ignored warning at all; the error supersedes the warning at the same site.
+     */
+    private void emitDirectiveIgnoredWarnings() {
+        for (var named : ctx.schema.getAllTypesAsList()) {
+            if (named.getName().startsWith("__")) continue;
+            if (!(named instanceof graphql.schema.GraphQLDirectiveContainer container)) continue;
+            if (!container.hasAppliedDirective(DIR_RECORD)) continue;
+            String name = named.getName();
+            // Suppress the warning when the reflection walk produced a multi-producer rejection
+            // for this type; the typed error supersedes the warning at the same site.
+            if (bindings.rejection(name).isPresent()) continue;
+
+            boolean isInput = named instanceof GraphQLInputObjectType;
+            boolean reachable = isInput
+                ? bindings.resolveInput(name).isPresent()
+                    || (named instanceof GraphQLInputObjectType iot && iot.hasAppliedDirective(DIR_TABLE))
+                : bindings.resolveResult(name).isPresent();
+            if (!reachable) continue;
+
+            String declaredClassName = readRecordClassName(container);
+            SourceLocation loc = named instanceof GraphQLObjectType obj
+                ? locationOf(obj)
+                : named instanceof GraphQLInputObjectType inp
+                    ? locationOf(inp)
+                    : null;
+
+            // Shadowed by @table — input-only (the OBJECT-side @table + @record combination is
+            // rejected by detectTypeDirectiveConflict before this site is reached).
+            if (isInput && container.hasAppliedDirective(DIR_TABLE)) {
+                String message = "Input type '" + name + "' carries both @table and "
+                    + formatRecordRef(declaredClassName)
+                    + ". Graphitron derives the backing class from @table; "
+                    + "the @record directive is ignored. Remove it.";
+                ctx.addWarning(new BuildWarning(message, loc));
+                continue;
+            }
+
+            Class<?> reflectedClass = isInput
+                ? bindings.resolveInput(name).orElse(null)
+                : bindings.resolveResult(name).orElse(null);
+            if (reflectedClass == null) continue;
+
+            // Matches: declaredClassName is null (no className declared) OR equals the reflected
+            // class name. The no-className case is equivalent to having no @record under R96.
+            boolean matches = declaredClassName == null
+                || declaredClassName.equals(reflectedClass.getName());
+            if (matches) {
+                String message = "Type '" + name + "' carries "
+                    + formatRecordRef(declaredClassName)
+                    + ". Graphitron derives the same backing class from the producing field's "
+                    + "reflected return type. The directive is redundant; remove it.";
+                ctx.addWarning(new BuildWarning(message, loc));
+            } else {
+                String message = "Type '" + name + "' carries "
+                    + formatRecordRef(declaredClassName)
+                    + ". Graphitron derives a different backing class (" + reflectedClass.getName()
+                    + ") from the producing field's reflected return type and uses that; "
+                    + "the directive is ignored. Remove it.";
+                ctx.addWarning(new BuildWarning(message, loc));
+            }
+        }
+    }
+
+    /**
+     * Reads the {@code className} field on a {@code @record} directive value, or {@code null}
+     * when the directive carries no className (no-argument form,
+     * {@code @record(record: null)}, or {@code @record(record: {className: null})}).
+     */
+    private static String readRecordClassName(graphql.schema.GraphQLDirectiveContainer container) {
+        var dir = container.getAppliedDirective(DIR_RECORD);
+        if (dir == null) return null;
+        var recordArg = dir.getArgument(ARG_RECORD);
+        if (recordArg == null || recordArg.getValue() == null) return null;
+        Map<String, Object> ref = asMap(recordArg.getValue());
+        return Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
+    }
+
+    private static String formatRecordRef(String className) {
+        return className == null
+            ? "@record (no className)"
+            : "@record(record: { className: \"" + className + "\" })";
+    }
+
+    /**
+     * R96: for every multi-producer disagreement the resolver reported, demote the SDL type to
+     * {@link UnclassifiedType} carrying the typed
+     * {@link Rejection.AuthorError.RecordBindingMismatch.MultiProducer} payload. The validator
+     * picks the demotion up through its standard {@link UnclassifiedType} pass.
+     */
+    private void surfaceMultiProducerRejections() {
+        for (var named : ctx.schema.getAllTypesAsList()) {
+            if (named.getName().startsWith("__")) continue;
+            String name = named.getName();
+            var rejection = bindings.rejection(name).orElse(null);
+            if (rejection == null) continue;
+            SourceLocation loc;
+            if (named instanceof GraphQLObjectType obj) loc = locationOf(obj);
+            else if (named instanceof GraphQLInputObjectType inp) loc = locationOf(inp);
+            else continue;
+            ctx.typeRegistry.demote(name, new UnclassifiedType(name, loc, rejection));
         }
     }
 
@@ -389,11 +537,12 @@ class TypeBuilder {
             if (objType.hasAppliedDirective(DIR_ERROR)) {
                 return buildErrorType(objType);
             }
-            if (objType.hasAppliedDirective(DIR_RECORD)) {
+            // R96: reflection-derived binding from the resolver, not the directive's className.
+            // A reachable type with a resolved binding classifies into the appropriate backed
+            // variant; an unreachable type falls through to PlainObjectType.
+            if (bindings.resolveResult(name).isPresent()) {
                 return buildResultType(objType, name, location);
             }
-            // Plain SDL object type — no domain directive. Record it in the model so
-            // emitters can iterate schema.types() without an assembled-schema fallback.
             return new PlainObjectType(name, location, objType);
         }
         if (namedType instanceof GraphQLInterfaceType iface) {
@@ -696,44 +845,28 @@ class TypeBuilder {
     }
 
     /**
-     * Reflects on the backing Java class named in {@code @record(record: {className:})} and
-     * constructs the appropriate {@link ResultType} sub-type.
+     * Constructs the appropriate {@link ResultType} sub-type from the reflection-resolved
+     * backing class produced by R96's {@link RecordBindingResolver}. The {@code @record}
+     * directive's {@code className} no longer participates in the binding; the directive is
+     * read only by {@link #emitDirectiveIgnoredWarnings} to surface a "directive ignored"
+     * warning. Pre-condition: {@code bindings.resolveResult(name).isPresent()}.
      */
     private GraphitronType buildResultType(GraphQLObjectType objType, String name, SourceLocation location) {
-        var dir = objType.getAppliedDirective(DIR_RECORD);
-        if (dir == null) return new GraphitronType.PojoResultType.NoBacking(name, location);
-        var recordArg = dir.getArgument(ARG_RECORD);
-        if (recordArg == null || recordArg.getValue() == null) {
-            return new GraphitronType.PojoResultType.NoBacking(name, location);
+        Class<?> cls = bindings.resolveResult(name).orElseThrow(
+            () -> new IllegalStateException("buildResultType called for '" + name
+                + "' without a resolved binding"));
+        String className = cls.getName();
+        if (cls.isRecord()) {
+            return new GraphitronType.JavaRecordType(name, location, className);
         }
-        Map<String, Object> ref = asMap(recordArg.getValue());
-        String inertness = checkArgMappingInert(ref, "record");
-        if (inertness != null) {
-            return new UnclassifiedType(name, location, Rejection.structural(inertness));
+        if (org.jooq.TableRecord.class.isAssignableFrom(cls)) {
+            TableRef table = svc.resolveTableByRecordClass(cls).orElse(null);
+            return new GraphitronType.JooqTableRecordType(name, location, className, table);
         }
-        String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
-        if (className == null) {
-            return new GraphitronType.PojoResultType.NoBacking(name, location);
+        if (org.jooq.Record.class.isAssignableFrom(cls)) {
+            return new GraphitronType.JooqRecordType(name, location, className);
         }
-        try {
-            Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
-            if (cls.isRecord()) {
-                recordBackingClasses.put(name, cls);
-                return new GraphitronType.JavaRecordType(name, location, className);
-            }
-            if (org.jooq.TableRecord.class.isAssignableFrom(cls)) {
-                TableRef table = svc.resolveTableByRecordClass(cls).orElse(null);
-                return new GraphitronType.JooqTableRecordType(name, location, className, table);
-            }
-            if (org.jooq.Record.class.isAssignableFrom(cls)) {
-                return new GraphitronType.JooqRecordType(name, location, className);
-            }
-            recordBackingClasses.put(name, cls);
-            return new GraphitronType.PojoResultType.Backed(name, location, className);
-        } catch (ClassNotFoundException e) {
-            return new UnclassifiedType(name, location, Rejection.structural(
-                "record backing class '" + className + "' could not be loaded"));
-        }
+        return new GraphitronType.PojoResultType.Backed(name, location, className);
     }
 
     private GraphitronType buildTableInterfaceType(GraphQLInterfaceType iface) {
@@ -818,18 +951,10 @@ class TypeBuilder {
     private GraphitronType buildInputType(GraphQLInputObjectType inputType) {
         String name = inputType.getName();
         SourceLocation location = locationOf(inputType);
-        // @record dominates @table on input types: legacy treats the combination as @record-only
-        // (six legacy paths skip when hasJavaRecordReference() is true). The rewrite used to fall
-        // into the @table branch first, attempt to resolve the input's fields as columns, and
-        // fail. Warn and route through @record instead so schemas using the combination still
-        // classify. See `@table + @record input-type fix` in graphitron-rewrite/roadmap/changelog.md.
-        if (inputType.hasAppliedDirective(DIR_TABLE) && inputType.hasAppliedDirective(DIR_RECORD)) {
-            ctx.addWarning(new BuildWarning(
-                "Input type '" + name + "': @table is shadowed by @record and is ignored. "
-                + "This combination is not supported — remove @table from this input.",
-                location));
-            return buildNonTableInputType(inputType, name, location);
-        }
+        // R96: @table wins on the (@table + @record) combination on input types. The legacy
+        // emission that surfaced the redundancy as a standalone warning here is removed; the
+        // signal is now carried by the "Shadowed by @table" variant of the directive-ignored
+        // warning, emitted at the single post-classification site in emitDirectiveIgnoredWarnings.
         if (inputType.hasAppliedDirective(DIR_TABLE)) {
             String tableName = argString(inputType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
             Optional<TableRef> tableOpt = svc.resolveTable(tableName);
@@ -893,7 +1018,12 @@ class TypeBuilder {
     }
 
     /**
-     * Reflects on the backing Java class and constructs the appropriate {@link InputType} sub-type.
+     * Constructs the appropriate {@link InputType} sub-type from the reflection-resolved
+     * backing class produced by R96's {@link RecordBindingResolver}. The {@code @record}
+     * directive's {@code className} no longer participates in the binding; the directive is
+     * read only by {@link #emitDirectiveIgnoredWarnings} to surface a "directive ignored"
+     * warning. When the resolver finds no binding (an unreached input type), the input
+     * classifies as {@link GraphitronType.PojoInputType} with a {@code null} className.
      */
     private GraphitronType buildNonTableInputType(GraphQLInputObjectType inputType, String name, SourceLocation location) {
         var shape = buildInputRecordShape(name, inputType);
@@ -901,38 +1031,22 @@ class TypeBuilder {
             return new UnclassifiedType(name, location, Rejection.structural(
                 "input-record component types could not be resolved for '" + name + "'"));
         }
-        var dir = inputType.getAppliedDirective(DIR_RECORD);
-        if (dir == null) return new GraphitronType.PojoInputType(name, location, null, inputType, shape);
-        var recordArg = dir.getArgument(ARG_RECORD);
-        if (recordArg == null || recordArg.getValue() == null) {
+        Class<?> cls = bindings.resolveInput(name).orElse(null);
+        if (cls == null) {
             return new GraphitronType.PojoInputType(name, location, null, inputType, shape);
         }
-        Map<String, Object> ref = asMap(recordArg.getValue());
-        String inertness = checkArgMappingInert(ref, "record");
-        if (inertness != null) {
-            return new UnclassifiedType(name, location, Rejection.structural(inertness));
+        String className = cls.getName();
+        if (cls.isRecord()) {
+            return new GraphitronType.JavaRecordInputType(name, location, className, inputType, shape);
         }
-        String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
-        if (className == null) {
-            return new GraphitronType.PojoInputType(name, location, null, inputType, shape);
+        if (org.jooq.TableRecord.class.isAssignableFrom(cls)) {
+            TableRef table = svc.resolveTableByRecordClass(cls).orElse(null);
+            return new GraphitronType.JooqTableRecordInputType(name, location, className, table, inputType, shape);
         }
-        try {
-            Class<?> cls = Class.forName(className, false, ctx.codegenLoader());
-            if (cls.isRecord()) {
-                return new GraphitronType.JavaRecordInputType(name, location, className, inputType, shape);
-            }
-            if (org.jooq.TableRecord.class.isAssignableFrom(cls)) {
-                TableRef table = svc.resolveTableByRecordClass(cls).orElse(null);
-                return new GraphitronType.JooqTableRecordInputType(name, location, className, table, inputType, shape);
-            }
-            if (org.jooq.Record.class.isAssignableFrom(cls)) {
-                return new GraphitronType.JooqRecordInputType(name, location, className, inputType, shape);
-            }
-            return new GraphitronType.PojoInputType(name, location, className, inputType, shape);
-        } catch (ClassNotFoundException e) {
-            return new UnclassifiedType(name, location, Rejection.structural(
-                "record backing class '" + className + "' could not be loaded"));
+        if (org.jooq.Record.class.isAssignableFrom(cls)) {
+            return new GraphitronType.JooqRecordInputType(name, location, className, inputType, shape);
         }
+        return new GraphitronType.PojoInputType(name, location, className, inputType, shape);
     }
 
     /**
