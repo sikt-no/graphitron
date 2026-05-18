@@ -13,8 +13,8 @@ last-updated: 2026-05-18
 > `ChildField.ServiceTableField`'s component type already guarantees a
 > narrow `ReturnTypeRef.TableBoundReturnType` (ChildField.java:571), and the
 > source-side typing pipeline already threads the specific typed
-> `TableRecord` class through `SourceKey.Wrap.TableRecord` (SourceKey.java:91,
-> consumed at GeneratorUtils.java:419). The target side throws that
+> `TableRecord` class through `SourceKey.Wrap.TableRecord` (SourceKey.java:132,
+> consumed at GeneratorUtils.java:429). The target side throws that
 > classifier guarantee away: the rows-method's `V` and the matching
 > `DataLoader<K, V>` value type are both widened to raw `org.jooq.Record`
 > at emit time, so developer `@service` methods are forced to declare
@@ -74,7 +74,7 @@ keeps `RECORD`, the generated source declares
 `Map<K, FooRecord>`. Generics are invariant in exactly the way R177
 cites as the motivation: the *generated* source then fails to compile.
 The `(Record) env.getSource()` casts in `FetcherEmitter`
-(lines 124, 127, 147, 150, 163) are narrowing assignments from the
+(lines 127, 150, 167) are narrowing assignments from the
 loader's `V`; a narrower `V` only strengthens what they can rely on.
 The cast itself is structurally a graphql-java boundary, not a contract
 with the loader.
@@ -116,7 +116,7 @@ raw `Record`" option that doesn't break the emitted compile.
 ## What R177 does *not* change
 
 - `ChildField.ServiceRecordField`'s `elementType()` path
-  (ChildField.java:633), which recovers V from a
+  (ChildField.java:632), which recovers V from a
   `method().returnType()` fallback. The fallback exists because
   `RowsMethodShape.strictPerKeyType` can return null for that variant
   (`ResultReturnType` with unresolved `fqClassName`, custom scalar,
@@ -161,11 +161,67 @@ in class 'no.sikt.fs.opptak.saksbehandling.VitnemalUtregningService' must return
 
 ## Test plan
 
-- **Unit tier:** `TypeFetcherGeneratorTest.java:324-325, 357-359, 363-365`
-  currently has string-pinned assertions on `java.util.List<org.jooq.Record>`
-  / `Map<…, Record>`-shaped emit; flip those to the specific record class
-  for the `ServiceTableField` case. Do not grow new unit assertions; the
-  existing ones already cover the structural axis.
+- **Unit tier:** flip the `org.jooq.Record`-pinned assertions on the
+  `ServiceTableField` arm of `TypeFetcherGeneratorTest.java` to the
+  specific record class. The fixture binds to `tableBoundFilm(...)`, so
+  post-R177 the expected substring becomes `...FilmRecord` (fully
+  qualified) in place of `org.jooq.Record`. Six `ServiceTableField`
+  assertions flip; they cover positional + mapped, single + list, on
+  both the data-fetcher return and the rows-method return:
+  - `serviceField_list_dataFetcherReturnsCompletableFutureListRecord`
+    (line 357-359);
+  - `serviceField_single_dataFetcherReturnsCompletableFutureRecord`
+    (line 363-365);
+  - `serviceField_mappedRow_list_dataFetcherReturnsCompletableFutureListRecord`
+    (line 439-441);
+  - `serviceField_mappedRow_single_dataFetcherReturnsCompletableFutureRecord`
+    (line 444-451);
+  - `serviceField_mappedRow_list_rowsMethodTakesSetAndReturnsMap`
+    (line 454-463; the `Map<…, List<Record>>` literal on the return-type
+    assertion);
+  - `serviceField_mappedRow_single_rowsMethodReturnsScalarMap`
+    (line 465-470; the `Map<…, Record>` literal on the return-type
+    assertion).
+  The `splitQuery_rowsMethodReturnsListOfListOfRecord` test
+  (line 322-326) is on `ChildField.SplitTableField` and stays unchanged;
+  R177 explicitly does not move that arm (`SplitRowsMethodEmitter` is
+  out of scope). Do not grow new unit assertions; the six above already
+  cover the structural axis.
+- **Validator-rejection test:** the rejection-test surface for the
+  `service-directive-resolver-strict-child-service-return` LBC key lives
+  in `GraphitronSchemaBuilderTest`'s enum-driven schema test
+  (`CHILD_SERVICE_*_REJECTED` siblings at
+  `GraphitronSchemaBuilderTest.java:6533-6562`), not in
+  `graphitron-lsp`'s `ValidatorDiagnosticsTest` (which covers
+  `Rejection` severity-mapping, not strict-return wording). Three arms
+  for the new R177 axis; each pairs a `CHILD_SERVICE_*` enum row with a
+  `TestServiceStub` method:
+  - *Migration arm (was-accepted/now-rejected):* a developer method
+    returning `List<Record>` / `Map<K, Record>` (raw jOOQ `Record` on
+    `V`) was accepted pre-R177 and must be rejected post-R177 with the
+    diagnostic naming the specific record class
+    (`"must return 'List<LanguageRecord>'"` for the canonical Language
+    fixture). Load-bearing rejection test for R177.
+  - *Acceptance arm (was-rejected/now-accepted):* a developer method
+    returning `List<LanguageRecord>` / `Map<K, LanguageRecord>` where
+    `LanguageRecord = tb.table().recordClass()` was rejected pre-R177
+    (this is the user-reported bug shape) and must be accepted post-R177
+    (field classifies, not `UnclassifiedField`).
+  - *Cross-record regression arm (was-rejected/stays-rejected):*
+    `List<BarRecord>` where `BarRecord` is the wrong jOOQ record class
+    for the field's table-bound return; already rejected by the same
+    `TypeName.equals` path. Pin to lock the diagnostic-wording change
+    without re-litigating the axis.
+  In the same commit, update the existing
+  `CHILD_SERVICE_TABLE_BOUND_WRONG_RETURN_REJECTED` row
+  (`GraphitronSchemaBuilderTest.java:6533-6547`): its diagnostic
+  assertion at line 6546 reads `"must return 'List<Record>'"` today;
+  post-R177 that wording becomes `"must return 'List<LanguageRecord>'"`.
+  The supporting fixture
+  `TestServiceStub.childServiceRowKeyedWrongReturn`
+  (`TestServiceStub.java:336`) is unchanged; it pins outer-shape
+  mismatch (scalar vs `List<V>`), an axis R177 does not touch — only the
+  diagnostic's `V` name shifts.
 - **Compile tier (regression backstop):** add one child-`@service`-with-
   `TableBoundReturnType` fixture in `graphitron-sakila-example` so
   `mvn compile -pl :graphitron-sakila-example` becomes the load-bearing
@@ -174,23 +230,6 @@ in class 'no.sikt.fs.opptak.saksbehandling.VitnemalUtregningService' must return
   signatures across `graphitron-sakila-service` or the rewrite test
   tree), so adding a positive fixture costs nothing and locks the
   emit-site contract via `javac` rather than string-matching.
-- **Validator-rejection test:** add a `ValidatorDiagnosticsTest` /
-  sibling pinning that flips the migration case and pins the
-  cross-record case as a regression backstop. These are two
-  architecturally different rejections that share a diagnostic wording;
-  keep them as separate test cases so a future regression points at the
-  right axis:
-  - *Acceptance arm (was-rejected/now-accepted):* `Map<K, FooRecord>`
-    where `FooRecord = tb.table().recordClass()` is the load-bearing
-    case R177 flips. Must be accepted post-R177.
-  - *Migration arm (was-accepted/now-rejected):* `Map<K, Record>` (raw
-    jOOQ Record) was accepted pre-R177 and must be rejected post-R177
-    with the new expected-type name in the diagnostic. This is the
-    load-bearing rejection test for R177.
-  - *Cross-record regression arm (was-rejected/stays-rejected):*
-    `Map<K, BarRecord>` where `BarRecord` is the wrong record class.
-    Already rejected by the same `TypeName.equals`; pin to lock the
-    diagnostic-wording change without re-litigating the axis.
 
 ## Fixture-sweep finding
 
