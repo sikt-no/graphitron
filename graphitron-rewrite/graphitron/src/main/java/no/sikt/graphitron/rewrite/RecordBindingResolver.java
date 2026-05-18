@@ -194,12 +194,24 @@ final class RecordBindingResolver {
 
         SourceLocation loc = locationOf(field);
 
-        // Ground result-axis binding from method return-element type.
+        // Ground result-axis binding from method return-element type, but only when the
+        // SDL return type carries @record. Plain SDL Objects (single-record carriers,
+        // R75 Phase 1) and non-@record types do not consume the producer's return class
+        // as their binding — the producer feeds their inner data field instead. Restricting
+        // the result-side observation to @record SDL types matches the spec's intent (replace
+        // the directive's className with reflection) while preserving R75's carrier shape.
         String resultSdl = unwrappedTypeName(field.getType());
-        Class<?> retElement = peelReturnElement(method.getGenericReturnType());
-        if (resultSdl != null && retElement != null && shouldBind(retElement)) {
-            addResultObservation(resultSdl, new ProducerBinding.RootService(
-                retElement, parent.getName(), field.getName(), className, methodName, loc));
+        if (resultSdl != null) {
+            var resultObjType = ctx.schema.getType(resultSdl);
+            boolean sdlHasRecord = resultObjType instanceof GraphQLObjectType ro
+                && ro.hasAppliedDirective(DIR_RECORD);
+            if (sdlHasRecord) {
+                Class<?> retElement = peelReturnElement(method.getGenericReturnType());
+                if (retElement != null && shouldBind(retElement)) {
+                    addResultObservation(resultSdl, new ProducerBinding.RootService(
+                        retElement, parent.getName(), field.getName(), className, methodName, loc));
+                }
+            }
         }
 
         // Ground input-axis bindings from method parameters → SDL arg types.
@@ -223,6 +235,14 @@ final class RecordBindingResolver {
 
     private void groundTableMethodField(GraphQLObjectType parent, GraphQLFieldDefinition field) {
         if (!field.hasAppliedDirective(DIR_TABLE_METHOD)) return;
+        // @tableMethod returns a jOOQ Table subclass; the SDL return type is @table-bound and the
+        // binding for that SDL type comes from @table already. The Table subclass's reflection
+        // record-type is the same class @table resolves to, but obtaining it from a bare-class
+        // return requires querying jOOQ's TableImpl.recordType() at instantiation time — which
+        // adds machinery without strengthening the diagnostic (the @table observation alone is
+        // sufficient). The walker therefore reads @tableMethod input-arg bindings (mirror of the
+        // @service input-arg arm; see groundServiceField's input loop) but does not contribute
+        // a result-axis observation here.
         GraphQLAppliedDirective dir = field.getAppliedDirective(DIR_TABLE_METHOD);
         String className = argString(field, DIR_TABLE_METHOD, ARG_CLASS_NAME).orElse(null);
         String methodName = argString(field, DIR_TABLE_METHOD, ARG_METHOD).orElse(null);
@@ -230,35 +250,24 @@ final class RecordBindingResolver {
 
         Method method = findUniqueMethod(className, methodName);
         if (method == null) return;
-
-        String resultSdl = unwrappedTypeName(field.getType());
-        if (resultSdl == null) return;
         SourceLocation loc = locationOf(field);
 
-        // @tableMethod's reflected return is typically Table<X>; we want X (the TableRecord class).
-        Type ret = method.getGenericReturnType();
-        Class<?> tableRecordClass = peelTableReturnElement(ret);
-        if (tableRecordClass != null && shouldBind(tableRecordClass)) {
-            addResultObservation(resultSdl, new ProducerBinding.RootTableMethod(
-                tableRecordClass, parent.getName(), field.getName(), className, methodName, loc));
+        // Ground input-axis bindings from method parameters → SDL arg types.
+        String rawArgMapping = argString(field, DIR_TABLE_METHOD, BuildContext.ARG_ARG_MAPPING).orElse("");
+        Map<String, String> overrides = parseArgMapping(rawArgMapping);
+        for (var p : method.getParameters()) {
+            if (!p.isNamePresent()) continue;
+            String paramName = p.getName();
+            String sdlArgName = overrides.getOrDefault(paramName, paramName);
+            GraphQLArgument arg = field.getArgument(sdlArgName);
+            if (arg == null) continue;
+            String inputSdl = unwrappedTypeName(arg.getType());
+            if (inputSdl == null) continue;
+            Class<?> paramElement = peelReturnElement(p.getParameterizedType());
+            if (paramElement == null || !shouldBind(paramElement)) continue;
+            addInputObservation(inputSdl, new ProducerBinding.RootTableMethod(
+                paramElement, parent.getName(), field.getName(), className, methodName, loc));
         }
-    }
-
-    /**
-     * Resolves {@code @tableMethod}'s return shape: a {@code Table<RecordX>} or a bare
-     * {@code Table}. Returns the inner record-class type argument when the outer is
-     * {@code Table}, otherwise falls back to {@link #peelReturnElement}.
-     */
-    private static Class<?> peelTableReturnElement(Type ret) {
-        if (ret instanceof ParameterizedType pt && pt.getRawType() instanceof Class<?> raw) {
-            if (org.jooq.Table.class.isAssignableFrom(raw)) {
-                Type[] args = pt.getActualTypeArguments();
-                if (args.length == 1 && args[0] instanceof Class<?> recordCls) {
-                    return recordCls;
-                }
-            }
-        }
-        return peelReturnElement(ret);
     }
 
     // ===== Phase 2: parent-accessor propagation =====

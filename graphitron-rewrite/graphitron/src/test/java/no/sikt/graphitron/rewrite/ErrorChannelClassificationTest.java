@@ -119,9 +119,12 @@ class ErrorChannelClassificationTest {
     }
 
     @Test
-    void unTypedRecordPayload_producesNoChannel() {
-        // PojoResultType with a null fqClassName cannot be reflected; classifier produces an
-        // empty channel rather than rejecting (the §3 redact arm is the fallback).
+    void unTypedRecordPayload_producesChannelFromReflectedProducer() {
+        // R96: the @record directive's className no longer drives binding. Even when @record
+        // carries no className, the @service producer's reflected return type grounds the
+        // backing class, so the payload class IS reflectable and the error channel populates.
+        // (Pre-R96 behaviour: without an explicit className the type would be NoBacking and
+        // produce an empty channel; R96 corrects this by reading the producer's return type.)
         var schema = build(UNION_ERROR_PAYLOAD_SDL.replace(
                 "@record(record: {className: \"" + SAK_PAYLOAD_FQN + "\"})",
                 "@record") + """
@@ -129,7 +132,7 @@ class ErrorChannelClassificationTest {
             """.formatted(SERVICE_DECL));
 
         var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
-        assertThat(f.errorChannel()).isEmpty();
+        assertThat(f.errorChannel()).isPresent();
     }
 
     @Test
