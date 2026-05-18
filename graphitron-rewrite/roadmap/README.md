@@ -28,7 +28,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R160` | LSP inlay hints and hover for inferred directives and field/type classification | Spec | 2026-05-13 | [plan](lsp-display-inference-and-classification.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R176` | Entity-resolution rejection message claims @table is missing when classification failed for other reasons | In Review | 2026-05-18 | [plan](entity-resolution-misleading-no-table-message.md) |
 
 ---
 
@@ -223,7 +222,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R177` [**Child @service rows-method preserves specific XRecord type for TableBoundReturnType**](child-service-rows-method-specific-xrecord.md)
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
-- `R176` [**Entity-resolution rejection message claims @table is missing when classification failed for other reasons**](entity-resolution-misleading-no-table-message.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
