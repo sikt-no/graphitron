@@ -120,8 +120,13 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         }
 
         var extensions = effectiveSchemaFileExtensions();
+        var expansion = SchemaInputExpander.expand(schemaInputs, basedir, extensions);
+        for (var ep : expansion.emptyPatterns()) {
+            getLog().warn("<schemaInput pattern='" + ep.pattern() + "'> (entry #"
+                + ep.entryIndex() + ") matched no files; skipping");
+        }
         return new RewriteContext(
-            SchemaInputExpander.expand(schemaInputs, basedir, extensions),
+            expansion.inputs(),
             extensions,
             basedir,
             outAbs,

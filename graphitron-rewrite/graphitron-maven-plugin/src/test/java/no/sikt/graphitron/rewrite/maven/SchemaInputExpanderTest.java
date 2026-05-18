@@ -22,11 +22,12 @@ class SchemaInputExpanderTest {
 
         var result = SchemaInputExpander.expand(List.of(binding), dir, java.util.Set.of(".graphqls", ".graphql"));
 
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).sourceName())
+        assertThat(result.inputs()).hasSize(1);
+        assertThat(result.inputs().get(0).sourceName())
             .isEqualTo(dir.resolve("schema.graphqls").toAbsolutePath().normalize().toString());
-        assertThat(result.get(0).tag()).isEmpty();
-        assertThat(result.get(0).descriptionNote()).isEmpty();
+        assertThat(result.inputs().get(0).tag()).isEmpty();
+        assertThat(result.inputs().get(0).descriptionNote()).isEmpty();
+        assertThat(result.emptyPatterns()).isEmpty();
     }
 
     @Test
@@ -39,19 +40,20 @@ class SchemaInputExpanderTest {
 
         var result = SchemaInputExpander.expand(List.of(binding), dir, java.util.Set.of(".graphqls", ".graphql"));
 
-        assertThat(result).hasSize(3);
-        result.forEach(si -> {
+        assertThat(result.inputs()).hasSize(3);
+        result.inputs().forEach(si -> {
             assertThat(si.tag()).isEqualTo(Optional.of("mytag"));
             assertThat(si.descriptionNote()).isEqualTo(Optional.of("my note"));
         });
     }
 
     @Test
-    void zeroMatchPattern_throwsMojoExecutionException(@TempDir Path dir) {
+    void singlePatternEmpty_throwsAggregateEmpty(@TempDir Path dir) {
         var binding = binding("nonexistent/**/*.graphqls", null, null);
 
         assertThatThrownBy(() -> SchemaInputExpander.expand(List.of(binding), dir, java.util.Set.of(".graphqls", ".graphql")))
             .isInstanceOf(MojoExecutionException.class)
+            .hasMessageContaining("<schemaInputs> matched no files")
             .hasMessageContaining("nonexistent/**/*.graphqls")
             .hasMessageContaining("entry #0");
     }
@@ -63,7 +65,7 @@ class SchemaInputExpanderTest {
 
         var result = SchemaInputExpander.expand(List.of(binding), dir, java.util.Set.of(".graphqls", ".graphql"));
 
-        assertThat(result.get(0).tag()).isEmpty();
+        assertThat(result.inputs().get(0).tag()).isEmpty();
     }
 
     @Test
@@ -73,7 +75,7 @@ class SchemaInputExpanderTest {
 
         var result = SchemaInputExpander.expand(List.of(binding), dir, java.util.Set.of(".graphqls", ".graphql"));
 
-        assertThat(result.get(0).descriptionNote()).isEmpty();
+        assertThat(result.inputs().get(0).descriptionNote()).isEmpty();
     }
 
     @Test
@@ -84,8 +86,8 @@ class SchemaInputExpanderTest {
 
         var result = SchemaInputExpander.expand(List.of(binding), dir, Set.of(".graphqls"));
 
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).sourceName())
+        assertThat(result.inputs()).hasSize(1);
+        assertThat(result.inputs().get(0).sourceName())
             .isEqualTo(dir.resolve("schema.graphqls").toAbsolutePath().normalize().toString());
     }
 
@@ -97,7 +99,7 @@ class SchemaInputExpanderTest {
 
         var result = SchemaInputExpander.expand(List.of(binding), dir, Set.of(".graphqls", ".graphql"));
 
-        assertThat(result).extracting(si -> Path.of(si.sourceName()).getFileName().toString())
+        assertThat(result.inputs()).extracting(si -> Path.of(si.sourceName()).getFileName().toString())
             .containsExactlyInAnyOrder("schema.graphqls", "extras.graphql");
     }
 
@@ -108,7 +110,70 @@ class SchemaInputExpanderTest {
 
         assertThatThrownBy(() -> SchemaInputExpander.expand(List.of(binding), dir, Set.of(".graphqls")))
             .isInstanceOf(MojoExecutionException.class)
-            .hasMessageContaining("matched no files");
+            .hasMessageContaining("<schemaInputs> matched no files")
+            .hasMessageContaining("entry #0");
+    }
+
+    @Test
+    void multiplePatterns_oneEmpty_warnsAndContinues(@TempDir Path dir) throws Exception {
+        var stable = Files.createDirectory(dir.resolve("stable"));
+        Files.createFile(stable.resolve("a.graphqls"));
+        Files.createDirectory(dir.resolve("beta"));
+        var experimental = Files.createDirectory(dir.resolve("experimental"));
+        Files.createFile(experimental.resolve("c.graphqls"));
+
+        var result = SchemaInputExpander.expand(
+            List.of(
+                binding("stable/**/*.graphqls", "stable", null),
+                binding("beta/**/*.graphqls", "beta", null),
+                binding("experimental/**/*.graphqls", "experimental", null)
+            ),
+            dir,
+            Set.of(".graphqls", ".graphql"));
+
+        assertThat(result.inputs())
+            .extracting(si -> Path.of(si.sourceName()).getFileName().toString())
+            .containsExactlyInAnyOrder("a.graphqls", "c.graphqls");
+        assertThat(result.emptyPatterns()).hasSize(1);
+        assertThat(result.emptyPatterns().get(0).entryIndex()).isEqualTo(1);
+        assertThat(result.emptyPatterns().get(0).pattern()).isEqualTo("beta/**/*.graphqls");
+    }
+
+    @Test
+    void multiplePatterns_oneEmpty_afterExtensionFilter_warnsAndContinues(@TempDir Path dir) throws Exception {
+        var stable = Files.createDirectory(dir.resolve("stable"));
+        Files.createFile(stable.resolve("a.graphqls"));
+        var beta = Files.createDirectory(dir.resolve("beta"));
+        Files.createFile(beta.resolve("description-suffix.md"));
+
+        var result = SchemaInputExpander.expand(
+            List.of(
+                binding("stable/**/*", "stable", null),
+                binding("beta/**/*", "beta", null)
+            ),
+            dir,
+            Set.of(".graphqls", ".graphql"));
+
+        assertThat(result.inputs())
+            .extracting(si -> Path.of(si.sourceName()).getFileName().toString())
+            .containsExactly("a.graphqls");
+        assertThat(result.emptyPatterns()).hasSize(1);
+        assertThat(result.emptyPatterns().get(0).entryIndex()).isEqualTo(1);
+        assertThat(result.emptyPatterns().get(0).pattern()).isEqualTo("beta/**/*");
+    }
+
+    @Test
+    void allPatternsEmpty_throwsAggregateEmpty(@TempDir Path dir) {
+        var b1 = binding("alpha/**/*.graphqls", null, null);
+        var b2 = binding("bravo/**/*.graphqls", null, null);
+
+        assertThatThrownBy(() -> SchemaInputExpander.expand(List.of(b1, b2), dir, Set.of(".graphqls", ".graphql")))
+            .isInstanceOf(MojoExecutionException.class)
+            .hasMessageContaining("<schemaInputs> matched no files")
+            .hasMessageContaining("entry #0")
+            .hasMessageContaining("alpha/**/*.graphqls")
+            .hasMessageContaining("entry #1")
+            .hasMessageContaining("bravo/**/*.graphqls");
     }
 
     private static SchemaInputBinding binding(String pattern, String tag, String descriptionNote) {
