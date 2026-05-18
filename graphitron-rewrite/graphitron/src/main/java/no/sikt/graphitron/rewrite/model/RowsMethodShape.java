@@ -29,7 +29,6 @@ import no.sikt.graphitron.rewrite.ScalarTypeResolver;
  */
 public final class RowsMethodShape {
 
-    private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
     private static final ClassName LIST   = ClassName.get("java.util", "List");
     private static final ClassName MAP    = ClassName.get("java.util", "Map");
 
@@ -43,7 +42,8 @@ public final class RowsMethodShape {
      * (loader signature).
      *
      * <ul>
-     *   <li>{@link ReturnTypeRef.TableBoundReturnType} → raw {@code org.jooq.Record}.</li>
+     *   <li>{@link ReturnTypeRef.TableBoundReturnType} → {@code tb.table().recordClass()}
+     *       (the jOOQ-generated {@code XRecord} class for the field's bound table).</li>
      *   <li>{@link ReturnTypeRef.ResultReturnType} with non-null {@code fqClassName} → the
      *       backing class.</li>
      *   <li>{@link ReturnTypeRef.ScalarReturnType} for one of the five standard GraphQL
@@ -55,7 +55,7 @@ public final class RowsMethodShape {
      */
     public static TypeName strictPerKeyType(ReturnTypeRef returnType) {
         return switch (returnType) {
-            case ReturnTypeRef.TableBoundReturnType ignored -> RECORD;
+            case ReturnTypeRef.TableBoundReturnType tb -> tb.table().recordClass();
             case ReturnTypeRef.ResultReturnType r -> r.fqClassName() != null
                 ? ClassName.bestGuess(r.fqClassName())
                 : null;

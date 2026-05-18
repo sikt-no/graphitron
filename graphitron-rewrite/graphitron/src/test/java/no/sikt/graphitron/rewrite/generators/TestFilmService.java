@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import org.jooq.Record;
+import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 import org.jooq.Row1;
 
 import java.util.List;
@@ -11,12 +11,13 @@ import java.util.List;
  *
  * <p>The {@code languageKeys} parameter uses {@code Row1<Integer>} matching the
  * {@code language_id} {@code serial} (Integer) column. Return type is the structurally-
- * required {@code List<List<Record>>} per the rows-method shape for a {@code [Film!]!} list
- * field with a positional {@code Row}-shaped batch key.
+ * required {@code List<List<FilmRecord>>} per the rows-method shape for a {@code [Film!]!}
+ * list field with a positional {@code Row}-shaped batch key (post-R177: V = {@code
+ * tb.table().recordClass()}, here {@code FilmRecord}).
  */
 public class TestFilmService {
 
-    public static List<List<Record>> getFilms(List<Row1<Integer>> languageKeys, String filter, String tenantId) {
+    public static List<List<FilmRecord>> getFilms(List<Row1<Integer>> languageKeys, String filter, String tenantId) {
         throw new UnsupportedOperationException();
     }
 }

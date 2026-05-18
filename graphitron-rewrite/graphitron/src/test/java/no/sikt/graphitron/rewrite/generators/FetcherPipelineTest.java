@@ -682,7 +682,7 @@ class FetcherPipelineTest {
     // ===== @service fields =====
 
     @Test
-    void serviceField_dataFetcherReturnsCompletableFutureListRecord() {
+    void serviceField_dataFetcherReturnsCompletableFutureListSpecificRecord() {
         var languageFetchers = findSpec("LanguageFetchers", """
             type Language @table(name: "language") { languageId: Int @field(name: "language_id") }
             type Film @table(name: "film") { title: String }
@@ -695,7 +695,7 @@ class FetcherPipelineTest {
             }
             """);
         assertThat(method(languageFetchers, "films").returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord>>>");
     }
 
     @Test

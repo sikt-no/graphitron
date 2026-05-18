@@ -365,8 +365,9 @@ public class TypeFetcherGenerator {
                     }
                 }
                 case ChildField.ServiceTableField stf -> {
-                    builder.addMethod(buildServiceDataFetcher(ctx, stf.name(), stf, stf.method(), stf.returnType(), parentTable, RECORD, className, outputPackage, stf.errorChannel()));
-                    builder.addMethod(buildServiceRowsMethod(ctx, stf, stf.method(), stf.returnType(), RECORD, stf.parentTypeName(), outputPackage));
+                    TypeName servicePerKeyType = stf.returnType().table().recordClass();
+                    builder.addMethod(buildServiceDataFetcher(ctx, stf.name(), stf, stf.method(), stf.returnType(), parentTable, servicePerKeyType, className, outputPackage, stf.errorChannel()));
+                    builder.addMethod(buildServiceRowsMethod(ctx, stf, stf.method(), stf.returnType(), servicePerKeyType, stf.parentTypeName(), outputPackage));
                 }
                 case ChildField.ServiceRecordField srf -> {
                     builder.addMethod(buildServiceDataFetcher(ctx, srf.name(), srf, srf.method(), srf.returnType(), parentTable, srf.elementType(), className, outputPackage, srf.errorChannel()));
@@ -4233,8 +4234,10 @@ public class TypeFetcherGenerator {
      * ({@code Map<K, V>}); the DataLoader unwraps both shapes internally and fulfills each
      * per-key promise.
      *
-     * <p>List/connection: returns {@code CompletableFuture<List<Record>>}. Single: returns
-     * {@code CompletableFuture<Record>}.
+     * <p>List/connection: returns {@code CompletableFuture<List<V>>}. Single: returns
+     * {@code CompletableFuture<V>}. {@code V} is the {@code perKeyType} the caller threads
+     * through: {@code tb.table().recordClass()} for {@code ServiceTableField} and
+     * {@code srf.elementType()} for {@code ServiceRecordField}.
      *
      * <p>Container axis ({@link LoaderRegistration#container()}):
      * <ul>
@@ -4246,6 +4249,21 @@ public class TypeFetcherGenerator {
      *       {@code Set<KeyType>}.</li>
      * </ul>
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "service-directive-resolver-strict-child-service-return",
+        reliesOn = "Types the DataLoader as DataLoader<K, V> (via the loaderType assembled in "
+            + "DataLoaderFetcherEmitter#build: ParameterizedTypeName.get(DATA_LOADER, keyType, "
+            + "loaderValueType)) where V is the perKeyType the caller threads through "
+            + "(tb.table().recordClass() for ServiceTableField, srf.elementType() for "
+            + "ServiceRecordField). The BatchLoader lambda is built from the rows-method's "
+            + "name (RowsMethodCall.batchLoaderLambda), so `newMappedDataLoader` / "
+            + "`newDataLoader` overload resolution against the lambda's return type sees the "
+            + "rows-method's declared `Map<K, V>` / `List<List<V>>` / `List<V>`. "
+            + "ServiceDirectiveResolver's strict-return check rejects developer methods "
+            + "whose declared return type doesn't match that exact shape, so the typed "
+            + "loader compiles without a wildcard or defensive cast. Post-R177 the strict "
+            + "TypeName.equals check is load-bearing for the typed loader, not just for the "
+            + "rows method's `.returns(...)`.")
     private static MethodSpec buildServiceDataFetcher(
             TypeFetcherEmissionContext ctx,
             String fieldName,
@@ -4295,9 +4313,9 @@ public class TypeFetcherGenerator {
      *       {@code Map<KeyType, V>} (single).</li>
      * </ul>
      *
-     * <p>{@code V} is {@code org.jooq.Record} for {@code ServiceTableField} (caller passes
-     * {@code RECORD}) and the per-key element type for {@code ServiceRecordField} (caller
-     * passes {@code srf.elementType()}).
+     * <p>{@code V} is {@code tb.table().recordClass()} for {@code ServiceTableField} (the
+     * jOOQ-generated {@code XRecord} class for the field's bound table) and the per-key
+     * element type for {@code ServiceRecordField} (caller passes {@code srf.elementType()}).
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "service-directive-resolver-strict-child-service-return",
@@ -4305,9 +4323,11 @@ public class TypeFetcherGenerator {
             + "rows-method return (Map<K, V>/List<List<V>>/List<V>) without a defensive cast or "
             + "wildcard local. ServiceDirectiveResolver's child-only strict-return check "
             + "rejects developer methods whose declared return type doesn't match this exact "
-            + "outer shape, so any mismatch surfaces at classify time rather than as a javac "
-            + "error on the generated source. Covers all (wrap, container) combinations, "
-            + "including the typed-TableRecord wrap for jOOQ TableRecord sources.")
+            + "outer shape (V = tb.table().recordClass() for TableBoundReturnType, the "
+            + "elementType for ServiceRecordField), so any mismatch surfaces at classify time "
+            + "rather than as a javac error on the generated source. Covers all (wrap, "
+            + "container) combinations, including the typed-TableRecord wrap for jOOQ "
+            + "TableRecord sources.")
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "service-catalog-instance-service-holder-shape",
         reliesOn = "Same guarantee as buildServiceFetcherCommon's static-vs-instance fork.")
