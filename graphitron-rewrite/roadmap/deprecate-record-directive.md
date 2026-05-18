@@ -1,7 +1,7 @@
 ---
 id: R96
 title: Derive backing-class binding from reflection; warn on redundant @record
-status: Ready
+status: In Progress
 bucket: model-cleanup
 priority: 6
 theme: model-cleanup

@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
-| `R96` | Derive backing-class binding from reflection; warn on redundant @record | Ready | 2026-05-18 | [plan](deprecate-record-directive.md) |
+| `R96` | Derive backing-class binding from reflection; warn on redundant @record | In Progress | 2026-05-18 | [plan](deprecate-record-directive.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
@@ -160,7 +160,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R129` [**Stub: ConditionJoin path in @reference on ColumnReferenceField**](column-reference-on-scalar-field-condition-join.md) — Backlog, stubs
 - `R16` [**`FkJoin` model cleanup: `JoinConditionRef` wrapper**](fkjoin-model-cleanup.md) — Backlog, cleanup
 - `R97` [**Deprecate @table on input types; consumer-derived tables + argMapping grouping**](consumer-derived-input-tables.md) — Backlog, architecture, blocked by [deprecate-record-directive](deprecate-record-directive.md)
-- `R96` [**Derive backing-class binding from reflection; warn on redundant @record**](deprecate-record-directive.md) — Ready, model-cleanup
+- `R96` [**Derive backing-class binding from reflection; warn on redundant @record**](deprecate-record-directive.md) — In Progress, model-cleanup
 - `R23` [**Multi-parent `NestingField` sharing: `TableField` arm**](nestingfield-multiparent-tablefield.md) — Spec
 - `R120` [**Drop or wire FkJoin.alias dead storage**](fkjoin-alias-dead-storage.md) — Backlog, cleanup
 - `R126` [**Scrub residual BatchKey.X references from sakila-service / sakila-example prose**](scrub-stale-batchkey-prose.md) — Backlog, cleanup
