@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: model-cleanup
-depends-on: [deprecate-record-directive]
+depends-on: []
 ---
 
 # Deprecate `@table` on input types; consumer-derived tables + `argMapping` grouping
@@ -171,13 +171,14 @@ extensions):
   type, the resolution can be `argMapping`-driven for the cases that
   need it. R94 should land first; R97 piggybacks on its Layer 2
   carrier.
-- **R96 (`deprecate-record-directive`)** — the symmetric directive
-  deprecation on `@record`. Same architectural argument:
-  `@record`-on-output is redundant with introspection;
-  `@table`-on-input is redundant with consumer-derived tables. R97
-  applies the same principle to the input-side `@table`. The
-  `@table + @record` shadow rule at `TypeBuilder.java:657-664` goes
-  away once both directives are removed (R96 phase 1 + R97).
+- **R96 (shipped)** — the symmetric directive deprecation on `@record`.
+  Same architectural argument: `@record`-on-output is redundant with
+  introspection; `@table`-on-input is redundant with consumer-derived
+  tables. R97 applies the same principle to the input-side `@table`.
+  The `@table + @record` shadow rule goes away once both directives
+  are removed (R96 shipped the reflection-driven binding + Shadowed-by-
+  `@table` directive-ignored warning; R97 + the R96 follow-on retire
+  the directive declarations).
 - **GG-376 (Jira)** — proposes `@param` for fan-out. R97's
   `argMapping` grouping subsumes that proposal: fan-out is expressed
   via grouping entries on the existing directive rather than a new
