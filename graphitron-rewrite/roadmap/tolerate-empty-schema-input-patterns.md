@@ -1,7 +1,7 @@
 ---
 id: R175
 title: Tolerate empty <schemaInput> pattern matches (warning, not hard error)
-status: Spec
+status: Ready
 bucket: dx
 priority: 3
 theme: structural-refactor
