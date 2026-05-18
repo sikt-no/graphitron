@@ -86,8 +86,12 @@ raw `Record`" option that doesn't break the emitted compile.
 ## What the change is
 
 1. `RowsMethodShape.strictPerKeyType` returns `tb.table().recordClass()`
-   for the `TableBoundReturnType` case (was: the `RECORD` constant);
-   update the line-46 docstring to match.
+   for the `TableBoundReturnType` case (was: the `RECORD` constant). In
+   the same commit, update the line-46 docstring from
+   `TableBoundReturnType → raw org.jooq.Record` to
+   `TableBoundReturnType → tb.table().recordClass()` (the jOOQ-generated
+   record class). Splitting the docstring update into a follow-up commit
+   leaves a false invariant on the line; bundle them.
 2. `TypeFetcherGenerator` line 368 passes `tb.table().recordClass()` as
    the `perKeyType` argument to `buildServiceDataFetcher` (was:
    `RECORD`).
@@ -98,18 +102,31 @@ raw `Record`" option that doesn't break the emitted compile.
    alongside the rows-method `.returns(...)` line: post-R177 the
    strict-`TypeName.equals` rejection is the *only* thing keeping the
    emitted DataLoader-typing line buildable, not just a structural-
-   symmetry nicety. The corresponding `@DependsOnClassifierCheck` at
-   TypeFetcherGenerator.java:4302-4310 (and its sibling at the
-   data-fetcher site) gets the matching wording.
+   symmetry nicety. Update the existing `@DependsOnClassifierCheck` at
+   TypeFetcherGenerator.java:4302-4310 (the rows-method emitter) to
+   reflect the post-R177 wording, *and* attach a new
+   `@DependsOnClassifierCheck(key = "service-directive-resolver-strict-child-service-return", reliesOn = …)`
+   to `buildServiceDataFetcher` whose `reliesOn` names the
+   `DataLoader<K, FooRecord>` typing built in
+   `DataLoaderFetcherEmitter.java:105` and the `newMappedDataLoader`
+   overload resolution against the rows-method's lambda. Post-R177 the
+   data-fetcher site is the more load-bearing of the two consumers and
+   today carries no annotation linking it to the classifier check.
 
 ## What R177 does *not* change
 
 - `ChildField.ServiceRecordField`'s `elementType()` path
   (ChildField.java:633), which recovers V from a
-  `method().returnType()` fallback because its component is the broad
-  `ReturnTypeRef` sealed root rather than `TableBoundReturnType`. The
-  fallback exists for a structurally different reason; R177 does not
-  copy-paste from it.
+  `method().returnType()` fallback. The fallback exists because
+  `RowsMethodShape.strictPerKeyType` can return null for that variant
+  (`ResultReturnType` with unresolved `fqClassName`, custom scalar,
+  enum), and `ServiceRecordField` carries the broad `ReturnTypeRef`
+  sealed root rather than `TableBoundReturnType`. Post-R177 the
+  `TableBoundReturnType` arm of `strictPerKeyType` never returns null,
+  so `ServiceTableField` correspondingly does not need an
+  `elementType()` accessor or a fallback. R177 does not copy-paste from
+  `ServiceRecordField` because the asymmetry is principled, not
+  accidental.
 - The `SourceKey.Wrap.TableRecord` source-side typing pipeline. R177
   brings the target-side typing into alignment with what the source
   side already does, but the source side itself is unchanged.
@@ -157,11 +174,23 @@ in class 'no.sikt.fs.opptak.saksbehandling.VitnemalUtregningService' must return
   signatures across `graphitron-sakila-service` or the rewrite test
   tree), so adding a positive fixture costs nothing and locks the
   emit-site contract via `javac` rather than string-matching.
-- **Validator-rejection test:** add a `ValidatorDiagnosticsTest` / sibling
-  pinning that flips: `Map<K, FooRecord>` is now accepted; `Map<K, Record>`
-  *or* `Map<K, BarRecord>` (wrong record class) is now rejected. The
-  rejection wording in the rejection arm needs the new expected type
-  baked in.
+- **Validator-rejection test:** add a `ValidatorDiagnosticsTest` /
+  sibling pinning that flips the migration case and pins the
+  cross-record case as a regression backstop. These are two
+  architecturally different rejections that share a diagnostic wording;
+  keep them as separate test cases so a future regression points at the
+  right axis:
+  - *Acceptance arm (was-rejected/now-accepted):* `Map<K, FooRecord>`
+    where `FooRecord = tb.table().recordClass()` is the load-bearing
+    case R177 flips. Must be accepted post-R177.
+  - *Migration arm (was-accepted/now-rejected):* `Map<K, Record>` (raw
+    jOOQ Record) was accepted pre-R177 and must be rejected post-R177
+    with the new expected-type name in the diagnostic. This is the
+    load-bearing rejection test for R177.
+  - *Cross-record regression arm (was-rejected/stays-rejected):*
+    `Map<K, BarRecord>` where `BarRecord` is the wrong record class.
+    Already rejected by the same `TypeName.equals`; pin to lock the
+    diagnostic-wording change without re-litigating the axis.
 
 ## Fixture-sweep finding
 
@@ -184,6 +213,13 @@ fixtures, only the unit-bookkeeping update enumerated above.
   pair becomes more truthful, not just descriptively updated: the
   "no-defensive-cast, no-wildcard" claim moves from vacuously true to
   load-bearing for the DataLoader-typing line.
+- **Structural symmetry of `strictPerKeyType` arms.** Post-R177 the
+  `TableBoundReturnType` arm reads its answer off
+  `tb.table().recordClass()` and the `ResultReturnType` arm reads its
+  answer off `r.fqClassName()`; every non-null branch now reads
+  directly off the classifier-resolved carrier, none synthesise
+  constants. R177 is a regression-toward-the-classifier-resolved shape,
+  not just a widening fix.
 - **Sealed hierarchies / sub-taxonomies for resolution outcomes.** No
   new variants; the change consumes an existing narrow component.
 - **No defensive casts in emitted code.** Strengthened; see above.
