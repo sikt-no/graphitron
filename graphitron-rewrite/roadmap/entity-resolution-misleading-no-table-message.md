@@ -37,6 +37,12 @@ When `EntityResolutionBuilder` encounters a type whose classification disqualifi
 
 Non-goals: changing what makes a type ineligible for `@key`, expanding the set of classifications that qualify as entities, or changing `TypeRegistry.demote` semantics for callers that legitimately want to overwrite (e.g. `TableInterfaceType` rejection three lines above the offending block).
 
+## Design principle in play
+
+This bug sits on the line between two principles already in the rewrite design docs: *classification belongs at the parse boundary* and *validator mirrors classifier invariants*. Together they imply a third, which the fix codifies: **once `TypeBuilder` has produced an `UnclassifiedType`, downstream stages enrich the rejection or pass it through; they do not relitigate the reason.** `EntityResolutionBuilder` is downstream of classification; when it sees an `UnclassifiedType`, its job is to leave it alone, not to substitute a fresh guess.
+
+That principle drives the call-site fix below over a registry-level `demote`-refuses-overwrite invariant. See "Why call-site, not registry" further down.
+
 ## Approach
 
 Two distinct cases inside the offending block. They want different treatments.
@@ -45,19 +51,21 @@ Two distinct cases inside the offending block. They want different treatments.
 
 The upstream `TypeBuilder` already recorded the real cause. `EntityResolutionBuilder` has nothing new to add — its check `!(gType instanceof TableType || gType instanceof NodeType)` only fired because classification had already failed.
 
-**Fix:** skip the demote. The existing `UnclassifiedType` will flow through `GraphitronSchemaValidator.validateUnclassifiedType` unmodified and the original rejection is reported. Use `continue` after a debug-log line (or no log at all — `validateUnclassifiedType` will surface the error regardless).
+**Fix:** skip the demote. The existing `UnclassifiedType` flows through `GraphitronSchemaValidator.validateUnclassifiedType` unmodified and the original rejection is reported. Plain `continue`; no log line needed — `validateUnclassifiedType` already surfaces the rejection.
 
-### Case B: `gType` is a different classification (`ScalarType`, etc.)
+### Case B: `gType` is a non-table-bound classification
 
-Author put `@key` on something that isn't even a table-bound candidate. The current message is wrong for this case too — the type may have no `@table` directive because it's a scalar, an interface, an enum. The user needs to know what they actually did.
+After the line-93 filter (`assembledType instanceof GraphQLObjectType`) and Case A's removal, the surviving Case-B set is: any `GraphQLObjectType` classified as something other than `TableType`, `NodeType`, `TableInterfaceType`, or `UnclassifiedType`. In practice today that is `PlainObjectType` (an SDL object with no `@table`) and the `ResultType` sub-hierarchy (`@record`-annotated types). Existing test `plainObjectTypeWithKey_demotesToUnclassifiedType` at `EntityResolutionBuilderTest.java:224` already exercises the `PlainObjectType` arm — Case B is live, not vestigial.
 
-**Fix:** emit a message that names the actual classification kind, not a guess about a missing directive:
+The current message ("`<T>` has no @table directive") is accurate for the `PlainObjectType` sub-case but wrong-by-coincidence for `ResultType`: a `@record` type also has no `@table`, but the actionable feedback is "you put `@key` on a `@record` type", not "you forgot `@table`". The new wording should name the classification kind so both sub-cases point at the actual misuse.
+
+**Fix:** emit a message that names the classification:
 
 ```
-@key on type '<TypeName>' requires a table-bound type, but '<TypeName>' is classified as <ClassificationKind> (no @table directive on the SDL declaration).
+@key on type '<TypeName>' requires a table-bound type, but '<TypeName>' is classified as <kind> — federation entities need a @table directive.
 ```
 
-Where `<ClassificationKind>` is the simple class name of `gType` (`ScalarType`, `EnumType`, …) lowered to a friendlier form by the existing model conventions. The "(no @table directive …)" parenthetical is now a hint, not a claim; it stays accurate because Case A is no longer routed here.
+`<kind>` is a friendly label derived from the `GraphitronType` subtype: `PlainObjectType` → `"a plain object type"`, `JavaRecordType` → `"a @record type"`, etc. A private `static String kindLabel(GraphitronType)` switch in `EntityResolutionBuilder` covers the surviving classifications; no existing helper in the codebase produces this label, and the closest neighbour (`GraphitronType.getClass().getSimpleName()`) leaks internal record names that aren't author-facing.
 
 ### Implementation sketch
 
@@ -77,47 +85,67 @@ with:
 ```java
 if (gType instanceof UnclassifiedType) {
     // Already rejected upstream (TypeBuilder); the existing rejection carries the
-    // real cause (unresolved @table, unresolvable @node keyColumns, malformed
-    // KjerneJooqGenerator metadata, …). Don't overwrite it with a guess.
+    // real cause. Pass it through unchanged — see "Design principle in play".
     continue;
 }
 if (!(gType instanceof TableType || gType instanceof NodeType)) {
     registry.demote(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
         "@key on type '" + typeName + "' requires a table-bound type, but '" + typeName
-        + "' is classified as " + kindLabel(gType) + " (no @table directive on the SDL declaration).")));
+        + "' is classified as " + kindLabel(gType)
+        + " — federation entities need a @table directive.")));
     continue;
 }
 ```
 
-`kindLabel(GraphitronType)` is a tiny private helper that maps a `GraphitronType` to a human-friendly string (`ScalarType` → `"scalar"`, `EnumType` → `"enum"`, etc.). If a small helper like this already lives on `GraphitronType` or in a sibling diagnostics util, reuse it; otherwise add it locally to `EntityResolutionBuilder`.
+`kindLabel(GraphitronType)` is a small private switch local to `EntityResolutionBuilder` mapping the surviving Case-B classifications to author-facing strings (`PlainObjectType` → `"a plain object type"`, `JavaRecordType`/`PojoResultType`/`JooqRecordType`/`JooqTableRecordType` → `"a @record type"`, default branch → `"a non-table-bound type"` for any classification a future contributor adds without updating the switch). No existing helper in the codebase produces this label.
 
-The `TableInterfaceType` branch immediately above stays as-is: it is itself a "demote a legitimately-classified type because @key isn't supported on this shape" path, which is materially different from the Case A overwrite.
+The `TableInterfaceType` branch immediately above stays as-is: it demotes a *classified* `TableInterfaceType`, which is the legitimate enrich-with-rejection pattern. Materially different from the Case A overwrite.
 
-### Why not change `TypeRegistry.demote` to refuse re-demotion?
+### Why call-site, not registry
 
-Tempting but wrong. `demote` is also used to *enrich* a rejection (the `TableInterfaceType` branch one block up does exactly this: it takes a classified `TableInterfaceType` and demotes it to `UnclassifiedType` because `@key` isn't supported on that shape). Forbidding `demote` on a non-classified entry would have to be `forbid demote on already-Unclassified entry`, which is a narrow guard that adds no value once the local `continue` above is in place — the only caller that hit the case is the one being fixed.
+A `demote`-refuses-overwrite invariant on `TypeRegistry` is the obvious alternative. The reason to reject it: `demote` is the registry's *enrich-with-rejection* primitive, not just a "mark Unclassified" verb. The two legitimate demote callers in the rewrite tree today (`TypeBuilder.java:226`, `EntityResolutionBuilder.java:104`) both demote from a *classified* entry to `UnclassifiedType` because a downstream stage discovered a structural problem the classifier couldn't see — a typeId collision across types, or `@key` on `TableInterfaceType`. A blanket overwrite refusal would block those, while a narrower "refuse overwrite of `UnclassifiedType`" rule duplicates what `if (gType instanceof UnclassifiedType) continue;` already says at one specific call site.
 
-A repo-wide audit of `demote` callers is part of this work to confirm no other site silently overwrites an `UnclassifiedType`. If others exist, they get the same `if (gType instanceof UnclassifiedType) continue;` guard at their call sites; the registry stays permissive.
+The deeper reason is the principle stated above: rejection durability is the *caller's* responsibility, because only the caller knows whether it's enriching a rejection (legitimate) or relitigating one (the bug). The registry can't tell those apart from the type signatures alone. Keeping the discipline at the call site keeps the registry honest about what it is — a mutable map with classification tracing — and puts the obligation where the knowledge lives.
+
+### `demote` call-site audit
+
+Inlined here rather than left as a follow-up. Four `demote(...)` callers in `graphitron-rewrite/graphitron/src/main/java`:
+
+| Site | Demoting from | Verdict |
+|---|---|---|
+| `TypeBuilder.java:226` | `NodeType` (typeId collision across types) | Legitimate enrich — classified type, the downstream check is what surfaced the collision. |
+| `EntityResolutionBuilder.java:104` | `TableInterfaceType` (`@key` on an interface) | Legitimate enrich — classified type, downstream check surfaces a structural rejection the classifier couldn't see. |
+| `EntityResolutionBuilder.java:110` | Whatever (incl. `UnclassifiedType`) | **The bug.** |
+| `EntityResolutionBuilder.java:128` | `TableType` or `NodeType` (line 109 already gated) | Legitimate enrich — gType is guaranteed table-bound by the preceding check. |
+
+Only the `:110` site is the overwrite. The other three sites all demote from classified entries; none overwrites a pre-existing `UnclassifiedType`. No additional call-site guards are needed.
 
 ## Tests
 
-Pipeline tier (`graphitron/src/test/java/.../federation/` neighbourhood — pick whichever existing test class covers EntityResolutionBuilder; if no test class covers it, the same fixture pattern as the `KeyNodeSynthesiser` tests applies):
+All in `graphitron/src/test/java/no/sikt/graphitron/rewrite/schema/federation/EntityResolutionBuilderTest.java` (existing `@UnitTier` class, uses `TestSchemaHelper.buildSchema` with real `customer`/`film`/`language` tables from the test jOOQ catalog). Every assertion checks both inclusion of the expected upstream phrase **and** absence of the misleading wording, uniformly across all three regression tests.
 
-1. **`@key` with unresolvable `@table` name surfaces the unknown-table rejection, not the misleading message.** Build a fixture with `type T @key(fields: "id") @node @table(name: "no_such_table") implements Node { id: ID! @nodeId }`; assert the validator error message contains the unknown-table phrasing produced by `unknownTableRejection`, and does **not** contain `has no @table directive`.
+1. **(new) `@key` with unresolvable `@table` name preserves the unknown-table rejection.** Fixture:
+   ```graphql
+   type Query { x: T }
+   type T implements Node @key(fields: "id") @node @table(name: "no_such_table") { id: ID! @nodeId }
+   ```
+   Assert `unclassified.reason()` contains the unknown-table phrase produced by `TypeBuilder.unknownTableRejection` (the existing wording in that helper, whatever it is — test should match the helper's literal so it doesn't drift), and does **not** contain `has no @table directive`.
 
-2. **`@key` with `@node(keyColumns: [...])` referencing a column not in the jOOQ table surfaces the unresolved-column rejection.** Use an existing fixture table with at least one column, set `keyColumns: ["definitely_not_a_column"]`. Assert the error message contains `key column 'definitely_not_a_column' in @node could not be resolved`, and does not contain `has no @table directive`.
+2. **(new) `@key` with `@node(keyColumns: [...])` referencing a non-column preserves the unresolved-column rejection.** Fixture uses `customer` (which exists), with `@node(keyColumns: ["definitely_not_a_column"])`. Assert `unclassified.reason()` contains `key column 'definitely_not_a_column' in @node could not be resolved`, and does **not** contain `has no @table directive`.
 
-3. **`@key` on a scalar / non-table-bound type still produces a clear classification-mismatch message.** Build a fixture where `@key` is attached to something that classifies as `ScalarType`. Assert the error message contains `is classified as scalar` and does **not** claim a missing `@table` outside the parenthetical hint.
+3. **(update existing) `plainObjectTypeWithKey_demotesToUnclassifiedType` (line 224) pins the new Case-B wording.** The current assertion is `assertThat(unclassified.reason()).contains("@table")`, which is too loose — it would still pass the bug. Tighten to: contains `is classified as a plain object type` AND contains `federation entities need a @table directive`. Both halves matter: the first is what makes the message actionable, the second preserves the "missing @table" hint for the case where it really is the cause.
 
-4. **Existing happy path stays green.** A `TableType` and a `NodeType` each with a valid `@key` still produce an `EntityResolution`. (Likely already covered; verify the existing test still passes.)
+4. **(new, optional) `@key` on a `@record`-annotated type names the `@record` kind.** Fixture: a `@record` type with `@key`. Assert `unclassified.reason()` contains `is classified as a @record type`. Optional because Case B's `ResultType` arm is rare; include if a `@record` fixture is cheap to spin up in `TestSchemaHelper`, otherwise punt to a follow-up. Mark it `@Disabled` with a TODO rather than silently dropping if it turns out to need new fixture machinery.
 
-The first two are the regression-prevention tests for the bug. The third pins the new wording. The fourth confirms no behaviour change for valid SDL.
+5. **(verify, no change) Existing happy paths stay green.** `nodeType_alwaysGetsNodeIdAlternative_evenWithoutFederation` (line 32) and `tableType_withExplicitKey_getsDirectAlternative` (line 67) confirm the non-error paths are unaffected.
+
+Tests 1, 2, 3 are the minimum sufficient regression-prevention set. Test 4 is nice-to-have; the implementer may drop it without spec revision.
 
 ## Out of scope
 
-- Surfacing *all* rejections per type rather than the first. The validator's one-error-per-UnclassifiedType policy is unchanged.
+- Surfacing *all* rejections per type rather than the first. The validator's one-error-per-`UnclassifiedType` policy is unchanged.
 - LSP fix-it hints for the new wording. The structural `Rejection` carries enough payload for an LSP layer to consume later; no fix-it is being authored here.
-- Auditing whether any other `Builder` pass silently overwrites prior `UnclassifiedType` rejections beyond the call-site audit described above.
+- Changing `TypeRegistry.demote` semantics. See "Why call-site, not registry".
 
 ## Effort
 
