@@ -278,7 +278,12 @@ type-match enforced uniformly with every other field.
   `requireDataTableMatchesInputTable` now lifts the DML mutation's
   input `@table` `TableRef` onto the emitted `ProducerBinding.DmlEmitted`,
   which the payload-side `deriveSplitQuerySource` caller reads as its
-  `parentTable` argument (§"Bulk DML reference" #1).
+  `parentTable` argument (§"Bulk DML reference" #1). The lookup path:
+  when `FieldBuilder.classifyField` constructs the SourceKey for a
+  child `@table` field on a payload SDL type, it consults the parent's
+  resolved `ProducerBinding` via `RecordBindingResolver`'s binding map,
+  pattern-matches on `DmlEmitted`, and feeds `dmlEmitted.tableRef()`
+  to `deriveSplitQuerySource(parentTable, List.of(), returnType)`.
 - **R156's NodeId encoder chain** (`HelperRef.Encode`,
   `CallSiteCompaction.NodeIdEncodeKeys`) survives unchanged; under R178
   it is wired through `resolveRecordAccessor`'s outcome arms rather than
@@ -349,13 +354,17 @@ null). The spike stays in-tree as a behavioral contract pin under the
   - Retarget `SingleRecordCarrierPipelineTest`,
     `SingleRecordTableFieldServiceProducerPipelineTest`,
     `FieldSourceSigilPipelineTest`, the
-    `SINGLE_RECORD_CARRIER_DATA_FIELD` / `SINGLE_RECORD_IDENTITY_FIELD` /
-    `MUTATION_DML_RECORD_FIELD` rows in `GraphitronSchemaBuilderTest`,
-    the bulk-DML rows in `GraphitronSchemaBuilderTest`, and
-    `MutationDeletePayloadCarrierCase` to assert the unified-path
-    classification outcomes (most retarget to assertions on the
-    standard `@record`-parent path; the producer-kind-conflict and
-    `$source`-sigil cases delete outright).
+    `SINGLE_RECORD_CARRIER_DATA_FIELD_ORPHAN` /
+    `SINGLE_RECORD_IDENTITY_FIELD` / `MUTATION_DML_RECORD_FIELD` /
+    `MUTATION_BULK_DML_RECORD_FIELD` rows in
+    `GraphitronSchemaBuilderTest`, the bulk-DML rows in
+    `GraphitronSchemaBuilderTest`, and `MutationDeletePayloadCarrierCase`
+    to assert the unified-path classification outcomes (most retarget to
+    assertions on the standard `@record`-parent path; the
+    producer-kind-conflict and `$source`-sigil cases delete outright;
+    `SINGLE_RECORD_CARRIER_DATA_FIELD_ORPHAN`'s `variants()` returning
+    `ChildField.SingleRecordTableField.class` retires with the permit
+    deletion).
 - **Compile tier**: keep all `graphitron-sakila-example` fixtures
   (`FilmsPayload`, `DeletedFilmsIdPayload`, `DeletedFilmsTablePayload`,
   `SingleFilmCardCarrier`, etc.) - the generated code must compile
@@ -368,8 +377,15 @@ null). The spike stays in-tree as a behavioral contract pin under the
   R156's two DELETE-carrier end-to-end tests). Same SQL, same Java
   outputs; the runtime contract does not change. Test names migrate
   away from `Carrier*` naming as the model retires.
-- **LSP tier**: `FieldSourceSigil`-related `Diagnostics` and
-  `FieldCompletions` cases retire with the sigil; nothing new.
+- **LSP tier**: the `$source` sigil itself survives R178 (see
+  §"Concrete deletions" / §"Target model" #3). LSP cases that asserted
+  carrier-walk-specific admission of `$source` (`DiagnosticsTest`'s
+  R159 sigil cases at the `films: [Film!] @field(name: "$source")`
+  shape, `FieldCompletionsTest`'s R159 sigil-completion cases) retarget
+  to the unified-path admission predicate: the sigil is valid at any
+  site where the per-field classifier would otherwise resolve a
+  name-based accessor / column lookup against the parent's reflected
+  shape. No new LSP cases.
 
 ## Migration / risk notes
 
