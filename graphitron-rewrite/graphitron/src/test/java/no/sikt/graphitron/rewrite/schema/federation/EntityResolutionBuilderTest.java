@@ -224,7 +224,8 @@ class EntityResolutionBuilderTest {
     @Test
     void plainObjectTypeWithKey_demotesToUnclassifiedType() {
         // Federation @key on a non-@table type doesn't make sense — the dispatcher needs
-        // a backing table to SELECT from.
+        // a backing table to SELECT from. The Case-B message names the classification and
+        // hints at the missing @table directive.
         var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
             type Query { x: Foo }
             type Foo @key(fields: "fooId") {
@@ -233,6 +234,62 @@ class EntityResolutionBuilderTest {
             """);
         assertThat(schema.type("Foo")).isInstanceOf(UnclassifiedType.class);
         var unclassified = (UnclassifiedType) schema.type("Foo");
-        assertThat(unclassified.reason()).contains("@table");
+        assertThat(unclassified.reason())
+            .contains("is classified as a plain object type")
+            .contains("federation entities need a @table directive");
+    }
+
+    @Test
+    void keyOnTypeWithUnresolvableTable_preservesUnknownTableRejection() {
+        // R176: when a type is already UnclassifiedType from upstream (here: TypeBuilder's
+        // unknownTableRejection), EntityResolutionBuilder must pass it through unchanged
+        // rather than overwriting it with a misleading "no @table directive" message.
+        var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
+            type Query { x: T }
+            type T implements Node @key(fields: "id") @node @table(name: "no_such_table") {
+                id: ID! @nodeId
+            }
+            """);
+        assertThat(schema.type("T")).isInstanceOf(UnclassifiedType.class);
+        var unclassified = (UnclassifiedType) schema.type("T");
+        assertThat(unclassified.reason())
+            .contains("could not be resolved in the jOOQ catalog")
+            .doesNotContain("has no @table directive");
+    }
+
+    @Test
+    void keyOnNodeTypeWithUnresolvableKeyColumn_preservesUnresolvedColumnRejection() {
+        // R176: a @node(keyColumns: [...]) referencing an unknown column makes TypeBuilder
+        // produce an UnclassifiedType carrying the key-column-error message. The downstream
+        // EntityResolutionBuilder must not overwrite that with its own guess.
+        var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
+            type Query { customer: Customer }
+            type Customer implements Node @key(fields: "id") @node(keyColumns: ["definitely_not_a_column"]) @table(name: "customer") {
+                id: ID! @nodeId
+            }
+            """);
+        assertThat(schema.type("Customer")).isInstanceOf(UnclassifiedType.class);
+        var unclassified = (UnclassifiedType) schema.type("Customer");
+        assertThat(unclassified.reason())
+            .contains("key column 'definitely_not_a_column' in @node could not be resolved")
+            .doesNotContain("has no @table directive");
+    }
+
+    @Test
+    void keyOnRecordType_namesRecordKindInMessage() {
+        // R176: Case B's @record arm — the "missing @table" hint is wrong-by-coincidence
+        // because @record types intentionally have no @table. Name the kind explicitly so
+        // the author sees that @key on @record is the misuse, not a forgotten @table.
+        var schema = TestSchemaHelper.buildSchema(FEDERATION_DIRECTIVES + """
+            type Query { x: FooRec }
+            type FooRec @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) @key(fields: "fooId") {
+                fooId: Int
+            }
+            """);
+        assertThat(schema.type("FooRec")).isInstanceOf(UnclassifiedType.class);
+        var unclassified = (UnclassifiedType) schema.type("FooRec");
+        assertThat(unclassified.reason())
+            .contains("is classified as a @record type")
+            .doesNotContain("has no @table directive");
     }
 }

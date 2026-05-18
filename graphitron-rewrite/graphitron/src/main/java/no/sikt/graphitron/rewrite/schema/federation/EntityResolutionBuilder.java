@@ -15,7 +15,12 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.JavaRecordType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.JooqRecordType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
@@ -105,11 +110,19 @@ public final class EntityResolutionBuilder {
                     "@key on TableInterfaceType is not supported; declare @key on the implementing types instead")));
                 continue;
             }
+            // A type already rejected upstream (e.g. unresolvable @table, malformed @node
+            // keyColumns) carries the real cause on its existing UnclassifiedType. Pass it
+            // through unchanged; relitigating would overwrite the actionable diagnostic with
+            // a misleading "no @table directive" message.
+            if (gType instanceof UnclassifiedType) {
+                continue;
+            }
             // Federation entities require a backing table (the dispatcher SELECTs from it).
             if (!(gType instanceof TableType || gType instanceof NodeType)) {
                 registry.demote(typeName, new UnclassifiedType(typeName, gType.location(), Rejection.structural(
-                    "@key requires a @table-bound type; '" + typeName
-                    + "' has no @table directive")));
+                    "@key on type '" + typeName + "' requires a table-bound type, but '" + typeName
+                    + "' is classified as " + kindLabel(gType)
+                    + " — federation entities need a @table directive.")));
                 continue;
             }
 
@@ -150,6 +163,23 @@ public final class EntityResolutionBuilder {
 
     private static boolean hasNodeIdAlternative(List<KeyAlternative> alternatives) {
         return alternatives.stream().anyMatch(a -> a.shape() == KeyShape.NODE_ID);
+    }
+
+    /**
+     * Author-facing label for a non-table-bound classification surviving the
+     * pre-checks in {@link #build}. Used inside the rejection message that fires
+     * when {@code @key} is declared on a type the classifier produced as something
+     * other than {@link TableType} or {@link NodeType}.
+     */
+    private static String kindLabel(GraphitronType gType) {
+        return switch (gType) {
+            case PlainObjectType p -> "a plain object type";
+            case JavaRecordType r -> "a @record type";
+            case PojoResultType r -> "a @record type";
+            case JooqRecordType r -> "a @record type";
+            case JooqTableRecordType r -> "a @record type";
+            default -> "a non-table-bound type";
+        };
     }
 
     private sealed interface AltResult {
