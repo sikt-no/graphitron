@@ -1,7 +1,7 @@
 ---
 id: R177
 title: Child @service rows-method preserves specific XRecord type for TableBoundReturnType
-status: Spec
+status: Ready
 bucket: bug
 depends-on: []
 created: 2026-05-18
