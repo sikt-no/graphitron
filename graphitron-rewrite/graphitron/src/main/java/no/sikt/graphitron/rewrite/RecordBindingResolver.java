@@ -70,7 +70,15 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
         + "class, so agreement on cls implies agreement on TableRef on either axis; (2) a "
         + "Java record's component list (the basis for accessor mapping) is a pure function "
         + "of cls. If either resolution generalises to take additional inputs, the corresponding "
-        + "commitment must be revisited as part of that change.")
+        + "commitment must be revisited as part of that change. Transitional state: the "
+        + "spec's single-writer claim ('the post-fold write to recordBackingClasses is the "
+        + "producer site') is partially aspirational today: TypeBuilder.buildResultType and "
+        + "TypeBuilder.buildNonTableInputType retain a directive-className fallback that writes "
+        + "to recordBackingClasses when the walker resolves no binding, so the audit covers two "
+        + "writers (this resolver's fold + the fallback) until the follow-on item retires the "
+        + "directive. The agreement guarantee for reachable types still holds; the fallback "
+        + "serves unreached types only and writes a single class per type with no agreement "
+        + "check needed (no other producer is observing the type).")
 final class RecordBindingResolver {
 
     private final BuildContext ctx;
