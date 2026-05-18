@@ -65,48 +65,42 @@ to match the field's declared return type
 Two semantically identical schemas should produce identical classification.
 The fix is structural: eliminate the regime that produces the divergence.
 
-## Why the carrier walk duplicates SourceKey + R96
+## Where the duplication lives
 
 `FetcherEmitter.buildSingleRecordTableFetcherValueRecordWrap`
 (FetcherEmitter.java:330-446) does exactly what every child-on-`@record`-
 parent fetcher does: pull a key off `env.getSource()`, run a projected
 SELECT against the inner table filtered by that key, with column
 selection driven by `env.getSelectionSet()`. The novelty is solely
-"where does the key come from" - the DML's `RETURNING` row instead of a
-catalog-FK column or a typed accessor on a `@record` parent's backing
-class. That distinction is a Reader arm (`SourceKey.Reader`), not a
-classification hierarchy.
+"where does the key come from" - a DML's `RETURNING` row instead of a
+catalog-FK column or a typed accessor on a `@record` parent. That
+distinction belongs on the Reader axis, not in a parallel classification
+hierarchy.
 
-Walking each piece of carrier machinery to confirm nothing survives
-independently:
+Each carrier-walk piece maps to standard machinery already in the
+classifier:
 
-- **`CarrierFieldRole.DataChannel` / `ErrorChannelRole`** - the same
-  question every `@record`-parent child field asks. `FieldBuilder.resolveRecordAccessor`
-  (FieldBuilder.java:3816) already classifies "this child reads via
-  accessor X, returning typed Y."
-- **`DataElement.Table` / `Record` / `Id`** - all three reduce to
-  Reader-arm choices in SourceKey. `Table` is "PK columns off the source
-  row, projected SELECT" (today `Reader.ResultRowWalk` + `Wrap.Record`);
-  `Record` is identity passthrough, expressible as `Reader.AccessorCall`
-  against the payload's record component or simply returning
-  `env.getSource()`; `Id` is encoded-NodeId via an accessor returning a
-  PK column, with the existing `HelperRef.Encode` chain.
-- **`SingleRecordCarrierShape` invariants** (exactly one DataChannel,
-  at-most-one ErrorChannel) - structurally redundant under the
-  multi-field-mutation-carrier direction (R128); each SDL field on the
-  payload class becomes its own SourceKey-classified field.
-- **`classifyDeleteTableProjection` / `PerFieldOutcome`** - "which payload
-  fields map to which PK columns of a DELETE's RETURNING." The same
-  question `resolveRecordAccessor` asks, with one extension: an
-  accessor-resolution outcome that returns "this accessor names a PK
-  column" rather than a record. Folds in.
-- **`carrierProducerRegistry` + `single-producer-kind` compare-then-write**
-  - exists only because the carrier walk has two encodings
-  (`Wrap.Record` for DML, `Wrap.TableRecord` for `@service`) for the
-  same coord. Without the parallel encoding the conflict can't arise.
-- **Four `register*CarrierDataField` helpers + the carrier-walk arms in
-  the schema-builder loop** (`GraphitronSchemaBuilder.buildSchema`
-  GraphitronSchemaBuilder.java:217-256) - collapse to the single
+- `CarrierFieldRole.DataChannel` / `ErrorChannelRole` → the per-field
+  question `FieldBuilder.resolveRecordAccessor` (FieldBuilder.java:3816)
+  already answers on `@record`-parent children.
+- `DataElement.Table` / `Record` / `Id` → Reader-arm choices.
+  `Table` → the `@splitQuery`-shaped `Reader.ColumnRead` + projected
+  SELECT (see §"Bulk DML reference"); `Record` → identity passthrough
+  via `$source` or name-matched `Reader.AccessorCall`; `Id` → encoded-
+  NodeId via an accessor returning a PK column, through the existing
+  `HelperRef.Encode` chain.
+- `SingleRecordCarrierShape` invariants (one DataChannel, optional
+  ErrorChannel) → dissolve under the multi-field direction (R128); each
+  SDL field on the payload classifies independently.
+- `classifyDeleteTableProjection` / `PerFieldOutcome` → `resolveRecordAccessor`
+  with one new outcome arm: "accessor names a PK column."
+- `carrierProducerRegistry` + the `single-producer-kind` reconciliation
+  → vanishes; it exists only to reconcile the carrier walk's two
+  encodings (`Wrap.Record` for DML, `Wrap.TableRecord` for `@service`)
+  of the same coord.
+- The four `register*CarrierDataField` helpers and the carrier-walk arm
+  of the schema-builder loop (`GraphitronSchemaBuilder.buildSchema`
+  GraphitronSchemaBuilder.java:217-256) → collapse to the single
   accessor-classification path.
 
 ## The target model
@@ -167,7 +161,7 @@ Model types:
 - `MutationField.MutationDmlRecordField`
 - `MutationField.MutationBulkDmlRecordField`
 - `MutationField.MutationServiceRecordField`
-- `SourceKey.Reader.ResultRowWalk`
+- `SourceKey.Reader.ResultRowWalk` (the permit, not a free-standing type)
 
 Classifier methods:
 - `BuildContext.tryResolveSingleRecordCarrier(String)`
@@ -225,21 +219,21 @@ type-match enforced uniformly with every other field.
   exposing the PK columns; the DataLoader runs the projected SELECT.
   The DML payload case is a *new producer* for this existing consumer:
   the parent is a sparse `RecordN<PK>` from a DML-emitted source
-  instead of a full `@table`-rooted record, but `ColumnRead`'s body
+  instead of a full `@table`-rooted record. `ColumnRead`'s body
   (`parent.get(<column>)`) is shape-agnostic - a `RecordN<PK>` exposes
-  the PK columns the reader needs. No `Reader` arm changes; no Reader
-  axis widens; the `source-key.result-row-walk-target-aligned-empty-
-  path` invariant deleted alongside `ResultRowWalk` does **not** migrate
-  to a new key (its guarantee falls out of the existing
-  `@splitQuery`-shaped emit).
-
-  A new `Reader.UpstreamSourceColumns(columns)` permit reading from
-  `env.getSource()` directly is **not** introduced. Such a permit
-  would re-encode "parent row exposing named columns" as a separate
-  reader axis distinguished only by producer kind - exactly the
-  duplication R178 is deleting elsewhere. The producer axis is
-  `RecordBindingResolver`'s job; replicating it on `Reader` would
-  re-create the two-producer reconciliation R178 retires.
+  the PK columns the reader needs - so no `Reader` arm changes and no
+  Reader axis widens. The deleted `source-key.result-row-walk-target-
+  aligned-empty-path` invariant does not migrate to a new key: its
+  three commitments dissolve at the unified emit site - (a) "wrap is
+  `Record` / `TableRecord(target.recordClass())`" is irrelevant under
+  `Wrap.Row` + `Reader.ColumnRead`; (b) empty path is given by
+  `deriveSplitQuerySource` passing `List.of()` for `path` (FieldBuilder.java:3956);
+  (c) target-aligned is given by the caller's choice of `parentTable`
+  equal to the DML producer's `TableRef`, itself guaranteed by
+  `record-binding.producer-agreement` (§"What stays" #3). No emitter
+  consumer reads the deleted invariant directly; no new
+  `@DependsOnClassifierCheck` is needed on `deriveSplitQuerySource`'s
+  caller.
 - **Error channel mechanism survives; only the carrier-walk wrapper
   retires.** The runtime contract is unchanged: the mutation wrapper
   emits `DataFetcherResult.newResult().data(<producerResult>).localContext(<mappedErrors>).build()`
@@ -267,21 +261,24 @@ type-match enforced uniformly with every other field.
   `@table` resolutions, `@tableMethod` returns); the DML producer is
   generator-emitted - the row shape is determined by
   `TypeFetcherGenerator.buildMutationDml*Fetcher` from the input
-  `@table` + `DmlKind` + cardinality, not by reflecting on a developer
-  class. The producer's identity is therefore not a Java `Class<?>` but
-  a `(TableRef, DmlKind, Cardinality)` triple. A new
+  `@table` + `DmlKind` + cardinality. A new
   `ProducerBinding.DmlEmitted(TableRef, DmlKind, Cardinality)` permit
-  carries this identity; `RecordBindingResolver`'s post-walk fold
-  extends to treat `DmlEmitted` as agreeing with any other producer
-  pointing at the same `TableRef` (the data-table-equals-input-table
-  case re-emerges here as agreement-fold against the input `@table`'s
-  `TableRef`). This permit is the structural replacement for the
+  carries this identity. To preserve the resolver's single-axis
+  class-identity fold (RecordBindingResolver.java:368-385),
+  `DmlEmitted.reflectedClass()` returns `TableRef.recordClass()` for
+  its carried `TableRef` - the same class `RootTable` grounds with at
+  RecordBindingResolver.java:156-159 - so the existing
+  `record-binding.producer-agreement` check fires unchanged: a DML
+  producer agrees with the input `@table`'s `RootTable` binding for
+  the same record class. This is the structural replacement for the
   deleted `mutation-dml-record-field.data-table-equals-input-table`
-  invariant: the guarantee that fired from `requireDataTableMatches
-  InputTable` re-fires through the existing `record-binding.producer-
-  agreement` load-bearing check, with no carrier-walk-specific
-  consumer. `DmlEmitted` does not synthesize a `Class<?>` - the
-  permit's `TableRef` is what the consumer (`SourceKey.target`) reads.
+  invariant; the guarantee re-emerges through the existing fold with
+  no new load-bearing key and no carrier-walk-specific consumer. The
+  classifier-side wiring that previously fired
+  `requireDataTableMatchesInputTable` now lifts the DML mutation's
+  input `@table` `TableRef` onto the emitted `ProducerBinding.DmlEmitted`,
+  which the payload-side `deriveSplitQuerySource` caller reads as its
+  `parentTable` argument (§"Bulk DML reference" #1).
 - **R156's NodeId encoder chain** (`HelperRef.Encode`,
   `CallSiteCompaction.NodeIdEncodeKeys`) survives unchanged; under R178
   it is wired through `resolveRecordAccessor`'s outcome arms rather than
@@ -289,68 +286,51 @@ type-match enforced uniformly with every other field.
 
 ## Bulk DML reference (model alignment)
 
-For `[Film!]` payload cardinality: today `env.getSource()` at the
-payload-level fetcher is `Result<RecordN<PK>>` and the carrier walk
-emits a custom `films` DataFetcher that iterates the source list,
-extracts PKs, runs one projected SELECT against the Film table, and
-returns the result. Under R178 the producer (DML fetcher) leaves
-exactly the same `Result<RecordN<PK>>` in source - the producer side is
-unchanged - but the `films` field is classified through the existing
-`@splitQuery`-shaped path rather than a bespoke carrier emitter.
+For `[Film!]` payload cardinality the producer (DML fetcher) leaves
+`Result<RecordN<PK>>` in `env.getSource()` - same shape as today - and
+the payload `films` field classifies through the existing
+`@splitQuery`-shaped path:
 
-The encoding chains existing machinery without adding a model axis:
-
-1. **Payload `films` field** classifies through the standard
-   `@splitQuery`-style derivation (`FieldBuilder.deriveSplitQuerySource`
-   at FieldBuilder.java:3956): `SourceKey(target = Film table,
-   columns = Film PK columns, wrap = Wrap.Row, reader =
-   Reader.ColumnRead, cardinality = MANY)` paired with
-   `LoaderRegistration(POSITIONAL_LIST, LOAD_ONE)`. The DataFetcher
-   reads PK columns off each `RecordN<PK>` in `env.getSource()`, returns
-   the DataLoader-batched future projected on the SelectionSet, same
-   shape today's `@splitQuery` field on a `@table` parent uses.
-2. **graphql-java unwraps** the returned `List<FilmRecord>` (spike V3
-   confirms: an explicit DataFetcher returning a list is walked
-   element-wise; the unwrap is graphql-java's own contract, not
+1. `FieldBuilder.deriveSplitQuerySource` (FieldBuilder.java:3956)
+   produces `SourceKey(target = Film table, columns = Film PK columns,
+   wrap = Wrap.Row, reader = Reader.ColumnRead, cardinality = MANY)`
+   paired with `LoaderRegistration(POSITIONAL_LIST, LOAD_ONE)`. The
+   DataFetcher reads PK columns off each `RecordN<PK>` in
+   `env.getSource()` and returns the DataLoader-batched future
+   projected on the SelectionSet - the same shape a `@splitQuery` field
+   on a `@table` parent uses.
+2. graphql-java walks the returned `List<FilmRecord>` element-wise
+   (spike V3; the unwrap is graphql-java's own contract, not
    graphitron's).
-3. **Per-Film child fields** read directly off each projected
-   `FilmRecord` via the standard `@table`-parent inline-subselect path,
-   identical to a Query-rooted Film child.
+3. Per-Film child fields read directly off each projected `FilmRecord`
+   via the standard `@table`-parent inline-subselect path, identical to
+   a Query-rooted Film child.
 
-The only thing the consumer site widens is which **producer shape** of
-`env.getSource()` is admissible at the parent role: today's
-`@splitQuery` parent is a `@table`-rooted record (or a `@record`-class
-parent); R178 adds the DML-emitted `RecordN<PK>` as a third producer
-shape. `Reader.ColumnRead`'s contract (`parent.get(<column>)`) does not
-change - a sparse `RecordN<PK>` exposes the PK columns ColumnRead
-reads. The widening lives entirely in `RecordBindingResolver`'s
-producer set (the `ProducerBinding.DmlEmitted` permit under §"What
-stays" #2), not on the SourceKey or Reader axes.
-
-There is no iteration logic in the films DataFetcher; no internal
-SELECT; no new Reader arm; no `SourceShape.SINGLE | ITERABLE` axis on
-SourceKey. The bulk-DML case is a new *producer* for the existing
-`@splitQuery`-shaped consumer site. The single-record DML case
-(`film: Film` rather than `films: [Film!]`) is the `Cardinality.ONE`
-arm of the same derivation; no separate branch.
+The single-record case (`film: Film`) is the `Cardinality.ONE` arm of
+the same derivation. The DML-emitted `RecordN<PK>` is admitted as a
+new producer shape through the `ProducerBinding.DmlEmitted` permit
+(§"What stays" #2); no SourceKey or Reader axis widens.
 
 `graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/ListSourceBehaviorSpike.java`
 pins the graphql-java behavior the encoding depends on (V3: a
-DataFetcher returning a list-shaped source identity-passthrough is
-walked element-wise; V5: without an explicit DataFetcher on the
-list-typed payload field, the default `PropertyDataFetcher` rejects the
-list source and the field renders null). The spike stays in-tree as a
-behavioral contract pin under the `UnitTier`.
+DataFetcher returning a list-shaped source is walked element-wise; V5:
+without an explicit DataFetcher on the list-typed field, the default
+`PropertyDataFetcher` rejects the list source and the field renders
+null). The spike stays in-tree as a behavioral contract pin under the
+`UnitTier`.
 
 ## Test plan
 
 - **Unit tier**: deletions only on the carrier-walk-specific tests
   (`CarrierFieldRoleCoverageTest`, `DataElementIdInvariantTest`,
   `PkResolutionEmitterReachabilityTest`, the carrier compact-ctor
-  invariant cases in `SourceKeyTest`, the R161 `Ok.NoBacking`/`ClassBacked`
-  fork cases). New unit cases pin the chosen Reader-arm option's
-  compact-constructor invariants (mirrors today's `ResultRowWalk`
-  invariant coverage in shape, smaller in surface).
+  invariant cases in `SourceKeyTest`, the R161 `Ok.NoBacking` /
+  `ClassBacked` fork cases) and on any remaining live reference to
+  `SourceKey.Reader.ResultRowWalk` surfaced by `git grep` at deletion
+  time (today: `UnifiedEmissionPinsTest`, `GeneratorUtils`, others).
+  New unit cases pin `ProducerBinding.DmlEmitted`'s compact-constructor
+  invariants (non-null `TableRef`, `reflectedClass()` returns
+  `TableRef.recordClass()`).
 - **Pipeline tier**:
   - Direct regression for the reported bug: assert that
     `SettKvotesporsmalAlgoritmePayload`-shaped schemas produce identical
@@ -407,9 +387,8 @@ behavioral contract pin under the `UnitTier`.
   Recommendation: R178 first, then close R128.
 - **No external surface change**. Every SDL form the carrier walk
   admits today must classify under the unified path with structurally
-  identical generated code (modulo whatever Reader-arm encoding choice
-  Spec picks). The execution-tier test surface is the load-bearing
-  contract.
+  identical generated code. The execution-tier test surface is the
+  load-bearing contract.
 - **Diagnostic wording**: today's carrier-walk-specific rejections
   ("single-record carrier '<T>' declares ...", "carrier field '<f>'
   resolves to no CarrierFieldRole permit", etc.) are replaced by the
@@ -430,9 +409,8 @@ behavioral contract pin under the `UnitTier`.
 - Wire-format / serialization for payload responses - unchanged.
 - The `@table`-parent child-classification path (`Reader.ColumnRead`,
   `Reader.AccessorCall`, `Reader.SourceRowsCall`,
-  `Reader.ServiceTableRecord`, `Reader.ServiceUntypedRecord`) - any
-  Reader-arm choice in #1 of "What stays" is additive against this set
-  and does not reshape existing arms.
+  `Reader.ServiceTableRecord`, `Reader.ServiceUntypedRecord`) - R178 is
+  additive against this set and does not reshape existing arms.
 
 ## Principles alignment
 
