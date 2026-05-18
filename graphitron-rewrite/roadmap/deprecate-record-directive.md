@@ -79,21 +79,22 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
      detection at checkpoint 2 requires every in-edge that can reach
      T to be observed.
 
-     Cycle protection: an in-progress set scoped per descent chain
-     blocks the chain from re-entering a type already being resolved
-     on the same chain. The in-progress set bounds termination only;
-     it does not stop sibling enumeration. A descent chain that
-     re-enters T contributes nothing through that path; sibling
-     in-edges and root producers still contribute their bindings to
-     T's collection set. The set must be per-chain rather than global:
-     a global "currently resolving" set would let the order of
-     in-edge enumeration determine which siblings contribute, so a
-     diamond `P1 → T` / `P2 → T` could observe only one in-edge if
-     the visit order placed the second arrival inside the first's
-     resolution. The synthetic diamond test under Tests is the
-     witness for this property; under a global set it would surface
-     only one of the two parent bindings and fail the per-type
-     collection-set claim.
+     Cycle protection: the walk uses fixed-point iteration over the
+     per-type collection sets rather than recursive descent. Phase 1
+     grounds every root producer; phase 2 repeatedly snapshots the
+     currently-folded per-type bindings, walks each parent's accessor
+     edges, and adds new observations to the per-type sets; the loop
+     terminates when a pass produces no new (reflectedClass, site)
+     pair. Sibling enumeration is order-independent by construction
+     (every parent with a folded binding is visited in every pass), so
+     a diamond `P1 → T` / `P2 → T` observes both in-edges as soon as
+     both parents have folded bindings, and a cycle converges trivially
+     (after the first pass the cycle's edges produce no new pairs and
+     the loop exits). Deduplication is by reflected-class identity plus
+     the site's `describe()` string so repeated traversals of the same
+     accessor path don't double-count. The synthetic diamond and cycle
+     tests under Tests witness the per-type set claim against this
+     algorithm.
 
    - **Per-type collection and post-fold memoization.** The walk
      accumulates every observed binding for T into a per-type
@@ -104,13 +105,15 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
      `PlainObjectType`); singleton writes the agreed `Class<?>` to
      `recordBackingClasses` and classifies T into the appropriate
      backed variant; two or more distinct classes surface
-     `Rejection.AuthorError.RecordBindingMismatch.MultiProducer` per
+     `Rejection.AuthorError.RecordBindingMultiProducer` per
      checkpoint 2 with every disagreeing site listed.
      `recordBackingClasses` is the *post-agreement* slot: subsequent
      callers asking for T's binding read directly from it without
-     re-walking. Termination is trivially finite (the per-descent-chain
-     in-progress set blocks re-entry; the chain is finite; the SDL
-     type set is finite). The substantive property is *completeness*:
+     re-walking. Termination is bounded by the finite product of
+     reachable SDL types and distinct (reflectedClass, site) pairs; in
+     practice the fixed point lands after a handful of passes, and a
+     1000-pass safety bound surfaces non-convergence as an
+     `IllegalStateException`. The substantive property is *completeness*:
      every reachable in-edge contributes to T's collection set, so a
      disagreement on any in-edge is observable. The synthetic
      accessor-graph unit test under Tests pins the algorithmic claim;
@@ -140,13 +143,13 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
    generated code is dead and not consulted at runtime, so any
    `@record` they carry is a silent no-op under R96.
 
-2. **Multi-producer agreement check.** When the recursive walk at
+2. **Multi-producer agreement check.** When the walk at
    checkpoint 1 reaches the same SDL type through more than one
    producer, every reached `Class<?>` for that type must agree.
    Disagreement is a classifier-tier rejection: R96 adds a
-   `RecordBindingMismatch` permit to the existing sealed
-   `Rejection.AuthorError` taxonomy with one arm,
-   `MultiProducer(sdlType, List<ProducerBinding> bindings)`, where
+   `RecordBindingMultiProducer` permit to the existing sealed
+   `Rejection.AuthorError` taxonomy with payload
+   `(sdlType, List<ProducerBinding> bindings)`, where
    `ProducerBinding` is a sealed sub-taxonomy over
    `RootService(serviceClass, methodName)` /
    `RootTable(tableRefName)` / `RootTableMethod(holderClass,
@@ -352,7 +355,7 @@ Validator-tier (`GraphitronSchemaValidator` test surface):
   producers whose reflected classes disagree (two `@service` methods,
   `@service` plus `@table`, or root producer plus an inbound parent
   accessor that reflects to a different return type) surfaces
-  `Rejection.AuthorError.RecordBindingMismatch.MultiProducer` on
+  `Rejection.AuthorError.RecordBindingMultiProducer` on
   `ValidationReport.errors()`; the diagnostic names every disagreeing
   `ProducerBinding` site; the build halts.
 - Shadowed-by-table: an `INPUT_OBJECT` carrying both `@table` and
@@ -392,14 +395,17 @@ Pipeline-tier (classifier output), split across producer sources:
   (unchanged baseline). `@record` on such an unreachable type is a
   silent no-op; the generated code is dead.
 - Synthetic accessor-graph unit test: a hand-built graph exercising
-  the descent on (a) a diamond (T reached through two parents that
-  both resolve to the same class), (b) a deep chain (T reached only
-  through a chain of length > 2 from a root producer), (c) a cycle
-  with cycle-broken grounding (T → U → T where U has a root
+  the fixed-point walk on (a) a diamond (T reached through two parents
+  that both resolve to the same class), (b) a deep chain (T reached
+  only through a chain of length > 2 from a root producer), (c) a
+  cycle with cycle-broken grounding (T → U → T where U has a root
   producer), and (d) an ungrounded cycle (T → U → T with no root
   producer in either) asserts the resolver returns the expected
   binding (a, b, c) and no binding (d). This pins the algorithmic
-  completeness claim.
+  completeness claim against the fixed-point implementation: every
+  parent with a folded binding is re-visited every pass, so sibling
+  enumeration is order-independent and cycles converge after the first
+  pass that produces no new (reflectedClass, site) pair.
 - Corpus-level additive assertion: across the sakila and fixture
   schemas, the set of reachable SDL types classifying as one of the
   eight backed variants is a superset of the with-directive baseline.
@@ -432,16 +438,17 @@ additive invariant).
 
 ## Risk
 
-The substantive risk sits in checkpoint 1's recursive walk. The
+The substantive risk sits in checkpoint 1's walk. The
 load-bearing property is **completeness over reachable types**: if
 any path through accessor edges from a root producer reaches SDL
-type T, the walk resolves T. Termination is trivial (the
-per-descent-chain in-progress set blocks re-entry; the chain is
-finite; the SDL type set is finite).
+type T, the walk resolves T. Termination is bounded by the finite
+product of reachable SDL types and distinct (reflectedClass, site)
+pairs; the fixed-point loop deduplicates by that pair and terminates
+the first pass that produces no new entry.
 The synthetic accessor-graph unit test under Tests is the
 algorithmic witness; it exercises diamond, deep chain, grounded
 cycle, and ungrounded cycle shapes against the resolver directly,
-so a bug in the descent fails the unit test independent of corpus
+so a bug in the walk fails the unit test independent of corpus
 contents. The corpus-level additive assertion is the integration
 witness against the sakila and fixture schemas.
 
@@ -490,8 +497,22 @@ classifies without mass fixture migration:
 - The walker's `@service` result-axis observation is gated on the SDL
   return type carrying `@record`. Plain SDL Objects (R75 Phase 1 carriers)
   and non-`@record` types do not consume the producer's return class as
-  their binding — the producer feeds their inner data field instead. This
-  preserves carrier-shape semantics under R96.
+  their binding; the producer feeds their inner data field instead. This
+  preserves carrier-shape semantics under R96 but makes the result-axis
+  walk tautological in the transitional state: reflection only fires
+  where the directive already declared the binding, so a producer
+  reaching a carrier-shape type without `@record` still classifies as
+  `PojoResultType.NoBacking` via R75's promotion. The post-retirement
+  anchor for this gate is the single-record-carrier trigger
+  (`BuildContext.tryResolveSingleRecordCarrier`, the same predicate
+  `promoteSingleRecordCarriers` consults): once the directive retires,
+  the gate flips from "skip when the SDL type lacks `@record`" to "skip
+  when the SDL type is a single-record carrier," and reflection becomes
+  the productive source for non-carrier types. The follow-on item must
+  ship the gate flip atomically with directive retirement; otherwise the
+  walker either over-binds carriers (gate removed without replacement)
+  or under-binds non-carriers (directive retired but gate still keyed
+  on `@record`-presence).
 - The `@tableMethod` arm contributes input-axis observations only; the
   result-axis observation is sourced from `@table` directly (the table
   resolver already grounds the same record class, so adding a parallel
@@ -505,12 +526,19 @@ classifies without mass fixture migration:
 - The rejection record is `Rejection.AuthorError.RecordBindingMultiProducer`
   (a single record permit directly under `AuthorError`), not the
   `RecordBindingMismatch.MultiProducer` two-level sealed sub-taxonomy this
-  spec body originally described. The flatter shape avoids a regex
-  collision in `SealedHierarchyDocCoverageTest`'s qualified-mention scan
-  (a `<intermediate>.<Capitalised>` regex can match the 2-level prefix
-  inside a 3-level reference, flagging the prefix as stale); the typed
-  payload is unchanged. A future producer-disagreement shape can land as
-  a sibling permit at the same level.
+  spec body originally described. The flatter shape matches the rest of
+  the `AuthorError` family (none of `UnknownName`, `Structural`,
+  `AccessorMismatch` are further split into sub-taxonomies); a future
+  producer-disagreement arm lands as a sibling permit at the same level.
+  The two-level shape was reachable but lost no expressive ground in
+  collapsing: the typed `List<ProducerBinding>` payload already carries
+  the variant data a sub-arm would have keyed off. The implementation
+  also discovered along the way that `SealedHierarchyDocCoverageTest`'s
+  qualified-mention regex collides on two-level prefixes (a
+  `<intermediate>.<Capitalised>` regex matches the 2-level prefix inside
+  a 3-level reference and flags it as stale); a follow-on item should
+  fix that regex independently so future shapes that genuinely need
+  sub-taxonomies aren't blocked by the doc-coverage tooling.
 - The drop-manifest golden file (pipeline-tier corpus assertion) is not
   yet in place. The corpus additive assertion ("no reachable backed type
   is demoted to `PlainObjectType`") is implicitly upheld today by the
