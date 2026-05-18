@@ -23,6 +23,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
+| `R176` | Entity-resolution rejection message claims @table is missing when classification failed for other reasons | Spec | 2026-05-18 | [plan](entity-resolution-misleading-no-table-message.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R160` | LSP inlay hints and hover for inferred directives and field/type classification | Spec | 2026-05-13 | [plan](lsp-display-inference-and-classification.md) |
@@ -220,6 +221,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### (untagged)
 
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
+- `R176` [**Entity-resolution rejection message claims @table is missing when classification failed for other reasons**](entity-resolution-misleading-no-table-message.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
