@@ -19,12 +19,25 @@ class SchemaInputExpander {
 
     private SchemaInputExpander() {}
 
-    static List<SchemaInput> expand(List<SchemaInputBinding> bindings, Path basedir,
+    /**
+     * Result of expanding a list of {@link SchemaInputBinding} entries: the flat list of resolved
+     * {@link SchemaInput} sources and any per-binding empty-pattern observations the caller can
+     * surface as warnings. Per-pattern empty matches are tolerated (other bindings can still
+     * produce content); the aggregate-empty case (every configured pattern matched zero) is
+     * thrown from {@link #expand} rather than handed back, so a non-empty {@code inputs} list
+     * is the only successful shape.
+     */
+    record ExpansionResult(List<SchemaInput> inputs, List<EmptyPattern> emptyPatterns) {
+        record EmptyPattern(int entryIndex, String pattern) {}
+    }
+
+    static ExpansionResult expand(List<SchemaInputBinding> bindings, Path basedir,
             Set<String> schemaFileExtensions) throws MojoExecutionException {
         if (bindings == null || bindings.isEmpty()) {
-            return List.of();
+            return new ExpansionResult(List.of(), List.of());
         }
         var expanded = new ArrayList<SchemaInput>();
+        var emptyPatterns = new ArrayList<ExpansionResult.EmptyPattern>();
         for (int i = 0; i < bindings.size(); i++) {
             var b = bindings.get(i);
             var scanner = new DirectoryScanner();
@@ -44,8 +57,8 @@ class SchemaInputExpander {
                 }
             }
             if (matches.isEmpty()) {
-                throw new MojoExecutionException(
-                    "<schemaInput pattern='" + b.pattern + "'> matched no files (entry #" + i + ")");
+                emptyPatterns.add(new ExpansionResult.EmptyPattern(i, b.pattern));
+                continue;
             }
             var tag = Optional.ofNullable(b.tag).filter(s -> !s.isEmpty());
             var note = Optional.ofNullable(b.descriptionNote).filter(s -> !s.isEmpty());
@@ -54,7 +67,14 @@ class SchemaInputExpander {
                 expanded.add(new SchemaInput(abs, tag, note));
             }
         }
-        return expanded;
+        if (expanded.isEmpty()) {
+            var sb = new StringBuilder("<schemaInputs> matched no files. Empty patterns:");
+            for (var ep : emptyPatterns) {
+                sb.append("\n  entry #").append(ep.entryIndex()).append(": ").append(ep.pattern());
+            }
+            throw new MojoExecutionException(sb.toString());
+        }
+        return new ExpansionResult(expanded, List.copyOf(emptyPatterns));
     }
 
     private static boolean matchesExtension(String relativePath, Set<String> schemaFileExtensions) {
