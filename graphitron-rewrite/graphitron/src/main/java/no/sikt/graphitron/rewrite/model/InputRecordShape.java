@@ -7,10 +7,12 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Pre-resolved shape of the graphitron-emitted record for one SDL {@code input} type. Lives
+ * Pre-resolved shape of the graphitron-emitted class for one SDL {@code input} type. Lives
  * on every {@link HasInputRecordShape} carrier (the four {@link GraphitronType.InputType}
  * leaves and {@link GraphitronType.TableInputType}). One {@link InputComponent} per SDL
- * field, in declaration order.
+ * field, in declaration order. The "record" terminology in this carrier's name and slot
+ * names is forward-looking: the emitted artifact is a plain Java class today and becomes a
+ * Java {@code record} once R174 lifts graphitron-javapoet's record support.
  *
  * <p>The compact constructor is the producer-side rejection backing the
  * {@code input-record.shape-from-input-type} load-bearing classifier check: a builder
@@ -18,7 +20,7 @@ import java.util.Objects;
  * {@code components}) surfaces the input type as {@link GraphitronType.UnclassifiedType}
  * via the existing fail-mode.
  *
- * @param recordClass the emitted record's fully-qualified Java class name (always
+ * @param recordClass the emitted class's fully-qualified Java class name (always
  *     {@code <outputPackage>.inputs.<InputName>})
  * @param components  one per SDL field, in declaration order
  */
@@ -41,14 +43,14 @@ public record InputRecordShape(
      *
      * @param sdlFieldName        SDL field name as declared in the schema (e.g. {@code "filmId"});
      *                            surfaces verbatim in {@code ConstraintViolation.getPropertyPath()}.
-     * @param javaComponentName   Java record component name (usually identical to
-     *                            {@code sdlFieldName}; a sanitiser would diverge here if the SDL
-     *                            name collides with a Java keyword).
-     * @param javaType            classifier-resolved Java type the record component declares.
-     *                            For scalar fields, derived via R101's
+     * @param javaComponentName   Java field/accessor name on the emitted class (usually identical
+     *                            to {@code sdlFieldName}; a sanitiser would diverge here if the
+     *                            SDL name collides with a Java keyword).
+     * @param javaType            classifier-resolved Java type the component declares. For scalar
+     *                            fields, derived via R101's
      *                            {@link no.sikt.graphitron.rewrite.ScalarTypeResolver}; for list
      *                            fields, a {@code List<X>} parameterisation over the element's
-     *                            Java type; for nested input refs, the emitted record's
+     *                            Java type; for nested input refs, the emitted class's
      *                            {@link ClassName}. An SDL field whose scalar fails to classify
      *                            surfaces as {@link GraphitronType.UnclassifiedType} on the
      *                            parent input type via the existing fail-mode and never reaches
