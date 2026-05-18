@@ -35,7 +35,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * a minority resolve a name against a closed set and carry the lookup attempt
      * + candidates. Each sub-arm's accessors apply uniformly to that arm.
      */
-    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch {
+    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMismatch {
 
         /**
          * The classifier resolved a name (column, table, FK, service method,
@@ -92,6 +92,44 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
             @Override public Rejection prefixedWith(String prefix) {
                 return new AccessorMismatch(prefix + reason);
+            }
+        }
+
+        /**
+         * Two or more producers reach the same SDL type with disagreeing reflected backing
+         * classes. R96's reflection walk grounds at root producers ({@code @service},
+         * {@code @table}, {@code @tableMethod}) and extends through parent accessor returns;
+         * when the same SDL type accumulates more than one distinct class in its collection
+         * set, this rejection surfaces with every disagreeing site listed.
+         *
+         * <p>Single arm {@link MultiProducer} carries the SDL type name plus the typed
+         * {@link ProducerBinding} list; downstream tooling switches on the arm rather than
+         * parsing prose. Producer site of the {@code record-binding.producer-agreement} load-
+         * bearing classifier check.
+         */
+        sealed interface RecordBindingMismatch extends AuthorError permits RecordBindingMismatch.MultiProducer {
+
+            record MultiProducer(String sdlTypeName, List<ProducerBinding> bindings)
+                    implements RecordBindingMismatch {
+                public MultiProducer {
+                    bindings = List.copyOf(bindings);
+                }
+
+                @Override public String message() {
+                    var sb = new StringBuilder()
+                        .append("type '").append(sdlTypeName)
+                        .append("' has disagreeing reflected backing classes from multiple producers:");
+                    for (ProducerBinding b : bindings) {
+                        sb.append("\n  - ").append(b.describe())
+                          .append(" → ").append(b.reflectedClass().getName());
+                    }
+                    sb.append("\n  Resolve by aligning the producers on a single backing class.");
+                    return sb.toString();
+                }
+
+                @Override public Rejection prefixedWith(String prefix) {
+                    return new MultiProducer(prefix + sdlTypeName, bindings);
+                }
             }
         }
     }
