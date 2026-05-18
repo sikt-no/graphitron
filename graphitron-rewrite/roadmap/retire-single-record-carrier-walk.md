@@ -217,24 +217,27 @@ type-match enforced uniformly with every other field.
 
 - **The "PK columns off the source row, projected SELECT keyed by those
   PKs" fetcher logic** is the only emit work the carrier walk did that
-  isn't already present elsewhere. Under R178 it lands as a single
-  Reader arm consumed uniformly by both `@table`-parent children
-  (existing producers) and payload-returning mutations (new producer).
-  The Spec implementation picks one of two encodings; both are
-  semantically equivalent and the choice is a model-cleanliness
-  judgement, not a correctness one:
-  - **Option A**: generalize `Reader.ColumnRead` so its scope widens
-    from "catalog-FK column on a `@table`-backed parent" to "read these
-    columns off the parent row, whatever the parent is." The DML payload
-    case becomes a `ColumnRead` against the producer-emitted `RecordN<...>`.
-  - **Option B**: add one new Reader arm `Reader.UpstreamSourceColumns(columns)`
-    whose contract is "read named columns off `env.getSource()`,
-    package as the loader-key shape." Compact-constructor invariant
-    similar in size to today's `ResultRowWalk`.
-  Spec phase picks. Recommendation: Option A. The narrower "FK column"
-  invariant of `ColumnRead` is already a vestige (FKs are one concrete
-  case of "named columns on the parent row"); widening makes both
-  consumers structurally identical.
+  isn't already present elsewhere. Under R178 it lands by generalizing
+  `Reader.ColumnRead`: scope widens from "catalog-FK column on a
+  `@table`-backed parent" to "read these columns off the parent row,
+  whatever the parent is." The DML payload case becomes a `ColumnRead`
+  against the producer-emitted `RecordN<...>`; the existing `@table`-
+  parent FK case is one concrete subset of the widened contract.
+
+  The alternative considered and rejected was a new
+  `Reader.UpstreamSourceColumns(columns)` permit reading from
+  `env.getSource()` directly. Rejected as principle-violating: it
+  re-introduces a *producer-axis fork* on the consumer side
+  (`UpstreamSourceColumns` for the DML-emitted producer, `ColumnRead`
+  for the `@table`-parent producer), encoding two readers for the same
+  downstream value - exactly the duplication the rest of R178 deletes.
+  The producer axis is `RecordBindingResolver`'s job; replicating it
+  on `Reader` would re-create the two-producer reconciliation R178
+  retires. The `source-key.result-row-walk-target-aligned-empty-path`
+  invariant deleted alongside `ResultRowWalk` does **not** migrate to
+  a new key under the widened `ColumnRead`: its guarantee (target-
+  aligned, empty path) falls out of `ColumnRead`'s existing compact-
+  constructor shape, which already requires columns on the parent row.
 - **Error channel mechanism survives; only the carrier-walk wrapper
   retires.** The runtime contract is unchanged: the mutation wrapper
   emits `DataFetcherResult.newResult().data(<producerResult>).localContext(<mappedErrors>).build()`
@@ -256,11 +259,27 @@ type-match enforced uniformly with every other field.
   `SqlStateHandler`, `ValidationHandler`), the mappings-constant
   dedup (`MappingsConstantNameDedup`), and the wrapper-side dispatch
   through `ErrorRouter.dispatch` / `ErrorRouter.redact` all stay.
-- **R96's `RecordBindingResolver`** gains one new producer: DML
-  mutation fetcher reflection. The walk already accepts producer
-  bindings from `@service` methods, `@table` resolutions, and
-  `@tableMethod` returns; DML fetchers join that list. No model changes
-  in `RecordBindingResolver`; one new caller.
+- **R96's `RecordBindingResolver`** gains one new producer arm. The
+  walk today grounds at developer-authored sources reachable by
+  reflection on a `java.lang.reflect.Method` (`@service` returns,
+  `@table` resolutions, `@tableMethod` returns); the DML producer is
+  generator-emitted - the row shape is determined by
+  `TypeFetcherGenerator.buildMutationDml*Fetcher` from the input
+  `@table` + `DmlKind` + cardinality, not by reflecting on a developer
+  class. The producer's identity is therefore not a Java `Class<?>` but
+  a `(TableRef, DmlKind, Cardinality)` triple. A new
+  `ProducerBinding.DmlEmitted(TableRef, DmlKind, Cardinality)` permit
+  carries this identity; `RecordBindingResolver`'s post-walk fold
+  extends to treat `DmlEmitted` as agreeing with any other producer
+  pointing at the same `TableRef` (the data-table-equals-input-table
+  case re-emerges here as agreement-fold against the input `@table`'s
+  `TableRef`). This permit is the structural replacement for the
+  deleted `mutation-dml-record-field.data-table-equals-input-table`
+  invariant: the guarantee that fired from `requireDataTableMatches
+  InputTable` re-fires through the existing `record-binding.producer-
+  agreement` load-bearing check, with no carrier-walk-specific
+  consumer. `DmlEmitted` does not synthesize a `Class<?>` - the
+  permit's `TableRef` is what the consumer (`SourceKey.target`) reads.
 - **R156's NodeId encoder chain** (`HelperRef.Encode`,
   `CallSiteCompaction.NodeIdEncodeKeys`) survives unchanged; under R178
   it is wired through `resolveRecordAccessor`'s outcome arms rather than
@@ -293,6 +312,15 @@ classification path instead of two.
     classification with and without the explicit
     `@field(name: "<sdlFieldName>")` directive. Two byte-identical
     `GraphitronSchema` snapshots, one fixture pair.
+  - **Diagnostic-quality regression**: when the unified path rejects an
+    `@service` mutation whose method's return type does not match the
+    payload class, the diagnostic must cite the *SDL field name* and
+    *the payload type's reflected class* - not the inner table's record
+    class. The reported bug surfaced specifically because the carrier-
+    walk-specific rejection ("must return `KvotesporsmalRecord` ... got
+    `SettKvotesporsmalAlgoritmePayload`") cited the inner table's record
+    instead of the payload's reflected class. Pin the new wording to
+    prevent regression toward that failure mode.
   - Retarget `SingleRecordCarrierPipelineTest`,
     `SingleRecordTableFieldServiceProducerPipelineTest`,
     `FieldSourceSigilPipelineTest`, the
