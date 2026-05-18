@@ -50,7 +50,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
  * resolutions, {@code @tableMethod} returns) and extends through parent-accessor return types.
  * Bindings accumulate into a per-SDL-type collection set on each axis (result + input); after the
  * walk completes, the per-type set is folded into a single agreed {@link Class}, an empty
- * resolution, or a {@link Rejection.AuthorError.RecordBindingMismatch.MultiProducer} diagnostic.
+ * resolution, or a {@link Rejection.AuthorError.RecordBindingMultiProducer} diagnostic.
  *
  * <p>The {@code @record} directive is read only to surface a directive-ignored warning; it does
  * not contribute to the binding under R96.
@@ -64,7 +64,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
     key = "record-binding.producer-agreement",
     description = "Every SDL type reached by more than one producer (root producers or parent "
         + "accessors) agrees on a single reflected Class. Disagreement surfaces as "
-        + "Rejection.AuthorError.RecordBindingMismatch.MultiProducer and the build halts. Two "
+        + "Rejection.AuthorError.RecordBindingMultiProducer and the build halts. Two "
         + "pure-function commitments ride under this check: (1) "
         + "ServiceCatalog.resolveTableByRecordClass derives the TableRef slot purely from the "
         + "class, so agreement on cls implies agreement on TableRef on either axis; (2) a "
@@ -88,7 +88,7 @@ final class RecordBindingResolver {
     private final Map<String, Class<?>> inputMemo = new LinkedHashMap<>();
 
     /** Multi-producer rejections, keyed by SDL type, on either axis. */
-    private final Map<String, Rejection.AuthorError.RecordBindingMismatch.MultiProducer> rejections =
+    private final Map<String, Rejection.AuthorError.RecordBindingMultiProducer> rejections =
         new LinkedHashMap<>();
 
     /** Reachable SDL types (any axis) — used to gate the directive-ignored warning. */
@@ -130,7 +130,7 @@ final class RecordBindingResolver {
     }
 
     /** Multi-producer rejection for the SDL type, or empty when none. */
-    Optional<Rejection.AuthorError.RecordBindingMismatch.MultiProducer> rejection(String sdlTypeName) {
+    Optional<Rejection.AuthorError.RecordBindingMultiProducer> rejection(String sdlTypeName) {
         return Optional.ofNullable(rejections.get(sdlTypeName));
     }
 
@@ -372,7 +372,7 @@ final class RecordBindingResolver {
         // Disagreement: record a typed rejection. The first observed binding's location is used
         // for the rejection's surfacing site; the full list is in the typed payload.
         rejections.computeIfAbsent(sdlType, k ->
-            new Rejection.AuthorError.RecordBindingMismatch.MultiProducer(sdlType, observed));
+            new Rejection.AuthorError.RecordBindingMultiProducer(sdlType, observed));
         memo.put(sdlType, null);
     }
 

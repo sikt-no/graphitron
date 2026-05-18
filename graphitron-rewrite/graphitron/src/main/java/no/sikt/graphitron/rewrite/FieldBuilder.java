@@ -3810,7 +3810,7 @@ class FieldBuilder {
         reliesOn = "Consumes parentBackingClass as the class field accessors will be emitted against. "
             + "R96's RecordBindingResolver guarantees that every reachable SDL type with multiple "
             + "producer-observation sites resolves to a single agreed reflected Class — or surfaces "
-            + "Rejection.AuthorError.RecordBindingMismatch.MultiProducer and halts the build before "
+            + "Rejection.AuthorError.RecordBindingMultiProducer and halts the build before "
             + "field classification runs. Lets the resolver run ClassAccessorResolver against one "
             + "stable class rather than guarding against producer-disagreement.")
     private AccessorResolution resolveRecordAccessor(GraphQLFieldDefinition fieldDef, String accessorBaseName,

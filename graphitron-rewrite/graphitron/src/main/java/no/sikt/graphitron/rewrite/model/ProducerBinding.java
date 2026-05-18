@@ -5,7 +5,7 @@ import graphql.language.SourceLocation;
 /**
  * One observed binding from a producer site that reaches an SDL type. Carries the reflected
  * {@link Class} the producer names and a structured description of where the binding came
- * from. Surfaces in {@link Rejection.AuthorError.RecordBindingMismatch.MultiProducer} when
+ * from. Surfaces in {@link Rejection.AuthorError.RecordBindingMultiProducer} when
  * two or more producers reach the same SDL type with disagreeing classes.
  *
  * <p>Four arms correspond to the producer sources R96's reflection walk visits:
