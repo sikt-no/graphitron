@@ -1,5 +1,5 @@
 ---
-id: R176
+id: R177
 title: "Child @service rows-method preserves specific XRecord type for TableBoundReturnType"
 status: Backlog
 bucket: bug
