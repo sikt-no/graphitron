@@ -27,7 +27,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R160` | LSP inlay hints and hover for inferred directives and field/type classification | Spec | 2026-05-13 | [plan](lsp-display-inference-and-classification.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R177` | Child @service rows-method preserves specific XRecord type for TableBoundReturnType | Ready | 2026-05-18 | [plan](child-service-rows-method-specific-xrecord.md) |
+| `R177` | Child @service rows-method preserves specific XRecord type for TableBoundReturnType | In Progress | 2026-05-18 | [plan](child-service-rows-method-specific-xrecord.md) |
 
 ---
 
