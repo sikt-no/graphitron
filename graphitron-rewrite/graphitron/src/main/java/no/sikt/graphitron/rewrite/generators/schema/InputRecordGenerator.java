@@ -70,27 +70,12 @@ public final class InputRecordGenerator {
     private InputRecordGenerator() {}
 
     /**
-     * Legacy two-arg overload. The reachable-closure walk needs the assembled schema to read
-     * argument types off SDL fields (the rewrite's {@code GraphitronType.RootType} variant
-     * carries no {@code schemaType()} accessor); calls through this overload fall back to
-     * emitting every classified input type regardless of reachability. Pipeline tier should
-     * prefer the three-arg form via {@code TestSchemaHelper.buildBundle}.
-     */
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
-        return generate(schema, null, outputPackage);
-    }
-
-    /**
      * Emits the input-record classes for every SDL input type reachable from a field argument
      * (transitively through nested input components). The returned list is sorted by class
-     * name for deterministic file output. When {@code assembled} is {@code null} the
-     * reachable-closure walk degrades to "emit every classified input"; the orphan sweep on
-     * the {@code inputs/} subpackage cleans up dead emissions.
+     * name for deterministic file output.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled, String outputPackage) {
-        Set<String> reachable = assembled == null
-            ? schema.types().keySet()
-            : reachableInputTypeNames(schema, assembled);
+        Set<String> reachable = reachableInputTypeNames(schema, assembled);
         var specs = new ArrayList<TypeSpec>(reachable.size());
         for (var entry : schema.types().entrySet()) {
             if (!reachable.contains(entry.getKey())) continue;
@@ -276,13 +261,11 @@ public final class InputRecordGenerator {
                     javaType, local, rawLocal, rawLocal, element);
             }
         } else if (isInputClass(javaType, outputPackage)) {
-            // Nested input ref: recurse fromMap. Symmetric-null on the wrapping map.
+            // Nested input ref: recurse fromMap. The recursive call's own top-level null
+            // guard collapses absent / explicit-null wire shapes to a null component.
             ClassName nested = (ClassName) javaType;
-            String rawLocal = local + "_raw";
-            b.addStatement("$T $L = ($T) in.get($S)",
-                MAP_STRING_OBJECT, rawLocal, MAP_STRING_OBJECT, sdlName);
-            b.addStatement("$T $L = $L == null ? null : $T.fromMap($L)",
-                nested, local, rawLocal, nested, rawLocal);
+            b.addStatement("$T $L = $T.fromMap(($T) in.get($S))",
+                nested, local, nested, MAP_STRING_OBJECT, sdlName);
         } else {
             // Scalar / enum / fallback Object: direct cast.
             b.addStatement("$T $L = ($T) in.get($S)", javaType, local, javaType, sdlName);
