@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R175` | Tolerate empty <schemaInput> pattern matches (warning, not hard error) | Spec | 2026-05-18 | [plan](tolerate-empty-schema-input-patterns.md) |
+| `R175` | Tolerate empty <schemaInput> pattern matches (warning, not hard error) | Ready | 2026-05-18 | [plan](tolerate-empty-schema-input-patterns.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R96` | Derive backing-class binding from reflection; warn on redundant @record | Ready | 2026-05-18 | [plan](deprecate-record-directive.md) |
@@ -168,7 +168,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### structural-refactor
 
 - `R164` [**Field model: three-dimension pivot**](field-model-two-axis-pivot.md) — Backlog, structural
-- `R175` [**Tolerate empty <schemaInput> pattern matches (warning, not hard error)**](tolerate-empty-schema-input-patterns.md) — Spec, dx
+- `R175` [**Tolerate empty <schemaInput> pattern matches (warning, not hard error)**](tolerate-empty-schema-input-patterns.md) — Ready, dx
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
