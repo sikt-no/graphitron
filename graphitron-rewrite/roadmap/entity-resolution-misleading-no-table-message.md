@@ -1,7 +1,7 @@
 ---
 id: R176
 title: Entity-resolution rejection message claims @table is missing when classification failed for other reasons
-status: Spec
+status: Ready
 bucket: validation
 depends-on: []
 created: 2026-05-18
