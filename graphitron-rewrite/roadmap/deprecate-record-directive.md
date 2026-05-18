@@ -205,7 +205,14 @@ Three checkpoints across `TypeBuilder` and `GraphitronSchemaValidator`:
    regardless of whether the directive agrees with reflection. Three
    message variants, selected by context at the single emission site:
 
-   - **Matches** (`className` equals the reflected class):
+   - **Matches** (`className` equals the reflected class, or `@record`
+     carries no `className` — `@record` without arguments, `@record(record:
+     null)`, or `@record(record: { className: null })`. The
+     no-`className` cases are equivalent to having no `@record` at all
+     under R96 — the directive's `className` is the only field that
+     ever participated in binding, and R96 ignores it — so they fold
+     into `Matches` by definition: there is nothing for the directive
+     to disagree with):
      > Type 'FilmReviewPayload' carries `@record(record: { className:
      > "com.example.FilmReviewPayloadRecord" })`. Graphitron derives
      > the same backing class from the producing field's reflected
@@ -305,16 +312,19 @@ continues to apply unchanged.
   (`payloadFactoryLambda`, `ResultAssembly`, the `PayloadAccessor` arm
   of `Transport`). Separate concern; whatever drives those today drives
   them after R96.
-- R94's input-record validation seam. R94 emits one
-  graphitron-internal Java record per reachable SDL input type and
-  attaches it to every classified input as a `recordShape` slot; R96
-  binds the *external* backing class for accessor resolution. The two
-  slots ride on orthogonal axes (graphitron-emitted validation record
-  vs. author-supplied accessor target) and coexist on the same input
-  type without conflict. R94 is currently in Spec, so this is a
-  forward commitment on R96's side: whichever lands first, the
-  input-side population path R96 adds inside `buildNonTableInputType`
-  must not write to the `recordShape` slot.
+- R94's input-record validation seam. R94 (shipped) emits one
+  graphitron-internal Java class per reachable SDL input type and
+  attaches it to every classified input as a `recordShape` slot
+  (populated by `TypeBuilder.buildInputRecordShape`; carried on the
+  four `InputType` permits and on `TableInputType` per
+  `GraphitronType.java`); R96 binds the *external* backing class for
+  accessor resolution. The two slots ride on orthogonal axes
+  (graphitron-emitted validation class vs. author-supplied accessor
+  target) and coexist on the same input type without conflict. R96's
+  input-side population path inside `buildNonTableInputType` must not
+  touch the existing `recordShape` slot (R94 owns that slot; R96 only
+  writes to `recordBackingClasses` and constructs the appropriate
+  backed input-type variant).
 
 ## Tests
 
