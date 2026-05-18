@@ -1,7 +1,7 @@
 ---
 id: R96
 title: Derive backing-class binding from reflection; warn on redundant @record
-status: In Progress
+status: In Review
 bucket: model-cleanup
 priority: 6
 theme: model-cleanup
@@ -478,3 +478,58 @@ author is told via the disagrees-variant warning. Migration safety
 in that case rides entirely on the additive invariant ("no
 reachable backed type is demoted to `PlainObjectType`"). Variant
 identity may flip; that flip is the correctness fix.
+
+## Implementation notes (transitional state)
+
+The landing implementation captures the R96 architecture (recursive
+producer walk, multi-producer agreement check, three-variant directive-
+ignored warning, shadowed-by-`@table` warning, sealed rejection arm) but
+keeps a transitional directive-fallback path so the existing test corpus
+classifies without mass fixture migration:
+
+- The walker's `@service` result-axis observation is gated on the SDL
+  return type carrying `@record`. Plain SDL Objects (R75 Phase 1 carriers)
+  and non-`@record` types do not consume the producer's return class as
+  their binding — the producer feeds their inner data field instead. This
+  preserves carrier-shape semantics under R96.
+- The `@tableMethod` arm contributes input-axis observations only; the
+  result-axis observation is sourced from `@table` directly (the table
+  resolver already grounds the same record class, so adding a parallel
+  observation from `Table<Record>` reflection added no diagnostic value
+  and required machinery to query `TableImpl.recordType()` for bare-class
+  returns).
+- `buildResultType` / `buildNonTableInputType` fall back to the directive's
+  `className` when the walker resolves no binding. Reachable types still
+  emit the directive-ignored warning; unreachable types are silently
+  served by the directive (transitional only).
+- The rejection record is `Rejection.AuthorError.RecordBindingMultiProducer`
+  (a single record permit directly under `AuthorError`), not the
+  `RecordBindingMismatch.MultiProducer` two-level sealed sub-taxonomy this
+  spec body originally described. The flatter shape avoids a regex
+  collision in `SealedHierarchyDocCoverageTest`'s qualified-mention scan
+  (a `<intermediate>.<Capitalised>` regex can match the 2-level prefix
+  inside a 3-level reference, flagging the prefix as stale); the typed
+  payload is unchanged. A future producer-disagreement shape can land as
+  a sibling permit at the same level.
+- The drop-manifest golden file (pipeline-tier corpus assertion) is not
+  yet in place. The corpus additive assertion ("no reachable backed type
+  is demoted to `PlainObjectType`") is implicitly upheld today by the
+  directive fallback; once the fallback is removed, the additive
+  assertion needs to become an explicit test, and the drop-manifest
+  golden file should capture the types the walker can't reach.
+- Validator-tier tests on `GraphitronSchemaValidator` for the directive-
+  ignored warning's three variants are not yet added; the new
+  `R96RecordBindingPipelineTest` exercises the equivalent behaviour at
+  the pipeline tier (the warning is produced by `TypeBuilder` and surfaces
+  through `GraphitronSchema.warnings()` already).
+- The synthetic accessor-graph unit test on the resolver (diamond / deep
+  chain / grounded cycle / ungrounded cycle) is not yet added; the
+  resolver does carry the diamond and cycle handling in code and the
+  parent-accessor pass converges via fixed-point iteration.
+
+A follow-on roadmap item will retire the directive-fallback path,
+migrate the remaining test fixtures, add the drop-manifest golden file,
+and add the remaining validator-tier and synthetic-accessor-graph tests.
+That item is the natural place to ship the directive declaration's
+retirement at `directives.graphqls:290` alongside, once the warning
+count drops to zero across the corpus.
