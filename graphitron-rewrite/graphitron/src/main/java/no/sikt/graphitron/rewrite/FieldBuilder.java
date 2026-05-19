@@ -2863,55 +2863,88 @@ class FieldBuilder {
     }
 
     /**
-     * R178 Phase 4 — locate a DML payload's single data field (the non-errors-shaped field).
-     * Returns the field definition when the payload SDL exposes exactly one non-errors-shaped
-     * field; returns {@code null} for zero or multiple data fields (the @mutation classifier
-     * falls through to its scalar/@table-bound paths). Errors-shaped fields are detected
-     * structurally via {@link BuildContext#detectErrorsFieldShape} so the migration agrees
-     * with the carrier walk's classification of errors fields.
+     * R178 Phase 4 — sealed result of a DML payload's structural carrier-shape scan. The walk
+     * produces one of:
+     *
+     * <ul>
+     *   <li>{@link Admit}: exactly one non-errors data field whose element classifies into a
+     *       recognized DML element kind (Table / Record / Id). The data field's definition and
+     *       element kind ride together so callers don't re-walk the SDL.</li>
+     *   <li>{@link Reject}: at least one non-errors field that can't be admitted (scalar or
+     *       polymorphic / interface / union element types the carrier walk's
+     *       {@code classifyCarrierField} would have NoPermit-rejected), or multiple
+     *       non-errors data fields (carrier walk multi-DataChannel rejection). The reason
+     *       string matches the carrier-walk diagnostic family.</li>
+     *   <li>{@link NotApplicable}: zero non-errors data fields, non-Object payload type, or
+     *       a {@code null} payload name. Callers fall through to the @mutation classifier's
+     *       scalar/@table-bound paths.</li>
+     * </ul>
      */
-    private GraphQLFieldDefinition detectStructuralDmlPayloadDataField(String payloadSdlName) {
-        if (payloadSdlName == null) return null;
-        var payloadType = ctx.schema.getType(payloadSdlName);
-        if (!(payloadType instanceof graphql.schema.GraphQLObjectType payloadObj)) return null;
-        GraphQLFieldDefinition dataField = null;
-        for (var f : payloadObj.getFieldDefinitions()) {
-            if (ctx.detectErrorsFieldShape(f) != null) continue;
-            if (dataField != null) return null;
-            dataField = f;
-        }
-        return dataField;
+    private sealed interface DmlCarrierScan {
+        record Admit(GraphQLFieldDefinition dataField, DmlElementKind element) implements DmlCarrierScan {}
+        record Reject(String reason) implements DmlCarrierScan {}
+        record NotApplicable() implements DmlCarrierScan {}
+    }
+
+    private sealed interface DmlElementKind {
+        record Table(TableRef table, String elementTypeName) implements DmlElementKind {}
+        record RecordElement(String fieldName) implements DmlElementKind {}
+        record IdElement() implements DmlElementKind {}
     }
 
     /**
-     * R178 Phase 4 — classify a DML payload's data field element kind structurally,
-     * replacing the {@code DataElement} discriminator the carrier walk's
-     * {@code classifyCarrierField} populated. The four arms mirror the carrier-walk
-     * outcomes the @mutation classifier dispatched on; the discriminator is the element
-     * type's classification ({@code TableBackedType}, {@code ResultType} with a non-null
-     * className, the ID scalar, or everything else).
+     * R178 Phase 4 — structural detection of a DML payload's carrier shape. Walks the payload
+     * SDL once, accumulating (a) non-errors fields that admit as recognized DML data elements
+     * (Table / Record / Id) and (b) non-errors fields whose element type isn't a recognized
+     * DML element kind. Errors-shaped fields are identified via
+     * {@link BuildContext#detectErrorsFieldShape} and skipped at the data-field level (they
+     * carry through {@link #detectStructuralDmlErrorChannel}).
+     *
+     * <p>The scan replicates {@link BuildContext#classifyCarrierField}'s reject decisions
+     * structurally: a non-errors field of an unrecognized shape produces a "no CarrierFieldRole
+     * permit" rejection naming the field and the extension point; multiple recognized data
+     * fields produce the "more than one DataChannel" rejection.
      */
-    private sealed interface StructuralDmlDataElement {
-        record Table(TableRef table, String elementTypeName) implements StructuralDmlDataElement {}
-        record RecordElement(String fieldName) implements StructuralDmlDataElement {}
-        record IdElement() implements StructuralDmlDataElement {}
-        record Other() implements StructuralDmlDataElement {}
-    }
-
-    private StructuralDmlDataElement classifyDmlPayloadDataElement(
-            GraphQLFieldDefinition dataField, String payloadSdlName) {
-        String elementTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(dataField.getType())).getName();
-        var elementType = ctx.types.get(elementTypeName);
-        if (elementType instanceof GraphitronType.TableBackedType tbt) {
-            return new StructuralDmlDataElement.Table(tbt.table(), elementTypeName);
+    private DmlCarrierScan scanStructuralDmlPayload(String payloadSdlName) {
+        if (payloadSdlName == null) return new DmlCarrierScan.NotApplicable();
+        var payloadType = ctx.schema.getType(payloadSdlName);
+        if (!(payloadType instanceof graphql.schema.GraphQLObjectType payloadObj)) {
+            return new DmlCarrierScan.NotApplicable();
         }
-        if (elementType instanceof GraphitronType.ResultType rt && rt.fqClassName() != null) {
-            return new StructuralDmlDataElement.RecordElement(dataField.getName());
+        GraphQLFieldDefinition admittedDataField = null;
+        DmlElementKind admittedElement = null;
+        int dataChannelCount = 0;
+        for (var f : payloadObj.getFieldDefinitions()) {
+            if (ctx.detectErrorsFieldShape(f) != null) continue;
+            String elementTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
+            var elementType = ctx.types.get(elementTypeName);
+            DmlElementKind kind;
+            if (elementType instanceof GraphitronType.TableBackedType tbt) {
+                kind = new DmlElementKind.Table(tbt.table(), elementTypeName);
+            } else if (elementType instanceof GraphitronType.ResultType rt && rt.fqClassName() != null) {
+                kind = new DmlElementKind.RecordElement(f.getName());
+            } else if ("ID".equals(elementTypeName)) {
+                kind = new DmlElementKind.IdElement();
+            } else {
+                return new DmlCarrierScan.Reject(
+                    "carrier field '" + f.getName() + "' of type '" + elementTypeName
+                    + "' resolves to no CarrierFieldRole permit; file a roadmap item for a new "
+                    + "CarrierFieldRole permit if this shape needs admission");
+            }
+            dataChannelCount++;
+            if (admittedDataField == null) {
+                admittedDataField = f;
+                admittedElement = kind;
+            }
         }
-        if ("ID".equals(elementTypeName)) {
-            return new StructuralDmlDataElement.IdElement();
+        if (dataChannelCount == 0) return new DmlCarrierScan.NotApplicable();
+        if (dataChannelCount > 1) {
+            return new DmlCarrierScan.Reject(
+                "single-record carrier '" + payloadSdlName + "' declares " + dataChannelCount
+                + " DataChannel-shaped fields; require exactly one (a future Backlog item may "
+                + "admit multi-data carriers behind a new CarrierFieldRole permit)");
         }
-        return new StructuralDmlDataElement.Other();
+        return new DmlCarrierScan.Admit(admittedDataField, admittedElement);
     }
 
     /**
@@ -3130,7 +3163,7 @@ class FieldBuilder {
                 yield null;
             }
             case no.sikt.graphitron.rewrite.model.DataElement.Table tableElement -> {
-                var projection = ctx.classifyDeleteTableProjection(carrierType, tableElement);
+                var projection = ctx.classifyDeleteTableProjection(carrierType, tableElement.name(), tableElement.table());
                 yield switch (projection) {
                     case BuildContext.DeleteTableProjection.Admitted admitted -> {
                         var returnType = new ReturnTypeRef.TableBoundReturnType(
@@ -3444,56 +3477,86 @@ class FieldBuilder {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(returnTypeError));
                 }
 
-                // R178 (Phase 4 slice 3): payload-returning DML mutations classify through the
-                // unified path. INSERT/UPDATE/UPSERT use a structural walk over the payload SDL
-                // (single non-errors-shaped data field; element kind: @table / @record / ID);
-                // DELETE retains the carrier-walk consultation pending its dedicated slice.
+                // R178 Phase 4: payload-returning DML mutations classify through structural
+                // detection of the payload SDL (single non-errors-shaped data field; element
+                // kind: @table / @record / ID). The carrier-walk consultation is retired from
+                // both DELETE and non-DELETE arms; they share the same detectStructural*
+                // helpers and dispatch on StructuralDmlDataElement permits.
                 //
-                // Non-DELETE structural detection replaces the verb-aware
-                // tryResolveSingleRecordCarrier consultation that previously fired the SettKvotesporsmal
-                // bug's forbidden-directives loop. The structural path classifies a payload
-                // identically regardless of whether the data field carries @field(name:).
-                //
-                // The DELETE-Id encoder resolution and DELETE-Table projection both still rely
-                // on the carrier walk; their migration lifts them onto the unified path
-                // (PropertyField + HelperRef.Encode for Id; projected RecordTableField for Table).
+                // DELETE-specific permit construction (SingleRecordIdFieldFromReturning,
+                // SingleRecordTableFieldFromReturning) is inlined here; the supporting helpers
+                // (classifyDeleteIdEncoderError, resolveDeleteIdEncoder, classifyDeleteTableProjection)
+                // operate on structural inputs.
                 if (returnType instanceof ReturnTypeRef.ResultReturnType rrt) {
-                    if (kind == DmlKind.DELETE) {
-                        var carrierResolution = ctx.tryResolveSingleRecordCarrier(rawReturn, kind);
-                        switch (carrierResolution) {
-                            case no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok ok -> {
-                                String mismatch = requireDataTableMatchesInputTable(tia.inputTable(), ok.shape(), kind, name);
-                                if (mismatch != null) {
-                                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(mismatch));
+                    var scan = scanStructuralDmlPayload(rrt.returnTypeName());
+                    if (scan instanceof DmlCarrierScan.Reject scanReject) {
+                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(scanReject.reason()));
+                    }
+                    if (scan instanceof DmlCarrierScan.Admit admit) {
+                        var dataField = admit.dataField();
+                        var element = admit.element();
+                        var wrapper = ctx.buildWrapper(dataField);
+                        var dataFieldLocation = locationOf(dataField);
+                        if (kind == DmlKind.DELETE) {
+                            switch (element) {
+                                case DmlElementKind.IdElement ignored -> {
+                                    String encoderError = classifyDeleteIdEncoderError(ctx, dataField, tia.inputTable(), name);
+                                    if (encoderError != null) {
+                                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(encoderError));
+                                    }
+                                    var encoder = resolveDeleteIdEncoder(ctx, dataField, tia.inputTable()).orElseThrow();
+                                    var returnType_id = new ReturnTypeRef.ScalarReturnType("ID", wrapper);
+                                    var coords = graphql.schema.FieldCoordinates.coordinates(rrt.returnTypeName(), dataField.getName());
+                                    var carrier = new ChildField.SingleRecordIdFieldFromReturning(
+                                        rrt.returnTypeName(), dataField.getName(), dataFieldLocation, returnType_id,
+                                        new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(encoder));
+                                    ctx.fieldRegistry.reclassify(coords, carrier, ChildField.SingleRecordIdFieldFromReturning.class);
                                 }
-                                var deleteRegError = registerDeleteCarrierDataField(ctx, ok.shape(), tia.inputTable(), name);
-                                if (deleteRegError != null) {
-                                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(deleteRegError));
+                                case DmlElementKind.Table tbl -> {
+                                    if (!tia.inputTable().equals(tbl.table())) {
+                                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                                            "@mutation(typeName: " + kind + ") field '" + name
+                                            + "' returns single-record DML carrier '" + rrt.returnTypeName()
+                                            + "' whose data field element type '" + tbl.elementTypeName()
+                                            + "' is bound to table '" + tbl.table().tableName()
+                                            + "', which does not match @table input table '" + tia.inputTable().tableName()
+                                            + "'; payload-returning DML mutations require the data field's table to equal the "
+                                            + "DML's input table"));
+                                    }
+                                    var projection = ctx.classifyDeleteTableProjection(rrt.returnTypeName(), tbl.elementTypeName(), tbl.table());
+                                    if (projection instanceof BuildContext.DeleteTableProjection.Rejected rejected) {
+                                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rejected.reason()));
+                                    }
+                                    var admitted = (BuildContext.DeleteTableProjection.Admitted) projection;
+                                    var returnType_tb = new ReturnTypeRef.TableBoundReturnType(tbl.elementTypeName(), tbl.table(), wrapper);
+                                    var coords = graphql.schema.FieldCoordinates.coordinates(rrt.returnTypeName(), dataField.getName());
+                                    var carrier = new ChildField.SingleRecordTableFieldFromReturning(
+                                        rrt.returnTypeName(), dataField.getName(), dataFieldLocation, returnType_tb, admitted.projection());
+                                    ctx.fieldRegistry.reclassify(coords, carrier, null);
                                 }
-                                Optional<ErrorChannel> dmlChannel = ok.shape().errorChannel()
-                                    .map(no.sikt.graphitron.rewrite.model.CarrierFieldRole.ErrorChannelRole::binding);
-                                boolean dataFieldIsList = ok.shape().data().element().wrapper().isList();
-                                if (tia.list() && dataFieldIsList) {
-                                    return new MutationField.MutationBulkDmlRecordField(
-                                        parentTypeName, name, location, rrt, tia, kind, dmlChannel);
+                                case DmlElementKind.RecordElement ignored -> {
+                                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                                        "R156: DataElement.Record carrier on DELETE is not supported; use @service for "
+                                        + "record-element carriers or DataElement.Id / DataElement.Table for DML carriers"));
                                 }
-                                return new MutationField.MutationDmlRecordField(
+                            }
+                            var dmlChannelResult = detectStructuralDmlErrorChannel(rrt.returnTypeName());
+                            if (dmlChannelResult instanceof StructuralDmlErrorChannel.RuleViolation rv) {
+                                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rv.reason()));
+                            }
+                            Optional<ErrorChannel> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
+                                ? Optional.of(p.channel()) : Optional.empty();
+                            boolean dataFieldIsList = wrapper.isList();
+                            if (tia.list() && dataFieldIsList) {
+                                return new MutationField.MutationBulkDmlRecordField(
                                     parentTypeName, name, location, rrt, tia, kind, dmlChannel);
                             }
-                            case no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Rejected rejected -> {
-                                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(rejected.reason()));
-                            }
-                            case no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.NotCandidate ignored -> {
-                                // Fall through to the bare-ID / [ID!] DELETE return path below.
-                            }
-                        }
-                    } else {
-                        // INSERT / UPDATE / UPSERT: structural detection of the payload's data field.
-                        var dataField = detectStructuralDmlPayloadDataField(rrt.returnTypeName());
-                        if (dataField != null) {
-                            var dataElementKind = classifyDmlPayloadDataElement(dataField, rrt.returnTypeName());
-                            switch (dataElementKind) {
-                                case StructuralDmlDataElement.Table tbl -> {
+                            return new MutationField.MutationDmlRecordField(
+                                parentTypeName, name, location, rrt, tia, kind, dmlChannel);
+                        } else {
+                            // INSERT / UPDATE / UPSERT
+                            switch (element) {
+                                case DmlElementKind.Table tbl -> {
                                     if (!tia.inputTable().equals(tbl.table())) {
                                         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                                             "@mutation(typeName: " + kind + ") field '" + name
@@ -3524,7 +3587,7 @@ class FieldBuilder {
                                     return new MutationField.MutationDmlRecordField(
                                         parentTypeName, name, location, rrt, tia, kind, dmlChannel);
                                 }
-                                case StructuralDmlDataElement.RecordElement re -> {
+                                case DmlElementKind.RecordElement re -> {
                                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                                         "@mutation(typeName: " + kind + ") field '" + name
                                         + "' returns single-record carrier '" + rrt.returnTypeName()
@@ -3533,7 +3596,7 @@ class FieldBuilder {
                                         + "@service mutation for record-element carriers, or change the data field's element "
                                         + "type to the input table's @table type / ID"));
                                 }
-                                case StructuralDmlDataElement.IdElement id -> {
+                                case DmlElementKind.IdElement ignored -> {
                                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                                         "single-record carrier '" + rrt.returnTypeName()
                                         + "' has data field of element type ID, which is the PK-echo permit "
@@ -3541,10 +3604,6 @@ class FieldBuilder {
                                         + "@mutation(typeName: DELETE) carriers. On @mutation(typeName: "
                                         + kind + ") the post-image is richer; use a @table-element data field "
                                         + "or a @record-element data field instead."));
-                                }
-                                case StructuralDmlDataElement.Other ignored -> {
-                                    // Not a recognized carrier element shape; fall through to the
-                                    // scalar-ID / @table-bound path below.
                                 }
                             }
                         }

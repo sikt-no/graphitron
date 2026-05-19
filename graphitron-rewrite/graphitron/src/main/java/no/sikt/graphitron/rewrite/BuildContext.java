@@ -649,7 +649,7 @@ class BuildContext {
                 if (kind != DmlKind.DELETE) {
                     yield ok;
                 }
-                var projection = classifyDeleteTableProjection(typeName, tableElement);
+                var projection = classifyDeleteTableProjection(typeName, tableElement.name(), tableElement.table());
                 yield switch (projection) {
                     case DeleteTableProjection.Admitted admitted -> ok;
                     case DeleteTableProjection.Rejected rejected ->
@@ -710,15 +710,14 @@ class BuildContext {
             + "projecting to List<PkResolution>; consumers of the projection rely on the "
             + "rejection arms being a hard reject and not a silent drop. Relaxing the gate "
             + "breaks the emitter's exhaustive sealed switch over PkResolution's two arms.")
-    DeleteTableProjection classifyDeleteTableProjection(String carrierTypeName, DataElement.Table tableElement) {
-        String elementTypeName = tableElement.name();
+    DeleteTableProjection classifyDeleteTableProjection(String carrierTypeName, String elementTypeName, TableRef elementTable) {
         var raw = schema.getType(elementTypeName);
         if (!(raw instanceof GraphQLObjectType elementObj)) {
             return new DeleteTableProjection.Rejected(
                 "DELETE carrier '" + carrierTypeName + "' element type '" + elementTypeName
                 + "' is not a GraphQL Object type; only @table-backed Object types can be projected");
         }
-        var pkColumns = tableElement.table().primaryKeyColumns();
+        var pkColumns = elementTable.primaryKeyColumns();
         var pkSqlNames = pkColumns.stream().map(ColumnRef::sqlName).collect(Collectors.toSet());
 
         var outcomes = new ArrayList<PerFieldOutcome>();
