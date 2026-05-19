@@ -172,10 +172,10 @@ final class MutationInputResolver {
                 if ("ID".equals(s.returnTypeName())) {
                     yield null;
                 }
-                // R178 Phase 4: candidate types whose carrier-shape would have surfaced a per-
-                // condition reason now flow through the structural scan: if the SDL Object's
-                // fields don't classify into recognized DML element kinds, surface the same
-                // per-condition diagnostic the carrier walk produced.
+                // R178 Phase 4: candidate types whose carrier-shape is structurally invalid
+                // surface a per-condition diagnostic through scanStructuralDmlPayload: if the
+                // SDL Object's fields don't classify into recognized DML element kinds, the
+                // scan's Reject arm names the offending field.
                 if (ctx != null) {
                     var scan = ctx.scanStructuralDmlPayload(s.returnTypeName());
                     if (scan instanceof BuildContext.DmlCarrierScan.Reject scanReject) {
@@ -196,12 +196,10 @@ final class MutationInputResolver {
             }
             case ReturnTypeRef.ResultReturnType r -> {
                 // R178 step 3: DML accepts a @record carrier return; the validator screens only
-                // for the wrapper shape (single, not list/connection). The carrier-walk rejection
-                // reason that was surfaced here retires with classifyCarrierField's
-                // forbidden-directives loop; payload-shape rejections now surface from the
-                // unified path's per-child classification (resolveServiceResultAssembly on @service
-                // mutations; the @mutation classifier's inline @record-element / table-equality
-                // checks on DML).
+                // for the wrapper shape (single, not list/connection). Payload-shape rejections
+                // surface from the unified path's per-child classification
+                // (resolveServiceResultAssembly on @service mutations; the @mutation classifier's
+                // inline @record-element / table-equality checks on DML).
                 if (r.wrapper().isList()) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + r.returnTypeName() + "' (list of @record) is not yet supported; "
@@ -225,9 +223,8 @@ final class MutationInputResolver {
         // bulk input, the refusal there will fire before this point.
         // R178 Phase 4: payload-shaped (ResultReturnType) returns dispatch cardinality coherence
         // on the structural single-data-field's wrapper; non-payload returns dispatch on the
-        // return's own wrapper. The carrier-walk consultation that previously gated this check
-        // retires; the structural walk via singleDataField produces the same admit/reject
-        // decisions for the carrier-with-single-data-field case.
+        // return's own wrapper. The structural walk via singleDataField produces the
+        // admit/reject decision for the carrier-with-single-data-field case.
         if (returnType instanceof ReturnTypeRef.ResultReturnType r && ctx != null) {
             var dataField = singleDataField(r.returnTypeName(), ctx);
             if (dataField != null) {

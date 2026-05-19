@@ -3665,7 +3665,7 @@ public class TypeFetcherGenerator {
      * concerns — the write transaction would carry the full read-projection's locking
      * footprint, and partial-projection cases (the response selection is a subset of the table)
      * would still need the follow-up SELECT for joined or computed fields. The PK echo is the
-     * narrowest payload the carrier walk needs and lives inside the smallest possible
+     * narrowest payload the data-field fetcher needs and lives inside the smallest possible
      * transaction window.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
@@ -4606,7 +4606,7 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Builds the carrier-walk catch arm: routes the throw through
+     * Builds the LocalContext-bound catch arm: routes the throw through
      * {@code ErrorRouter.dispatchToLocalContext} with this channel's mapping-table constant.
      * No payload-factory lambda is needed: the matched throwable is placed into
      * {@code DataFetcherResult.localContext}; the carrier's errors-field DataFetcher reads
@@ -4615,7 +4615,7 @@ public class TypeFetcherGenerator {
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "error-channel.local-context-transport",
-        reliesOn = "BuildContext.classifyCarrierField only emits ErrorChannel.LocalContext "
+        reliesOn = "FieldBuilder.detectStructuralDmlErrorChannel only emits ErrorChannel.LocalContext "
             + "when the carrier's data field's fetcher honors the null-source short-circuit "
             + "guard at FetcherEmitter.java:273. The emitted dispatchToLocalContext call sets "
             + "data=null on match, relying on that guard to keep the data side of the response "

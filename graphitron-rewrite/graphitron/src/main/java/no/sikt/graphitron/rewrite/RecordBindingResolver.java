@@ -114,15 +114,16 @@ final class RecordBindingResolver {
      * {@code @mutation} field whose payload is a non-{@code @table} SDL Object. Stored on a
      * dedicated axis (not result/input) so the existing record-binding fold and the
      * {@code recordBackingClasses} pump in {@link TypeBuilder#buildTypes()} continue to ignore
-     * the new arm while the carrier walk owns the per-field classification of payload
-     * children. The cutover commit lifts these observations into the result-axis fold.
+     * the new arm. A future cutover commit may lift these observations into the result-axis
+     * fold; until then the dedicated map keeps the DML-emitted shape isolated from
+     * developer-authored {@code @record} bindings.
      */
     private final Map<String, ProducerBinding.DmlEmitted> dmlEmittedMemo = new LinkedHashMap<>();
 
     /**
      * R178 step 2b: dedicated map for {@link ProducerBinding.ServiceEmitted} observations from
-     * {@code @service} mutation fields with carrier-shaped payloads. Mirrors
-     * {@link #dmlEmittedMemo}; the cutover commit moves both into the main result-axis fold.
+     * {@code @service} mutation fields with payload-returning shapes. Mirrors
+     * {@link #dmlEmittedMemo}.
      */
     private final Map<String, ProducerBinding.ServiceEmitted> serviceEmittedMemo = new LinkedHashMap<>();
 
@@ -156,8 +157,7 @@ final class RecordBindingResolver {
      * R178 DML mutation payload binding for an SDL type. Carries the inner {@link TableRef}
      * the DML producer emits rows for, the {@link DmlKind}, and the producer-side cardinality
      * lifted from the input {@code @table} arg. Held on a dedicated axis so the existing fold
-     * and the {@link TypeBuilder#buildTypes()} {@code recordBackingClasses} pump don't see it
-     * until the cutover commit retires the carrier walk.
+     * and the {@link TypeBuilder#buildTypes()} {@code recordBackingClasses} pump don't see it.
      */
     Optional<ProducerBinding.DmlEmitted> resolveDmlEmitted(String sdlTypeName) {
         return Optional.ofNullable(dmlEmittedMemo.get(sdlTypeName));
@@ -400,14 +400,12 @@ final class RecordBindingResolver {
      * SDL type of every DML {@code @mutation} field whose payload is a non-{@code @table} SDL
      * Object. Reads the {@code @mutation(typeName:)} arg to derive {@link DmlKind}, locates the
      * single {@code @table}-bearing input argument, resolves the table via the catalog, and
-     * lifts the cardinality from the input arg's list shape (matching the carrier walk's bulk-
-     * vs-single dispatch).
+     * lifts the cardinality from the input arg's list shape (bulk-vs-single dispatch).
      *
      * <p>Skipped cases: missing or malformed {@code @mutation(typeName:)}, no {@code @table}
      * input argument, unresolvable table name, ID/scalar return types, {@code @table}-bound
      * returns (already grounded by {@link ProducerBinding.RootTable}), and unloadable record
-     * classes. Each skip preserves the build's current handling for that shape; the carrier walk
-     * remains the live classifier for the SDL coordinates this resolver doesn't observe.
+     * classes. Each skip preserves the build's current handling for that shape.
      *
      * <p>Multi-argument {@code @table} mutations and missing-{@code @table} mutations fall
      * through silently here; the per-mutation diagnostics live in

@@ -119,12 +119,12 @@ public sealed interface MutationField extends RootField, WithErrorChannel
     /**
      * R75 / Phase 1 — a record-returning DML mutation: the schema field carries
      * {@code @mutation(typeName: INSERT|UPDATE|UPSERT)}, takes a {@code @table} input, and
-     * returns a payload carrier (an SDL Object the
-     * {@link no.sikt.graphitron.rewrite.BuildContext#tryResolveSingleRecordCarrier}
-     * trigger resolves to {@code Ok}). Sibling to {@link DmlTableField}: the latter covers the
-     * "direct @table return" shape ({@code createFilm: Film}), this covers the "payload wrap"
-     * shape ({@code createFilm: CreateFilmPayload}). The carrier's data field is classified
-     * as {@link ChildField.SingleRecordTableField}.
+     * returns a payload carrier (an SDL Object admitted by
+     * {@code BuildContext.scanStructuralDmlPayload} as a single non-errors data field whose
+     * element is an {@code @table}-bound type). Sibling to {@link DmlTableField}: the latter
+     * covers the "direct @table return" shape ({@code createFilm: Film}), this covers the
+     * "payload wrap" shape ({@code createFilm: CreateFilmPayload}). The carrier's data field is
+     * classified as {@link ChildField.SingleRecordTableField}.
      *
      * <p>The {@code kind} discriminator drives per-DML-kind emit variation (INSERT vs UPDATE vs
      * UPSERT each have distinct SQL shapes); the model is one permit because the components are
@@ -154,9 +154,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             // SingleRecordIdFieldFromReturning (encoded PK echo) or
             // SingleRecordTableFieldFromReturning (PK-only RETURNING projected through a sealed
             // PkResolution switch); both fetcher paths consume the RETURNING record directly,
-            // so no follow-up SELECT runs after the row is gone. The verb-aware carrier walk
-            // (BuildContext.tryResolveSingleRecordCarrier(typeName, DmlKind)) is the producer
-            // site for the DELETE-admissibility decision.
+            // so no follow-up SELECT runs after the row is gone. The DELETE-admissibility
+            // decision is enforced at FieldBuilder's @mutation classifier (post-R178) on the
+            // DmlElementKind dispatch returned by BuildContext.scanStructuralDmlPayload.
         }
     }
 
@@ -216,11 +216,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * {@link ChildField.SingleRecordIdFieldFromReturning} or
      * {@link ChildField.SingleRecordTableFieldFromReturning} (no follow-up SELECT — the row is
      * gone, the encoded PK or PkResolution projection is consumed directly off the RETURNING
-     * record). The verb-aware
-     * {@link no.sikt.graphitron.rewrite.BuildContext#tryResolveSingleRecordCarrier(String, no.sikt.graphitron.rewrite.model.DmlKind)}
-     * overload is the producer site for the DELETE-admissibility decision; this record's
-     * compact constructor admits all four {@link DmlKind} values today (with UPSERT deferred
-     * per R145).
+     * record). The DELETE-admissibility decision is enforced at FieldBuilder's @mutation
+     * classifier (post-R178) on the DmlElementKind dispatch returned by
+     * {@code BuildContext.scanStructuralDmlPayload}; this record's compact constructor admits
+     * all four {@link DmlKind} values today (with UPSERT deferred per R145).
      *
      * @see no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator
      */

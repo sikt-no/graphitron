@@ -5892,11 +5892,11 @@ class GraphitronSchemaBuilderTest {
                     .contains("Invariant #16");
             }),
 
-        DML_INSERT_LIST_PAYLOAD_NO_CARRIER_FIELD_ROLE_REJECTED(
+        DML_INSERT_LIST_PAYLOAD_UNRECOGNIZED_CARRIER_FIELD_REJECTED(
             "R141: DML INSERT with bulk @table input + carrier carrying a sibling field that "
-                + "resolves to no CarrierFieldRole permit → UnclassifiedField. The carrier walk "
-                + "rejects with a descriptive reason naming the offending field and the "
-                + "extension point (file a roadmap item for a new CarrierFieldRole permit).",
+                + "does not resolve to a recognized DML carrier data-field shape → "
+                + "UnclassifiedField. The structural scan rejects with a descriptive reason "
+                + "naming the offending field and the extension point (file a roadmap item).",
             """
             type Film @table(name: "film") { title: String }
             type FilmsPayload { films: [Film!] affectedRowCount: Int }
@@ -5910,7 +5910,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (UnclassifiedField) schema.field("Mutation", "createFilmsPayload");
                 assertThat(f.reason())
                     .contains("affectedRowCount")
-                    .contains("CarrierFieldRole permit")
+                    .contains("not a recognized DML carrier data-field shape")
                     .contains("file a roadmap item");
             }),
 
@@ -6046,7 +6046,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_RECORD_CARRIER_NO_DATA_CHANNEL_REJECTED(
-            "R161: DML returning a @record carrier with no DataChannel-shaped field → UnclassifiedField (the carrier walk rejects 'data: String' as no-permit since String is neither @table nor ID; user's developer-supplied class is no longer inspected)",
+            "R161: DML returning a @record carrier with no data-channel-shaped field → UnclassifiedField (the structural scan rejects 'data: String' as an unrecognized carrier data-field shape since String is neither @table nor ID; user's developer-supplied class is no longer inspected)",
             """
             type Film @table(name: "film") { title: String }
             type SakPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.SakPayload"}) {
@@ -6064,7 +6064,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
                 assertThat(f.reason())
-                    .contains("resolves to no CarrierFieldRole permit");
+                    .contains("not a recognized DML carrier data-field shape");
             }),
 
         // ===== R144 new admission and rejection cases =====

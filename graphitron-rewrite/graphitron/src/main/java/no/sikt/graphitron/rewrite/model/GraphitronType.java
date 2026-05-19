@@ -112,11 +112,10 @@ public sealed interface GraphitronType
      *
      * <p>R75 / Phase 1 split this from a single nullable-className record into a sealed
      * sub-taxonomy: {@link Backed} for authored payloads with {@code @record(record: {className: ...})},
-     * {@link NoBacking} for plain SDL Objects promoted to {@code ResultType} by the
-     * {@code tryResolveSingleRecordCarrier} trigger and for {@code @record}-declared types
-     * whose {@code className} field is unset. Lifts the prior sentinel overload at the type
-     * level: every consumer learns which case it's looking at from the permit identity, not
-     * from a nullable.
+     * {@link NoBacking} for {@code @record}-declared types whose {@code className} field is
+     * unset (and historically for plain SDL Objects promoted to {@code ResultType}; R178
+     * retired the promotion pass). Lifts the prior sentinel overload at the type level: every
+     * consumer learns which case it's looking at from the permit identity, not from a nullable.
      *
      * <p>The {@link ResultType#fqClassName()} method is preserved on the interface — {@link Backed}
      * returns the non-null class name; {@link NoBacking} returns {@code null}. Sites that today

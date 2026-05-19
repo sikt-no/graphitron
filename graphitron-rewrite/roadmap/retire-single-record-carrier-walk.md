@@ -160,20 +160,26 @@ One classification path for every field on a payload-returning mutation:
 
 ## Concrete deletions
 
+> **Post-slice-7 reality.** Each item below is annotated as **shipped**
+> (deleted under Phase 1-4 of R178) or **Phase 5** (deferred to the
+> Phase 5 emit-side migration; recorded again in §"Phase 5 survivors"
+> below). The unannotated items are the full R178 deletion catalogue
+> independent of phase sequencing.
+
 Model types:
 - `BuildContext.SingleRecordCarrierResolution` (sealed: `NotCandidate` /
-  `Rejected` / `Ok.NoBacking` / `Ok.ClassBacked`)
-- `SingleRecordCarrierShape`
-- `CarrierFieldRole` (sealed: `DataChannel` / `ErrorChannelRole`)
-- `DataElement` (sealed: `Table` / `Record` / `Id`)
-- `BuildContext.DeleteTableProjection` (sealed: `Admitted` / `Rejected`)
-- `BuildContext.PerFieldOutcome`
-- `PkResolution`
-- `ChildField.SingleRecordTableField`
-- `ChildField.SingleRecordTableFieldFromReturning`
-- `ChildField.SingleRecordIdentityField`
-- `ChildField.SingleRecordIdFieldFromReturning`
-- `SourceKey.Reader.ResultRowWalk` (the permit, not a free-standing type)
+  `Rejected` / `Ok.NoBacking` / `Ok.ClassBacked`) — **shipped**
+- `SingleRecordCarrierShape` — **shipped**
+- `CarrierFieldRole` (sealed: `DataChannel` / `ErrorChannelRole`) — **shipped**
+- `DataElement` (sealed: `Table` / `Record` / `Id`) — **shipped**
+- `BuildContext.DeleteTableProjection` (sealed: `Admitted` / `Rejected`) — **Phase 5**
+- `BuildContext.PerFieldOutcome` — **Phase 5**
+- `PkResolution` — **Phase 5**
+- `ChildField.SingleRecordTableField` — **Phase 5**
+- `ChildField.SingleRecordTableFieldFromReturning` — **Phase 5**
+- `ChildField.SingleRecordIdentityField` — **shipped**
+- `ChildField.SingleRecordIdFieldFromReturning` — **Phase 5**
+- `SourceKey.Reader.ResultRowWalk` (the permit, not a free-standing type) — **Phase 5**
 
 The three payload-returning mutation-root permits
 (`MutationField.MutationDmlRecordField`,
@@ -196,24 +202,27 @@ to a payload-class canonical constructor. The slot stays on
 `QueryServiceRecordField`).
 
 Classifier methods:
-- `BuildContext.tryResolveSingleRecordCarrier(String)`
-- `BuildContext.tryResolveSingleRecordCarrier(String, DmlKind)`
-- `BuildContext.classifyCarrierField`
-- `BuildContext.classifyDeleteTableProjection`
-- `BuildContext.classifyElementFieldForDeleteProjection`
-- `BuildContext.carrierProducerRegistry`
-- `TypeBuilder.promoteSingleRecordCarriers`
-- `FieldBuilder.classifyServiceCarrierProducer`
-- `FieldBuilder.registerDmlCarrierDataField`
-- `FieldBuilder.registerServiceCarrierDataField`
-- `FieldBuilder.registerDeleteCarrierDataField`
-- `FieldBuilder.registerCarrierDataFieldImpl`
-- `FieldBuilder.requireDataTableMatchesInputTable`
-- `FieldBuilder.checkSourceSigilTypeMatch`
+- `BuildContext.tryResolveSingleRecordCarrier(String)` — **shipped**
+- `BuildContext.tryResolveSingleRecordCarrier(String, DmlKind)` — **shipped**
+- `BuildContext.classifyCarrierField` — **shipped**
+- `BuildContext.classifyDeleteTableProjection` — **Phase 5**
+- `BuildContext.classifyElementFieldForDeleteProjection` — **Phase 5**
+- `BuildContext.carrierProducerRegistry` — **shipped**
+- `TypeBuilder.promoteSingleRecordCarriers` — **shipped**
+- `FieldBuilder.classifyServiceCarrierProducer` — **shipped**
+- `FieldBuilder.registerDmlCarrierDataField` — **shipped**
+- `FieldBuilder.registerServiceCarrierDataField` — **shipped**
+- `FieldBuilder.registerDeleteCarrierDataField` — **shipped**
+- `FieldBuilder.registerCarrierDataFieldImpl` — **shipped**
+- `FieldBuilder.requireDataTableMatchesInputTable` — **shipped** (replaced by
+  the smaller `requireDmlDataTableMatchesInputTable` helper that anchors the
+  surviving `mutation-dml-record-field.data-table-equals-input-table` key)
+- `FieldBuilder.checkSourceSigilTypeMatch` — **shipped**
 - `GraphitronSchemaBuilder.registerCarrierDataField` and the carrier-walk
-  arm of the schema-builder loop
+  arm of the schema-builder loop — **shipped**
 
-Emitters:
+Emitters (all **Phase 5** — alive until the emit-side migration to
+`Wrap.Row` + `Reader.ColumnRead`):
 - `FetcherEmitter.buildSingleRecordTableFetcherValue`
 - `FetcherEmitter.buildSingleRecordTableFetcherValueRecordWrap`
 - `FetcherEmitter.buildSingleRecordTableFetcherValueTableRecordWrap`
@@ -232,12 +241,15 @@ on a plain `Record` cast, replacing the typed `RecordN<...>` cast in the
 deleted `buildSingleRecordTableFetcherValueRecordWrap` arm.
 
 `@LoadBearingClassifierCheck` keys:
-- `single-record-carrier-shape.roles-exhaustively-classified`
-- `mutation-dml-record-field.data-table-equals-input-table`
-- `mutation-delete-carrier.pk-resolution-projection-clean`
-- `carrier-data-field.single-producer-kind`
-- `carrier-data-field.service-producer-strict-return`
-- `source-key.result-row-walk-target-aligned-empty-path`
+- `single-record-carrier-shape.roles-exhaustively-classified` — **shipped**
+- `mutation-dml-record-field.data-table-equals-input-table` — **Phase 5**
+  (re-anchored under slice 7a on the new helper
+  `FieldBuilder.requireDmlDataTableMatchesInputTable`; retires when its
+  consumers retire)
+- `mutation-delete-carrier.pk-resolution-projection-clean` — **Phase 5**
+- `carrier-data-field.single-producer-kind` — **shipped**
+- `carrier-data-field.service-producer-strict-return` — **shipped**
+- `source-key.result-row-walk-target-aligned-empty-path` — **Phase 5**
 
 R159's `$source` sigil stays as the explicit identity-passthrough
 mechanism (see §"Target model" #3 above). What retires from R159 is the
@@ -629,6 +641,10 @@ null). The spike stays in-tree as a behavioral contract pin under the
         `SingleRecordIdFieldFromReturning` references the @mutation
         classifier and drops the `DataElement.Id` internal-jargon
         reference.
+  - **R178 In Review scope.** The In-Review handoff covers Phase 1
+    through Phase 4 (slices 1-7). Phase 5 is a separable follow-up
+    (emit-side migration to `Wrap.Row` + `Reader.ColumnRead`) and
+    ships under its own roadmap item once R178 is closed.
   - **Phase 5 survivors** (carry forward from Phase 4): the spec's full
     §"Concrete deletions" list includes items the DELETE arm and the
     DML/Service unified arms still produce; they retire

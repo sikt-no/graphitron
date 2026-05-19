@@ -55,7 +55,8 @@ public final class FetcherEmitter {
         reliesOn = "The Transport.LocalContext arm of the ErrorsField switch emits "
             + "'env -> env.getLocalContext()'. That reader is only correct when the carrier's "
             + "catch arm has populated env.getLocalContext() with the errors list, which is "
-            + "the contract BuildContext.classifyCarrierField pins as the load-bearing guarantee.")
+            + "the contract FieldBuilder.detectStructuralDmlErrorChannel pins as the load-bearing "
+            + "guarantee.")
     public static CodeBlock dataFetcherValue(
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
@@ -72,21 +73,21 @@ public final class FetcherEmitter {
             return buildSingleRecordTableFetcherValue(srtf, outputPackage);
         }
         if (field instanceof ChildField.SingleRecordIdFieldFromReturning idCarrier) {
-            // R156: data field on a payload-returning DELETE carrier with DataElement.Id. The
-            // mutation fetcher produced a Record (single) or Result<Record> (bulk) from the
+            // R156: data field on a payload-returning DELETE carrier with an ID-typed data field.
+            // The mutation fetcher produced a Record (single) or Result<Record> (bulk) from the
             // PK-only RETURNING; this fetcher reads PK column(s) off each row and runs them
             // through the resolved NodeId encoder. No follow-up SELECT — the row is gone.
             return buildSingleRecordIdFromReturningFetcherValue(idCarrier);
         }
         if (field instanceof ChildField.SingleRecordTableFieldFromReturning tableCarrier) {
-            // R156: data field on a payload-returning DELETE carrier with DataElement.Table.
-            // Synthesizes per source row a new jOOQ Record over the element @table with PK
+            // R156: data field on a payload-returning DELETE carrier with an @table-element data
+            // field. Synthesizes per source row a new jOOQ Record over the element @table with PK
             // columns copied from the RETURNING Record; non-PK column slots remain null so
             // the per-field ColumnFetcher on the element type returns null for NonPkNullable
             // arms. The PkResolution projection list on the carrier pinpoints which columns to
             // copy; no other field shape (FK reference, @service, child collection) reaches
-            // this emitter — the verb-aware carrier walk rejects them in
-            // classifyDeleteTableProjection before this carrier is constructed.
+            // this emitter — BuildContext.classifyDeleteTableProjection rejects them before the
+            // carrier is constructed.
             return buildSingleRecordTableFromReturningFetcherValue(tableCarrier);
         }
         if (field instanceof ChildField.ErrorsField ef) {
@@ -696,7 +697,7 @@ public final class FetcherEmitter {
      * boxing widening is generated. The load-bearing assumption is therefore not only "the
      * projection rejects FK / service / non-PK-non-null fields" (which lets the synthesis
      * succeed) but also "source and target Records resolve to the same generated table class"
-     * (which lets the per-column copy compile). The verb-aware carrier walk pins the input
+     * (which lets the per-column copy compile). The @mutation classifier pins the input
      * {@code @table} on both sides; a future change that synthesizes a Record over a different
      * jOOQ-generated class than the source RETURNING reads from would need to revisit this.
      */
