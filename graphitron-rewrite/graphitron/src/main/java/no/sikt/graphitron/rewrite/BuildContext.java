@@ -465,10 +465,9 @@ class BuildContext {
     }
 
     /**
-     * Outcome of the DELETE carrier walk's per-field projection over a {@code @table}-element
-     * data field (R156). Builder-internal sealed type, used by {@link FieldBuilder} to construct
-     * the per-field {@link ChildField.SingleRecordTableFieldFromReturning} carrier's projection
-     * list.
+     * Outcome of the per-field DELETE carrier projection step over a {@code @table}-element data
+     * field (R156). Builder-internal sealed type, used by {@link FieldBuilder} to construct the
+     * per-field {@link ChildField.SingleRecordTableFieldFromReturning} carrier's projection list.
      *
      * <p>Two arms:
      * <ul>
@@ -478,7 +477,7 @@ class BuildContext {
      *   <li>{@link Rejected} — at least one element-type field classified into a rejection arm
      *       ({@link PerFieldOutcome.NonPkNonNullable}, {@link PerFieldOutcome.ServiceField},
      *       or {@link PerFieldOutcome.UnsupportedField}); the reason names the offending
-     *       fields and points authors at the ID-element shape as the recommended pattern.</li>
+     *       fields and points authors at the ID-typed carrier shape as the recommended pattern.</li>
      * </ul>
      */
     sealed interface DeleteTableProjection {
@@ -647,9 +646,8 @@ class BuildContext {
             var errorTypes = detectErrorsFieldShape(f);
             if (errorTypes != null) {
                 // §1 channel-level rules: rule 7 (handler cardinality) and rule 8 (duplicate
-                // match criteria). The carrier walk's classifyCarrierField enforced these
-                // inline on errors-shaped fields; the structural scan preserves the same
-                // diagnostic family so test fixtures pinning the wording stay green.
+                // match criteria). Test fixtures pin the wording, so the diagnostic family is
+                // preserved through the structural scan.
                 String rule7 = FieldBuilder.checkChannelLevelHandlerRules(errorTypes);
                 if (rule7 != null) {
                     return new DmlCarrierScan.Reject(
@@ -669,12 +667,12 @@ class BuildContext {
             if (fieldNameRef instanceof FieldSourceSigil.ParseResult.UnknownSigil unknown) {
                 return new DmlCarrierScan.Reject(FieldSourceSigil.unknownSigilMessage(unknown.raw()));
             }
-            // Forbidden-directives check (carrier walk's classifyCarrierField equivalent). The
-            // listed directives signal a different fetcher contract than a payload carrier's
-            // data-field path, so their presence routes the type away from the carrier walk.
-            // Note: @field is intentionally NOT on this list (R178 retires the @field-on-non-
-            // $source HardReject — the SettKvotesporsmal bug fix). Pure-metadata directives
-            // (@deprecated, custom directives without execution semantics) pass through.
+            // Forbidden-directives check. The listed directives signal a different fetcher
+            // contract than a payload carrier's data-field path, so their presence routes the
+            // type away from the DML-carrier mold. Note: @field is intentionally NOT on this
+            // list (R178 retires the @field-on-non-$source HardReject — the SettKvotesporsmal
+            // bug fix). Pure-metadata directives (@deprecated, custom directives without
+            // execution semantics) pass through.
             for (String forbidden : FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES) {
                 if (f.hasAppliedDirective(forbidden)) {
                     return new DmlCarrierScan.NotApplicable();
@@ -689,8 +687,8 @@ class BuildContext {
                 kind = new DmlElementKind.RecordElement(f.getName());
             } else if ("ID".equals(elementTypeName)) {
                 // R156 wrapper-shape rule: list-of-nullable ([ID]) and Connection wrappers
-                // are rejected on payload-returning DELETE. The carrier walk's classifyCarrierField
-                // produced HardReject diagnostics with these wordings; preserve the same family.
+                // are rejected on payload-returning DELETE. Test fixtures pin these diagnostic
+                // wordings; preserve the same family.
                 var wrapper = buildWrapper(f);
                 if (wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List list && list.itemNullable()) {
                     return new DmlCarrierScan.Reject(
@@ -745,9 +743,8 @@ class BuildContext {
         boolean fieldNullable = !(fieldDef.getType() instanceof graphql.schema.GraphQLNonNull);
         if (classified == null) {
             // No classification — treat as unsupported. Could happen if the element type is a
-            // PlainObjectType whose fields the schema walk left unclassified. Rejecting at the
-            // carrier walk is honest: the projection cannot resolve a field the classifier
-            // never typed.
+            // PlainObjectType whose fields the schema walk left unclassified. Rejecting the
+            // projection is honest: it cannot resolve a field the classifier never typed.
             return new PerFieldOutcome.UnsupportedField(fieldName, "unclassified");
         }
         return switch (classified) {

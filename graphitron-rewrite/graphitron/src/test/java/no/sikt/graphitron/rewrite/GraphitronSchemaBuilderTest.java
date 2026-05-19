@@ -1871,10 +1871,9 @@ class GraphitronSchemaBuilderTest {
 
         SINGLE_RECORD_CARRIER_DATA_FIELD_ORPHAN(
             "Plain Object carrier (no @record/@table) wrapping a single @table-element data field, "
-                + "consumed by a Query field with no producing mutation → orphan carrier; the "
-                + "verbless walk's DataElement.Table arm is a no-op (R158), and no producer site "
-                + "registers the data field. graphql-java's never-traverse-unproduced-fields "
-                + "guarantee makes the missing registration structurally safe.",
+                + "consumed by a Query field with no producing mutation → orphan carrier; no "
+                + "producer site registers the data field, and graphql-java's never-traverse-"
+                + "unproduced-fields guarantee makes the missing registration structurally safe.",
             """
             type Film @table(name: "film") { title: String }
             type FilmPayload { films: [Film!] }
@@ -1889,8 +1888,9 @@ class GraphitronSchemaBuilderTest {
         SINGLE_RECORD_IDENTITY_FIELD_ORPHAN(
             "R178 Phase 4: a plain Object carrier wrapping a single record-element data field "
                 + "(@record-backed ResultType) consumed by a Query field with no producing mutation "
-                + "→ orphan carrier; the data field stays unregistered (the SingleRecordIdentityField "
-                + "permit retired with the carrier walk).",
+                + "→ orphan carrier; the data field stays unregistered (record-element identity "
+                + "passthrough is now handled by the unified per-field classifier on producer-bound "
+                + "parents).",
             """
             type FilmDto @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
                 title: String
@@ -5985,7 +5985,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_RECORD_CARRIER_WITH_ERRORS_HAPPY(
-            "DML returning a @record carrier with film+errors → MutationDmlRecordField via carrier walk (R161 widening: @record(record:{className:}) on a Java-record-backed wrapper)",
+            "DML returning a @record carrier with film+errors → MutationDmlRecordField (@record(record:{className:}) on a Java-record-backed wrapper, admitted by the structural DML-carrier scan)",
             """
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
                 path: [String!]!
@@ -6012,7 +6012,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DML_RECORD_CARRIER_ROW_ONLY_HAPPY(
-            "DML returning a @record carrier with film only → MutationDmlRecordField via carrier walk (R161 widening: bare carrier on JavaRecordType wrapper, no errors channel)",
+            "DML returning a @record carrier with film only → MutationDmlRecordField (bare carrier on JavaRecordType wrapper, no errors channel, admitted by the structural DML-carrier scan)",
             """
             type Film @table(name: "film") { title: String }
             type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
@@ -6156,13 +6156,14 @@ class GraphitronSchemaBuilderTest {
 
     /**
      * R156 admission / rejection matrix for {@code @mutation(typeName: DELETE)} carriers. The
-     * verb-aware carrier walk admits two element-arm shapes (DataElement.Id PK-echo,
-     * DataElement.Table with a clean projection through PerFieldOutcome) and rejects everything
-     * else, including DataElement.Id on non-DELETE verbs (the post-image of INSERT/UPDATE/UPSERT
-     * is richer than the PK), list-of-nullable {@code [ID]} wrappers, projection-table types
-     * with non-PK non-nullable / @service / unsupported (FK-traversing / child-collection)
-     * fields, and DataElement.Id carriers whose input @table is not @node-backed or whose
-     * explicit @nodeId pins to a different table.
+     * structural DML-carrier scan admits two element-shape arms (the ID-typed PK-echo shape and
+     * the {@code @table}-element shape with a clean PK-only projection) and rejects everything
+     * else, including the ID-typed shape on non-DELETE verbs (the post-image of
+     * INSERT/UPDATE/UPSERT is richer than the PK), list-of-nullable {@code [ID]} wrappers,
+     * {@code @table}-element types with non-PK non-nullable / {@code @service} / unsupported
+     * (FK-traversing / child-collection) fields, and ID-typed carriers whose input
+     * {@code @table} is not {@code @node}-backed or whose explicit {@code @nodeId} pins to a
+     * different table.
      */
     enum MutationDeletePayloadCarrierCase implements ClassificationCase {
 
@@ -6208,7 +6209,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         INSERT_ID_CARRIER_REJECTS(
-            "INSERT + [ID!] carrier → UnclassifiedField (DataElement.Id is the PK-echo permit; admitted only on DELETE)",
+            "INSERT + [ID!] carrier → UnclassifiedField (the ID-typed PK-echo shape is admitted only on DELETE)",
             """
             type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID! @nodeId title: String }
             input FilmInput @table(name: "film") { title: String }
@@ -6225,7 +6226,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         DELETE_LIST_OF_NULLABLE_REJECTS(
-            "DELETE + [ID] (list-of-nullable) carrier → UnclassifiedField at the verbless walk (HardReject wrapper shape)",
+            "DELETE + [ID] (list-of-nullable) carrier → UnclassifiedField at the structural scan (wrapper-shape reject)",
             """
             type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID! @nodeId title: String }
             input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
@@ -6241,7 +6242,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         UPDATE_ID_CARRIER_REJECTS(
-            "UPDATE + [ID!] carrier → UnclassifiedField (DataElement.Id is the PK-echo permit; admitted only on DELETE)",
+            "UPDATE + [ID!] carrier → UnclassifiedField (the ID-typed PK-echo shape is admitted only on DELETE)",
             """
             type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID! @nodeId title: String }
             input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String @value }
@@ -6257,7 +6258,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         UPSERT_ID_CARRIER_REJECTS(
-            "UPSERT + [ID!] carrier → UnclassifiedField (DataElement.Id permit-verb rule fires before R144's UPSERT-defer)",
+            "UPSERT + [ID!] carrier → UnclassifiedField (the ID-typed shape's verb rule fires before R144's UPSERT-defer)",
             """
             type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID! @nodeId title: String }
             input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String @value }
@@ -6276,7 +6277,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         DELETE_TABLE_SERVICE_FIELD_REJECTS(
-            "DELETE + [Foo!] with a @service-resolved field on the element type → UnclassifiedField pointing at DataElement.Id",
+            "DELETE + [Foo!] with a @service-resolved field on the element type → UnclassifiedField pointing at the ID-typed carrier shape",
             """
             type Film @table(name: "film") {
                 title: String

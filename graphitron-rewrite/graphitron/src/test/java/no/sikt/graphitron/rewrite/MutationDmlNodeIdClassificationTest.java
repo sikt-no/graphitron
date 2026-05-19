@@ -254,9 +254,10 @@ class MutationDmlNodeIdClassificationTest {
     // ===== R156 DELETE-payload-carrier admission matrix (cardinality × element) =====
     //
     // The four admission cells of §Tests L4 (R156). The composite-PK cells use Bar
-    // (id_1, id_2); the R130 reproducer fixture the spec named as the motivating shape
-    // for the DataElement.Id arm. The single-PK cells use Baz (id) to round out the cardinality
-    // axis without composite-PK noise. Each cell asserts the parent mutation classifies as
+    // (id_1, id_2); the R130 reproducer fixture the spec named as the motivating shape for
+    // the ID-typed PK-echo carrier shape. The single-PK cells use Baz (id) to round out the
+    // cardinality axis without composite-PK noise. Each cell asserts the parent mutation
+    // classifies as
     // MutationDmlRecordField / MutationBulkDmlRecordField with kind=DELETE, AND the per-field
     // carrier on the data field classifies as SingleRecordIdFieldFromReturning carrying the
     // resolved NodeIdEncodeKeys encoder. Implicit and explicit @nodeId both admit.

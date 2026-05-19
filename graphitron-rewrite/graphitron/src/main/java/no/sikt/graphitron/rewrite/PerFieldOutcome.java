@@ -7,8 +7,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Builder-internal per-field outcome produced by the DELETE carrier walk over a
- * {@link no.sikt.graphitron.rewrite.model.DataElement.Table} element type (R156).
+ * Builder-internal per-field outcome produced by the DELETE carrier projection step over a
+ * {@code @table}-element payload-returning DELETE carrier (R156).
  *
  * <p>Each field on the element SDL type classifies into exactly one arm. The
  * {@code classifyDeleteTableProjection} step on {@link BuildContext} consumes the
@@ -61,13 +61,14 @@ sealed interface PerFieldOutcome {
 
     /**
      * Field is {@code @service}-resolved. The projection step rejects the whole carrier with a
-     * diagnostic pointing the author at {@link no.sikt.graphitron.rewrite.model.DataElement.Id}.
-     * Admitting a service-resolved field on the element SDL type would open a silent-null hole:
-     * the service receives a PK-only {@code Record} at runtime and any non-PK source param
-     * silently produces {@code null}, with no classifier guarantee that the service's source
-     * params resolve to PK columns. The strict reject closes the hole; authors who want to
-     * project service-backed data on the deleted entity use the {@code DataElement.Id} shape
-     * and resolve through a sibling lookup.
+     * diagnostic pointing the author at the ID-typed carrier shape (where the element type is
+     * {@code ID} or {@code [ID!]} rather than a {@code @table}-projection element). Admitting a
+     * service-resolved field on the element SDL type would open a silent-null hole: the service
+     * receives a PK-only {@code Record} at runtime and any non-PK source param silently produces
+     * {@code null}, with no classifier guarantee that the service's source params resolve to PK
+     * columns. The strict reject closes the hole; authors who want to project service-backed
+     * data on the deleted entity use the ID-typed carrier shape and resolve through a sibling
+     * lookup.
      */
     record ServiceField(String fieldName) implements PerFieldOutcome {}
 

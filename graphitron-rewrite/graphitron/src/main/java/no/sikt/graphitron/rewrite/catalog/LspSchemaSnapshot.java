@@ -61,8 +61,9 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         /**
          * R159 — per-carrier projection of the carrier-payload data field's name. Keyed by the
          * carrier's SDL type name; value is the SDL field name of the carrier's single
-         * {@code DataChannel} role. Populated only for types whose classifier-side carrier walk
-         * returns {@code Ok}; absent for everything else.
+         * data field. Populated only for types whose classifier-side structural DML-carrier
+         * scan ({@code BuildContext.scanStructuralDmlPayload}) admits; absent for everything
+         * else.
          *
          * <p>Backing data for {@link #siteContext(String, String)}; the LSP arms route through
          * that method rather than evaluating the (typeName, fieldName) predicate themselves.

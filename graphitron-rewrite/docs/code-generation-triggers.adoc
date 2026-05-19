@@ -191,7 +191,7 @@ The federation `_entities` field is *not* modelled as a `QueryField` permit; it 
 | `@mutation(typeName: UPDATE)`, returning `ID` or a `@table` type | `MutationUpdateTableField` | Field method stub
 | `@mutation(typeName: DELETE)`, returning `ID` or a `@table` type | `MutationDeleteTableField` | Field method stub
 | `@mutation(typeName: UPSERT)`, returning `ID` or a `@table` type | `MutationUpsertTableField` | Field method stub
-| `@mutation(typeName: INSERT\|UPDATE\|DELETE\|UPSERT)`, returning a single-record `@record(record:{className:...})`-or-bare-SDL carrier (one `DataChannel` field, optional `ErrorChannelRole` field) | `MutationDmlRecordField` | Two-step fetcher: per-kind DML chain inside `transactionResult` with PK-only `RETURNING`, plus a follow-up data-field SELECT outside the transaction
+| `@mutation(typeName: INSERT\|UPDATE\|DELETE\|UPSERT)`, returning a single-record `@record(record:{className:...})`-or-bare-SDL carrier (one recognized data field, optional errors-shaped field) | `MutationDmlRecordField` | Two-step fetcher: per-kind DML chain inside `transactionResult` with PK-only `RETURNING`, plus a follow-up data-field SELECT outside the transaction
 | `@mutation(typeName: INSERT\|UPDATE)` with bulk `@table` input, returning a single-record carrier with a list-shaped `@table`-element data field | `MutationBulkDmlRecordField` | Per-row DML inside one `transactionResult`, accumulating a typed `Result<RecordN<PK>>` in input order
 | `@service`, return `@table` type | `MutationServiceTableField` | Async DataLoader fetcher + `rows*()` method
 | `@service`, return non-table type | `MutationServiceRecordField` | Field method stub
@@ -199,7 +199,7 @@ The federation `_entities` field is *not* modelled as a `QueryField` permit; it 
 | Both `@service` and `@mutation` | `UnclassifiedField`** | Validation error ; build fails
 |===
 
-The four `Mutation*TableField` permits are guaranteed never to carry a `@record` return — every `@record`-returning DML mutation routes through the carrier-walk permits (`MutationDmlRecordField` / `MutationBulkDmlRecordField`) via `BuildContext.tryResolveSingleRecordCarrier`. The narrowness is enforced structurally by the routing in `FieldBuilder.classifyMutationField`, not by an Invariant the validator restates.
+The four `Mutation*TableField` permits are guaranteed never to carry a `@record` return: every `@record`-returning DML mutation routes through the DML-carrier permits (`MutationDmlRecordField` / `MutationBulkDmlRecordField`) via `BuildContext.scanStructuralDmlPayload`. The narrowness is enforced structurally by the routing in `FieldBuilder.classifyMutationField`, not by an Invariant the validator restates.
 
 === Child Fields (on `@table` parent)
 

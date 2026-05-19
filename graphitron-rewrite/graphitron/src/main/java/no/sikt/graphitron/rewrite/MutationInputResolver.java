@@ -247,9 +247,9 @@ final class MutationInputResolver {
                         + "(Invariant #15)";
                 }
             }
-            // Carrier with zero or multiple data fields: the @mutation classifier's structural
-            // scan owns the "multi-DataChannel" / "no permit" diagnostics; return null and let
-            // the classifier surface the carrier-shape rejection.
+            // Carrier with zero or multiple recognized data fields: the @mutation classifier's
+            // structural scan (BuildContext.scanStructuralDmlPayload) owns the rejection
+            // diagnostics; return null and let the classifier surface them.
             return null;
         }
         if (listInput && !returnType.wrapper().isList()) {

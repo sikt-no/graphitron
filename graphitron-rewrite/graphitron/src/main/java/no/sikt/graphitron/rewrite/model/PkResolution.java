@@ -4,8 +4,8 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Model-facing per-field projection produced by the DELETE carrier walk and carried on
- * {@link ChildField.SingleRecordTableFieldFromReturning} to the emitter (R156).
+ * Model-facing per-field projection produced by the DELETE carrier projection step and carried
+ * on {@link ChildField.SingleRecordTableFieldFromReturning} to the emitter (R156).
  *
  * <p>Two arms — one for each emission case the emitter has to handle. By construction, the only
  * producer is {@code BuildContext.classifyDeleteTableProjection}, which rejects the carrier

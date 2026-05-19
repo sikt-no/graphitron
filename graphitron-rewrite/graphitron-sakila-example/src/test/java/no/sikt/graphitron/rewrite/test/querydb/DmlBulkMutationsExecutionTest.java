@@ -886,7 +886,7 @@ class DmlBulkMutationsExecutionTest {
             .fetchOne().value1();
     }
 
-    // ===== R156: payload-returning DELETE (DataElement.Id + DataElement.Table arms) =====
+    // ===== R156: payload-returning DELETE (ID-typed and @table-element carrier shapes) =====
     //
     // deleteFilmsIdCarrier returns DeletedFilmsIdPayload { deletedIds: [ID!] }, where the
     // carrier's data field classifies as ChildField.SingleRecordIdFieldFromReturning carrying
