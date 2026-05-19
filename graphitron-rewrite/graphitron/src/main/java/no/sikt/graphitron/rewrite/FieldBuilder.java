@@ -2755,8 +2755,6 @@ class FieldBuilder {
      * columns, exactly the equality this check enforces.
      *
      * <p>Returns {@code null} when the tables match; a non-null rejection reason otherwise.
-     * This is the single producer site for
-     * {@code mutation-dml-record-field.data-table-equals-input-table}.
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "mutation-dml-record-field.data-table-equals-input-table",
@@ -2765,44 +2763,22 @@ class FieldBuilder {
             + "PK-only RETURNING and the data-field fetcher's WHERE-PK-IN response SELECT "
             + "share one column set without a defensive cross-table check; jOOQ would "
             + "otherwise reject the RETURNING projection or the SELECT predicate at runtime. "
-            + "For DataElement.Id carriers (R156, DELETE-only), the encoder's table replaces "
-            + "the element table in the equality check — the encoded ID's NodeType pins the "
-            + "carrier to the input @table by structural identity.")
-    private static String requireDataTableMatchesInputTable(
-            TableRef inputTable,
-            no.sikt.graphitron.rewrite.model.SingleRecordCarrierShape shape,
-            DmlKind kind,
-            String name) {
-        // R75 Phase 2: DML mutations admit only @table-element / @id-element data. Record-element
-        // carriers would require a row-to-domain-record conversion step at the emitter, which
-        // the spec tracks separately. Reject here at classify time with a per-mismatch message.
-        var dataElement = shape.data().element();
-        if (dataElement instanceof no.sikt.graphitron.rewrite.model.DataElement.Table tableElement) {
-            if (inputTable.equals(tableElement.table())) {
-                return null;
-            }
-            return "@mutation(typeName: " + kind + ") field '" + name
-                + "' returns single-record DML carrier '" + shape.carrierTypeName()
-                + "' whose data field element type '" + tableElement.name()
-                + "' is bound to table '" + tableElement.table().tableName()
-                + "', which does not match @table input table '" + inputTable.tableName()
-                + "'; payload-returning DML mutations require the data field's table to equal the "
-                + "DML's input table";
-        }
-        if (dataElement instanceof no.sikt.graphitron.rewrite.model.DataElement.Id) {
-            // R156 — DataElement.Id table-linkage is verified through the encoder lookup in
-            // the per-field carrier registration (resolveDeleteIdEncoder below). The encoder
-            // pins to the input @table by structural identity (its NodeType.table() equals the
-            // input @table); resolveDeleteIdEncoder rejects when the linkage fails, with the
-            // same diagnostic family as today's bare-ID DELETE return path. Here we just admit.
+            + "For ID-element carriers (R156, DELETE-only), the encoder's table replaces "
+            + "the element table in the equality check, since the encoded ID's NodeType pins "
+            + "the carrier to the input @table by structural identity.")
+    private static String requireDmlDataTableMatchesInputTable(
+            TableRef inputTable, BuildContext.DmlElementKind.Table tbl, DmlKind kind,
+            String mutationFieldName, String carrierTypeName) {
+        if (inputTable.equals(tbl.table())) {
             return null;
         }
-        return "@mutation(typeName: " + kind + ") field '" + name
-            + "' returns single-record carrier '" + shape.carrierTypeName()
-            + "' with a record-element data field ('" + dataElement.name()
-            + "'); DML mutations require an @table-element or ID-scalar data field. Use a "
-            + "@service mutation for record-element carriers, or change the data field's element "
-            + "type to the input table's @table type / ID";
+        return "@mutation(typeName: " + kind + ") field '" + mutationFieldName
+            + "' returns single-record DML carrier '" + carrierTypeName
+            + "' whose data field element type '" + tbl.elementTypeName()
+            + "' is bound to table '" + tbl.table().tableName()
+            + "', which does not match @table input table '" + inputTable.tableName()
+            + "'; payload-returning DML mutations require the data field's table to equal the "
+            + "DML's input table";
     }
 
     /**
@@ -2877,6 +2853,19 @@ class FieldBuilder {
         record RuleViolation(String reason) implements StructuralDmlErrorChannel {}
     }
 
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "error-channel.local-context-transport",
+        description = "A carrier admitted with ErrorChannel.LocalContext has a data field whose "
+            + "fetcher honors the null-source short-circuit guard "
+            + "(FetcherEmitter.java:273, 'if (source == null) return null;'). The catch arm "
+            + "emits 'data(null).localContext(List.of(t)).build()'; the data side of the "
+            + "response renders coherently only because the data-field fetcher refuses to "
+            + "run on a null source. Today only SingleRecordTableField cardinality variants and "
+            + "the DELETE-returning carriers are reachable through structural detection, and "
+            + "all honor this guard; this site is the load-bearing producer for the guarantee, "
+            + "and a future data-field shape that doesn't short-circuit on null must be rejected "
+            + "at this classifier (or at the validator mirror in GraphitronSchemaValidator) before "
+            + "reaching the emitter.")
     private StructuralDmlErrorChannel detectStructuralDmlErrorChannel(String payloadSdlName) {
         if (payloadSdlName == null) return new StructuralDmlErrorChannel.None();
         var payloadType = ctx.schema.getType(payloadSdlName);
@@ -2982,8 +2971,8 @@ class FieldBuilder {
     }
 
     /**
-     * R156 — resolve the NodeId encoder for a {@link DataElement.Id} carrier field on a
-     * DELETE mutation. Two recognition forms:
+     * R156 — resolve the NodeId encoder for an ID-element carrier field on a DELETE mutation.
+     * Two recognition forms:
      * <ul>
      *   <li><b>Implicit</b>: no {@code @nodeId} directive on the carrier field, or {@code @nodeId}
      *       without {@code typeName}. The encoder is the input {@code @table}'s {@code @node}
@@ -3022,93 +3011,11 @@ class FieldBuilder {
     }
 
     /**
-     * R156 — register the per-field {@link ChildField} sibling for the data field of a
-     * DELETE-with-carrier mutation. Called after the verb-aware carrier walk admits the shape
-     * and {@link #requireDataTableMatchesInputTable} accepts the table linkage. For
-     * {@link DataElement.Id} arms, resolves the NodeId encoder and writes
-     * {@link ChildField.SingleRecordIdFieldFromReturning} under the carrier's
-     * {@code (carrierType, dataFieldName)} coords. For {@link DataElement.Table} arms, re-runs
-     * {@link BuildContext#classifyDeleteTableProjection} to retrieve the per-field
-     * {@link PkResolution} list and writes {@link ChildField.SingleRecordTableFieldFromReturning}
-     * (overwriting the verbless walk's {@link ChildField.SingleRecordTableField} registration
-     * because no follow-up SELECT runs after DELETE — the row is gone). Returns a non-null
-     * rejection reason when the registration cannot complete (encoder lookup fails, projection
-     * rejects); returns {@code null} on success.
-     *
-     * <p>The double call to {@code classifyDeleteTableProjection} (once in the verb-aware
-     * overload to validate admissibility, once here to retrieve the projection) is idempotent;
-     * both calls go through the same {@code @LoadBearingClassifierCheck} gate, so the rejection
-     * rule applies uniformly.
-     */
-    private static String registerDeleteCarrierDataField(
-            BuildContext ctx,
-            no.sikt.graphitron.rewrite.model.SingleRecordCarrierShape shape,
-            TableRef inputTable,
-            String mutationName) {
-        var dataChannel = shape.data();
-        String carrierType = shape.carrierTypeName();
-        String dataFieldName = dataChannel.fieldName();
-        var carrierRaw = ctx.schema.getType(carrierType);
-        if (!(carrierRaw instanceof graphql.schema.GraphQLObjectType carrierObj)) {
-            return "R156: DELETE carrier '" + carrierType + "' is not a GraphQL Object type";
-        }
-        var dataFieldDef = carrierObj.getFieldDefinition(dataFieldName);
-        if (dataFieldDef == null) {
-            return "R156: DELETE carrier '" + carrierType + "' data field '" + dataFieldName + "' missing from SDL";
-        }
-        SourceLocation dataFieldLocation = locationOf(dataFieldDef);
-        var coords = graphql.schema.FieldCoordinates.coordinates(carrierType, dataFieldName);
-        return switch (dataChannel.element()) {
-            case no.sikt.graphitron.rewrite.model.DataElement.Id idElement -> {
-                String encoderError = classifyDeleteIdEncoderError(ctx, dataFieldDef, inputTable, mutationName);
-                if (encoderError != null) {
-                    yield encoderError;
-                }
-                var encoder = resolveDeleteIdEncoder(ctx, dataFieldDef, inputTable).orElseThrow();
-                var returnType = new ReturnTypeRef.ScalarReturnType("ID", idElement.wrapper());
-                var carrier = new ChildField.SingleRecordIdFieldFromReturning(
-                    carrierType, dataFieldName, dataFieldLocation, returnType,
-                    new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(encoder));
-                // The verbless walk left this coord unregistered for DataElement.Id carriers
-                // (the GraphitronSchemaBuilder.registerCarrierDataField switch arm is a no-op
-                // for Id, since encoder resolution needs the input @table). reclassify with
-                // expectedExistingClass=null handles both "no pre-existing" and "expected
-                // shape" branches uniformly.
-                ctx.fieldRegistry.reclassify(coords, carrier, ChildField.SingleRecordIdFieldFromReturning.class);
-                yield null;
-            }
-            case no.sikt.graphitron.rewrite.model.DataElement.Table tableElement -> {
-                var projection = ctx.classifyDeleteTableProjection(carrierType, tableElement.name(), tableElement.table());
-                yield switch (projection) {
-                    case BuildContext.DeleteTableProjection.Admitted admitted -> {
-                        var returnType = new ReturnTypeRef.TableBoundReturnType(
-                            tableElement.name(), tableElement.table(), tableElement.wrapper());
-                        var carrier = new ChildField.SingleRecordTableFieldFromReturning(
-                            carrierType, dataFieldName, dataFieldLocation, returnType, admitted.projection());
-                        // R158 hollowed out the verbless walk's DataElement.Table arm; no prior
-                        // registration exists at this coord. The reclassify call admits both
-                        // "no pre-existing" (typical DELETE-with-Table path) and a hypothetical
-                        // pre-existing INSERT/UPDATE/UPSERT producer of the same carrier (which
-                        // would be rejected upstream by R158's single-producer-kind check before
-                        // ever reaching this DELETE registration site for the same coord).
-                        ctx.fieldRegistry.reclassify(coords, carrier, null);
-                        yield null;
-                    }
-                    case BuildContext.DeleteTableProjection.Rejected rejected -> rejected.reason();
-                };
-            }
-            case no.sikt.graphitron.rewrite.model.DataElement.Record ignored ->
-                "R156: DataElement.Record carrier on DELETE is not supported; use @service for "
-                    + "record-element carriers or DataElement.Id / DataElement.Table for DML carriers";
-        };
-    }
-
-    /**
-     * R156 — classify the carrier-field encoder error for a {@link DataElement.Id} DELETE
-     * carrier. Returns a non-null diagnostic when the encoder cannot be resolved (no
-     * {@code @node}-backed input table, {@code @nodeId(typeName:)} resolves to an unknown type,
-     * or the named NodeType's table doesn't match the input table). Returns {@code null} when
-     * the encoder is fine.
+     * R156 — classify the carrier-field encoder error for an ID-element DELETE carrier.
+     * Returns a non-null diagnostic when the encoder cannot be resolved (no {@code @node}-backed
+     * input table, {@code @nodeId(typeName:)} resolves to an unknown type, or the named
+     * NodeType's table doesn't match the input table). Returns {@code null} when the encoder is
+     * fine.
      */
     private static String classifyDeleteIdEncoderError(
             BuildContext ctx, GraphQLFieldDefinition dataField, TableRef inputTable, String mutationName) {
@@ -3428,15 +3335,10 @@ class FieldBuilder {
                                     ctx.fieldRegistry.reclassify(coords, carrier, ChildField.SingleRecordIdFieldFromReturning.class);
                                 }
                                 case BuildContext.DmlElementKind.Table tbl -> {
-                                    if (!tia.inputTable().equals(tbl.table())) {
-                                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                                            "@mutation(typeName: " + kind + ") field '" + name
-                                            + "' returns single-record DML carrier '" + rrt.returnTypeName()
-                                            + "' whose data field element type '" + tbl.elementTypeName()
-                                            + "' is bound to table '" + tbl.table().tableName()
-                                            + "', which does not match @table input table '" + tia.inputTable().tableName()
-                                            + "'; payload-returning DML mutations require the data field's table to equal the "
-                                            + "DML's input table"));
+                                    String tableMismatch = requireDmlDataTableMatchesInputTable(
+                                        tia.inputTable(), tbl, kind, name, rrt.returnTypeName());
+                                    if (tableMismatch != null) {
+                                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tableMismatch));
                                     }
                                     var projection = ctx.classifyDeleteTableProjection(rrt.returnTypeName(), tbl.elementTypeName(), tbl.table());
                                     if (projection instanceof BuildContext.DeleteTableProjection.Rejected rejected) {
@@ -3451,8 +3353,8 @@ class FieldBuilder {
                                 }
                                 case BuildContext.DmlElementKind.RecordElement ignored -> {
                                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                                        "R156: DataElement.Record carrier on DELETE is not supported; use @service for "
-                                        + "record-element carriers or DataElement.Id / DataElement.Table for DML carriers"));
+                                        "R156: record-element data field on DELETE is not supported; use @service for "
+                                        + "record-element carriers or an @table-element / ID-scalar data field for DML carriers"));
                                 }
                             }
                             var dmlChannelResult = detectStructuralDmlErrorChannel(rrt.returnTypeName());
@@ -3472,15 +3374,10 @@ class FieldBuilder {
                             // INSERT / UPDATE / UPSERT
                             switch (element) {
                                 case BuildContext.DmlElementKind.Table tbl -> {
-                                    if (!tia.inputTable().equals(tbl.table())) {
-                                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
-                                            "@mutation(typeName: " + kind + ") field '" + name
-                                            + "' returns single-record DML carrier '" + rrt.returnTypeName()
-                                            + "' whose data field element type '" + tbl.elementTypeName()
-                                            + "' is bound to table '" + tbl.table().tableName()
-                                            + "', which does not match @table input table '" + tia.inputTable().tableName()
-                                            + "'; payload-returning DML mutations require the data field's table to equal the "
-                                            + "DML's input table"));
+                                    String tableMismatch = requireDmlDataTableMatchesInputTable(
+                                        tia.inputTable(), tbl, kind, name, rrt.returnTypeName());
+                                    if (tableMismatch != null) {
+                                        return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(tableMismatch));
                                     }
                                     var dmlChannelResult = detectStructuralDmlErrorChannel(rrt.returnTypeName());
                                     if (dmlChannelResult instanceof StructuralDmlErrorChannel.RuleViolation rv) {

@@ -20,11 +20,9 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
-import no.sikt.graphitron.rewrite.model.CarrierFieldRole;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
-import no.sikt.graphitron.rewrite.model.DataElement;
 import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -45,8 +43,6 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.JoinStep.ConditionJoin;
 import no.sikt.graphitron.rewrite.model.JoinStep.FkJoin;
 import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution;
-import no.sikt.graphitron.rewrite.model.SingleRecordCarrierShape;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import org.jooq.ForeignKey;
 import org.slf4j.Logger;
@@ -474,198 +470,10 @@ class BuildContext {
     }
 
     /**
-     * Trigger function for single-record DML carriers (R75 Phase 1). A pure function over
-     * {@link #schema} and {@link #types} returning a sealed {@link SingleRecordCarrierResolution}
-     * that callers route on:
-     *
-     * <ul>
-     *   <li>{@link SingleRecordCarrierResolution.Ok} — admit the type as a single-record DML
-     *       carrier; carries the resolved {@link SingleRecordCarrierShape}.</li>
-     *   <li>{@link SingleRecordCarrierResolution.NotCandidate} — type is not a single-record-
-     *       carrier-shaped Object (carries {@code @table}, {@code @record} with
-     *       {@code className}, is an interface / union / enum / scalar, etc.); consumers fall
-     *       through silently.</li>
-     *   <li>{@link SingleRecordCarrierResolution.Rejected} — type is a candidate (plain SDL
-     *       Object, or {@code @record} without {@code className}) but failed a per-condition
-     *       check; the reason names the failed positive criterion and is plumbed into the
-     *       validator's rejection-message paths.</li>
-     * </ul>
-     *
-     * <p>The function is referentially transparent given a frozen {@link #schema} and
-     * {@link #types}; it materialises no state and is called on demand at the production
-     * sites and one validator site.
-     *
-     * <p>Plain SDL Objects passing this trigger are promoted to
-     * {@link GraphitronType.PojoResultType.NoBacking} during type classification (see
-     * {@link TypeBuilder#promoteSingleRecordCarriers}); the trigger remains callable on the
-     * pre-promotion shape ({@link GraphitronType.PlainObjectType}) so the promoter itself can
-     * use it.
-     */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "single-record-carrier-shape.roles-exhaustively-classified",
-        description = "Every emitted SingleRecordCarrierShape.roles list is exhaustively classified "
-            + "into CarrierFieldRole permits — a carrier field that resolves to no permit causes "
-            + "the walk to return Rejected with a descriptive reason naming the offending field, "
-            + "rather than producing an Ok shape with the unknown field tolerated. Emitters and "
-            + "registration sites dispatch over the closed permit set via sealed switches; a new "
-            + "permit landing without a corresponding consumer dispatch fails build-time "
-            + "CarrierFieldRoleCoverageTest.")
-    SingleRecordCarrierResolution tryResolveSingleRecordCarrier(String typeName) {
-        GraphitronType target = types.get(typeName);
-        // Condition #1: registered as PlainObjectType (pre-promotion), or any ResultType arm
-        // (@record-declared type, with or without a developer-supplied className). R161 widened
-        // the candidate set from {PlainObjectType, PojoResultType.NoBacking} to {PlainObjectType,
-        // ResultType}: every ResultType arm exposes the same SDL field shape the carrier walk
-        // dispatches on, so the className informs nothing the post-R161 codegen consumes.
-        boolean isCandidate = target instanceof GraphitronType.PlainObjectType
-            || target instanceof GraphitronType.ResultType;
-        if (!isCandidate) {
-            return new SingleRecordCarrierResolution.NotCandidate();
-        }
-        GraphQLType raw = schema.getType(typeName);
-        if (!(raw instanceof GraphQLObjectType objType)) {
-            return new SingleRecordCarrierResolution.NotCandidate();
-        }
-
-        var fields = objType.getFieldDefinitions();
-        if (fields.isEmpty()) {
-            return new SingleRecordCarrierResolution.Rejected(
-                "single-record carrier '" + typeName
-                + "' declares no fields; require exactly one DataChannel field");
-        }
-
-        // R141: walk every carrier field and classify each into a CarrierFieldRole permit. Today
-        // the walk produces DataChannel permits only; CarrierFieldRole.ErrorChannelRole exists in
-        // the type system but the walk does not classify it (R12, error-handling-parity, lands the
-        // ErrorChannelRole producer in the same commit it lands the consumer-side annotations).
-        // Any field that does not classify into a DataChannel today rejects the carrier with the
-        // descriptive "no CarrierFieldRole permit" message that names the offending field and the
-        // extension point ("file a roadmap item"); future Backlog items
-        // (payload-carrier-affected-row-count, payload-carrier-client-mutation-id) add new permits
-        // and tighten this walk.
-        var roles = new ArrayList<CarrierFieldRole>(fields.size());
-        for (var field : fields) {
-            var rolesResult = classifyCarrierField(typeName, field);
-            switch (rolesResult) {
-                case CarrierFieldClassification.Role r -> roles.add(r.role());
-                case CarrierFieldClassification.NoPermit np -> {
-                    return new SingleRecordCarrierResolution.Rejected(np.reason());
-                }
-                case CarrierFieldClassification.HardReject hr -> {
-                    return new SingleRecordCarrierResolution.Rejected(hr.reason());
-                }
-            }
-        }
-
-        // The compact-constructor invariants on SingleRecordCarrierShape enforce exactly-one
-        // DataChannel, at-most-one ErrorChannelRole, distinct field names. The walk surfaces the
-        // multi-DataChannel case as a graceful rejection (two carrier fields that both look like
-        // @table-element data) rather than letting the compact-constructor's IllegalArgumentException
-        // propagate.
-        long dataChannelCount = roles.stream().filter(r -> r instanceof CarrierFieldRole.DataChannel).count();
-        if (dataChannelCount > 1) {
-            return new SingleRecordCarrierResolution.Rejected(
-                "single-record carrier '" + typeName + "' declares " + dataChannelCount
-                + " DataChannel-shaped fields; require exactly one (a future Backlog item may "
-                + "admit multi-data carriers behind a new CarrierFieldRole permit)");
-        }
-        var shape = new SingleRecordCarrierShape(typeName, roles);
-        // The sub-arm tag carries the carrier-class-category fork into the model rather than
-        // forcing each consumer to re-classify the parent GraphitronType arm. ClassBacked
-        // covers every ResultType arm with a developer-supplied className (Backed,
-        // JavaRecordType, JooqRecordType, JooqTableRecordType); NoBacking covers
-        // PlainObjectType (pre-promotion) and PojoResultType.NoBacking (post-promotion).
-        // The split is the model-side counterpart to the R161 candidate-set widening.
-        boolean classBacked = target instanceof GraphitronType.ResultType
-            && !(target instanceof GraphitronType.PojoResultType.NoBacking);
-        return classBacked
-            ? new SingleRecordCarrierResolution.Ok.ClassBacked(shape)
-            : new SingleRecordCarrierResolution.Ok.NoBacking(shape);
-    }
-
-    /**
-     * Verb-aware trigger function for single-record DML carriers (R156). Extends the verbless
-     * {@link #tryResolveSingleRecordCarrier(String)} with DELETE-admissibility per element arm.
-     * Called from {@link FieldBuilder} during mutation classification where the {@link DmlKind}
-     * is in scope; the verbless overload remains the shape-only entry point used by
-     * {@code TypeBuilder.promoteSingleRecordCarriers}, the schema-walk loop, and
-     * {@code MutationInputResolver}'s input-side recognition.
-     *
-     * <p>Sealed-result extension on top of the verbless shape:
-     * <ul>
-     *   <li>{@link DataElement.Id} arm — admitted only on {@link DmlKind#DELETE}; rejected on
-     *       INSERT / UPDATE / UPSERT with the permit-verb message. The rule is structural:
-     *       {@code DataElement.Id} commits the carrier to PK as the entire post-image, and the
-     *       only verb whose post-image is the PK is DELETE.</li>
-     *   <li>{@link DataElement.Table} arm — on DELETE, runs the projection step
-     *       ({@link #classifyDeleteTableProjection}); rejects the carrier if the projection step
-     *       surfaces a {@code NonPkNonNullable}, {@code ServiceField}, or
-     *       {@code UnsupportedField} arm. On non-DELETE, admits unchanged (existing R75 / R141
-     *       carrier path).</li>
-     *   <li>{@link DataElement.Record} arm — admits unchanged on every verb (R75 Phase 2
-     *       {@code @service}-only path; the mutation-field classifier upstream already filters
-     *       Record-element shapes off the DML path).</li>
-     * </ul>
-     *
-     * <p>The verb-aware overload is intentionally a STRICT EXTENSION of the verbless walk: the
-     * positive-criterion shape check runs through {@link #tryResolveSingleRecordCarrier(String)},
-     * and the verb arm layers on top. Two callers ask the same admissibility question through
-     * the same gate; the validator (when it surfaces the diagnostic for SDL authors) reads
-     * through the verb-aware overload, not through a parallel kind-checking path. This closes
-     * the "two consumers evaluating the same predicate over a model field" smell the
-     * generation-thinking principle warns against.
-     *
-     * <p>Note on the {@code DataElement.Id} encoder: this overload does NOT resolve the
-     * NodeId encoder against the owning mutation's input {@code @table}. The encoder lookup
-     * needs the input {@code @table}, which is in scope at {@link FieldBuilder}'s mutation
-     * classifier (where {@code tia.inputTable()} is known) but not here. FieldBuilder resolves
-     * the encoder after the verb-aware overload returns {@code Ok}, constructs the per-field
-     * {@link ChildField.SingleRecordIdFieldFromReturning} carrier with the encoder, and writes
-     * it to {@code fieldRegistry}.
-     */
-    SingleRecordCarrierResolution tryResolveSingleRecordCarrier(String typeName, DmlKind kind) {
-        var base = tryResolveSingleRecordCarrier(typeName);
-        if (!(base instanceof SingleRecordCarrierResolution.Ok ok)) {
-            return base;
-        }
-        var dataElement = ok.shape().roles().stream()
-            .filter(r -> r instanceof CarrierFieldRole.DataChannel)
-            .map(r -> ((CarrierFieldRole.DataChannel) r).element())
-            .findFirst()
-            .orElseThrow();
-        return switch (dataElement) {
-            case DataElement.Id ignored -> {
-                if (kind == DmlKind.DELETE) {
-                    yield ok;
-                }
-                yield new SingleRecordCarrierResolution.Rejected(
-                    "single-record carrier '" + typeName + "' has data field of element type ID, "
-                    + "which is the PK-echo permit (post-image == primary key) and is admitted "
-                    + "only on @mutation(typeName: DELETE) carriers. On @mutation(typeName: "
-                    + kind + ") the post-image is richer; use a @table-element data field or a "
-                    + "@record-element data field instead.");
-            }
-            case DataElement.Table tableElement -> {
-                if (kind != DmlKind.DELETE) {
-                    yield ok;
-                }
-                var projection = classifyDeleteTableProjection(typeName, tableElement.name(), tableElement.table());
-                yield switch (projection) {
-                    case DeleteTableProjection.Admitted admitted -> ok;
-                    case DeleteTableProjection.Rejected rejected ->
-                        new SingleRecordCarrierResolution.Rejected(rejected.reason());
-                };
-            }
-            case DataElement.Record ignored -> ok;
-        };
-    }
-
-    /**
-     * Outcome of the DELETE carrier walk's per-field projection over a
-     * {@link DataElement.Table} element type (R156). Builder-internal sealed type, used by the
-     * verb-aware {@link #tryResolveSingleRecordCarrier(String, DmlKind)} overload to validate
-     * admissibility and by {@link FieldBuilder} to construct the per-field
-     * {@link ChildField.SingleRecordTableFieldFromReturning} carrier's projection list.
+     * Outcome of the DELETE carrier walk's per-field projection over a {@code @table}-element
+     * data field (R156). Builder-internal sealed type, used by {@link FieldBuilder} to construct
+     * the per-field {@link ChildField.SingleRecordTableFieldFromReturning} carrier's projection
+     * list.
      *
      * <p>Two arms:
      * <ul>
@@ -675,7 +483,7 @@ class BuildContext {
      *   <li>{@link Rejected} — at least one element-type field classified into a rejection arm
      *       ({@link PerFieldOutcome.NonPkNonNullable}, {@link PerFieldOutcome.ServiceField},
      *       or {@link PerFieldOutcome.UnsupportedField}); the reason names the offending
-     *       fields and points authors at {@link DataElement.Id} as the recommended pattern.</li>
+     *       fields and points authors at the ID-element shape as the recommended pattern.</li>
      * </ul>
      */
     sealed interface DeleteTableProjection {
@@ -765,8 +573,8 @@ class BuildContext {
                     .append(" are not resolvable from the PK-only RETURNING record (no follow-up "
                         + "query runs against the deleted row);");
             }
-            msg.append(" Prefer a DataElement.Id shape: a carrier field of type ID or [ID!] "
-                + "(with @nodeId either implicit by the input @table's @node registration or "
+            msg.append(" Prefer an ID-typed carrier field (type ID or [ID!] "
+                + "with @nodeId either implicit by the input @table's @node registration or "
                 + "explicit on the field), which echoes the deleted primary keys without "
                 + "requiring a @table-element projection.");
             return new DeleteTableProjection.Rejected(msg.toString());
@@ -790,18 +598,16 @@ class BuildContext {
     }
 
     /**
-     * R178 Phase 4 — sealed result of a payload's structural carrier-shape scan, the
-     * replacement for {@link SingleRecordCarrierResolution} on the @mutation classifier and
-     * MutationInputResolver paths. Three arms:
+     * R178 Phase 4 — sealed result of a payload's structural carrier-shape scan, used by the
+     * @mutation classifier and MutationInputResolver paths to decide whether a payload type
+     * admits as a single-record DML carrier. Three arms:
      *
      * <ul>
      *   <li>{@link Admit}: exactly one non-errors data field whose element classifies into a
      *       recognized DML element kind (Table / Record / Id). The data field's definition and
      *       element kind ride together so callers don't re-walk the SDL.</li>
      *   <li>{@link Reject}: at least one non-errors field that can't be admitted (scalar or
-     *       polymorphic / interface / union element types), or multiple recognized data fields
-     *       (the carrier walk's multi-DataChannel rejection). The reason string matches the
-     *       carrier walk's diagnostic family.</li>
+     *       polymorphic / interface / union element types), or multiple recognized data fields.</li>
      *   <li>{@link NotApplicable}: zero non-errors data fields, non-Object payload type, or
      *       a {@code null} payload name. Callers fall through to their non-carrier code paths.</li>
      * </ul>
@@ -825,9 +631,8 @@ class BuildContext {
      * fields are identified via {@link #detectErrorsFieldShape} and skipped at the data-field
      * level (they carry through the error-channel resolution).
      *
-     * <p>Replaces the carrier walk's {@link SingleRecordCarrierResolution} dispatch for the
-     * @mutation classifier and the MutationInputResolver shape-coherence check. The scan is
-     * referentially transparent given a frozen schema and types.
+     * <p>Drives the @mutation classifier and the MutationInputResolver shape-coherence check.
+     * The scan is referentially transparent given a frozen schema and types.
      */
     private static final java.util.Set<String> FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES = java.util.Set.of(
         DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_AS_CONNECTION, DIR_SPLIT_QUERY,
@@ -991,29 +796,6 @@ class BuildContext {
     }
 
     /**
-     * Per-field carrier classifier outcome. Three arms:
-     *
-     * <ul>
-     *   <li>{@link CarrierFieldClassification.Role} — the field classifies into a
-     *       {@link CarrierFieldRole} permit; carrier resolution accumulates it.</li>
-     *   <li>{@link CarrierFieldClassification.NoPermit} — the field's shape matches no
-     *       admitted permit today; the unified walk returns
-     *       {@link SingleRecordCarrierResolution.Rejected} with the offending field named and
-     *       the {@code CarrierFieldRole} extension point pointed at.</li>
-     *   <li>{@link CarrierFieldClassification.HardReject} — the field could be a
-     *       {@link CarrierFieldRole.DataChannel} by SDL shape but fails a structural
-     *       precondition (forbidden directive, non-admissible element type); reuses the
-     *       legacy carrier-rejection language so authors moving from Phase 1 see the same
-     *       diagnostic surface.</li>
-     * </ul>
-     */
-    private sealed interface CarrierFieldClassification {
-        record Role(CarrierFieldRole role) implements CarrierFieldClassification {}
-        record NoPermit(String reason) implements CarrierFieldClassification {}
-        record HardReject(String reason) implements CarrierFieldClassification {}
-    }
-
-    /**
      * Lightweight predicate for "this GraphQL field is an {@code errors}-shaped field" (a
      * polymorphic-of-all-{@code @error} list with the nullability shape §2b allows). Returns
      * the resolved {@code List<ErrorType>} when the shape matches, {@code null} otherwise.
@@ -1046,151 +828,6 @@ class BuildContext {
             return null;
         }
         return errorTypes;
-    }
-
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "error-channel.local-context-transport",
-        description = "A carrier admitted with ErrorChannel.LocalContext has a data field whose "
-            + "fetcher honors the null-source short-circuit guard "
-            + "(FetcherEmitter.java:273, 'if (source == null) return null;'). The catch arm "
-            + "emits 'data(null).localContext(List.of(t)).build()'; the data side of the "
-            + "response renders coherently only because the data-field fetcher refuses to "
-            + "run on a null source. Today only SingleRecordTableField cardinality variants are "
-            + "reachable via the carrier walk and all honor this guard; the producer above is "
-            + "the load-bearing site for the guarantee, and a future data-field shape that "
-            + "doesn't short-circuit on null must be rejected at this classifier (or at the "
-            + "validator mirror in GraphitronSchemaValidator) before reaching the emitter.")
-    private CarrierFieldClassification classifyCarrierField(String carrierTypeName, GraphQLFieldDefinition dataField) {
-        // R12 producer arm: errors-shaped fields admit as CarrierFieldRole.ErrorChannelRole with
-        // an ErrorChannel.LocalContext binding. The arm runs ahead of the DataChannel resolution
-        // (which would otherwise reject the polymorphic union/interface element as NoPermit).
-        // The §1 channel-level reject rules surface here as NoPermit so the unified walk names the
-        // offending channel; the shared shape predicate (detectErrorsFieldShape) gates entry so
-        // non-errors-shaped fields fall through to the DataChannel resolution unchanged.
-        var errorTypes = detectErrorsFieldShape(dataField);
-        if (errorTypes != null) {
-            String rule7 = FieldBuilder.checkChannelLevelHandlerRules(errorTypes);
-            if (rule7 != null) {
-                return new CarrierFieldClassification.NoPermit(
-                    "errors-shaped carrier field '" + dataField.getName() + "': " + rule7);
-            }
-            String rule8 = FieldBuilder.checkDuplicateMatchCriteria(errorTypes);
-            if (rule8 != null) {
-                return new CarrierFieldClassification.NoPermit(
-                    "errors-shaped carrier field '" + dataField.getName() + "': " + rule8);
-            }
-            var binding = new ErrorChannel.LocalContext(
-                errorTypes, toScreamingSnake(carrierTypeName));
-            return new CarrierFieldClassification.Role(
-                new CarrierFieldRole.ErrorChannelRole(dataField.getName(), binding));
-        }
-
-        String dataFieldName = dataField.getName();
-        String dataElementName = baseTypeName(dataField);
-
-        // The data field's element type is registered as TableBackedType (Phase 1 carrier) or a
-        // record-backed ResultType with a non-null backing class (Phase 2 @service carrier).
-        // R156 adds the DataElement.Id arm: an ID-scalar carrier field for payload-returning
-        // DELETE. Plain SDL Objects promoted to PojoResultType.NoBacking have no class to match
-        // against a @service method's reflected return type, so they're rejected as elements
-        // (only admissible as the carrier itself). Anything else (Int, String, an
-        // interface/union the carrier walk does not know how to project) lands as
-        // no-permit-match.
-        GraphitronType elementType = types.get(dataElementName);
-        FieldWrapper dataWrapper = buildWrapper(dataField);
-        DataElement dataElement;
-        boolean isIdElement = "ID".equals(dataElementName);
-        if (elementType instanceof TableBackedType tbt) {
-            dataElement = new DataElement.Table(dataElementName, tbt.table(), dataWrapper);
-        } else if (elementType instanceof ResultType rt && rt.fqClassName() != null) {
-            dataElement = new DataElement.Record(dataElementName, rt.fqClassName(), dataWrapper);
-        } else if (isIdElement) {
-            // R156 — DataElement.Id: ID-scalar carrier field. Wrapper must be singleton (ID/ID!)
-            // or list-of-non-null ([ID!]/[ID!]!); list-of-nullable ([ID]) rejects here.
-            // Connection wrappers reject as well (the DataElement.Id record's compact ctor would
-            // throw, surface as HardReject here for a clean diagnostic). Verb-restriction
-            // (DELETE-only) and encoder resolution against the owning mutation's input @table
-            // happen in the verb-aware tryResolveSingleRecordCarrier overload + FieldBuilder.
-            if (dataWrapper instanceof FieldWrapper.List list && list.itemNullable()) {
-                return new CarrierFieldClassification.HardReject(
-                    "single-record carrier field '" + dataFieldName + "' has element type 'ID' "
-                    + "with a list-of-nullable wrapper '[ID]'; payload-returning DELETE requires "
-                    + "either singleton (ID / ID!) or list-of-non-null ([ID!] / [ID!]!) — every "
-                    + "element of a successful DELETE response is the encoded PK of an "
-                    + "actually-deleted row, so the slot cannot be null");
-            }
-            if (dataWrapper instanceof FieldWrapper.Connection) {
-                return new CarrierFieldClassification.HardReject(
-                    "single-record carrier field '" + dataFieldName + "' has element type 'ID' "
-                    + "with a Connection wrapper; payload-returning DELETE requires either "
-                    + "singleton (ID / ID!) or list-of-non-null ([ID!] / [ID!]!)");
-            }
-            dataElement = new DataElement.Id(dataElementName, dataWrapper);
-        } else {
-            return new CarrierFieldClassification.NoPermit(
-                "carrier field '" + dataFieldName + "' (element '" + dataElementName
-                + "') resolves to no CarrierFieldRole permit; only DataChannel (one @table data "
-                + "field paired to the input @table, or one ID-scalar data field for "
-                + "payload-returning DELETE) and ErrorChannelRole (R12 errors-shaped field) are "
-                + "admitted today. Adding support for '" + dataFieldName
-                + "' requires a new CarrierFieldRole permit; file a roadmap item for the field "
-                + "shape.");
-        }
-
-        // The data field carries no graphitron-domain directive. Directives like @service,
-        // @sourceRow, @reference, @field, @asConnection, @splitQuery, and @externalField
-        // signal a different fetcher contract than SingleRecordTableField's ResultRowWalk emit;
-        // routing the data field through here would fight the field's intended classification.
-        // Pure-metadata directives (@deprecated, user-defined custom directives without execution
-        // semantics) are not on the list and pass through silently. Authors who need
-        // graphitron-domain behaviour on the data field can opt back in with
-        // @record(record: {className: ...}) explicitly.
-        //
-        // R156: @nodeId is permitted on DataElement.Id carrier fields (the explicit-encoder
-        // recognition form). The encoder's pinning to the owning mutation's input @table is
-        // verified later in FieldBuilder where the input @table is in scope; here we only
-        // accept the directive structurally.
-        //
-        // R159: @field(name: "$source") is admitted on @table-element / @record-element data
-        // fields (not on Id-element). The directive is a no-op confirmation of the implicit
-        // binding the carrier walk already produces from the SDL element type; the producer
-        // type-match check fires downstream in FieldBuilder where the producer MethodRef is
-        // in scope. Unknown sigils ($X != $source) hard-reject here with the canonical
-        // FieldSourceSigil message before the forbidden-directive loop runs, so the author
-        // sees "Unknown sigil" rather than "forbidden directive".
-        boolean fieldIsSourceSigil = false;
-        if (!isIdElement) {
-            switch (FieldSourceSigil.parseArgFieldNameRef(dataField, DIR_FIELD, ARG_NAME)) {
-                case FieldSourceSigil.ParseResult.Absent ignored -> {}
-                case FieldSourceSigil.ParseResult.Ok ok -> {
-                    fieldIsSourceSigil = ok.ref() instanceof FieldSourceSigil.FieldNameRef.UpstreamRoot;
-                }
-                case FieldSourceSigil.ParseResult.UnknownSigil us ->
-                    { return new CarrierFieldClassification.HardReject(FieldSourceSigil.unknownSigilMessage(us.raw())); }
-            }
-        }
-        Set<String> forbidden = isIdElement
-            ? Set.of(DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_FIELD,
-                DIR_AS_CONNECTION, DIR_SPLIT_QUERY, DIR_EXTERNAL_FIELD, DIR_CONDITION,
-                DIR_LOOKUP_KEY, DIR_NOT_GENERATED, DIR_TABLE_METHOD, DIR_DEFAULT_ORDER,
-                DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE)
-            : Set.of(DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_NODE_ID, DIR_FIELD,
-                DIR_AS_CONNECTION, DIR_SPLIT_QUERY, DIR_EXTERNAL_FIELD, DIR_CONDITION,
-                DIR_LOOKUP_KEY, DIR_NOT_GENERATED, DIR_TABLE_METHOD, DIR_DEFAULT_ORDER,
-                DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
-        for (var applied : dataField.getAppliedDirectives()) {
-            if (fieldIsSourceSigil && DIR_FIELD.equals(applied.getName())) continue;
-            if (forbidden.contains(applied.getName())) {
-                return new CarrierFieldClassification.HardReject(
-                    "single-record carrier field '" + dataFieldName + "' carries '@"
-                    + applied.getName() + "'; admits @table-element / @record-element / "
-                    + "ID-element data fields without graphitron-domain field-level directives "
-                    + "(except @nodeId on ID-element fields for the R156 explicit-encoder form)");
-            }
-        }
-
-        return new CarrierFieldClassification.Role(
-            new CarrierFieldRole.DataChannel(dataFieldName, dataElement, fieldIsSourceSigil));
     }
 
     /**

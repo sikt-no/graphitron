@@ -3989,13 +3989,6 @@ public class TypeFetcherGenerator {
             + "SELECT reads the same PK columns off env.getSource() (Result<RecordN<...>>). "
             + "Without table-equality the two halves would reference different column sets, "
             + "and jOOQ would reject the data-field WHERE predicate at runtime.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "single-record-carrier-shape.roles-exhaustively-classified",
-        reliesOn = "The fetcher emits the data-channel projection only; the closed-list "
-            + "CarrierFieldRole permits classifier rule guarantees no other field shape on the "
-            + "carrier reaches emit. R12 (error-handling-parity) attaches its own consumer "
-            + "annotations against the ErrorChannelRole permit when it lands; until then, "
-            + "shape.errorChannel() is always empty on this leaf's NoBacking carrier shape.")
     private static MethodSpec buildMutationBulkDmlRecordFetcher(
             TypeFetcherEmissionContext ctx, MutationField.MutationBulkDmlRecordField f, String outputPackage) {
         var tia = f.tableInputArg();
