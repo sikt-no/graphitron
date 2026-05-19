@@ -34,71 +34,7 @@ This item fixes both jobs and the policy question that surfaced them: snapshot p
 
 ## Implementation
 
-### `graphitron-rewrite/pom.xml`
-
-Add a `gitlab` profile next to the existing `release` profile (graphitron-rewrite/pom.xml:254-410), ported verbatim from `pom.xml:509-547`:
-
-```xml
-<profile>
-    <!-- Publishes to the Sikt GitLab Packages Maven registry as a secondary distribution
-         channel alongside Maven Central. Authentication is provided by a ci_settings.xml
-         file referencing the CI_JOB_TOKEN, written by .gitlab-ci.yml. -->
-    <id>gitlab</id>
-    <distributionManagement>
-        <repository>
-            <id>gitlab-maven</id>
-            <url>${env.CI_API_V4_URL}/projects/${env.CI_PROJECT_ID}/packages/maven</url>
-        </repository>
-    </distributionManagement>
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-deploy-plugin</artifactId>
-                <configuration>
-                    <deployAtEnd>true</deployAtEnd>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-source-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>attach-sources</id>
-                        <goals>
-                            <goal>jar-no-fork</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
-</profile>
-```
-
-Note the deliberate omission of `<snapshotRepository>`: the rewrite parent's invariant is that an accidental `mvn deploy` on `10-SNAPSHOT` should fail fast. With `publish:snapshot` retired, no pipeline path needs a snapshot target, and reintroducing one in the `gitlab` profile would defeat the fail-fast property for that profile alone.
-
-### `.gitlab-ci.yml`
-
-Three edits in one commit:
-
-1. Bump `default: image:` from `maven:3.9-eclipse-temurin-21` to `maven:3.9-eclipse-temurin-25`.
-2. Delete the `publish:snapshot` job (and its preceding two-line comment about `-gitlab-SNAPSHOT`).
-3. Rewrite `publish:release` so both `mvn` calls target the rewrite reactor and the regex accepts `-RC<n>`:
-
-   ```yaml
-   publish:release:
-     extends: .maven-publish
-     rules:
-       - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+(-RC\d+)?$/
-     script:
-       - VERSION=${CI_COMMIT_TAG#v}
-       - echo "Releasing version $VERSION to GitLab Packages"
-       - mvn -f graphitron-rewrite/pom.xml $MAVEN_CLI_OPTS versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false -DprocessAllModules=true
-       - mvn -f graphitron-rewrite/pom.xml $MAVEN_CLI_OPTS $MAVEN_SKIP_OPTS -s ci_settings.xml clean deploy -P gitlab
-   ```
-
-4. Update the header comment block (lines 1-20): drop the SNAPSHOT trigger line, drop the SNAPSHOT-cleanup `NOTE:` paragraph, update the tag pattern note to include the `-RC<n>` suffix.
+Shipped on this branch. `graphitron-rewrite/pom.xml` gained the `gitlab` profile (no `<snapshotRepository>`, so accidental `mvn deploy` on `10-SNAPSHOT` still fails fast); `.gitlab-ci.yml` lost `publish:snapshot`, bumped to `maven:3.9-eclipse-temurin-25`, rewrote `publish:release` to use `-f graphitron-rewrite/pom.xml` on both `mvn` calls, added `-DprocessAllModules=true` to `versions:set`, widened the tag regex to `^v\d+\.\d+\.\d+(-RC\d+)?$`, and updated the header comment block.
 
 ## Risks and mitigations
 

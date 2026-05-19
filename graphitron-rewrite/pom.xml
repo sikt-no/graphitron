@@ -336,6 +336,43 @@
             </build>
         </profile>
         <profile>
+            <!-- Publishes to the Sikt GitLab Packages Maven registry as a secondary distribution
+                 channel alongside Maven Central. Authentication is provided by a ci_settings.xml
+                 file referencing the CI_JOB_TOKEN, written by .gitlab-ci.yml. No snapshotRepository
+                 is declared: the rewrite parent's invariant is that an accidental `mvn deploy` on
+                 10-SNAPSHOT must fail fast. -->
+            <id>gitlab</id>
+            <distributionManagement>
+                <repository>
+                    <id>gitlab-maven</id>
+                    <url>${env.CI_API_V4_URL}/projects/${env.CI_PROJECT_ID}/packages/maven</url>
+                </repository>
+            </distributionManagement>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-deploy-plugin</artifactId>
+                        <configuration>
+                            <deployAtEnd>true</deployAtEnd>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
             <!-- Per-module classifier-trace emission. Each child module runs its surefire / failsafe
                  fork with -Dgraphitron.classification.trace=${project.build.directory}/leaf-coverage.jsonl
                  and truncates that file in process-test-resources so a re-run does not append
