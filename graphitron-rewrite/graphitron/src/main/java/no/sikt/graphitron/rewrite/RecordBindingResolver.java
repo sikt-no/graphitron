@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import graphql.language.EnumValue;
 import graphql.language.SourceLocation;
 import graphql.schema.GraphQLAppliedDirective;
 import graphql.schema.GraphQLArgument;
@@ -7,13 +8,17 @@ import graphql.schema.GraphQLDirectiveContainer;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNamedType;
+import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
+import no.sikt.graphitron.rewrite.model.DmlKind;
 import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.ProducerBinding;
 import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.lang.reflect.Method;
@@ -33,6 +38,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_METHOD;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_SERVICE_REF;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_MUTATION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_RECORD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_TABLE;
@@ -102,6 +109,16 @@ final class RecordBindingResolver {
     /** Reachable SDL types (any axis) — used to gate the directive-ignored warning. */
     private final Set<String> reachable = new LinkedHashSet<>();
 
+    /**
+     * R178 DML mutation payload bindings, observed for the payload SDL type of every DML
+     * {@code @mutation} field whose payload is a non-{@code @table} SDL Object. Stored on a
+     * dedicated axis (not result/input) so the existing record-binding fold and the
+     * {@code recordBackingClasses} pump in {@link TypeBuilder#buildTypes()} continue to ignore
+     * the new arm while the carrier walk owns the per-field classification of payload
+     * children. The cutover commit lifts these observations into the result-axis fold.
+     */
+    private final Map<String, ProducerBinding.DmlEmitted> dmlEmittedMemo = new LinkedHashMap<>();
+
     RecordBindingResolver(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = Objects.requireNonNull(ctx);
         this.svc = Objects.requireNonNull(svc);
@@ -126,6 +143,17 @@ final class RecordBindingResolver {
     /** Returns the resolved input-axis binding for an SDL type, or empty when none. */
     Optional<Class<?>> resolveInput(String sdlTypeName) {
         return Optional.ofNullable(inputMemo.get(sdlTypeName));
+    }
+
+    /**
+     * R178 DML mutation payload binding for an SDL type. Carries the inner {@link TableRef}
+     * the DML producer emits rows for, the {@link DmlKind}, and the producer-side cardinality
+     * lifted from the input {@code @table} arg. Held on a dedicated axis so the existing fold
+     * and the {@link TypeBuilder#buildTypes()} {@code recordBackingClasses} pump don't see it
+     * until the cutover commit retires the carrier walk.
+     */
+    Optional<ProducerBinding.DmlEmitted> resolveDmlEmitted(String sdlTypeName) {
+        return Optional.ofNullable(dmlEmittedMemo.get(sdlTypeName));
     }
 
     /**
@@ -176,13 +204,14 @@ final class RecordBindingResolver {
             }
         });
 
-        // @service and @tableMethod on field definitions.
+        // @service, @tableMethod, and @mutation (R178 DmlEmitted) on field definitions.
         ctx.schema.getAllTypesAsList().forEach(named -> {
             if (!(named instanceof GraphQLObjectType obj)) return;
             if (named.getName().startsWith("__")) return;
             for (GraphQLFieldDefinition field : obj.getFieldDefinitions()) {
                 groundServiceField(obj, field);
                 groundTableMethodField(obj, field);
+                groundDmlMutationField(obj, field);
             }
         });
     }
@@ -276,6 +305,101 @@ final class RecordBindingResolver {
             addInputObservation(inputSdl, new ProducerBinding.RootTableMethod(
                 paramElement, parent.getName(), field.getName(), className, methodName, loc));
         }
+    }
+
+    /**
+     * R178: grounds a {@link ProducerBinding.DmlEmitted} result-axis observation for the payload
+     * SDL type of every DML {@code @mutation} field whose payload is a non-{@code @table} SDL
+     * Object. Reads the {@code @mutation(typeName:)} arg to derive {@link DmlKind}, locates the
+     * single {@code @table}-bearing input argument, resolves the table via the catalog, and
+     * lifts the cardinality from the input arg's list shape (matching the carrier walk's bulk-
+     * vs-single dispatch).
+     *
+     * <p>Skipped cases: missing or malformed {@code @mutation(typeName:)}, no {@code @table}
+     * input argument, unresolvable table name, ID/scalar return types, {@code @table}-bound
+     * returns (already grounded by {@link ProducerBinding.RootTable}), and unloadable record
+     * classes. Each skip preserves the build's current handling for that shape; the carrier walk
+     * remains the live classifier for the SDL coordinates this resolver doesn't observe.
+     *
+     * <p>Multi-argument {@code @table} mutations and missing-{@code @table} mutations fall
+     * through silently here; the per-mutation diagnostics live in
+     * {@link MutationInputResolver#resolveInput} and surface there.
+     */
+    private void groundDmlMutationField(GraphQLObjectType parent, GraphQLFieldDefinition field) {
+        if (!field.hasAppliedDirective(DIR_MUTATION)) return;
+        DmlKind kind = readDmlKind(field);
+        if (kind == null) return;
+
+        GraphQLArgument tableArg = findSingleTableInputArg(field);
+        if (tableArg == null) return;
+
+        GraphQLInputObjectType tableInput = (GraphQLInputObjectType)
+            GraphQLTypeUtil.unwrapAll(tableArg.getType());
+        String tableSqlName = argString(tableInput, DIR_TABLE, ARG_NAME)
+            .orElse(tableInput.getName().toLowerCase());
+
+        Optional<TableRef> tableOpt = svc.resolveTable(tableSqlName);
+        if (tableOpt.isEmpty()) return;
+        TableRef table = tableOpt.get();
+
+        Class<?> recordClass;
+        try {
+            recordClass = Class.forName(
+                table.recordClass().reflectionName(), false, ctx.codegenLoader());
+        } catch (ClassNotFoundException ignored) {
+            return;
+        }
+
+        String payloadSdl = unwrappedTypeName(field.getType());
+        if (payloadSdl == null) return;
+        GraphQLType payloadType = ctx.schema.getType(payloadSdl);
+        if (!(payloadType instanceof GraphQLObjectType payloadObj)) return;
+        // @table-bound payloads (mutate(...): Film, where Film carries @table) are already
+        // grounded as RootTable; don't double-bind.
+        if (payloadObj.hasAppliedDirective(DIR_TABLE)) return;
+
+        SourceKey.Cardinality cardinality =
+            GraphQLTypeUtil.unwrapNonNull(tableArg.getType()) instanceof GraphQLList
+                ? SourceKey.Cardinality.MANY
+                : SourceKey.Cardinality.ONE;
+
+        // Phase 1 storage: dedicated map, isolated from the result-axis fold and the
+        // recordBackingClasses pump. The cutover commit moves this into addResultObservation.
+        // A payload SDL type reachable as the return of multiple DML mutations keeps the first
+        // observation; the cutover-side multi-producer check fires from the standard fold once
+        // the bindings move there.
+        dmlEmittedMemo.putIfAbsent(payloadSdl, new ProducerBinding.DmlEmitted(
+            recordClass, table, kind, cardinality, locationOf(field)));
+    }
+
+    private static DmlKind readDmlKind(GraphQLFieldDefinition field) {
+        GraphQLAppliedDirective dir = field.getAppliedDirective(DIR_MUTATION);
+        if (dir == null) return null;
+        var arg = dir.getArgument(ARG_TYPE_NAME);
+        if (arg == null) return null;
+        Object value = arg.getValue();
+        String raw = value instanceof EnumValue ev ? ev.getName()
+            : value instanceof String s ? s
+            : null;
+        if (raw == null) return null;
+        try {
+            return DmlKind.valueOf(raw);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private static GraphQLArgument findSingleTableInputArg(GraphQLFieldDefinition field) {
+        GraphQLArgument found = null;
+        for (var arg : field.getArguments()) {
+            GraphQLType unwrapped = GraphQLTypeUtil.unwrapAll(arg.getType());
+            if (unwrapped instanceof GraphQLInputObjectType iot
+                    && iot.hasAppliedDirective(DIR_TABLE)) {
+                if (found != null) return null;  // multi-table: defer to MutationInputResolver
+                found = arg;
+            }
+        }
+        return found;
     }
 
     // ===== Phase 2: parent-accessor propagation =====
