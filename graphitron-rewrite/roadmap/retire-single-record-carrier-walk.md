@@ -7,7 +7,7 @@ priority: 7
 theme: mutations-errors
 depends-on: []
 created: 2026-05-18
-last-updated: 2026-05-18
+last-updated: 2026-05-19
 ---
 
 # Retire single-record carrier walk; collapse to SourceKey + R96 reflection
@@ -16,18 +16,24 @@ last-updated: 2026-05-18
 > (`BuildContext.tryResolveSingleRecordCarrier`, `classifyCarrierField`,
 > the `SingleRecordCarrierShape` / `CarrierFieldRole` / `DataElement` /
 > `PerFieldOutcome` / `PkResolution` model trees, the four
-> `register*CarrierDataField` helpers, the `MutationDmlRecordField` /
-> `MutationServiceRecordField` / `SingleRecordTableField*` / `SingleRecordId*`
-> permits, and the `Reader.ResultRowWalk` SourceKey arm) is a parallel
-> classification regime that duplicates what `SourceKey` +
-> `Reader.AccessorCall` + R96's `RecordBindingResolver` already do. Every
-> piece of work it accomplishes - PK-keyed projected SELECT from a
-> producer's source row, parent-record-keyed accessor reads, target-table
-> binding, payload-shape classification - is expressible through the
-> standard SourceKey + reflection machinery used everywhere else in the
-> classifier. R178 deletes the parallel hierarchy and routes every
-> payload-returning mutation (`@service` and `@mutation`-DML, single and
-> bulk) through the standard `@record`-parent + SourceKey path.
+> `register*CarrierDataField` helpers, the four
+> `ChildField.SingleRecord*` per-field permits, and the
+> `Reader.ResultRowWalk` SourceKey arm) is a parallel classification
+> regime that duplicates what `SourceKey` + `Reader.AccessorCall` + R96's
+> `RecordBindingResolver` already do. Every piece of work it
+> accomplishes - PK-keyed projected SELECT from a producer's source row,
+> parent-record-keyed accessor reads, target-table binding, payload-
+> shape classification - is expressible through the standard SourceKey
+> + reflection machinery used everywhere else in the classifier. R178
+> deletes the parallel hierarchy and routes every payload-returning
+> mutation (`@service` and `@mutation`-DML, single and bulk) through the
+> standard `@record`-parent + SourceKey path. The mutation-root permits
+> that today identify payload-returning shapes
+> (`MutationField.MutationDmlRecordField`,
+> `MutationBulkDmlRecordField`, `MutationServiceRecordField`) **stay**;
+> what changes is their classification path - the carrier-walk
+> consultation moves out, the permits are constructed directly from the
+> parsed directive + resolved input table + reflected error channel.
 
 ## The reported bug that exposed the duplication
 
@@ -133,11 +139,20 @@ One classification path for every field on a payload-returning mutation:
    returning `List<SakKvotesporsmalSvarRecord>`), and
    `@field(name: "$errors")` reads `env.getLocalContext()` (per the
    `ErrorChannel.LocalContext` contract under §"What stays" below).
-   Default auto-wires: a field whose SDL name matches a source-row name
-   binds to that name; a field named `errors` whose payload has an
-   active error channel binds to localContext. The sigils are the
-   explicit form when the default name doesn't match what the schema
-   author needs. No DTOs are generated.
+   The errors-field defaulting rule fixes three sub-cases:
+   `@field(name: "$errors")` always selects the localContext transport
+   (no accessor lookup); `@field(name: "<literal>")` (explicit non-
+   sigil, including the literal `"errors"`) always selects the payload-
+   accessor transport with no localContext fallback (the author opted
+   out of the default fallback by writing the directive); an SDL field
+   named `errors` with no `@field` directive on a payload with an
+   active error channel resolves the payload class's `errors` accessor
+   first and falls back to localContext only when no accessor matches.
+   Other field names resolve by accessor name only; the localContext
+   fallback fires solely for the bare `errors` default. The
+   `selectErrorsTransport` rule table at `FieldBuilder` pins this
+   decision; the unit-tier `ErrorsTransportSelectionTest` is the
+   contract. No DTOs are generated.
 4. **The `@record` directive is irrelevant**. R96 already makes it
    informational; the deprecate-record-directive item retires it from
    the codegen surface entirely. R178 removes the last classifier
@@ -158,10 +173,27 @@ Model types:
 - `ChildField.SingleRecordTableFieldFromReturning`
 - `ChildField.SingleRecordIdentityField`
 - `ChildField.SingleRecordIdFieldFromReturning`
-- `MutationField.MutationDmlRecordField`
-- `MutationField.MutationBulkDmlRecordField`
-- `MutationField.MutationServiceRecordField`
 - `SourceKey.Reader.ResultRowWalk` (the permit, not a free-standing type)
+
+The three payload-returning mutation-root permits
+(`MutationField.MutationDmlRecordField`,
+`MutationField.MutationBulkDmlRecordField`,
+`MutationField.MutationServiceRecordField`) **stay**. Their compact-
+constructor shapes are already structurally aligned with
+`QueryField.QueryServiceRecordField`; what changes is their
+classification path - the carrier-walk consultation
+(`tryResolveSingleRecordCarrier`, `register*CarrierDataField`,
+`requireDataTableMatchesInputTable`, `classifyServiceCarrierProducer`,
+`checkSourceSigilTypeMatch`) is removed from inside the classifier and
+each permit is constructed directly from the parsed `@mutation` /
+`@service` directive + resolved input table. The
+`Optional<ResultAssembly>` slot is not added to the two DML permits;
+"more like `QueryServiceRecordField`" refers to the classification
+path, not field-by-field permit alignment, and the DML producer is
+generator-emitted with no service method whose return type would bind
+to a payload-class canonical constructor. The slot stays on
+`MutationServiceRecordField` (where it already lives, mirroring
+`QueryServiceRecordField`).
 
 Classifier methods:
 - `BuildContext.tryResolveSingleRecordCarrier(String)`
@@ -187,8 +219,17 @@ Emitters:
 - `FetcherEmitter.buildSingleRecordTableFetcherValueTableRecordWrap`
 - `FetcherEmitter.buildSingleRecordIdFromReturningFetcherValue`
 - `FetcherEmitter.buildSingleRecordTableFromReturningFetcherValue`
-- `TypeFetcherGenerator.buildMutationDmlRecordFetcher`
-- `TypeFetcherGenerator.buildMutationBulkDmlRecordFetcher`
+
+`TypeFetcherGenerator.buildMutationDmlRecordFetcher` and
+`buildMutationBulkDmlRecordFetcher` stay alongside the two
+`MutationField.Mutation*DmlRecordField` permits they consume; the DML
+fetcher still emits `RecordN<PK>` / `Result<RecordN<PK>>` into
+`env.getSource()` exactly as today. What changes is who builds the
+payload-child fetchers off that source: the unified `classifyField`
+path emits standard `PropertyField` / `RecordTableField` / `ErrorsField`
+permits whose existing fetchers read PK columns via `Reader.ColumnRead`
+on a plain `Record` cast, replacing the typed `RecordN<...>` cast in the
+deleted `buildSingleRecordTableFetcherValueRecordWrap` arm.
 
 `@LoadBearingClassifierCheck` keys:
 - `single-record-carrier-shape.roles-exhaustively-classified`
@@ -209,6 +250,27 @@ type-match enforced uniformly with every other field.
 
 ## What stays / consolidates
 
+- **The three payload-returning mutation-root permits** -
+  `MutationField.MutationDmlRecordField`,
+  `MutationField.MutationBulkDmlRecordField`,
+  `MutationField.MutationServiceRecordField` - keep their compact-
+  constructor shapes and stay the classification target for payload-
+  returning mutations. The carrier-walk binding is removed from
+  *around* them, not from inside: the classifier constructs each permit
+  directly from the parsed `@mutation` / `@service` directive (DML kind,
+  input `@table`, error channel) without consulting
+  `tryResolveSingleRecordCarrier` or the `register*CarrierDataField`
+  helpers. Their fetcher emitters
+  (`TypeFetcherGenerator.buildMutationDmlRecordFetcher`,
+  `buildMutationBulkDmlRecordFetcher`, the shared service-fetcher path
+  used by `buildMutationServiceRecordFetcher`) stay unchanged. The
+  error-channel resolution that today reads from the carrier shape
+  (`ok.shape().errorChannel()`) moves into a standalone reflection
+  walk over the payload SDL: scan for an errors-shaped field, derive
+  `Optional<ErrorChannel>` from the polymorphic-of-`@error` member set
+  and the payload class's structure, independent of the deleted
+  `SingleRecordCarrierShape`. The result is shape-identical to today's
+  carrier-walk output; the producer site changes.
 - **The "PK columns off the source row, projected SELECT keyed by those
   PKs" fetcher logic** is the only emit work the carrier walk did that
   isn't already present elsewhere - and it already exists, under
@@ -410,6 +472,19 @@ null). The spike stays in-tree as a behavioral contract pin under the
   resolves to no CarrierFieldRole permit", etc.) are replaced by the
   standard `@record`-parent diagnostics. Authors get one consistent
   diagnostic family across the classifier.
+- **Implementation slicing**. Phase 1 (additive `ProducerBinding.
+  DmlEmitted` permit, observed by the R96 reflection walk, exposed
+  through `TypeBuilder.dmlEmittedBinding`) and Phase 3A (additive
+  `$errors` sigil + `selectErrorsTransport` rule-table helper, both
+  unwired) shipped as separate commits with no behavior change. Phase
+  3B is the atomic cutover required by the spec: every payload-
+  returning mutation arm (DML payload, `@service` payload, DELETE-
+  from-returning) switches from the carrier walk to the unified path
+  in a single commit, with pipeline tests retargeted, the SettKvotes-
+  porsmal regression pin added, and the diagnostic-wording pin added.
+  Phase 4 deletions follow as their own commits and remove the now-
+  unreachable carrier-walk types, methods, emitters, and load-bearing
+  classifier checks listed under §"Concrete deletions".
 
 ## Out of scope
 
