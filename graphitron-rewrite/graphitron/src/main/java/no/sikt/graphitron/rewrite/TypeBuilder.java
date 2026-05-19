@@ -138,6 +138,17 @@ class TypeBuilder {
         return recordBackingClasses;
     }
 
+    /**
+     * R178 DML payload bindings produced by {@link RecordBindingResolver#groundDmlMutationField}.
+     * Keyed by payload SDL type name. Read by the schema-builder loop and threaded into
+     * {@link FieldBuilder#classifyField} so the unified-path classifier can route a payload
+     * field's child classification through the inner {@code TableRef} the DML producer carries.
+     * Empty until {@code buildTypes()} completes.
+     */
+    java.util.Optional<no.sikt.graphitron.rewrite.model.ProducerBinding.DmlEmitted> dmlEmittedBinding(String sdlTypeName) {
+        return bindings == null ? java.util.Optional.empty() : bindings.resolveDmlEmitted(sdlTypeName);
+    }
+
     // ===== Two-pass type map construction =====
 
     Map<String, GraphitronType> buildTypes() {
