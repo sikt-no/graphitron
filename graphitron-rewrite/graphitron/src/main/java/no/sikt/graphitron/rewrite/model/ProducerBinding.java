@@ -153,7 +153,7 @@ public sealed interface ProducerBinding
      * An {@code @service} mutation field's reflected return-element class, observed as the
      * producer-side binding for the payload SDL type of an {@code @service}-carrier shape.
      * The {@code @service} method returns {@code XRecord} (single-cardinality) or
-     * {@code List<XRecord>} (list-cardinality) where {@code X} matches the carrier payload's
+     * {@code List<XRecord>} (list-cardinality) where {@code X} matches the payload's
      * inner {@code @table}-typed data field's record class; the observation grounds when the
      * structural read of the payload's SDL fields finds exactly one non-errors-shaped
      * {@code @table}-typed data field whose record class equals the method's return-element

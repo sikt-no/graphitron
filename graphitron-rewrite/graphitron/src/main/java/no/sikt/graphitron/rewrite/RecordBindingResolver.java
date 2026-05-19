@@ -275,7 +275,7 @@ final class RecordBindingResolver {
         // above. The classifier-side dispatch in FieldBuilder.classifyChildFieldOnResultType
         // reads through TypeBuilder.serviceEmittedBinding to construct
         // ChildField.SingleRecordTableField with Wrap.TableRecord at the data-field coord.
-        groundServiceCarrierBinding(parent, field, method, className, methodName, resultSdl, loc);
+        groundServicePayloadBinding(parent, field, method, className, methodName, resultSdl, loc);
 
         // Ground input-axis bindings from method parameters → SDL arg types.
         // Argument mapping: parameter name = SDL arg name unless argMapping overrides.
@@ -312,7 +312,7 @@ final class RecordBindingResolver {
      * directive"; errors-shaped fields (polymorphic-of-{@code @error}) are excluded by the
      * "must be a GraphQL Object" check.
      */
-    private void groundServiceCarrierBinding(GraphQLObjectType parent, GraphQLFieldDefinition field,
+    private void groundServicePayloadBinding(GraphQLObjectType parent, GraphQLFieldDefinition field,
             Method method, String className, String methodName, String resultSdl, SourceLocation loc) {
         if (resultSdl == null) return;
         GraphQLType payloadType = ctx.schema.getType(resultSdl);

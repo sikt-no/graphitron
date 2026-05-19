@@ -430,7 +430,7 @@ type SetterShapeFilmReviewPayload @record(record: {className: "no.sikt.graphitro
 }
 
 # R12 fixture: DML mutation with a LocalContext error channel. The payload is a plain SDL
-# Object (no @record(record:{className:})), so the structural DML-carrier scan admits it and
+# Object (no @record(record:{className:})), so the structural DML-payload scan admits it and
 # FieldBuilder.detectStructuralDmlErrorChannel binds the channel to ErrorChannel.LocalContext.
 # MutationDmlRecordField carries the channel; the catch arm dispatches through
 # ErrorRouter.dispatchToLocalContext, packing the matched Throwable into env.getLocalContext().
@@ -1366,7 +1366,7 @@ type Mutation {
     createKeyedNode(in: CreateKeyedNodeInput!): ID @mutation(typeName: INSERT)
 
     # Single-record DML carrier mutations (FilmPayload, plain SDL Object with no
-    # @record/@table). The structural DML-carrier scan (BuildContext.scanStructuralDmlPayload)
+    # @record/@table). The structural DML-payload scan (BuildContext.scanStructuralDmlPayload)
     # admits payload-returning DML, the @mutation classifier produces MutationDmlRecordField,
     # and the data field classifies as ChildField.SingleRecordTableField with a SourceKey
     # (Reader.ResultRowWalk, Wrap.Record, PK columns). The fetcher runs PK-only RETURNING

@@ -158,7 +158,7 @@ class SourceKeyTest {
     @Test
     void resultRowWalkAcceptsWrapTableRecordMatchingTarget() {
         // R158: ResultRowWalk admits Wrap.TableRecord whose className equals target.recordClass()
-        // (the @service carrier-payload producer's typed XRecord return).
+        // (the @service payload producer's typed XRecord return).
         var key = new SourceKey(
             FILM_TABLE,
             List.of(FILM_ID),

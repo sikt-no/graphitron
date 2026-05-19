@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * R159 pipeline-tier coverage for the {@code @field(name: "$source")} sigil on the
- * carrier-payload data field. SDL → classified model assertions (admit, type-mismatch
+ * payload data field. SDL → classified model assertions (admit, type-mismatch
  * reject, unknown-sigil reject, bare-name regression, model-shape regression, and the
  * non-carrier-site regression that the sigil-aware arm does not silently rewire the
  * non-carrier paths to learn about sigils) plus validator-surface assertions on the

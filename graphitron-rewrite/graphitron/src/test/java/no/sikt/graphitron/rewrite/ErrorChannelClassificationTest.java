@@ -564,9 +564,9 @@ class ErrorChannelClassificationTest {
             """;
 
     @Test
-    void carrierWalkErrorsField_classifiesAsErrorsFieldWithLocalContextTransport() {
+    void payloadErrorsField_classifiesAsErrorsFieldWithLocalContextTransport() {
         // A plain SDL Object carrier (PojoResultType.NoBacking after promotion) with an
-        // errors-shaped field admits at the structural DML-carrier scan. The errors field
+        // errors-shaped field admits at the structural DML-payload scan. The errors field
         // classifies as ChildField.ErrorsField carrying Transport.LocalContext (the
         // discriminator FetcherEmitter reads at emit time). The mutation classifies as
         // MutationBulkDmlRecordField and FieldBuilder.detectStructuralDmlErrorChannel wires
@@ -586,9 +586,9 @@ class ErrorChannelClassificationTest {
     }
 
     @Test
-    void carrierWalkErrorsField_rejectsMultipleValidationHandlers() {
+    void payloadErrorsField_rejectsMultipleValidationHandlers() {
         // Rule 7 (§1): a carrier with two VALIDATION-handler @error types in its errors channel
-        // is rejected at the structural DML-carrier scan with the offending channel named.
+        // is rejected at the structural DML-payload scan with the offending channel named.
         var schema = TestSchemaHelper.buildSchema("""
             type V1 @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
             type V2 @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }

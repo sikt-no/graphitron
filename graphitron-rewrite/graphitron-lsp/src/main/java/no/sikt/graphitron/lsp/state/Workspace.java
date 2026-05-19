@@ -185,7 +185,7 @@ public final class Workspace {
         var current = this.snapshot;
         if (current instanceof LspSchemaSnapshot.Built.Current c) {
             this.snapshot = new LspSchemaSnapshot.Built.Previous(
-                c.directives(), c.typesByName(), c.carrierDataFieldByType());
+                c.directives(), c.typesByName(), c.payloadDataFieldByType());
             markAllForRecalculation();
         }
     }

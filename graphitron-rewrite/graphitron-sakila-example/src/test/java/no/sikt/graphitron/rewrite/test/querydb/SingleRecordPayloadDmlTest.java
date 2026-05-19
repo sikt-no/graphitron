@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
-class SingleRecordCarrierDmlTest {
+class SingleRecordPayloadDmlTest {
 
     static PostgreSQLContainer postgres;
     static DSLContext dsl;

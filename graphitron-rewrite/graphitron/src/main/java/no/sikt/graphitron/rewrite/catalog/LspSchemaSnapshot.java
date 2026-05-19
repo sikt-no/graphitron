@@ -59,16 +59,16 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
         Map<String, TypeBackingShape> typesByName();
 
         /**
-         * R159 — per-carrier projection of the carrier-payload data field's name. Keyed by the
+         * R159 — per-carrier projection of the payload data field's name. Keyed by the
          * carrier's SDL type name; value is the SDL field name of the carrier's single
-         * data field. Populated only for types whose classifier-side structural DML-carrier
+         * data field. Populated only for types whose classifier-side structural DML-payload
          * scan ({@code BuildContext.scanStructuralDmlPayload}) admits; absent for everything
          * else.
          *
          * <p>Backing data for {@link #siteContext(String, String)}; the LSP arms route through
          * that method rather than evaluating the (typeName, fieldName) predicate themselves.
          */
-        Map<String, String> carrierDataFieldByType();
+        Map<String, String> payloadDataFieldByType();
 
         default Optional<DirectiveShape> directive(String name) {
             return directives().stream().filter(d -> d.name().equals(name)).findFirst();
@@ -87,34 +87,34 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
          * {@link FieldSourceSigil.SiteContext} arm that
          * {@link FieldSourceSigil#sourceSigilDefinedAt} dispatches on for the
          * {@code (typeName, fieldName)} coordinate. The snapshot is the single source of truth
-         * for which coordinate is the carrier-data-field admit site today; LSP consumers route
+         * for which coordinate is the payload-data-field admit site today; LSP consumers route
          * through this method rather than reimplementing the predicate against the underlying
-         * {@link #carrierDataFieldByType()} map, so a future broadening (a new admit site, a
+         * {@link #payloadDataFieldByType()} map, so a future broadening (a new admit site, a
          * second sigil) flips the sealed answer in one place.
          */
         default FieldSourceSigil.SiteContext siteContext(String typeName, String fieldName) {
-            var carrierField = carrierDataFieldByType().get(typeName);
+            var carrierField = payloadDataFieldByType().get(typeName);
             if (carrierField != null && carrierField.equals(fieldName)) {
-                return new FieldSourceSigil.SiteContext.CarrierDataField();
+                return new FieldSourceSigil.SiteContext.PayloadDataField();
             }
             return new FieldSourceSigil.SiteContext.Other();
         }
 
         record Current(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName,
-                       Map<String, String> carrierDataFieldByType) implements Built {
+                       Map<String, String> payloadDataFieldByType) implements Built {
             public Current {
                 directives = List.copyOf(directives);
                 typesByName = Map.copyOf(typesByName);
-                carrierDataFieldByType = Map.copyOf(carrierDataFieldByType);
+                payloadDataFieldByType = Map.copyOf(payloadDataFieldByType);
             }
         }
 
         record Previous(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName,
-                        Map<String, String> carrierDataFieldByType) implements Built {
+                        Map<String, String> payloadDataFieldByType) implements Built {
             public Previous {
                 directives = List.copyOf(directives);
                 typesByName = Map.copyOf(typesByName);
-                carrierDataFieldByType = Map.copyOf(carrierDataFieldByType);
+                payloadDataFieldByType = Map.copyOf(payloadDataFieldByType);
             }
         }
     }

@@ -116,10 +116,10 @@ public final class CatalogBuilder {
         var typesByName = (schema == null || catalog == null)
             ? Map.<String, TypeBackingShape>of()
             : projectTypesByName(schema, catalog);
-        var carrierDataFieldByType = (schema == null)
+        var payloadDataFieldByType = (schema == null)
             ? Map.<String, String>of()
-            : projectCarrierDataFields(schema);
-        return new LspSchemaSnapshot.Built.Current(directives, typesByName, carrierDataFieldByType);
+            : projectPayloadDataFields(schema);
+        return new LspSchemaSnapshot.Built.Current(directives, typesByName, payloadDataFieldByType);
     }
 
     /**
@@ -129,15 +129,15 @@ public final class CatalogBuilder {
      * {@code SingleRecordTableFieldFromReturning}; each marks its parent type as a single-record
      * carrier whose data field name is the field's own name.
      */
-    private static Map<String, String> projectCarrierDataFields(GraphitronSchema schema) {
+    private static Map<String, String> projectPayloadDataFields(GraphitronSchema schema) {
         var out = new LinkedHashMap<String, String>();
         for (var entry : schema.fields().entrySet()) {
             var field = entry.getValue();
-            boolean isCarrierData =
+            boolean isPayloadData =
                 field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField
                 || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning
                 || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning;
-            if (isCarrierData) {
+            if (isPayloadData) {
                 out.put(field.parentTypeName(), field.name());
             }
         }

@@ -2639,7 +2639,7 @@ class FieldBuilder {
     }
 
     /**
-     * R159 / R178 Phase 4 — type-match check at the carrier-data-field {@code $source}
+     * R159 / R178 Phase 4 — type-match check at the payload-data-field {@code $source}
      * admission site. Runs when an {@code @service} mutation returns a structurally carrier-
      * shaped payload (single {@code @table}-typed data field) whose data field opts into the
      * {@code $source} sigil via {@code @field(name: "$source")}: compares the producer's
@@ -2657,9 +2657,9 @@ class FieldBuilder {
     private String checkSourceSigilTypeMatch(
             no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType returnType,
             no.sikt.graphitron.rewrite.model.MethodRef method) {
-        var shape = detectStructuralServiceCarrierShape(returnType.returnTypeName());
+        var shape = detectStructuralServicePayloadShape(returnType.returnTypeName());
         if (shape == null) return null;
-        var dataField = findStructuralCarrierDataField(returnType.returnTypeName());
+        var dataField = findStructuralPayloadDataField(returnType.returnTypeName());
         if (dataField == null) return null;
         var parsed = FieldSourceSigil.parseArgFieldNameRef(dataField, DIR_FIELD, ARG_NAME);
         boolean isSourceSigil = parsed instanceof FieldSourceSigil.ParseResult.Ok ok
@@ -2674,12 +2674,12 @@ class FieldBuilder {
 
     /**
      * R178 Phase 4 — re-walk the payload SDL to retrieve the structurally-detected carrier's
-     * data field definition. Mirrors {@link #detectStructuralServiceCarrierShape}'s walk but
+     * data field definition. Mirrors {@link #detectStructuralServicePayloadShape}'s walk but
      * returns the field definition rather than its resolved table/cardinality; both helpers
      * land at the same single {@code @table}-typed data field on payloads that
-     * {@link #detectStructuralServiceCarrierShape} admits.
+     * {@link #detectStructuralServicePayloadShape} admits.
      */
-    private GraphQLFieldDefinition findStructuralCarrierDataField(String payloadSdlName) {
+    private GraphQLFieldDefinition findStructuralPayloadDataField(String payloadSdlName) {
         if (payloadSdlName == null) return null;
         var payloadType = ctx.schema.getType(payloadSdlName);
         if (!(payloadType instanceof graphql.schema.GraphQLObjectType payloadObj)) return null;
@@ -2766,11 +2766,11 @@ class FieldBuilder {
      * payloads (zero or multiple {@code @table}-typed data fields), ClassBacked payloads, and
      * methods whose return matches the expected shape all short-circuit to {@code null}.
      */
-    private String classifyServiceCarrierProducer(
+    private String classifyServicePayloadProducer(
             no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType returnType,
             no.sikt.graphitron.rewrite.model.MethodRef method) {
         if (returnType.fqClassName() != null) return null;
-        var shape = detectStructuralServiceCarrierShape(returnType.returnTypeName());
+        var shape = detectStructuralServicePayloadShape(returnType.returnTypeName());
         if (shape == null) return null;
         var target = shape.table();
         var cardinality = shape.cardinality();
@@ -2788,7 +2788,7 @@ class FieldBuilder {
 
     /**
      * R178 step 3: structural detection for an {@code @service}-carrier shape on a NoBacking
-     * SDL payload. Mirrors {@code RecordBindingResolver.groundServiceCarrierBinding}'s payload
+     * SDL payload. Mirrors {@code RecordBindingResolver.groundServicePayloadBinding}'s payload
      * SDL walk: scans the payload object's field definitions, looks for exactly one
      * {@code @table}-typed data field (the field's element type is a GraphQL Object carrying
      * the {@code @table} directive, resolved through {@code ctx.types} as a TableBackedType),
@@ -2799,9 +2799,9 @@ class FieldBuilder {
      * <p>The detection is deliberately structural; the SettKvotesporsmal bug's mechanism (a
      * forbidden-directives loop over the carrier shape) cannot fire from this site.
      */
-    private record StructuralServiceCarrierShape(TableRef table, SourceKey.Cardinality cardinality) {}
+    private record StructuralServicePayloadShape(TableRef table, SourceKey.Cardinality cardinality) {}
 
-    private StructuralServiceCarrierShape detectStructuralServiceCarrierShape(String payloadSdlName) {
+    private StructuralServicePayloadShape detectStructuralServicePayloadShape(String payloadSdlName) {
         if (payloadSdlName == null) return null;
         var payloadType = ctx.schema.getType(payloadSdlName);
         if (!(payloadType instanceof graphql.schema.GraphQLObjectType payloadObj)) return null;
@@ -2819,7 +2819,7 @@ class FieldBuilder {
                 ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE;
         }
         if (dataField == null) return null;
-        return new StructuralServiceCarrierShape(table, cardinality);
+        return new StructuralServicePayloadShape(table, cardinality);
     }
 
     /**
@@ -3087,7 +3087,7 @@ class FieldBuilder {
                     buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, ch ->
                         new MutationField.MutationServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch));
                 case ServiceDirectiveResolver.Resolved.Result r -> {
-                    // R159: when the @service mutation returns a carrier-payload type whose
+                    // R159: when the @service mutation returns a payload type whose
                     // data field opts into the $source sigil, verify the producer's reflected
                     // return type matches the SDL element's backing class. The check is colocated
                     // here because the producer's MethodRef is in scope; the rejection flows
@@ -3097,17 +3097,17 @@ class FieldBuilder {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                             Rejection.structural(sourceSigilError));
                     }
-                    // R178 step 3: @service-carrier strict-return check detects the carrier shape
+                    // R178 step 3: @service-payload strict-return check detects the payload shape
                     // directly from the payload SDL. The check fires only for NoBacking payloads
                     // (no @record class); ClassBacked payloads route through the surviving
                     // legacy-equality check inside buildServiceField, which produces the
                     // payload-class diagnostic. This split is the SettKvotesporsmal bug's
                     // structural fix: ClassBacked payloads get a diagnostic citing the payload
                     // class, not the inner table's record class.
-                    String serviceCarrierError = classifyServiceCarrierProducer(r.returnType(), r.method());
-                    if (serviceCarrierError != null) {
+                    String servicePayloadError = classifyServicePayloadProducer(r.returnType(), r.method());
+                    if (servicePayloadError != null) {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
-                            Rejection.structural(serviceCarrierError));
+                            Rejection.structural(servicePayloadError));
                     }
                     yield buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, ch ->
                         new MutationField.MutationServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), ch));
@@ -3160,10 +3160,10 @@ class FieldBuilder {
                 // operate on structural inputs.
                 if (returnType instanceof ReturnTypeRef.ResultReturnType rrt) {
                     var scan = ctx.scanStructuralDmlPayload(rrt.returnTypeName());
-                    if (scan instanceof BuildContext.DmlCarrierScan.Reject scanReject) {
+                    if (scan instanceof BuildContext.DmlPayloadScan.Reject scanReject) {
                         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(scanReject.reason()));
                     }
-                    if (scan instanceof BuildContext.DmlCarrierScan.Admit admit) {
+                    if (scan instanceof BuildContext.DmlPayloadScan.Admit admit) {
                         var dataField = admit.dataField();
                         var element = admit.element();
                         var wrapper = ctx.buildWrapper(dataField);

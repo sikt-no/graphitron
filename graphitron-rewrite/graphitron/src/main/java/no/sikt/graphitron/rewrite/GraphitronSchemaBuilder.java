@@ -234,7 +234,7 @@ public class GraphitronSchemaBuilder {
                     (nDml.isPresent() && nDml.get().kind() != no.sikt.graphitron.rewrite.model.DmlKind.DELETE)
                     || nService.isPresent();
                 var scan = ctx.scanStructuralDmlPayload(objType.getName());
-                if (scan instanceof BuildContext.DmlCarrierScan.Admit && !skipForUnifiedPath
+                if (scan instanceof BuildContext.DmlPayloadScan.Admit && !skipForUnifiedPath
                         && parentType instanceof no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType.NoBacking) {
                     Class<?> parentBackingClass0 = typeBuilder.recordBackingClasses().get(objType.getName());
                     for (var f : objType.getFieldDefinitions()) {

@@ -45,7 +45,7 @@ public sealed interface ChildField extends GraphitronField
      * invariant {@code source-key.result-row-walk-target-aligned-empty-path} to use
      * {@link SourceKey.Reader.ResultRowWalk} with either {@link SourceKey.Wrap.Record}
      * (DML mutation producer) or {@link SourceKey.Wrap.TableRecord} whose {@code className}
-     * matches {@code target.recordClass()} ({@code @service} carrier-payload producer).
+     * matches {@code target.recordClass()} ({@code @service} payload producer).
      * {@link #joinPath()},
      * {@link #filters()}, {@link #orderBy()}, and {@link #pagination()} are structurally empty/None
      * for this permit (no navigation, no WHERE, no ordering, no pagination); accessor methods return

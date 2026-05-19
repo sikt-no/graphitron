@@ -445,7 +445,7 @@ null). The spike stays in-tree as a behavioral contract pin under the
     `SettKvotesporsmalAlgoritmePayload`") cited the inner table's record
     instead of the payload's reflected class. Pin the new wording to
     prevent regression toward that failure mode.
-  - Retarget `SingleRecordCarrierPipelineTest`,
+  - Retarget `SingleRecordPayloadPipelineTest`,
     `SingleRecordTableFieldServiceProducerPipelineTest`,
     `FieldSourceSigilPipelineTest`, the
     `SINGLE_RECORD_CARRIER_DATA_FIELD_ORPHAN` /
@@ -465,7 +465,7 @@ null). The spike stays in-tree as a behavioral contract pin under the
   through the unified path. Compile-tier passing is the load-bearing
   guarantee that the producer/consumer wiring is correct.
 - **Execution tier**: keep every existing carrier-walk execution test
-  (`SingleRecordCarrierDmlTest`'s durability pins,
+  (`SingleRecordPayloadDmlTest`'s durability pins,
   `DmlBulkMutationsExecutionTest`'s order-preservation pins,
   `SingleRecordTableFieldServiceProducerExecutionTest`'s eight cases,
   R156's two DELETE-carrier end-to-end tests). Same SQL, same Java
@@ -640,7 +640,7 @@ null). The spike stays in-tree as a behavioral contract pin under the
         `CatalogBuilder.projectCarrierDataFields`. Test cleanup:
         `SINGLE_RECORD_IDENTITY_FIELD_ORPHAN.variants()` returns
         `Set.of()`; removes
-        `SingleRecordCarrierPipelineTest.fetcherEmitter_singleRecordIdentityFieldArm`;
+        `SingleRecordPayloadPipelineTest.fetcherEmitter_singleRecordIdentityFieldArm`;
         rewires `LocalContextErrorsFieldValidationTest.guardedSibling`
         to use `SingleRecordIdFieldFromReturning`.
       - **7d**: cosmetic — `VariantCoverageTest` row for

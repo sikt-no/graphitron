@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * R158 execution-tier fixture: an {@code @service}-backed mutation that returns the
- * carrier-payload's data field shape verbatim ({@code List<FilmRecord>} for MANY,
+ * payload's data field shape verbatim ({@code List<FilmRecord>} for MANY,
  * {@code FilmRecord} for ONE). The carrier's data field classifies as
  * {@code ChildField.SingleRecordTableField} with
  * {@code SourceKey.Wrap.TableRecord(FilmRecord)}; the FetcherEmitter's
