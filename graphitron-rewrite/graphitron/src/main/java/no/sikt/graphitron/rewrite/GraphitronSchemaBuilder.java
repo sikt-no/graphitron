@@ -140,6 +140,7 @@ public class GraphitronSchemaBuilder {
         bctx.svc = svc;
         var typeBuilder = new TypeBuilder(bctx, svc);
         var fieldBuilder = new FieldBuilder(bctx, svc);
+        fieldBuilder.setTypeBuilder(typeBuilder);
         var result = buildSchema(bctx, typeBuilder, fieldBuilder);
         return new Bundle(result.model, result.assembled, federationLink);
     }
@@ -235,8 +236,21 @@ public class GraphitronSchemaBuilder {
                 // producer-site helpers (registerDmlCarrierDataField / registerServiceCarrier
                 // DataField) reclassify the data field via compare-then-write when the carrier
                 // is used as a DML or @service return.
+                // R178 (step 1, DML-only cutover): for INSERT / UPDATE / UPSERT payloads, the
+                // payload's child fields classify through the unified path against the
+                // producer's ProducerBinding.DmlEmitted observation (deriveSplitQuerySource on
+                // the inner @table). The carrier-walk Ok.NoBacking short-circuit stays the
+                // path for non-DML carriers (@service-only) and for DELETE carriers (where the
+                // mutation classifier still uses registerDeleteCarrierDataField to write the
+                // SingleRecord*FromReturning per-field permits; that reclassify call requires
+                // the verbless walk to have pre-registered the data-field coord so the
+                // expected-existing-class guard in FieldRegistry.reclassify is satisfied).
+                var nbinding = typeBuilder.dmlEmittedBinding(objType.getName());
+                boolean skipForUnifiedPath = nbinding.isPresent()
+                    && nbinding.get().kind() != no.sikt.graphitron.rewrite.model.DmlKind.DELETE;
                 if (ctx.tryResolveSingleRecordCarrier(objType.getName())
-                        instanceof SingleRecordCarrierResolution.Ok.NoBacking ok) {
+                        instanceof SingleRecordCarrierResolution.Ok.NoBacking ok
+                        && !skipForUnifiedPath) {
                     registerCarrierDataField(ctx, objType, ok.shape());
                     // R12: walk the carrier's non-data-channel fields (ErrorChannelRole today)
                     // through the normal per-field classifier so liftToErrorsField materialises
