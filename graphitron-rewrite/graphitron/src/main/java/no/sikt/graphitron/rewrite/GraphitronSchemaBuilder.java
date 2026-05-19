@@ -217,45 +217,22 @@ public class GraphitronSchemaBuilder {
             .forEach(objType -> {
                 var parentType = ctx.types.get(objType.getName());
                 if (parentType == null) return;
-                // R75 Phase 1: single-record DML carrier registration. PojoResultType.NoBacking
-                // types passing the trigger admit a single data field as SingleRecordTableField
-                // with an inline-constructed SourceKey (Reader.ResultRowWalk, Wrap.Record, PK
-                // columns from the data field's element table; cardinality from the data field's
-                // wrapper). Phase 1 admits exactly one field, so we register it here and skip
-                // the normal per-type classification pass for this carrier. NotCandidate /
-                // Rejected fall through.
-                //
-                // R161: the carrier-walk admission was widened so the className-carrying arms
-                // (Backed / JavaRecordType / JooqRecordType / JooqTableRecordType) route through
-                // MutationDmlRecordField at mutation-classification time. The type-level
-                // short-circuit fires only on Ok.NoBacking, the model sub-arm where there is no
-                // developer class for R88's per-field accessor-resolution pass to inspect.
-                // Ok.ClassBacked falls through to normal per-type classification so R88
-                // diagnostics surface on developer-supplied classes; classifyChildFieldOnResultType's
-                // DmlEmitted / ServiceEmitted producer-binding arms construct the data-field
-                // permit when the carrier is used as a DML or @service return.
-                // R178: for payloads classified through the unified path (DML-emitted or
-                // @service-emitted carrier binding present), the per-type pass runs against
-                // the producer binding to construct the data-field permit. The carrier-walk
-                // Ok.NoBacking short-circuit stays the path for:
-                //   - orphan NoBacking carriers (no producer binding; the data field stays
-                //     unregistered per R158, and graphql-java's never-traverse-unproduced-fields
-                //     guarantee makes the missing entry structurally safe);
-                //   - DELETE DML carriers (registerDeleteCarrierDataField is still the sole
-                //     writer for SingleRecord*FromReturning permits; reclassify expects the
-                //     verbless walk to have pre-registered the data-field coord).
+                // R178 Phase 4: structural carrier-shape detection (scanStructuralDmlPayload)
+                // routes payload-returning DML through the unified path. For payloads with a
+                // producer binding (DmlEmitted for non-DELETE, or ServiceEmitted), the per-type
+                // pass runs against the binding to construct the data-field permit. For orphan
+                // NoBacking carriers (carrier-shaped payload that no producer mutation returns)
+                // and for DELETE DML carriers (data-field permit constructed at the @mutation
+                // classifier from the DmlElementKind dispatch), the data field stays
+                // unregistered at this site; graphql-java's never-traverse-unproduced-fields
+                // guarantee makes the missing entry structurally safe. Errors-shaped fields
+                // still classify through the normal per-field classifier so ErrorsField is
+                // materialised independent of the producer binding.
                 var nDml = typeBuilder.dmlEmittedBinding(objType.getName());
                 var nService = typeBuilder.serviceEmittedBinding(objType.getName());
                 boolean skipForUnifiedPath =
                     (nDml.isPresent() && nDml.get().kind() != no.sikt.graphitron.rewrite.model.DmlKind.DELETE)
                     || nService.isPresent();
-                // R178 Phase 4: structural carrier-shape detection replaces the carrier walk's
-                // Ok.NoBacking gate. For orphan NoBacking carriers (a structurally carrier-shaped
-                // payload that no producer mutation returns), the data field stays unregistered
-                // per R158 (graphql-java's never-traverse-unproduced-fields guarantee makes the
-                // missing entry structurally safe). Errors-shaped fields still classify through
-                // the normal per-field classifier so ErrorsField is materialised independent of
-                // the producer binding.
                 var scan = ctx.scanStructuralDmlPayload(objType.getName());
                 if (scan instanceof BuildContext.DmlCarrierScan.Admit && !skipForUnifiedPath
                         && parentType instanceof no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType.NoBacking) {
@@ -269,9 +246,9 @@ public class GraphitronSchemaBuilder {
                     }
                     return;
                 }
-                // Fields on plain SDL object types (no domain directive, no single-record-carrier
-                // promotion) are the developer's responsibility to wire — the classifier records
-                // the parent in schema.types() but leaves per-field classification out.
+                // Fields on plain SDL object types (no domain directive) are the developer's
+                // responsibility to wire — the classifier records the parent in schema.types()
+                // but leaves per-field classification out.
                 if (parentType instanceof no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType) return;
                 Class<?> parentBackingClass = typeBuilder.recordBackingClasses().get(objType.getName());
                 objType.getFieldDefinitions().forEach(fieldDef ->

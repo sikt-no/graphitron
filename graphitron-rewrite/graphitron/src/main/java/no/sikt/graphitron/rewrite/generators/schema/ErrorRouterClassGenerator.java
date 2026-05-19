@@ -128,13 +128,13 @@ public final class ErrorRouterClassGenerator {
                 + "or, in the no-channel case, to a redacted {@code DataFetcherResult} carrying\n"
                 + "only a correlation ID ({@code redact}).\n"
                 + "\n"
-                + "<p>{@code dispatchToLocalContext} is the carrier-walk counterpart of\n"
+                + "<p>{@code dispatchToLocalContext} is the LocalContext-channel counterpart of\n"
                 + "{@code dispatch}: instead of constructing a developer payload class, it returns\n"
                 + "a {@code DataFetcherResult} with {@code data=null} and the matched exception in\n"
                 + "{@code localContext}, so the carrier's errors-field DataFetcher can read it via\n"
                 + "{@code env.getLocalContext()} and the data field's null-source guard short-\n"
                 + "circuits. Used by {@code MutationDmlRecordField} / {@code MutationBulkDmlRecordField}\n"
-                + "wrappers post-R161.\n"
+                + "wrappers.\n"
                 + "\n"
                 + "<p>Generated alongside {@code ErrorMappings}; preserves the rewrite's\n"
                 + "no-runtime-jar invariant.\n")
@@ -381,7 +381,7 @@ public final class ErrorRouterClassGenerator {
             .addParameter(mappingArray, "mappings")
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addParameter(typeP, "sentinel")
-            .addJavadoc("Channel-mapped dispatch on the carrier-walk catch path. For each mapping in\n"
+            .addJavadoc("Channel-mapped dispatch on the LocalContext-bound catch path. For each mapping in\n"
                 + "source-declaration order, walks the cause chain outermost-first; the first match\n"
                 + "returns a {@code DataFetcherResult} whose data is the caller-supplied non-null\n"
                 + "{@code sentinel} and whose {@code localContext} carries the matched\n"
@@ -401,9 +401,9 @@ public final class ErrorRouterClassGenerator {
                 + "<p>Falls through to {@link #redact} on no match: the privacy contract is the same\n"
                 + "as the no-channel disposition.\n"
                 + "\n"
-                + "<p>Used by carrier-walk-admitted wrappers post-R161; the binding lives on\n"
+                + "<p>Used by DML payload-returning wrappers; the binding lives on\n"
                 + "{@code ErrorChannel.LocalContext}, produced by\n"
-                + "{@code BuildContext.classifyCarrierField}.\n")
+                + "{@code FieldBuilder.detectStructuralDmlErrorChannel}.\n")
             .addCode("// Source-order match: first (mapping, cause) pair that satisfies the predicate.\n")
             .beginControlFlow("for ($T mapping : mappings)", mapping)
             .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)

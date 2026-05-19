@@ -131,40 +131,41 @@ class SingleRecordCarrierPipelineTest {
             .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning.class);
     }
 
-    // ===== Carrier-walk rejection (R141: no CarrierFieldRole permit match) =====
+    // ===== Structural carrier-shape rejection (R141: unrecognized carrier-field shape) =====
 
     @Test
     void carrier_withMultipleDataFields_returnsRejected() {
-        // R141: two @table-element list-shaped data fields is two DataChannels — the walk
-        // rejects with "declares N DataChannel-shaped fields; require exactly one".
+        // R141: two @table-element list-shaped data fields is two data channels — the scan
+        // rejects with "declares N data-channel-shaped fields; require exactly one".
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
             "type FilmPayload { films: [Film!] alsoFilms: [Film!] }"));
 
         var mutField = schema.field("Mutation", mutationName(DmlKind.INSERT));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains("2 DataChannel-shaped fields", "require exactly one");
+        assertThat(reason).contains("2 data-channel-shaped fields", "require exactly one");
     }
 
     @Test
     void carrier_withScalarField_returnsRejected() {
-        // R141: a scalar (String) on the carrier resolves to no CarrierFieldRole permit; the
-        // walk rejects naming the offending field and pointing at the extension point.
+        // R141: a scalar (String) on the carrier is not a recognized DML carrier data-field
+        // shape; the scan rejects naming the offending field and pointing at the extension
+        // point.
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
             "type FilmPayload { films: [Film!] description: String }"));
 
         var mutField = schema.field("Mutation", mutationName(DmlKind.INSERT));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains("description", "no CarrierFieldRole permit", "file a roadmap item");
+        assertThat(reason).contains("description", "not a recognized DML carrier data-field shape", "file a roadmap item");
     }
 
     @Test
     void carrier_withInterfaceField_returnsRejected() {
-        // R141: an interface-typed field on the carrier resolves to no CarrierFieldRole permit
-        // (the SDL polymorphic union/interface shape is reserved for R12's ErrorChannelRole and
-        // requires @error members; an arbitrary interface doesn't match). The walk names the
-        // offending field.
+        // R141: an interface-typed field on the carrier is not a recognized DML carrier
+        // data-field shape (the SDL polymorphic union/interface shape is reserved for the
+        // errors channel and requires @error members; an arbitrary interface doesn't match).
+        // The scan names the offending field.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             interface Searchable { id: ID! }
@@ -177,7 +178,7 @@ class SingleRecordCarrierPipelineTest {
         var mutField = schema.field("Mutation", "createFilm");
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains("hits", "no CarrierFieldRole permit", "file a roadmap item");
+        assertThat(reason).contains("hits", "not a recognized DML carrier data-field shape", "file a roadmap item");
     }
 
     @Test

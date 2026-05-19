@@ -166,8 +166,7 @@ public sealed interface ProducerBinding
      * dispatch ({@code FieldBuilder.classifyChildFieldOnResultType}) reads the binding via
      * {@code TypeBuilder.serviceEmittedBinding} to construct
      * {@code ChildField.SingleRecordTableField} with {@code SourceKey.Wrap.TableRecord} for
-     * the payload's data field, mirroring today's {@code registerServiceCarrierDataField}
-     * output without consulting the carrier-walk's producer-registry.
+     * the payload's data field.
      *
      * <p>Compact-constructor invariants mirror {@link DmlEmitted}: every component non-null,
      * {@code reflectedClass.getName()} equals {@code tableRef.recordClass().reflectionName()}.

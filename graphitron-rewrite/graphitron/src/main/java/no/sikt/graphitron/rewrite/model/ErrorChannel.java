@@ -17,19 +17,16 @@ import java.util.List;
  * are mapped, which payload class to instantiate, and the constant on the per-package
  * {@code ErrorMappings} helper that holds the dispatch table.
  *
- * <h2>Sealed split (carrier-walk wiring)</h2>
+ * <h2>Sealed split</h2>
  *
  * Two arms cover the two ways the catch-side ferry can hand errors back to graphql-java:
- * {@link PayloadClass} construction (the only arm pre-carrier-walk; the catch arm builds
- * a developer payload class with the errors list slotted in) and {@link LocalContext}
- * (R161-enabled; the catch arm emits {@code data(null).localContext(errorsList).build()}
- * and the errors-field DataFetcher reads from {@code env.getLocalContext()}). Both arms
- * share the {@link #mappedErrorTypes()} and {@link #mappingsConstantName()} accessors, which
- * is what the channel-agnostic consumers ({@code MappingsConstantNameDedup},
- * {@code ErrorMappingsClassGenerator}, {@code CheckedExceptionMatcher}) need.
- *
- * <p>Spec: {@code error-handling-parity.md} §3 ("Carrier-walk {@code ErrorChannelRole}
- * wiring").
+ * {@link PayloadClass} construction (the catch arm builds a developer payload class with the
+ * errors list slotted in) and {@link LocalContext} (the catch arm emits
+ * {@code data(null).localContext(errorsList).build()} and the errors-field DataFetcher reads
+ * from {@code env.getLocalContext()}). Both arms share the {@link #mappedErrorTypes()} and
+ * {@link #mappingsConstantName()} accessors, which is what the channel-agnostic consumers
+ * ({@code MappingsConstantNameDedup}, {@code ErrorMappingsClassGenerator},
+ * {@code CheckedExceptionMatcher}) need.
  */
 public sealed interface ErrorChannel {
 
@@ -103,10 +100,10 @@ public sealed interface ErrorChannel {
 
     /**
      * The catch arm hands errors back through graphql-java's {@code DataFetcherResult.localContext}.
-     * Wired by the carrier-walk producer in {@code BuildContext.classifyCarrierField}: a wrapper
-     * shaped {@code { data: X, errors: [SomeError!]! }} binds the errors-field side of the
-     * carrier directly to this arm. After R161 this arm is the unified DML error-channel
-     * transport used by {@code MutationDmlRecordField} / {@code MutationBulkDmlRecordField}.
+     * Produced by {@code FieldBuilder.detectStructuralDmlErrorChannel} on a wrapper shaped
+     * {@code { data: X, errors: [SomeError!]! }}, where the errors-field side of the carrier
+     * binds directly to this arm. This is the unified DML error-channel transport used by
+     * {@code MutationDmlRecordField} / {@code MutationBulkDmlRecordField}.
      *
      * <p>The catch arm emits a pattern that consults the channel's mapping table via
      * {@code ErrorRouter.dispatchToLocalContext(throwable, mappings, env, sentinel)} and returns

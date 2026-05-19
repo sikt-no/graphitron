@@ -49,36 +49,21 @@ public final class FieldRegistry {
     }
 
     /**
-     * Replace an existing classification for {@code coords}. Used by carrier-walk paths whose
-     * verbless walk in {@code GraphitronSchemaBuilder.registerCarrierDataField} may pre-register
-     * a structural placeholder before {@link no.sikt.graphitron.rewrite.FieldBuilder} knows the
-     * owning mutation's producer kind:
+     * Replace an existing classification for {@code coords}, or admit a first-time write. Used by
+     * the @mutation classifier's DELETE arm in {@link no.sikt.graphitron.rewrite.FieldBuilder}: a
+     * DELETE-carrier's data field may already be classified by the standard per-field classifier
+     * (e.g. as a ColumnField on the payload SDL) by the time the @mutation classifier visits the
+     * parent; this method swaps in the DELETE-specific carrier
+     * ({@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning} or
+     * {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning}).
      *
-     * <ul>
-     *   <li>R156 DELETE carriers: the verbless walk wrote
-     *       {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField} (the
-     *       INSERT/UPDATE/UPSERT shape with follow-up SELECT); FieldBuilder reclassifies to
-     *       {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning}
-     *       (the DELETE sibling carrying the projection list). {@code expectedExistingClass} is
-     *       non-null and pins the structural guard.</li>
-     *   <li>R158 single-record DML carrier data-field registration: the verbless walk no longer
-     *       writes a placeholder for {@code DataElement.Table} carriers — the per-producer
-     *       helpers in {@code FieldBuilder} (DML kinds and {@code @service}) are the only writer.
-     *       {@code expectedExistingClass} is {@code null}; the method admits both "no
-     *       pre-existing entry" (first producer) and "matching pre-existing entry" (second
-     *       producer with consistent wrap, which the helper has already confirmed via
-     *       compare-then-write before calling here).</li>
-     * </ul>
-     *
-     * <p>When {@code expectedExistingClass} is non-null and an existing entry is present, the
-     * structural guard fires: if the existing entry is not an instance of the expected class
-     * the reclassification fails fast rather than silently overwriting a divergent shape. When
-     * {@code expectedExistingClass} is {@code null} the method admits any pre-existing entry
-     * (or none).
+     * <p>{@code expectedExistingClass} optionally pins a structural guard: when non-null and an
+     * existing entry is present, the reclassification fails fast if the existing entry is not an
+     * instance of the expected class. When {@code null}, any pre-existing entry (or none) is
+     * accepted.
      *
      * <p>{@link #classify} stays the duplicate-rejecting entry point for every other call site;
-     * this method is the explicit, named exception that the carrier-walk path is allowed to
-     * take and no other path should reach for.
+     * this method is the explicit, named exception.
      */
     public void reclassify(FieldCoordinates coords, GraphitronField field,
                            Class<? extends GraphitronField> expectedExistingClass) {
@@ -86,10 +71,7 @@ public final class FieldRegistry {
         Objects.requireNonNull(field, "field");
         var existing = fields.get(coords);
         if (existing == null) {
-            // No pre-existing classification — admit; behave like classify(). This happens for
-            // R156 DataElement.Id carriers (verbless walk leaves the data field unregistered)
-            // and for R158 DataElement.Table first-producer registrations (verbless walk hollowed
-            // out the arm; the first producer-site helper is the first writer).
+            // No pre-existing classification — admit; behave like classify().
             fields.put(coords, field);
             traceOutput(field);
             return;

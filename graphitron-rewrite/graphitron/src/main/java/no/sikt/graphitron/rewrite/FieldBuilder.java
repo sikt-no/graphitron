@@ -2714,10 +2714,10 @@ class FieldBuilder {
      * channel.
      *
      * <p>Post-R161, the {@code DmlTableField} permits never carry a {@code @record} return — every
-     * {@code ResultReturnType} routes through the carrier-walk permits via {@code BuildContext
-     * .tryResolveSingleRecordCarrier}, or rejects at {@code MutationInputResolver.validateReturnType}
-     * before reaching this builder. {@code resolveErrorChannel} therefore returns {@code NoChannel}
-     * by construction here; the call is preserved so the model's slot stays uniformly wired.
+     * {@code ResultReturnType} routes through the {@code Mutation*DmlRecordField} permits, or
+     * rejects at {@code MutationInputResolver.validateReturnType} before reaching this builder.
+     * {@code resolveErrorChannel} therefore returns {@code NoChannel} by construction here; the
+     * call is preserved so the model's slot stays uniformly wired.
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "dml-mutation-shape-guarantees",
@@ -2789,9 +2789,8 @@ class FieldBuilder {
      * reflected return {@link no.sikt.graphitron.javapoet.TypeName} against the data table's
      * record class through {@link FieldSourceSigil#sourceSigilTypeMatches}.
      *
-     * <p>The detection is structural (consults the payload SDL directly, not the carrier
-     * walk) so the {@link BuildContext#classifyCarrierField} forbidden-directives loop is
-     * not exercised at this site.
+     * <p>The detection is structural (consults the payload SDL directly), so no
+     * forbidden-directives loop runs at this site.
      *
      * <p>Returns {@code null} when the check passes (or when no carrier shape / no
      * {@code $source} sigil applies); on mismatch, returns the canonical
@@ -2839,13 +2838,11 @@ class FieldBuilder {
     }
 
     /**
-     * R178 Phase 4 — structural detection of a DML payload's error channel, replacing the
-     * carrier walk's {@code classifyCarrierField} ErrorChannelRole arm. Scans the payload
-     * SDL for an errors-shaped field (via {@link BuildContext#detectErrorsFieldShape}),
-     * runs the channel-level handler rules (§1 rule 7 and rule 8) inline, and produces
-     * either an {@link ErrorChannel.LocalContext} binding shape-identical to today's
-     * carrier-walk output, an empty result when the payload has no errors-shaped field,
-     * or a rule-violation rejection naming the offending channel.
+     * R178 Phase 4 — structural detection of a DML payload's error channel. Scans the payload
+     * SDL for an errors-shaped field (via {@link BuildContext#detectErrorsFieldShape}), runs
+     * the channel-level handler rules (§1 rule 7 and rule 8) inline, and produces either an
+     * {@link ErrorChannel.LocalContext} binding, an empty result when the payload has no
+     * errors-shaped field, or a rule-violation rejection naming the offending channel.
      */
     private sealed interface StructuralDmlErrorChannel {
         record None() implements StructuralDmlErrorChannel {}
@@ -2901,10 +2898,9 @@ class FieldBuilder {
      * <p>The check is restricted to NoBacking payloads because ClassBacked payloads have their
      * own diagnostic path through {@link #resolveServiceResultAssembly}, which produces a
      * diagnostic citing the SDL payload's reflected class (not the inner table's record class).
-     * The SettKvotesporsmal bug surfaced specifically because the carrier walk's strict-return
-     * check fired on a ClassBacked payload citing the inner table's record class; restricting
-     * the structural strict-return to NoBacking ensures that case routes through
-     * {@code resolveServiceResultAssembly}'s payload-class diagnostic.
+     * The SettKvotesporsmal regression pinned this split: ClassBacked payloads route through
+     * {@code resolveServiceResultAssembly}'s payload-class diagnostic; NoBacking payloads route
+     * through this structural strict-return check.
      *
      * <p>Returns a non-null rejection string when the payload is NoBacking, structurally a
      * single-{@code @table}-data-field carrier, and the method's return type does not equal
@@ -2942,10 +2938,8 @@ class FieldBuilder {
      * Returns {@code null} for shapes the carrier mold doesn't admit (zero or multiple
      * {@code @table}-typed fields, non-Object payload, unresolved inner table).
      *
-     * <p>The detection is deliberately walk-free: it consults
-     * {@code BuildContext.tryResolveSingleRecordCarrier} nowhere, so the
-     * {@link BuildContext#classifyCarrierField} forbidden-directives loop (the SettKvotesporsmal
-     * bug's mechanism) does not fire from this site.
+     * <p>The detection is deliberately structural; the SettKvotesporsmal bug's mechanism (a
+     * forbidden-directives loop over the carrier shape) cannot fire from this site.
      */
     private record StructuralServiceCarrierShape(TableRef table, SourceKey.Cardinality cardinality) {}
 
@@ -3059,7 +3053,7 @@ class FieldBuilder {
      * arm the DML emitter pattern-matches on. Total over the post-R161 admitted return-type set
      * (Scalar-ID / TableBound, single or list); unreachable on anything else
      * ({@code MutationInputResolver.validateReturnType} already rejected list-payload returns
-     * and the carrier walk routes {@code @record} returns to {@code MutationDmlRecordField}).
+     * and the @mutation classifier routes {@code @record} returns to {@code MutationDmlRecordField}).
      */
     private static DmlReturnExpression buildDmlReturnExpression(
             ReturnTypeRef returnType,
@@ -3238,23 +3232,19 @@ class FieldBuilder {
                     // R159: when the @service mutation returns a carrier-payload type whose
                     // data field opts into the $source sigil, verify the producer's reflected
                     // return type matches the SDL element's backing class. The check is colocated
-                    // here because classifyCarrierField (in BuildContext) does not have the
-                    // producer's MethodRef in scope; the rejection still flows through the
-                    // existing UnclassifiedField -> ValidationError -> LSP path.
+                    // here because the producer's MethodRef is in scope; the rejection flows
+                    // through the existing UnclassifiedField -> ValidationError -> LSP path.
                     String sourceSigilError = checkSourceSigilTypeMatch(r.returnType(), r.method());
                     if (sourceSigilError != null) {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                             Rejection.structural(sourceSigilError));
                     }
-                    // R178 step 3: @service-carrier strict-return check, restructured to detect
-                    // the carrier shape directly from the payload SDL rather than via the carrier
-                    // walk. The check fires only for NoBacking payloads (no @record class); for
-                    // ClassBacked payloads {@link #resolveServiceResultAssembly} produces the
-                    // per-constructor diagnostic citing the payload class. This split is the
-                    // SettKvotesporsmal bug's structural fix: ClassBacked payloads no longer
-                    // route through the carrier walk (which would have demanded the inner
-                    // table's record class as the return type, regardless of @field presence on
-                    // the data channel).
+                    // R178 step 3: @service-carrier strict-return check detects the carrier shape
+                    // directly from the payload SDL. The check fires only for NoBacking payloads
+                    // (no @record class); for ClassBacked payloads {@link #resolveServiceResultAssembly}
+                    // produces the per-constructor diagnostic citing the payload class. This split
+                    // is the SettKvotesporsmal bug's structural fix: ClassBacked payloads get a
+                    // diagnostic citing the payload class, not the inner table's record class.
                     String serviceCarrierError = classifyServiceCarrierProducer(r.returnType(), r.method());
                     if (serviceCarrierError != null) {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
@@ -3301,9 +3291,9 @@ class FieldBuilder {
 
                 // R178 Phase 4: payload-returning DML mutations classify through structural
                 // detection of the payload SDL (single non-errors-shaped data field; element
-                // kind: @table / @record / ID). The carrier-walk consultation is retired from
-                // both DELETE and non-DELETE arms; they share the same detectStructural*
-                // helpers and dispatch on StructuralDmlDataElement permits.
+                // kind: @table / @record / ID). Both DELETE and non-DELETE arms share the
+                // same detectStructural* helpers and dispatch on the DmlElementKind permit
+                // returned by scanStructuralDmlPayload.
                 //
                 // DELETE-specific permit construction (SingleRecordIdFieldFromReturning,
                 // SingleRecordTableFieldFromReturning) is inlined here; the supporting helpers
@@ -3562,11 +3552,7 @@ class FieldBuilder {
         // Step 1 admits only @table-typed children on DML-emitted parents (the SettKvotesporsmal
         // bug fixture and FilmPayload / FilmsPayload / FilmCreateLocalContextPayload all have
         // this shape). Errors-shaped children fall through to the existing liftToErrorsField
-        // path; @record-typed and scalar children on DML payloads are deferred to step 2 (the
-        // carrier-walk Ok.NoBacking short-circuit registered them today, and the schema-builder
-        // loop gates the short-circuit on absent DmlEmitted binding, so a DML-emitted payload
-        // with @record-typed or scalar children would not register correctly until the unified
-        // path's arms for those shapes ship).
+        // path; @record-typed and scalar children on DML payloads are deferred to step 2.
         var dmlEmitted = dmlEmittedBinding(parentTypeName);
         if (dmlEmitted.isPresent()) {
             var binding = dmlEmitted.get();
@@ -3586,14 +3572,12 @@ class FieldBuilder {
                         + "' which does not match the input @table '" + binding.tableRef().tableName()
                         + "'; payload-returning DML mutations require child @table-bound fields to bind to the input table"));
                 }
-                // Step 1 produces the carrier-walk-shaped {@link ChildField.SingleRecordTableField}
+                // Step 1 produces {@link ChildField.SingleRecordTableField} with
                 // (Reader.ResultRowWalk, Wrap.Record) so the existing emit path
                 // (FetcherEmitter.buildSingleRecordTableFetcherValueRecordWrap) keeps working
-                // unchanged. The classifier path that produces this permit is the unified one
-                // (DmlEmitted-driven, sibling to deriveSplitQuerySource's emit shape); a
-                // follow-up step lifts the emitter to Wrap.Row + Reader.ColumnRead so the
-                // generated source uses the @splitQuery-shape contract documented in §"Bulk
-                // DML reference" of the R178 spec.
+                // unchanged. A follow-up step lifts the emitter to Wrap.Row + Reader.ColumnRead
+                // so the generated source uses the @splitQuery-shape contract documented in
+                // §"Bulk DML reference" of the R178 spec.
                 var pkColumns = binding.tableRef().primaryKeyColumns();
                 var cardinality = tb.wrapper().isList()
                     ? SourceKey.Cardinality.MANY

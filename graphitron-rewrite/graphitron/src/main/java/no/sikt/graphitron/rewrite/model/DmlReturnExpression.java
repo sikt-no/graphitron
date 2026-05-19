@@ -14,11 +14,11 @@ package no.sikt.graphitron.rewrite.model;
  *   <li>{@code TableBoundReturnType}, list — {@link ProjectedList}</li>
  * </ul>
  *
- * <p>{@code @record}-returning DML routes through the carrier-walk permits
+ * <p>{@code @record}-returning DML routes through the {@code Mutation*DmlRecordField} permits
  * ({@link MutationField.MutationDmlRecordField} / {@link MutationField.MutationBulkDmlRecordField})
  * rather than carrying a fifth arm here. R161 collapsed the historical {@code Payload} arm by
- * widening {@code BuildContext.tryResolveSingleRecordCarrier} to admit every {@code ResultType}
- * arm: {@code Mutation*TableField} permits are now guaranteed never to carry a {@code @record}
+ * widening the structural-carrier admission to every {@code ResultType} arm: the
+ * {@code Mutation*TableField} permits are now guaranteed never to carry a {@code @record}
  * return, and the type system enforces narrowness structurally rather than via classifier-
  * acceptance shape.
  *

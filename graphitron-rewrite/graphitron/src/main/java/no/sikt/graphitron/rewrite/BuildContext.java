@@ -412,12 +412,9 @@ class BuildContext {
      * Converts a type name and wrapper into the correct {@link ReturnTypeRef} variant by
      * consulting the populated {@link #types} map.
      *
-     * <p>R75 Phase 1: single-record DML carriers are not short-circuited here. Plain SDL
-     * Objects that pass {@link #tryResolveSingleRecordCarrier} are promoted to
-     * {@link GraphitronType.PojoResultType.NoBacking} during type classification (see
-     * {@link TypeBuilder#promoteSingleRecordCarriers}), so they resolve through the
-     * {@code target instanceof ResultType} arm below and return a
-     * {@link ReturnTypeRef.ResultReturnType} the mutation classifier reads structurally.
+     * <p>R75 Phase 1: single-record DML carriers are not short-circuited here. Carrier-shaped
+     * SDL Objects resolve through the {@code target instanceof ResultType} arm below and return
+     * a {@link ReturnTypeRef.ResultReturnType} the mutation classifier reads structurally.
      */
     ReturnTypeRef resolveReturnType(String targetTypeName, FieldWrapper wrapper) {
         GraphitronType target = types.get(targetTypeName);
@@ -443,9 +440,7 @@ class BuildContext {
      * </ol>
      *
      * <p>Lives on {@link BuildContext} (rather than the field-builder pipeline) so non-builder
-     * sites can compute a wrapper without holding a {@code FieldBuilder} reference. R75's
-     * {@link #tryResolveSingleRecordCarrier} is one such caller — the data field's wrapper has
-     * to be computed at trigger time, before the field-builder pipeline runs.
+     * sites can compute a wrapper without holding a {@code FieldBuilder} reference.
      */
     FieldWrapper buildWrapper(GraphQLFieldDefinition fieldDef) {
         GraphQLType fieldType = fieldDef.getType();
@@ -715,8 +710,9 @@ class BuildContext {
             } else {
                 return new DmlCarrierScan.Reject(
                     "carrier field '" + f.getName() + "' of type '" + elementTypeName
-                    + "' resolves to no CarrierFieldRole permit; file a roadmap item for a new "
-                    + "CarrierFieldRole permit if this shape needs admission");
+                    + "' is not a recognized DML carrier data-field shape "
+                    + "(expected @table-element, @record-element, or ID-element); "
+                    + "file a roadmap item if this shape needs admission");
             }
             dataChannelCount++;
             if (admittedDataField == null) {
@@ -728,8 +724,8 @@ class BuildContext {
         if (dataChannelCount > 1) {
             return new DmlCarrierScan.Reject(
                 "single-record carrier '" + payloadSdlName + "' declares " + dataChannelCount
-                + " DataChannel-shaped fields; require exactly one (a future Backlog item may "
-                + "admit multi-data carriers behind a new CarrierFieldRole permit)");
+                + " data-channel-shaped fields; require exactly one (a future Backlog item may "
+                + "admit multi-data carriers)");
         }
         return new DmlCarrierScan.Admit(admittedDataField, admittedElement);
     }
@@ -800,9 +796,10 @@ class BuildContext {
      * polymorphic-of-all-{@code @error} list with the nullability shape §2b allows). Returns
      * the resolved {@code List<ErrorType>} when the shape matches, {@code null} otherwise.
      *
-     * <p>Mirrors the lift rules in {@code FieldBuilder.liftToErrorsField}; the carrier-walk
-     * producer below and {@code FieldBuilder.resolveErrorChannel} consume it through the same
-     * port so the two classifier paths agree on what counts as an errors-shaped field.
+     * <p>Mirrors the lift rules in {@code FieldBuilder.liftToErrorsField};
+     * {@code FieldBuilder.detectStructuralDmlErrorChannel} and
+     * {@code FieldBuilder.resolveErrorChannel} consume it through the same port so the two
+     * classifier paths agree on what counts as an errors-shaped field.
      */
     List<GraphitronType.ErrorType> detectErrorsFieldShape(GraphQLFieldDefinition fieldDef) {
         var returnType = resolveReturnType(baseTypeName(fieldDef), buildWrapper(fieldDef));
@@ -831,9 +828,10 @@ class BuildContext {
     }
 
     /**
-     * Converts a CamelCase identifier to SCREAMING_SNAKE_CASE. Used by the carrier-walk
-     * producer to derive {@code ErrorChannel.LocalContext.mappingsConstantName} from the
-     * wrapper SDL type name (e.g. {@code FilmPayload} -&gt; {@code FILM_PAYLOAD}).
+     * Converts a CamelCase identifier to SCREAMING_SNAKE_CASE. Used by
+     * {@code FieldBuilder.detectStructuralDmlErrorChannel} to derive
+     * {@code ErrorChannel.LocalContext.mappingsConstantName} from the wrapper SDL type name
+     * (e.g. {@code FilmPayload} -&gt; {@code FILM_PAYLOAD}).
      */
     static String toScreamingSnake(String s) {
         if (s == null || s.isEmpty()) return s;
