@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R179` | Delete ResultAssembly; service success arm is universal passthrough | Spec | 2026-05-19 | [plan](delete-result-assembly.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
+| `R179` | Delete ResultAssembly; service success arm is universal passthrough | Ready | 2026-05-19 | [plan](delete-result-assembly.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
@@ -129,7 +129,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R179` [**Delete ResultAssembly; service success arm is universal passthrough**](delete-result-assembly.md) — Spec, cleanup
+- `R179` [**Delete ResultAssembly; service success arm is universal passthrough**](delete-result-assembly.md) — Ready, cleanup
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
 - `R137` [**@service method return-type wrapper composition (Optional / CompletableFuture / Mono / DataFetcherResult)**](service-wrapper-composition.md) — Backlog, architecture
