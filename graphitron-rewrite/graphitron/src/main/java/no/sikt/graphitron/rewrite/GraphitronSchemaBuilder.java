@@ -250,22 +250,22 @@ public class GraphitronSchemaBuilder {
                 boolean skipForUnifiedPath =
                     (nDml.isPresent() && nDml.get().kind() != no.sikt.graphitron.rewrite.model.DmlKind.DELETE)
                     || nService.isPresent();
-                if (ctx.tryResolveSingleRecordCarrier(objType.getName())
-                        instanceof SingleRecordCarrierResolution.Ok.NoBacking ok
-                        && !skipForUnifiedPath) {
-                    registerCarrierDataField(ctx, objType, ok.shape());
-                    // R12: walk the carrier's non-data-channel fields (ErrorChannelRole today)
-                    // through the normal per-field classifier so liftToErrorsField materialises
-                    // the ChildField.ErrorsField with the Transport arm read from the parent's
-                    // resolved channel. The data-channel field is registered above by
-                    // registerCarrierDataField; we skip it here to avoid clobbering.
+                // R178 Phase 4: structural carrier-shape detection replaces the carrier walk's
+                // Ok.NoBacking gate. For orphan NoBacking carriers (a structurally carrier-shaped
+                // payload that no producer mutation returns), the data field stays unregistered
+                // per R158 (graphql-java's never-traverse-unproduced-fields guarantee makes the
+                // missing entry structurally safe). Errors-shaped fields still classify through
+                // the normal per-field classifier so ErrorsField is materialised independent of
+                // the producer binding.
+                var scan = ctx.scanStructuralDmlPayload(objType.getName());
+                if (scan instanceof BuildContext.DmlCarrierScan.Admit && !skipForUnifiedPath
+                        && parentType instanceof no.sikt.graphitron.rewrite.model.GraphitronType.PojoResultType.NoBacking) {
                     Class<?> parentBackingClass0 = typeBuilder.recordBackingClasses().get(objType.getName());
-                    for (var role : ok.shape().roles()) {
-                        if (role instanceof no.sikt.graphitron.rewrite.model.CarrierFieldRole.ErrorChannelRole ecr) {
-                            var ef = objType.getFieldDefinition(ecr.fieldName());
+                    for (var f : objType.getFieldDefinitions()) {
+                        if (ctx.detectErrorsFieldShape(f) != null) {
                             ctx.fieldRegistry.classify(
-                                FieldCoordinates.coordinates(objType.getName(), ecr.fieldName()),
-                                fieldBuilder.classifyField(ef, objType.getName(), parentType, parentBackingClass0));
+                                FieldCoordinates.coordinates(objType.getName(), f.getName()),
+                                fieldBuilder.classifyField(f, objType.getName(), parentType, parentBackingClass0));
                         }
                     }
                     return;
@@ -292,87 +292,6 @@ public class GraphitronSchemaBuilder {
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings());
         return new BuildResult(model, rebuiltAssembled);
-    }
-
-    /**
-     * Registers the carrier's {@link no.sikt.graphitron.rewrite.model.CarrierFieldRole.DataChannel}
-     * with the field registry. R75 Phase 1 admits {@link no.sikt.graphitron.rewrite.model.DataElement.Table}
-     * (a follow-up SELECT against the carrier's table) as
-     * {@link ChildField.SingleRecordTableField}; R75 Phase 2 admits
-     * {@link no.sikt.graphitron.rewrite.model.DataElement.Record} (identity passthrough of the
-     * producing operation's domain record) as {@link ChildField.SingleRecordIdentityField}. The
-     * cardinality of the resulting {@link SourceKey} is read from the data field's wrapper, so
-     * the R141 list-shaped carrier ({@code films: [Film!]}) registers as
-     * {@link SourceKey.Cardinality#MANY} and the singleton case ({@code film: Film}) stays
-     * {@link SourceKey.Cardinality#ONE}.
-     *
-     * <p>The {@link no.sikt.graphitron.rewrite.model.CarrierFieldRole.ErrorChannelRole} permit, if
-     * present on the shape, is not registered here (R12, error-handling-parity, lands the
-     * carrier-side error-channel registration when it ships); the {@code roles} iteration
-     * focuses on the data channel today.
-     */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "single-record-carrier-shape.roles-exhaustively-classified",
-        reliesOn = "registerCarrierDataField walks shape.roles via a sealed switch over "
-            + "CarrierFieldRole permits; the exhaustive classification guarantee lets the "
-            + "data-channel arm read the resolved DataElement directly without checking for "
-            + "an unclassified-field tolerated state.")
-    private static void registerCarrierDataField(
-            BuildContext ctx, GraphQLObjectType objType,
-            no.sikt.graphitron.rewrite.model.SingleRecordCarrierShape shape) {
-        for (var role : shape.roles()) {
-            switch (role) {
-                case no.sikt.graphitron.rewrite.model.CarrierFieldRole.DataChannel dc -> {
-                    var dataFieldDef = objType.getFieldDefinition(dc.fieldName());
-                    switch (dc.element()) {
-                        case no.sikt.graphitron.rewrite.model.DataElement.Table tableElement -> {
-                            // R158 / R178: DataElement.Table per-field carrier registration is
-                            // deferred to the per-producer site in FieldBuilder, which has the
-                            // producing mutation's kind (DML verb vs @service reflection result)
-                            // in scope. The producer-kind discrimination wires SourceKey.wrap to
-                            // either Wrap.Record (DML mutation fetcher emits RecordN<...>) or
-                            // Wrap.TableRecord(target.recordClass()) (@service returns XRecord /
-                            // List<XRecord>); the verbless walk has no producer context, so it
-                            // would have to commit to one wrap shape arbitrarily.
-                            // classifyChildFieldOnResultType's DmlEmitted / ServiceEmitted arms
-                            // are the structural writers; an orphan carrier type (no producing
-                            // mutation) lands with no entry, which graphql-java's never-traverse-
-                            // an-unproduced-field guarantee makes structurally safe.
-                            //
-                            // The dataFieldDef reference is intentionally unused here; each
-                            // producer-site arm re-derives it from the schema. Suppress the
-                            // unused-local warning by referencing it once.
-                            if (dataFieldDef == null) { /* unreachable: walk only enters for fields present in SDL */ }
-                        }
-                        case no.sikt.graphitron.rewrite.model.DataElement.Record recordElement -> {
-                            ctx.fieldRegistry.classify(
-                                FieldCoordinates.coordinates(objType.getName(), dc.fieldName()),
-                                new ChildField.SingleRecordIdentityField(
-                                    objType.getName(), dc.fieldName(), locationOf(dataFieldDef),
-                                    new ReturnTypeRef.ResultReturnType(
-                                        recordElement.name(), recordElement.wrapper(), recordElement.fqClassName())));
-                        }
-                        case no.sikt.graphitron.rewrite.model.DataElement.Id ignored -> {
-                            // R156 — DataElement.Id per-field carrier registration is deferred
-                            // to the verb-aware mutation classifier in FieldBuilder, which has
-                            // the owning mutation's input @table in scope and can resolve the
-                            // NodeId encoder via that table's @node registration. The verbless
-                            // walk admits the Id shape structurally (the schema-walk loop
-                            // promotes the carrier type), but doesn't construct
-                            // SingleRecordIdFieldFromReturning here because the encoder lookup
-                            // is per-owning-mutation: two mutations sharing the same Id-carrier
-                            // payload with different input @tables would pin to different
-                            // encoders, so the per-field carrier is a verb-aware artefact.
-                        }
-                    }
-                }
-                case no.sikt.graphitron.rewrite.model.CarrierFieldRole.ErrorChannelRole ignored -> {
-                    // R12 (error-handling-parity) lands the carrier-side error-channel
-                    // registration when it ships. R141 reserves the permit in the type system
-                    // without producing it from the walk; no registration runs here today.
-                }
-            }
-        }
     }
 
     /**
