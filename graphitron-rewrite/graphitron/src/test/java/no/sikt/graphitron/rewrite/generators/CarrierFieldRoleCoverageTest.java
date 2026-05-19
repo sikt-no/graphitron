@@ -46,9 +46,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 public class CarrierFieldRoleCoverageTest {
 
-    /** Source files that must dispatch over every {@link CarrierFieldRole} permit. */
+    /**
+     * Source files that must dispatch over every {@link CarrierFieldRole} permit. Under R178
+     * Phase 4, GraphitronSchemaBuilder's registerCarrierDataField helper retired (the orphan-
+     * carrier walk no longer registers data fields; classifyChildFieldOnResultType's
+     * producer-binding arms are the structural writers). SingleRecordCarrierShape itself
+     * remains the lone consumer until the model types retire entirely.
+     */
     private static final List<Path> CONSUMERS = List.of(
-        Path.of("src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilder.java"),
         Path.of("src/main/java/no/sikt/graphitron/rewrite/model/SingleRecordCarrierShape.java"));
 
     @Test

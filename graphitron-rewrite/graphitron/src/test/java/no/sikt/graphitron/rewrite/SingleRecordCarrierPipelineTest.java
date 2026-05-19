@@ -423,12 +423,13 @@ class SingleRecordCarrierPipelineTest {
     // ===== R75 Phase 2: record-element data fields =====
 
     @Test
-    void carrier_recordElement_dataFieldClassifiesAsSingleRecordIdentityField() {
-        // Phase 2 widens the trigger's condition #3 to admit record-backed ResultType elements
-        // (any ResultType arm with a non-null fqClassName). The data field's element type here
-        // is @record(record: {className: ...}) → PojoResultType.Backed; the trigger emits
-        // SingleRecordCarrierShape with DataElement.Record, and the schema-builder classifies
-        // the data field as SingleRecordIdentityField with the resolved ResultReturnType.
+    void carrier_recordElement_orphanDataFieldStaysUnregistered() {
+        // R178 Phase 4: orphan record-element carriers (no producer mutation consuming the
+        // payload) leave the data field unregistered. graphql-java's never-traverse-unproduced-
+        // fields guarantee makes the missing registration structurally safe. The
+        // SingleRecordIdentityField permit retires with the carrier walk; record-element
+        // identity passthrough is now handled by the unified per-field classifier on producer-
+        // bound parents.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmDto @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
@@ -441,13 +442,7 @@ class SingleRecordCarrierPipelineTest {
         var carrier = schema.type("FilmDtoPayload");
         assertThat(carrier).isInstanceOf(GraphitronType.PojoResultType.NoBacking.class);
 
-        var dataField = schema.field("FilmDtoPayload", "film");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordIdentityField.class);
-        var identityField = (ChildField.SingleRecordIdentityField) dataField;
-        assertThat(identityField.returnType()).isInstanceOf(ReturnTypeRef.ResultReturnType.class);
-        assertThat(identityField.returnType().returnTypeName()).isEqualTo("FilmDto");
-        assertThat(identityField.returnType().fqClassName())
-            .isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.DummyRecord");
+        assertThat(schema.field("FilmDtoPayload", "film")).isNull();
     }
 
     @ParameterizedTest
