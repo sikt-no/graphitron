@@ -1,7 +1,7 @@
 ---
 id: R183
 title: "GitLab pipeline: drop snapshots, publish rewrite reactor on release tags"
-status: In Review
+status: In Progress
 bucket: bug
 theme: legacy-migration
 depends-on: []
@@ -25,6 +25,7 @@ This item fixes both jobs and the policy question that surfaced them: snapshot p
 - `graphitron-rewrite/pom.xml` carries the `gitlab` profile (distribution-management + sources-jar, ported from the root pom), but with **no `<snapshotRepository>`** so an accidental `mvn deploy` on `10-SNAPSHOT` fails fast (the rewrite parent's stated invariant, see `graphitron-rewrite/docs/README.adoc` publishing section). The root-pom copy stays in place until R182 deletes the entire legacy reactor; in the meantime it is unreachable without a `-f pom.xml` flag callers no longer pass.
 - Pipeline base image bumps from `maven:3.9-eclipse-temurin-21` to `maven:3.9-eclipse-temurin-25`. The rewrite parent's `requireJavaVersion` enforcer rule (graphitron-rewrite/pom.xml:230-232) requires JDK 25, so the legacy image fails the build the moment `-f graphitron-rewrite/pom.xml` takes effect.
 - `publish:release` runs against a `postgres:18-alpine` service (alias `postgres`), with `init.sql` from `graphitron-sakila-db/src/main/resources/` applied in the script via `postgresql-client` installed in `before_script`-style apt-get. jOOQ codegen runs in-pipeline against the live service (no Testcontainers / Docker-in-Docker), and the `-Plocal-db` profile in `graphitron-sakila-db/pom.xml` is activated alongside `gitlab` to point codegen at the service rather than spinning up a Testcontainer.
+- `graphitron-sakila-example`'s `local-db` profile is parameterized: `test.db.url`, `test.db.username`, and `test.db.password` are exposed as pom properties (with a `localhost:5432` default) and referenced via `${test.db.url}` in surefire's `systemPropertyVariables`. The publish job passes `-Dtest.db.url=jdbc:postgresql://postgres:5432/rewrite_test` so the execution-tier tests connect to the service rather than a Testcontainer or a non-existent `localhost`.
 - The same apt-get step also installs `gcc`, because `graphitron-lsp` builds a native tree-sitter shared library at `generate-resources` (`graphitron-lsp/src/main/native/build-native.sh`) that's bundled into the published `graphitron-lsp` jar. Without `gcc`, `build-native.sh` exits 127 on `cc` and the deploy fails before `versions:set` even returns to the parent reactor.
 - Tests run in the publish pipeline. The earlier "skip tests, GitHub gates them" rationale was load-bearing only when Docker-in-Docker was the alternative; once a real Postgres is in the runner anyway, running tests is a cheap deploy-boundary sanity check, and GitHub's publish workflow is itself in flux per R182 so cannot be relied on as a gate yet.
 
@@ -43,7 +44,7 @@ Shipped on this branch:
 - `.gitlab-ci.yml` lost `publish:snapshot`, bumped to `maven:3.9-eclipse-temurin-25`, rewrote `publish:release` to use `-f graphitron-rewrite/pom.xml` on both `mvn` calls, added `-DprocessAllModules=true` to `versions:set`, widened the tag regex to `^v\d+\.\d+\.\d+(-RC\d+)?$`, and updated the header comment block.
 - `publish:release` provisions a `postgres:18-alpine` service, installs `postgresql-client` + `gcc` in the runner via apt-get, applies `init.sql` to the service, and runs `clean deploy -P gitlab,local-db -Ddb.url=jdbc:postgresql://postgres:5432/rewrite_test`. Tests + codegen run; only the `MAVEN_SKIP_OPTS` variable that previously carried `-Djooq.codegen.skip=true` was removed.
 
-The initial pass missed two things: several rewrite-reactor modules (`graphitron-sakila-service`, `graphitron-sakila-example`) compile against jOOQ-generated classes from `graphitron-sakila-db` (skipping codegen broke the reactor's compile phase regardless of which modules ultimately deploy); and `graphitron-lsp` invokes a native build at `generate-resources` (`build-native.sh`) that needs `cc`, which the `maven:3.9-eclipse-temurin-25` runtime image doesn't ship. The postgres-service path covers the first, an apt-get `gcc` covers the second, and the combination makes "run tests in the deploy job" essentially free.
+The initial pass missed three things: several rewrite-reactor modules (`graphitron-sakila-service`, `graphitron-sakila-example`) compile against jOOQ-generated classes from `graphitron-sakila-db` (skipping codegen broke the reactor's compile phase regardless of which modules ultimately deploy); `graphitron-lsp` invokes a native build at `generate-resources` (`build-native.sh`) that needs `cc`, which the `maven:3.9-eclipse-temurin-25` runtime image doesn't ship; and `graphitron-sakila-example`'s `local-db` profile hardcoded `test.db.url=jdbc:postgresql://localhost:5432/...` as a literal in surefire's `systemPropertyVariables`, where CLI `-D` overrides can't reach it. The postgres-service path covers the first, an apt-get `gcc` covers the second, and parameterizing the surefire literal through pom properties covers the third.
 
 ## Risks and mitigations
 
