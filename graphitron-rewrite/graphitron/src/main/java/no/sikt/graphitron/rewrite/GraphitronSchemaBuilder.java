@@ -229,19 +229,18 @@ public class GraphitronSchemaBuilder {
                 // R161: the carrier-walk admission was widened so the className-carrying arms
                 // (Backed / JavaRecordType / JooqRecordType / JooqTableRecordType) route through
                 // MutationDmlRecordField at mutation-classification time. The type-level
-                // short-circuit fires only on Ok.NoBacking — the model sub-arm where there is no
+                // short-circuit fires only on Ok.NoBacking, the model sub-arm where there is no
                 // developer class for R88's per-field accessor-resolution pass to inspect.
                 // Ok.ClassBacked falls through to normal per-type classification so R88
-                // diagnostics surface on developer-supplied classes; the mutation classifier's
-                // producer-site helpers (registerDmlCarrierDataField / registerServiceCarrier
-                // DataField) reclassify the data field via compare-then-write when the carrier
-                // is used as a DML or @service return.
+                // diagnostics surface on developer-supplied classes; classifyChildFieldOnResultType's
+                // DmlEmitted / ServiceEmitted producer-binding arms construct the data-field
+                // permit when the carrier is used as a DML or @service return.
                 // R178: for payloads classified through the unified path (DML-emitted or
                 // @service-emitted carrier binding present), the per-type pass runs against
                 // the producer binding to construct the data-field permit. The carrier-walk
                 // Ok.NoBacking short-circuit stays the path for:
                 //   - orphan NoBacking carriers (no producer binding; the data field stays
-                //     unregistered per R158 — graphql-java's never-traverse-unproduced-fields
+                //     unregistered per R158, and graphql-java's never-traverse-unproduced-fields
                 //     guarantee makes the missing entry structurally safe);
                 //   - DELETE DML carriers (registerDeleteCarrierDataField is still the sole
                 //     writer for SingleRecord*FromReturning permits; reclassify expects the
@@ -327,23 +326,22 @@ public class GraphitronSchemaBuilder {
                     var dataFieldDef = objType.getFieldDefinition(dc.fieldName());
                     switch (dc.element()) {
                         case no.sikt.graphitron.rewrite.model.DataElement.Table tableElement -> {
-                            // R158 — DataElement.Table per-field carrier registration is deferred
-                            // to the per-producer site in FieldBuilder, which has the producing
-                            // mutation's kind (DML verb vs @service reflection result) in scope.
-                            // The producer-kind discrimination wires SourceKey.wrap to either
-                            // Wrap.Record (DML mutation fetcher emits RecordN<...>) or
+                            // R158 / R178: DataElement.Table per-field carrier registration is
+                            // deferred to the per-producer site in FieldBuilder, which has the
+                            // producing mutation's kind (DML verb vs @service reflection result)
+                            // in scope. The producer-kind discrimination wires SourceKey.wrap to
+                            // either Wrap.Record (DML mutation fetcher emits RecordN<...>) or
                             // Wrap.TableRecord(target.recordClass()) (@service returns XRecord /
                             // List<XRecord>); the verbless walk has no producer context, so it
-                            // would have to commit to one wrap shape arbitrarily. The two
-                            // FieldBuilder helpers — registerDmlCarrierDataField and
-                            // registerServiceCarrierDataField — are the only writers; an orphan
-                            // carrier type (no producing mutation) lands with no entry, which
-                            // graphql-java's never-traverse-an-unproduced-field guarantee makes
-                            // structurally safe.
+                            // would have to commit to one wrap shape arbitrarily.
+                            // classifyChildFieldOnResultType's DmlEmitted / ServiceEmitted arms
+                            // are the structural writers; an orphan carrier type (no producing
+                            // mutation) lands with no entry, which graphql-java's never-traverse-
+                            // an-unproduced-field guarantee makes structurally safe.
                             //
-                            // The {@code dataFieldDef} reference is intentionally unused here;
-                            // each producer-site helper re-derives it from the schema. Suppress
-                            // the unused-local warning by referencing it once.
+                            // The dataFieldDef reference is intentionally unused here; each
+                            // producer-site arm re-derives it from the schema. Suppress the
+                            // unused-local warning by referencing it once.
                             if (dataFieldDef == null) { /* unreachable: walk only enters for fields present in SDL */ }
                         }
                         case no.sikt.graphitron.rewrite.model.DataElement.Record recordElement -> {
