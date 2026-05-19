@@ -119,6 +119,13 @@ final class RecordBindingResolver {
      */
     private final Map<String, ProducerBinding.DmlEmitted> dmlEmittedMemo = new LinkedHashMap<>();
 
+    /**
+     * R178 step 2b: dedicated map for {@link ProducerBinding.ServiceEmitted} observations from
+     * {@code @service} mutation fields with carrier-shaped payloads. Mirrors
+     * {@link #dmlEmittedMemo}; the cutover commit moves both into the main result-axis fold.
+     */
+    private final Map<String, ProducerBinding.ServiceEmitted> serviceEmittedMemo = new LinkedHashMap<>();
+
     RecordBindingResolver(BuildContext ctx, ServiceCatalog svc) {
         this.ctx = Objects.requireNonNull(ctx);
         this.svc = Objects.requireNonNull(svc);
@@ -154,6 +161,15 @@ final class RecordBindingResolver {
      */
     Optional<ProducerBinding.DmlEmitted> resolveDmlEmitted(String sdlTypeName) {
         return Optional.ofNullable(dmlEmittedMemo.get(sdlTypeName));
+    }
+
+    /**
+     * R178 step 2b: resolves the optional {@link ProducerBinding.ServiceEmitted} observation
+     * for an SDL payload type whose producer is an {@code @service} mutation field with a
+     * carrier-shaped payload. Mirrors {@link #resolveDmlEmitted}.
+     */
+    Optional<ProducerBinding.ServiceEmitted> resolveServiceEmitted(String sdlTypeName) {
+        return Optional.ofNullable(serviceEmittedMemo.get(sdlTypeName));
     }
 
     /**
@@ -251,6 +267,16 @@ final class RecordBindingResolver {
             }
         }
 
+        // R178 step 2b: ServiceEmitted observation for @service-carrier candidates. The check
+        // is structural: the payload SDL must be a GraphQL Object with exactly one @table-typed
+        // field whose record class matches the method's reflected return-element. Both NoBacking
+        // (plain SDL Object) and ClassBacked (@record-bound) carriers ground here; this map is
+        // independent of the main result-axis fold and the existing RootService observation
+        // above. The classifier-side dispatch in FieldBuilder.classifyChildFieldOnResultType
+        // reads through TypeBuilder.serviceEmittedBinding to construct
+        // ChildField.SingleRecordTableField with Wrap.TableRecord at the data-field coord.
+        groundServiceCarrierBinding(parent, field, method, className, methodName, resultSdl, loc);
+
         // Ground input-axis bindings from method parameters → SDL arg types.
         // Argument mapping: parameter name = SDL arg name unless argMapping overrides.
         Map<String, String> argMappingOverrides = parseArgMapping(
@@ -268,6 +294,68 @@ final class RecordBindingResolver {
             addInputObservation(inputSdl, new ProducerBinding.RootService(
                 paramElement, parent.getName(), field.getName(), className, methodName, loc));
         }
+    }
+
+    /**
+     * R178 step 2b: structural detection for an {@code @service}-carrier candidate. Grounds a
+     * {@link ProducerBinding.ServiceEmitted} observation when the payload SDL Object exposes
+     * exactly one {@code @table}-typed data field whose record class equals the
+     * {@code @service} method's reflected return-element class. Skipped silently for shapes
+     * the carrier mold doesn't admit (multiple {@code @table}-typed fields, no
+     * {@code @table}-typed field, unresolvable inner table, class-load failure, type mismatch
+     * between method return and the data field's record class).
+     *
+     * <p>R96 runs before per-type classification populates {@code ctx.types}, so the detection
+     * reads directly from {@code ctx.schema} (the assembled GraphQL schema) and the catalog
+     * via {@link ServiceCatalog#resolveTable}. The {@code @table}-typed predicate is "the
+     * field's return type unwraps to a GraphQL Object that carries the {@code @table}
+     * directive"; errors-shaped fields (polymorphic-of-{@code @error}) are excluded by the
+     * "must be a GraphQL Object" check.
+     */
+    private void groundServiceCarrierBinding(GraphQLObjectType parent, GraphQLFieldDefinition field,
+            Method method, String className, String methodName, String resultSdl, SourceLocation loc) {
+        if (resultSdl == null) return;
+        GraphQLType payloadType = ctx.schema.getType(resultSdl);
+        if (!(payloadType instanceof GraphQLObjectType payloadObj)) return;
+
+        GraphQLFieldDefinition dataField = null;
+        String dataFieldTableName = null;
+        for (var f : payloadObj.getFieldDefinitions()) {
+            String unwrappedFieldType = unwrappedTypeName(f.getType());
+            if (unwrappedFieldType == null) continue;
+            GraphQLType fieldType = ctx.schema.getType(unwrappedFieldType);
+            if (!(fieldType instanceof GraphQLObjectType fieldObj)) continue;
+            if (!fieldObj.hasAppliedDirective(DIR_TABLE)) continue;
+            if (dataField != null) return;
+            dataField = f;
+            dataFieldTableName = argString(fieldObj, DIR_TABLE, ARG_NAME)
+                .orElse(unwrappedFieldType.toLowerCase());
+        }
+        if (dataField == null) return;
+
+        Optional<TableRef> tableOpt = svc.resolveTable(dataFieldTableName);
+        if (tableOpt.isEmpty()) return;
+        TableRef table = tableOpt.get();
+
+        Class<?> recordClass;
+        try {
+            recordClass = Class.forName(
+                table.recordClass().reflectionName(), false, ctx.codegenLoader());
+        } catch (ClassNotFoundException ignored) {
+            return;
+        }
+
+        Class<?> retElement = peelReturnElement(method.getGenericReturnType());
+        if (retElement == null || !retElement.equals(recordClass)) return;
+
+        SourceKey.Cardinality cardinality =
+            GraphQLTypeUtil.unwrapNonNull(dataField.getType()) instanceof GraphQLList
+                ? SourceKey.Cardinality.MANY
+                : SourceKey.Cardinality.ONE;
+
+        serviceEmittedMemo.putIfAbsent(resultSdl, new ProducerBinding.ServiceEmitted(
+            retElement, table, cardinality, parent.getName(), field.getName(),
+            className, methodName, loc));
     }
 
     private void groundTableMethodField(GraphQLObjectType parent, GraphQLFieldDefinition field) {
