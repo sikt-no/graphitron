@@ -194,10 +194,17 @@
     </dependencies>
 
     <profiles>
-        <!-- Connect execution tests to a pre-existing local PostgreSQL instead of TestContainers.
-             Caller is responsible for running init.sql against the target database beforehand. -->
+        <!-- Connect execution tests to a pre-existing PostgreSQL instead of TestContainers.
+             Caller is responsible for running init.sql against the target database beforehand.
+             test.db.url / username / password are overridable via -D so CI environments
+             (e.g. the GitLab publish job's postgres service) can point at a non-localhost host. -->
         <profile>
             <id>local-db</id>
+            <properties>
+                <test.db.url>jdbc:postgresql://localhost:5432/rewrite_test</test.db.url>
+                <test.db.username>postgres</test.db.username>
+                <test.db.password>postgres</test.db.password>
+            </properties>
             <build>
                 <plugins>
                     <plugin>
@@ -205,9 +212,9 @@
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
                             <systemPropertyVariables>
-                                <test.db.url>jdbc:postgresql://localhost:5432/rewrite_test</test.db.url>
-                                <test.db.username>postgres</test.db.username>
-                                <test.db.password>postgres</test.db.password>
+                                <test.db.url>${test.db.url}</test.db.url>
+                                <test.db.username>${test.db.username}</test.db.username>
+                                <test.db.password>${test.db.password}</test.db.password>
                             </systemPropertyVariables>
                         </configuration>
                     </plugin>
