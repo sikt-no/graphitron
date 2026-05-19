@@ -12,8 +12,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import no.sikt.graphitron.generated.schema.GraphitronContext;
-import org.dataloader.DataLoaderRegistry;
+import no.sikt.graphitron.generated.Graphitron;
 
 import java.net.URI;
 import java.util.Map;
@@ -26,10 +25,10 @@ import java.util.Map;
  * {@code GET /graphql} (no query, {@code Accept: text/html}) is redirected to the
  * pre-built GraphiQL playground at {@code /graphiql/}.
  *
- * <p>Each request builds a fresh {@link DataLoaderRegistry} (graphql-java requires one even
- * when no DataLoader is used; Split-fetchers rely on it for batching) and threads a
- * per-request {@link AppContext} under {@link GraphitronContext} on the
- * {@link ExecutionInput}, where every generated fetcher looks it up.
+ * <p>Per-request wiring goes through {@link Graphitron#newExecutionInput} which threads
+ * the {@link AppContext} under the typed context key every generated fetcher reads from
+ * and attaches a fresh {@code DataLoaderRegistry} (graphql-java requires one even when
+ * no DataLoader is used; split-fetchers rely on it for batching).
  */
 @Path("/graphql")
 public class GraphqlResource {
@@ -60,11 +59,8 @@ public class GraphqlResource {
     }
 
     private Response execute(String query, Map<String, Object> variables, String operationName) {
-        AppContext context = new AppContext(dataSource, Map.of());
-        ExecutionInput.Builder input = ExecutionInput.newExecutionInput()
-            .query(query)
-            .graphQLContext(b -> b.put(GraphitronContext.class, context))
-            .dataLoaderRegistry(new DataLoaderRegistry());
+        ExecutionInput.Builder input = Graphitron.newExecutionInput(new AppContext(dataSource, Map.of()))
+            .query(query);
         if (variables != null) {
             input.variables(variables);
         }

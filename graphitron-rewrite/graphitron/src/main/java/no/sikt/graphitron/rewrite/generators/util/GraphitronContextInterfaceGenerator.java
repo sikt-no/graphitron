@@ -42,13 +42,16 @@ public class GraphitronContextInterfaceGenerator {
 
         var T = TypeVariableName.get("T");
         var getContextArgument = MethodSpec.methodBuilder("getContextArgument")
-            .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+            .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
             .addTypeVariable(T)
             .returns(T)
             .addParameter(ENV, "env")
             .addParameter(String.class, "name")
+            .addStatement("return env.getGraphQlContext().get(name)")
             .addJavadoc("Resolves the named {@code contextArgument} value (see {@code @condition}\n"
-                + "and {@code @tableMethod} directives) for this fetch.\n")
+                + "and {@code @tableMethod} directives) for this fetch. The default reads the\n"
+                + "value from the request's {@code GraphQLContext} under the given key; override\n"
+                + "to source values from elsewhere (e.g. authenticated principal, JWT claims).\n")
             .build();
 
         var getTenantId = MethodSpec.methodBuilder("getTenantId")
@@ -100,8 +103,9 @@ public class GraphitronContextInterfaceGenerator {
             .addModifiers(Modifier.PUBLIC)
             .addJavadoc("Per-request extension point that brokers runtime values (DSLContext, context\n"
                 + "arguments, tenant id, validator) into generated fetchers. Apps supply an\n"
-                + "implementation per request via\n"
-                + "{@code ExecutionInput.newExecutionInput(...).graphQLContext(Map.of(GraphitronContext.class, impl))}.\n")
+                + "implementation per request via {@code Graphitron.newExecutionInput(ctx)} (or\n"
+                + "the single-tenant {@code Graphitron.newExecutionInput(dslContext)} convenience\n"
+                + "overload, which adapts the {@code DSLContext} into a default implementation).\n")
             .addMethod(getDslContext)
             .addMethod(getContextArgument)
             .addMethod(getTenantId)

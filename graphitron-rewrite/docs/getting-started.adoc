@@ -49,16 +49,27 @@ GraphQL engine = GraphQL.newGraphQL(schema).build();
 
 GraphitronContext ctx = new AppContext(dsl);
 
-ExecutionInput input = ExecutionInput.newExecutionInput()
+ExecutionInput input = Graphitron.newExecutionInput(ctx)
     .query(query)
-    .graphQLContext(b -> b.put(GraphitronContext.class, ctx))
     .build();
 
 var result = engine.execute(input);
 ----
 
-The context key is the generated `GraphitronContext.class`; every emitted
-fetcher looks it up with that typed key.
+`Graphitron.newExecutionInput(...)` is the one-call factory: it pre-wires the
+`GraphitronContext` under the typed key every emitted fetcher reads from, and
+attaches an empty `DataLoaderRegistry` (graphql-java requires one; generated
+fetchers populate it lazily on first lookup).
+
+Single-tenant apps can skip the `GraphitronContext` implementation entirely
+and pass a `DSLContext` directly:
+
+[source,java]
+----
+ExecutionInput input = Graphitron.newExecutionInput(dsl)
+    .query(query)
+    .build();
+----
 
 For a complete app and the recommended test setup, see the
 https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-rewrite/graphitron-sakila-example[`graphitron-sakila-example`]
@@ -254,15 +265,16 @@ public class JwtContext implements GraphitronContext {
 }
 ----
 
-Per-request wiring stashes the JWT claims under a stable key:
+Per-request wiring stashes the JWT claims under a stable key. Extra
+`.graphQLContext(...)` calls *merge* with the factory's existing context put,
+so the typed `GraphitronContext.class` entry and the `"jwtClaims"` string key
+coexist cleanly:
 
 [source,java]
 ----
-ExecutionInput input = ExecutionInput.newExecutionInput()
+ExecutionInput input = Graphitron.newExecutionInput(ctx)
     .query(query)
-    .graphQLContext(b -> b
-        .put(GraphitronContext.class, ctx)
-        .put("jwtClaims", verifiedClaims))
+    .graphQLContext(b -> b.put("jwtClaims", verifiedClaims))
     .build();
 ----
 
@@ -428,5 +440,6 @@ flowchart TD
   needs is in the programmatic schema. If you need an SDL string (e.g., for
   logging or debugging), call `new SchemaPrinter().print(schema)`.
 * `DataLoaderRegistry` is per-request. graphql-java requires one on
-  `ExecutionInput` even when no DataLoader is used; emit
-  `.dataLoaderRegistry(new DataLoaderRegistry())` alongside the context put.
+  `ExecutionInput` even when no DataLoader is used; `Graphitron.newExecutionInput(...)`
+  pre-attaches an empty one. Chain `.dataLoaderRegistry(custom)` to override
+  (graphql-java's replace overload swaps the factory's default).

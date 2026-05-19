@@ -58,6 +58,28 @@ class GraphitronContextInterfaceGeneratorTest {
     }
 
     @Test
+    void getContextArgument_hasDefaultImplementationReadingGraphQLContext() {
+        var method = findMethod("getContextArgument");
+        assertThat(method.modifiers()).contains(Modifier.DEFAULT).doesNotContain(Modifier.ABSTRACT);
+        assertThat(method.code().toString()).contains("env.getGraphQlContext().get(name)");
+    }
+
+    /**
+     * Load-bearing: the {@code Graphitron.newExecutionInput(DSLContext)} lambda form
+     * {@code (GraphitronContext) env -> dsl} relies on this interface having exactly
+     * one abstract method. Adding another abstract method silently breaks the lambda
+     * form; any such change must update {@code GraphitronFacadeGenerator} in tandem.
+     */
+    @Test
+    void generatedInterface_hasExactlyOneAbstractMethod() {
+        TypeSpec spec = GraphitronContextInterfaceGenerator.generate().get(0);
+        var abstractMethods = spec.methodSpecs().stream()
+            .filter(m -> m.modifiers().contains(Modifier.ABSTRACT))
+            .toList();
+        assertThat(abstractMethods).hasSize(1);
+    }
+
+    @Test
     void getTenantId_hasDefaultImplementationReturningEmptyString() {
         var method = findMethod("getTenantId");
         assertThat(method.modifiers()).contains(Modifier.DEFAULT);
