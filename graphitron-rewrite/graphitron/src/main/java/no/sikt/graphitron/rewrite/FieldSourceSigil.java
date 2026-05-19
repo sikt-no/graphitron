@@ -5,8 +5,6 @@ import graphql.schema.GraphQLDirectiveContainer;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.model.DataElement;
-import no.sikt.graphitron.rewrite.model.FieldWrapper;
 
 import java.util.Optional;
 
@@ -174,37 +172,18 @@ public final class FieldSourceSigil {
     }
 
     /**
-     * Type-matching predicate at the admitted carrier-data-field site. Compares the
-     * producer's reflected return {@link TypeName} against the SDL data element's
-     * expected backing class:
+     * Type-matching predicate at the admitted carrier-data-field site. Compares the producer's
+     * reflected return {@link TypeName} against an expected SDL element backing class. The
+     * {@code sdlIsList} flag drives list-wrapping: when {@code true}, the producer must return
+     * {@code List<expectedElementClass>} or {@code Result<expectedElementClass>}; when
+     * {@code false}, the producer must return {@code expectedElementClass} directly.
      *
-     * <ul>
-     *   <li>{@link DataElement.Table}: expected element class is the table's record class.
-     *       List-wrapping is preserved on both sides; {@link FieldWrapper.List} requires
-     *       the producer to return {@code List<RecordClass>} or {@code Result<RecordClass>},
-     *       {@link FieldWrapper.Single} requires the producer to return {@code RecordClass}
-     *       directly.</li>
-     *   <li>{@link DataElement.Record}: expected element class is the
-     *       {@link DataElement.Record#fqClassName()}; the same list-wrapping rule applies.
-     *       Exact equality today; future items may relax to assignability when a forcing
-     *       function appears.</li>
-     *   <li>{@link DataElement.Id}: out of scope; {@code $source} on ID-element carriers
-     *       is not admitted. Returns a rejection.</li>
-     * </ul>
-     *
-     * <p>Returns {@link Optional#empty()} on match; on mismatch, returns the canonical
-     * message produced by {@link #typeMismatchMessage}.
+     * <p>Returns {@link Optional#empty()} on match; on mismatch, returns the canonical message
+     * produced by {@link #typeMismatchMessage}.
      */
     public static Optional<String> sourceSigilTypeMatches(
             TypeName producerReturnType, String producerClassName, String producerMethodName,
-            DataElement element) {
-        TypeName expectedElementClass = expectedElementClass(element);
-        if (expectedElementClass == null) {
-            return Optional.of(typeMismatchMessage(producerClassName, producerMethodName,
-                producerReturnType.toString(), "<no backing class for element kind "
-                + element.getClass().getSimpleName() + ">"));
-        }
-        boolean sdlIsList = element.wrapper().isList();
+            TypeName expectedElementClass, boolean sdlIsList) {
         TypeName actualElement = unwrapListLike(producerReturnType, sdlIsList);
         if (actualElement == null) {
             return Optional.of(typeMismatchMessage(producerClassName, producerMethodName,
@@ -217,14 +196,6 @@ public final class FieldSourceSigil {
                 (sdlIsList ? "List<" : "") + expectedElementClass + (sdlIsList ? ">" : "")));
         }
         return Optional.empty();
-    }
-
-    private static TypeName expectedElementClass(DataElement element) {
-        return switch (element) {
-            case DataElement.Table t -> t.table().recordClass();
-            case DataElement.Record r -> ClassName.bestGuess(r.fqClassName());
-            case DataElement.Id ignored -> null;
-        };
     }
 
     /**
