@@ -12,11 +12,13 @@
 # Auth uses CI_JOB_TOKEN, which has write access to this project's
 # package registry by default; no manual secrets required.
 #
-# Tests are skipped here. Tests and javadoc generation run in the GitHub
-# CI build that gates merges to main and tags. The GitLab pipeline only
-# republishes the same source tree to GitLab Packages as a secondary
-# distribution channel, so re-running tests adds no value and would
-# require Docker-in-Docker for the jOOQ codegen testcontainer.
+# Tests, jOOQ codegen, and javadoc all run here. The original incarnation
+# of this pipeline skipped tests because Testcontainers needed Docker-in-Docker
+# and "tests run in GitHub anyway"; both legs are obsolete. The publish job
+# now provisions a Postgres service and uses -Plocal-db to avoid Docker, and
+# the rewrite reactor's compile graph depends on jOOQ-generated classes from
+# graphitron-sakila-db anyway. Once the DB is up, running tests is a cheap
+# sanity check at the deploy boundary.
 
 default:
   image: maven:3.9-eclipse-temurin-25
@@ -26,7 +28,6 @@ variables:
     -Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository
     -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=warn
   MAVEN_CLI_OPTS: "--batch-mode --errors --show-version"
-  MAVEN_SKIP_OPTS: "-Dmaven.test.skip=true -Djooq.codegen.skip=true"
 
 cache:
   key:
@@ -54,8 +55,18 @@ publish:release:
   extends: .maven-publish
   rules:
     - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+(-RC\d+)?$/
+  services:
+    - name: postgres:18-alpine
+      alias: postgres
+  variables:
+    POSTGRES_DB: rewrite_test
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    POSTGRES_HOST_AUTH_METHOD: trust
   script:
+    - apt-get update -qq && apt-get install -y -qq postgresql-client
+    - PGPASSWORD=postgres psql -h postgres -U postgres -d rewrite_test -f graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql
     - VERSION=${CI_COMMIT_TAG#v}
     - echo "Releasing version $VERSION to GitLab Packages"
     - mvn -f graphitron-rewrite/pom.xml $MAVEN_CLI_OPTS versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false -DprocessAllModules=true
-    - mvn -f graphitron-rewrite/pom.xml $MAVEN_CLI_OPTS $MAVEN_SKIP_OPTS -s ci_settings.xml clean deploy -P gitlab
+    - mvn -f graphitron-rewrite/pom.xml $MAVEN_CLI_OPTS -Ddb.url=jdbc:postgresql://postgres:5432/rewrite_test -s ci_settings.xml clean deploy -P gitlab,local-db
