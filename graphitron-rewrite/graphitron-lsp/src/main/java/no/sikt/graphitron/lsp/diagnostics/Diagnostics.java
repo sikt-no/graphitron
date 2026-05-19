@@ -522,10 +522,10 @@ public final class Diagnostics {
         // parent type has no entry in the type-backing projection at all (mid-edit / not-yet-
         // classified), stay silent so we don't punish the user for a shape we cannot resolve.
         if (no.sikt.graphitron.rewrite.FieldSourceSigil.UPSTREAM_ROOT_LITERAL.equals(memberName)) {
-            boolean isCarrierDataField = fieldName != null
+            boolean isPayloadDataField = fieldName != null
                 && no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilDefinedAt(
                     built.siteContext(typeName.get(), fieldName));
-            if (!isCarrierDataField && built.typesByName().containsKey(typeName.get())) {
+            if (!isPayloadDataField && built.typesByName().containsKey(typeName.get())) {
                 out.add(diagnostic(file, valueNode, DiagnosticSeverity.Error,
                     no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilNotDefinedHereMessage()));
             }

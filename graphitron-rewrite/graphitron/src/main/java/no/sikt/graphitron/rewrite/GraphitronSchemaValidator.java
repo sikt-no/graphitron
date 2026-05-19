@@ -961,7 +961,7 @@ public class GraphitronSchemaValidator {
      * <p>The fetcher emitted for that sibling must short-circuit on {@code null} source and return
      * {@code null}; otherwise the catch path renders {@code data} as a corrupt half-payload instead
      * of the SDL-level {@code data: null, errors: [...]} shape. The {@code @service}-payload
-     * lifting in {@code FieldBuilder.findCarrierErrorsBinding} keeps the data-channel role's
+     * lifting in {@code FieldBuilder.findPayloadErrorsBinding} keeps the data-channel role's
      * variants within {@link #LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS} by construction. R161
      * widens that admission to mutation DML record fields, and any future widening that admits a
      * non-guarded variant must extend the allow-list along with the matching fetcher's null-source

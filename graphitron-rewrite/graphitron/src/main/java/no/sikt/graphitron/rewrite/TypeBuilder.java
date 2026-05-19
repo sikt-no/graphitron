@@ -232,7 +232,7 @@ class TypeBuilder {
         // ResultType arm (resolveReturnType produces ResultReturnType; the mutation classifier
         // reads the trigger to admit MutationDmlRecordField); plain SDL Objects that don't
         // match the trigger remain as PlainObjectType for the developer to wire by hand.
-        promoteSingleRecordCarriers();
+        promoteSingleRecordPayloads();
 
         return ctx.typeRegistry.entries();
     }
@@ -245,13 +245,13 @@ class TypeBuilder {
      * {@code types.get(dataElementName)} and requires it to be a {@link TableBackedType}
      * (or a recognized {@code @record} / ID element kind).
      */
-    private void promoteSingleRecordCarriers() {
+    private void promoteSingleRecordPayloads() {
         var plainObjectNames = ctx.typeRegistry.entries().entrySet().stream()
             .filter(e -> e.getValue() instanceof PlainObjectType)
             .map(java.util.Map.Entry::getKey)
             .toList();
         for (var name : plainObjectNames) {
-            if (ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlCarrierScan.Admit) {
+            if (ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlPayloadScan.Admit) {
                 var current = (PlainObjectType) ctx.typeRegistry.get(name);
                 ctx.typeRegistry.enrich(name,
                     new GraphitronType.PojoResultType.NoBacking(name, current.location()));

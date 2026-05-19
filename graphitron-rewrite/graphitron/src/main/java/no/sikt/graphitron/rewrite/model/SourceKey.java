@@ -319,7 +319,7 @@ public record SourceKey(
          * producer's row shape IS the data table); {@link SourceKey#wrap()} is either
          * {@link Wrap.Record} (DML mutation fetcher producer emits {@code RecordN<...>})
          * or {@link Wrap.TableRecord} whose {@code className} equals
-         * {@code target.recordClass()} ({@code @service} carrier-payload producer returns
+         * {@code target.recordClass()} ({@code @service} payload producer returns
          * a typed {@code XRecord} or {@code List<XRecord>} verbatim). Cardinality matches
          * the producer's output cardinality (single → {@link Cardinality#ONE}; list →
          * {@link Cardinality#MANY}). The structural invariants are enforced by

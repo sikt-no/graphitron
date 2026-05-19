@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * R75 Phase 1: pipeline-tier coverage for single-record DML carriers — plain SDL Object
+ * R75 Phase 1: pipeline-tier coverage for single-record DML payloads — plain SDL Object
  * payload types whose single {@code @table}-element data field admits without an authored
  * Java carrier.
  *
@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * load-bearing data-table-equals-input-table check rejects mismatches.
  */
 @PipelineTier
-class SingleRecordCarrierPipelineTest {
+class SingleRecordPayloadPipelineTest {
 
     // ===== Trigger admission, parameterised over DmlKind (INSERT / UPDATE / UPSERT) =====
 
@@ -46,7 +46,7 @@ class SingleRecordCarrierPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void carrier_bulkInput_listDataField_classifiesAsMutationBulkDmlRecordField(DmlKind kind) {
+    void payload_bulkInput_listDataField_classifiesAsMutationBulkDmlRecordField(DmlKind kind) {
         // UPSERT is deferred to R145 (mutation-cardinality-safety-upsert); the classifier surfaces
         // a deferred-to-R145 rejection rather than constructing the leaf, so the parameterised
         // case excludes UPSERT.
@@ -63,7 +63,7 @@ class SingleRecordCarrierPipelineTest {
     }
 
     @Test
-    void carrier_bulkInput_listDataField_upsertDeferredToR145() {
+    void payload_bulkInput_listDataField_upsertDeferredToR145() {
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.UPSERT, "type FilmPayload { films: [Film!] }"));
         var mutField = schema.field("Mutation", mutationName(DmlKind.UPSERT));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
@@ -73,7 +73,7 @@ class SingleRecordCarrierPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void carrier_bulkInput_listDataField_dataFieldClassifiesAsSingleRecordTableField(DmlKind kind) {
+    void payload_bulkInput_listDataField_dataFieldClassifiesAsSingleRecordTableField(DmlKind kind) {
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind, "type FilmPayload { films: [Film!] }"));
 
         var dataField = schema.field("FilmPayload", "films");
@@ -93,7 +93,7 @@ class SingleRecordCarrierPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void carrier_singleDataField_dataFieldClassifiesWithCardinalityOne(DmlKind kind) {
+    void payload_singleDataField_dataFieldClassifiesWithCardinalityOne(DmlKind kind) {
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload { film: Film }"));
 
         var mutField = schema.field("Mutation", mutationName(kind));
@@ -106,7 +106,7 @@ class SingleRecordCarrierPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void carrier_atRecordWithNullClassName_classifiesAsMutationDmlRecordField(DmlKind kind) {
+    void payload_atRecordWithNullClassName_classifiesAsMutationDmlRecordField(DmlKind kind) {
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind, "type FilmPayload @record { film: Film }"));
         assertThat(schema.field("Mutation", mutationName(kind)))
             .isInstanceOf(MutationField.MutationDmlRecordField.class);
@@ -115,7 +115,7 @@ class SingleRecordCarrierPipelineTest {
     // ===== DELETE-with-carrier admission (R156) =====
 
     @Test
-    void carrier_withDeleteAndProjectableElement_admitsAsMutationDmlRecordField() {
+    void payload_withDeleteAndProjectableElement_admitsAsMutationDmlRecordField() {
         // R156: DELETE-with-carrier admits when the element type's fields all classify into
         // admissible PerFieldOutcome arms. `Film @table { title: String }` has only one field,
         // nullable non-PK, which classifies into PerFieldOutcome.NonPkNullable → admits.
@@ -134,7 +134,7 @@ class SingleRecordCarrierPipelineTest {
     // ===== Structural carrier-shape rejection (R141: unrecognized carrier-field shape) =====
 
     @Test
-    void carrier_withMultipleDataFields_returnsRejected() {
+    void payload_withMultipleDataFields_returnsRejected() {
         // R141: two @table-element list-shaped data fields is two data channels — the scan
         // rejects with "declares N data-channel-shaped fields; require exactly one".
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
@@ -147,8 +147,8 @@ class SingleRecordCarrierPipelineTest {
     }
 
     @Test
-    void carrier_withScalarField_returnsRejected() {
-        // R141: a scalar (String) on the carrier is not a recognized DML carrier data-field
+    void payload_withScalarField_returnsRejected() {
+        // R141: a scalar (String) on the carrier is not a recognized DML payload data-field
         // shape; the scan rejects naming the offending field and pointing at the extension
         // point.
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
@@ -157,12 +157,12 @@ class SingleRecordCarrierPipelineTest {
         var mutField = schema.field("Mutation", mutationName(DmlKind.INSERT));
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains("description", "not a recognized DML carrier data-field shape", "file a roadmap item");
+        assertThat(reason).contains("description", "not a recognized DML payload data-field shape", "file a roadmap item");
     }
 
     @Test
-    void carrier_withInterfaceField_returnsRejected() {
-        // R141: an interface-typed field on the carrier is not a recognized DML carrier
+    void payload_withInterfaceField_returnsRejected() {
+        // R141: an interface-typed field on the carrier is not a recognized DML payload
         // data-field shape (the SDL polymorphic union/interface shape is reserved for the
         // errors channel and requires @error members; an arbitrary interface doesn't match).
         // The scan names the offending field.
@@ -178,7 +178,7 @@ class SingleRecordCarrierPipelineTest {
         var mutField = schema.field("Mutation", "createFilm");
         assertThat(mutField).isInstanceOf(UnclassifiedField.class);
         var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains("hits", "not a recognized DML carrier data-field shape", "file a roadmap item");
+        assertThat(reason).contains("hits", "not a recognized DML payload data-field shape", "file a roadmap item");
     }
 
     @Test
@@ -200,7 +200,7 @@ class SingleRecordCarrierPipelineTest {
     }
 
     @Test
-    void carrier_atRecordWithClassName_classifiesAsExistingPath() {
+    void payload_atRecordWithClassName_classifiesAsExistingPath() {
         // A @record with className keeps the existing authored-carrier path: when the SDL
         // shape would otherwise admit as carrier (one @table-element data field), the
         // classifier instead walks the type's fields through classifyChildFieldOnResultType.
@@ -218,7 +218,7 @@ class SingleRecordCarrierPipelineTest {
     }
 
     @Test
-    void carrier_dataFieldCarriesAtField_admitsUnderR178() {
+    void payload_dataFieldCarriesAtField_admitsUnderR178() {
         // R178 retired the carrier walk's forbidden-directives HardReject on @field(name:) on
         // non-$source carrier data fields (the SettKvotesporsmal bug's mechanism). With and
         // without the directive, the payload classifies identically; see
@@ -236,7 +236,7 @@ class SingleRecordCarrierPipelineTest {
     }
 
     @Test
-    void carrier_dataFieldCarriesAtDeprecated_admits() {
+    void payload_dataFieldCarriesAtDeprecated_admits() {
         // R141: bulk-input + list-data-field admits as MutationBulkDmlRecordField; @deprecated
         // on the data field is pure SDL metadata, not on the carrier's forbidden-directive list.
         var schema = TestSchemaHelper.buildSchema("""
@@ -256,7 +256,7 @@ class SingleRecordCarrierPipelineTest {
     // ===== Carrier promotion: plain SDL Object becomes PojoResultType.NoBacking =====
 
     @Test
-    void carrier_plainSdlObject_promotesToPojoResultTypeNoBacking() {
+    void payload_plainSdlObject_promotesToPojoResultTypeNoBacking() {
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.INSERT,
             "type FilmPayload { films: [Film!] }"));
         var carrierType = schema.type("FilmPayload");
@@ -281,7 +281,7 @@ class SingleRecordCarrierPipelineTest {
     // ===== Cross-paths =====
 
     @Test
-    void carrier_returnedFromQueryField_isOrphanWithNoRegistration() {
+    void payload_returnedFromQueryField_isOrphanWithNoRegistration() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type FilmPayload { films: [Film!] }
@@ -299,7 +299,7 @@ class SingleRecordCarrierPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void carrier_dataTableMismatchesInputTable_rejectsAtClassifier(DmlKind kind) {
+    void payload_dataTableMismatchesInputTable_rejectsAtClassifier(DmlKind kind) {
         // The data field's @table is `actor`, but the mutation's input @table is `film` —
         // the load-bearing mutation-dml-record-field.data-table-equals-input-table check rejects.
         // Uses bulk input + list data field so the carrier admits its shape and the mismatch
@@ -423,7 +423,7 @@ class SingleRecordCarrierPipelineTest {
     // ===== R75 Phase 2: record-element data fields =====
 
     @Test
-    void carrier_recordElement_orphanDataFieldStaysUnregistered() {
+    void payload_recordElement_orphanDataFieldStaysUnregistered() {
         // R178 Phase 4: orphan record-element carriers (no producer mutation consuming the
         // payload) leave the data field unregistered. graphql-java's never-traverse-unproduced-
         // fields guarantee makes the missing registration structurally safe. Record-element
@@ -446,7 +446,7 @@ class SingleRecordCarrierPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void carrier_recordElement_dmlMutationRejectsAtClassifier(DmlKind kind) {
+    void payload_recordElement_dmlMutationRejectsAtClassifier(DmlKind kind) {
         // @mutation (DML) is restricted to @table-element data. A record-element carrier on a
         // DML mutation would require a "DML row → domain record" conversion step at the
         // emitter, which the spec tracks separately. The mutation classifier rejects at
@@ -475,9 +475,9 @@ class SingleRecordCarrierPipelineTest {
             "@service mutation");
     }
 
-    // ===== LocalContext error channel on DML carriers (R12 + structural-scan integration) =====
+    // ===== LocalContext error channel on DML payloads (R12 + structural-scan integration) =====
     //
-    // The structural DML-carrier scan (BuildContext.scanStructuralDmlPayload) admits a carrier
+    // The structural DML-payload scan (BuildContext.scanStructuralDmlPayload) admits a carrier
     // shape with one @table-element or @record-element data field plus an optional errors-shaped
     // sibling; FieldBuilder.detectStructuralDmlErrorChannel binds the errors-channel transport
     // to ErrorChannel.LocalContext when the carrier has no developer-supplied class with an
@@ -497,7 +497,7 @@ class SingleRecordCarrierPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void carrier_singleInput_withErrorsField_classifiesAsMutationDmlRecordFieldWithLocalContext(DmlKind kind) {
+    void payload_singleInput_withErrorsField_classifiesAsMutationDmlRecordFieldWithLocalContext(DmlKind kind) {
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(kind,
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
             + "type FilmPayload { film: Film errors: [CarrierError!] }"));
@@ -527,7 +527,7 @@ class SingleRecordCarrierPipelineTest {
 
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
-    void carrier_bulkInput_withErrorsField_classifiesAsMutationBulkDmlRecordFieldWithLocalContext(DmlKind kind) {
+    void payload_bulkInput_withErrorsField_classifiesAsMutationBulkDmlRecordFieldWithLocalContext(DmlKind kind) {
         var schema = TestSchemaHelper.buildSchema(payloadDml(kind,
             CARRIER_WALK_LOCAL_CONTEXT_ERRORS
             + "type FilmPayload { films: [Film!] errors: [CarrierError!] }"));
@@ -553,7 +553,7 @@ class SingleRecordCarrierPipelineTest {
     }
 
     @Test
-    void carrier_withErrorsField_emittedFetcher_dispatchesThroughLocalContextRouter() throws Exception {
+    void payload_withErrorsField_emittedFetcher_dispatchesThroughLocalContextRouter() throws Exception {
         // End-to-end emit pin: the MutationDmlRecordField fetcher's catch arm dispatches through
         // ErrorRouter.dispatchToLocalContext (R12 Phase C2), and the payload's errors-field
         // fetcher reads via env.getLocalContext() (R12 Phase C3 / FetcherEmitter LocalContext
@@ -580,7 +580,7 @@ class SingleRecordCarrierPipelineTest {
             .contains("SQLDialect.DEFAULT")
             .contains("newRecord");
 
-        // The carrier payload's ErrorsField with Transport.LocalContext is wired through
+        // The payload's ErrorsField with Transport.LocalContext is wired through
         // FetcherRegistrationsEmitter (the schema-level wiring layer), not as a per-Fetchers
         // method. Assert the FilmPayload wiring registers a lambda whose body reads
         // env.getLocalContext().

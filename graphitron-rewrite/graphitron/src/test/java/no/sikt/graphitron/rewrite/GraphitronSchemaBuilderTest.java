@@ -1869,7 +1869,7 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
-        SINGLE_RECORD_CARRIER_DATA_FIELD_ORPHAN(
+        SINGLE_RECORD_PAYLOAD_DATA_FIELD_ORPHAN(
             "Plain Object carrier (no @record/@table) wrapping a single @table-element data field, "
                 + "consumed by a Query field with no producing mutation → orphan carrier; no "
                 + "producer site registers the data field, and graphql-java's never-traverse-"
@@ -5285,7 +5285,7 @@ class GraphitronSchemaBuilderTest {
 
         MUTATION_DML_RECORD_FIELD(
             "R75 / Phase 1: @mutation(typeName: INSERT) with single @table input and a single-"
-                + "record DML carrier (plain SDL Object wrapping one @table-element data field) "
+                + "record DML payload (plain SDL Object wrapping one @table-element data field) "
                 + "→ MutationDmlRecordField. R141 pairs the input cardinality to the data field's "
                 + "wrapper, so this row's single + single shape stays on the original sealed leaf.",
             """
@@ -5892,9 +5892,9 @@ class GraphitronSchemaBuilderTest {
                     .contains("Invariant #16");
             }),
 
-        DML_INSERT_LIST_PAYLOAD_UNRECOGNIZED_CARRIER_FIELD_REJECTED(
+        DML_INSERT_LIST_PAYLOAD_UNRECOGNIZED_DATA_FIELD_REJECTED(
             "R141: DML INSERT with bulk @table input + carrier carrying a sibling field that "
-                + "does not resolve to a recognized DML carrier data-field shape → "
+                + "does not resolve to a recognized DML payload data-field shape → "
                 + "UnclassifiedField. The structural scan rejects with a descriptive reason "
                 + "naming the offending field and the extension point (file a roadmap item).",
             """
@@ -5910,7 +5910,7 @@ class GraphitronSchemaBuilderTest {
                 var f = (UnclassifiedField) schema.field("Mutation", "createFilmsPayload");
                 assertThat(f.reason())
                     .contains("affectedRowCount")
-                    .contains("not a recognized DML carrier data-field shape")
+                    .contains("not a recognized DML payload data-field shape")
                     .contains("file a roadmap item");
             }),
 
@@ -5984,8 +5984,8 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.reason()).contains("list-typed input field is not supported");
             }),
 
-        DML_RECORD_CARRIER_WITH_ERRORS_HAPPY(
-            "DML returning a @record carrier with film+errors → MutationDmlRecordField (@record(record:{className:}) on a Java-record-backed wrapper, admitted by the structural DML-carrier scan)",
+        DML_RECORD_PAYLOAD_WITH_ERRORS_HAPPY(
+            "DML returning a @record carrier with film+errors → MutationDmlRecordField (@record(record:{className:}) on a Java-record-backed wrapper, admitted by the structural DML-payload scan)",
             """
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
                 path: [String!]!
@@ -6011,8 +6011,8 @@ class GraphitronSchemaBuilderTest {
                 assertThat(f.errorChannel()).isPresent();
             }),
 
-        DML_RECORD_CARRIER_ROW_ONLY_HAPPY(
-            "DML returning a @record carrier with film only → MutationDmlRecordField (bare carrier on JavaRecordType wrapper, no errors channel, admitted by the structural DML-carrier scan)",
+        DML_RECORD_PAYLOAD_ROW_ONLY_HAPPY(
+            "DML returning a @record carrier with film only → MutationDmlRecordField (bare carrier on JavaRecordType wrapper, no errors channel, admitted by the structural DML-payload scan)",
             """
             type Film @table(name: "film") { title: String }
             type DeleteFilmPayload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DeleteFilmRowOnlyPayload"}) {
@@ -6045,7 +6045,7 @@ class GraphitronSchemaBuilderTest {
                     .contains("(list of @record) is not yet supported");
             }),
 
-        DML_RECORD_CARRIER_NO_DATA_CHANNEL_REJECTED(
+        DML_RECORD_PAYLOAD_NO_DATA_FIELD_REJECTED(
             "R161: DML returning a @record carrier with no data-channel-shaped field → UnclassifiedField (the structural scan rejects 'data: String' as an unrecognized carrier data-field shape since String is neither @table nor ID; user's developer-supplied class is no longer inspected)",
             """
             type Film @table(name: "film") { title: String }
@@ -6064,7 +6064,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
                 assertThat(f.reason())
-                    .contains("not a recognized DML carrier data-field shape");
+                    .contains("not a recognized DML payload data-field shape");
             }),
 
         // ===== R144 new admission and rejection cases =====
@@ -6152,11 +6152,11 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
-    // ===== MutationDeletePayloadCarrierCase (R156) =====
+    // ===== MutationDeletePayloadCase (R156) =====
 
     /**
      * R156 admission / rejection matrix for {@code @mutation(typeName: DELETE)} carriers. The
-     * structural DML-carrier scan admits two element-shape arms (the ID-typed PK-echo shape and
+     * structural DML-payload scan admits two element-shape arms (the ID-typed PK-echo shape and
      * the {@code @table}-element shape with a clean PK-only projection) and rejects everything
      * else, including the ID-typed shape on non-DELETE verbs (the post-image of
      * INSERT/UPDATE/UPSERT is richer than the PK), list-of-nullable {@code [ID]} wrappers,
@@ -6165,7 +6165,7 @@ class GraphitronSchemaBuilderTest {
      * {@code @table} is not {@code @node}-backed or whose explicit {@code @nodeId} pins to a
      * different table.
      */
-    enum MutationDeletePayloadCarrierCase implements ClassificationCase {
+    enum MutationDeletePayloadCase implements ClassificationCase {
 
         BULK_DELETE_TABLE_NULLABLE_NON_PK_ADMITS(
             "bulk DELETE + [Foo!] carrier with only nullable non-PK column fields → MutationBulkDmlRecordField + SingleRecordTableFieldFromReturning with PkResolution.NonPkNullable projection",
@@ -6208,7 +6208,7 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
-        INSERT_ID_CARRIER_REJECTS(
+        INSERT_ID_PAYLOAD_REJECTS(
             "INSERT + [ID!] carrier → UnclassifiedField (the ID-typed PK-echo shape is admitted only on DELETE)",
             """
             type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID! @nodeId title: String }
@@ -6241,7 +6241,7 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
-        UPDATE_ID_CARRIER_REJECTS(
+        UPDATE_ID_PAYLOAD_REJECTS(
             "UPDATE + [ID!] carrier → UnclassifiedField (the ID-typed PK-echo shape is admitted only on DELETE)",
             """
             type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID! @nodeId title: String }
@@ -6257,7 +6257,7 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
-        UPSERT_ID_CARRIER_REJECTS(
+        UPSERT_ID_PAYLOAD_REJECTS(
             "UPSERT + [ID!] carrier → UnclassifiedField (the ID-typed shape's verb rule fires before R144's UPSERT-defer)",
             """
             type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID! @nodeId title: String }
@@ -6300,7 +6300,7 @@ class GraphitronSchemaBuilderTest {
         final String description;
         final String sdl;
         final Consumer<GraphitronSchema> assertions;
-        MutationDeletePayloadCarrierCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+        MutationDeletePayloadCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
             this.description = description;
             this.sdl = sdl;
             this.assertions = assertions;
@@ -6310,8 +6310,8 @@ class GraphitronSchemaBuilderTest {
     }
 
     @ParameterizedTest(name = "{0}")
-    @EnumSource(MutationDeletePayloadCarrierCase.class)
-    void mutationDeletePayloadCarrierClassification(MutationDeletePayloadCarrierCase tc) {
+    @EnumSource(MutationDeletePayloadCase.class)
+    void mutationDeletePayloadClassification(MutationDeletePayloadCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 

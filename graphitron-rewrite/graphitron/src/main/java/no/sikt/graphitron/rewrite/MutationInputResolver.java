@@ -178,7 +178,7 @@ final class MutationInputResolver {
                 // scan's Reject arm names the offending field.
                 if (ctx != null) {
                     var scan = ctx.scanStructuralDmlPayload(s.returnTypeName());
-                    if (scan instanceof BuildContext.DmlCarrierScan.Reject scanReject) {
+                    if (scan instanceof BuildContext.DmlPayloadScan.Reject scanReject) {
                         yield "@mutation(typeName: " + kind + ") return type '"
                             + s.returnTypeName() + "': " + scanReject.reason()
                             + "; or author a carrier with @record(record: {className: ...})";

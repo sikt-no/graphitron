@@ -217,7 +217,7 @@ class SingleRecordTableFieldServiceProducerExecutionTest {
 
     /**
      * ONE-arm null source: the {@code @service} mutation returns {@code null} (unknown ID);
-     * graphql-java does not traverse the carrier-payload type when the parent value is null,
+     * graphql-java does not traverse the payload type when the parent value is null,
      * so the entire {@code serviceFilmById} result is {@code null}. The data-field fetcher's
      * own {@code source == null} short-circuit is unreachable in this path; it remains in
      * the emitted code for the symmetry with the MANY arm and for future paths where the

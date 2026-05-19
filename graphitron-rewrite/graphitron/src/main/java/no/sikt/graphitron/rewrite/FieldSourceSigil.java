@@ -12,7 +12,7 @@ import java.util.Optional;
  * Shared callables for the {@code @field(name:)} root-value sigils.
  *
  * <p>Two sigil literals are admitted: {@code $source} (R159), binding the upstream Java
- * value at the carrier-payload data field site to the SDL field; and {@code $errors}
+ * value at the payload data field site to the SDL field; and {@code $errors}
  * (R178), binding the SDL field to {@code env.getLocalContext()} for errors-shaped fields
  * on payload-returning mutation types. The helper owns the canonical rejection messages
  * (unknown sigil, not-defined-here, type mismatch); the classifier, the LSP completions
@@ -118,23 +118,23 @@ public final class FieldSourceSigil {
 
     /**
      * The set of sites where the sigil is admitted today. R159 has exactly one admitted
-     * site ({@link CarrierDataField}); every other site classifies as {@link Other}.
+     * site ({@link PayloadDataField}); every other site classifies as {@link Other}.
      * Sealed so future broadening adds a new arm rather than reshaping call sites.
      */
-    public sealed interface SiteContext permits SiteContext.CarrierDataField, SiteContext.Other {
+    public sealed interface SiteContext permits SiteContext.PayloadDataField, SiteContext.Other {
         /** Carrier-payload data field on a {@code @service}-backed mutation (the R158 admit). */
-        record CarrierDataField() implements SiteContext {}
+        record PayloadDataField() implements SiteContext {}
         /** Every other site: record-backed, table-backed, POJO, root, etc. */
         record Other() implements SiteContext {}
     }
 
     /**
-     * True only at the R159-admitted site (carrier-payload data field today). Consumers
+     * True only at the R159-admitted site (payload data field today). Consumers
      * (classifier admit, LSP completion, LSP diagnostic) ask one question and get one
      * answer; broadening admit in a future item flips a single return value here.
      */
     public static boolean sourceSigilDefinedAt(SiteContext ctx) {
-        return ctx instanceof SiteContext.CarrierDataField;
+        return ctx instanceof SiteContext.PayloadDataField;
     }
 
     /** Canonical message for {@code @field(name: "$X")} where {@code $X} is not an admitted sigil literal. */
@@ -147,12 +147,12 @@ public final class FieldSourceSigil {
      * Canonical message for {@code @field(name: "$source")} at a site that does not admit
      * the sigil. The LSP overlays this at AST-validation time; the build's classifier
      * surfaces the same message via the existing {@code UnclassifiedField} route only at
-     * the carrier-data-field site (other sites surface today's generic unknown-accessor /
+     * the payload-data-field site (other sites surface today's generic unknown-accessor /
      * unknown-column rejection unchanged).
      */
     public static String sourceSigilNotDefinedHereMessage() {
         return "'" + UPSTREAM_ROOT_LITERAL + "' is not defined at this site; "
-            + "it is only valid on the data field of a carrier-payload type returned by a "
+            + "it is only valid on the data field of a payload type returned by a "
             + "@service-backed mutation.";
     }
 
@@ -172,7 +172,7 @@ public final class FieldSourceSigil {
     }
 
     /**
-     * Type-matching predicate at the admitted carrier-data-field site. Compares the producer's
+     * Type-matching predicate at the admitted payload-data-field site. Compares the producer's
      * reflected return {@link TypeName} against an expected SDL element backing class. The
      * {@code sdlIsList} flag drives list-wrapping: when {@code true}, the producer must return
      * {@code List<expectedElementClass>} or {@code Result<expectedElementClass>}; when

@@ -78,16 +78,16 @@ public final class FieldCompletions {
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) {
             return List.of();
         }
-        // R159: at the carrier-payload data field site, prepend $source as a top-level completion.
+        // R159: at the payload data field site, prepend $source as a top-level completion.
         // The snapshot owns the (typeName, fieldName) -> SiteContext classification through
         // siteContext(); we route the predicate through sourceSigilDefinedAt rather than reading
         // the underlying projection ourselves. Snapshot-uncertainty rule: when the parent type
         // has no entry in the carrier projection, siteContext returns Other and the sigil is
         // not suggested.
-        boolean isCarrierDataField = fieldName != null
+        boolean isPayloadDataField = fieldName != null
             && no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilDefinedAt(
                 built.siteContext(typeName, fieldName));
-        var sigilItems = isCarrierDataField ? List.of(sourceSigilItem(context)) : List.<CompletionItem>of();
+        var sigilItems = isPayloadDataField ? List.of(sourceSigilItem(context)) : List.<CompletionItem>of();
         var backing = built.typesByName().get(typeName);
         if (backing == null) return sigilItems;
         var rest = switch (backing) {

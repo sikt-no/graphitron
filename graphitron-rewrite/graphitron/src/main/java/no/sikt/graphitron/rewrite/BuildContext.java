@@ -412,7 +412,7 @@ class BuildContext {
      * Converts a type name and wrapper into the correct {@link ReturnTypeRef} variant by
      * consulting the populated {@link #types} map.
      *
-     * <p>R75 Phase 1: single-record DML carriers are not short-circuited here. Carrier-shaped
+     * <p>R75 Phase 1: single-record DML payloads are not short-circuited here. Carrier-shaped
      * SDL Objects resolve through the {@code target instanceof ResultType} arm below and return
      * a {@link ReturnTypeRef.ResultReturnType} the mutation classifier reads structurally.
      */
@@ -594,7 +594,7 @@ class BuildContext {
     /**
      * R178 Phase 4 — sealed result of a payload's structural carrier-shape scan, used by the
      * @mutation classifier and MutationInputResolver paths to decide whether a payload type
-     * admits as a single-record DML carrier. Three arms:
+     * admits as a single-record DML payload. Three arms:
      *
      * <ul>
      *   <li>{@link Admit}: exactly one non-errors data field whose element classifies into a
@@ -606,10 +606,10 @@ class BuildContext {
      *       a {@code null} payload name. Callers fall through to their non-carrier code paths.</li>
      * </ul>
      */
-    public sealed interface DmlCarrierScan {
-        record Admit(GraphQLFieldDefinition dataField, DmlElementKind element) implements DmlCarrierScan {}
-        record Reject(String reason) implements DmlCarrierScan {}
-        record NotApplicable() implements DmlCarrierScan {}
+    public sealed interface DmlPayloadScan {
+        record Admit(GraphQLFieldDefinition dataField, DmlElementKind element) implements DmlPayloadScan {}
+        record Reject(String reason) implements DmlPayloadScan {}
+        record NotApplicable() implements DmlPayloadScan {}
     }
 
     public sealed interface DmlElementKind {
@@ -633,11 +633,11 @@ class BuildContext {
         DIR_EXTERNAL_FIELD, DIR_CONDITION, DIR_LOOKUP_KEY, DIR_NOT_GENERATED,
         DIR_TABLE_METHOD, DIR_DEFAULT_ORDER, DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
 
-    public DmlCarrierScan scanStructuralDmlPayload(String payloadSdlName) {
-        if (payloadSdlName == null) return new DmlCarrierScan.NotApplicable();
+    public DmlPayloadScan scanStructuralDmlPayload(String payloadSdlName) {
+        if (payloadSdlName == null) return new DmlPayloadScan.NotApplicable();
         var payloadType = schema.getType(payloadSdlName);
         if (!(payloadType instanceof GraphQLObjectType payloadObj)) {
-            return new DmlCarrierScan.NotApplicable();
+            return new DmlPayloadScan.NotApplicable();
         }
         GraphQLFieldDefinition admittedDataField = null;
         DmlElementKind admittedElement = null;
@@ -650,12 +650,12 @@ class BuildContext {
                 // preserved through the structural scan.
                 String rule7 = FieldBuilder.checkChannelLevelHandlerRules(errorTypes);
                 if (rule7 != null) {
-                    return new DmlCarrierScan.Reject(
+                    return new DmlPayloadScan.Reject(
                         "errors-shaped carrier field '" + f.getName() + "': " + rule7);
                 }
                 String rule8 = FieldBuilder.checkDuplicateMatchCriteria(errorTypes);
                 if (rule8 != null) {
-                    return new DmlCarrierScan.Reject(
+                    return new DmlPayloadScan.Reject(
                         "errors-shaped carrier field '" + f.getName() + "': " + rule8);
                 }
                 continue;
@@ -665,17 +665,17 @@ class BuildContext {
             // dispatch with the canonical FieldSourceSigil.unknownSigilMessage wording.
             var fieldNameRef = FieldSourceSigil.parseArgFieldNameRef(f, DIR_FIELD, ARG_NAME);
             if (fieldNameRef instanceof FieldSourceSigil.ParseResult.UnknownSigil unknown) {
-                return new DmlCarrierScan.Reject(FieldSourceSigil.unknownSigilMessage(unknown.raw()));
+                return new DmlPayloadScan.Reject(FieldSourceSigil.unknownSigilMessage(unknown.raw()));
             }
             // Forbidden-directives check. The listed directives signal a different fetcher
             // contract than a payload carrier's data-field path, so their presence routes the
-            // type away from the DML-carrier mold. Note: @field is intentionally NOT on this
+            // type away from the DML-payload mold. Note: @field is intentionally NOT on this
             // list (R178 retires the @field-on-non-$source HardReject — the SettKvotesporsmal
             // bug fix). Pure-metadata directives (@deprecated, custom directives without
             // execution semantics) pass through.
             for (String forbidden : FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES) {
                 if (f.hasAppliedDirective(forbidden)) {
-                    return new DmlCarrierScan.NotApplicable();
+                    return new DmlPayloadScan.NotApplicable();
                 }
             }
             String elementTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
@@ -691,7 +691,7 @@ class BuildContext {
                 // wordings; preserve the same family.
                 var wrapper = buildWrapper(f);
                 if (wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List list && list.itemNullable()) {
-                    return new DmlCarrierScan.Reject(
+                    return new DmlPayloadScan.Reject(
                         "single-record carrier field '" + f.getName() + "' has element type 'ID' "
                         + "with a list-of-nullable wrapper '[ID]'; payload-returning DELETE requires "
                         + "either singleton (ID / ID!) or list-of-non-null ([ID!] / [ID!]!), since "
@@ -699,16 +699,16 @@ class BuildContext {
                         + "actually-deleted row, so the slot cannot be null");
                 }
                 if (wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
-                    return new DmlCarrierScan.Reject(
+                    return new DmlPayloadScan.Reject(
                         "single-record carrier field '" + f.getName() + "' has element type 'ID' "
                         + "with a Connection wrapper; payload-returning DELETE requires either "
                         + "singleton (ID / ID!) or list-of-non-null ([ID!] / [ID!]!)");
                 }
                 kind = new DmlElementKind.IdElement();
             } else {
-                return new DmlCarrierScan.Reject(
+                return new DmlPayloadScan.Reject(
                     "carrier field '" + f.getName() + "' of type '" + elementTypeName
-                    + "' is not a recognized DML carrier data-field shape "
+                    + "' is not a recognized DML payload data-field shape "
                     + "(expected @table-element, @record-element, or ID-element); "
                     + "file a roadmap item if this shape needs admission");
             }
@@ -718,14 +718,14 @@ class BuildContext {
                 admittedElement = kind;
             }
         }
-        if (dataChannelCount == 0) return new DmlCarrierScan.NotApplicable();
+        if (dataChannelCount == 0) return new DmlPayloadScan.NotApplicable();
         if (dataChannelCount > 1) {
-            return new DmlCarrierScan.Reject(
+            return new DmlPayloadScan.Reject(
                 "single-record carrier '" + payloadSdlName + "' declares " + dataChannelCount
                 + " data-channel-shaped fields; require exactly one (a future Backlog item may "
                 + "admit multi-data carriers)");
         }
-        return new DmlCarrierScan.Admit(admittedDataField, admittedElement);
+        return new DmlPayloadScan.Admit(admittedDataField, admittedElement);
     }
 
     /**
