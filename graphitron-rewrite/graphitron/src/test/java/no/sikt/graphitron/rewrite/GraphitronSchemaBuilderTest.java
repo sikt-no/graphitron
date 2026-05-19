@@ -1890,7 +1890,7 @@ class GraphitronSchemaBuilderTest {
             "R178 Phase 4: a plain Object carrier wrapping a single record-element data field "
                 + "(@record-backed ResultType) consumed by a Query field with no producing mutation "
                 + "→ orphan carrier; the data field stays unregistered (the SingleRecordIdentityField "
-                + "permit retires with the carrier walk).",
+                + "permit retired with the carrier walk).",
             """
             type FilmDto @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
                 title: String
@@ -1901,7 +1901,7 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(schema.field("FilmDtoPayload", "film"))
                 .as("orphan record-element carrier data field has no fieldRegistry entry after R178")
                 .isNull()) {
-            @Override public Set<Class<?>> variants() { return Set.of(ChildField.SingleRecordIdentityField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(); }
         };
 
         final String sdl;

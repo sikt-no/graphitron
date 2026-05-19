@@ -104,9 +104,8 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.RecordTableField f        -> validateRecordTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.RecordLookupTableField f  -> validateRecordLookupTableField(f, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField f  -> {} // R75 Phase 1 — narrow TableBoundReturnType component + SourceKey compact-constructor invariant pin the structural shape; admission-time checks (table-equality, DELETE rejection) live in the mutation-field classifier
-            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdentityField f -> {} // R75 Phase 2 — narrow ResultReturnType component pins the structural shape; element-kind admission and method-return matching live in the mutation-field / @service classifier
-            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning f -> {} // R156 — narrow ScalarReturnType component + NodeIdEncodeKeys compaction; admission-time checks (wrapper shape, encoder-pins-to-input-@table, DELETE-only) live in the verb-aware carrier walk
-            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning f -> {} // R156 — narrow TableBoundReturnType + List<PkResolution> projection from BuildContext.classifyDeleteTableProjection; admission-time checks (no NonPkNonNullable/ServiceField/UnsupportedField arms, DELETE-only) live in the verb-aware carrier walk
+            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning f -> {} // R156 — narrow ScalarReturnType component + NodeIdEncodeKeys compaction; admission-time checks (wrapper shape, encoder-pins-to-input-@table, DELETE-only) live in the @mutation classifier
+            case no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning f -> {} // R156 — narrow TableBoundReturnType + List<PkResolution> projection from BuildContext.classifyDeleteTableProjection; admission-time checks (no NonPkNonNullable/ServiceField/UnsupportedField arms, DELETE-only) live in the @mutation classifier
             case no.sikt.graphitron.rewrite.model.ChildField.RecordField f             -> validateRecordField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.ComputedField f           -> validateComputedField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.PropertyField f           -> validatePropertyField(f, errors);
@@ -1012,9 +1011,6 @@ public class GraphitronSchemaValidator {
      *       + {@code buildSingleRecordTableFetcherValueTableRecordWrap} (explicit
      *       {@code if (source == null) return null;} before any
      *       {@code source.value1()} / {@code record.get(<PK>)} read).</li>
-     *   <li>{@code SingleRecordIdentityField} → {@code buildSingleRecordIdentityFetcherValue}
-     *       (identity passthrough {@code env -> env.getSource()}; null source becomes null
-     *       value without dereferencing).</li>
      *   <li>{@code SingleRecordIdFieldFromReturning} → {@code buildSingleRecordIdFromReturningFetcherValue}
      *       (explicit guard before encoder dispatch).</li>
      *   <li>{@code SingleRecordTableFieldFromReturning} → {@code buildSingleRecordTableFromReturningFetcherValue}
@@ -1030,7 +1026,6 @@ public class GraphitronSchemaValidator {
      */
     private static final java.util.Set<Class<? extends GraphitronField>> LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS = java.util.Set.of(
         ChildField.SingleRecordTableField.class,
-        ChildField.SingleRecordIdentityField.class,
         ChildField.SingleRecordIdFieldFromReturning.class,
         ChildField.SingleRecordTableFieldFromReturning.class
     );

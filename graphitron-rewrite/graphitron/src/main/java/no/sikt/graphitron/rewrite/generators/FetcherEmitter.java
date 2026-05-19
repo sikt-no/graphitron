@@ -89,9 +89,6 @@ public final class FetcherEmitter {
             // classifyDeleteTableProjection before this carrier is constructed.
             return buildSingleRecordTableFromReturningFetcherValue(tableCarrier);
         }
-        if (field instanceof ChildField.SingleRecordIdentityField) {
-            return buildSingleRecordIdentityFetcherValue();
-        }
         if (field instanceof ChildField.ErrorsField ef) {
             // Switch on the field's resolved Transport: PayloadAccessor reads the errors list
             // off the parent payload via graphql-java's PropertyDataFetcher (record accessor /
@@ -217,28 +214,6 @@ public final class FetcherEmitter {
                     + "' requires JOIN-with-projection emission — not yet implemented.");
         }
         return CodeBlock.of("$T::$L", fetchersClass, field.name());
-    }
-
-    /**
-     * R75 Phase 2 — identity passthrough for a {@link ChildField.SingleRecordIdentityField}.
-     * The parent operation (an {@code @service} mutation, after wrapper unwrap) produced a
-     * domain record that graphql-java is now traversing; the data field's value IS that source
-     * value verbatim. Null source becomes null value naturally (the lambda evaluates
-     * {@code env.getSource()} which returns null), and graphql-java surfaces the field as
-     * null without dereferencing.
-     */
-    @DependsOnClassifierCheck(
-        key = "error-channel.local-context-transport",
-        reliesOn = "Identity passthrough: env.getSource() returns the upstream value verbatim. "
-            + "A null source returns null without dereferencing, satisfying the validator "
-            + "allow-list's null-source short-circuit invariant for SingleRecordIdentityField. "
-            + "No LocalContext-bound producer routes to this arm today (the carrier-walk "
-            + "producer only admits DataElement.Record carriers under @service today, and "
-            + "@service catch arms use ErrorChannel.PayloadClass not LocalContext); the "
-            + "annotation pre-emptively pins the invariant so a future @service LocalContext "
-            + "producer or a relaxed identity-passthrough lambda surfaces as an audit signal.")
-    private static CodeBlock buildSingleRecordIdentityFetcherValue() {
-        return CodeBlock.of("($T env) -> env.getSource()", DATA_FETCHING_ENV);
     }
 
     /**

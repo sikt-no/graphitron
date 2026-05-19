@@ -124,11 +124,10 @@ public final class CatalogBuilder {
 
     /**
      * R159 — projects the carrier-data-field coordinates onto the LSP snapshot. Walks
-     * {@link GraphitronSchema#fields()} for fields classified by the carrier walk as
-     * {@code ChildField.SingleRecordTableField}, {@code SingleRecordIdentityField},
-     * {@code SingleRecordIdFieldFromReturning}, or {@code SingleRecordTableFieldFromReturning};
-     * each marks its parent type as a single-record carrier whose data field name is the
-     * field's own name.
+     * {@link GraphitronSchema#fields()} for fields classified as
+     * {@code ChildField.SingleRecordTableField}, {@code SingleRecordIdFieldFromReturning}, or
+     * {@code SingleRecordTableFieldFromReturning}; each marks its parent type as a single-record
+     * carrier whose data field name is the field's own name.
      */
     private static Map<String, String> projectCarrierDataFields(GraphitronSchema schema) {
         var out = new LinkedHashMap<String, String>();
@@ -136,7 +135,6 @@ public final class CatalogBuilder {
             var field = entry.getValue();
             boolean isCarrierData =
                 field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField
-                || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdentityField
                 || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning
                 || field instanceof no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableFieldFromReturning;
             if (isCarrierData) {

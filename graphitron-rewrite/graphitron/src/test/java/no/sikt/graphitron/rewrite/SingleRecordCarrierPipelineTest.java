@@ -476,22 +476,6 @@ class SingleRecordCarrierPipelineTest {
             "@service mutation");
     }
 
-    @Test
-    void fetcherEmitter_singleRecordIdentityFieldArm() throws Exception {
-        // Phase 2 structural pin: FetcherEmitter.dataFetcherValue dispatches
-        // SingleRecordIdentityField as its own arm (identity passthrough — env -> env.getSource()).
-        // Overloading ConstructorField with an identity-accessor variant was rejected at spec
-        // time per the principles doc's "god accessor" smell; the sibling-permit shape keeps the
-        // read-mechanism axis explicit at the type-system level.
-        var src = Files.readString(Path.of(
-            "src/main/java/no/sikt/graphitron/rewrite/generators/FetcherEmitter.java"));
-        long identityArms = countMatches(src, Pattern.compile(
-            "field\\s+instanceof\\s+ChildField\\.SingleRecordIdentityField\\b"));
-        assertThat(identityArms)
-            .as("SingleRecordIdentityField has its own dispatch arm")
-            .isEqualTo(1);
-    }
-
     // ===== Carrier-walk LocalContext error channel (R12 + R161 integration) =====
     //
     // R161 widens tryResolveSingleRecordCarrier to admit any ResultType arm and wires
