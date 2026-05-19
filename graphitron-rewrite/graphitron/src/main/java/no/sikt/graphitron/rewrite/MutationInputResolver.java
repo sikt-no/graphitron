@@ -197,9 +197,9 @@ final class MutationInputResolver {
             case ReturnTypeRef.ResultReturnType r -> {
                 // R178 step 3: DML accepts a @record carrier return; the validator screens only
                 // for the wrapper shape (single, not list/connection). Payload-shape rejections
-                // surface from the unified path's per-child classification
-                // (resolveServiceResultAssembly on @service mutations; the @mutation classifier's
-                // inline @record-element / table-equality checks on DML).
+                // surface from the unified path's per-child classification (the legacy-equality
+                // check inside FieldBuilder.buildServiceField on @service mutations; the
+                // @mutation classifier's inline @record-element / table-equality checks on DML).
                 if (r.wrapper().isList()) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + r.returnTypeName() + "' (list of @record) is not yet supported; "

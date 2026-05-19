@@ -290,8 +290,7 @@ class ErrorMappingsClassGeneratorTest {
                 returnType,
                 TestFixtures.staticServiceMethodRef("com.example.SvcStub", "doStuff",
                     ClassName.get(Object.class), List.of()),
-                Optional.of(channels.get(i)),
-                Optional.empty());
+                Optional.of(channels.get(i)));
             fields.put(FieldCoordinates.coordinates("Mutation", fieldName), field);
         }
         return new GraphitronSchema(types, fields);

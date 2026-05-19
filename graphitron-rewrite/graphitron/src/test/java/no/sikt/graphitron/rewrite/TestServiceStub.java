@@ -297,6 +297,16 @@ class TestServiceStub {
     }
 
     /**
+     * Returns the dummy {@code SakPayload} from a {@link TestInputBean} input. Used by the
+     * validator-pre-step regression test that needs an Input-typed arg (for the R94 fromMap
+     * materialisation path) plus a SakPayload return (so the surrounding ErrorChannel resolves
+     * as a PayloadClass that the validator pre-step can pre-populate with violations).
+     */
+    public static no.sikt.graphitron.codereferences.dummyreferences.SakPayload runSakWithInputBean(TestInputBean input) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Returns the multi-ctor variant of the dummy payload. Used by the test that exercises
      * canonical-constructor selection on hand-rolled {@code @record} POJOs that declare extra
      * constructors alongside the canonical (all-fields) one.
@@ -307,9 +317,9 @@ class TestServiceStub {
 
     /**
      * Returns the setter-shape sibling payload. Used by tests exercising R154 §2's mutable-bean
-     * payload-construction shape: the service returns the SDL payload type directly (legacy
-     * passthrough), so no ResultAssembly is resolved; the carrier classifier resolves only the
-     * ErrorChannel against the setter-shape payload class.
+     * payload-construction shape: the service returns the SDL payload type directly (the
+     * universal-passthrough path); the carrier classifier resolves the ErrorChannel against the
+     * setter-shape payload class.
      */
     public static no.sikt.graphitron.codereferences.dummyreferences.SetterShapeSakPayload runSetterSak() {
         throw new UnsupportedOperationException();

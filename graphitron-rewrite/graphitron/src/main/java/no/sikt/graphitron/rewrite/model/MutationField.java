@@ -80,10 +80,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
-     * <p>{@code resultAssembly} carries the carrier-side success-arm wiring when the service
-     * method's return type binds to a parameter of the SDL payload class's canonical constructor
-     * (the "service returns the domain object" shape). Empty when the service method returns the
-     * SDL payload class directly (legacy passthrough shape).
+     * <p>The success arm is universal passthrough: the service method returns the SDL payload
+     * class (or table-bound record) directly, and per-field wiring projects SDL fields off the
+     * parent's domain return.
      */
     record MutationServiceTableField(
         String parentTypeName,
@@ -91,8 +90,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         MethodRef method,
-        Optional<ErrorChannel> errorChannel,
-        Optional<ResultAssembly> resultAssembly
+        Optional<ErrorChannel> errorChannel
     ) implements MutationField, MethodBackedField {}
 
     /**
@@ -101,10 +99,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>Parameter binding (including context arguments) is fully encoded in
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
-     * <p>{@code resultAssembly} carries the carrier-side success-arm wiring when the service
-     * method's return type binds to a parameter of the SDL payload class's canonical constructor
-     * (the "service returns the domain object" shape). Empty when the service method returns the
-     * SDL payload class directly (legacy passthrough shape).
+     * <p>The success arm is universal passthrough: the service method returns the SDL payload
+     * class (or scalar / pojo) directly, and per-field wiring projects SDL fields off the
+     * parent's domain return.
      */
     record MutationServiceRecordField(
         String parentTypeName,
@@ -112,8 +109,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef returnType,
         MethodRef method,
-        Optional<ErrorChannel> errorChannel,
-        Optional<ResultAssembly> resultAssembly
+        Optional<ErrorChannel> errorChannel
     ) implements MutationField, MethodBackedField {}
 
     /**

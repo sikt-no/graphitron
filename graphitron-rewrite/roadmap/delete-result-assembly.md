@@ -1,7 +1,7 @@
 ---
 id: R179
 title: Delete ResultAssembly; service success arm is universal passthrough
-status: Ready
+status: In Review
 bucket: cleanup
 priority: 5
 theme: service
@@ -11,6 +11,15 @@ last-updated: 2026-05-19
 ---
 
 # Delete ResultAssembly; service success arm is universal passthrough
+
+## Shipped
+
+Implemented in a single commit. The two non-blocking friction notes captured by the reviewer at Spec → Ready handoff resolved naturally during the deletion pass:
+
+- The §Delete bullet's "four call sites in the service-backed builders (`buildQueryServiceTableField`, `buildQueryServiceRecordField`, ...)" framing was imprecise: the actual single call site is the `buildServiceField` helper itself; the four service-backed classifier arms in `classifyQueryField` / `classifyMutationField` route through it. The four lambdas there lost their `ra` parameter cleanly.
+- The reviewer's enumeration of stale-doc sites missed two `{@link ResultAssembly}` references in `FieldBuilder.java` (`buildMethodBackedWithChannel` javadoc and `buildServiceField` javadoc in the pre-deletion file); both were caught in the deletion pass and rewrote as part of the same commit.
+
+One fixture addition was needed beyond the spec's enumeration: `TestServiceStub.runSakWithInputBean(TestInputBean)` returning `SakPayload`. The pre-existing `FetcherPipelineTest.inputRecord_validatorPreStep_receivesTypedRecordNotMap` was depending on the deleted Assembly path to admit a `String`-returning service stub against a `SakPayload`-declaring SDL field; under universal passthrough the stub's return type must match. The new stub preserves the test's intent (validator pre-step on Input-typed arg with VALIDATION-bearing channel) without losing the R150 input-bean classification dimension.
 
 ## Problem
 

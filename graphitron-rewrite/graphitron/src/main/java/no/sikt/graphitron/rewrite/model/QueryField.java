@@ -154,10 +154,9 @@ public sealed interface QueryField extends RootField
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
      * <p>{@code errorChannel} carries the carrier-side typed-error wiring when this field's
-     * payload includes an {@code errors} field. {@code resultAssembly} carries the carrier-side
-     * success-arm wiring when the service method's return type binds to a parameter of the SDL
-     * payload class's canonical constructor (the "service returns the domain object" shape);
-     * empty when the service returns the SDL payload class directly (legacy passthrough shape).
+     * payload includes an {@code errors} field. The success arm is universal passthrough: the
+     * service method returns the SDL payload class (or table-bound record) directly, and
+     * per-field wiring projects SDL fields off the parent's domain return.
      */
     record QueryServiceTableField(
         String parentTypeName,
@@ -165,8 +164,7 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         MethodRef method,
-        Optional<ErrorChannel> errorChannel,
-        Optional<ResultAssembly> resultAssembly
+        Optional<ErrorChannel> errorChannel
     ) implements QueryField, MethodBackedField, WithErrorChannel {}
 
     /**
@@ -176,10 +174,9 @@ public sealed interface QueryField extends RootField
      * {@link MethodRef#params()} via {@link ParamSource}.
      *
      * <p>{@code errorChannel} carries the carrier-side typed-error wiring when this field's
-     * payload includes an {@code errors} field. {@code resultAssembly} carries the carrier-side
-     * success-arm wiring when the service method's return type binds to a parameter of the SDL
-     * payload class's canonical constructor (the "service returns the domain object" shape);
-     * empty when the service returns the SDL payload class directly (legacy passthrough shape).
+     * payload includes an {@code errors} field. The success arm is universal passthrough: the
+     * service method returns the SDL payload class (or scalar / pojo) directly, and per-field
+     * wiring projects SDL fields off the parent's domain return.
      */
     record QueryServiceRecordField(
         String parentTypeName,
@@ -187,7 +184,6 @@ public sealed interface QueryField extends RootField
         SourceLocation location,
         ReturnTypeRef returnType,
         MethodRef method,
-        Optional<ErrorChannel> errorChannel,
-        Optional<ResultAssembly> resultAssembly
+        Optional<ErrorChannel> errorChannel
     ) implements QueryField, MethodBackedField, WithErrorChannel {}
 }

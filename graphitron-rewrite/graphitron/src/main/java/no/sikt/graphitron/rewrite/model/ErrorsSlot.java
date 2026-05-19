@@ -17,10 +17,10 @@ import java.util.List;
  *       {@link PayloadConstructionShape.MutableBean}.</li>
  * </ul>
  *
- * <p>Sibling of {@link ResultSlot} in form but lives in its own sealed hierarchy : folding the
- * two onto one broad {@code Slot} interface would force every consumer to widen and reach back
- * through {@code instanceof} for the role-specific data ({@code ErrorChannel} and
- * {@code ResultAssembly} each carry their own slot type).
+ * <p>Role-specific seal: the slot variant pairs with {@link PayloadConstructionShape} on the
+ * surrounding {@link ErrorChannel}, with no need for a broader {@code Slot} interface. Folding
+ * onto a wider interface would force consumers to widen and reach back through
+ * {@code instanceof} for the role-specific data {@code ErrorChannel} already carries.
  */
 public sealed interface ErrorsSlot
         permits ErrorsSlot.CtorParameterIndex, ErrorsSlot.SetterMethod {
