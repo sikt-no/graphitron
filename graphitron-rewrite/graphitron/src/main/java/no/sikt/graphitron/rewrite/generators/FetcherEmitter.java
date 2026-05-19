@@ -290,14 +290,6 @@ public final class FetcherEmitter {
             + "((Record) env.getSource()).into(Tables.X) posture) operate under different "
             + "Reader invariants and read the source through the erased Record shape; the "
             + "typed cast posture here is carrier-specific.")
-    @DependsOnClassifierCheck(
-        key = "carrier-data-field.single-producer-kind",
-        reliesOn = "The wrap-permit dispatch in this method relies on at most one wrap shape "
-            + "reaching the emitter per (carrierType, dataFieldName) coord. The FieldBuilder "
-            + "producer-site helpers (registerDmlCarrierDataField, registerServiceCarrierDataField) "
-            + "compare-then-write and reject the second producer on mismatched wrap; without "
-            + "that the same coord could classify under two wrap shapes whose source casts "
-            + "would conflict at request time.")
     private static CodeBlock buildSingleRecordTableFetcherValue(
             ChildField.SingleRecordTableField srtf, String outputPackage) {
         var sk = srtf.sourceKey();
@@ -468,10 +460,12 @@ public final class FetcherEmitter {
      * R158 — Wrap.TableRecord arm of {@link #buildSingleRecordTableFetcherValue}. The upstream
      * {@code @service} mutation method returned {@code List<XRecord>} (MANY) or {@code XRecord}
      * (ONE) verbatim; the source cast is typed against the developer-declared {@code XRecord}
-     * class (pinned by the {@code carrier-data-field.service-producer-strict-return} check to
-     * the data table's record class). PK extraction goes through the typed
-     * {@code record.get(<Table.PK_FIELD>)} accessors, paralleling the {@code Wrap.Record} arm's
-     * map-key shape but typed against {@code XRecord} instead of {@code RecordN}.
+     * class, pinned to the data table's record class by R178 step 3's structural strict-return
+     * check on the {@code @service} payload's single {@code @table}-typed data field and by
+     * {@code ProducerBinding.ServiceEmitted}'s structural ground (the method's reflected return-
+     * element class must equal the inner table's record class). PK extraction goes through the
+     * typed {@code record.get(<Table.PK_FIELD>)} accessors, paralleling the {@code Wrap.Record}
+     * arm's map-key shape but typed against {@code XRecord} instead of {@code RecordN}.
      */
     @DependsOnClassifierCheck(
         key = "error-channel.local-context-transport",

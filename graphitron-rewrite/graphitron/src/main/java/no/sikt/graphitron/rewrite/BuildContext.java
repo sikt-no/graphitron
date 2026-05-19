@@ -162,23 +162,6 @@ class BuildContext {
      */
     final FieldRegistry fieldRegistry = new FieldRegistry();
     /**
-     * R158 — per-carrier-data-field producer registry, keyed by {@code (carrierType,
-     * dataFieldName)}. Records the first mutation that registers a
-     * {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordTableField} for the coord
-     * (DML or {@code @service} producer-site helper writes alongside its
-     * {@link FieldRegistry#reclassify} call). Read only by the second producer's helper on the
-     * same coord to enrich the {@code Rejection.structural} diagnostic with the previously-
-     * registered mutation name when wrap shapes disagree (DML emits {@code Wrap.Record},
-     * {@code @service} emits {@code Wrap.TableRecord(target.recordClass())}; mixing producer
-     * kinds on a single carrier type is rejected at classify time by
-     * {@code carrier-data-field.single-producer-kind}).
-     *
-     * <p>The wrap shape lives on the existing {@link FieldRegistry} entry; this map exists
-     * solely so the rejection diagnostic can name both mutations regardless of registration
-     * order. No generator or other classifier reads from it.
-     */
-    final java.util.Map<graphql.schema.FieldCoordinates, String> carrierProducerRegistry = new java.util.LinkedHashMap<>();
-    /**
      * Live, read-only view of {@link #typeRegistry}. Reads delegate to the registry's
      * backing map and reflect any subsequent {@code classify} / {@code enrich} / {@code demote}
      * / {@code synthesize} calls. Mutating operations on this map throw
