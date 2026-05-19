@@ -1,7 +1,7 @@
 ---
 id: R183
 title: "GitLab pipeline: drop snapshots, publish rewrite reactor on release tags"
-status: Backlog
+status: Spec
 bucket: bug
 theme: legacy-migration
 depends-on: []
@@ -22,17 +22,94 @@ This item fixes both jobs and the policy question that surfaced them: snapshot p
 - `publish:snapshot` job removed (or commented out with a one-line rationale referencing this item).
 - `publish:release` runs `mvn -f graphitron-rewrite/pom.xml versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false -DprocessAllModules=true` followed by `mvn -f graphitron-rewrite/pom.xml ... clean deploy -P gitlab`.
 - `publish:release` tag regex matches `^v\d+\.\d+\.\d+(-RC\d+)?$`, identical to the GitHub workflow on `claude/graphitron-rewrite`.
-- `graphitron-rewrite/pom.xml` carries the `gitlab` profile (distribution-management + sources-jar, ported from the root pom). The root-pom copy can stay; it becomes inert without `-f` flag callers.
-- Optional: a `release:` job using `release-cli` that creates the GitLab Release object attached to the tag (so "create a release in GitLab" works end-to-end, not just artifact publishing). If included, it depends on `publish:release` succeeding first.
+- `graphitron-rewrite/pom.xml` carries the `gitlab` profile (distribution-management + sources-jar, ported from the root pom), but with **no `<snapshotRepository>`** so an accidental `mvn deploy` on `10-SNAPSHOT` fails fast (the rewrite parent's stated invariant, see `graphitron-rewrite/docs/README.adoc` publishing section). The root-pom copy stays in place until R182 deletes the entire legacy reactor; in the meantime it is unreachable without a `-f pom.xml` flag callers no longer pass.
+- Pipeline base image bumps from `maven:3.9-eclipse-temurin-21` to `maven:3.9-eclipse-temurin-25`. The rewrite parent's `requireJavaVersion` enforcer rule (graphitron-rewrite/pom.xml:230-232) requires JDK 25, so the legacy image fails the build the moment `-f graphitron-rewrite/pom.xml` takes effect.
 
 ## Out of scope
 
-- Removing the legacy reactor or the root-pom `gitlab` profile. R182 collapses both as part of the unnest.
+- Removing the legacy reactor or the root-pom `gitlab` profile. R182 collapses both as part of the unnest; the root-pom copy of the profile dies with the legacy `pom.xml` it lives in.
 - Maven Central publishing. The GitHub workflow on `main` is a separate fix once R182 retires the legacy reactor; this item only touches GitLab.
 - Cleanup of existing junk `9-gitlab-SNAPSHOT` artifacts already deposited in GitLab Packages. Manual UI task, called out for the implementer to do once the snapshot job stops firing.
+- A `release:` job using `release-cli` to create a GitLab Release object attached to the tag. Skipped by default: consumers depend by Maven coordinate, so a release-list entry in GitLab's UI is cosmetic. Can be added in a follow-up if a visible release surface is wanted.
+
+## Implementation
+
+### `graphitron-rewrite/pom.xml`
+
+Add a `gitlab` profile next to the existing `release` profile (graphitron-rewrite/pom.xml:254-410), ported verbatim from `pom.xml:509-547`:
+
+```xml
+<profile>
+    <!-- Publishes to the Sikt GitLab Packages Maven registry as a secondary distribution
+         channel alongside Maven Central. Authentication is provided by a ci_settings.xml
+         file referencing the CI_JOB_TOKEN, written by .gitlab-ci.yml. -->
+    <id>gitlab</id>
+    <distributionManagement>
+        <repository>
+            <id>gitlab-maven</id>
+            <url>${env.CI_API_V4_URL}/projects/${env.CI_PROJECT_ID}/packages/maven</url>
+        </repository>
+    </distributionManagement>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <configuration>
+                    <deployAtEnd>true</deployAtEnd>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</profile>
+```
+
+Note the deliberate omission of `<snapshotRepository>`: the rewrite parent's invariant is that an accidental `mvn deploy` on `10-SNAPSHOT` should fail fast. With `publish:snapshot` retired, no pipeline path needs a snapshot target, and reintroducing one in the `gitlab` profile would defeat the fail-fast property for that profile alone.
+
+### `.gitlab-ci.yml`
+
+Three edits in one commit:
+
+1. Bump `default: image:` from `maven:3.9-eclipse-temurin-21` to `maven:3.9-eclipse-temurin-25`.
+2. Delete the `publish:snapshot` job (and its preceding two-line comment about `-gitlab-SNAPSHOT`).
+3. Rewrite `publish:release` so both `mvn` calls target the rewrite reactor and the regex accepts `-RC<n>`:
+
+   ```yaml
+   publish:release:
+     extends: .maven-publish
+     rules:
+       - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+(-RC\d+)?$/
+     script:
+       - VERSION=${CI_COMMIT_TAG#v}
+       - echo "Releasing version $VERSION to GitLab Packages"
+       - mvn -f graphitron-rewrite/pom.xml $MAVEN_CLI_OPTS versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false -DprocessAllModules=true
+       - mvn -f graphitron-rewrite/pom.xml $MAVEN_CLI_OPTS $MAVEN_SKIP_OPTS -s ci_settings.xml clean deploy -P gitlab
+   ```
+
+4. Update the header comment block (lines 1-20): drop the SNAPSHOT trigger line, drop the SNAPSHOT-cleanup `NOTE:` paragraph, update the tag pattern note to include the `-RC<n>` suffix.
+
+## Risks and mitigations
+
+- **`versions:set` half-applies.** Without `-DprocessAllModules=true`, only the aggregator pom updates and child modules keep `${revision}`; the deploy then publishes mismatched coordinates. Mitigation: the flag is included in the script above.
+- **Mirror sync re-triggering publish.** With `publish:snapshot` removed and `publish:release` keyed on tags, default-branch pushes from the GitHub → GitLab mirror cannot trigger any deploy. The only deploy path is an explicit tag.
+- **Legacy junk in GitLab Packages.** The `9-gitlab-SNAPSHOT` artifacts already deposited by the buggy job persist after this change; their removal is a manual UI step in Settings → Packages and registries (already called out under *Out of scope*).
+- **JDK 25 image availability.** `maven:3.9-eclipse-temurin-25` is published on Docker Hub; confirm before merging by running `docker pull` (or letting the first pipeline run on the throwaway tag resolve it). Fallback if absent: an `openjdk:25-jdk` image plus Maven install in `before_script`, deferred until needed.
 
 ## Verification
 
+- Confirm the GitLab runner pulls `maven:3.9-eclipse-temurin-25` successfully (a `docker pull` from a local Docker host suffices, or observe the pull step in the throwaway-tag pipeline run below).
 - Push a throwaway tag (e.g. `v10.0.0-RC0`) on a scratch branch, confirm `publish:release` fires and deploys `no.sikt.graphitron:graphitron:10.0.0-RC0` (and the other rewrite-reactor coordinates) to GitLab Packages.
 - Confirm a default-branch push does not trigger any publish job.
 - Delete the throwaway tag and its package after the test.
