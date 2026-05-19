@@ -1,7 +1,7 @@
 ---
 id: R183
 title: "GitLab pipeline: drop snapshots, publish rewrite reactor on release tags"
-status: In Progress
+status: In Review
 bucket: bug
 theme: legacy-migration
 depends-on: []
