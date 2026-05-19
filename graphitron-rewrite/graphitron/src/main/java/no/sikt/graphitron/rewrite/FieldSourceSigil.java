@@ -11,14 +11,15 @@ import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import java.util.Optional;
 
 /**
- * Shared callables for the {@code @field(name:)} root-value sigil {@code $source}.
+ * Shared callables for the {@code @field(name:)} root-value sigils.
  *
- * <p>R159 admits exactly one sigil literal: {@code $source}, binding the upstream Java
- * value at the carrier-payload data field site to the SDL field, taken as a whole. The
- * helper here owns the canonical rejection messages (unknown sigil, not-defined-here,
- * type mismatch); the classifier, the LSP completions arm, and the LSP diagnostics arm
- * all route through these methods so a message tweak in one place updates all three
- * consumer surfaces.
+ * <p>Two sigil literals are admitted: {@code $source} (R159), binding the upstream Java
+ * value at the carrier-payload data field site to the SDL field; and {@code $errors}
+ * (R178), binding the SDL field to {@code env.getLocalContext()} for errors-shaped fields
+ * on payload-returning mutation types. The helper owns the canonical rejection messages
+ * (unknown sigil, not-defined-here, type mismatch); the classifier, the LSP completions
+ * arm, and the LSP diagnostics arm all route through these methods so a message tweak in
+ * one place updates all three consumer surfaces.
  *
  * <p>The helper is sibling to {@link BuildContext#argString} rather than a replacement.
  * Existing call sites that read raw {@code @field(name:)} as a free-form string stay
@@ -27,19 +28,31 @@ import java.util.Optional;
  */
 public final class FieldSourceSigil {
 
-    /** The one admitted sigil literal. Authors write this exact value in {@code @field(name:)}. */
+    /** R159 sigil literal. Authors write this exact value in {@code @field(name:)} to bind the SDL field to {@code env.getSource()}. */
     public static final String UPSTREAM_ROOT_LITERAL = "$source";
+
+    /**
+     * R178 sigil literal. Authors write this exact value in {@code @field(name:)} on an
+     * errors-shaped field of a payload-returning mutation type to force the
+     * {@code env.getLocalContext()} transport for that field's DataFetcher, bypassing the
+     * default-name accessor-then-localContext fallback that fires for an unannotated
+     * {@code errors}-named field.
+     */
+    public static final String LOCAL_CONTEXT_LITERAL = "$errors";
 
     private FieldSourceSigil() {}
 
     /**
-     * Parsed form of a {@code @field(name:)} argument value. Two arms:
+     * Parsed form of a {@code @field(name:)} argument value. Three arms:
      * {@link BareName} carries the literal column / accessor name (current single-segment
-     * shape); {@link UpstreamRoot} represents the {@code $source} sigil.
+     * shape); {@link UpstreamRoot} represents the {@code $source} sigil (R159);
+     * {@link LocalContext} represents the {@code $errors} sigil (R178).
      */
-    public sealed interface FieldNameRef permits FieldNameRef.BareName, FieldNameRef.UpstreamRoot {
+    public sealed interface FieldNameRef
+            permits FieldNameRef.BareName, FieldNameRef.UpstreamRoot, FieldNameRef.LocalContext {
         record BareName(String value) implements FieldNameRef {}
         record UpstreamRoot() implements FieldNameRef {}
+        record LocalContext() implements FieldNameRef {}
     }
 
     /**
@@ -74,18 +87,35 @@ public final class FieldSourceSigil {
         var argument = dir.getArgument(arg);
         if (argument == null) return new ParseResult.Absent();
         Object value = argument.getValue();
-        String raw;
-        if (value instanceof StringValue sv) raw = sv.getValue().strip();
-        else if (value instanceof String s) raw = s.strip();
-        else return new ParseResult.Absent();
-        if (raw.isEmpty()) return new ParseResult.Absent();
-        if (raw.startsWith("$")) {
-            if (UPSTREAM_ROOT_LITERAL.equals(raw)) {
+        if (value instanceof StringValue sv) return parseRawValue(sv.getValue());
+        if (value instanceof String s) return parseRawValue(s);
+        return new ParseResult.Absent();
+    }
+
+    /**
+     * Pure raw-string parser exposed for unit-tier rule-table pinning. {@code null} and
+     * blank-after-strip inputs map to {@link ParseResult.Absent}; sigil prefixes ({@code $}-
+     * leading) map to {@link ParseResult.Ok} or {@link ParseResult.UnknownSigil} per the
+     * admitted-literal table; everything else maps to {@link ParseResult.Ok} carrying a
+     * {@link FieldNameRef.BareName}. Sibling of {@link #parseArgFieldNameRef}: that helper
+     * extracts the raw value from a {@link GraphQLDirectiveContainer} and delegates here,
+     * so the directive-container reads and the literal-parsing logic stay separately
+     * testable.
+     */
+    static ParseResult parseRawValue(String raw) {
+        if (raw == null) return new ParseResult.Absent();
+        String trimmed = raw.strip();
+        if (trimmed.isEmpty()) return new ParseResult.Absent();
+        if (trimmed.startsWith("$")) {
+            if (UPSTREAM_ROOT_LITERAL.equals(trimmed)) {
                 return new ParseResult.Ok(new FieldNameRef.UpstreamRoot());
             }
-            return new ParseResult.UnknownSigil(raw);
+            if (LOCAL_CONTEXT_LITERAL.equals(trimmed)) {
+                return new ParseResult.Ok(new FieldNameRef.LocalContext());
+            }
+            return new ParseResult.UnknownSigil(trimmed);
         }
-        return new ParseResult.Ok(new FieldNameRef.BareName(raw));
+        return new ParseResult.Ok(new FieldNameRef.BareName(trimmed));
     }
 
     /**
@@ -109,9 +139,10 @@ public final class FieldSourceSigil {
         return ctx instanceof SiteContext.CarrierDataField;
     }
 
-    /** Canonical message for {@code @field(name: "$X")} where {@code $X} is not {@code $source}. */
+    /** Canonical message for {@code @field(name: "$X")} where {@code $X} is not an admitted sigil literal. */
     public static String unknownSigilMessage(String raw) {
-        return "Unknown sigil '" + raw + "' on @field(name:); allowed: " + UPSTREAM_ROOT_LITERAL;
+        return "Unknown sigil '" + raw + "' on @field(name:); allowed: "
+            + UPSTREAM_ROOT_LITERAL + ", " + LOCAL_CONTEXT_LITERAL;
     }
 
     /**

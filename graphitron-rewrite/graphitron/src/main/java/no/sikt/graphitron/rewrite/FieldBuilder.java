@@ -1760,6 +1760,66 @@ class FieldBuilder {
         return new ChildField.Transport.PayloadAccessor();
     }
 
+    /**
+     * R178 errors-field transport selection (commit 3A scaffolding; wired up in 3B).
+     *
+     * <p>Pure decision: given the parsed {@code @field(name:)} value on an SDL errors-shaped
+     * field and whether the parent payload's backing class exposes a matching {@code errors}
+     * accessor, returns the {@link ChildField.Transport} arm per the R178 errors-field
+     * defaulting rule:
+     *
+     * <ul>
+     *   <li>{@code @field(name: "$errors")} → {@link ChildField.Transport.LocalContext}.
+     *       Explicit opt-in to the {@code env.getLocalContext()} transport; no accessor
+     *       lookup runs even when the parent class exposes a matching member.</li>
+     *   <li>{@code @field(name: "<literal>")} (explicit non-sigil, including
+     *       {@code @field(name: "errors")}) → {@link ChildField.Transport.PayloadAccessor}.
+     *       The caller is responsible for validating that the literal resolves to a real
+     *       accessor on the parent class; the localContext fallback is not applied to
+     *       explicit names.</li>
+     *   <li>{@code @field(name: "$source")} → {@link ChildField.Transport.PayloadAccessor}.
+     *       The {@code $source} sigil on an errors-shaped field is rejected upstream
+     *       (errors-shaped fields are by definition polymorphic-of-{@code @error}, not
+     *       passthrough identity); this fall-through is unreachable in practice and exists
+     *       only to keep the switch exhaustive.</li>
+     *   <li>No {@code @field} directive, parent class exposes an {@code errors} accessor →
+     *       {@link ChildField.Transport.PayloadAccessor}.</li>
+     *   <li>No {@code @field} directive, no matching accessor →
+     *       {@link ChildField.Transport.LocalContext}. The default-name fallback that lets
+     *       payloads without a developer-authored {@code errors} property still receive
+     *       typed errors via {@code env.getLocalContext()}.</li>
+     *   <li>{@link FieldSourceSigil.ParseResult.UnknownSigil} →
+     *       {@link ChildField.Transport.PayloadAccessor}. Unknown sigils are rejected
+     *       upstream by the directive validator; this fall-through is unreachable and
+     *       exists for switch exhaustiveness.</li>
+     * </ul>
+     *
+     * <p>Package-private for the unit-tier rule-table pin
+     * {@code ErrorsTransportSelectionTest}; 3B wires this into a {@code FieldBuilder} site
+     * adapter that reads {@code @field(name:)} from the SDL field and queries
+     * {@code ClassAccessorResolver} for the {@code errors} accessor against the parent
+     * class resolved by R96's reflection walk.
+     */
+    static ChildField.Transport selectErrorsTransport(
+            FieldSourceSigil.ParseResult parsed, boolean accessorMatchesErrors) {
+        return switch (parsed) {
+            case FieldSourceSigil.ParseResult.Ok ok -> switch (ok.ref()) {
+                case FieldSourceSigil.FieldNameRef.LocalContext ignored ->
+                    new ChildField.Transport.LocalContext();
+                case FieldSourceSigil.FieldNameRef.BareName ignored ->
+                    new ChildField.Transport.PayloadAccessor();
+                case FieldSourceSigil.FieldNameRef.UpstreamRoot ignored ->
+                    new ChildField.Transport.PayloadAccessor();
+            };
+            case FieldSourceSigil.ParseResult.Absent ignored ->
+                accessorMatchesErrors
+                    ? new ChildField.Transport.PayloadAccessor()
+                    : new ChildField.Transport.LocalContext();
+            case FieldSourceSigil.ParseResult.UnknownSigil ignored ->
+                new ChildField.Transport.PayloadAccessor();
+        };
+    }
+
     // ===== Carrier classifier: ErrorChannel resolution =====
 
     /**
