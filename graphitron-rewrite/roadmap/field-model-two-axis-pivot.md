@@ -235,7 +235,6 @@ The five SQL / runtime mixin interfaces collapse into pattern matches on the thr
 
 ## Dependencies and sequencing
 
-- **Supersedes R162 and R163.** R162's verb-on-permit-identity becomes the verb-per-arm flattening on `QueryBuilder` (`Insert` / `Update` / `Delete` / `Upsert`) with `ReturnShape` as a per-arm sub-component. R163's `Record → Carrier` rename evaporates because the carrier-walk plumbing types decompose onto `Select` with appropriate `SourceJoin` shapes. Both Discardable once R164 enters Spec.
-- **Depends on R161** (`unify-record-dml-on-carrier-walk`). The carrier-walk unification must settle in code before the model rewrites onto it.
+- R161 (`unify-record-dml-on-carrier-walk`) shipped; R178 then retired the carrier-walk family outright, so the starting model is closer to R164's target than this item's earlier drafts assumed. The `ReturnShape` per-arm sub-component on `QueryBuilder.Insert/Update/Delete/Upsert` lands on the surviving DML permits directly, with no intermediate consolidation step.
 - Touches every emitter, validator, and a substantial portion of the test surface. Likely 2-4 weeks of focused work; should land before further model evolution to avoid rebasing on a moving target.
 - Recommended sequencing inside R164: (1) introduce `DataFetcherBuilder`, `QueryBuilder`, and `ValidationBuilder` as sealed slots on `Field` alongside the existing permits; (2) populate them from existing permit data via a transitional adapter; (3) migrate consumers one at a time; (4) retire old permits and mixins; (5) delete the adapter. Each step verifiable and reversible.
