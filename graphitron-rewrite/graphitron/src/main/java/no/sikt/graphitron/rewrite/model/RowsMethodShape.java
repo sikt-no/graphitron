@@ -19,13 +19,16 @@ import no.sikt.graphitron.rewrite.ScalarTypeResolver;
  *   <li>Positional (List keys): {@code List<V>} (single) or {@code List<List<V>>} (list).</li>
  * </ul>
  *
- * <p>One source of truth for two consumers: the validator (strict-equality check on the
+ * <p>One source of truth for three consumers: the validator (strict-equality check on the
  * developer-declared rows-method return type at classify time, in
- * {@code ServiceDirectiveResolver}) and the emitter ({@code .returns(...)} on the rows
- * method body in {@code TypeFetcherGenerator.buildServiceRowsMethod}). The
+ * {@code ServiceDirectiveResolver}), the rows-method emitter ({@code .returns(...)} on the
+ * rows method body in {@code TypeFetcherGenerator.buildServiceRowsMethod}), and the
+ * data-fetcher emitter (the {@code DataLoader<K, V>} typing line built in
+ * {@code TypeFetcherGenerator.buildServiceDataFetcher}, which Java generics invariance
+ * forces to match the rows method's declared {@code V} exactly). The
  * {@code service-directive-resolver-strict-child-service-return}
- * {@link LoadBearingClassifierCheck} key pairs them; this helper is the implementation
- * both sides share so the cross-product cannot drift.
+ * {@link LoadBearingClassifierCheck} key pairs all three; this helper is the implementation
+ * the validator and both emit sites share so the cross-product cannot drift.
  */
 public final class RowsMethodShape {
 
