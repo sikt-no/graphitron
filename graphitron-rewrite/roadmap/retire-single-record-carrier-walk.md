@@ -519,14 +519,26 @@ null). The spike stays in-tree as a behavioral contract pin under the
     match today's @service producer). The `@service` classifier no
     longer writes through `registerServiceCarrierDataField`; the
     helper retains only the strict-return diagnostic.
-  - **Phase 3B step 3** (pending): retire the two remaining carrier-
-    walk consultations: `MutationInputResolver.validateReturnType`'s
-    `tryResolveSingleRecordCarrier` shape gate (lines 207-212) and
-    `FieldBuilder.classifyServiceCarrierProducer`'s shape gate. With
-    these gone, `BuildContext.classifyCarrierField`'s forbidden-
-    directives loop (which is the SettKvotesporsmal bug's mechanism)
-    no longer fires from any production path, and the regression pin
-    + the diagnostic-wording pin land alongside.
+  - **Phase 3B step 3** (shipped): retire the two carrier-walk
+    consultations the bug fired through:
+    `MutationInputResolver.validateReturnType`'s
+    `tryResolveSingleRecordCarrier` shape gate (lines 207-212), now an
+    inline wrapper-shape check; and
+    `FieldBuilder.classifyServiceCarrierProducer`'s carrier-walk
+    consultation, replaced with a structural payload-SDL walk
+    (`detectStructuralServiceCarrierShape`) that fires the strict-
+    return diagnostic only for NoBacking carriers. ClassBacked
+    carriers route exclusively through
+    `FieldBuilder.resolveServiceResultAssembly`, whose diagnostic
+    cites the payload class (not the inner table's record class) on
+    return-type mismatch. The SettKvotesporsmal-shape regression pin
+    and the diagnostic-wording pin land alongside
+    (`SettKvotesporsmalShapeRegressionTest`). Other call sites
+    (`checkSourceSigilTypeMatch`, `transportForParent`'s active-
+    channel gate, and the `@mutation` classifier's non-DELETE block)
+    still consult the carrier walk transitionally; their forbidden-
+    directives loop is harmless because none of them propagate the
+    walk's `Rejected` arm as an `UnclassifiedField`.
   - **Phase 4 deletions** (pending): remove the carrier-walk model
     types, classifier methods, emitters, and load-bearing classifier
     checks listed under §"Concrete deletions". The

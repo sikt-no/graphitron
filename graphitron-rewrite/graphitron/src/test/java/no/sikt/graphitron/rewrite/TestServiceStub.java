@@ -324,6 +324,19 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * R178 step 3 SettKvotesporsmal-shape regression: returns the SDL payload class directly
+     * (legacy passthrough). The payload class exposes a {@code film()} accessor returning the
+     * inner {@code FilmRecord}, but the {@code @service} method's reflected return type is the
+     * payload class itself, not the inner record. Before R178 step 3 the carrier walk admitted
+     * the payload shape as a single-record carrier and demanded {@code FilmRecord} as the return
+     * type; after step 3 the unified path classifies the data field through the standard
+     * {@code @record}-parent accessor lookup, with no carrier-walk consultation.
+     */
+    public static no.sikt.graphitron.codereferences.dummyreferences.SettKvotesporsmalShapePayload runPassthroughPayload() {
+        throw new UnsupportedOperationException();
+    }
+
     // ===== R32 child-@service strict-return-type fixtures =====
 
     /**
