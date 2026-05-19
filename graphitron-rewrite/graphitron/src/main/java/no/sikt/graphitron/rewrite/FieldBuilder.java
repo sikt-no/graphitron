@@ -1786,36 +1786,34 @@ class FieldBuilder {
                     + "Use [" + returnType.returnTypeName() + "] or [" + returnType.returnTypeName() + "!]"));
         }
 
-        // R178 step 2: transport selection runs through {@link #selectErrorsTransport} (the
-        // unit-tier rule table pinned by {@link ErrorsTransportSelectionTest}). The active-
-        // channel gate ahead of the rule firing replaces the today's "carrier walk says
-        // ErrorChannelRole.LocalContext" reading: a parent is treated as having an active
-        // error channel iff the carrier walk admits it as a single-record carrier. The
-        // selectErrorsTransport rule's Absent + !accessor → LocalContext fallback only fires
-        // for active-channel parents; non-carrier parents fall back to PayloadAccessor
-        // regardless of the rule's output. Step 3 retires the carrier-walk gate by reading
-        // a producer-side binding signal (DmlEmitted today, ServiceEmitted under §"What
-        // stays" #2 of the spec once R96's ServiceEmitted observation lands).
+        // R178 step 2 / Phase 4: transport selection runs through {@link #selectErrorsTransport}
+        // (the unit-tier rule table pinned by {@link ErrorsTransportSelectionTest}). The active-
+        // channel gate ahead of the rule firing reads the R96 producer-binding maps: a parent
+        // is treated as having an active error channel iff a payload-returning producer
+        // (DmlEmitted or ServiceEmitted) is bound to it. Non-producer-bound parents (plain
+        // @record types reachable as service / query returns whose errors-shaped field is a
+        // developer-owned slot) fall back to PayloadAccessor regardless of the rule's output.
         var transport = transportForParent(fieldDef, name, parentTypeName, parentBackingClass);
         return new ErrorsField(parentTypeName, name, location, errorTypes, transport);
     }
 
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "error-channel.local-context-transport",
-        reliesOn = "Selects Transport.LocalContext on the ErrorsField when the parent carrier was "
-            + "admitted with ErrorChannel.LocalContext; this is the discriminator the emitter "
-            + "reads at FetcherEmitter.dataFetcherValue. The producer in BuildContext."
-            + "classifyCarrierField is the load-bearing site for the binding; this query reads "
-            + "it back through the same carrier walk so the two views agree.")
+        reliesOn = "Selects Transport.LocalContext on the ErrorsField only when a producer "
+            + "binding (DmlEmitted or ServiceEmitted) is present for the parent payload type, "
+            + "which is the structural guarantee that the mutation wrapper populates "
+            + "env.getLocalContext() at request time. Without a producer binding the parent has "
+            + "no localContext-populating wrapper, so the errors field must read from a payload "
+            + "accessor instead.")
     private ChildField.Transport transportForParent(GraphQLFieldDefinition fieldDef,
             String errorsFieldName, String parentTypeName, Class<?> parentBackingClass) {
-        // Active-channel gate: a parent qualifies as carrying an error channel iff the
-        // carrier walk admits it as a single-record carrier. Non-carrier parents (plain
-        // @record types reachable as service / query returns whose errors-shaped field is
-        // a developer-owned slot) fall back to PayloadAccessor regardless of the rule.
-        var resolution = ctx.tryResolveSingleRecordCarrier(parentTypeName);
-        boolean activeChannel = resolution
-            instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok;
+        // Active-channel gate: a parent qualifies as carrying an error channel iff a producer-
+        // returning mutation is bound to it (DML or @service). Non-producer-bound parents (plain
+        // @record types reachable as service / query returns whose errors-shaped field is a
+        // developer-owned slot, or orphan carrier-shaped types unreachable through any producer)
+        // fall back to PayloadAccessor.
+        boolean activeChannel = dmlEmittedBinding(parentTypeName).isPresent()
+            || serviceEmittedBinding(parentTypeName).isPresent();
         if (!activeChannel) {
             return new ChildField.Transport.PayloadAccessor();
         }
@@ -2808,13 +2806,16 @@ class FieldBuilder {
     }
 
     /**
-     * R159 — type-match check at the carrier-data-field {@code $source} admission site. Runs
-     * when an @service mutation returns a single-record carrier whose data field opts into
-     * the {@code $source} sigil (the carrier walk's
-     * {@link no.sikt.graphitron.rewrite.model.CarrierFieldRole.DataChannel#sourceSigil()}
-     * bit, set once at parse time): compares the producer's reflected return
-     * {@link no.sikt.graphitron.javapoet.TypeName} against the SDL element's backing class
-     * through {@link FieldSourceSigil#sourceSigilTypeMatches}.
+     * R159 / R178 Phase 4 — type-match check at the carrier-data-field {@code $source}
+     * admission site. Runs when an {@code @service} mutation returns a structurally carrier-
+     * shaped payload (single {@code @table}-typed data field) whose data field opts into the
+     * {@code $source} sigil via {@code @field(name: "$source")}: compares the producer's
+     * reflected return {@link no.sikt.graphitron.javapoet.TypeName} against the data table's
+     * record class through {@link FieldSourceSigil#sourceSigilTypeMatches}.
+     *
+     * <p>The detection is structural (consults the payload SDL directly, not the carrier
+     * walk) so the {@link BuildContext#classifyCarrierField} forbidden-directives loop is
+     * not exercised at this site.
      *
      * <p>Returns {@code null} when the check passes (or when no carrier shape / no
      * {@code $source} sigil applies); on mismatch, returns the canonical
@@ -2824,16 +2825,41 @@ class FieldBuilder {
     private String checkSourceSigilTypeMatch(
             no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType returnType,
             no.sikt.graphitron.rewrite.model.MethodRef method) {
-        var resolution = ctx.tryResolveSingleRecordCarrier(returnType.returnTypeName());
-        if (!(resolution instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok ok)) {
-            return null;
-        }
-        var dataChannel = ok.shape().data();
-        if (!dataChannel.sourceSigil()) return null;
+        var shape = detectStructuralServiceCarrierShape(returnType.returnTypeName());
+        if (shape == null) return null;
+        var dataField = findStructuralCarrierDataField(returnType.returnTypeName());
+        if (dataField == null) return null;
+        var parsed = FieldSourceSigil.parseArgFieldNameRef(dataField, DIR_FIELD, ARG_NAME);
+        boolean isSourceSigil = parsed instanceof FieldSourceSigil.ParseResult.Ok ok
+            && ok.ref() instanceof FieldSourceSigil.FieldNameRef.UpstreamRoot;
+        if (!isSourceSigil) return null;
         var mismatch = FieldSourceSigil.sourceSigilTypeMatches(
             method.returnType(), method.className(), method.methodName(),
-            dataChannel.element());
+            shape.table().recordClass(),
+            shape.cardinality() == SourceKey.Cardinality.MANY);
         return mismatch.orElse(null);
+    }
+
+    /**
+     * R178 Phase 4 — re-walk the payload SDL to retrieve the structurally-detected carrier's
+     * data field definition. Mirrors {@link #detectStructuralServiceCarrierShape}'s walk but
+     * returns the field definition rather than its resolved table/cardinality; both helpers
+     * land at the same single {@code @table}-typed data field on payloads that
+     * {@link #detectStructuralServiceCarrierShape} admits.
+     */
+    private GraphQLFieldDefinition findStructuralCarrierDataField(String payloadSdlName) {
+        if (payloadSdlName == null) return null;
+        var payloadType = ctx.schema.getType(payloadSdlName);
+        if (!(payloadType instanceof graphql.schema.GraphQLObjectType payloadObj)) return null;
+        GraphQLFieldDefinition dataField = null;
+        for (var f : payloadObj.getFieldDefinitions()) {
+            String unwrappedFieldType = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
+            var t = ctx.types.get(unwrappedFieldType);
+            if (!(t instanceof GraphitronType.TableBackedType)) continue;
+            if (dataField != null) return null;
+            dataField = f;
+        }
+        return dataField;
     }
 
     /**
