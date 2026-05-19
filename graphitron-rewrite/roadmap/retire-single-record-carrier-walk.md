@@ -539,7 +539,7 @@ null). The spike stays in-tree as a behavioral contract pin under the
     still consult the carrier walk transitionally; their forbidden-
     directives loop is harmless because none of them propagate the
     walk's `Rejected` arm as an `UnclassifiedField`.
-  - **Phase 4** (in progress — slices 1-6 shipped, slice 7 pending):
+  - **Phase 4** (shipped — slices 1-7 all landed):
     progressive removal of the carrier-walk wiring, structured as
     incremental commits each leaving the build green:
     - **Slice 1** (shipped): delete the dead Dml/Service writers
@@ -590,26 +590,48 @@ null). The spike stays in-tree as a behavioral contract pin under the
       to assert "stays unregistered"; drops GraphitronSchemaBuilder from
       `CarrierFieldRoleCoverageTest.CONSUMERS`. After slice 6 the carrier
       walk has no production callers.
-    - **Slice 7** (pending): delete the now-unused carrier-walk methods
-      and supporting sealed model types. Removable today:
-      `FieldBuilder.registerDeleteCarrierDataField` (dead — slice 4
-      inlined the equivalent logic); `BuildContext.tryResolveSingleRecordCarrier`
-      (both overloads); `BuildContext.classifyCarrierField` and
-      `CarrierFieldClassification`; `SingleRecordCarrierResolution`;
-      `SingleRecordCarrierShape`; `CarrierFieldRole`; `DataElement`;
-      `ChildField.SingleRecordIdentityField` (no longer produced after
-      slice 6). The `@LoadBearingClassifierCheck` keys
-      `single-record-carrier-shape.roles-exhaustively-classified` (and
-      its consumer annotations in `GraphitronSchemaBuilder` and
-      `TypeFetcherGenerator`) retire alongside `classifyCarrierField`.
-      Test cleanup: `DataElementIdInvariantTest`,
-      `CarrierFieldRoleCoverageTest`, the carrier-walk variants in
-      `VariantCoverageTest`, the R161 `Ok.NoBacking` / `ClassBacked` fork
-      cases, and pipeline-tier rejection assertions whose diagnostic
-      wording came from `classifyCarrierField`.
-  - **Phase 4 still-pending** (after slice 7): the spec's full §"Concrete
-    deletions" list includes items that survive Phase 4 because the DELETE
-    arm and the DML/Service unified arms still produce them; they retire
+    - **Slice 7** (shipped, in four sub-commits):
+      - **7a**: delete the dead carrier-walk infrastructure
+        (`FieldBuilder.registerDeleteCarrierDataField`,
+        `FieldBuilder.requireDataTableMatchesInputTable`,
+        `BuildContext.tryResolveSingleRecordCarrier` both overloads,
+        `BuildContext.classifyCarrierField` +
+        `CarrierFieldClassification`). The
+        `@LoadBearingClassifierCheck` key
+        `single-record-carrier-shape.roles-exhaustively-classified`
+        retires with `classifyCarrierField`. Re-anchors two surviving
+        keys on still-live producers:
+        `error-channel.local-context-transport` moves onto
+        `FieldBuilder.detectStructuralDmlErrorChannel` (the new sole
+        producer of `ErrorChannel.LocalContext` on DML payloads);
+        `mutation-dml-record-field.data-table-equals-input-table`
+        extracts into a small
+        `FieldBuilder.requireDmlDataTableMatchesInputTable` helper
+        called from both DELETE and non-DELETE arms.
+      - **7b**: delete the four sealed model files
+        (`SingleRecordCarrierResolution`, `SingleRecordCarrierShape`,
+        `CarrierFieldRole`, `DataElement`). Drops a now-unused import
+        in `GraphitronSchemaBuilder` and the two pinning tests
+        (`DataElementIdInvariantTest`, `CarrierFieldRoleCoverageTest`).
+      - **7c**: retire the `ChildField.SingleRecordIdentityField`
+        permit (no producer after slice 6). Removes the dispatch arms
+        in `GraphitronSchemaValidator` (the allow-list switch +
+        `LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS`),
+        `FetcherEmitter` (dispatch + `buildSingleRecordIdentityFetcherValue`),
+        `TypeFetcherGenerator` (no-op arm + class entry), and
+        `CatalogBuilder.projectCarrierDataFields`. Test cleanup:
+        `SINGLE_RECORD_IDENTITY_FIELD_ORPHAN.variants()` returns
+        `Set.of()`; removes
+        `SingleRecordCarrierPipelineTest.fetcherEmitter_singleRecordIdentityFieldArm`;
+        rewires `LocalContextErrorsFieldValidationTest.guardedSibling`
+        to use `SingleRecordIdFieldFromReturning`.
+      - **7d**: cosmetic — `VariantCoverageTest` row for
+        `SingleRecordIdFieldFromReturning` references the @mutation
+        classifier and drops the `DataElement.Id` internal-jargon
+        reference.
+  - **Phase 5 survivors** (carry forward from Phase 4): the spec's full
+    §"Concrete deletions" list includes items the DELETE arm and the
+    DML/Service unified arms still produce; they retire
     in Phase 5. Specifically: `ChildField.SingleRecordTableField` /
     `SingleRecordTableFieldFromReturning` / `SingleRecordIdFieldFromReturning`,
     `Reader.ResultRowWalk` (the permit), `DeleteTableProjection`,
