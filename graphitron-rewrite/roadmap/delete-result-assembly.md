@@ -1,7 +1,7 @@
 ---
 id: R179
 title: Delete ResultAssembly; service success arm is universal passthrough
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 5
 theme: service
