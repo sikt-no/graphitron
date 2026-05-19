@@ -1,7 +1,7 @@
 ---
 id: R184
 title: Graphitron.newExecutionInput factory for single-tenant ergonomics
-status: Spec
+status: Ready
 bucket: feature
 priority: 6
 depends-on: []
