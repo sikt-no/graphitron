@@ -121,7 +121,7 @@ class SingleRecordCarrierPipelineTest {
         // nullable non-PK, which classifies into PerFieldOutcome.NonPkNullable → admits.
         // The mutation classifies as MutationDmlRecordField with kind=DELETE; the per-field
         // data carrier on `FilmPayload.film` is registered as SingleRecordTableFieldFromReturning
-        // (overwriting the verbless walk's SingleRecordTableField).
+        // (the DELETE classifier re-registers over the prior SingleRecordTableField entry).
         var schema = TestSchemaHelper.buildSchema(payloadDmlSingleInput(DmlKind.DELETE, "type FilmPayload { film: Film }"));
         var mutField = schema.field("Mutation", mutationName(DmlKind.DELETE));
         assertThat(mutField).isInstanceOf(MutationField.MutationDmlRecordField.class);
@@ -288,12 +288,11 @@ class SingleRecordCarrierPipelineTest {
             type Query { wrappedFilms: FilmPayload }
             """);
 
-        // R158: Query-side carriers have no producing mutation, so the per-producer
-        // registration site in FieldBuilder is never reached. The verbless walk's
-        // DataElement.Table arm is a no-op after R158, so the data field carries no
-        // fieldRegistry entry. graphql-java only traverses fields whose parent was
-        // produced by a fetcher; an unproduced carrier's data field is never reached at
-        // runtime, so a missing registration is structurally safe.
+        // Query-side carriers have no producing mutation, so the per-producer registration
+        // site in FieldBuilder is never reached, and the data field carries no fieldRegistry
+        // entry. graphql-java only traverses fields whose parent was produced by a fetcher;
+        // an unproduced carrier's data field is never reached at runtime, so a missing
+        // registration is structurally safe.
         var dataField = schema.field("FilmPayload", "films");
         assertThat(dataField).isNull();
     }
@@ -427,8 +426,7 @@ class SingleRecordCarrierPipelineTest {
     void carrier_recordElement_orphanDataFieldStaysUnregistered() {
         // R178 Phase 4: orphan record-element carriers (no producer mutation consuming the
         // payload) leave the data field unregistered. graphql-java's never-traverse-unproduced-
-        // fields guarantee makes the missing registration structurally safe. The
-        // SingleRecordIdentityField permit retires with the carrier walk; record-element
+        // fields guarantee makes the missing registration structurally safe. Record-element
         // identity passthrough is now handled by the unified per-field classifier on producer-
         // bound parents.
         var schema = TestSchemaHelper.buildSchema("""
@@ -449,11 +447,11 @@ class SingleRecordCarrierPipelineTest {
     @ParameterizedTest
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void carrier_recordElement_dmlMutationRejectsAtClassifier(DmlKind kind) {
-        // Phase 2 keeps @mutation (DML) restricted to @table-element data. A record-element
-        // carrier (DataElement.Record) on a DML mutation would require a "DML row → domain
-        // record" conversion step at the emitter, which the spec tracks separately. The
-        // mutation classifier rejects at classify time with a per-mismatch message naming the
-        // carrier, the data field, and pointing to @service as the right path.
+        // @mutation (DML) is restricted to @table-element data. A record-element carrier on a
+        // DML mutation would require a "DML row → domain record" conversion step at the
+        // emitter, which the spec tracks separately. The mutation classifier rejects at
+        // classify time with a per-mismatch message naming the carrier, the data field, and
+        // pointing to @service as the right path.
         String sdl = """
             type Film @table(name: "film") { title: String }
             type FilmDto @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
@@ -477,13 +475,13 @@ class SingleRecordCarrierPipelineTest {
             "@service mutation");
     }
 
-    // ===== Carrier-walk LocalContext error channel (R12 + R161 integration) =====
+    // ===== LocalContext error channel on DML carriers (R12 + structural-scan integration) =====
     //
-    // R161 widens tryResolveSingleRecordCarrier to admit any ResultType arm and wires
-    // SingleRecordCarrierShape.errorChannel() → MutationDmlRecordField.errorChannel (FieldBuilder
-    // ~3381). R12 Phase C's carrier-walk admission of CarrierFieldRole.ErrorChannelRole resolves
-    // the binding as ErrorChannel.LocalContext when the carrier has no developer-supplied class
-    // with an errors slot (no @record(record:{className:})). These tests pin that the resulting
+    // The structural DML-carrier scan (BuildContext.scanStructuralDmlPayload) admits a carrier
+    // shape with one @table-element or @record-element data field plus an optional errors-shaped
+    // sibling; FieldBuilder.detectStructuralDmlErrorChannel binds the errors-channel transport
+    // to ErrorChannel.LocalContext when the carrier has no developer-supplied class with an
+    // errors slot (no @record(record:{className:})). These tests pin that the resulting
     // MutationDmlRecordField / MutationBulkDmlRecordField carries Optional.of(LocalContext) and
     // the sibling ErrorsField on the payload classifies with Transport.LocalContext — the two
     // halves the emitter's catch arm (TypeFetcherGenerator.catchArm) and the data fetcher

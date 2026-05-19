@@ -50,10 +50,10 @@ class FieldSourceSigilPipelineTest {
 
     /**
      * R158 admit case: {@code @field(name: "$source")} on the carrier data field of a
-     * {@code @service}-backed mutation. The carrier walk admits the directive (it is a no-op
-     * confirmation of the implicit binding the SDL element type already produces); the
-     * mutation classifies as {@link MutationField.MutationServiceRecordField} and the data
-     * field classifies as {@link ChildField.SingleRecordTableField}.
+     * {@code @service}-backed mutation. The directive admits as a no-op confirmation of the
+     * implicit binding the SDL element type already produces; the mutation classifies as
+     * {@link MutationField.MutationServiceRecordField} and the data field classifies as
+     * {@link ChildField.SingleRecordTableField}.
      */
     @Test
     void sourceSigil_serviceCarrier_typeMatches_admits() {

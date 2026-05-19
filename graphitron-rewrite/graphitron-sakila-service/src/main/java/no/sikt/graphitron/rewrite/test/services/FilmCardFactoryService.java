@@ -3,18 +3,14 @@ package no.sikt.graphitron.rewrite.test.services;
 import no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord;
 
 /**
- * R75 Phase 2 compilation-tier fixture: an {@code @service} method whose return type is the
+ * Compilation-tier fixture: an {@code @service} method whose return type is the
  * {@code @record}-backed Java class {@link FilmCardData}. Wired through a {@code Mutation}
  * field returning a plain SDL Object carrier ({@code SingleFilmCardCarrier}); the carrier
- * promotes to {@code PojoResultType.NoBacking} via {@code TypeBuilder.promoteSingleRecordCarriers},
- * and its single data field {@code card: FilmCardWrapper} classifies as
- * {@code ChildField.SingleRecordIdentityField} (identity passthrough emit).
+ * promotes to {@code PojoResultType.NoBacking} via {@code TypeBuilder.promoteSingleRecordCarriers}
+ * (now consulting {@code BuildContext.scanStructuralDmlPayload}), and the unified per-field
+ * classifier on the producer-bound parent resolves the {@code card: FilmCardWrapper} data field.
  *
- * <p>Exists at the compilation tier only — confirms the schema compiles end-to-end. The
- * spec's 8-case wrapper-composition execution matrix is deferred to a separate roadmap item
- * because the {@code @service} substrate has no support for {@code Optional<T>} /
- * {@code CompletableFuture<T>} / {@code Mono<T>} / {@code DataFetcherResult<T>} return wrappers
- * today; admitting any of them is an {@code @service}-infrastructure change distinct from R75.
+ * <p>Exists at the compilation tier only — confirms the schema compiles end-to-end.
  */
 public final class FilmCardFactoryService {
 

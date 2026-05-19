@@ -565,11 +565,12 @@ class ErrorChannelClassificationTest {
 
     @Test
     void carrierWalkErrorsField_classifiesAsErrorsFieldWithLocalContextTransport() {
-        // R12 Phase C: a plain SDL Object carrier (PojoResultType.NoBacking after promotion)
-        // with an errors-shaped field admits at the carrier walk. The errors field classifies
-        // as ChildField.ErrorsField carrying Transport.LocalContext (the discriminator FetcherEmitter
-        // reads at emit time). MutationBulkDmlRecordField still classifies as today; R161 wires
-        // the channel onto the mutation field's Optional<ErrorChannel> slot.
+        // A plain SDL Object carrier (PojoResultType.NoBacking after promotion) with an
+        // errors-shaped field admits at the structural DML-carrier scan. The errors field
+        // classifies as ChildField.ErrorsField carrying Transport.LocalContext (the
+        // discriminator FetcherEmitter reads at emit time). The mutation classifies as
+        // MutationBulkDmlRecordField and FieldBuilder.detectStructuralDmlErrorChannel wires
+        // the channel onto its Optional<ErrorChannel> slot.
         var schema = TestSchemaHelper.buildSchema(CARRIER_WALK_ERROR_SDL + """
             type FilmPayload { films: [Film!] errors: [CarrierError!] }
             type Query { x: String }
@@ -587,8 +588,7 @@ class ErrorChannelClassificationTest {
     @Test
     void carrierWalkErrorsField_rejectsMultipleValidationHandlers() {
         // Rule 7 (§1): a carrier with two VALIDATION-handler @error types in its errors channel
-        // is rejected at the carrier walk with the offending channel named (NoPermit surfaces
-        // through the unified walk as Rejected).
+        // is rejected at the structural DML-carrier scan with the offending channel named.
         var schema = TestSchemaHelper.buildSchema("""
             type V1 @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
             type V2 @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }

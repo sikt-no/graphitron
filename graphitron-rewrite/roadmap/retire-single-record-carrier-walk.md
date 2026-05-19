@@ -208,8 +208,12 @@ Classifier methods:
 - `BuildContext.classifyDeleteTableProjection` — **Phase 5**
 - `BuildContext.classifyElementFieldForDeleteProjection` — **Phase 5**
 - `BuildContext.carrierProducerRegistry` — **shipped**
-- `TypeBuilder.promoteSingleRecordCarriers` — **shipped**
-- `FieldBuilder.classifyServiceCarrierProducer` — **shipped**
+- `TypeBuilder.promoteSingleRecordCarriers` — **rewritten** (now consults
+  `BuildContext.scanStructuralDmlPayload` directly; the carrier-walk
+  consultation is gone, the method name and its single call site survive)
+- `FieldBuilder.classifyServiceCarrierProducer` — **rewritten** (now uses
+  `detectStructuralServiceCarrierShape` for the NoBacking strict-return
+  check; the carrier-walk consultation is gone, the method name survives)
 - `FieldBuilder.registerDmlCarrierDataField` — **shipped**
 - `FieldBuilder.registerServiceCarrierDataField` — **shipped**
 - `FieldBuilder.registerDeleteCarrierDataField` — **shipped**
@@ -217,7 +221,9 @@ Classifier methods:
 - `FieldBuilder.requireDataTableMatchesInputTable` — **shipped** (replaced by
   the smaller `requireDmlDataTableMatchesInputTable` helper that anchors the
   surviving `mutation-dml-record-field.data-table-equals-input-table` key)
-- `FieldBuilder.checkSourceSigilTypeMatch` — **shipped**
+- `FieldBuilder.checkSourceSigilTypeMatch` — **rewritten** (now uses
+  `detectStructuralServiceCarrierShape` + `findStructuralCarrierDataField`;
+  the carrier-walk consultation is gone, the method name survives)
 - `GraphitronSchemaBuilder.registerCarrierDataField` and the carrier-walk
   arm of the schema-builder loop — **shipped**
 

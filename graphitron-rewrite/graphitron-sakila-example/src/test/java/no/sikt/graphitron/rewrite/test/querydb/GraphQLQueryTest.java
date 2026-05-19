@@ -4255,13 +4255,13 @@ class GraphQLQueryTest {
         payload.extractingByKey("errors", as(LIST)).isEmpty();
     }
 
-    // ===== R12 + R161 carrier-walk DML LocalContext error channel end-to-end =====
+    // ===== R12 DML LocalContext error channel end-to-end =====
     //
     // Mirrors the @service-backed submitFilmReview tests on the DML pillar. The
-    // createFilmWithErrors mutation classifies as MutationDmlRecordField (R161's widening admits
-    // ResultType carriers) with errorChannel = Optional.of(ErrorChannel.LocalContext) (R12 Phase
-    // C's carrier-walk ErrorChannelRole admission). The catch arm dispatches through
-    // ErrorRouter.dispatchToLocalContext, which packs the matched throwable into
+    // createFilmWithErrors mutation classifies as MutationDmlRecordField (admitted by the
+    // structural DML-carrier scan) with errorChannel = Optional.of(ErrorChannel.LocalContext)
+    // (bound by FieldBuilder.detectStructuralDmlErrorChannel). The catch arm dispatches
+    // through ErrorRouter.dispatchToLocalContext, which packs the matched throwable into
     // env.getLocalContext() as a single-element list and returns data: null; the carrier's
     // errors field reads that list back via env.getLocalContext(), and the data field (Film)
     // short-circuits on the null source so the SDL response renders { film: null, errors: [{
