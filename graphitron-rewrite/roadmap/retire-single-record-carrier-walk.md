@@ -317,35 +317,49 @@ type-match enforced uniformly with every other field.
   `SqlStateHandler`, `ValidationHandler`), the mappings-constant
   dedup (`MappingsConstantNameDedup`), and the wrapper-side dispatch
   through `ErrorRouter.dispatch` / `ErrorRouter.redact` all stay.
-- **R96's `RecordBindingResolver`** gains one new producer arm. The
+- **R96's `RecordBindingResolver`** gains two new producer arms. The
   walk today grounds at developer-authored sources reachable by
   reflection on a `java.lang.reflect.Method` (`@service` returns,
   `@table` resolutions, `@tableMethod` returns); the DML producer is
-  generator-emitted - the row shape is determined by
+  generator-emitted (the row shape is determined by
   `TypeFetcherGenerator.buildMutationDml*Fetcher` from the input
-  `@table` + `DmlKind` + cardinality. A new
-  `ProducerBinding.DmlEmitted(TableRef, DmlKind, Cardinality)` permit
-  carries this identity. To preserve the resolver's single-axis
-  class-identity fold (RecordBindingResolver.java:368-385),
-  `DmlEmitted.reflectedClass()` returns `TableRef.recordClass()` for
-  its carried `TableRef` - the same class `RootTable` grounds with at
-  RecordBindingResolver.java:156-159 - so the existing
-  `record-binding.producer-agreement` check fires unchanged: a DML
-  producer agrees with the input `@table`'s `RootTable` binding for
-  the same record class. This is the structural replacement for the
-  deleted `mutation-dml-record-field.data-table-equals-input-table`
-  invariant; the guarantee re-emerges through the existing fold with
-  no new load-bearing key and no carrier-walk-specific consumer. The
+  `@table` + `DmlKind` + cardinality), and the `@service`-carrier
+  producer is developer-authored but observed structurally (the
+  payload SDL's single `@table`-typed data field's table is the
+  binding identity, not the SDL Object itself).
+  - `ProducerBinding.DmlEmitted(TableRef, DmlKind, Cardinality)`
+    grounded by `groundDmlMutationField` for every `@mutation` field
+    whose payload is a non-`@table` SDL Object. Stored in a dedicated
+    `dmlEmittedMemo` (isolated from the result-axis fold until the
+    Phase 4 cutover lifts it in).
+  - `ProducerBinding.ServiceEmitted(TableRef, Cardinality, producer
+    site)` grounded by `groundServiceCarrierBinding` (added to
+    `groundServiceField` in Phase 3B step 2b) for every `@service`
+    field whose payload SDL Object exposes exactly one
+    `@table`-typed data field whose record class equals the
+    method's reflected return-element class. Stored in a dedicated
+    `serviceEmittedMemo`, parallel to `dmlEmittedMemo`. The
+    structural read avoids consulting the carrier walk, so the
+    bug-triggering forbidden-directives loop at
+    `classifyCarrierField:1050-1068` is not exercised at observation
+    time.
+  Both permits return `TableRef.recordClass()` from `reflectedClass()`
+  so they fold uniformly into the existing
+  `record-binding.producer-agreement` check whenever the dedicated
+  maps move into the main result-axis fold. The DML side replaces
+  the deleted `mutation-dml-record-field.data-table-equals-input-table`
+  invariant; the `@service`-carrier side replaces
+  `carrier-data-field.service-producer-strict-return`. The
   classifier-side wiring that previously fired
-  `requireDataTableMatchesInputTable` now lifts the DML mutation's
-  input `@table` `TableRef` onto the emitted `ProducerBinding.DmlEmitted`,
-  which the payload-side `deriveSplitQuerySource` caller reads as its
-  `parentTable` argument (§"Bulk DML reference" #1). The lookup path:
-  when `FieldBuilder.classifyField` constructs the SourceKey for a
-  child `@table` field on a payload SDL type, it consults the parent's
-  resolved `ProducerBinding` via `RecordBindingResolver`'s binding map,
-  pattern-matches on `DmlEmitted`, and feeds `dmlEmitted.tableRef()`
-  to `deriveSplitQuerySource(parentTable, List.of(), returnType)`.
+  `requireDataTableMatchesInputTable` and
+  `registerServiceCarrierDataField` now reads through the producer-
+  binding map at field-classify time: `classifyChildFieldOnResultType`
+  consults `dmlEmittedBinding(parentTypeName)` first, then
+  `serviceEmittedBinding(parentTypeName)`, pattern-matches on the
+  arm, and constructs `ChildField.SingleRecordTableField` with
+  `Wrap.Record` (DML) or `Wrap.TableRecord(table.recordClass())`
+  (`@service`) - the existing emit shape until Phase 5 lifts to
+  `Wrap.Row` + `Reader.ColumnRead`.
 - **R156's NodeId encoder chain** (`HelperRef.Encode`,
   `CallSiteCompaction.NodeIdEncodeKeys`) survives unchanged; under R178
   it is wired through `resolveRecordAccessor`'s outcome arms rather than
@@ -472,19 +486,62 @@ null). The spike stays in-tree as a behavioral contract pin under the
   resolves to no CarrierFieldRole permit", etc.) are replaced by the
   standard `@record`-parent diagnostics. Authors get one consistent
   diagnostic family across the classifier.
-- **Implementation slicing**. Phase 1 (additive `ProducerBinding.
-  DmlEmitted` permit, observed by the R96 reflection walk, exposed
-  through `TypeBuilder.dmlEmittedBinding`) and Phase 3A (additive
-  `$errors` sigil + `selectErrorsTransport` rule-table helper, both
-  unwired) shipped as separate commits with no behavior change. Phase
-  3B is the atomic cutover required by the spec: every payload-
-  returning mutation arm (DML payload, `@service` payload, DELETE-
-  from-returning) switches from the carrier walk to the unified path
-  in a single commit, with pipeline tests retargeted, the SettKvotes-
-  porsmal regression pin added, and the diagnostic-wording pin added.
-  Phase 4 deletions follow as their own commits and remove the now-
-  unreachable carrier-walk types, methods, emitters, and load-bearing
-  classifier checks listed under §"Concrete deletions".
+- **Implementation slicing**. The cutover ships as a sequence of
+  commits rather than a single atomic 3B:
+  - **Phase 1** (shipped): additive `ProducerBinding.DmlEmitted`
+    permit, observed by R96 in a dedicated map, exposed through
+    `TypeBuilder.dmlEmittedBinding`. No behaviour change.
+  - **Phase 3A** (shipped): additive `$errors` sigil literal +
+    `FieldBuilder.selectErrorsTransport` rule-table helper, pinned by
+    `ErrorsTransportSelectionTest`. Both unwired; no behaviour change.
+  - **Phase 3B step 1** (shipped): drop the carrier-walk wiring from
+    the `@mutation` classifier's INSERT/UPDATE/UPSERT block. The
+    payload's data-field permit construction moves to a new arm in
+    `FieldBuilder.classifyChildFieldOnResultType` that fires when the
+    parent's `DmlEmitted` binding is present (the per-type pass runs
+    via the schema-builder loop because the `Ok.NoBacking` short-
+    circuit is gated on absent `DmlEmitted` for non-DELETE kinds).
+    DELETE stays on the carrier walk in this commit; the
+    `register*CarrierDataField` writers stay as dead code for Phase 4
+    deletion. SourceKey shape produced by the unified arm preserves
+    emit compatibility: `Wrap.Record` + `Reader.ResultRowWalk`.
+  - **Phase 3B step 2a** (shipped): wire `FieldBuilder
+    .transportForParent` through `selectErrorsTransport` with an
+    active-channel gate driven (transitionally) by
+    `tryResolveSingleRecordCarrier`. Behaviour preserved across all
+    current fixtures.
+  - **Phase 3B step 2b** (shipped): add
+    `ProducerBinding.ServiceEmitted` (sibling to `DmlEmitted`), ground
+    it from R96's `groundServiceField` via a structural read of the
+    payload SDL's fields, and route `@service`-carrier data-field
+    classification through a second arm in
+    `classifyChildFieldOnResultType` (Wrap shape `TableRecord` to
+    match today's @service producer). The `@service` classifier no
+    longer writes through `registerServiceCarrierDataField`; the
+    helper retains only the strict-return diagnostic.
+  - **Phase 3B step 3** (pending): retire the two remaining carrier-
+    walk consultations: `MutationInputResolver.validateReturnType`'s
+    `tryResolveSingleRecordCarrier` shape gate (lines 207-212) and
+    `FieldBuilder.classifyServiceCarrierProducer`'s shape gate. With
+    these gone, `BuildContext.classifyCarrierField`'s forbidden-
+    directives loop (which is the SettKvotesporsmal bug's mechanism)
+    no longer fires from any production path, and the regression pin
+    + the diagnostic-wording pin land alongside.
+  - **Phase 4 deletions** (pending): remove the carrier-walk model
+    types, classifier methods, emitters, and load-bearing classifier
+    checks listed under §"Concrete deletions". The
+    `register*CarrierDataField` helpers, `registerCarrierDataFieldImpl`,
+    `BuildContext.carrierProducerRegistry`, and the carrier-walk
+    `Reader.ResultRowWalk` permit are unreachable from production
+    after step 3 ships.
+  - **Phase 5 emit-side migration** (pending, separable from R178's
+    classifier scope per the spec but recorded here for navigability):
+    lift the data-field permit from `SourceKey(Wrap.Record/TableRecord,
+    Reader.ResultRowWalk)` to `SourceKey(Wrap.Row, Reader.ColumnRead)`
+    as described in §"Bulk DML reference". Requires
+    `SplitRowsMethodEmitter` to admit empty `joinPath` and
+    `GeneratorUtils.buildFkRowKey` to handle a `NoBacking` parent via
+    a `(Record) env.getSource().get(<sqlName>)` cast.
 
 ## Out of scope
 
