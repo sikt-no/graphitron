@@ -27,7 +27,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R160` | LSP inlay hints and hover for inferred directives and field/type classification | Spec | 2026-05-13 | [plan](lsp-display-inference-and-classification.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R183` | GitLab pipeline: drop snapshots, publish rewrite reactor on release tags | In Review | 2026-05-19 | [plan](gitlab-pipeline-release-only.md) |
+| `R183` | GitLab pipeline: drop snapshots, publish rewrite reactor on release tags | In Progress | 2026-05-19 | [plan](gitlab-pipeline-release-only.md) |
 
 ---
 
@@ -195,7 +195,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R47` [**Short class-name resolution for `@service` and `@externalField` (legacy parity)**](service-short-classname-resolution.md) — Backlog, cleanup
 - `R26` [**Retire `graphitron-maven-plugin` + `graphitron-schema-transform`**](retire-maven-plugin.md) — In Progress
 - `R34` [**sis-graphql-spec migration to graphitron-rewrite**](sis-rewrite-migration.md) — Backlog, cleanup
-- `R183` [**GitLab pipeline: drop snapshots, publish rewrite reactor on release tags**](gitlab-pipeline-release-only.md) — In Review, bug
+- `R183` [**GitLab pipeline: drop snapshots, publish rewrite reactor on release tags**](gitlab-pipeline-release-only.md) — In Progress, bug
 - `R182` [**Retire legacy reactor and unnest graphitron-rewrite to repo root**](unnest-rewrite-aggregator.md) — Backlog, structural, blocked by [retire-maven-plugin](retire-maven-plugin.md)
 
 ### lsp

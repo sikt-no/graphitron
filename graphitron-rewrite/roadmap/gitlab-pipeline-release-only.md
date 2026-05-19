@@ -1,7 +1,7 @@
 ---
 id: R183
 title: "GitLab pipeline: drop snapshots, publish rewrite reactor on release tags"
-status: In Review
+status: In Progress
 bucket: bug
 theme: legacy-migration
 depends-on: []
@@ -25,6 +25,7 @@ This item fixes both jobs and the policy question that surfaced them: snapshot p
 - `graphitron-rewrite/pom.xml` carries the `gitlab` profile (distribution-management + sources-jar, ported from the root pom), but with **no `<snapshotRepository>`** so an accidental `mvn deploy` on `10-SNAPSHOT` fails fast (the rewrite parent's stated invariant, see `graphitron-rewrite/docs/README.adoc` publishing section). The root-pom copy stays in place until R182 deletes the entire legacy reactor; in the meantime it is unreachable without a `-f pom.xml` flag callers no longer pass.
 - Pipeline base image bumps from `maven:3.9-eclipse-temurin-21` to `maven:3.9-eclipse-temurin-25`. The rewrite parent's `requireJavaVersion` enforcer rule (graphitron-rewrite/pom.xml:230-232) requires JDK 25, so the legacy image fails the build the moment `-f graphitron-rewrite/pom.xml` takes effect.
 - `publish:release` runs against a `postgres:18-alpine` service (alias `postgres`), with `init.sql` from `graphitron-sakila-db/src/main/resources/` applied in the script via `postgresql-client` installed in `before_script`-style apt-get. jOOQ codegen runs in-pipeline against the live service (no Testcontainers / Docker-in-Docker), and the `-Plocal-db` profile in `graphitron-sakila-db/pom.xml` is activated alongside `gitlab` to point codegen at the service rather than spinning up a Testcontainer.
+- The same apt-get step also installs `gcc`, because `graphitron-lsp` builds a native tree-sitter shared library at `generate-resources` (`graphitron-lsp/src/main/native/build-native.sh`) that's bundled into the published `graphitron-lsp` jar. Without `gcc`, `build-native.sh` exits 127 on `cc` and the deploy fails before `versions:set` even returns to the parent reactor.
 - Tests run in the publish pipeline. The earlier "skip tests, GitHub gates them" rationale was load-bearing only when Docker-in-Docker was the alternative; once a real Postgres is in the runner anyway, running tests is a cheap deploy-boundary sanity check, and GitHub's publish workflow is itself in flux per R182 so cannot be relied on as a gate yet.
 
 ## Out of scope
@@ -40,9 +41,9 @@ Shipped on this branch:
 
 - `graphitron-rewrite/pom.xml` gained the `gitlab` profile (no `<snapshotRepository>`, so accidental `mvn deploy` on `10-SNAPSHOT` still fails fast).
 - `.gitlab-ci.yml` lost `publish:snapshot`, bumped to `maven:3.9-eclipse-temurin-25`, rewrote `publish:release` to use `-f graphitron-rewrite/pom.xml` on both `mvn` calls, added `-DprocessAllModules=true` to `versions:set`, widened the tag regex to `^v\d+\.\d+\.\d+(-RC\d+)?$`, and updated the header comment block.
-- `publish:release` provisions a `postgres:18-alpine` service, installs `postgresql-client` in the runner via apt-get, applies `init.sql` to the service, and runs `clean deploy -P gitlab,local-db -Ddb.url=jdbc:postgresql://postgres:5432/rewrite_test`. Tests + codegen run; only the `MAVEN_SKIP_OPTS` variable that previously carried `-Djooq.codegen.skip=true` was removed.
+- `publish:release` provisions a `postgres:18-alpine` service, installs `postgresql-client` + `gcc` in the runner via apt-get, applies `init.sql` to the service, and runs `clean deploy -P gitlab,local-db -Ddb.url=jdbc:postgresql://postgres:5432/rewrite_test`. Tests + codegen run; only the `MAVEN_SKIP_OPTS` variable that previously carried `-Djooq.codegen.skip=true` was removed.
 
-The initial pass missed that several rewrite-reactor modules (`graphitron-sakila-service`, `graphitron-sakila-example`) compile against jOOQ-generated classes from `graphitron-sakila-db`; skipping codegen broke the reactor's compile phase regardless of which modules ultimately deploy (`maven.deploy.skip=true` is set on the sakila / fixtures / roadmap-tool modules anyway). The fix is the postgres-service path, which also makes "run tests in the deploy job" essentially free.
+The initial pass missed two things: several rewrite-reactor modules (`graphitron-sakila-service`, `graphitron-sakila-example`) compile against jOOQ-generated classes from `graphitron-sakila-db` (skipping codegen broke the reactor's compile phase regardless of which modules ultimately deploy); and `graphitron-lsp` invokes a native build at `generate-resources` (`build-native.sh`) that needs `cc`, which the `maven:3.9-eclipse-temurin-25` runtime image doesn't ship. The postgres-service path covers the first, an apt-get `gcc` covers the second, and the combination makes "run tests in the deploy job" essentially free.
 
 ## Risks and mitigations
 
@@ -52,6 +53,7 @@ The initial pass missed that several rewrite-reactor modules (`graphitron-sakila
 - **JDK 25 image availability.** `maven:3.9-eclipse-temurin-25` is published on Docker Hub; confirm before merging by running `docker pull` (or letting the first pipeline run on the throwaway tag resolve it). Fallback if absent: an `openjdk:25-jdk` image plus Maven install in `before_script`, deferred until needed.
 - **`postgres:18-alpine` image and apt-get reachability.** The publish job depends on the Postgres image being pullable by the GitLab runner and on `apt-get install postgresql-client` succeeding in the maven image. Both are routine, but a runner without outbound network for either layer would silently break the job at job-start time. The throwaway-tag verification below catches this.
 - **init.sql drift.** The publish job applies `graphitron-sakila-db/src/main/resources/init.sql` to a freshly-started postgres service. If the schema ever drifts in a way that init.sql no longer cleanly applies (e.g. a partial migration committed without updating init.sql), the publish job fails at the psql step. That's a fail-fast property by design — the same drift would break local-db builds for every developer — but worth noting as the failure mode.
+- **Native build toolchain.** `graphitron-lsp`'s `build-native.sh` invokes `cc` directly with C11 flags. The apt-get `gcc` install is enough for x86_64 Linux runners (which is what `maven:3.9-eclipse-temurin-25` is). The native lib is bundled into the deployed jar at `lib/linux-x86_64/`, so a runner that can't provide a working compiler doesn't produce a working artifact; the failure is loud (exit 127) rather than silent. The pom's `build-native-linux-x86_64` profile activates by OS detection, so this is the only target the GitLab pipeline produces — macOS / Windows native builds are not part of the GitLab publish path.
 
 ## Verification
 
