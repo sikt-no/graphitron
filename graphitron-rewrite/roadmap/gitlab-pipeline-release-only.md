@@ -1,7 +1,7 @@
 ---
 id: R183
 title: "GitLab pipeline: drop snapshots, publish rewrite reactor on release tags"
-status: In Review
+status: In Progress
 bucket: bug
 theme: legacy-migration
 depends-on: []
@@ -59,7 +59,13 @@ The initial pass missed three things: several rewrite-reactor modules (`graphitr
 ## Verification
 
 - Confirm the GitLab runner pulls `maven:3.9-eclipse-temurin-25` successfully (a `docker pull` from a local Docker host suffices, or observe the pull step in the throwaway-tag pipeline run below).
-- Push a throwaway tag (e.g. `v10.0.0-RC0`) on a scratch branch, confirm `publish:release` fires and deploys `no.sikt.graphitron:graphitron:10.0.0-RC0` (and the other rewrite-reactor coordinates) to GitLab Packages.
+- Push a throwaway tag (e.g. `v10.0.0-RC0`). Either route works: push to GitHub and let the mirror carry it (exercises the production path), or create the tag directly in GitLab (faster smoke test; the mirror may delete it on the next sync but the deposited package survives). Confirm `publish:release` fires and deploys all five expected coordinates to GitLab Packages at `10.0.0-RC0`:
+    - `no.sikt:graphitron-rewrite-parent` (pom)
+    - `no.sikt:graphitron-javapoet`
+    - `no.sikt:graphitron`
+    - `no.sikt:graphitron-maven-plugin`
+    - `no.sikt:graphitron-lsp`
+  The remaining rewrite-reactor modules (`graphitron-fixtures-codegen`, `graphitron-sakila-db`, `graphitron-sakila-service`, `graphitron-sakila-example`, `graphitron-roadmap-tool`, `graphitron-docs`) carry `maven.deploy.skip=true` and must NOT appear in the registry.
 - Confirm a default-branch push does not trigger any publish job.
 - Delete the throwaway tag and its package after the test.
 
