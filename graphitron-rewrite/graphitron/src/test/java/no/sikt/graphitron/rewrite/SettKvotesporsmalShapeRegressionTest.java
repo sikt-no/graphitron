@@ -37,8 +37,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>Diagnostic-wording pin: when the {@code @service} method's reflected return type
  *       doesn't match the payload class, the diagnostic cites the payload class (not the
  *       inner table's record class). The diagnostic family migrates from the carrier walk's
- *       {@code "must return <InnerRecord>"} wording to {@code resolveServiceResultAssembly}'s
- *       {@code "must return <PayloadClass>"} wording.</li>
+ *       {@code "must return <InnerRecord>"} wording to the legacy-equality check in
+ *       {@code FieldBuilder.buildServiceField}'s {@code "must return <PayloadClass>"}
+ *       wording.</li>
  * </ol>
  */
 @PipelineTier
@@ -115,8 +116,8 @@ class SettKvotesporsmalShapeRegressionTest {
      * '<PayloadClass>'"}) cited {@code KvotesporsmalRecord}, the inner table's record class
      * (here {@code FilmRecord}), rather than something the author would recognise as the
      * payload-level type. Under R178 step 3 the rejection routes through
-     * {@code resolveServiceResultAssembly}, which cites the payload-level reflected type
-     * instead.
+     * {@code FieldBuilder.buildServiceField}'s legacy-equality check, which cites the
+     * payload-level reflected type instead.
      */
     @Test
     void classBacked_returnMismatch_diagnosticDoesNotCiteInnerTableRecord() {

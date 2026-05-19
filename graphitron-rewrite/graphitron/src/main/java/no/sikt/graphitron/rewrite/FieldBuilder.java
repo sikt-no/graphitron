@@ -491,18 +491,18 @@ class FieldBuilder {
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "payload-construction.shape-resolved",
-        description = "Every ErrorChannel and ResultAssembly carries a PayloadConstructionShape "
-            + "arm (AllFieldsCtor or MutableBean) the emitter dispatches on. The two "
-            + "TypeFetcherGenerator payload-factory emit sites (catch-arm payload-factory "
-            + "lambda, service-result buildSuccessPayload) wear @DependsOnClassifierCheck on "
-            + "this key.")
+        description = "Every ErrorChannel carries a PayloadConstructionShape arm (AllFieldsCtor "
+            + "or MutableBean) the emitter dispatches on. The two surviving consumers are the "
+            + "catch-arm payloadFactoryLambda (TypeFetcherGenerator) and the validator pre-step's "
+            + "declareEarlyPayloadFromErrors; both wear @DependsOnClassifierCheck on this key.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "payload-construction.setter-name-matches-sdl-field",
         description = "Every MutableBean SetterBinding's setter method name matches the SDL "
             + "field name under Java-bean conversion (sdl field 'rating' -> 'setRating'). "
-            + "The catch-arm payload-factory and analogous service-result emit sites call "
-            + "setter.getName() directly into the generated source; the binding guarantees "
-            + "that name resolves to a real method on the payload class.")
+            + "The catch-arm payloadFactoryLambda and the validator pre-step's "
+            + "declareEarlyPayloadSetters call setter.getName() directly into the generated "
+            + "source; the binding guarantees that name resolves to a real method on the "
+            + "payload class.")
     static PayloadConstructionShapeResult resolvePayloadConstructionShape(
             Class<?> payloadCls, java.util.List<String> sdlFieldNames) {
         var ctors = payloadCls.getDeclaredConstructors();
@@ -2142,175 +2142,6 @@ class FieldBuilder {
             : null;
     }
 
-    // ===== Carrier classifier: service ResultAssembly resolution =====
-
-    /**
-     * Outcome of the carrier-side {@code ResultAssembly} resolution for a service-backed field.
-     * Three terminal states:
-     *
-     * <ul>
-     *   <li>{@link NoAssembly} — the service method returns the SDL payload class directly
-     *       (legacy passthrough shape) or the field's return type isn't a {@code @record}
-     *       payload at all; the wrapper passes the service return value through.</li>
-     *   <li>{@link Assembly} — the service method's return type matches one parameter on the
-     *       payload class's canonical constructor (the new "service returns the domain object"
-     *       shape); the wrapper assembles the payload around the captured return value.</li>
-     *   <li>{@link Reject} — the service return type matches neither the SDL payload class nor
-     *       any constructor parameter; the field surfaces as {@code UnclassifiedField} with the
-     *       carried reason.</li>
-     * </ul>
-     */
-    private sealed interface ResultAssemblyResult {
-        record NoAssembly() implements ResultAssemblyResult {}
-        record Assembly(no.sikt.graphitron.rewrite.model.ResultAssembly assembly) implements ResultAssemblyResult {}
-        record Reject(String reason) implements ResultAssemblyResult {}
-    }
-
-    private static final ResultAssemblyResult NO_RESULT_ASSEMBLY = new ResultAssemblyResult.NoAssembly();
-
-    /**
-     * Resolves a service-backed field's success-arm payload-construction recipe.
-     * The caller passes the field's resolved {@link ReturnTypeRef} and the resolved
-     * {@link MethodRef} for the service method; the resolver compares the service return type
-     * against the SDL payload type (legacy match) and falls back to walking the payload class's
-     * canonical constructor for a parameter assignable from the service return type (the new
-     * domain-object shape).
-     *
-     * <p>The result slot binds by full {@link no.sikt.graphitron.javapoet.TypeName} equality
-     * against the service method's reflected return type.
-     */
-    private ResultAssemblyResult resolveServiceResultAssembly(
-            ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method) {
-        if (!(returnType instanceof ReturnTypeRef.ResultReturnType result)) {
-            return NO_RESULT_ASSEMBLY;
-        }
-        if (result.fqClassName() == null) {
-            return NO_RESULT_ASSEMBLY;
-        }
-        boolean isList = returnType.wrapper().isList();
-
-        // Legacy passthrough shape: service returns the SDL payload class directly. Equal
-        // TypeName ⇒ no per-parameter binding needed.
-        var payloadClassName = ClassName.bestGuess(result.fqClassName());
-        no.sikt.graphitron.javapoet.TypeName sdlPayloadTypeName = isList
-            ? no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
-                ClassName.get("java.util", "List"), payloadClassName)
-            : payloadClassName;
-        if (method.returnType().equals(sdlPayloadTypeName)) {
-            return NO_RESULT_ASSEMBLY;
-        }
-        // List-cardinality service fields: per-element ResultAssembly is out of scope. Either
-        // the service returns List<Payload> (handled above) or it doesn't match; reject the
-        // doesn't-match branch with a descriptive reason instead of silently going passthrough.
-        if (isList) {
-            return new ResultAssemblyResult.Reject(
-                "@service method '" + method.className() + "." + method.methodName()
-                    + "' returns '" + method.returnType()
-                    + "' but the field's declared return is '" + sdlPayloadTypeName
-                    + "'; list-cardinality service fields must return the SDL payload type "
-                    + "directly (per-element ResultAssembly is not supported)");
-        }
-
-        Class<?> payloadCls;
-        try {
-            payloadCls = Class.forName(result.fqClassName(), false, ctx.codegenLoader());
-        } catch (ClassNotFoundException e) {
-            return new ResultAssemblyResult.Reject(
-                "payload class '" + result.fqClassName() + "' could not be loaded");
-        }
-
-        // ResultAssembly identifies the result slot on the canonical (all-fields) constructor.
-        // Records always declare exactly one; hand-rolled POJOs may declare extras (e.g. a
-        // no-arg constructor) and are disambiguated by parameter count vs. SDL field count.
-        // When no canonical constructor can be identified, the only remaining valid shape is
-        // legacy passthrough (service returns the SDL payload class directly), and we already
-        // ruled that out above; surface the legacy "must return" wording so existing fixture
-        // tests keep asserting on a single message.
-        var sdlFieldNamesList = sdlFieldNames(result.returnTypeName());
-        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFieldNamesList);
-        if (shapeResult instanceof PayloadConstructionShapeResult.Reject) {
-            return new ResultAssemblyResult.Reject(
-                "@service method '" + method.className() + "." + method.methodName()
-                    + "' must return '" + sdlPayloadTypeName + "' to match the field's "
-                    + "declared payload type — got '" + method.returnType() + "'");
-        }
-        var shape = ((PayloadConstructionShapeResult.Resolved) shapeResult).shape();
-        if (shape instanceof no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean mb) {
-            return buildResultAssemblyBeanArm(mb, result, method, sdlPayloadTypeName);
-        }
-        var ctor = ((no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor) shape).ctor();
-        var parameters = ctor.getParameters();
-        var genericParameterTypes = ctor.getGenericParameterTypes();
-
-        int resultSlotIndex = -1;
-        for (int i = 0; i < parameters.length; i++) {
-            var paramTypeName = no.sikt.graphitron.javapoet.TypeName.get(genericParameterTypes[i]);
-            if (paramTypeName.equals(method.returnType())) {
-                if (resultSlotIndex >= 0) {
-                    return new ResultAssemblyResult.Reject(
-                        "payload class '" + result.fqClassName()
-                            + "' has multiple parameters typed as " + method.returnType()
-                            + " on its constructor; the service's return type requires exactly "
-                            + "one matching result slot");
-                }
-                resultSlotIndex = i;
-            }
-        }
-        if (resultSlotIndex < 0) {
-            return new ResultAssemblyResult.Reject(
-                "@service method '" + method.className() + "." + method.methodName()
-                    + "' must return '" + sdlPayloadTypeName + "' (the field's declared payload "
-                    + "class) or a type matching one parameter on " + result.fqClassName()
-                    + "'s canonical constructor — got '" + method.returnType() + "'");
-        }
-
-        var defaultedSlots = collectDefaultedSlots(parameters, genericParameterTypes, resultSlotIndex);
-        var resultSlotType = no.sikt.graphitron.javapoet.TypeName.get(genericParameterTypes[resultSlotIndex]);
-        var resultSlot = new no.sikt.graphitron.rewrite.model.ResultSlot.CtorParameterIndex(resultSlotIndex);
-        return new ResultAssemblyResult.Assembly(new no.sikt.graphitron.rewrite.model.ResultAssembly(
-            payloadClassName, resultSlot, resultSlotType, defaultedSlots));
-    }
-
-    private static ResultAssemblyResult buildResultAssemblyBeanArm(
-            no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean mb,
-            ReturnTypeRef.ResultReturnType result,
-            no.sikt.graphitron.rewrite.model.MethodRef method,
-            no.sikt.graphitron.javapoet.TypeName sdlPayloadTypeName) {
-        var bindings = mb.bindings();
-        int boundIndex = -1;
-        for (int i = 0; i < bindings.size(); i++) {
-            var setter = bindings.get(i).setter();
-            var paramTypeName = no.sikt.graphitron.javapoet.TypeName.get(
-                setter.getGenericParameterTypes()[0]);
-            if (paramTypeName.equals(method.returnType())) {
-                if (boundIndex >= 0) {
-                    return new ResultAssemblyResult.Reject(
-                        "payload class '" + result.fqClassName()
-                            + "' has multiple setters typed as " + method.returnType()
-                            + "; the service's return type requires exactly one matching "
-                            + "result-slot setter");
-                }
-                boundIndex = i;
-            }
-        }
-        if (boundIndex < 0) {
-            return new ResultAssemblyResult.Reject(
-                "@service method '" + method.className() + "." + method.methodName()
-                    + "' must return '" + sdlPayloadTypeName + "' (the field's declared payload "
-                    + "class) or a type matching one setter on " + result.fqClassName()
-                    + "'s mutable-bean shape — got '" + method.returnType() + "'");
-        }
-        var boundSetter = bindings.get(boundIndex).setter();
-        var nonBoundSetters = collectNonBoundSetters(bindings, boundIndex);
-        var resultSlot = new no.sikt.graphitron.rewrite.model.ResultSlot.SetterMethod(
-            boundSetter, nonBoundSetters);
-        var resultSlotType = no.sikt.graphitron.javapoet.TypeName.get(
-            boundSetter.getGenericParameterTypes()[0]);
-        var payloadClassName = ClassName.bestGuess(result.fqClassName());
-        return new ResultAssemblyResult.Assembly(new no.sikt.graphitron.rewrite.model.ResultAssembly(
-            payloadClassName, resultSlot, resultSlotType, java.util.List.of()));
-    }
-
     /**
      * Channel-level reject rules from §1's parse-time table that span multiple {@code @error}
      * types in the same channel. Runs after the carrier classifier has resolved
@@ -2521,8 +2352,8 @@ class FieldBuilder {
     /**
      * Builds the {@link no.sikt.graphitron.rewrite.model.DefaultedSlot} list for every
      * constructor parameter except the bound slot at {@code boundSlotIndex}. Used by
-     * {@link #resolveErrorChannel} (errors slot) and {@link #resolveServiceResultAssembly}
-     * (result slot) to capture per-non-bound-slot default literals from one reflection pass.
+     * {@link #resolveErrorChannel} (errors slot) to capture per-non-bound-slot default
+     * literals from one reflection pass.
      */
     private static List<no.sikt.graphitron.rewrite.model.DefaultedSlot> collectDefaultedSlots(
             java.lang.reflect.Parameter[] parameters,
@@ -2604,10 +2435,11 @@ class FieldBuilder {
      * {@code errorChannel} slot; the lift adds the slot uniformly so the §4 check runs against a
      * populated channel wherever the field's payload declares an {@code errors} field.
      *
-     * <p>Sibling of {@link #buildServiceField}: that helper additionally resolves the
-     * {@link no.sikt.graphitron.rewrite.model.ResultAssembly} for root service variants whose
-     * payload may also declare a result slot. Child {@code @service} and {@code @tableMethod}
-     * variants don't carry an assembly slot, so this helper omits the second resolution.
+     * <p>Sibling of {@link #buildServiceField}: that helper additionally runs the
+     * service-return strict-equality check against the SDL payload type, rejecting service
+     * methods whose return type does not match the field's declared payload. Child
+     * {@code @service} and {@code @tableMethod} variants don't need that check (their return
+     * shapes are pinned by the catalog's strict-return guarantee), so this helper omits it.
      *
      * <p>Both helpers call into the same {@link #checkDeclaredCheckedExceptions} utility; the
      * {@code service-method.declared-exceptions-covered} {@link no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck}
@@ -2634,14 +2466,18 @@ class FieldBuilder {
     }
 
     /**
-     * Variant of {@link #buildWithChannel} for service-backed root fields: resolves both the
-     * {@link ErrorChannel} (catch-arm dispatch recipe) and the {@link no.sikt.graphitron.rewrite.model.ResultAssembly}
-     * (success-arm payload-construction recipe) and forwards both to {@code builder}. Used by
-     * the four service field variants ({@code MutationServiceTableField},
-     * {@code MutationServiceRecordField}, {@code QueryServiceTableField},
-     * {@code QueryServiceRecordField}); the two resolutions are independent (a service-backed
-     * field can carry one without the other), but a rejection on either side surfaces as
-     * {@code UnclassifiedField}.
+     * Variant of {@link #buildWithChannel} for service-backed root fields: resolves the
+     * {@link ErrorChannel} (catch-arm dispatch recipe), runs the declared-checked-exception
+     * match check against the resolved channel, and verifies the service method's reflected
+     * return type matches the SDL payload type. Used by the four service field variants
+     * ({@code MutationServiceTableField}, {@code MutationServiceRecordField},
+     * {@code QueryServiceTableField}, {@code QueryServiceRecordField}); a rejection on any of
+     * the three checks surfaces as {@code UnclassifiedField}.
+     *
+     * <p>The strict-return check runs only when the field declares a {@code @record}-backed
+     * payload ({@code ResultReturnType} with a non-null {@code fqClassName}); other return
+     * shapes (table-bound, pojo-result, scalar) are screened upstream by
+     * {@code ServiceCatalog.reflectServiceMethod} and {@code ServiceDirectiveResolver}.
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "service-method.declared-exceptions-covered",
@@ -2655,9 +2491,7 @@ class FieldBuilder {
             ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
             String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef,
-            java.util.function.BiFunction<Optional<ErrorChannel>,
-                                          Optional<no.sikt.graphitron.rewrite.model.ResultAssembly>,
-                                          GraphitronField> builder) {
+            java.util.function.Function<Optional<ErrorChannel>, GraphitronField> builder) {
         Optional<ErrorChannel> channel;
         switch (resolveErrorChannel(returnType)) {
             case ErrorChannelResult.NoChannel ignored -> channel = Optional.empty();
@@ -2670,15 +2504,38 @@ class FieldBuilder {
         if (exceptionsReason != null) {
             return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(exceptionsReason));
         }
-        Optional<no.sikt.graphitron.rewrite.model.ResultAssembly> assembly;
-        switch (resolveServiceResultAssembly(returnType, method)) {
-            case ResultAssemblyResult.NoAssembly ignored -> assembly = Optional.empty();
-            case ResultAssemblyResult.Assembly a -> assembly = Optional.of(a.assembly());
-            case ResultAssemblyResult.Reject r -> {
-                return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(r.reason()));
-            }
+        String returnTypeReason = checkServiceReturnMatchesPayload(returnType, method);
+        if (returnTypeReason != null) {
+            return new UnclassifiedField(parentTypeName, fieldName, location, fieldDef, Rejection.structural(returnTypeReason));
         }
-        return builder.apply(channel, assembly);
+        return builder.apply(channel);
+    }
+
+    /**
+     * Strict-equality check on the service method's return type against the SDL payload type
+     * for {@code @record}-backed payloads. Returns a rejection reason when the method's
+     * reflected return type does not equal the SDL payload type (or {@code List<Payload>} for
+     * list-cardinality fields); returns {@code null} otherwise.
+     *
+     * <p>Per-field wiring projects SDL fields off the parent's domain return, so the success
+     * arm is universal passthrough: the service method must return the SDL payload class
+     * directly. This check makes the constraint explicit at classify time rather than at
+     * runtime via a ClassCastException.
+     */
+    private static String checkServiceReturnMatchesPayload(
+            ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method) {
+        if (!(returnType instanceof ReturnTypeRef.ResultReturnType result)) return null;
+        if (result.fqClassName() == null) return null;
+        boolean isList = returnType.wrapper().isList();
+        var payloadClassName = ClassName.bestGuess(result.fqClassName());
+        no.sikt.graphitron.javapoet.TypeName sdlPayloadTypeName = isList
+            ? no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
+                ClassName.get("java.util", "List"), payloadClassName)
+            : payloadClassName;
+        if (method.returnType().equals(sdlPayloadTypeName)) return null;
+        return "@service method '" + method.className() + "." + method.methodName()
+            + "' must return '" + sdlPayloadTypeName + "' to match the field's "
+            + "declared payload type — got '" + method.returnType() + "'";
     }
 
     /**
@@ -2896,11 +2753,12 @@ class FieldBuilder {
      * {@code List<XRecord>} (Cardinality.MANY) shape.
      *
      * <p>The check is restricted to NoBacking payloads because ClassBacked payloads have their
-     * own diagnostic path through {@link #resolveServiceResultAssembly}, which produces a
-     * diagnostic citing the SDL payload's reflected class (not the inner table's record class).
-     * The SettKvotesporsmal regression pinned this split: ClassBacked payloads route through
-     * {@code resolveServiceResultAssembly}'s payload-class diagnostic; NoBacking payloads route
-     * through this structural strict-return check.
+     * own diagnostic path through {@link #buildServiceField}'s surviving legacy-equality
+     * check, which produces a diagnostic citing the SDL payload's reflected class (not the
+     * inner table's record class). The SettKvotesporsmal regression pinned this split:
+     * ClassBacked payloads route through {@code buildServiceField}'s "must return
+     * '&lt;PayloadClass&gt;'" reject; NoBacking payloads route through this structural
+     * strict-return check.
      *
      * <p>Returns a non-null rejection string when the payload is NoBacking, structurally a
      * single-{@code @table}-data-field carrier, and the method's return type does not equal
@@ -3102,14 +2960,14 @@ class FieldBuilder {
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
                 case ServiceDirectiveResolver.Resolved.TableBound tb ->
-                    buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, ra) ->
-                        new QueryField.QueryServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch, ra));
+                    buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, ch ->
+                        new QueryField.QueryServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch));
                 case ServiceDirectiveResolver.Resolved.Result r ->
-                    buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, (ch, ra) ->
-                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), ch, ra));
+                    buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, ch ->
+                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), ch));
                 case ServiceDirectiveResolver.Resolved.Scalar s ->
-                    buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, ra) ->
-                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, s.returnType(), s.method(), ch, ra));
+                    buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, ch ->
+                        new QueryField.QueryServiceRecordField(parentTypeName, name, location, s.returnType(), s.method(), ch));
             };
         }
 
@@ -3226,8 +3084,8 @@ class FieldBuilder {
                     new UnclassifiedField(parentTypeName, name, location, fieldDef, r.rejection());
                 case ServiceDirectiveResolver.Resolved.ErrorsLifted e -> e.field();
                 case ServiceDirectiveResolver.Resolved.TableBound tb ->
-                    buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, (ch, ra) ->
-                        new MutationField.MutationServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch, ra));
+                    buildServiceField(tb.returnType(), tb.method(), parentTypeName, name, location, fieldDef, ch ->
+                        new MutationField.MutationServiceTableField(parentTypeName, name, location, tb.returnType(), tb.method(), ch));
                 case ServiceDirectiveResolver.Resolved.Result r -> {
                     // R159: when the @service mutation returns a carrier-payload type whose
                     // data field opts into the $source sigil, verify the producer's reflected
@@ -3241,21 +3099,22 @@ class FieldBuilder {
                     }
                     // R178 step 3: @service-carrier strict-return check detects the carrier shape
                     // directly from the payload SDL. The check fires only for NoBacking payloads
-                    // (no @record class); for ClassBacked payloads {@link #resolveServiceResultAssembly}
-                    // produces the per-constructor diagnostic citing the payload class. This split
-                    // is the SettKvotesporsmal bug's structural fix: ClassBacked payloads get a
-                    // diagnostic citing the payload class, not the inner table's record class.
+                    // (no @record class); ClassBacked payloads route through the surviving
+                    // legacy-equality check inside buildServiceField, which produces the
+                    // payload-class diagnostic. This split is the SettKvotesporsmal bug's
+                    // structural fix: ClassBacked payloads get a diagnostic citing the payload
+                    // class, not the inner table's record class.
                     String serviceCarrierError = classifyServiceCarrierProducer(r.returnType(), r.method());
                     if (serviceCarrierError != null) {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                             Rejection.structural(serviceCarrierError));
                     }
-                    yield buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, (ch, ra) ->
-                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), ch, ra));
+                    yield buildServiceField(r.returnType(), r.method(), parentTypeName, name, location, fieldDef, ch ->
+                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, r.returnType(), r.method(), ch));
                 }
                 case ServiceDirectiveResolver.Resolved.Scalar s ->
-                    buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, (ch, ra) ->
-                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, s.returnType(), s.method(), ch, ra));
+                    buildServiceField(s.returnType(), s.method(), parentTypeName, name, location, fieldDef, ch ->
+                        new MutationField.MutationServiceRecordField(parentTypeName, name, location, s.returnType(), s.method(), ch));
             };
         }
 

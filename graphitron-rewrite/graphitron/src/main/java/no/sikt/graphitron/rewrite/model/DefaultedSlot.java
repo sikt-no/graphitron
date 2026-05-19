@@ -5,9 +5,8 @@ import no.sikt.graphitron.javapoet.TypeName;
 /**
  * One non-bound parameter on a payload class's canonical constructor: a slot the emitter
  * fills with a literal default at code-emission time. Used by {@link ErrorChannel} (every
- * slot except the errors slot) and by {@link ResultAssembly} (every slot except the result
- * slot); the remaining bound slots are identified by index on the carrier and printed
- * separately.
+ * slot except the errors slot); the bound errors slot is identified by index on the carrier
+ * and printed separately.
  *
  * <ul>
  *   <li>{@code index} : the slot's position in the constructor's parameter list.</li>

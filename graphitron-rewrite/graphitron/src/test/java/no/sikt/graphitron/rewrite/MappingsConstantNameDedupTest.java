@@ -180,8 +180,7 @@ class MappingsConstantNameDedupTest {
             null,
             new ReturnTypeRef.ResultReturnType("Payload", new FieldWrapper.Single(true), payloadFqn),
             TestFixtures.staticServiceMethodRef("com.example.SvcStub", "doStuff", TypeName.OBJECT, List.of()),
-            channel,
-            Optional.empty());
+            channel);
     }
 
     private static Map<FieldCoordinates, GraphitronField> oneFetcher(String fieldName, ErrorChannel.PayloadClass channel) {

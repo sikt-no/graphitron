@@ -802,8 +802,9 @@ class FetcherPipelineTest {
         // graphitron-emitted class via <InputName>.fromMap(...) and walks the typed local
         // through validator.validate(...). Drifting the pre-step back to a raw Map walk
         // (validate(env.getArgument(...))) fails the contains assertion. Uses TestInputBean
-        // + runWithInputBean (the canonical R150 service-input-bean classification path) so
-        // the SDL classifies cleanly; the validator pre-step then runs on top.
+        // + runSakWithInputBean (the canonical R150 service-input-bean classification path
+        // returning the SakPayload directly) so the SDL classifies cleanly; the validator
+        // pre-step then runs on top.
         var sdl = """
             enum TestInputBeanEnum { LOW HIGH }
             input TestInputNested { key: String, value: String }
@@ -824,7 +825,7 @@ class FetcherPipelineTest {
             type Query { x: String }
             type Mutation {
                 runWithInputBean(input: TestInputBean): SakPayload
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runWithInputBean"})
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSakWithInputBean"})
             }
             """;
         var bundle = TestSchemaHelper.buildBundle(sdl);

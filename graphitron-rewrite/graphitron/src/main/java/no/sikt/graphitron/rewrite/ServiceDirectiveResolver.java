@@ -330,13 +330,11 @@ final class ServiceDirectiveResolver {
             }
             case ReturnTypeRef.ResultReturnType r -> {
                 // ResultReturnType with a backing class is the @record-payload shape. The service
-                // method may either return the SDL payload class directly (legacy passthrough
-                // shape) OR a domain object that fits one of the payload class's canonical-
-                // constructor parameters (the "service returns the domain object" shape). The
-                // strict TypeName-equals check can't tell those apart; the ResultAssembly
-                // resolver in FieldBuilder does. Return null here so the strict check is skipped,
-                // and let the carrier classifier emit a precise reject when neither the SDL
-                // payload nor any ctor-param shape matches.
+                // method must return the SDL payload class directly (universal passthrough); the
+                // strict TypeName-equals check happens inside FieldBuilder.buildServiceField,
+                // which produces a payload-class-citing diagnostic on mismatch. Return null here
+                // so the strict check is skipped at the resolver layer, and let the classifier
+                // emit the precise reject.
                 yield null;
             }
             case ReturnTypeRef.ScalarReturnType ignored -> null;

@@ -1265,7 +1265,7 @@ public class TypeFetcherGenerator {
             + "column fetchers traverse it directly. A wider service return would force Object on "
             + "the fetcher and lose static type safety. Note: the shared buildServiceFetcherCommon "
             + "helper is also reached from buildQueryServiceRecordFetcher, whose PojoResultType / "
-            + "ScalarReturnType paths do not depend on this guarantee — annotating the helper "
+            + "ScalarReturnType paths do not depend on this guarantee, so annotating the helper "
             + "would overclaim.")
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "service-resolver-root-list-record-return-pair",
@@ -1285,7 +1285,7 @@ public class TypeFetcherGenerator {
         // assignment compiles. graphql-java accepts either as a list value.
         TypeName returnType = isList ? qstf.method().returnType() : recordClass;
         return buildServiceFetcherCommon(ctx, qstf.name(), qstf.method(), qstf.parentTypeName(),
-            returnType, qstf.errorChannel(), qstf.resultAssembly(), outputPackage);
+            returnType, qstf.errorChannel(), outputPackage);
     }
 
     /**
@@ -1307,7 +1307,7 @@ public class TypeFetcherGenerator {
                                                               String outputPackage) {
         TypeName returnType = computeServiceRecordReturnType(qsrf);
         return buildServiceFetcherCommon(ctx, qsrf.name(), qsrf.method(), qsrf.parentTypeName(),
-            returnType, qsrf.errorChannel(), qsrf.resultAssembly(), outputPackage);
+            returnType, qsrf.errorChannel(), outputPackage);
     }
 
     /**
@@ -1333,9 +1333,8 @@ public class TypeFetcherGenerator {
      * shape to {@link #buildQueryServiceTableFetcher}. Root mutation fields have no parent table
      * and no parent-batching context, so the emission delegates to the shared
      * {@link #buildServiceFetcherCommon} helper without alteration. The shared helper handles
-     * the pre-execution Jakarta validation pre-step, the try/catch wrapper, and the
-     * {@code resultAssembly} success-arm payload assembly uniformly across query and
-     * mutation services.
+     * the pre-execution Jakarta validation pre-step and the try/catch wrapper uniformly across
+     * query and mutation services; the success arm is universal passthrough.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "service-catalog-strict-service-return",
@@ -1357,7 +1356,7 @@ public class TypeFetcherGenerator {
         // See buildQueryServiceTableFetcher for the List-cardinality policy.
         TypeName returnType = isList ? mstf.method().returnType() : recordClass;
         return buildServiceFetcherCommon(ctx, mstf.name(), mstf.method(), mstf.parentTypeName(),
-            returnType, mstf.errorChannel(), mstf.resultAssembly(), outputPackage);
+            returnType, mstf.errorChannel(), outputPackage);
     }
 
     /**
@@ -1370,7 +1369,7 @@ public class TypeFetcherGenerator {
                                                                  String outputPackage) {
         TypeName returnType = computeMutationServiceRecordReturnType(msrf);
         return buildServiceFetcherCommon(ctx, msrf.name(), msrf.method(), msrf.parentTypeName(),
-            returnType, msrf.errorChannel(), msrf.resultAssembly(), outputPackage);
+            returnType, msrf.errorChannel(), outputPackage);
     }
 
     /**
@@ -1401,17 +1400,17 @@ public class TypeFetcherGenerator {
      * {@code GraphitronContext}-supplied {@code Validator}, and short-circuits with the
      * payload's errors-arm filled by the violations when any are produced.
      *
-     * <p>When {@code resultAssembly} is present, the success arm assembles the payload around
-     * the captured service-return local: the service method returns the domain object the
-     * payload's result slot expects, and the emitter walks the constructor's slots positionally
-     * (result slot &larr; service return, errors slot &larr; {@code List.of()} when a channel is
-     * also present, every other slot &larr; its pre-resolved {@code defaultLiteral}). When
-     * absent, the emitter falls back to the legacy passthrough shape
-     * ({@code return service-value-as-payload}).
+     * <p>The success arm is universal passthrough: the service method returns the SDL payload
+     * class directly, and the emitter forwards the return value into the
+     * {@link DataFetcherResult} without further assembly. Per-field wiring (graphql-java's
+     * child fetchers) projects SDL fields off the parent's domain return, so the generator
+     * does not construct output DTOs on the happy path.
      *
      * <p>The catch arm forks on {@code errorChannel}: a present channel routes through
      * {@code ErrorRouter.dispatch} with the channel's mapping table and synthesized payload
-     * factory; an absent channel routes through {@code ErrorRouter.redact}.
+     * factory; an absent channel routes through {@code ErrorRouter.redact}. Generator-side DTO
+     * construction is unavoidable on the error path because no value was returned for per-field
+     * wiring to project from.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "service-catalog-instance-service-holder-shape",
@@ -1423,7 +1422,6 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildServiceFetcherCommon(TypeFetcherEmissionContext ctx, String fieldName, MethodRef method,
                                                         String parentTypeName, TypeName valueType,
                                                         Optional<ErrorChannel> errorChannel,
-                                                        Optional<no.sikt.graphitron.rewrite.model.ResultAssembly> resultAssembly,
                                                         String outputPackage) {
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var serviceClass = ClassName.bestGuess(method.className());
@@ -1456,26 +1454,12 @@ public class TypeFetcherGenerator {
         if (needsDsl) {
             builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
         }
-        if (resultAssembly.isPresent()) {
-            // "Service returns the domain object" shape: capture the service return in a typed
-            // local and assemble the payload around it via a positional constructor walk.
-            var ra = resultAssembly.get();
-            builder.addStatement("$T __row = $L.$L($L)",
-                ra.resultSlotType(),
-                callTarget,
-                method.methodName(),
-                ArgCallEmitter.buildMethodBackedCallArgs(ctx, method, null, conditionsClassName));
-            builder.addCode(buildSuccessPayload(valueType, ra, errorChannel, "__row"));
-        } else {
-            // Legacy passthrough: service method returns the SDL payload class directly. The
-            // emitter forwards the return value into the DataFetcherResult without assembly.
-            builder.addStatement("$T payload = $L.$L($L)",
-                valueType,
-                callTarget,
-                method.methodName(),
-                ArgCallEmitter.buildMethodBackedCallArgs(ctx, method, null, conditionsClassName));
-        }
-        builder.addCode(returnSyncSuccess(valueType, "payload"));
+        builder.addStatement("$T result = $L.$L($L)",
+            valueType,
+            callTarget,
+            method.methodName(),
+            ArgCallEmitter.buildMethodBackedCallArgs(ctx, method, null, conditionsClassName));
+        builder.addCode(returnSyncSuccess(valueType, "result"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, errorChannel));
         builder.endControlFlow();
@@ -1517,95 +1501,6 @@ public class TypeFetcherGenerator {
             case MethodRef.CallShape.Static s -> s.needsDslLocal();
             case MethodRef.CallShape.InstanceWithDslHolder ignored -> true;
         };
-    }
-
-    /**
-     * Emits the success-arm payload-construction block when a {@code ResultAssembly} is present
-     * on a service-backed fetcher. Dispatches on the assembly's {@link ResultSlot} arm:
-     * the all-fields-ctor arm walks the constructor's slot indices {@code 0..N-1} (where
-     * {@code N == 1 + ra.defaultedSlots().size()}) and prints, per slot: the row local at the
-     * result-ctor-index, {@code List.of()} at the channel's errors-ctor-index when a channel
-     * is also present, and the slot's pre-resolved {@code defaultLiteral} otherwise. The
-     * phase-2 setter arm lands as a new {@code case} on this switch. The block declares a typed
-     * {@code payload} local that the caller's {@link #returnSyncSuccess} subsequently wraps in
-     * the {@link DataFetcherResult}.
-     */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "payload-construction.shape-resolved",
-        reliesOn = "switch over resultSlot is total because the classifier resolves "
-            + "PayloadConstructionShape to either AllFieldsCtor or MutableBean, and each arm "
-            + "produces the matching slot variant. The emitter never sees a third shape.")
-    private static CodeBlock buildSuccessPayload(TypeName valueType,
-                                                 no.sikt.graphitron.rewrite.model.ResultAssembly ra,
-                                                 Optional<ErrorChannel> errorChannel,
-                                                 String rowLocal) {
-        // The errors-slot peek into the channel is PayloadClass-only: LocalContext channels
-        // have no payload class to slot the errors list into. Drop straight to the
-        // no-channel arm when the channel is LocalContext (none today; preemptive coverage).
-        var payloadChannel = errorChannel
-            .flatMap(c -> c instanceof ErrorChannel.PayloadClass pc ? Optional.of(pc) : Optional.<ErrorChannel.PayloadClass>empty());
-        return switch (ra.resultSlot()) {
-            case no.sikt.graphitron.rewrite.model.ResultSlot.CtorParameterIndex resultCpi ->
-                buildSuccessPayloadCtor(valueType, ra, resultCpi.index(), payloadChannel, rowLocal);
-            case no.sikt.graphitron.rewrite.model.ResultSlot.SetterMethod sm ->
-                buildSuccessPayloadSetters(valueType, sm, payloadChannel, rowLocal);
-        };
-    }
-
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "payload-construction.setter-name-matches-sdl-field",
-        reliesOn = "calls boundSetter.getName() and nonBoundSetter.setter().getName() directly "
-            + "into the generated source; the classifier guarantees each Method resolves to a "
-            + "real public method on the payload class.")
-    private static CodeBlock buildSuccessPayloadSetters(
-            TypeName valueType,
-            no.sikt.graphitron.rewrite.model.ResultSlot.SetterMethod sm,
-            Optional<ErrorChannel.PayloadClass> errorChannel,
-            String rowLocal) {
-        var b = CodeBlock.builder().add("$T payload = new $T();\n", valueType, valueType);
-        b.add("payload.$L($L);\n", sm.boundSetter().getName(), rowLocal);
-        java.lang.reflect.Method errorsSetter = errorChannel
-            .map(ErrorChannel.PayloadClass::errorsSlot)
-            .filter(s -> s instanceof no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod)
-            .map(s -> ((no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod) s).boundSetter())
-            .orElse(null);
-        for (var nbs : sm.nonBoundSetters()) {
-            if (errorsSetter != null && nbs.setter().equals(errorsSetter)) {
-                b.add("payload.$L($T.of());\n", nbs.setter().getName(), LIST);
-            } else {
-                b.add("payload.$L($L);\n", nbs.setter().getName(), nbs.defaultLiteral());
-            }
-        }
-        return b.build();
-    }
-
-    private static CodeBlock buildSuccessPayloadCtor(TypeName valueType,
-                                                     no.sikt.graphitron.rewrite.model.ResultAssembly ra,
-                                                     int resultSlotIndex,
-                                                     Optional<ErrorChannel.PayloadClass> errorChannel,
-                                                     String rowLocal) {
-        int slotCount = 1 + ra.defaultedSlots().size();
-        var defaultsByIndex = ra.defaultedSlots().stream()
-            .collect(java.util.stream.Collectors.toMap(s -> s.index(), s -> s.defaultLiteral()));
-        Integer errorsCtorIndex = errorChannel
-            .map(ErrorChannel.PayloadClass::errorsSlot)
-            .filter(s -> s instanceof no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex)
-            .map(s -> ((no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex) s).index())
-            .orElse(null);
-
-        var ctor = CodeBlock.builder().add("$T payload = new $T(", valueType, valueType);
-        for (int i = 0; i < slotCount; i++) {
-            if (i > 0) ctor.add(", ");
-            if (i == resultSlotIndex) {
-                ctor.add(rowLocal);
-            } else if (errorsCtorIndex != null && i == errorsCtorIndex) {
-                ctor.add("$T.of()", LIST);
-            } else {
-                ctor.add(defaultsByIndex.get(i));
-            }
-        }
-        ctor.add(");\n");
-        return ctor.build();
     }
 
     /** Whether any flattened handler on the channel is a {@code ValidationHandler}. */
