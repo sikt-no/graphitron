@@ -73,8 +73,8 @@ class VariantCoverageTest {
             + "target yet (the fixtures use `bar` (composite PK) only for same-table NodeId "
             + "paths). Add a NodeIdPipelineTest case when a composite-PK FK target lands.",
         ChildField.SingleRecordIdFieldFromReturning.class,
-            "R156: produced by the verb-aware carrier walk for @mutation(typeName: DELETE) "
-            + "carriers with DataElement.Id. Covered structurally by the four "
+            "R156: produced by the @mutation classifier for @mutation(typeName: DELETE) carriers "
+            + "with an ID-typed data field. Covered structurally by the four "
             + "MutationDmlNodeIdClassificationTest admission cells (bulk/single × implicit/"
             + "explicit @nodeId on the nodeidfixture catalog) and end-to-end by "
             + "DmlBulkMutationsExecutionTest#deleteFilmsIdCarrier_returnsEncodedNodeIdsOfDeletedRows. "
