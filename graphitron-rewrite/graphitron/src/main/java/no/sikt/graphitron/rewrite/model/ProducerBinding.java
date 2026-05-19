@@ -20,7 +20,7 @@ import java.util.Objects;
 public sealed interface ProducerBinding
     permits ProducerBinding.RootService, ProducerBinding.RootTable,
             ProducerBinding.RootTableMethod, ProducerBinding.ParentAccessor,
-            ProducerBinding.DmlEmitted {
+            ProducerBinding.DmlEmitted, ProducerBinding.ServiceEmitted {
 
     /** The reflected Java class this producer named for the SDL type. */
     Class<?> reflectedClass();
@@ -146,6 +146,60 @@ public sealed interface ProducerBinding
         @Override public String describe() {
             return "DML " + kind + " (" + cardinality + ") emitted from '"
                 + tableRef.tableName() + "'";
+        }
+    }
+
+    /**
+     * An {@code @service} mutation field's reflected return-element class, observed as the
+     * producer-side binding for the payload SDL type of an {@code @service}-carrier shape.
+     * The {@code @service} method returns {@code XRecord} (single-cardinality) or
+     * {@code List<XRecord>} (list-cardinality) where {@code X} matches the carrier payload's
+     * inner {@code @table}-typed data field's record class; the observation grounds when the
+     * structural read of the payload's SDL fields finds exactly one non-errors-shaped
+     * {@code @table}-typed data field whose record class equals the method's return-element
+     * class.
+     *
+     * <p>Sibling of {@link DmlEmitted}: where {@code DmlEmitted} represents the generator-
+     * emitted {@code RecordN<PK>} shape a DML mutation fetcher places into
+     * {@code env.getSource()}, this represents the developer-emitted {@code XRecord} /
+     * {@code List<XRecord>} shape an {@code @service} method returns. The classifier-side
+     * dispatch ({@code FieldBuilder.classifyChildFieldOnResultType}) reads the binding via
+     * {@code TypeBuilder.serviceEmittedBinding} to construct
+     * {@code ChildField.SingleRecordTableField} with {@code SourceKey.Wrap.TableRecord} for
+     * the payload's data field, mirroring today's {@code registerServiceCarrierDataField}
+     * output without consulting the carrier-walk's producer-registry.
+     *
+     * <p>Compact-constructor invariants mirror {@link DmlEmitted}: every component non-null,
+     * {@code reflectedClass.getName()} equals {@code tableRef.recordClass().reflectionName()}.
+     */
+    record ServiceEmitted(
+        Class<?> reflectedClass,
+        TableRef tableRef,
+        SourceKey.Cardinality cardinality,
+        String parentTypeName,
+        String fieldName,
+        String serviceClassName,
+        String methodName,
+        SourceLocation location
+    ) implements ProducerBinding {
+        public ServiceEmitted {
+            Objects.requireNonNull(reflectedClass, "reflectedClass");
+            Objects.requireNonNull(tableRef, "tableRef");
+            Objects.requireNonNull(cardinality, "cardinality");
+            Objects.requireNonNull(location, "location");
+            String expected = tableRef.recordClass().reflectionName();
+            if (!reflectedClass.getName().equals(expected)) {
+                throw new IllegalArgumentException(
+                    "ProducerBinding.ServiceEmitted: reflectedClass (" + reflectedClass.getName()
+                        + ") must equal tableRef.recordClass().reflectionName() (" + expected
+                        + ") so the record-binding.producer-agreement fold matches RootTable "
+                        + "for the same TableRef");
+            }
+        }
+
+        @Override public String describe() {
+            return "@service-carrier (" + cardinality + ") on " + parentTypeName + "."
+                + fieldName + " via " + serviceClassName + "." + methodName;
         }
     }
 }

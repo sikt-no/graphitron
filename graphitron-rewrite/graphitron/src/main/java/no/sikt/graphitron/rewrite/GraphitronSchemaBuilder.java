@@ -236,18 +236,21 @@ public class GraphitronSchemaBuilder {
                 // producer-site helpers (registerDmlCarrierDataField / registerServiceCarrier
                 // DataField) reclassify the data field via compare-then-write when the carrier
                 // is used as a DML or @service return.
-                // R178 (step 1, DML-only cutover): for INSERT / UPDATE / UPSERT payloads, the
-                // payload's child fields classify through the unified path against the
-                // producer's ProducerBinding.DmlEmitted observation (deriveSplitQuerySource on
-                // the inner @table). The carrier-walk Ok.NoBacking short-circuit stays the
-                // path for non-DML carriers (@service-only) and for DELETE carriers (where the
-                // mutation classifier still uses registerDeleteCarrierDataField to write the
-                // SingleRecord*FromReturning per-field permits; that reclassify call requires
-                // the verbless walk to have pre-registered the data-field coord so the
-                // expected-existing-class guard in FieldRegistry.reclassify is satisfied).
-                var nbinding = typeBuilder.dmlEmittedBinding(objType.getName());
-                boolean skipForUnifiedPath = nbinding.isPresent()
-                    && nbinding.get().kind() != no.sikt.graphitron.rewrite.model.DmlKind.DELETE;
+                // R178: for payloads classified through the unified path (DML-emitted or
+                // @service-emitted carrier binding present), the per-type pass runs against
+                // the producer binding to construct the data-field permit. The carrier-walk
+                // Ok.NoBacking short-circuit stays the path for:
+                //   - orphan NoBacking carriers (no producer binding; the data field stays
+                //     unregistered per R158 — graphql-java's never-traverse-unproduced-fields
+                //     guarantee makes the missing entry structurally safe);
+                //   - DELETE DML carriers (registerDeleteCarrierDataField is still the sole
+                //     writer for SingleRecord*FromReturning permits; reclassify expects the
+                //     verbless walk to have pre-registered the data-field coord).
+                var nDml = typeBuilder.dmlEmittedBinding(objType.getName());
+                var nService = typeBuilder.serviceEmittedBinding(objType.getName());
+                boolean skipForUnifiedPath =
+                    (nDml.isPresent() && nDml.get().kind() != no.sikt.graphitron.rewrite.model.DmlKind.DELETE)
+                    || nService.isPresent();
                 if (ctx.tryResolveSingleRecordCarrier(objType.getName())
                         instanceof SingleRecordCarrierResolution.Ok.NoBacking ok
                         && !skipForUnifiedPath) {

@@ -207,6 +207,16 @@ class FieldBuilder {
         return typeBuilder == null ? java.util.Optional.empty() : typeBuilder.dmlEmittedBinding(sdlTypeName);
     }
 
+    /**
+     * R178 step 2b sibling to {@link #dmlEmittedBinding}: resolves the
+     * {@link no.sikt.graphitron.rewrite.model.ProducerBinding.ServiceEmitted} binding for an
+     * SDL payload type observed as the return of an {@code @service}-carrier mutation field.
+     */
+    java.util.Optional<no.sikt.graphitron.rewrite.model.ProducerBinding.ServiceEmitted> serviceEmittedBinding(
+            String sdlTypeName) {
+        return typeBuilder == null ? java.util.Optional.empty() : typeBuilder.serviceEmittedBinding(sdlTypeName);
+    }
+
     // ===== Shared resolution helpers =====
 
     /**
@@ -2827,11 +2837,19 @@ class FieldBuilder {
     }
 
     /**
-     * R158 — @service-producer carrier registration entry point. Resolves the carrier shape from
-     * the resolved return type, then delegates to {@link #registerServiceCarrierDataField}. The
-     * helper is a no-op for non-carrier returns and for carriers whose data element is not
-     * {@link no.sikt.graphitron.rewrite.model.DataElement.Table}; both cases short-circuit to
-     * {@code null} (no rejection).
+     * R178 step 2b: diagnostic-only @service-carrier strict-return check. The data-field
+     * registration moves to the unified path's {@link ProducerBinding.ServiceEmitted} arm in
+     * {@link #classifyChildFieldOnResultType}; this helper now retains only the type-match
+     * diagnostic so a mismatched producer surfaces as {@link UnclassifiedField} at the
+     * mutation field rather than as a missing per-payload data-field entry the per-type pass
+     * would silently leave behind.
+     *
+     * <p>Returns a non-null rejection string when the carrier walk admits the return as a
+     * single-record carrier with an {@link DataElement.Table} data field whose
+     * {@code recordClass()} disagrees with the method's reflected return-element class;
+     * {@code null} otherwise. Non-carrier returns and {@link DataElement.Record} /
+     * {@link DataElement.Id} arms short-circuit to {@code null} (the strict-return contract
+     * applies only to Table-element carriers).
      */
     private String classifyServiceCarrierProducer(
             no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType returnType,
@@ -2841,7 +2859,23 @@ class FieldBuilder {
         if (!(resolution instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok ok)) {
             return null;
         }
-        return registerServiceCarrierDataField(ctx, ok.shape(), method, mutationName);
+        if (!(ok.shape().data().element() instanceof no.sikt.graphitron.rewrite.model.DataElement.Table tableElement)) {
+            return null;
+        }
+        var target = tableElement.table();
+        var cardinality = tableElement.wrapper().isList()
+            ? SourceKey.Cardinality.MANY
+            : SourceKey.Cardinality.ONE;
+        no.sikt.graphitron.javapoet.TypeName expectedReturnType = cardinality == SourceKey.Cardinality.ONE
+            ? target.recordClass()
+            : no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
+                ClassName.get(java.util.List.class), target.recordClass());
+        if (!expectedReturnType.equals(method.returnType())) {
+            return "method '" + method.methodName() + "' in class '" + method.className()
+                + "' must return '" + expectedReturnType + "' to match the field's declared return type"
+                + " — got '" + method.returnType() + "'";
+        }
+        return null;
     }
 
     /**
@@ -3755,6 +3789,50 @@ class FieldBuilder {
             }
             // Non-@table, non-polymorphic children on DML payloads fall through to existing
             // arms below. For step 1 the relevant fixtures don't exercise this fall-through.
+        }
+
+        // R178 step 2b: @service-carrier sibling. The producer is an @service method returning
+        // XRecord (single) or List<XRecord> (bulk), observed as ProducerBinding.ServiceEmitted
+        // by R96's structural detection. The classifier-side dispatch mirrors the DmlEmitted
+        // arm above: construct SingleRecordTableField directly, with Wrap.TableRecord this
+        // time (the source at runtime is the typed XRecord from the @service method, not a
+        // sparse RecordN<PK> from the DML emitter). The existing FetcherEmitter's
+        // Wrap.TableRecord arm consumes the resulting permit unchanged.
+        var serviceEmitted = serviceEmittedBinding(parentTypeName);
+        if (serviceEmitted.isPresent()) {
+            var binding = serviceEmitted.get();
+            String rawTypeName1 = baseTypeName(fieldDef);
+            String elementTypeName1 = ctx.isConnectionType(rawTypeName1)
+                ? ctx.connectionElementTypeName(rawTypeName1) : rawTypeName1;
+            var resolvedReturnType = ctx.resolveReturnType(elementTypeName1, buildWrapper(fieldDef));
+            if (resolvedReturnType instanceof ReturnTypeRef.PolymorphicReturnType p) {
+                var lift = liftToErrorsField(fieldDef, parentTypeName, p, parentBackingClass);
+                if (lift != null) return lift;
+            }
+            if (resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
+                if (!binding.tableRef().equals(tb.table())) {
+                    return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
+                        "@service-carrier payload field '" + parentTypeName + "." + name
+                        + "' returns @table '" + tb.table().tableName()
+                        + "' which does not match the @service producer's inner @table '"
+                        + binding.tableRef().tableName()
+                        + "'; payload-returning @service-carrier mutations require the data field's "
+                        + "@table to equal the producer's reflected return-element record class's table"));
+                }
+                var pkColumns = binding.tableRef().primaryKeyColumns();
+                var cardinality = tb.wrapper().isList()
+                    ? SourceKey.Cardinality.MANY
+                    : SourceKey.Cardinality.ONE;
+                var sourceKey = new SourceKey(
+                    binding.tableRef(),
+                    pkColumns,
+                    List.of(),
+                    new SourceKey.Wrap.TableRecord(binding.tableRef().recordClass()),
+                    cardinality,
+                    new SourceKey.Reader.ResultRowWalk());
+                return new ChildField.SingleRecordTableField(
+                    parentTypeName, name, location, tb, sourceKey);
+            }
         }
 
         // @tableMethod on a @record parent — DTO-parent shape, produces RecordTableMethodField.

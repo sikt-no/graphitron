@@ -149,6 +149,17 @@ class TypeBuilder {
         return bindings == null ? java.util.Optional.empty() : bindings.resolveDmlEmitted(sdlTypeName);
     }
 
+    /**
+     * R178 step 2b: resolves the optional {@link no.sikt.graphitron.rewrite.model.ProducerBinding.ServiceEmitted}
+     * binding for an SDL payload type whose producer is an {@code @service} mutation field
+     * with a carrier-shaped payload. Mirrors {@link #dmlEmittedBinding}; both bindings sit on
+     * dedicated maps inside the resolver and are read at field-classify time to drive the
+     * unified-path data-field permit construction.
+     */
+    java.util.Optional<no.sikt.graphitron.rewrite.model.ProducerBinding.ServiceEmitted> serviceEmittedBinding(String sdlTypeName) {
+        return bindings == null ? java.util.Optional.empty() : bindings.resolveServiceEmitted(sdlTypeName);
+    }
+
     // ===== Two-pass type map construction =====
 
     Map<String, GraphitronType> buildTypes() {
