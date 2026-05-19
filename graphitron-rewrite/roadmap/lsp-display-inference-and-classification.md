@@ -93,7 +93,6 @@ sealed interface FieldClassification
             FieldClassification.CompositeColumnField,
             FieldClassification.CompositeColumnReferenceField,
             FieldClassification.SingleRecordTableField,
-            FieldClassification.SingleRecordIdentityField,
             FieldClassification.TableField,
             FieldClassification.SplitTableField,
             FieldClassification.LookupTableField,
@@ -270,7 +269,6 @@ Field-side labels (mapped from the `GraphitronField` leaves as enumerated under 
 | `ChildField.CompositeColumnField` | "composite column" |
 | `ChildField.CompositeColumnReferenceField` | "composite reference column" |
 | `ChildField.SingleRecordTableField` | "single record table field" |
-| `ChildField.SingleRecordIdentityField` | "single record identity" |
 | `ChildField.TableField` | "table field" |
 | `ChildField.SplitTableField` | "split table field" |
 | `ChildField.LookupTableField` | "lookup table field" |

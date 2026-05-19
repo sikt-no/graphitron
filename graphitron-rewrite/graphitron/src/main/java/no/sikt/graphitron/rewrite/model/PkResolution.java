@@ -16,11 +16,10 @@ import java.util.Optional;
  * that the rejection arms cannot appear here.
  *
  * <p>The projection list rides on the per-field
- * {@link ChildField.SingleRecordTableFieldFromReturning} permit — not on
- * {@link SingleRecordCarrierShape} and not on {@link DataElement.Table} — because it is data only
- * the new DELETE-specific child carrier consumes. Placing it on the shape or on the element
- * record would force every non-DELETE consumer of those sealed types to ignore a slot it has no
- * story for, exactly the "narrow component types over broad interfaces" smell.
+ * {@link ChildField.SingleRecordTableFieldFromReturning} permit because it is data only the new
+ * DELETE-specific child carrier consumes. Placing it on a broader sealed type or on the input
+ * {@code @table} element would force every non-DELETE consumer to ignore a slot it has no story
+ * for, exactly the "narrow component types over broad interfaces" smell.
  */
 public sealed interface PkResolution {
 
