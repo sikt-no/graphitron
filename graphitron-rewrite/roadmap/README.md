@@ -17,7 +17,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
-| `R184` | Graphitron.newExecutionInput factory for single-tenant ergonomics | In Progress | 2026-05-19 | [plan](graphitron-execution-input-factory.md) |
+| `R184` | Graphitron.newExecutionInput factory for single-tenant ergonomics | In Review | 2026-05-19 | [plan](graphitron-execution-input-factory.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R178` | Retire single-record carrier walk; collapse to SourceKey + R96 reflection | In Progress | 2026-05-19 <sub>created 2026-05-18</sub> | [plan](retire-single-record-carrier-walk.md) |
