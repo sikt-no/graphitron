@@ -64,7 +64,7 @@ publish:release:
     POSTGRES_PASSWORD: postgres
     POSTGRES_HOST_AUTH_METHOD: trust
   script:
-    - apt-get update -qq && apt-get install -y -qq postgresql-client
+    - apt-get update -qq && apt-get install -y -qq postgresql-client gcc
     - PGPASSWORD=postgres psql -h postgres -U postgres -d rewrite_test -f graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql
     - VERSION=${CI_COMMIT_TAG#v}
     - echo "Releasing version $VERSION to GitLab Packages"
