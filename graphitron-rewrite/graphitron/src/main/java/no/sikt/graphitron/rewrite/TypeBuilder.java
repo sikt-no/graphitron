@@ -238,11 +238,12 @@ class TypeBuilder {
     }
 
     /**
-     * Walks every {@link PlainObjectType} in the registry and promotes those passing
-     * {@link BuildContext#tryResolveSingleRecordCarrier} to
-     * {@link GraphitronType.PojoResultType.NoBacking}. Must run after the second pass so the
-     * trigger sees the fully-classified element-type registry; the trigger reads
-     * {@code types.get(dataElementName)} and requires it to be a {@link TableBackedType}.
+     * R178 Phase 4 — walks every {@link PlainObjectType} in the registry and promotes those
+     * whose structural carrier-shape scan ({@link BuildContext#scanStructuralDmlPayload})
+     * admits, to {@link GraphitronType.PojoResultType.NoBacking}. Must run after the second
+     * pass so the scan sees the fully-classified element-type registry; the scan reads
+     * {@code types.get(dataElementName)} and requires it to be a {@link TableBackedType}
+     * (or a recognized {@code @record} / ID element kind).
      */
     private void promoteSingleRecordCarriers() {
         var plainObjectNames = ctx.typeRegistry.entries().entrySet().stream()
@@ -250,8 +251,7 @@ class TypeBuilder {
             .map(java.util.Map.Entry::getKey)
             .toList();
         for (var name : plainObjectNames) {
-            if (ctx.tryResolveSingleRecordCarrier(name)
-                    instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok) {
+            if (ctx.scanStructuralDmlPayload(name) instanceof BuildContext.DmlCarrierScan.Admit) {
                 var current = (PlainObjectType) ctx.typeRegistry.get(name);
                 ctx.typeRegistry.enrich(name,
                     new GraphitronType.PojoResultType.NoBacking(name, current.location()));

@@ -790,6 +790,146 @@ class BuildContext {
     }
 
     /**
+     * R178 Phase 4 — sealed result of a payload's structural carrier-shape scan, the
+     * replacement for {@link SingleRecordCarrierResolution} on the @mutation classifier and
+     * MutationInputResolver paths. Three arms:
+     *
+     * <ul>
+     *   <li>{@link Admit}: exactly one non-errors data field whose element classifies into a
+     *       recognized DML element kind (Table / Record / Id). The data field's definition and
+     *       element kind ride together so callers don't re-walk the SDL.</li>
+     *   <li>{@link Reject}: at least one non-errors field that can't be admitted (scalar or
+     *       polymorphic / interface / union element types), or multiple recognized data fields
+     *       (the carrier walk's multi-DataChannel rejection). The reason string matches the
+     *       carrier walk's diagnostic family.</li>
+     *   <li>{@link NotApplicable}: zero non-errors data fields, non-Object payload type, or
+     *       a {@code null} payload name. Callers fall through to their non-carrier code paths.</li>
+     * </ul>
+     */
+    public sealed interface DmlCarrierScan {
+        record Admit(GraphQLFieldDefinition dataField, DmlElementKind element) implements DmlCarrierScan {}
+        record Reject(String reason) implements DmlCarrierScan {}
+        record NotApplicable() implements DmlCarrierScan {}
+    }
+
+    public sealed interface DmlElementKind {
+        record Table(TableRef table, String elementTypeName) implements DmlElementKind {}
+        record RecordElement(String fieldName) implements DmlElementKind {}
+        record IdElement() implements DmlElementKind {}
+    }
+
+    /**
+     * R178 Phase 4 — structural detection of a DML payload's carrier shape. Walks the payload
+     * SDL once, accumulating non-errors fields and classifying each into a recognized DML
+     * element kind (Table / Record / Id) or rejecting unrecognized shapes. Errors-shaped
+     * fields are identified via {@link #detectErrorsFieldShape} and skipped at the data-field
+     * level (they carry through the error-channel resolution).
+     *
+     * <p>Replaces the carrier walk's {@link SingleRecordCarrierResolution} dispatch for the
+     * @mutation classifier and the MutationInputResolver shape-coherence check. The scan is
+     * referentially transparent given a frozen schema and types.
+     */
+    private static final java.util.Set<String> FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES = java.util.Set.of(
+        DIR_SERVICE, DIR_SOURCE_ROW, DIR_REFERENCE, DIR_AS_CONNECTION, DIR_SPLIT_QUERY,
+        DIR_EXTERNAL_FIELD, DIR_CONDITION, DIR_LOOKUP_KEY, DIR_NOT_GENERATED,
+        DIR_TABLE_METHOD, DIR_DEFAULT_ORDER, DIR_ORDER_BY, DIR_MULTITABLE_REFERENCE);
+
+    public DmlCarrierScan scanStructuralDmlPayload(String payloadSdlName) {
+        if (payloadSdlName == null) return new DmlCarrierScan.NotApplicable();
+        var payloadType = schema.getType(payloadSdlName);
+        if (!(payloadType instanceof GraphQLObjectType payloadObj)) {
+            return new DmlCarrierScan.NotApplicable();
+        }
+        GraphQLFieldDefinition admittedDataField = null;
+        DmlElementKind admittedElement = null;
+        int dataChannelCount = 0;
+        for (var f : payloadObj.getFieldDefinitions()) {
+            var errorTypes = detectErrorsFieldShape(f);
+            if (errorTypes != null) {
+                // §1 channel-level rules: rule 7 (handler cardinality) and rule 8 (duplicate
+                // match criteria). The carrier walk's classifyCarrierField enforced these
+                // inline on errors-shaped fields; the structural scan preserves the same
+                // diagnostic family so test fixtures pinning the wording stay green.
+                String rule7 = FieldBuilder.checkChannelLevelHandlerRules(errorTypes);
+                if (rule7 != null) {
+                    return new DmlCarrierScan.Reject(
+                        "errors-shaped carrier field '" + f.getName() + "': " + rule7);
+                }
+                String rule8 = FieldBuilder.checkDuplicateMatchCriteria(errorTypes);
+                if (rule8 != null) {
+                    return new DmlCarrierScan.Reject(
+                        "errors-shaped carrier field '" + f.getName() + "': " + rule8);
+                }
+                continue;
+            }
+            // R159: parse-time check on @field(name:). UnknownSigil ($-prefixed values that
+            // aren't recognized literals like $source) reject ahead of the element-shape
+            // dispatch with the canonical FieldSourceSigil.unknownSigilMessage wording.
+            var fieldNameRef = FieldSourceSigil.parseArgFieldNameRef(f, DIR_FIELD, ARG_NAME);
+            if (fieldNameRef instanceof FieldSourceSigil.ParseResult.UnknownSigil unknown) {
+                return new DmlCarrierScan.Reject(FieldSourceSigil.unknownSigilMessage(unknown.raw()));
+            }
+            // Forbidden-directives check (carrier walk's classifyCarrierField equivalent). The
+            // listed directives signal a different fetcher contract than a payload carrier's
+            // data-field path, so their presence routes the type away from the carrier walk.
+            // Note: @field is intentionally NOT on this list (R178 retires the @field-on-non-
+            // $source HardReject — the SettKvotesporsmal bug fix). Pure-metadata directives
+            // (@deprecated, custom directives without execution semantics) pass through.
+            for (String forbidden : FORBIDDEN_CARRIER_DATA_FIELD_DIRECTIVES) {
+                if (f.hasAppliedDirective(forbidden)) {
+                    return new DmlCarrierScan.NotApplicable();
+                }
+            }
+            String elementTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
+            var elementType = types.get(elementTypeName);
+            DmlElementKind kind;
+            if (elementType instanceof GraphitronType.TableBackedType tbt) {
+                kind = new DmlElementKind.Table(tbt.table(), elementTypeName);
+            } else if (elementType instanceof GraphitronType.ResultType rt && rt.fqClassName() != null) {
+                kind = new DmlElementKind.RecordElement(f.getName());
+            } else if ("ID".equals(elementTypeName)) {
+                // R156 wrapper-shape rule: list-of-nullable ([ID]) and Connection wrappers
+                // are rejected on payload-returning DELETE. The carrier walk's classifyCarrierField
+                // produced HardReject diagnostics with these wordings; preserve the same family.
+                var wrapper = buildWrapper(f);
+                if (wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List list && list.itemNullable()) {
+                    return new DmlCarrierScan.Reject(
+                        "single-record carrier field '" + f.getName() + "' has element type 'ID' "
+                        + "with a list-of-nullable wrapper '[ID]'; payload-returning DELETE requires "
+                        + "either singleton (ID / ID!) or list-of-non-null ([ID!] / [ID!]!), since "
+                        + "every element of a successful DELETE response is the encoded PK of an "
+                        + "actually-deleted row, so the slot cannot be null");
+                }
+                if (wrapper instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
+                    return new DmlCarrierScan.Reject(
+                        "single-record carrier field '" + f.getName() + "' has element type 'ID' "
+                        + "with a Connection wrapper; payload-returning DELETE requires either "
+                        + "singleton (ID / ID!) or list-of-non-null ([ID!] / [ID!]!)");
+                }
+                kind = new DmlElementKind.IdElement();
+            } else {
+                return new DmlCarrierScan.Reject(
+                    "carrier field '" + f.getName() + "' of type '" + elementTypeName
+                    + "' resolves to no CarrierFieldRole permit; file a roadmap item for a new "
+                    + "CarrierFieldRole permit if this shape needs admission");
+            }
+            dataChannelCount++;
+            if (admittedDataField == null) {
+                admittedDataField = f;
+                admittedElement = kind;
+            }
+        }
+        if (dataChannelCount == 0) return new DmlCarrierScan.NotApplicable();
+        if (dataChannelCount > 1) {
+            return new DmlCarrierScan.Reject(
+                "single-record carrier '" + payloadSdlName + "' declares " + dataChannelCount
+                + " DataChannel-shaped fields; require exactly one (a future Backlog item may "
+                + "admit multi-data carriers behind a new CarrierFieldRole permit)");
+        }
+        return new DmlCarrierScan.Admit(admittedDataField, admittedElement);
+    }
+
+    /**
      * Classify a single element-SDL-type field for the DELETE projection. Switches on the
      * already-classified {@link ChildField} from {@link #fieldRegistry}; the four
      * non-rejecting arms ({@code PkRead}, {@code NonPkNullable}) map to admissible projection

@@ -2863,91 +2863,6 @@ class FieldBuilder {
     }
 
     /**
-     * R178 Phase 4 — sealed result of a DML payload's structural carrier-shape scan. The walk
-     * produces one of:
-     *
-     * <ul>
-     *   <li>{@link Admit}: exactly one non-errors data field whose element classifies into a
-     *       recognized DML element kind (Table / Record / Id). The data field's definition and
-     *       element kind ride together so callers don't re-walk the SDL.</li>
-     *   <li>{@link Reject}: at least one non-errors field that can't be admitted (scalar or
-     *       polymorphic / interface / union element types the carrier walk's
-     *       {@code classifyCarrierField} would have NoPermit-rejected), or multiple
-     *       non-errors data fields (carrier walk multi-DataChannel rejection). The reason
-     *       string matches the carrier-walk diagnostic family.</li>
-     *   <li>{@link NotApplicable}: zero non-errors data fields, non-Object payload type, or
-     *       a {@code null} payload name. Callers fall through to the @mutation classifier's
-     *       scalar/@table-bound paths.</li>
-     * </ul>
-     */
-    private sealed interface DmlCarrierScan {
-        record Admit(GraphQLFieldDefinition dataField, DmlElementKind element) implements DmlCarrierScan {}
-        record Reject(String reason) implements DmlCarrierScan {}
-        record NotApplicable() implements DmlCarrierScan {}
-    }
-
-    private sealed interface DmlElementKind {
-        record Table(TableRef table, String elementTypeName) implements DmlElementKind {}
-        record RecordElement(String fieldName) implements DmlElementKind {}
-        record IdElement() implements DmlElementKind {}
-    }
-
-    /**
-     * R178 Phase 4 — structural detection of a DML payload's carrier shape. Walks the payload
-     * SDL once, accumulating (a) non-errors fields that admit as recognized DML data elements
-     * (Table / Record / Id) and (b) non-errors fields whose element type isn't a recognized
-     * DML element kind. Errors-shaped fields are identified via
-     * {@link BuildContext#detectErrorsFieldShape} and skipped at the data-field level (they
-     * carry through {@link #detectStructuralDmlErrorChannel}).
-     *
-     * <p>The scan replicates {@link BuildContext#classifyCarrierField}'s reject decisions
-     * structurally: a non-errors field of an unrecognized shape produces a "no CarrierFieldRole
-     * permit" rejection naming the field and the extension point; multiple recognized data
-     * fields produce the "more than one DataChannel" rejection.
-     */
-    private DmlCarrierScan scanStructuralDmlPayload(String payloadSdlName) {
-        if (payloadSdlName == null) return new DmlCarrierScan.NotApplicable();
-        var payloadType = ctx.schema.getType(payloadSdlName);
-        if (!(payloadType instanceof graphql.schema.GraphQLObjectType payloadObj)) {
-            return new DmlCarrierScan.NotApplicable();
-        }
-        GraphQLFieldDefinition admittedDataField = null;
-        DmlElementKind admittedElement = null;
-        int dataChannelCount = 0;
-        for (var f : payloadObj.getFieldDefinitions()) {
-            if (ctx.detectErrorsFieldShape(f) != null) continue;
-            String elementTypeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
-            var elementType = ctx.types.get(elementTypeName);
-            DmlElementKind kind;
-            if (elementType instanceof GraphitronType.TableBackedType tbt) {
-                kind = new DmlElementKind.Table(tbt.table(), elementTypeName);
-            } else if (elementType instanceof GraphitronType.ResultType rt && rt.fqClassName() != null) {
-                kind = new DmlElementKind.RecordElement(f.getName());
-            } else if ("ID".equals(elementTypeName)) {
-                kind = new DmlElementKind.IdElement();
-            } else {
-                return new DmlCarrierScan.Reject(
-                    "carrier field '" + f.getName() + "' of type '" + elementTypeName
-                    + "' resolves to no CarrierFieldRole permit; file a roadmap item for a new "
-                    + "CarrierFieldRole permit if this shape needs admission");
-            }
-            dataChannelCount++;
-            if (admittedDataField == null) {
-                admittedDataField = f;
-                admittedElement = kind;
-            }
-        }
-        if (dataChannelCount == 0) return new DmlCarrierScan.NotApplicable();
-        if (dataChannelCount > 1) {
-            return new DmlCarrierScan.Reject(
-                "single-record carrier '" + payloadSdlName + "' declares " + dataChannelCount
-                + " DataChannel-shaped fields; require exactly one (a future Backlog item may "
-                + "admit multi-data carriers behind a new CarrierFieldRole permit)");
-        }
-        return new DmlCarrierScan.Admit(admittedDataField, admittedElement);
-    }
-
-    /**
      * R178 Phase 4 — structural detection of a DML payload's error channel, replacing the
      * carrier walk's {@code classifyCarrierField} ErrorChannelRole arm. Scans the payload
      * SDL for an errors-shaped field (via {@link BuildContext#detectErrorsFieldShape}),
@@ -3488,18 +3403,18 @@ class FieldBuilder {
                 // (classifyDeleteIdEncoderError, resolveDeleteIdEncoder, classifyDeleteTableProjection)
                 // operate on structural inputs.
                 if (returnType instanceof ReturnTypeRef.ResultReturnType rrt) {
-                    var scan = scanStructuralDmlPayload(rrt.returnTypeName());
-                    if (scan instanceof DmlCarrierScan.Reject scanReject) {
+                    var scan = ctx.scanStructuralDmlPayload(rrt.returnTypeName());
+                    if (scan instanceof BuildContext.DmlCarrierScan.Reject scanReject) {
                         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(scanReject.reason()));
                     }
-                    if (scan instanceof DmlCarrierScan.Admit admit) {
+                    if (scan instanceof BuildContext.DmlCarrierScan.Admit admit) {
                         var dataField = admit.dataField();
                         var element = admit.element();
                         var wrapper = ctx.buildWrapper(dataField);
                         var dataFieldLocation = locationOf(dataField);
                         if (kind == DmlKind.DELETE) {
                             switch (element) {
-                                case DmlElementKind.IdElement ignored -> {
+                                case BuildContext.DmlElementKind.IdElement ignored -> {
                                     String encoderError = classifyDeleteIdEncoderError(ctx, dataField, tia.inputTable(), name);
                                     if (encoderError != null) {
                                         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(encoderError));
@@ -3512,7 +3427,7 @@ class FieldBuilder {
                                         new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(encoder));
                                     ctx.fieldRegistry.reclassify(coords, carrier, ChildField.SingleRecordIdFieldFromReturning.class);
                                 }
-                                case DmlElementKind.Table tbl -> {
+                                case BuildContext.DmlElementKind.Table tbl -> {
                                     if (!tia.inputTable().equals(tbl.table())) {
                                         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                                             "@mutation(typeName: " + kind + ") field '" + name
@@ -3534,7 +3449,7 @@ class FieldBuilder {
                                         rrt.returnTypeName(), dataField.getName(), dataFieldLocation, returnType_tb, admitted.projection());
                                     ctx.fieldRegistry.reclassify(coords, carrier, null);
                                 }
-                                case DmlElementKind.RecordElement ignored -> {
+                                case BuildContext.DmlElementKind.RecordElement ignored -> {
                                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                                         "R156: DataElement.Record carrier on DELETE is not supported; use @service for "
                                         + "record-element carriers or DataElement.Id / DataElement.Table for DML carriers"));
@@ -3556,7 +3471,7 @@ class FieldBuilder {
                         } else {
                             // INSERT / UPDATE / UPSERT
                             switch (element) {
-                                case DmlElementKind.Table tbl -> {
+                                case BuildContext.DmlElementKind.Table tbl -> {
                                     if (!tia.inputTable().equals(tbl.table())) {
                                         return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                                             "@mutation(typeName: " + kind + ") field '" + name
@@ -3587,7 +3502,7 @@ class FieldBuilder {
                                     return new MutationField.MutationDmlRecordField(
                                         parentTypeName, name, location, rrt, tia, kind, dmlChannel);
                                 }
-                                case DmlElementKind.RecordElement re -> {
+                                case BuildContext.DmlElementKind.RecordElement re -> {
                                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                                         "@mutation(typeName: " + kind + ") field '" + name
                                         + "' returns single-record carrier '" + rrt.returnTypeName()
@@ -3596,7 +3511,7 @@ class FieldBuilder {
                                         + "@service mutation for record-element carriers, or change the data field's element "
                                         + "type to the input table's @table type / ID"));
                                 }
-                                case DmlElementKind.IdElement ignored -> {
+                                case BuildContext.DmlElementKind.IdElement ignored -> {
                                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(
                                         "single-record carrier '" + rrt.returnTypeName()
                                         + "' has data field of element type ID, which is the PK-echo permit "

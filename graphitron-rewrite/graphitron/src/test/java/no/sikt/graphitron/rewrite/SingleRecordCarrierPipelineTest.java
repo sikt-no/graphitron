@@ -217,7 +217,11 @@ class SingleRecordCarrierPipelineTest {
     }
 
     @Test
-    void carrier_dataFieldCarriesAtField_returnsRejected() {
+    void carrier_dataFieldCarriesAtField_admitsUnderR178() {
+        // R178 retired the carrier walk's forbidden-directives HardReject on @field(name:) on
+        // non-$source carrier data fields (the SettKvotesporsmal bug's mechanism). With and
+        // without the directive, the payload classifies identically; see
+        // SettKvotesporsmalShapeRegressionTest for the contract pin.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
@@ -227,9 +231,7 @@ class SingleRecordCarrierPipelineTest {
             """);
 
         var mutField = schema.field("Mutation", "createFilm");
-        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
-        var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains("carries '@field'");
+        assertThat(mutField).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
     }
 
     @Test
