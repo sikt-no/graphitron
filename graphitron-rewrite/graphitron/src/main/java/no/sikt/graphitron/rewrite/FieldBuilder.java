@@ -1715,6 +1715,21 @@ class FieldBuilder {
      */
     GraphitronField liftToErrorsField(GraphQLFieldDefinition fieldDef, String parentTypeName,
                                               ReturnTypeRef.PolymorphicReturnType returnType) {
+        return liftToErrorsField(fieldDef, parentTypeName, returnType, null);
+    }
+
+    /**
+     * R178 step 2 overload taking the parent's reflected backing class. Threaded by
+     * {@link #classifyChildFieldOnResultType} so the transport selector can probe the parent
+     * class for an accessor matching the errors-shaped SDL field. The 3-arg overload above
+     * stays for the {@code ServiceDirectiveResolver} caller, where the parent's backing class
+     * is not in scope; that caller falls back to {@code accessorMatchesErrors = false}, which
+     * matches today's transport for the unannotated default-name path on payloads with no
+     * developer-supplied class.
+     */
+    GraphitronField liftToErrorsField(GraphQLFieldDefinition fieldDef, String parentTypeName,
+                                              ReturnTypeRef.PolymorphicReturnType returnType,
+                                              Class<?> parentBackingClass) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
 
@@ -1761,14 +1776,17 @@ class FieldBuilder {
                     + "Use [" + returnType.returnTypeName() + "] or [" + returnType.returnTypeName() + "!]"));
         }
 
-        // Transport selection: when the parent is a carrier admitted by the carrier walk with an
-        // ErrorChannelRole bound to a LocalContext channel, the errors-field DataFetcher reads
-        // from env.getLocalContext() (Transport.LocalContext). Otherwise the errors slot lives on
-        // the developer payload class and graphql-java's PropertyDataFetcher walks the accessor
-        // (Transport.PayloadAccessor). The carrier walk's per-field result is the source of truth;
-        // re-running tryResolveSingleRecordCarrier here is idempotent (pure structural walk over
-        // the parent's SDL fields).
-        var transport = transportForParent(parentTypeName);
+        // R178 step 2: transport selection runs through {@link #selectErrorsTransport} (the
+        // unit-tier rule table pinned by {@link ErrorsTransportSelectionTest}). The active-
+        // channel gate ahead of the rule firing replaces the today's "carrier walk says
+        // ErrorChannelRole.LocalContext" reading: a parent is treated as having an active
+        // error channel iff the carrier walk admits it as a single-record carrier. The
+        // selectErrorsTransport rule's Absent + !accessor → LocalContext fallback only fires
+        // for active-channel parents; non-carrier parents fall back to PayloadAccessor
+        // regardless of the rule's output. Step 3 retires the carrier-walk gate by reading
+        // a producer-side binding signal (DmlEmitted today, ServiceEmitted under §"What
+        // stays" #2 of the spec once R96's ServiceEmitted observation lands).
+        var transport = transportForParent(fieldDef, name, parentTypeName, parentBackingClass);
         return new ErrorsField(parentTypeName, name, location, errorTypes, transport);
     }
 
@@ -1779,17 +1797,44 @@ class FieldBuilder {
             + "reads at FetcherEmitter.dataFetcherValue. The producer in BuildContext."
             + "classifyCarrierField is the load-bearing site for the binding; this query reads "
             + "it back through the same carrier walk so the two views agree.")
-    private ChildField.Transport transportForParent(String parentTypeName) {
+    private ChildField.Transport transportForParent(GraphQLFieldDefinition fieldDef,
+            String errorsFieldName, String parentTypeName, Class<?> parentBackingClass) {
+        // Active-channel gate: a parent qualifies as carrying an error channel iff the
+        // carrier walk admits it as a single-record carrier. Non-carrier parents (plain
+        // @record types reachable as service / query returns whose errors-shaped field is
+        // a developer-owned slot) fall back to PayloadAccessor regardless of the rule.
         var resolution = ctx.tryResolveSingleRecordCarrier(parentTypeName);
-        if (resolution instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok ok) {
-            for (var role : ok.shape().roles()) {
-                if (role instanceof no.sikt.graphitron.rewrite.model.CarrierFieldRole.ErrorChannelRole ecr
-                    && ecr.binding() instanceof ErrorChannel.LocalContext) {
-                    return new ChildField.Transport.LocalContext();
-                }
-            }
+        boolean activeChannel = resolution
+            instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok;
+        if (!activeChannel) {
+            return new ChildField.Transport.PayloadAccessor();
         }
-        return new ChildField.Transport.PayloadAccessor();
+        var parsed = FieldSourceSigil.parseArgFieldNameRef(fieldDef, DIR_FIELD, ARG_NAME);
+        boolean accessorMatchesErrors = probeErrorsAccessor(parentBackingClass, errorsFieldName);
+        return selectErrorsTransport(parsed, accessorMatchesErrors);
+    }
+
+    /**
+     * R178 step 2: probe the parent's reflected class for an accessor matching the SDL
+     * errors-shaped field name. Returns {@code false} when the parent has no developer-
+     * supplied class (NoBacking carriers) or when no accessor matches.
+     *
+     * <p>The expected return type is {@code java.util.List} — errors-shaped fields are
+     * list-typed by structural rule (validated upstream in {@link #liftToErrorsField}).
+     * The candidate-order is {@link ClassAccessorResolver.CandidateOrder#RECORD_FIRST}
+     * so a Java-record component accessor wins over a getter-prefixed lookup; this matches
+     * the resolution preference graphql-java's {@code PropertyDataFetcher} uses against
+     * record-shaped payloads.
+     */
+    private static boolean probeErrorsAccessor(Class<?> parentBackingClass, String accessorBaseName) {
+        if (parentBackingClass == null) return false;
+        var resolution = ClassAccessorResolver.resolve(
+            parentBackingClass,
+            accessorBaseName,
+            java.util.List.class,
+            new ClassAccessorResolver.PerArgument(java.util.List.of()),
+            ClassAccessorResolver.CandidateOrder.RECORD_FIRST);
+        return resolution instanceof AccessorResolution.Resolved;
     }
 
     /**
@@ -3675,7 +3720,7 @@ class FieldBuilder {
                 ? ctx.connectionElementTypeName(rawTypeName0) : rawTypeName0;
             var resolvedReturnType = ctx.resolveReturnType(elementTypeName0, buildWrapper(fieldDef));
             if (resolvedReturnType instanceof ReturnTypeRef.PolymorphicReturnType p) {
-                var lift = liftToErrorsField(fieldDef, parentTypeName, p);
+                var lift = liftToErrorsField(fieldDef, parentTypeName, p, parentBackingClass);
                 if (lift != null) return lift;
             }
             if (resolvedReturnType instanceof ReturnTypeRef.TableBoundReturnType tb) {
@@ -3928,7 +3973,7 @@ class FieldBuilder {
             case ReturnTypeRef.ScalarReturnType s -> recordFieldOrUnclassified(
                 fieldDef, parentTypeName, name, location, s, columnName, parentResultType, parentBackingClass);
             case ReturnTypeRef.PolymorphicReturnType p -> {
-                var lift = liftToErrorsField(fieldDef, parentTypeName, p);
+                var lift = liftToErrorsField(fieldDef, parentTypeName, p, parentBackingClass);
                 if (lift != null) yield lift;
                 yield classifyRecordParentPolymorphicChild(fieldDef, parentTypeName, name, location,
                     elementTypeName, p, parentResultType);
