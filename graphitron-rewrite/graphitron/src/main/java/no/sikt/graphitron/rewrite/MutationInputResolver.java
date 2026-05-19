@@ -172,14 +172,17 @@ final class MutationInputResolver {
                 if ("ID".equals(s.returnTypeName())) {
                     yield null;
                 }
-                // R75 Phase 1: candidates whose carrier types failed to promote land here as a
-                // ScalarReturnType (no PojoResultType registered). Surface the per-condition reason
-                // from the trigger so the validator names the same criterion the classifier checked.
-                if (ctx != null && ctx.tryResolveSingleRecordCarrier(s.returnTypeName())
-                        instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Rejected rej) {
-                    yield "@mutation(typeName: " + kind + ") return type '"
-                        + s.returnTypeName() + "': " + rej.reason()
-                        + "; or author a carrier with @record(record: {className: ...})";
+                // R178 Phase 4: candidate types whose carrier-shape would have surfaced a per-
+                // condition reason now flow through the structural scan: if the SDL Object's
+                // fields don't classify into recognized DML element kinds, surface the same
+                // per-condition diagnostic the carrier walk produced.
+                if (ctx != null) {
+                    var scan = ctx.scanStructuralDmlPayload(s.returnTypeName());
+                    if (scan instanceof BuildContext.DmlCarrierScan.Reject scanReject) {
+                        yield "@mutation(typeName: " + kind + ") return type '"
+                            + s.returnTypeName() + "': " + scanReject.reason()
+                            + "; or author a carrier with @record(record: {className: ...})";
+                    }
                 }
                 yield "@mutation(typeName: " + kind + ") return type '"
                     + s.returnTypeName() + "' is not yet supported; use ID or a @table type";
@@ -220,25 +223,37 @@ final class MutationInputResolver {
         // R138's lifted Invariant #15 below. UPSERT under R144's cardinality-safety regime is
         // refused upstream at resolveInput; if we ever reach this check with kind == UPSERT and
         // bulk input, the refusal there will fire before this point.
+        // R178 Phase 4: payload-shaped (ResultReturnType) returns dispatch cardinality coherence
+        // on the structural single-data-field's wrapper; non-payload returns dispatch on the
+        // return's own wrapper. The carrier-walk consultation that previously gated this check
+        // retires; the structural walk via singleDataField produces the same admit/reject
+        // decisions for the carrier-with-single-data-field case.
         if (returnType instanceof ReturnTypeRef.ResultReturnType r && ctx != null) {
-            var resolution = ctx.tryResolveSingleRecordCarrier(r.returnTypeName());
-            if (resolution instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok ok) {
-                var data = ok.shape().data();
-                boolean dataFieldIsList = data.element().wrapper().isList();
+            var dataField = singleDataField(r.returnTypeName(), ctx);
+            if (dataField != null) {
+                boolean dataFieldIsList = ctx.buildWrapper(dataField).isList();
                 if (listInput && dataFieldIsList) {
                     // R141 admitted arm: bulk input + list-shaped @table-element data field.
-                    // Classifier will route this to MutationBulkDmlRecordField; the response-SELECT
-                    // joins on the input table's PK and the emitter batches per-row DML in input
-                    // order to satisfy the order-preservation invariant.
                     return null;
                 }
                 if (!listInput && dataFieldIsList) {
                     return "@mutation(typeName: " + kind + ") with a single @table input "
                         + "cannot return a list-shaped data field on the carrier ('"
-                        + ok.shape().carrierTypeName() + "." + data.fieldName()
+                        + r.returnTypeName() + "." + dataField.getName()
                         + "'); list-shaped output requires bulk input (Invariant #16)";
                 }
+                if (listInput && !dataFieldIsList) {
+                    return "@mutation(typeName: " + kind + ") with a listed @table input "
+                        + "must return a list (found '" + r.returnTypeName() + "', "
+                        + "single-cardinality); the emit path runs valuesOfRows(...).fetchOne(), "
+                        + "which throws TooManyRowsException on every call with >1 input row "
+                        + "(Invariant #15)";
+                }
             }
+            // Carrier with zero or multiple data fields: the @mutation classifier's structural
+            // scan owns the "multi-DataChannel" / "no permit" diagnostics; return null and let
+            // the classifier surface the carrier-shape rejection.
+            return null;
         }
         if (listInput && !returnType.wrapper().isList()) {
             return "@mutation(typeName: " + kind + ") with a listed @table input "
@@ -248,6 +263,26 @@ final class MutationInputResolver {
                 + "(Invariant #15)";
         }
         return null;
+    }
+
+    /**
+     * R178 Phase 4 — structural lookup for a payload's single non-errors data field. Returns
+     * the field definition when the payload SDL exposes exactly one non-errors-shaped field;
+     * {@code null} for zero or multiple data fields, or non-Object payload types. Used by the
+     * cardinality coherence check in {@link #validateReturnType} to read the data field's
+     * list-ness directly from the SDL wrapper.
+     */
+    private static graphql.schema.GraphQLFieldDefinition singleDataField(String payloadSdlName, BuildContext ctx) {
+        if (payloadSdlName == null) return null;
+        var payloadType = ctx.schema.getType(payloadSdlName);
+        if (!(payloadType instanceof graphql.schema.GraphQLObjectType payloadObj)) return null;
+        graphql.schema.GraphQLFieldDefinition dataField = null;
+        for (var f : payloadObj.getFieldDefinitions()) {
+            if (ctx.detectErrorsFieldShape(f) != null) continue;
+            if (dataField != null) return null;
+            dataField = f;
+        }
+        return dataField;
     }
 
     /**

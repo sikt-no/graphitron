@@ -161,13 +161,13 @@ class FieldSourceSigilPipelineTest {
     }
 
     /**
-     * Bare-name regression: {@code @field(name: "X")} (any non-{@code $}-prefixed value) at the
-     * carrier data field continues to {@code HardReject} with the existing forbidden-directive
-     * message. The sigil-aware arm does not relax the long-standing rejection for non-sigil
-     * values.
+     * Bare-name pin under R178: {@code @field(name: "X")} (any non-{@code $}-prefixed value) at
+     * the carrier data field admits identically to the no-{@code @field} form. R178 retired the
+     * carrier walk's forbidden-directives HardReject (the SettKvotesporsmal bug's mechanism);
+     * the bare-name value is a no-op at the data-field site.
      */
     @Test
-    void sourceSigil_bareNameAtCarrier_continuesToHardRejectAsForbidden() {
+    void sourceSigil_bareNameAtCarrier_admitsUnderR178() {
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmInput @table(name: "film") { title: String }
@@ -177,9 +177,7 @@ class FieldSourceSigilPipelineTest {
             """);
 
         var mutField = schema.field("Mutation", "createFilms");
-        assertThat(mutField).isInstanceOf(UnclassifiedField.class);
-        var reason = ((UnclassifiedField) mutField).rejection().message();
-        assertThat(reason).contains("carries '@field'");
+        assertThat(mutField).isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
     }
 
     /**
