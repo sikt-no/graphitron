@@ -15,6 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
+| `R179` | Delete ResultAssembly; service success arm is universal passthrough | Spec | 2026-05-19 | [plan](delete-result-assembly.md) |
 | `R45` | Typed context-value registry for `@service` | Spec |  | [plan](typed-context-value-registry.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
@@ -65,7 +66,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 ### Cleanup
 
 - `R163` [**Rename Record to Carrier across the carrier-walk model**](rename-record-to-carrier-model-wide.md): > **Superseded by R164** (`field-model-two-axis-pivot`). The carrier-walk plumbing renamed by this item (`SingleRecordCarrierShape`, `ChildField.SingleRecord*`, `BuildContext#tryResolveSingleRecordCarrier`, etc.) does not survive R164 in its current shape: the carrier-walk family decomposes onto R164's new axes — the bulk-carrier follow-up SELECT is `(source=Many, action=Query.OverSource, builder=SubSelect)`, and the carrier's read-from-source data fields are `(source=Many, action=Trivial, builder=None)`. The surrounding plumbing types get rebuilt as components of the new structure. The rename happens implicitly. Discard once R164 enters Spec. <sub>updated 2026-05-14</sub> _(blocked by [mutation-result-field-sealed-on-kind](mutation-result-field-sealed-on-kind.md))_
-- `R179` [**Delete ResultAssembly; service success arm is universal passthrough**](delete-result-assembly.md): <One-paragraph problem statement: what is missing or broken, and why it matters. Replace this and add a plan body when the item moves to Spec.> <sub>updated 2026-05-19</sub>
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md): The `leaf-coverage` profile in `graphitron-rewrite/pom.xml` is activated by negation (`<name>!leaf-coverage.skip</name>`), so every default contributor `mvn verify` truncates `target/leaf-coverage.jsonl` in `process-test-resources` and threads a `graphitron.classification.trace` system property into every surefire/failsafe. The traces are only consumed by `roadmap-tool leaf-coverage`, which after R132 runs only in the CI regeneration step. Every other build pays the antrun-truncate cost and writes JSONL nobody reads.
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md): `@externalField` lifted to `IMPLEMENTED_LEAVES` end-to-end in `computed-field-with-reference` (R48, shipped; see [`changelog.md`](changelog.md)). The directive's name is the surviving historical artefact: it predates the `ChildField.ComputedField` model variant and reads as "field resolved by external code" rather than the narrower behaviour the lift settled on (a `Field<X>` returned by a static method, inlined into the SELECT projection at the alias). A clearer name ships in this plan; the old name stays accepted for one consumer-migration window.
 - `R27` [**Retire `@nodeId` and `IdReferenceField` synthesis shims**](retire-synthesis-shims.md): Two parallel shims survive in the classifier so legacy SDL keeps building. Both should retire on the same gate (sis migration to canonical SDL); their wire shape is independent but the user-visible migration is one piece of work, so the two retirements ship together. _(blocked by [sis-rewrite-migration](sis-rewrite-migration.md))_
@@ -126,7 +126,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R179` [**Delete ResultAssembly; service success arm is universal passthrough**](delete-result-assembly.md) — Backlog, cleanup
+- `R179` [**Delete ResultAssembly; service success arm is universal passthrough**](delete-result-assembly.md) — Spec, cleanup
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R45` [**Typed context-value registry for `@service`**](typed-context-value-registry.md) — Spec, architecture
 - `R137` [**@service method return-type wrapper composition (Optional / CompletableFuture / Mono / DataFetcherResult)**](service-wrapper-composition.md) — Backlog, architecture
