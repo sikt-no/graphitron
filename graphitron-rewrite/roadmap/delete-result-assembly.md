@@ -1,7 +1,7 @@
 ---
 id: R179
-title: "Delete ResultAssembly; service success arm is universal passthrough"
-status: Backlog
+title: Delete ResultAssembly; service success arm is universal passthrough
+status: Spec
 bucket: cleanup
 priority: 5
 theme: service
