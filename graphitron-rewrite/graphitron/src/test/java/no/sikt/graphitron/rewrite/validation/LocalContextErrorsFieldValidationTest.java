@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code error-channel.local-context-transport} invariant. A carrier admitted with
  * {@link ChildField.Transport.LocalContext} must have a sibling data-channel field whose fetcher
  * honors the null-source short-circuit guard. The validator allow-list is exercised against the
- * variants currently reachable through {@code BuildContext.classifyCarrierField}; an off-allow-list
+ * variants currently reachable through the post-R178 structural detectors; an off-allow-list
  * sibling produces a structural error.
  *
  * <p>The fixture builds {@link GraphitronSchema} instances directly rather than going through SDL
@@ -58,10 +58,15 @@ class LocalContextErrorsFieldValidationTest {
             parentTypeName, "errors", null, List.of(), new ChildField.Transport.PayloadAccessor());
     }
 
-    private static ChildField.SingleRecordIdentityField guardedSibling(String parentTypeName) {
-        return new ChildField.SingleRecordIdentityField(
-            parentTypeName, "film", null,
-            new ReturnTypeRef.ResultReturnType("Film", new FieldWrapper.Single(true), "com.example.Film"));
+    private static ChildField.SingleRecordIdFieldFromReturning guardedSibling(String parentTypeName) {
+        return new ChildField.SingleRecordIdFieldFromReturning(
+            parentTypeName, "filmId", null,
+            new ReturnTypeRef.ScalarReturnType("ID", new FieldWrapper.Single(true)),
+            new CallSiteCompaction.NodeIdEncodeKeys(
+                new no.sikt.graphitron.rewrite.model.HelperRef.Encode(
+                    no.sikt.graphitron.javapoet.ClassName.get("com.example", "FilmHelper"),
+                    "encodeId",
+                    java.util.List.of(new ColumnRef("FILM_ID", "", "")))));
     }
 
     private static ChildField.ColumnField unguardedSibling(String parentTypeName) {
