@@ -2837,35 +2837,35 @@ class FieldBuilder {
     }
 
     /**
-     * R178 step 2b: diagnostic-only @service-carrier strict-return check. The data-field
-     * registration moves to the unified path's {@link ProducerBinding.ServiceEmitted} arm in
-     * {@link #classifyChildFieldOnResultType}; this helper now retains only the type-match
-     * diagnostic so a mismatched producer surfaces as {@link UnclassifiedField} at the
-     * mutation field rather than as a missing per-payload data-field entry the per-type pass
-     * would silently leave behind.
+     * R178 step 3: structural strict-return check for {@code @service} mutations whose payload
+     * is a NoBacking carrier (no {@code @record} class on the SDL payload type). The check is
+     * the structural replacement for {@code carrier-data-field.service-producer-strict-return}:
+     * it inspects the payload SDL directly (single {@code @table}-typed data field) and
+     * compares the method's reflected return type against the expected
+     * {@code XRecord} (Cardinality.ONE) / {@code List<XRecord>} (Cardinality.MANY) shape.
      *
-     * <p>Returns a non-null rejection string when the carrier walk admits the return as a
-     * single-record carrier with an {@link DataElement.Table} data field whose
-     * {@code recordClass()} disagrees with the method's reflected return-element class;
-     * {@code null} otherwise. Non-carrier returns and {@link DataElement.Record} /
-     * {@link DataElement.Id} arms short-circuit to {@code null} (the strict-return contract
-     * applies only to Table-element carriers).
+     * <p>The check is restricted to NoBacking payloads because ClassBacked payloads have their
+     * own diagnostic path through {@link #resolveServiceResultAssembly}, which produces a
+     * diagnostic citing the SDL payload's reflected class (not the inner table's record class).
+     * The SettKvotesporsmal bug surfaced specifically because the carrier walk's strict-return
+     * check fired on a ClassBacked payload citing the inner table's record class; restricting
+     * the structural strict-return to NoBacking ensures that case routes through
+     * {@code resolveServiceResultAssembly}'s payload-class diagnostic.
+     *
+     * <p>Returns a non-null rejection string when the payload is NoBacking, structurally a
+     * single-{@code @table}-data-field carrier, and the method's return type does not equal
+     * exactly {@code XRecord} or {@code List<XRecord>}; {@code null} otherwise. Non-carrier
+     * payloads (zero or multiple {@code @table}-typed data fields), ClassBacked payloads, and
+     * methods whose return matches the expected shape all short-circuit to {@code null}.
      */
     private String classifyServiceCarrierProducer(
             no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType returnType,
-            no.sikt.graphitron.rewrite.model.MethodRef method,
-            String mutationName) {
-        var resolution = ctx.tryResolveSingleRecordCarrier(returnType.returnTypeName());
-        if (!(resolution instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Ok ok)) {
-            return null;
-        }
-        if (!(ok.shape().data().element() instanceof no.sikt.graphitron.rewrite.model.DataElement.Table tableElement)) {
-            return null;
-        }
-        var target = tableElement.table();
-        var cardinality = tableElement.wrapper().isList()
-            ? SourceKey.Cardinality.MANY
-            : SourceKey.Cardinality.ONE;
+            no.sikt.graphitron.rewrite.model.MethodRef method) {
+        if (returnType.fqClassName() != null) return null;
+        var shape = detectStructuralServiceCarrierShape(returnType.returnTypeName());
+        if (shape == null) return null;
+        var target = shape.table();
+        var cardinality = shape.cardinality();
         no.sikt.graphitron.javapoet.TypeName expectedReturnType = cardinality == SourceKey.Cardinality.ONE
             ? target.recordClass()
             : no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
@@ -2876,6 +2876,44 @@ class FieldBuilder {
                 + " — got '" + method.returnType() + "'";
         }
         return null;
+    }
+
+    /**
+     * R178 step 3: structural detection for an {@code @service}-carrier shape on a NoBacking
+     * SDL payload. Mirrors {@code RecordBindingResolver.groundServiceCarrierBinding}'s payload
+     * SDL walk: scans the payload object's field definitions, looks for exactly one
+     * {@code @table}-typed data field (the field's element type is a GraphQL Object carrying
+     * the {@code @table} directive, resolved through {@code ctx.types} as a TableBackedType),
+     * and returns the resolved table plus the cardinality derived from the data field's wrapper.
+     * Returns {@code null} for shapes the carrier mold doesn't admit (zero or multiple
+     * {@code @table}-typed fields, non-Object payload, unresolved inner table).
+     *
+     * <p>The detection is deliberately walk-free: it consults
+     * {@code BuildContext.tryResolveSingleRecordCarrier} nowhere, so the
+     * {@link BuildContext#classifyCarrierField} forbidden-directives loop (the SettKvotesporsmal
+     * bug's mechanism) does not fire from this site.
+     */
+    private record StructuralServiceCarrierShape(TableRef table, SourceKey.Cardinality cardinality) {}
+
+    private StructuralServiceCarrierShape detectStructuralServiceCarrierShape(String payloadSdlName) {
+        if (payloadSdlName == null) return null;
+        var payloadType = ctx.schema.getType(payloadSdlName);
+        if (!(payloadType instanceof graphql.schema.GraphQLObjectType payloadObj)) return null;
+        GraphQLFieldDefinition dataField = null;
+        TableRef table = null;
+        SourceKey.Cardinality cardinality = null;
+        for (var f : payloadObj.getFieldDefinitions()) {
+            String unwrappedFieldType = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(f.getType())).getName();
+            var t = ctx.types.get(unwrappedFieldType);
+            if (!(t instanceof GraphitronType.TableBackedType tbt)) continue;
+            if (dataField != null) return null;
+            dataField = f;
+            table = tbt.table();
+            cardinality = GraphQLTypeUtil.unwrapNonNull(f.getType()) instanceof GraphQLList
+                ? SourceKey.Cardinality.MANY : SourceKey.Cardinality.ONE;
+        }
+        if (dataField == null) return null;
+        return new StructuralServiceCarrierShape(table, cardinality);
     }
 
     /**
@@ -3441,13 +3479,16 @@ class FieldBuilder {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                             Rejection.structural(sourceSigilError));
                     }
-                    // R158: register the carrier data field for the @service producer kind.
-                    // Runs only when the resolved return type is a single-record carrier with a
-                    // DataElement.Table data channel (other shapes fall through as no-ops).
-                    // Compares the producer's reflected return type against the carrier-walk
-                    // target's expected XRecord / List<XRecord> shape, then compare-then-writes
-                    // the SingleRecordTableField with Wrap.TableRecord(target.recordClass()).
-                    String serviceCarrierError = classifyServiceCarrierProducer(r.returnType(), r.method(), name);
+                    // R178 step 3: @service-carrier strict-return check, restructured to detect
+                    // the carrier shape directly from the payload SDL rather than via the carrier
+                    // walk. The check fires only for NoBacking payloads (no @record class); for
+                    // ClassBacked payloads {@link #resolveServiceResultAssembly} produces the
+                    // per-constructor diagnostic citing the payload class. This split is the
+                    // SettKvotesporsmal bug's structural fix: ClassBacked payloads no longer
+                    // route through the carrier walk (which would have demanded the inner
+                    // table's record class as the return type, regardless of @field presence on
+                    // the data channel).
+                    String serviceCarrierError = classifyServiceCarrierProducer(r.returnType(), r.method());
                     if (serviceCarrierError != null) {
                         yield new UnclassifiedField(parentTypeName, name, location, fieldDef,
                             Rejection.structural(serviceCarrierError));

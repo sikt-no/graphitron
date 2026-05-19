@@ -192,23 +192,17 @@ final class MutationInputResolver {
                 yield null;
             }
             case ReturnTypeRef.ResultReturnType r -> {
-                // DML accepts a @record carrier return when the SDL type classifies through the
-                // carrier walk (one DataChannel field, optional ErrorChannelRole field). The
-                // validator only screens for the wrapper shape (single, not list/connection)
-                // and surfaces the carrier walk's per-condition rejection reason.
+                // R178 step 3: DML accepts a @record carrier return; the validator screens only
+                // for the wrapper shape (single, not list/connection). The carrier-walk rejection
+                // reason that was surfaced here retires with classifyCarrierField's
+                // forbidden-directives loop; payload-shape rejections now surface from the
+                // unified path's per-child classification (resolveServiceResultAssembly on @service
+                // mutations; the @mutation classifier's inline @record-element / table-equality
+                // checks on DML).
                 if (r.wrapper().isList()) {
                     yield "@mutation(typeName: " + kind + ") return type '"
                         + r.returnTypeName() + "' (list of @record) is not yet supported; "
                         + "use a single @record payload, an ID, or a @table type";
-                }
-                // R161: the carrier walk's candidate predicate admits every ResultType arm, so
-                // the probe runs unconditionally — one probe keyed off the SDL shape, not two
-                // probes composing on `fqClassName == null` vs `!= null`.
-                if (ctx != null
-                        && ctx.tryResolveSingleRecordCarrier(r.returnTypeName())
-                            instanceof no.sikt.graphitron.rewrite.model.SingleRecordCarrierResolution.Rejected rej) {
-                    yield "@mutation(typeName: " + kind + ") return type '"
-                        + r.returnTypeName() + "': " + rej.reason();
                 }
                 yield null;
             }
