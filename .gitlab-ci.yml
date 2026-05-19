@@ -12,13 +12,17 @@
 # Auth uses CI_JOB_TOKEN, which has write access to this project's
 # package registry by default; no manual secrets required.
 #
-# Tests, jOOQ codegen, and javadoc all run here. The original incarnation
-# of this pipeline skipped tests because Testcontainers needed Docker-in-Docker
-# and "tests run in GitHub anyway"; both legs are obsolete. The publish job
-# now provisions a Postgres service and uses -Plocal-db to avoid Docker, and
-# the rewrite reactor's compile graph depends on jOOQ-generated classes from
+# Tests and jOOQ codegen run here. The original incarnation of this pipeline
+# skipped tests because Testcontainers needed Docker-in-Docker and "tests run
+# in GitHub anyway"; both legs are obsolete. The publish job now provisions a
+# Postgres service and uses -Plocal-db to avoid Docker, and the rewrite
+# reactor's compile graph depends on jOOQ-generated classes from
 # graphitron-sakila-db anyway. Once the DB is up, running tests is a cheap
 # sanity check at the deploy boundary.
+#
+# Javadoc and signing are not run: the `gitlab` profile attaches only sources,
+# not javadoc, and there is no GPG signing here. Maven Central via the GitHub
+# workflow's `-P release` is where javadoc + signed artifacts come from.
 
 default:
   image: maven:3.9-eclipse-temurin-25
