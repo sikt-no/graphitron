@@ -41,21 +41,27 @@ pull in any Graphitron runtime jar.
 // GENERATED: from GraphitronContextInterfaceGenerator
 public interface GraphitronContext {
     DSLContext getDslContext(DataFetchingEnvironment env);
-    <T> T getContextArgument(DataFetchingEnvironment env, String name);
+    default <T> T getContextArgument(DataFetchingEnvironment env, String name) {
+        return env.getGraphQlContext().get(name);
+    }
     default String getTenantId(DataFetchingEnvironment env) { return ""; }
 }
 ----
 
+`getDslContext` is the only abstract method; the others carry defaults so apps
+that only need to thread a `DSLContext` can pass a lambda
+(`(GraphitronContext) env -> dsl`) or rely on the `Graphitron.newExecutionInput(dsl)`
+factory overload.
+
 === Registration
 
-Apps register an implementation per request via the typed key
-`GraphitronContext.class`:
+Apps register an implementation per request via `Graphitron.newExecutionInput(...)`,
+which puts the context under the typed key every emitted fetcher reads from:
 
 [source,java]
 ----
-ExecutionInput input = ExecutionInput.newExecutionInput()
+ExecutionInput input = Graphitron.newExecutionInput(ctx)
     .query(query)
-    .graphQLContext(b -> b.put(GraphitronContext.class, ctx))
     .build();
 ----
 
