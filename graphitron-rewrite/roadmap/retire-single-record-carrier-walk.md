@@ -539,13 +539,86 @@ null). The spike stays in-tree as a behavioral contract pin under the
     still consult the carrier walk transitionally; their forbidden-
     directives loop is harmless because none of them propagate the
     walk's `Rejected` arm as an `UnclassifiedField`.
-  - **Phase 4 deletions** (pending): remove the carrier-walk model
-    types, classifier methods, emitters, and load-bearing classifier
-    checks listed under §"Concrete deletions". The
-    `register*CarrierDataField` helpers, `registerCarrierDataFieldImpl`,
-    `BuildContext.carrierProducerRegistry`, and the carrier-walk
-    `Reader.ResultRowWalk` permit are unreachable from production
-    after step 3 ships.
+  - **Phase 4** (in progress — slices 1-6 shipped, slice 7 pending):
+    progressive removal of the carrier-walk wiring, structured as
+    incremental commits each leaving the build green:
+    - **Slice 1** (shipped): delete the dead Dml/Service writers
+      (`registerDmlCarrierDataField`, `registerServiceCarrierDataField`,
+      `registerCarrierDataFieldImpl`, `BuildContext.carrierProducerRegistry`)
+      and the `@LoadBearingClassifierCheck` keys
+      `carrier-data-field.single-producer-kind` and
+      `carrier-data-field.service-producer-strict-return` they pinned.
+    - **Slice 2** (shipped): retire the carrier-walk consultations from
+      `FieldBuilder.transportForParent` (active-channel gate now reads
+      DmlEmitted / ServiceEmitted producer bindings) and
+      `FieldBuilder.checkSourceSigilTypeMatch` (structural detection via
+      `detectStructuralServiceCarrierShape` + new
+      `findStructuralCarrierDataField` helper).
+    - **Slice 3** (shipped): migrate the @mutation classifier's
+      INSERT/UPDATE/UPSERT arm to a structural payload-SDL walk. Records
+      the SettKvotesporsmal bug's last surface in the @mutation classifier
+      as retired.
+    - **Slice 4** (shipped): migrate the DELETE @mutation classifier arm
+      to the same structural detection. Inlines the
+      `SingleRecordIdFieldFromReturning` and
+      `SingleRecordTableFieldFromReturning` permit construction;
+      `classifyDeleteTableProjection` signature shifts to take
+      `(carrierTypeName, elementTypeName, elementTable)`. DELETE and
+      non-DELETE arms consolidate to one
+      `DmlCarrierScan` / `DmlElementKind` sealed dispatch.
+    - **Slice 5** (shipped): lift the structural scanner from FieldBuilder
+      to BuildContext as `scanStructuralDmlPayload`; the scan replaces the
+      carrier walk on the @mutation classifier, MutationInputResolver, and
+      TypeBuilder paths. Adds rule 7 / rule 8 / [ID]-wrapper / unknown-sigil
+      / forbidden-directives checks (the @field forbidden check is omitted
+      per R178's SettKvotesporsmal bug fix). Migrates
+      `MutationInputResolver.validateReturnType` (both ScalarReturnType
+      and ResultReturnType arms) and `TypeBuilder.promoteSingleRecordCarriers`.
+      Retargets `carrier_dataFieldCarriesAtField_returnsRejected` and
+      `sourceSigil_bareNameAtCarrier_continuesToHardRejectAsForbidden` to
+      admit under R178 (the SettKvotesporsmal contract: with-and-without
+      `@field` classify identically).
+    - **Slice 6** (shipped): migrate the verbless walk in
+      `GraphitronSchemaBuilder.buildSchema`. Orphan NoBacking carriers
+      (carrier-shaped payloads with no producing mutation) leave their
+      data field unregistered (graphql-java's never-traverse-unproduced-
+      fields guarantee makes the missing entry structurally safe);
+      errors-shaped fields still classify through the normal per-field
+      classifier. Deletes `GraphitronSchemaBuilder.registerCarrierDataField`.
+      Retargets `SINGLE_RECORD_IDENTITY_FIELD` /
+      `carrier_recordElement_dataFieldClassifiesAsSingleRecordIdentityField`
+      to assert "stays unregistered"; drops GraphitronSchemaBuilder from
+      `CarrierFieldRoleCoverageTest.CONSUMERS`. After slice 6 the carrier
+      walk has no production callers.
+    - **Slice 7** (pending): delete the now-unused carrier-walk methods
+      and supporting sealed model types. Removable today:
+      `FieldBuilder.registerDeleteCarrierDataField` (dead — slice 4
+      inlined the equivalent logic); `BuildContext.tryResolveSingleRecordCarrier`
+      (both overloads); `BuildContext.classifyCarrierField` and
+      `CarrierFieldClassification`; `SingleRecordCarrierResolution`;
+      `SingleRecordCarrierShape`; `CarrierFieldRole`; `DataElement`;
+      `ChildField.SingleRecordIdentityField` (no longer produced after
+      slice 6). The `@LoadBearingClassifierCheck` keys
+      `single-record-carrier-shape.roles-exhaustively-classified` (and
+      its consumer annotations in `GraphitronSchemaBuilder` and
+      `TypeFetcherGenerator`) retire alongside `classifyCarrierField`.
+      Test cleanup: `DataElementIdInvariantTest`,
+      `CarrierFieldRoleCoverageTest`, the carrier-walk variants in
+      `VariantCoverageTest`, the R161 `Ok.NoBacking` / `ClassBacked` fork
+      cases, and pipeline-tier rejection assertions whose diagnostic
+      wording came from `classifyCarrierField`.
+  - **Phase 4 still-pending** (after slice 7): the spec's full §"Concrete
+    deletions" list includes items that survive Phase 4 because the DELETE
+    arm and the DML/Service unified arms still produce them; they retire
+    in Phase 5. Specifically: `ChildField.SingleRecordTableField` /
+    `SingleRecordTableFieldFromReturning` / `SingleRecordIdFieldFromReturning`,
+    `Reader.ResultRowWalk` (the permit), `DeleteTableProjection`,
+    `PerFieldOutcome`, `PkResolution`, `classifyDeleteTableProjection` /
+    `classifyElementFieldForDeleteProjection`, the five FetcherEmitter
+    methods, and the remaining `@LoadBearingClassifierCheck` keys
+    (`mutation-dml-record-field.data-table-equals-input-table`,
+    `mutation-delete-carrier.pk-resolution-projection-clean`,
+    `source-key.result-row-walk-target-aligned-empty-path`).
   - **Phase 5 emit-side migration** (pending, separable from R178's
     classifier scope per the spec but recorded here for navigability):
     lift the data-field permit from `SourceKey(Wrap.Record/TableRecord,
