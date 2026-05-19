@@ -24,7 +24,7 @@ That violates the rewrite's architectural constraint that the generator does not
 
 Under that layering, `ResultAssembly` is solving a problem the per-field wiring layer already solves. It was introduced by sessions that didn't recognise the wiring path was the proper answer; the result is a sealed slot hierarchy (`ResultSlot.CtorParameterIndex | SetterMethod`), a parallel classifier pipeline (`ResultAssemblyResult.NoAssembly | Assembly | Reject`), and a forked success-arm emitter — none of which earn their keep against the wiring path.
 
-The catch arm's `payloadFactoryLambda` is a different concern and stays: when the service throws, the service never produced a payload, so the generator constructs `Payload(null, errors)` from the error-routed list. Generator-side DTO construction is unavoidable on the error path; that's where `PayloadConstructionShape`, `ErrorsSlot`, `NonBoundSetter`, and `DefaultedSlot` earn their keep, and they all continue to.
+The catch arm's `payloadFactoryLambda` is a different concern and stays: when the service throws, the service never produced a payload, so the generator constructs `Payload(null, errors)` from the error-routed list. Generator-side DTO construction is unavoidable on the error path; that's where `PayloadConstructionShape`, `ErrorsSlot`, `NonBoundSetter`, and `DefaultedSlot` earn their keep, and they all continue to. The wiring layer cannot symmetrise this: graphql-java per-field DataFetchers project off a *value* the parent resolver returned, but on the throw path no value was returned. The error-routed list is produced inside the service-call try block, which is generator-owned, so the synthetic payload must also be constructed there. The boundary is structural, not a missing abstraction.
 
 ## Scope
 
@@ -44,7 +44,7 @@ Removing `ResultAssembly` is purely a generator-side cleanup. No SDL change, no 
 
 ### Rename
 
-- Inside `buildServiceFetcherCommon`, rename the success-arm local from `payload` to `result`. The variable holds a `TableRecord` for `QueryServiceTableField` / `MutationServiceTableField` (Single), the developer's declared `Result<XRecord>` / `List<XRecord>` for the List arm, and the `@record` backing class (or reflected return type) for `*ServiceRecordField`. `payload` is residue from the discarded mental model. Update the `return $T.success(result)` / `returnSyncSuccess(valueType, "result")` site and any local references. Keep the local — the catch arm dispatches the captured exception, not the local, so the rename is purely cosmetic but worth doing while the file is open.
+- Inside `buildServiceFetcherCommon`, rename the success-arm local from `payload` to `result`. This is the only hygiene-only step in the spec; everything else under Delete is structural. Bundling it into the same commit is deliberate (the file is open anyway, the rename pins the corrected mental model in source), but flagged separately here so the asymmetry is visible to a reviewer. The variable holds a `TableRecord` for `QueryServiceTableField` / `MutationServiceTableField` (Single), the developer's declared `Result<XRecord>` / `List<XRecord>` for the List arm, and the `@record` backing class (or reflected return type) for `*ServiceRecordField`. `payload` is residue from the discarded mental model. Update the `return $T.success(result)` / `returnSyncSuccess(valueType, "result")` site and any local references. Keep the local — the catch arm dispatches the captured exception, not the local, so the rename is purely cosmetic but worth doing while the file is open.
 
 ### Fixtures
 
@@ -65,6 +65,8 @@ Today's classifier produces three distinct reject messages for service-return mi
 3. "list-cardinality service fields must return the SDL payload type directly (per-element ResultAssembly is not supported)" — list-arm mismatch.
 
 After the deletion, all three collapse to the existing legacy-passthrough rejection: "must return `<sdlPayload>`" (single source of truth, already produced by the `method.returnType().equals(sdlPayloadTypeName)` check above the deleted block). Existing tests asserting on `.contains("must return")` continue to pass. Tests asserting on the more specific wording (e.g. "or a type matching one parameter on ...") need their assertion narrowed to "must return".
+
+The `LoadBearingGuaranteeAuditTest` net was checked at spec time: a grep for `ResultAssembly` / `resolveServiceResultAssembly` against `@LoadBearing*` / `@DependsOnClassifier*` annotation values returned zero matches. No dependent-emitter audit is owed; the classifier path being deleted carries no annotated downstream consumer.
 
 ## Tests
 
