@@ -6192,7 +6192,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         BULK_DELETE_TABLE_NON_NULL_NON_PK_REJECTS(
-            "DELETE + [Foo!] with non-null non-PK column → UnclassifiedField naming the offending field, pointing at DataElement.Id",
+            "DELETE + [Foo!] with non-null non-PK column → UnclassifiedField naming the offending field, pointing at the ID-typed carrier shape",
             """
             type Film @table(name: "film") { title: String! }
             input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
@@ -6202,7 +6202,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "deleteFilms");
-                assertThat(f.reason()).contains("title", "non-primary-key columns", "non-nullable", "DataElement.Id");
+                assertThat(f.reason()).contains("title", "non-primary-key columns", "non-nullable", "ID-typed carrier field");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
@@ -6289,7 +6289,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var f = (UnclassifiedField) schema.field("Mutation", "deleteFilms");
-                assertThat(f.reason()).contains("computedThing", "@service", "DataElement.Id");
+                assertThat(f.reason()).contains("computedThing", "@service", "ID-typed carrier field");
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },

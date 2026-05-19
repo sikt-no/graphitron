@@ -961,23 +961,23 @@ public class GraphitronSchemaValidator {
      *
      * <p>The fetcher emitted for that sibling must short-circuit on {@code null} source and return
      * {@code null}; otherwise the catch path renders {@code data} as a corrupt half-payload instead
-     * of the SDL-level {@code data: null, errors: [...]} shape. Today's carrier-walk admission set
-     * in {@code BuildContext.classifyCarrierField} ({@link CarrierFieldRole.ErrorChannelRole}) keeps
-     * the data-channel role's variants within {@link #LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS} by
-     * construction. R161 widens that admission to mutation DML record fields, and any future
-     * widening that admits a non-guarded variant must extend the allow-list along with the
-     * matching fetcher's null-source guard. This validator pass is the cross-check that turns a
-     * silently-broken admission into a build-time {@link Rejection.AuthorError.Structural}.
+     * of the SDL-level {@code data: null, errors: [...]} shape. The {@code @service}-payload
+     * lifting in {@code FieldBuilder.findCarrierErrorsBinding} keeps the data-channel role's
+     * variants within {@link #LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS} by construction. R161
+     * widens that admission to mutation DML record fields, and any future widening that admits a
+     * non-guarded variant must extend the allow-list along with the matching fetcher's null-source
+     * guard. This validator pass is the cross-check that turns a silently-broken admission into a
+     * build-time {@link Rejection.AuthorError.Structural}.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "error-channel.local-context-transport",
-        reliesOn = "The validator mirrors BuildContext.classifyCarrierField's invariant that a "
-            + "carrier admitted with ErrorChannel.LocalContext has a data field whose fetcher "
-            + "honors the null-source short-circuit guard. Rejects schemas whose ErrorsField "
-            + "carries Transport.LocalContext but whose sibling data-channel field is not on "
-            + "the LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS allow-list as "
-            + "Rejection.structural so emit-time consumers (TypeFetcherGenerator's catch arm "
-            + "and asyncWrapTail) can assume the guard without a runtime branch.")
+        reliesOn = "The validator mirrors the producer invariant that a carrier admitted with "
+            + "ErrorChannel.LocalContext has a data field whose fetcher honors the null-source "
+            + "short-circuit guard. Rejects schemas whose ErrorsField carries Transport.LocalContext "
+            + "but whose sibling data-channel field is not on the "
+            + "LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS allow-list as Rejection.structural so "
+            + "emit-time consumers (TypeFetcherGenerator's catch arm and asyncWrapTail) can assume "
+            + "the guard without a runtime branch.")
     private void validateLocalContextErrorsFieldGuards(GraphitronSchema schema, List<ValidationError> errors) {
         for (var f : schema.fields().values()) {
             if (!(f instanceof ChildField.ErrorsField ef)) continue;
@@ -1022,11 +1022,11 @@ public class GraphitronSchemaValidator {
      * </ul>
      *
      * <p>The audit harness {@code LoadBearingGuaranteeAuditTest} surfaces a missing producer if
-     * the {@code @LoadBearingClassifierCheck} on {@code BuildContext.classifyCarrierField} is
-     * relaxed below the consumer count. Adding a variant to this set without anchoring the
-     * matching emitter site annotation orphans the new consumer; removing the guard from an
-     * existing emitter arm must remove the variant from this set so the consumer-side annotation
-     * stops referencing a no-longer-honored invariant.
+     * the {@code @LoadBearingClassifierCheck} on the LocalContext producer is relaxed below the
+     * consumer count. Adding a variant to this set without anchoring the matching emitter site
+     * annotation orphans the new consumer; removing the guard from an existing emitter arm must
+     * remove the variant from this set so the consumer-side annotation stops referencing a
+     * no-longer-honored invariant.
      */
     private static final java.util.Set<Class<? extends GraphitronField>> LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS = java.util.Set.of(
         ChildField.SingleRecordTableField.class,
