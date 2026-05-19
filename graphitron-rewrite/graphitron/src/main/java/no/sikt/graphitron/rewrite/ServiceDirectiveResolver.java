@@ -279,9 +279,9 @@ final class ServiceDirectiveResolver {
         description = "Rejects developer @service methods at the root whose resolved return type "
             + "is TableBoundReturnType + List unless the method's reflected return type equals "
             + "Result<XRecord> or List<XRecord> exactly. Sibling producer to "
-            + "service-catalog-strict-service-return (which now covers only the Single arm "
-            + "and ResultReturnType paths). Lets the two root table-fetcher emitters declare "
-            + "the typed local by reading MethodRef.returnType() without a defensive cast.")
+            + "service-catalog-strict-service-return (which now covers only the Single arm of "
+            + "TableBoundReturnType). Lets the two root table-fetcher emitters declare the typed "
+            + "local by reading MethodRef.returnType() without a defensive cast.")
     private static String validateRootListTableBoundReturnPair(ReturnTypeRef returnType, MethodRef method) {
         if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) return null;
         if (!returnType.wrapper().isList()) return null;
