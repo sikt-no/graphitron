@@ -262,27 +262,46 @@ class ServiceCatalog {
                                 Rejection.structural("parameter names not available for method '" + methodName + "' in class '" + className
                                 + "' — compile with -parameters flag (see warning above for instructions)"));
                         }
-                        // SOURCES batching is only meaningful when there is a parent table to batch
-                        // against. On root operation fields and DTO-parent children (parentPkColumns
-                        // empty) the parameter must match a GraphQL argument or context key — point
-                        // the user at the actual mismatch instead of an unrelated SOURCES-flavored
-                        // hint (the lifter-directive roadmap doesn't help with arg-name typos).
-                        //
-                        // Exception: an anonymous-key SOURCES-shape parameter (List<RowN> /
-                        // List<RecordN>) at root is its own diagnostic — `@service at the root
-                        // does not support List<Row>/List<Record> batch parameters`. A
-                        // List<TableRecord> at root is the canonical InputBeanResolver shape for
-                        // "list of input objects mapped to records", so it falls through to the
-                        // arg-mismatch block below if the parameter name doesn't bind.
-                        // classifySourcesType returns empty for parentPkColumns.isEmpty(), so the
-                        // detection happens here on the parameter type directly.
+                        // The discriminator is the parameter type axis, not the coordinate. The
+                        // parameter must either match a GraphQL argument / context key (handled
+                        // above), classify as SOURCES (handled by classifySourcesType), or land in
+                        // one of the diagnostics below. parentPkColumns only gates which SOURCES
+                        // outcomes are reachable at a given coordinate; it does not gate the
+                        // name-mismatch diagnostic, which applies wherever the parameter is clearly
+                        // not SOURCES-adjacent (root, DTO-parent child, or @table-parent child with
+                        // a non-container type like LocalDate / String / Integer).
+                        // Anonymous-key SOURCES shapes (List<RowN> / List<RecordN>) at root get the
+                        // dedicated batch-at-root diagnostic — `@service at the root does not
+                        // support List<Row>/List<Record> batch parameters`. List<TableRecord> at
+                        // root is the canonical InputBeanResolver shape and falls through to the
+                        // arg-mismatch arm if the parameter name doesn't bind (R185 narrowed
+                        // looksLikeSourcesShape so TableRecord is excluded). classifySourcesType
+                        // returns empty for parentPkColumns.isEmpty(), so the detection happens
+                        // here on the parameter type directly.
                         if (parentPkColumns.isEmpty() && looksLikeSourcesShape(p.getParameterizedType())) {
                             return new ServiceReflectionResult(null,
                                 Rejection.structural("@service at the root does not support "
                                 + "List<Row>/List<Record> batch parameters — the root "
                                 + "has no parent context to batch against"));
                         }
-                        if (parentPkColumns.isEmpty()) {
+                        // DTO-shape parameters (List<DTO> / Set<DTO>) at child coordinates keep
+                        // precedence over the name-mismatch arm: the @sourceRow lifter-directive
+                        // hint is genuinely actionable here (DataLoader batching applies, and the
+                        // missing piece is a DTO-to-key conversion). At root coordinates the gate
+                        // flips: List<DTO> there has no batching context, so the arg-mismatch arm
+                        // wins (pinned by dtoSources_onRootField_pointsAtArgCtxMismatch).
+                        if (!parentPkColumns.isEmpty()) {
+                            String dtoReason = dtoSourcesRejectionReason(p.getParameterizedType());
+                            if (dtoReason != null) {
+                                return new ServiceReflectionResult(null,
+                                    Rejection.structural("parameter '" + displayName + "' in method '" + methodName + "': " + dtoReason));
+                            }
+                        }
+                        // Non-SOURCES-adjacent parameter that didn't match any argument / context
+                        // key: the only plausible diagnosis is a name mismatch (or a missing
+                        // context key). Fires at any coordinate — root, DTO-parent child, or
+                        // @table-parent child with a non-container type (R187).
+                        if (!looksLikeSourcesShape(p.getParameterizedType())) {
                             String available = formatNameSet(argByJavaName.keySet());
                             String suggestion;
                             if (argByJavaName.isEmpty()) {
@@ -320,11 +339,6 @@ class ServiceCatalog {
                                 + " — available GraphQL arguments: " + available
                                 + "; available context keys: " + formatNameSet(ctxKeys)
                                 + suggestion));
-                        }
-                        String dtoReason = dtoSourcesRejectionReason(p.getParameterizedType());
-                        if (dtoReason != null) {
-                            return new ServiceReflectionResult(null,
-                                Rejection.structural("parameter '" + displayName + "' in method '" + methodName + "': " + dtoReason));
                         }
                         return new ServiceReflectionResult(null,
                             Rejection.structural("parameter '" + displayName + "' in method '" + methodName

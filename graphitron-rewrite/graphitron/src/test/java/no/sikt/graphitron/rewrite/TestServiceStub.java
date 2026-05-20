@@ -46,6 +46,17 @@ class TestServiceStub {
     /** Param that isn't DSLContext, isn't a GraphQL arg, and isn't a {@code List<?>}. */
     public static String getWithUnknown(Object opaque) { throw new UnsupportedOperationException(); }
 
+    /**
+     * Returns {@code Result<FilmRecord>} with a {@code List<Row1<Integer>>} keys parameter and
+     * a non-SOURCES-shaped {@code LocalDate} payload parameter — used by R187 tests pinning that
+     * a clearly non-SOURCES-adjacent type at a nested coordinate produces the arg-mismatch
+     * diagnostic rather than "unrecognized sources type".
+     */
+    public static Result<FilmRecord> getFilmsWithLocalDate(java.util.List<org.jooq.Row1<Integer>> keys,
+                                                          java.time.LocalDate input) {
+        throw new UnsupportedOperationException();
+    }
+
     // ===== FilmRecord-returning methods (positive-classification tests with @table-bound returns) =====
 
     /** Returns the specific {@link FilmRecord} — used by {@code @service} on a {@code Film} return. */

@@ -6480,6 +6480,25 @@ class GraphitronSchemaBuilderTest {
                     .doesNotContain("does not support List<Row>");
             }),
 
+        SERVICE_ON_CHILD_WITH_NON_SOURCES_PARAM_NAME_MISMATCH_REJECTED(
+            "@service on @table-parent child with non-SOURCES-shaped param (LocalDate) whose name doesn't match any GraphQL arg → UnclassifiedField with arg-mismatch diagnostic (R187)",
+            """
+            type Film @table(name: "film") {
+                title: String
+                statushistorikk(dato: String): [Film]
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsWithLocalDate"})
+            }
+            type Query { films: [Film] }
+            """,
+            schema -> {
+                var f = schema.field("Film", "statushistorikk");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("does not match any GraphQL argument or context key")
+                    .contains("available GraphQL arguments: [dato]")
+                    .doesNotContain("unrecognized sources type");
+            }),
+
         TABLEMETHOD_WITH_WIDER_RETURN_TYPE_REJECTED(
             "@tableMethod whose method returns a wider Table<?> rather than the generated jOOQ table class → UnclassifiedField (Invariants §3)",
             """

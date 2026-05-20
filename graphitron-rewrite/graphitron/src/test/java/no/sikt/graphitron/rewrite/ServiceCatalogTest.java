@@ -108,15 +108,44 @@ class ServiceCatalogTest {
     }
 
     @Test
-    void reflectServiceMethod_unrecognisedParam_onChildField_stillErrors() {
-        // Non-empty parentPkColumns: child of a table-backed parent. SOURCES batching applies
-        // here, so an unrecognized-shape parameter still falls through to the SOURCES error.
+    void reflectServiceMethod_unrecognisedParam_onChildField_pointsAtArgCtxMismatch() {
+        // Non-empty parentPkColumns: child of a table-backed parent. Post-R187 the discriminator
+        // is the parameter type axis, not the coordinate: a clearly non-SOURCES-adjacent type
+        // (here, {@code Object}) under a non-empty parent PK still gets the arg-mismatch
+        // diagnostic, matching the root-coordinate behaviour. SOURCES batching could in principle
+        // apply at this coordinate, but the parameter shape rules it out, so the only plausible
+        // diagnosis is a name mismatch (or a missing context key).
         var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
         var result = newCatalog().reflectServiceMethod(
             STUB_CLASS, "getWithUnknown", bindings(Map.of()), Set.of(), filmPk, null);
 
         assertThat(result.failed()).isTrue();
-        assertThat(result.rejection().message()).contains("unrecognized sources type");
+        assertThat(result.rejection().message())
+            .contains("does not match any GraphQL argument or context key")
+            .contains("available GraphQL arguments: (none)")
+            .contains("available context keys: (none)")
+            .doesNotContain("unrecognized sources type");
+    }
+
+    @Test
+    void reflectServiceMethod_nonSourcesPayloadOnChildField_pointsAtArgCtxMismatch() {
+        // R187 reproduction: child @service whose key parameter is a proper SOURCES shape
+        // (List<Row1<Integer>>) and whose second parameter is a clearly non-SOURCES-adjacent
+        // type (LocalDate) whose name does not match any GraphQL argument. The arg-mismatch
+        // diagnostic is the one the user can act on (rename the Java parameter or bind via
+        // argMapping); the legacy "unrecognized sources type" message described a feature the
+        // user never asked for.
+        var filmPk = List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"));
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getFilmsWithLocalDate", bindings(Map.of("dato", "dato")), Set.of(), filmPk, null);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("parameter 'input'")
+            .contains("does not match any GraphQL argument or context key")
+            .contains("available GraphQL arguments: [dato]")
+            .contains("argMapping")
+            .doesNotContain("unrecognized sources type");
     }
 
     @Test

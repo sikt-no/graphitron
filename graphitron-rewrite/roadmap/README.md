@@ -18,7 +18,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R45` | Tenant routing and schema-driven ExecutionInput factory | Spec |  | [plan](tenant-routing-and-execution-input.md) |
 | `R191` | Honor @field(name:) for accessor lookup on free-form @record parents | In Review | 2026-05-20 | [plan](record-parent-field-name-accessor-remap.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
-| `R187` | Nested @service param-name mismatch shadowed by 'unrecognized sources type' diagnostic | Spec | 2026-05-20 | [plan](service-nested-arg-mismatch-shadowed-by-sources-diagnostic.md) |
+| `R187` | Nested @service param-name mismatch shadowed by 'unrecognized sources type' diagnostic | In Review | 2026-05-20 | [plan](service-nested-arg-mismatch-shadowed-by-sources-diagnostic.md) |
 | `R185` | Root @service arg-name mismatch shadowed by Sources-shape diagnostic | In Review | 2026-05-20 | [plan](service-root-arg-mismatch-shadowed-by-sources-diagnostic.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
@@ -137,7 +137,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R45` [**Tenant routing and schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Spec, architecture
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture, blocked by [single-tenant-execution-input-factory](single-tenant-execution-input-factory.md)
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md)
-- `R187` [**Nested @service param-name mismatch shadowed by 'unrecognized sources type' diagnostic**](service-nested-arg-mismatch-shadowed-by-sources-diagnostic.md) — Spec, bug
+- `R187` [**Nested @service param-name mismatch shadowed by 'unrecognized sources type' diagnostic**](service-nested-arg-mismatch-shadowed-by-sources-diagnostic.md) — In Review, bug
 - `R185` [**Root @service arg-name mismatch shadowed by Sources-shape diagnostic**](service-root-arg-mismatch-shadowed-by-sources-diagnostic.md) — In Review, bug
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
