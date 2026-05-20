@@ -15,6 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
+| `R194` | Reject case-insensitive synthesised type-name collisions | Spec | 2026-05-20 | [plan](reject-case-insensitive-synth-type-collisions.md) |
 | `R190` | Single-tenant schema-driven ExecutionInput factory and sealed GraphitronContext | Spec | 2026-05-20 | [plan](single-tenant-execution-input-factory.md) |
 | `R45` | Tenant routing and schema-driven ExecutionInput factory | Spec |  | [plan](tenant-routing-and-execution-input.md) |
 | `R191` | Honor @field(name:) for accessor lookup on free-form @record parents | In Review | 2026-05-20 | [plan](record-parent-field-name-accessor-remap.md) |
@@ -227,6 +228,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
+- `R194` [**Reject case-insensitive synthesised type-name collisions**](reject-case-insensitive-synth-type-collisions.md)
 - `R188` [**Replace @value with PK-default partition + @condition on mutations**](simplify-update-mutations-drop-value.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
 
