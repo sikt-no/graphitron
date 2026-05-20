@@ -1,7 +1,7 @@
 ---
 id: R189
-title: "FK-target `@nodeId` input fields on `@mutation` (INSERT / UPDATE / DELETE)"
-status: Backlog
+title: FK-target `@nodeId` input fields on `@mutation` (INSERT / UPDATE / DELETE)
+status: Spec
 bucket: feature
 theme: nodeid
 depends-on: []
@@ -27,7 +27,7 @@ even though the legacy graphitron generator handles the shape across INSERT / UP
 
 ## Why the carrier is verb-uniform
 
-The classifier (`BuildContext.classifyInputField` → `NodeIdLeafResolver.Resolved.FkTarget.DirectFk`, `BuildContext.java:1832-1845`) already produces carriers with everything every DML emitter needs:
+The classifier (`BuildContext.classifyInputField` → `NodeIdLeafResolver.Resolved.FkTarget.DirectFk`, `BuildContext.java:1832-1845`) already produces carriers with everything every DML emitter needs. `NodeIdLeafResolver.Resolved.FkTarget` is sealed `DirectFk | TranslatedFk`, but the `TranslatedFk` arm at `BuildContext.java:1846-1849` produces an `InputFieldResolution.Unresolved` outright; only `DirectFk` ever reaches `ColumnReferenceField` / `CompositeColumnReferenceField` at the input-field level. The `id-reference` synthesis shim at `BuildContext.buildInputNodeIdReference` (`BuildContext.java:1867-1897`) is the only other producer of these two carriers, and it constructs the same `liftedSourceColumns` + `NodeIdDecodeKeys` shape that `DirectFk` does. The widening below is therefore scoped to the `DirectFk`-shaped carrier; `TranslatedFk` admission is out of scope and stays a separate future item if it ever surfaces a use case.
 
 - `liftedSourceColumns` — the FK columns on the input's *own* table (`CAMPUS.LARESTED_ID` in the example) that receive the decoded values or carry the WHERE-side filter. No JOIN to the parent table is involved.
 - `extraction` — narrowed to `CallSiteExtraction.NodeIdDecodeKeys` at the type level, identical to the same-table NodeId carrier the existing DML emitters handle.
@@ -59,7 +59,7 @@ The single roadmap item buys verb-uniform admission across the surface that *doe
 
 ### Validator-side binding walker
 
-4. `EnumMappingResolver.buildLookupBindings` (`EnumMappingResolver.java:299-361`) — add `case ColumnReferenceField` / `case CompositeColumnReferenceField` arms that build the same `InputColumnBindingGroup.DecodedRecordGroup` shape the `CompositeColumnField` arm uses (composite reference) or the `MapGroup` shape adapted to read from a decoded record (arity-1 reference). Target columns come from `liftedSourceColumns()`. This is the load-bearing fix that prevents the PK-coverage check at `MutationInputResolver.java:496-512` from silently under-counting reference contributions.
+4. `EnumMappingResolver.buildLookupBindings` (`EnumMappingResolver.java:299-361`) — add `case ColumnReferenceField` / `case CompositeColumnReferenceField` arms. The arity-1 reference reuses the exact `MapGroup` shape the arity-1 `ColumnField` NodeId path already builds at `EnumMappingResolver.java:337-338` via the non-`Direct` extraction branch (`:334-336`); the only delta is `target column = liftedSourceColumns().get(0)` instead of `cf.column()`. The composite reference reuses the `DecodedRecordGroup` shape the `CompositeColumnField` arm builds at `:347-352`; the only delta is iterating `liftedSourceColumns()` instead of `ccf.columns()` to assign `RecordBinding` target columns. No new `InputColumnBindingGroup` permit is introduced; this is the load-bearing fix that prevents the PK-coverage check at `MutationInputResolver.java:496-512` from silently under-counting reference contributions.
 
 ### Emitter dispatch (INSERT)
 
@@ -72,7 +72,7 @@ The single roadmap item buys verb-uniform admission across the surface that *doe
 
 ### Emitter dispatch (UPDATE / UPSERT SET)
 
-6. The eight `(InputField.ColumnField) sf` cast sites in `TypeFetcherGenerator` (lines 2017, 2102, 2127, 2145, 2300, 3758, 3797, 4044) all cast `tia.setFields()` entries. With `SetField` widened, every cast is a runtime CCE if left as-is. Replace each with a switch over the carrier variants, emitting the SET write against `column()` (today's path) or against each `liftedSourceColumns` entry with the matching `value<i+1>()` decoded slot. UPSERT-SET sites are reached from the existing `buildRecordUpsertChain` path; UPSERT itself is still refused, but the helpers it shares with UPDATE are on this list.
+6. Every `(InputField.ColumnField) sf` cast over an iterator of `tia.setFields()` entries — at the time of writing eight sites in `TypeFetcherGenerator` (lines 2017, 2102, 2127, 2145, 2300, 3758, 3797, 4044), but the invariant is the cast-shape, not the line list. With `SetField` widened, every such cast is a runtime CCE if left as-is. Replace each with a switch over the carrier variants, emitting the SET write against `column()` (today's path) or against each `liftedSourceColumns` entry with the matching `value<i+1>()` decoded slot. UPSERT-SET sites are reached from the existing `buildRecordUpsertChain` path; UPSERT itself is still refused, but the helpers it shares with UPDATE are on this list.
 
 ### Emitter dispatch (UPDATE / DELETE WHERE)
 
@@ -80,14 +80,20 @@ The single roadmap item buys verb-uniform admission across the surface that *doe
 
 ### Audit annotations
 
-8. Update three named `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` annotations whose text encodes the "only `ColumnField` / `CompositeColumnField`" assumption:
-   - `mutation-input.where-columns-cover-pk` (`MutationInputResolver.java:312-317`) — re-state that contributed filter columns now include `ColumnReferenceField.liftedSourceColumns()` and `CompositeColumnReferenceField.liftedSourceColumns()`.
+8. Update three named `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` annotations whose text encodes the "only `ColumnField` / `CompositeColumnField`" assumption. One of the three is a *semantic* change to the classifier guarantee itself; the other two are *wording-only* refreshes that re-state the same invariant over a widened carrier set.
+
+   *Semantic change* (the load-bearing one called out in Risks):
+   - `mutation-input.where-columns-cover-pk` (`MutationInputResolver.java:312-317`) — the set of columns counted toward PK coverage genuinely grows. Re-state that contributed filter columns now include `ColumnReferenceField.liftedSourceColumns()` and `CompositeColumnReferenceField.liftedSourceColumns()`. This is the check the validator-side under-counting failure mode rides on; step 9's negative-rejection fixture is what exercises it.
+
+   *Wording-only refreshes* (no behavioural delta; the invariants already hold over the widened set):
    - `mutation-input.update-set-fields-equal-value-marked` (`MutationInputResolver.java:318-323`) — re-state that `setFields()` is the `@value`-marked admissible-carrier set, where "admissible carrier" now includes the reference variants.
-   - `mutation-input.lookup-binding-decoded-record-arity-matches-carrier-columns` (`EnumMappingResolver.java:292-298`) — re-state the arity guarantee for the new arms (arity-1 reference → one-slot decoded record; composite reference → N-slot record with `liftedSourceColumns().size() == N`).
+   - `mutation-input.lookup-binding-decoded-record-arity-matches-carrier-columns` (`EnumMappingResolver.java:292-298`) — re-state the arity guarantee for the new arms (arity-1 reference → one-slot `MapGroup`; composite reference → N-slot `DecodedRecordGroup` with `liftedSourceColumns().size() == N`).
 
 ### Test surface
 
 9. Pipeline-tier fixtures exercising the user's `OpprettCampusInput` shape on each of the three admitted verbs (one INSERT, one UPDATE, one DELETE). Verify both the arity-1 and composite-key arms; the rooted-at-parent fixture R50 added in `nodeidfixture` (`parent_node` + `child_ref`) is the natural execution-tier driver for the composite arm.
+
+   *Negative-rejection fixture for the under-counting failure mode.* In addition to the acceptance fixtures, a pipeline-tier fixture whose FK input field's `liftedSourceColumns()` *exactly cover* the input table's primary key. This fixture asserts that the resolver produces *no* `mutation-input.where-columns-cover-pk` rejection. Without it, step 4's load-bearing widening is silently regressable: the validator can drop its reference-carrier arms, generated code still compiles (the `case null, default ->` no-op makes the binding list shorter but well-formed), the compilation tier passes, and the execution tier never runs because the schema is rejected upstream. Only this specific assertion catches that regression. The fixture sits next to the INSERT acceptance fixture and shares its schema.
 
 ## Risks
 
