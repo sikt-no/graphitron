@@ -1,7 +1,7 @@
 ---
 id: R194
 title: Reject case-insensitive synthesised type-name collisions
-status: Spec
+status: Ready
 bucket: correctness
 priority: 3
 depends-on: []
