@@ -1,5 +1,5 @@
 ---
-id: R196
+id: R198
 title: SchemaWatcher on macOS is polling-only; disable latency-bound tests there
 status: Spec
 bucket: bug
@@ -27,21 +27,21 @@ of someone actually running the build on macOS.
 1. Annotate the six watch-driven tests in
    `graphitron-maven-plugin/src/test/.../SchemaWatcherTest.java` and the one in
    `CatalogRefreshTest.java` with `@DisabledOnOs(OS.MAC)` and a comment
-   pointing at this item. The remaining tests in those classes
+   pointing at R197. The remaining tests in those classes
    (`overflowEvent_firesCallback`, `addRootRacesWithDispatch...`,
    `dispatch_triggersOnDotGraphql_whenConfigured`,
    `dispatch_ignoresUnconfiguredSuffix`, `constructor_emptySuffixSet_rejected`)
    drive `dispatch(...)` synthetically and stay enabled on every platform.
 2. Add a class-level javadoc note on `SchemaWatcher` documenting the macOS
-   polling fallback (~10 s latency) and the recommended path: R195's
+   polling fallback (~10 s latency) and the recommended path: R197's
    LSP-driven regen trigger.
 3. No production code change. The watcher works on macOS, just slowly; users
-   with the LSP attached do not feel it once R195 ships.
+   with the LSP attached do not feel it once R197 ships.
 
 ## Out of scope
 
 - Swapping the WatchService backend to `io.methvin:directory-watcher` or
   similar native FSEvents library. That is a real option but should be sized
-  separately: it adds a dep (JNA), and the LSP-driven path (R195) covers the
+  separately: it adds a dep (JNA), and the LSP-driven path (R197) covers the
   primary user experience for free.
 - Linux aarch64 / Windows verification. R89 owns that surface.
