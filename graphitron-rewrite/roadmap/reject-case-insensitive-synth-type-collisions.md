@@ -1,7 +1,7 @@
 ---
 id: R194
 title: Reject case-insensitive type-name collisions
-status: In Review
+status: Ready
 bucket: correctness
 priority: 3
 depends-on: []
@@ -108,6 +108,46 @@ Pipeline coverage in `GraphitronSchemaBuilderTest.CaseInsensitiveTypeClashCase`:
 
 Compilation and execution tiers not applicable: the rejection prevents
 emission.
+
+## Review feedback (In Review → Ready, 2026-05-20)
+
+One material gap surfaced on the In Review pass; the rest of the work landed
+clean (build green, spec ↔ diff aligned, capability interface matches the
+`SqlGeneratingField`/`BatchKeyField` precedent, drift-protection tests
+extended, doc tree + mermaid-class updated).
+
+`CaseFoldCollision.prefixedWith` at
+`graphitron/src/main/java/no/sikt/graphitron/rewrite/model/Rejection.java:210-215`
+degrades to `Structural` and discards the typed `group` / `origin`. This
+breaks the R58 contract: every other sealed leaf (`UnknownName`,
+`DirectiveConflict`, `AccessorMismatch`, `RecordBindingMultiProducer`,
+`Structural`, `Deferred`) returns the same record class with typed
+components intact, and `RejectionRenderingTest` codifies that contract
+with a `prefixedWithPreserves<Variant>TypedFields` case per leaf. The
+variant's javadoc rationalises the degrade as "no wrap sites thread
+context onto it", but `GraphitronSchemaValidator.validateUnclassifiedType`
+(`GraphitronSchemaValidator.java:918-924`) *is* such a wrap site and
+fires on every diagnostic, so the typed structure is lost on the only
+path that reaches `ValidationError.rejection`. That defeats this spec's
+own design rationale ("Carrying the group as typed data... keeps
+downstream consumers (LSP diagnostics, watch-mode formatter) free to
+render the group structurally"): if an LSP fix-it does
+`instanceof CaseFoldCollision` on the validator-projected rejection, it
+will never match.
+
+Next pass: add a `String prefix` field to the record (default `""`),
+accumulate it in `prefixedWith` and prepend it in `message()`; add a
+`prefixedWithPreservesCaseFoldCollisionTypedFields` case to
+`RejectionRenderingTest` mirroring lines 127-160. Wire-format prose tests
+should keep passing exact-match; the only behavioural change is that the
+validator-projected rejection retains `CaseFoldCollision` type rather
+than collapsing to `Structural`.
+
+Phase 1 shipped at 5e5f5e3 (builder pass + 5 pipeline cases); phase 2
+shipped at a1feace (`EmitsPerTypeFile` capability lift, typed
+`CaseFoldCollision` arm, two more origin-arm pipeline cases, doc +
+drift-protection updates). Remaining: the `prefixedWith` type-preservation
+fix described above.
 
 ## Out of scope
 
