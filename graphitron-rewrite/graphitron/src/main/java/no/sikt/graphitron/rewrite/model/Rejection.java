@@ -173,15 +173,21 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * entry point.
          *
          * <p>{@code group} carries every case-equivalent type name in registry-iteration order;
-         * {@code origin} names the classifier arm the demoted member came from. {@link #message()}
-         * specialises the actionable fix hint per {@code origin}.
+         * {@code origin} names the classifier arm the demoted member came from; {@code prefix}
+         * accumulates wrap-site prose threaded through {@link #prefixedWith(String)} (the
+         * validator prepends {@code "Type 'X': "} on every diagnostic). {@link #message()} renders
+         * {@code prefix} ahead of the origin-specialised fix hint; the typed {@code group} and
+         * {@code origin} survive every {@code prefixedWith} pass so downstream consumers (LSP
+         * fix-its, watch-mode formatter) can read the collision group structurally on the
+         * validator-projected rejection without re-parsing prose.
          *
          * <p>Producer: {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder} R194 case-fold
          * uniqueness pass.
          */
         record CaseFoldCollision(
             List<String> group,
-            Origin origin
+            Origin origin,
+            String prefix
         ) implements InvalidSchema {
             public CaseFoldCollision {
                 group = List.copyOf(group);
@@ -191,7 +197,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
                 String groupList = group.stream()
                     .map(n -> "'" + n + "'")
                     .collect(Collectors.joining(", "));
-                return switch (origin) {
+                String body = switch (origin) {
                     case SYNTH_CONNECTION ->
                         "synthesised connection type collides case-insensitively with " + groupList
                             + "; rename the source field or set @asConnection(connectionName: \"...\") to a name that is unique under case-folding";
@@ -205,13 +211,11 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
                         "collides case-insensitively with " + groupList
                             + "; rename one of the colliding types (case-only differences are not portable across case-insensitive filesystems)";
                 };
+                return prefix + body;
             }
 
             @Override public Rejection prefixedWith(String prefix) {
-                // The collision detector is a terminal producer (no wrap sites thread context onto
-                // it), so this path is defensive only. Degrade to Structural carrying the rendered
-                // message; the typed structure is preserved on the unprefixed primary path.
-                return new Structural(prefix + message());
+                return new CaseFoldCollision(group, origin, prefix + this.prefix);
             }
 
             /** Origin arm; identifies the classifier arm the demoted member came from. */
@@ -339,7 +343,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * the actionable fix hint.
      */
     static Rejection caseFoldCollision(List<String> group, InvalidSchema.CaseFoldCollision.Origin origin) {
-        return new InvalidSchema.CaseFoldCollision(group, origin);
+        return new InvalidSchema.CaseFoldCollision(group, origin, "");
     }
 
     /**
