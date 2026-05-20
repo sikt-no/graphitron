@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: service
-depends-on: [typed-context-value-registry]
+depends-on: [tenant-routing-and-execution-input]
 ---
 
 # Multi-tenant fan-out for `@service`
