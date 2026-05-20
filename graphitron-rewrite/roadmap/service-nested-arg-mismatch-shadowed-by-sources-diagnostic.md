@@ -69,7 +69,7 @@ The existing `dtoSources_onRootField_pointsAtArgCtxMismatch` test (`ServiceCatal
 
 The discriminator at lines 258-329 is now walked by two consumers (R185 and R187) inspecting overlapping predicates (`classifySourcesType`, `looksLikeSourcesShape`, `dtoSourcesRejectionReason`) with subtly different precedence. The principles-architect review of this Spec flagged that a sealed `UnresolvedParam` classification ; classify once, then a single `switch` produces the rejection ; would be a stronger shape: precedence would live in one place, the validator-mirrors-classifier rule would apply trivially, and "what does the classifier emit for `List<DTO>` with a name typo?" would be answered in one location with a test pinning it.
 
-This item *deliberately* doesn't take that on. R187 is a bug fix with a small, surgical diff; the unification is its own architectural item and the right move is to file it as a follow-up rather than expand R187's scope. The follow-up Backlog stub is filed as R192 (`service-param-classification-sealed-hierarchy.md`), referencing R185, R187, and the predicate-chain smell.
+This item *deliberately* doesn't take that on. R187 is a bug fix with a small, surgical diff; the unification is its own architectural item and the right move is to file it as a follow-up rather than expand R187's scope. The follow-up Backlog stub is filed as R193 (`service-param-classification-sealed-hierarchy.md`), referencing R185, R187, and the predicate-chain smell.
 
 ## Implementation
 
