@@ -35,6 +35,15 @@ import java.util.List;
  * ordered list of PK columns (each a fully resolved {@link ColumnRef}) populated from
  * {@code table.getPrimaryKey().getFields()} at parse time.
  *
+ * <p>{@code provenance} records whether the SQL table name came from a user-authored
+ * {@code @table(name: "...")} argument or was inferred from the SDL type name. R160's
+ * LSP inferred-directive arm reads this to render an inlay hint at sites where the user
+ * omitted {@code name:}. Construction sites that lift a {@link TableRef} from the catalog
+ * outside a {@code @table} directive context (e.g. {@link JooqCatalog.TableEntry#toTableRef}
+ * called from internal lifters) default to {@link NameProvenance.Inferred.FromSdlName};
+ * the LSP projector only reaches {@code TableRef}s through type-level carriers and never
+ * sees the internal-lift defaults.
+ *
  * <p>When the owning GraphQL type also carries {@code @node}, the type is classified as
  * {@link GraphitronType.NodeType} instead of {@link GraphitronType.TableType}, with the
  * {@code @node} directive properties ({@code typeId} and key columns) stored directly on it.
@@ -45,9 +54,29 @@ public record TableRef(
     ClassName tableClass,
     ClassName recordClass,
     ClassName constantsClass,
-    List<ColumnRef> primaryKeyColumns
+    List<ColumnRef> primaryKeyColumns,
+    NameProvenance provenance
 ) {
+    /**
+     * Back-compat constructor for call sites that don't carry user-facing provenance
+     * (PK column lifters, internal catalog conversions, tests). Defaults provenance to
+     * {@link NameProvenance.Inferred.FromSdlName}; type-level classification at
+     * {@code @table}-directive sites uses the full-arity constructor.
+     */
+    public TableRef(String tableName, String javaFieldName, ClassName tableClass,
+                    ClassName recordClass, ClassName constantsClass,
+                    List<ColumnRef> primaryKeyColumns) {
+        this(tableName, javaFieldName, tableClass, recordClass, constantsClass,
+             primaryKeyColumns, NameProvenance.inferredFromSdlName());
+    }
+
     public boolean hasPrimaryKey() {
         return !primaryKeyColumns.isEmpty();
+    }
+
+    /** Returns a copy of this ref with the supplied provenance, leaving all other fields untouched. */
+    public TableRef withProvenance(NameProvenance newProvenance) {
+        return new TableRef(tableName, javaFieldName, tableClass, recordClass,
+            constantsClass, primaryKeyColumns, newProvenance);
     }
 }

@@ -889,9 +889,27 @@ class BuildContext {
      * Carries the result of {@link #parsePath}: either a fully resolved list of path elements or
      * an error message. When {@code errorMessage()} is non-null the {@code elements()} list is
      * empty and the containing field must be classified as an unclassified variant.
+     *
+     * <p>{@code pathProvenance} records whether the resolved path came from a user-authored
+     * {@code @reference(path:)} list, or was inferred from a unique single-hop FK between the
+     * parent and target tables. {@code @reference}-consuming permits read this off the returned
+     * {@code ParsedPath} and copy it onto their {@code pathProvenance} component; per-call-site
+     * sampling of the directive arg is avoided so the two-consumers-evaluating-the-same-predicate
+     * smell doesn't show up at every {@code parsePath} call. Non-reference-consuming call sites
+     * (table-method paths, service paths, etc.) read {@code elements} and ignore the provenance
+     * field. When the path is neither authored nor a single-hop inference (e.g. {@code parsePath}
+     * returned empty elements with no inference triggered), the provenance is {@code Authored}
+     * by default — no {@code @reference}-consuming permit is constructed at such call sites,
+     * so the default is observationally invisible.
      */
-    record ParsedPath(List<JoinStep> elements, String errorMessage) {
+    record ParsedPath(List<JoinStep> elements, String errorMessage,
+                      no.sikt.graphitron.rewrite.model.PathProvenance pathProvenance) {
         boolean hasError() { return errorMessage != null; }
+
+        /** Back-compat constructor for tests / call sites that don't care about provenance. */
+        public ParsedPath(List<JoinStep> elements, String errorMessage) {
+            this(elements, errorMessage, no.sikt.graphitron.rewrite.model.PathProvenance.authored());
+        }
     }
 
     /**
@@ -1065,7 +1083,8 @@ class BuildContext {
         }
 
         if (!errors.isEmpty()) {
-            return new ParsedPath(List.of(), String.join("; ", errors));
+            return new ParsedPath(List.of(), String.join("; ", errors),
+                no.sikt.graphitron.rewrite.model.PathProvenance.authored());
         }
         if (resolvedElements.isEmpty()
                 && startSqlTableName != null
@@ -1078,19 +1097,30 @@ class BuildContext {
                     case FkJoinResolution.Resolved r -> resolvedElements.add(r.fkJoin());
                     case FkJoinResolution.UnknownTable u -> {
                         return new ParsedPath(List.of(),
-                            unknownTableRejection(u.failure(), u.requestedName()).message());
+                            unknownTableRejection(u.failure(), u.requestedName()).message(),
+                            no.sikt.graphitron.rewrite.model.PathProvenance.authored());
                     }
                     case FkJoinResolution.UnknownForeignKey uf -> {
                         return new ParsedPath(List.of(),
-                            unknownForeignKeyRejection(uf.fkName()).message());
+                            unknownForeignKeyRejection(uf.fkName()).message(),
+                            no.sikt.graphitron.rewrite.model.PathProvenance.authored());
                     }
                 }
+                // Inference fired: the path was not authored, the FK name is the inferred answer.
+                var inferredFkName = fks.get(0).getName();
+                return new ParsedPath(List.copyOf(resolvedElements), null,
+                    no.sikt.graphitron.rewrite.model.PathProvenance.fromUniqueFk(inferredFkName));
             } else {
                 return new ParsedPath(List.of(),
-                    fkCountMessage(startSqlTableName, targetSqlTableName, fks, /*directiveAbsent=*/true));
+                    fkCountMessage(startSqlTableName, targetSqlTableName, fks, /*directiveAbsent=*/true),
+                    no.sikt.graphitron.rewrite.model.PathProvenance.authored());
             }
         }
-        return new ParsedPath(List.copyOf(resolvedElements), null);
+        // Path was authored (pathArg != null) — the resolved elements come from the user's list.
+        // The pathArg == null && no-inference branch reaches here too, but those call sites do
+        // not construct an @reference-consuming permit (no reference, no provenance read).
+        return new ParsedPath(List.copyOf(resolvedElements), null,
+            no.sikt.graphitron.rewrite.model.PathProvenance.authored());
     }
 
     /**
@@ -1587,6 +1617,10 @@ class BuildContext {
         boolean list = GraphQLTypeUtil.unwrapNonNull(type) instanceof GraphQLList;
         String typeName = ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(type)).getName();
         boolean hasFieldDir = field.hasAppliedDirective(DIR_FIELD);
+        boolean inputColumnNameAuthored = hasFieldDir && argString(field, DIR_FIELD, ARG_NAME).isPresent();
+        no.sikt.graphitron.rewrite.model.NameProvenance inputColumnNameProvenance = inputColumnNameAuthored
+            ? no.sikt.graphitron.rewrite.model.NameProvenance.authored()
+            : no.sikt.graphitron.rewrite.model.NameProvenance.inferredFromSdlName();
         String columnName = hasFieldDir
             ? argString(field, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
@@ -1612,10 +1646,12 @@ class BuildContext {
                     // Plain (non-@nodeId) @reference: the predicate fires against the resolved
                     // column directly. liftedSourceColumns carries that single column so the
                     // emitter has one slot to read for both nodeId and non-nodeId carriers.
+                    ColumnRef colWithProv = col.withProvenance(inputColumnNameProvenance);
                     return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                        col, path.elements(), List.of(col), cond,
-                        new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
+                        colWithProv, path.elements(), List.of(colWithProv), cond,
+                        new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(),
+                        path.pathProvenance()));
                 })
                 .orElseGet(() -> new InputFieldResolution.Unresolved(name, columnName,
                     "no column '" + columnName + "' reachable via @reference path"));
@@ -1727,7 +1763,9 @@ class BuildContext {
                         shimTargetResolved.entry().toTableRef(targetTableOpt.get()),
                         targetTypeOpt.get(), targetTableOpt.get(),
                         shimTargetMeta.get().typeId(), shimTargetMeta.get().keyColumns(),
-                        shimJoinPath, shimFkResolved.fkJoin().sourceSideColumns(), shimRefCond);
+                        shimJoinPath, shimFkResolved.fkJoin().sourceSideColumns(), shimRefCond,
+                        no.sikt.graphitron.rewrite.model.PathProvenance.fromUniqueFk(
+                            shimFkResolved.fkJoin().fk().sqlName()));
                 }
             }
         }
@@ -1737,7 +1775,7 @@ class BuildContext {
             Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
             return new InputFieldResolution.Resolved(new InputField.ColumnField(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()), cond,
+                new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), inputColumnNameProvenance), cond,
                 new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct()));
         }
         // NodeId synthesis shim: scalar ID field with no @nodeId directive whose backing table
@@ -1836,12 +1874,14 @@ class BuildContext {
                     return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(
                         parentTypeName, name, locationOf(field), typeName, nonNull, list,
                         direct.keyColumns().get(0), direct.joinPath(),
-                        direct.liftedSourceColumns(), cond, extraction));
+                        direct.liftedSourceColumns(), cond, extraction,
+                        direct.pathProvenance()));
                 }
                 return new InputFieldResolution.Resolved(new InputField.CompositeColumnReferenceField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     direct.keyColumns(), direct.joinPath(),
-                    direct.liftedSourceColumns(), cond, extraction));
+                    direct.liftedSourceColumns(), cond, extraction,
+                    direct.pathProvenance()));
             }
             case NodeIdLeafResolver.Resolved.FkTarget.TranslatedFk translated -> {
                 return new InputFieldResolution.Unresolved(name, null,
@@ -1870,7 +1910,8 @@ class BuildContext {
             String refTypeName, String targetTableName, String targetTypeId,
             List<ColumnRef> targetKeyColumns, List<JoinStep> joinPath,
             List<ColumnRef> liftedSourceColumns,
-            Optional<ArgConditionRef> cond) {
+            Optional<ArgConditionRef> cond,
+            no.sikt.graphitron.rewrite.model.PathProvenance pathProvenance) {
         if (targetKeyColumns.isEmpty()) {
             return new InputFieldResolution.Unresolved(name, null,
                 "@nodeId(typeName: '" + refTypeName + "') targets table '" + targetTableName
@@ -1890,10 +1931,11 @@ class BuildContext {
         if (targetKeyColumns.size() == 1) {
             return new InputFieldResolution.Resolved(new InputField.ColumnReferenceField(parentTypeName, name, location,
                 typeName, nonNull, list, targetKeyColumns.get(0), joinPath, liftedSourceColumns, cond,
-                extraction));
+                extraction, pathProvenance));
         }
         return new InputFieldResolution.Resolved(new InputField.CompositeColumnReferenceField(parentTypeName, name, location,
-            typeName, nonNull, list, targetKeyColumns, joinPath, liftedSourceColumns, cond, extraction));
+            typeName, nonNull, list, targetKeyColumns, joinPath, liftedSourceColumns, cond, extraction,
+            pathProvenance));
     }
 
     /**
