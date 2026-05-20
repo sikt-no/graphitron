@@ -173,6 +173,30 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         assertThat(((SourceKey.Reader.AccessorCall) psk.reader()).accessor().methodName()).isEqualTo("films");
     }
 
+    @Test
+    void childInterfaceField_recordParent_accessorKeyedMany_fieldNameRemapsAccessor() {
+        // R191: @field(name:) on a free-form @record parent remaps the accessor base name. The
+        // Pojo parent (AccessorPayloads.ListPayload) exposes `List<FilmRecord> films()`; the SDL
+        // field is named `referrers` and uses @field(name: "films") to bridge the divergence.
+        // Without the directive-honored remap, the matcher would search for an accessor named
+        // `referrers` / `getReferrers` / `isReferrers` and fall through to UnclassifiedField.
+        var schema = TestSchemaHelper.buildSchema(INTERFACE_PARTICIPANTS + """
+            type ListPayloadType @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$ListPayload"}) {
+              referrers: [FilmReferrer!]! @field(name: "films")
+            }
+            type Query { lp: ListPayloadType }
+            """);
+        var field = (ChildField.InterfaceField) schema.field("ListPayloadType", "referrers");
+        var psk = field.parentSourceKey();
+        assertThat(psk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
+        assertThat(psk.cardinality()).isEqualTo(SourceKey.Cardinality.MANY);
+        assertThat(psk.target().tableName()).isEqualTo("film");
+        // The carried method name is the actual accessor name (the directive value), not the SDL
+        // field name.
+        assertThat(((SourceKey.Reader.AccessorCall) psk.reader()).accessor().methodName())
+            .isEqualTo("films");
+    }
+
     // ===== UnionField siblings (mirror Interface; pin shape parity rather than re-verifying body) =====
 
     @Test

@@ -2575,6 +2575,49 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
         },
 
+        ACCESSOR_ROWKEYED_FIELD_NAME_REMAPS_ACCESSOR(
+            "@field(name:) on a free-form @record parent remaps the accessor base name → admits with the directive-named accessor",
+            """
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$RemappedPayload"}) {
+              film: Film @field(name: "filmRecord")
+            }
+            type Query { payload: Payload }
+            """,
+            schema -> {
+                var f = (RecordTableField) schema.field("Payload", "film");
+                var sk = f.sourceKey();
+                assertThat(sk.reader()).isInstanceOf(SourceKey.Reader.AccessorCall.class);
+                assertThat(sk.cardinality()).isEqualTo(SourceKey.Cardinality.ONE);
+                // The carried method name is the actual accessor name (the directive value),
+                // not the SDL field name.
+                assertThat(((SourceKey.Reader.AccessorCall) sk.reader()).accessor().methodName())
+                    .isEqualTo("filmRecord");
+                assertThat(sk.columns()).hasSize(1);
+                assertThat(sk.columns().get(0).sqlName()).isEqualTo("film_id");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(RecordTableField.class); }
+        },
+
+        ACCESSOR_ROWKEYED_FIELD_NAME_REJECTS_WITHOUT_DIRECTIVE(
+            "Divergent accessor name with no @field(name:) on a free-form @record parent → falls through to the three-option AUTHOR_ERROR",
+            """
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Payload @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads$RemappedPayload"}) {
+              film: Film
+            }
+            type Query { payload: Payload }
+            """,
+            schema -> {
+                var unc = (UnclassifiedField) schema.field("Payload", "film");
+                assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
+                assertThat(unc.reason()).contains("typed accessor");
+                assertThat(unc.reason()).contains("@sourceRow");
+                assertThat(unc.reason()).contains("typed jOOQ TableRecord");
+            }) {
+            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+        },
+
         ACCESSOR_ROWKEYED_REJECTS_HETEROGENEOUS_ELEMENT(
             "Accessor element TableRecord doesn't match field's @table → falls through to three-option AUTHOR_ERROR",
             """
