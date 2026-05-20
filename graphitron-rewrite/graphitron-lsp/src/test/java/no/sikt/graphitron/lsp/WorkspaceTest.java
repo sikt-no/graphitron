@@ -9,9 +9,15 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -173,6 +179,111 @@ class WorkspaceTest {
 
         assertThat(ws.drainRecalculate())
             .containsExactlyInAnyOrder("file:///a.graphqls", "file:///b.graphqls");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("publicQueueMutators")
+    void everyPublicQueueMutatingMethodFiresTheListener(String name, Consumer<Workspace> mutator) {
+        var ws = new Workspace();
+        // Pre-seed: one open file, a Built.Current snapshot so demoteSnapshot
+        // transitions (rather than no-ops) and setBuildOutput has a well-formed
+        // BuildArtifacts to swap into.
+        ws.didOpen("file:///a.graphqls", 1, "type Foo { x: Int }\n");
+        ws.setBuildOutput(
+            new GraphQLRewriteGenerator.BuildArtifacts(
+                CompletionData.empty(),
+                new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of())),
+            ValidationReport.empty());
+        ws.drainRecalculate();
+        var fires = new AtomicInteger();
+        ws.setRecalculateListener(fires::incrementAndGet);
+
+        mutator.accept(ws);
+
+        assertThat(fires.get())
+            .as("%s should fire the listener exactly once", name)
+            .isEqualTo(1);
+    }
+
+    static Stream<Arguments> publicQueueMutators() {
+        return Stream.of(
+            Arguments.of("didOpen",
+                (Consumer<Workspace>) ws -> ws.didOpen("file:///b.graphqls", 1, "type Bar { y: Int }\n")),
+            Arguments.of("didChange",
+                (Consumer<Workspace>) ws -> ws.didChange("file:///a.graphqls", 2,
+                    List.of(new TextDocumentContentChangeEvent("type Foo { y: Int }\n")))),
+            Arguments.of("didClose",
+                (Consumer<Workspace>) ws -> ws.didClose("file:///a.graphqls")),
+            Arguments.of("setBuildOutput",
+                (Consumer<Workspace>) ws -> ws.setBuildOutput(
+                    new GraphQLRewriteGenerator.BuildArtifacts(
+                        CompletionData.empty(),
+                        new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of())),
+                    ValidationReport.empty())),
+            Arguments.of("demoteSnapshot",
+                (Consumer<Workspace>) Workspace::demoteSnapshot),
+            Arguments.of("markAllForRecalculation",
+                (Consumer<Workspace>) Workspace::markAllForRecalculation));
+    }
+
+    @Test
+    void recalculateListenerDefaultsToNoOpForTestHarnesses() {
+        var ws = new Workspace();
+        // No setRecalculateListener call: the default Runnable should be a
+        // no-op rather than null, so a mutator invocation does not NPE on the
+        // listener field. Regression guard against a future implementation
+        // that drops the no-op default.
+        ws.didOpen("file:///a.graphqls", 1, "type Foo { x: Int }\n");
+        assertThat(ws.drainRecalculate()).containsExactly("file:///a.graphqls");
+    }
+
+    @Test
+    void drainRecalculateIsIdempotentOnEmptyQueue() {
+        var ws = new Workspace();
+        ws.didOpen("file:///a.graphqls", 1, "type Foo { x: Int }\n");
+
+        // First drain returns the queued entry; second returns empty. The
+        // single-extraction property the listener path depends on: even if
+        // the listener fires twice for two mutations interleaved with one
+        // drain, the second drain only sees what was actually added since.
+        assertThat(ws.drainRecalculate()).containsExactly("file:///a.graphqls");
+        assertThat(ws.drainRecalculate()).isEmpty();
+    }
+
+    @ParameterizedTest(name = "no-op from {0}")
+    @MethodSource("noOpDemoteStartingStates")
+    void demoteSnapshotOnNoOpDoesNotFireListener(String name, LspSchemaSnapshot startingState) {
+        var ws = new Workspace();
+        ws.didOpen("file:///a.graphqls", 1, "type Foo { x: Int }\n");
+        if (startingState instanceof LspSchemaSnapshot.Built.Previous) {
+            // Drive the workspace through Current -> Previous via the public
+            // path so the starting state is reached without reflection.
+            ws.setBuildOutput(
+                new GraphQLRewriteGenerator.BuildArtifacts(
+                    CompletionData.empty(),
+                    new LspSchemaSnapshot.Built.Current(List.of(), Map.of(), Map.of())),
+                ValidationReport.empty());
+            ws.demoteSnapshot();
+            assertThat(ws.snapshot()).isInstanceOf(LspSchemaSnapshot.Built.Previous.class);
+        } else {
+            assertThat(ws.snapshot()).isInstanceOf(LspSchemaSnapshot.Unavailable.class);
+        }
+        ws.drainRecalculate();
+        var fires = new AtomicInteger();
+        ws.setRecalculateListener(fires::incrementAndGet);
+
+        ws.demoteSnapshot();
+
+        assertThat(fires.get())
+            .as("demoteSnapshot starting from %s should not fire the listener", name)
+            .isZero();
+    }
+
+    static Stream<Arguments> noOpDemoteStartingStates() {
+        return Stream.of(
+            Arguments.of("Unavailable", new LspSchemaSnapshot.Unavailable()),
+            Arguments.of("Built.Previous",
+                new LspSchemaSnapshot.Built.Previous(List.of(), Map.of(), Map.of())));
     }
 
     @Test

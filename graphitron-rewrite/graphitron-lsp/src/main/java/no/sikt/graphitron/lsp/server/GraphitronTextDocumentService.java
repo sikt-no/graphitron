@@ -69,36 +69,38 @@ public class GraphitronTextDocumentService implements TextDocumentService {
      * exchanged capabilities and the client proxy exists. Until this
      * fires the service still works for tests that drive completions
      * without a paired client; diagnostic publishes are silently
-     * skipped.
+     * skipped. Also registers the workspace's recalculate listener so
+     * every queue-mutating workspace method (editor events plus the
+     * build-trigger paths from {@code DevMojo}) drains and publishes
+     * diagnostics through the same seam.
      */
     public void setClient(LanguageClient client) {
         this.client = client;
+        workspace.setRecalculateListener(this::publishDiagnosticsForRecalculate);
     }
 
     @Override
     public void didOpen(DidOpenTextDocumentParams params) {
         var doc = params.getTextDocument();
         workspace.didOpen(doc.getUri(), doc.getVersion(), doc.getText());
-        publishDiagnosticsForRecalculate();
     }
 
     @Override
     public void didChange(DidChangeTextDocumentParams params) {
         var doc = params.getTextDocument();
         workspace.didChange(doc.getUri(), doc.getVersion(), params.getContentChanges());
-        publishDiagnosticsForRecalculate();
     }
 
     @Override
     public void didClose(DidCloseTextDocumentParams params) {
         String uri = params.getTextDocument().getUri();
-        workspace.didClose(uri);
         // Clear any diagnostics the client may still be holding for the
-        // closed file. Other dependents recalculate as usual below.
+        // closed file. Other dependents recalculate via the workspace's
+        // recalculate listener as part of the didClose call below.
         if (client != null) {
             client.publishDiagnostics(new PublishDiagnosticsParams(uri, List.of()));
         }
-        publishDiagnosticsForRecalculate();
+        workspace.didClose(uri);
     }
 
     @Override

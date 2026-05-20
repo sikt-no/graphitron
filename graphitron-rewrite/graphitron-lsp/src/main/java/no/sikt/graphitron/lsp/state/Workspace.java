@@ -43,6 +43,7 @@ public final class Workspace {
     private volatile CompletionData catalog;
     private volatile LspSchemaSnapshot snapshot = LspSchemaSnapshot.unavailable();
     private volatile ValidationReport validationReport = ValidationReport.empty();
+    private volatile Runnable recalculateListener = () -> {};
 
     public Workspace() {
         this(CompletionData.empty(), LspVocabulary.load());
@@ -58,15 +59,15 @@ public final class Workspace {
     }
 
     public void didOpen(String uri, int version, String text) {
-        synchronized (lock) {
+        enqueueAndNotify(() -> {
             var file = new WorkspaceFile(version, text);
             files.put(uri, file);
             enqueueTouched(uri, Set.of(), file.declaredTypes());
-        }
+        });
     }
 
     public void didChange(String uri, int newVersion, List<TextDocumentContentChangeEvent> changes) {
-        synchronized (lock) {
+        enqueueAndNotify(() -> {
             var file = files.get(uri);
             if (file == null) {
                 return;
@@ -76,17 +77,17 @@ public final class Workspace {
                 applyChange(file, newVersion, change);
             }
             enqueueTouched(uri, declaredBefore, file.declaredTypes());
-        }
+        });
     }
 
     public void didClose(String uri) {
-        synchronized (lock) {
+        enqueueAndNotify(() -> {
             var file = files.remove(uri);
             if (file == null) {
                 return;
             }
             enqueueTouched(uri, file.declaredTypes(), Set.of());
-        }
+        });
     }
 
     public Optional<WorkspaceFile> get(String uri) {
@@ -212,13 +213,51 @@ public final class Workspace {
      * though no individual buffer did) and internally on catalog swaps.
      */
     public void markAllForRecalculation() {
-        synchronized (lock) {
+        enqueueAndNotify(() -> {
             for (var uri : files.keySet()) {
                 if (!toRecalculate.contains(uri)) {
                     toRecalculate.add(uri);
                 }
             }
+        });
+    }
+
+    /**
+     * Single-slot listener wire-up. The listener fires once after every
+     * public mutator that touches {@code toRecalculate} returns, off the
+     * workspace {@code lock}. Default is no-op so test callers that drive
+     * the workspace directly need no setup; the document service installs
+     * the real publish callback from
+     * {@link no.sikt.graphitron.lsp.server.GraphitronTextDocumentService#setClient}.
+     *
+     * <p>One slot, not a list: today there is exactly one consumer (the
+     * document service drains the queue and ships diagnostics). Lift to a
+     * multi-consumer fan-out when a second consumer surfaces with a
+     * forcing function.
+     */
+    public void setRecalculateListener(Runnable listener) {
+        this.recalculateListener = listener;
+    }
+
+    /**
+     * Funnel for every {@code toRecalculate} write reachable from the six
+     * public mutators ({@link #didOpen}, {@link #didChange},
+     * {@link #didClose}, {@link #setBuildOutput}, {@link #demoteSnapshot},
+     * {@link #markAllForRecalculation}). The mutation runs under
+     * {@code lock} so the queue stays consistent with the file map; the
+     * listener fires after lock release so a heavy
+     * {@code publishDiagnosticsForRecalculate} on the lsp4j thread does
+     * not serialise build swaps on the watcher thread behind it.
+     * Idempotency on the drain side (a second {@link #drainRecalculate}
+     * after the first returns empty) makes any "listener fires twice for
+     * two mutations interleaved with one drain" race a no-op rather than
+     * a correctness hazard.
+     */
+    private void enqueueAndNotify(Runnable mutation) {
+        synchronized (lock) {
+            mutation.run();
         }
+        recalculateListener.run();
     }
 
     private void applyChange(WorkspaceFile file, int newVersion, TextDocumentContentChangeEvent change) {
