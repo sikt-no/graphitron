@@ -104,22 +104,12 @@ public sealed interface InputField extends GraphitronField
         List<JoinStep> joinPath,
         List<ColumnRef> liftedSourceColumns,
         Optional<ArgConditionRef> condition,
-        CallSiteExtraction extraction,
-        PathProvenance pathProvenance
+        CallSiteExtraction extraction
     ) implements InputField, LookupKeyField, SetField {
 
         public ColumnReferenceField {
             joinPath = List.copyOf(joinPath);
             liftedSourceColumns = List.copyOf(liftedSourceColumns);
-        }
-
-        /** Back-compat constructor for tests; defaults pathProvenance to {@link PathProvenance.Authored}. */
-        public ColumnReferenceField(String parentTypeName, String name, SourceLocation location,
-                                    String typeName, boolean nonNull, boolean list, ColumnRef column,
-                                    List<JoinStep> joinPath, List<ColumnRef> liftedSourceColumns,
-                                    Optional<ArgConditionRef> condition, CallSiteExtraction extraction) {
-            this(parentTypeName, name, location, typeName, nonNull, list, column, joinPath,
-                 liftedSourceColumns, condition, extraction, PathProvenance.authored());
         }
     }
 
@@ -178,8 +168,7 @@ public sealed interface InputField extends GraphitronField
         List<JoinStep> joinPath,
         List<ColumnRef> liftedSourceColumns,
         Optional<ArgConditionRef> condition,
-        CallSiteExtraction.NodeIdDecodeKeys extraction,
-        PathProvenance pathProvenance
+        CallSiteExtraction.NodeIdDecodeKeys extraction
     ) implements InputField, LookupKeyField, SetField {
 
         public CompositeColumnReferenceField {
@@ -190,17 +179,6 @@ public sealed interface InputField extends GraphitronField
                 throw new IllegalArgumentException(
                     "InputField.CompositeColumnReferenceField requires arity >= 2 (got " + columns.size() + "); arity-1 routes to ColumnReferenceField");
             }
-        }
-
-        /** Back-compat constructor for tests; defaults pathProvenance to {@link PathProvenance.Authored}. */
-        public CompositeColumnReferenceField(String parentTypeName, String name, SourceLocation location,
-                                             String typeName, boolean nonNull, boolean list,
-                                             List<ColumnRef> columns, List<JoinStep> joinPath,
-                                             List<ColumnRef> liftedSourceColumns,
-                                             Optional<ArgConditionRef> condition,
-                                             CallSiteExtraction.NodeIdDecodeKeys extraction) {
-            this(parentTypeName, name, location, typeName, nonNull, list, columns, joinPath,
-                 liftedSourceColumns, condition, extraction, PathProvenance.authored());
         }
     }
 

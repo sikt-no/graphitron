@@ -64,15 +64,8 @@ public sealed interface ParticipantRef permits ParticipantRef.TableBound, Partic
             String fieldName,
             ColumnRef column,
             JoinStep.FkJoin fkJoin,
-            String aliasName,
-            PathProvenance pathProvenance
+            String aliasName
         ) {
-            /** Back-compat constructor; defaults pathProvenance to {@link PathProvenance.Authored}. */
-            public CrossTableField(String fieldName, ColumnRef column, JoinStep.FkJoin fkJoin,
-                                   String aliasName) {
-                this(fieldName, column, fkJoin, aliasName, PathProvenance.authored());
-            }
-
             /** The cross table joined to project this field — equivalent to {@code fkJoin().targetTable()}. */
             public TableRef targetTable() { return fkJoin.targetTable(); }
 

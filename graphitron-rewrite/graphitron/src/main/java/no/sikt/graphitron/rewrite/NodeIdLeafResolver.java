@@ -181,18 +181,8 @@ final class NodeIdLeafResolver {
                     List<ColumnRef> keyColumns,
                     List<ColumnRef> fkSourceColumns,
                     List<ColumnRef> liftedSourceColumns,
-                    List<JoinStep> joinPath,
-                    no.sikt.graphitron.rewrite.model.PathProvenance pathProvenance)
-                implements FkTarget {
-
-                /** Back-compat constructor for tests; defaults pathProvenance to {@link no.sikt.graphitron.rewrite.model.PathProvenance.Authored}. */
-                public DirectFk(String refTypeName, TableRef targetTable, HelperRef.Decode decodeMethod,
-                                List<ColumnRef> keyColumns, List<ColumnRef> fkSourceColumns,
-                                List<ColumnRef> liftedSourceColumns, List<JoinStep> joinPath) {
-                    this(refTypeName, targetTable, decodeMethod, keyColumns, fkSourceColumns,
-                         liftedSourceColumns, joinPath, no.sikt.graphitron.rewrite.model.PathProvenance.authored());
-                }
-            }
+                    List<JoinStep> joinPath)
+                implements FkTarget {}
 
             /**
              * Translated-FK arm: FK target columns differ from {@code T}'s key columns.
@@ -341,8 +331,7 @@ final class NodeIdLeafResolver {
             List<ColumnRef> liftedAligned = permute(joinPath.liftedSourceColumns(), permutation);
             return new Resolved.FkTarget.DirectFk(
                 refTypeName, targetTable, decodeMethod, keys.keyColumns(),
-                firstHop.sourceSideColumns(), liftedAligned, joinPath.path(),
-                joinPath.pathProvenance());
+                firstHop.sourceSideColumns(), liftedAligned, joinPath.path());
         }
         return new Resolved.FkTarget.TranslatedFk(
             refTypeName, targetTable, decodeMethod, keys.keyColumns(), joinPath.path());
@@ -456,12 +445,7 @@ final class NodeIdLeafResolver {
             + " — annotate the target type with @node or surface the metadata via KjerneJooqGenerator");
     }
 
-    private record JoinPathResult(List<JoinStep> path, List<ColumnRef> liftedSourceColumns,
-                                  String error, no.sikt.graphitron.rewrite.model.PathProvenance pathProvenance) {
-        JoinPathResult(List<JoinStep> path, List<ColumnRef> liftedSourceColumns, String error) {
-            this(path, liftedSourceColumns, error, no.sikt.graphitron.rewrite.model.PathProvenance.authored());
-        }
-    }
+    private record JoinPathResult(List<JoinStep> path, List<ColumnRef> liftedSourceColumns, String error) {}
 
     /**
      * Resolves the FK join path from {@code containingTable} to {@code targetTableName}.
@@ -506,7 +490,7 @@ final class NodeIdLeafResolver {
             if (liftError != null) {
                 return new JoinPathResult(null, null, liftError);
             }
-            return new JoinPathResult(path.elements(), liftSourceColumns(path.elements()), null, path.pathProvenance());
+            return new JoinPathResult(path.elements(), liftSourceColumns(path.elements()), null);
         }
         // No @reference: single-hop FK auto-discovery. Multi-hop is always explicit; the
         // auto-discovery fallback never searches past one hop. Disambiguation among A → ? → C
@@ -531,8 +515,7 @@ final class NodeIdLeafResolver {
             fkOpt.get(), containingTable.tableName(), leafName, 0, null, /*selfRefFkOnSource=*/true);
         return switch (fkStepResolution) {
             case BuildContext.FkJoinResolution.Resolved r ->
-                new JoinPathResult(List.of(r.fkJoin()), r.fkJoin().sourceSideColumns(), null,
-                    no.sikt.graphitron.rewrite.model.PathProvenance.fromUniqueFk(fkName));
+                new JoinPathResult(List.of(r.fkJoin()), r.fkJoin().sourceSideColumns(), null);
             case BuildContext.FkJoinResolution.UnknownTable u ->
                 new JoinPathResult(null, null,
                     ctx.unknownTableRejection(u.failure(), u.requestedName()).message());
