@@ -14,6 +14,7 @@ stateDiagram-v2
     Backlog --> Spec        : pick / draft plan; status: Spec
     Spec --> Spec           : revise [reviewer ≠ last committer]
     Spec --> Ready          : sign off [reviewer ≠ last committer]
+    Ready --> Spec          : reopen; status: Spec
     Ready --> InProgress    : start work; status: In Progress
     InProgress --> InReview : land implementation; status: In Review
     InReview --> Ready      : rework [reviewer ≠ implementer]
@@ -26,6 +27,8 @@ stateDiagram-v2
     InReview --> Discarded  : abandon; delete file
     Discarded --> [*]
 ----
+
+*Reopening Ready:* `Ready → Spec` is unguarded. Either the implementer (after starting work and discovering the plan needs substantive redesign) or any other session may flip a `Ready` item back to `Spec` when the existing sign-off no longer covers the shape of the work. The next `Spec → Ready` transition re-engages the reviewer-rule guard against the session that lands the spec revision, so a fresh independent sign-off is required before implementation resumes. Use this rather than carrying an in-flight `Ready` forward through implementation when the spec body has materially diverged from what the original reviewer approved. A minor in-flight tweak that does not change the design is a normal `In Progress` plan edit, not a reopen.
 
 *Reviewer rule:* the guards on `Spec → Ready` and `In Review → Done` require a different *Claude Code session* from the one that last changed the artifact. The session ID is the identifier the gate compares against, not the git author or the human at the keyboard; the human user behind both sessions is typically the same person, and that's fine. The point is fresh context: a reviewer session with no prior reasoning trail on the work spots design problems the authoring or implementing session has already rationalized away. Each session's ID is recorded on the commits it produces as the `https://claude.ai/code/session_<id>` trailer in the message body, so the disqualified party can be resolved from `git log` on the artifact (spec file, or implementation commits referencing the item). A reviewer session that lands substantive edits on the artifact disqualifies *that session* from approving the resulting revision; another session must sign off.
 

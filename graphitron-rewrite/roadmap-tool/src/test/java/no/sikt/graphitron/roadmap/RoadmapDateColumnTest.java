@@ -65,6 +65,16 @@ class RoadmapDateColumnTest {
     }
 
     @Test
+    void status_acceptsReadyToSpecReopen(@TempDir Path dir) throws IOException {
+        Path file = writePlan(dir, "reopen", 1, "Ready", "");
+
+        String previous = Main.applyStatusTransition(file, "Spec");
+
+        assertThat(previous).isEqualTo("Ready");
+        assertThat(Files.readString(file)).contains("status: Spec");
+    }
+
+    @Test
     void status_rejectsInvalidTransition(@TempDir Path dir) throws IOException {
         Path file = writePlan(dir, "item", 1, "Backlog", "");
 
