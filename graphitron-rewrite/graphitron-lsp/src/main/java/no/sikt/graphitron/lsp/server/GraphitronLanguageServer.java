@@ -31,7 +31,7 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
 
     private final Workspace workspace;
     private final GraphitronTextDocumentService textService;
-    private final WorkspaceService workspaceService = new GraphitronWorkspaceService();
+    private final WorkspaceService workspaceService;
     private LanguageClient client;
 
     public GraphitronLanguageServer() {
@@ -45,6 +45,7 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
     public GraphitronLanguageServer(Workspace workspace, Consumer<String> onSchemaSaved) {
         this.workspace = workspace;
         this.textService = new GraphitronTextDocumentService(workspace, onSchemaSaved);
+        this.workspaceService = new GraphitronWorkspaceService(workspace);
     }
 
     public Workspace workspace() {
@@ -59,6 +60,10 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
         capabilities.setCompletionProvider(new CompletionOptions(false, null));
         capabilities.setDefinitionProvider(true);
         capabilities.setCodeActionProvider(true);
+        // R160 — advertise the inlay-hint capability so editors that opt in via
+        // graphitron.inlayHints.* config keys receive the inferred-directive and
+        // classification hint surface. The handler is a no-op when all toggles default off.
+        capabilities.setInlayHintProvider(true);
         return CompletableFuture.completedFuture(new InitializeResult(capabilities));
     }
 

@@ -43,6 +43,7 @@ public final class Workspace {
     private volatile CompletionData catalog;
     private volatile LspSchemaSnapshot snapshot = LspSchemaSnapshot.unavailable();
     private volatile ValidationReport validationReport = ValidationReport.empty();
+    private volatile InlayHintConfig inlayHintConfig = InlayHintConfig.defaults();
     private volatile Runnable recalculateListener = () -> {};
 
     public Workspace() {
@@ -156,6 +157,27 @@ public final class Workspace {
     }
 
     /**
+     * R160 — the client's inlay-hint / hover toggles. Read on every inlay-hint and hover
+     * request; swapped atomically by {@link #setInlayHintConfig} when the document service
+     * receives a {@code workspace/didChangeConfiguration} notification (or pulls fresh
+     * settings via {@code workspace/configuration}). Stays at {@link InlayHintConfig#defaults()}
+     * (all off) until the client opts in, which is the no-behaviour-change-for-existing-users
+     * contract the spec requires.
+     */
+    public InlayHintConfig inlayHintConfig() {
+        return inlayHintConfig;
+    }
+
+    /**
+     * R160 — atomic swap of the client's inlay-hint / hover toggles. Called by the
+     * document service from the configuration-pull path on initialisation and from the
+     * {@code workspace/didChangeConfiguration} notification handler.
+     */
+    public void setInlayHintConfig(InlayHintConfig config) {
+        this.inlayHintConfig = config == null ? InlayHintConfig.defaults() : config;
+    }
+
+    /**
      * Success-path swap: catalog, snapshot, and validator report move
      * together atomically (from the perspective of consumers that hold the
      * workspace through three volatile reads), one recalculation. Used by
@@ -186,7 +208,8 @@ public final class Workspace {
         var current = this.snapshot;
         if (current instanceof LspSchemaSnapshot.Built.Current c) {
             this.snapshot = new LspSchemaSnapshot.Built.Previous(
-                c.directives(), c.typesByName(), c.payloadDataFieldByType());
+                c.directives(), c.typesByName(), c.payloadDataFieldByType(),
+                c.fieldClassificationsByCoord(), c.typeClassificationsByName());
             markAllForRecalculation();
         }
     }
