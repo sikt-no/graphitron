@@ -507,7 +507,7 @@ class TypeBuilder {
             var column = new ColumnRef(columnEntry.sqlName(), columnEntry.javaName(), columnEntry.columnClass());
 
             String aliasName = participantTypeName + "_" + fieldName;
-            out.add(new ParticipantRef.TableBound.CrossTableField(fieldName, column, fk, aliasName, parsed.pathProvenance()));
+            out.add(new ParticipantRef.TableBound.CrossTableField(fieldName, column, fk, aliasName));
         }
         return List.copyOf(out);
     }
@@ -721,15 +721,12 @@ class TypeBuilder {
     private GraphitronType buildTableType(GraphQLObjectType objType) {
         String name = objType.getName();
         SourceLocation location = locationOf(objType);
-        boolean nameAuthored = argString(objType, DIR_TABLE, ARG_NAME).isPresent();
         String tableName = argString(objType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         Optional<TableRef> tableOpt = svc.resolveTable(tableName);
         if (tableOpt.isEmpty()) {
             return new UnclassifiedType(name, location, ctx.unknownTableRejection(tableName));
         }
-        TableRef tableRef = tableOpt.get().withProvenance(nameAuthored
-            ? no.sikt.graphitron.rewrite.model.NameProvenance.authored()
-            : no.sikt.graphitron.rewrite.model.NameProvenance.inferredFromSdlName());
+        TableRef tableRef = tableOpt.get();
 
         // Platform-id synthesis. The malformed-metadata diagnostic runs unconditionally so SDL
         // authors see the issue even when they try to override values with explicit @node.
@@ -924,15 +921,11 @@ class TypeBuilder {
     private GraphitronType buildTableInterfaceType(GraphQLInterfaceType iface) {
         String name = iface.getName();
         SourceLocation location = locationOf(iface);
-        boolean nameAuthored = argString(iface, DIR_TABLE, ARG_NAME).isPresent();
         String tableName = argString(iface, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
         Optional<TableRef> tableOpt = svc.resolveTable(tableName);
         if (tableOpt.isEmpty()) {
             return new UnclassifiedType(name, location, ctx.unknownTableRejection(tableName));
         }
-        TableRef tableRefWithProv = tableOpt.get().withProvenance(nameAuthored
-            ? no.sikt.graphitron.rewrite.model.NameProvenance.authored()
-            : no.sikt.graphitron.rewrite.model.NameProvenance.inferredFromSdlName());
         String discriminatorRaw = argString(iface, DIR_DISCRIMINATE, ARG_ON).orElse(null);
         // Resolve to the SQL column name so generators can use DSL.name(col) with the correct
         // casing. findColumn accepts both Java names and SQL names. Falls back to the raw value
@@ -940,7 +933,7 @@ class TypeBuilder {
         JooqCatalog.ColumnEntry discriminatorEntry = discriminatorRaw == null ? null
             : ctx.catalog.findColumn(tableOpt.get().tableName(), discriminatorRaw).orElse(null);
         String discriminatorColumn = discriminatorEntry != null ? discriminatorEntry.sqlName() : discriminatorRaw;
-        return new TableInterfaceType(name, location, discriminatorColumn, tableRefWithProv, List.of());
+        return new TableInterfaceType(name, location, discriminatorColumn, tableOpt.get(), List.of());
     }
 
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
@@ -1012,16 +1005,12 @@ class TypeBuilder {
         // signal is now carried by the "Shadowed by @table" variant of the directive-ignored
         // warning, emitted at the single post-classification site in emitDirectiveIgnoredWarnings.
         if (inputType.hasAppliedDirective(DIR_TABLE)) {
-            boolean nameAuthored = argString(inputType, DIR_TABLE, ARG_NAME).isPresent();
             String tableName = argString(inputType, DIR_TABLE, ARG_NAME).orElse(name.toLowerCase());
             Optional<TableRef> tableOpt = svc.resolveTable(tableName);
             if (tableOpt.isEmpty()) {
                 return new UnclassifiedType(name, location, ctx.unknownTableRejection(tableName));
             }
-            TableRef tableRefWithProv = tableOpt.get().withProvenance(nameAuthored
-                ? no.sikt.graphitron.rewrite.model.NameProvenance.authored()
-                : no.sikt.graphitron.rewrite.model.NameProvenance.inferredFromSdlName());
-            return buildTableInputType(name, location, inputType.getFieldDefinitions(), tableRefWithProv, inputType);
+            return buildTableInputType(name, location, inputType.getFieldDefinitions(), tableOpt.get(), inputType);
         }
         if (isUsedWithOverrideCondition(name)) {
             return buildNonTableInputType(inputType, name, location);

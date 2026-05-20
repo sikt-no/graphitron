@@ -4710,7 +4710,7 @@ class FieldBuilder {
                 if (nodeRefPath.hasError()) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(nodeRefPath.errorMessage()));
                 }
-                return buildNodeIdReferenceCarrier(parentTypeName, name, location, parentTable, targetNodeType, nodeRefPath.elements(), nodeRefPath.pathProvenance());
+                return buildNodeIdReferenceCarrier(parentTypeName, name, location, parentTable, targetNodeType, nodeRefPath.elements());
             } else {
                 if (!(tableType instanceof NodeType nodeType)) {
                     return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural("@nodeId requires the containing type to be a node type (via @node or KjerneJooqGenerator metadata)"));
@@ -4720,10 +4720,6 @@ class FieldBuilder {
         }
 
         boolean hasFieldDirective = fieldDef.hasAppliedDirective(DIR_FIELD);
-        boolean columnNameAuthored = hasFieldDirective && argString(fieldDef, DIR_FIELD, ARG_NAME).isPresent();
-        no.sikt.graphitron.rewrite.model.NameProvenance columnNameProvenance = columnNameAuthored
-            ? no.sikt.graphitron.rewrite.model.NameProvenance.authored()
-            : no.sikt.graphitron.rewrite.model.NameProvenance.inferredFromSdlName();
         String columnName = hasFieldDirective
             ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
             : name;
@@ -4738,9 +4734,7 @@ class FieldBuilder {
             if (crossTable != null) {
                 return new ParticipantColumnReferenceField(
                     parentTypeName, name, location,
-                    crossTable.column().withProvenance(columnNameProvenance),
-                    crossTable.fkJoin(), crossTable.aliasName(),
-                    crossTable.pathProvenance());
+                    crossTable.column(), crossTable.fkJoin(), crossTable.aliasName());
             }
             var refPath = ctx.parsePath(fieldDef, name, tableType.table().tableName(), null);
             if (refPath.hasError()) {
@@ -4756,10 +4750,8 @@ class FieldBuilder {
                     "column '" + columnName + "' could not be resolved in the jOOQ table",
                     columnName, candidates));
             }
-            return new ColumnReferenceField(parentTypeName, name, location, columnName,
-                column.get().withProvenance(columnNameProvenance), refPath.elements(),
-                new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
-                refPath.pathProvenance());
+            return new ColumnReferenceField(parentTypeName, name, location, columnName, column.get(), refPath.elements(),
+                new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
         }
 
         Optional<ColumnRef> column = svc.resolveColumn(columnName, tableType);
@@ -4785,8 +4777,7 @@ class FieldBuilder {
                 "column '" + columnName + "' could not be resolved in the jOOQ table",
                 columnName, ctx.catalog.columnJavaNamesOf(tableSqlName)));
         }
-        return new ColumnField(parentTypeName, name, location, columnName,
-            column.get().withProvenance(columnNameProvenance),
+        return new ColumnField(parentTypeName, name, location, columnName, column.get(),
             new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
     }
 
@@ -4827,8 +4818,7 @@ class FieldBuilder {
      */
     private ChildField buildNodeIdReferenceCarrier(
             String parentTypeName, String name, graphql.language.SourceLocation location,
-            TableRef parentTable, NodeType targetNodeType, List<JoinStep> joinPath,
-            no.sikt.graphitron.rewrite.model.PathProvenance pathProvenance) {
+            TableRef parentTable, NodeType targetNodeType, List<JoinStep> joinPath) {
         var enc = targetNodeType.encodeMethod();
         var compaction = new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(enc);
         var keys = targetNodeType.nodeKeyColumns();
@@ -4850,9 +4840,9 @@ class FieldBuilder {
         // implements the JOIN-with-projection form.
         if (keys.size() == 1) {
             ColumnRef k = keys.get(0);
-            return new ColumnReferenceField(parentTypeName, name, location, k.javaName(), k, joinPath, compaction, pathProvenance);
+            return new ColumnReferenceField(parentTypeName, name, location, k.javaName(), k, joinPath, compaction);
         }
-        return new ChildField.CompositeColumnReferenceField(parentTypeName, name, location, keys, joinPath, compaction, pathProvenance);
+        return new ChildField.CompositeColumnReferenceField(parentTypeName, name, location, keys, joinPath, compaction);
     }
 
     /**

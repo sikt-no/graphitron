@@ -176,17 +176,8 @@ public sealed interface ChildField extends GraphitronField
         String columnName,
         ColumnRef column,
         List<JoinStep> joinPath,
-        CallSiteCompaction compaction,
-        PathProvenance pathProvenance
-    ) implements ChildField {
-        /** Back-compat constructor for tests; defaults pathProvenance to {@link PathProvenance.Authored}. */
-        public ColumnReferenceField(String parentTypeName, String name, SourceLocation location,
-                                    String columnName, ColumnRef column, List<JoinStep> joinPath,
-                                    CallSiteCompaction compaction) {
-            this(parentTypeName, name, location, columnName, column, joinPath, compaction,
-                 PathProvenance.authored());
-        }
-    }
+        CallSiteCompaction compaction
+    ) implements ChildField {}
 
     /**
      * A scalar field on a {@link GraphitronType.TableInterfaceType} participant that
@@ -207,14 +198,8 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ColumnRef column,
         JoinStep.FkJoin fkJoin,
-        String aliasName,
-        PathProvenance pathProvenance
+        String aliasName
     ) implements ChildField {
-        /** Back-compat constructor for tests; defaults pathProvenance to {@link PathProvenance.Authored}. */
-        public ParticipantColumnReferenceField(String parentTypeName, String name, SourceLocation location,
-                                               ColumnRef column, JoinStep.FkJoin fkJoin, String aliasName) {
-            this(parentTypeName, name, location, column, fkJoin, aliasName, PathProvenance.authored());
-        }
         /** The cross table joined to project this field — equivalent to {@code fkJoin().targetTable()}. */
         public TableRef targetTable() { return fkJoin.targetTable(); }
     }
@@ -232,8 +217,7 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         List<ColumnRef> columns,
         List<JoinStep> joinPath,
-        CallSiteCompaction.NodeIdEncodeKeys compaction,
-        PathProvenance pathProvenance
+        CallSiteCompaction.NodeIdEncodeKeys compaction
     ) implements ChildField {
 
         public CompositeColumnReferenceField {
@@ -242,13 +226,6 @@ public sealed interface ChildField extends GraphitronField
                 throw new IllegalArgumentException(
                     "CompositeColumnReferenceField requires arity >= 2 (got " + columns.size() + "); arity-1 routes to ColumnReferenceField");
             }
-        }
-
-        /** Back-compat constructor for tests; defaults pathProvenance to {@link PathProvenance.Authored}. */
-        public CompositeColumnReferenceField(String parentTypeName, String name, SourceLocation location,
-                                             List<ColumnRef> columns, List<JoinStep> joinPath,
-                                             CallSiteCompaction.NodeIdEncodeKeys compaction) {
-            this(parentTypeName, name, location, columns, joinPath, compaction, PathProvenance.authored());
         }
     }
 
