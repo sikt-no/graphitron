@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
+import no.sikt.graphitron.rewrite.maven.watch.DispatchTestSupport;
 import no.sikt.graphitron.rewrite.maven.watch.SchemaWatcher;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -73,7 +74,7 @@ class CatalogRefreshTest {
         debounce = new DebounceExecutor(DEBOUNCE_MS);
         watcher = new SchemaWatcher(Set.of(classesDir), debounce, rebuilder, ".class");
 
-        watcher.dispatch(classesDir, entryCreateEvent(Path.of("Tables.class")));
+        DispatchTestSupport.dispatch(watcher, classesDir, entryCreateEvent(Path.of("Tables.class")));
 
         assertThat(fired.await(WAIT_MS, TimeUnit.MILLISECONDS))
             .as("rebuilder must fire on .class write")
@@ -98,7 +99,7 @@ class CatalogRefreshTest {
         watcher = new SchemaWatcher(Set.of(classesDir), debounce,
             rebuilds::incrementAndGet, ".class");
 
-        watcher.dispatch(classesDir, entryModifyEvent(Path.of("schema.graphqls")));
+        DispatchTestSupport.dispatch(watcher, classesDir, entryModifyEvent(Path.of("schema.graphqls")));
 
         Thread.sleep(WAIT_MS);
         assertThat(rebuilds.get())

@@ -82,11 +82,6 @@ public final class SchemaWatcher implements AutoCloseable {
         for (Path root : roots) {
             registerRecursive(root);
         }
-        if (watchService.getClass().getSimpleName().contains("Polling")) {
-            LOGGER.info(
-                "graphitron:dev: JDK provides a polling WatchService on this platform; schema file change latency ≈ 10 s. "
-                    + "Connect an editor with the Graphitron LSP for event-driven regen.");
-        }
     }
 
     /** Registers {@code root} and every existing subdirectory beneath it. */
@@ -129,6 +124,10 @@ public final class SchemaWatcher implements AutoCloseable {
      * Blocks the calling thread, dispatching events until the watcher is closed.
      */
     public void run() {
+        if (watchService.getClass().getSimpleName().contains("Polling")) {
+            LOGGER.info("graphitron:dev: JDK provides a polling WatchService on this platform; schema file change latency ≈ 10 s.");
+            LOGGER.info("graphitron:dev: connect an editor with the Graphitron LSP for event-driven regen instead.");
+        }
         try {
             while (true) {
                 WatchKey key;
@@ -153,13 +152,12 @@ public final class SchemaWatcher implements AutoCloseable {
     }
 
     /**
-     * Test seam: drives a synthetic event into the dispatcher without waiting on the
-     * OS-level {@link WatchService}. Production callers reach this only via the
-     * {@link #run()} loop; this is the visible entry point used by tests that pin
-     * unit-tier invariants on the dispatch logic itself (suffix filter, OVERFLOW
-     * reschedule, on-the-fly subdirectory registration).
+     * Drives a single watch event through the suffix-filter / OVERFLOW-reschedule /
+     * subdirectory-registration logic. Production callers reach this only via the
+     * {@link #run()} loop. Package-private as a test seam, paired with
+     * {@code DispatchTestSupport} for cross-package synthetic-dispatch consumers.
      */
-    public void dispatch(Path dir, WatchEvent<?> event) {
+    void dispatch(Path dir, WatchEvent<?> event) {
         WatchEvent.Kind<?> kind = event.kind();
         if (kind == StandardWatchEventKinds.OVERFLOW) {
             LOGGER.info("graphitron:dev: OVERFLOW; rescheduling regeneration");
