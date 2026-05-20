@@ -1,7 +1,7 @@
 ---
 id: R198
 title: SchemaWatcher on macOS is polling-only; lift FS-bound tests to synthetic dispatch
-status: Ready
+status: In Review
 bucket: bug
 priority: 15
 theme: lsp
@@ -41,51 +41,44 @@ masquerading as the other.
 
 ## Plan
 
-1. **Lift the five `SchemaWatcherTest` FS-bound tests onto synthetic dispatch.**
-   - `writingGraphqlsFile_firesCallback` → fires `entryCreateEvent("schema.graphqls")`.
-   - `modifyingGraphqlsFile_firesCallback` → fires `entryModifyEvent("schema.graphqls")`.
-   - `deletingGraphqlsFile_firesCallback` → fires `entryDeleteEvent("schema.graphqls")` (new helper alongside `entryCreateEvent` / `entryModifyEvent`).
-   - `rapidWrites_firesCallbackOnce` → three synthetic dispatches; assert exactly one trigger; the debounce window is `DebounceExecutor`'s contract, not `SchemaWatcher`'s, but the wire-up that `SchemaWatcher` calls `debounce.schedule(onTrigger)` exactly once per matching suffix on three closely-spaced events is the invariant.
-   - `newSubdirectory_isRegisteredAndFiresCallback` → `Files.createDirectory` (real) + synthetic `ENTRY_CREATE` for that directory + a second synthetic `ENTRY_MODIFY` for a file beneath it; assert callback and `watchedDirs()` contains the new directory.
+All six steps shipped together (single In Progress commit). Summary:
 
-2. **Lift `CatalogRefreshTest.classFileWriteRefreshesWorkspaceCatalog`.** Same
-   transformation: synthetic `ENTRY_CREATE` for `Tables.class`, the
-   `rebuilder` callback runs, then the workspace-catalog-swap assertion stands.
+1. **Lifted `SchemaWatcherTest` FS-bound cases to synthetic dispatch.**
+   `modifyingGraphqlsFile_firesCallback`, `deletingGraphqlsFile_firesCallback`,
+   `rapidWrites_firesCallbackOnce`, `newSubdirectory_isRegisteredAndFiresCallback`
+   now drive synthetic `WatchEvent` values directly into
+   `SchemaWatcher.dispatch(...)`. Added `entryDeleteEvent(Path)` helper alongside
+   the existing `entryCreateEvent` / `entryModifyEvent` / `overflowEvent`. The
+   `newSubdirectory` case retains a real `Files.createDirectory` (so the
+   dispatcher's `Files.isDirectory` branch resolves) but injects the events
+   synthetically.
 
-3. **Delete or fold the green-by-accident tests.**
-   - `nonGraphqlsFile_noCallback` duplicates the surviving
-     `dispatch_ignoresUnconfiguredSuffix` (synthetic, cross-platform,
-     deterministic). Delete.
-   - `graphqlsWriteDoesNotFireClasspathWatcher` is `dispatch_ignoresUnconfiguredSuffix`
-     parameterised on the classpath-watcher's `.class` suffix; fold into the
-     synthetic shape (fire `ENTRY_MODIFY("schema.graphqls")` on a watcher
-     configured for `.class`, assert callback count is zero, no sleep needed).
+2. **Lifted `CatalogRefreshTest.classFileWriteRefreshesWorkspaceCatalog`.**
+   Synthetic `ENTRY_CREATE` for `Tables.class`; the workspace-catalog-swap
+   assertion stands unchanged.
 
-4. **Keep one real-FS integration smoke test, Linux-only by design.** Tag a
-   single representative case (likely the lifted
-   `writingGraphqlsFile_firesCallback`) with `@EnabledOnOs(OS.LINUX)` and a
-   javadoc that says, in one sentence, "this is the inotify integration; the
-   logic is covered cross-platform by the synthetic-dispatch tests." Honest
-   about what it asserts.
+3. **Folded `graphqlsWriteDoesNotFireClasspathWatcher`** to synthetic
+   `ENTRY_MODIFY("schema.graphqls")` on a `.class`-configured watcher. Stayed
+   in `CatalogRefreshTest` to keep classpath-watcher coverage adjacent to the
+   catalog-rebuilder integration. Deleted `nonGraphqlsFile_noCallback` ;
+   duplicate of `dispatch_ignoresUnconfiguredSuffix`.
 
-5. **Backend-probe ratchet.** Add a single test that calls
-   `FileSystems.getDefault().newWatchService().getClass().getSimpleName()`,
-   asserts it equals `"PollingWatchService"` on macOS, fails otherwise. If a
-   future JDK ships an FSEvents-backed WatchService, this test fails loudly
-   and R198's assumptions get revisited. The invariant the design depends on
-   is "Mac's WatchService is polling-only"; encode that, don't encode "we
-   ran the suite on Mac and gave up". Pair: assert it equals
-   `"LinuxWatchService"` (or the JDK's current name; check in implementation)
-   on Linux as a sanity ratchet.
+4. **Kept `writingGraphqlsFile_firesCallback` as the Linux-only inotify
+   smoke** (`@EnabledOnOs(OS.LINUX)`), with a javadoc pointing to the
+   synthetic cross-platform coverage.
 
-6. **Runtime hint instead of (or in addition to) class javadoc.** At
-   `SchemaWatcher` construction time, if `watchService.getClass().getSimpleName()`
-   contains `"Polling"`, emit one `LOGGER.info` line: "polling
-   WatchService detected; schema file change latency ≈ 10 s. Connect an
-   editor with the Graphitron LSP for event-driven regen." This puts the
-   surprise where it's felt (developer terminal at dev-mojo startup), not in
-   a javadoc only contributors read. Class javadoc still gets a one-line
-   note for contributors, but the audience-correct hint is at runtime.
+5. **Added `watchServiceBackend_matchesExpectedPerOs` probe** in
+   `SchemaWatcherTest`. Asserts `PollingWatchService` on macOS,
+   `LinuxWatchService` on Linux; silent on other OSes (R89's surface).
+
+6. **Runtime hint** wired in the `SchemaWatcher` constructor: one
+   `LOGGER.info` line when `watchService.getClass().getSimpleName()` contains
+   `"Polling"`, pointing to the LSP path for event-driven regen.
+
+Fork resolved during implementation: widened `SchemaWatcher.dispatch` from
+package-private to `public`, with an updated javadoc that names it a test
+seam. Lets `CatalogRefreshTest` (in `..maven.dev`) drive synthetic events
+without crossing into the watch package or duplicating helpers.
 
 ## Out of scope
 
