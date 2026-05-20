@@ -43,4 +43,24 @@ public record ColumnRef(String sqlName, String javaName, String columnClass, Nam
     public ColumnRef withProvenance(NameProvenance newProvenance) {
         return new ColumnRef(sqlName, javaName, columnClass, newProvenance);
     }
+
+    /**
+     * Equality excludes {@link #provenance} for the same reason as {@link TableRef#equals}:
+     * the field carries WHERE the SQL name came from (authored argument vs SDL-name inference),
+     * not WHAT the column is. Two refs that point at the same SQL identity compare equal
+     * regardless of how the classifier sourced the name.
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof ColumnRef other)) return false;
+        return java.util.Objects.equals(sqlName, other.sqlName)
+            && java.util.Objects.equals(javaName, other.javaName)
+            && java.util.Objects.equals(columnClass, other.columnClass);
+    }
+
+    @Override
+    public int hashCode() {
+        return java.util.Objects.hash(sqlName, javaName, columnClass);
+    }
 }

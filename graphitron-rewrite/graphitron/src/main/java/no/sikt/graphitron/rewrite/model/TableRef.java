@@ -79,4 +79,30 @@ public record TableRef(
         return new TableRef(tableName, javaFieldName, tableClass, recordClass,
             constantsClass, primaryKeyColumns, newProvenance);
     }
+
+    /**
+     * Equality excludes {@link #provenance}: the field carries WHERE the SQL name came from
+     * (authored argument vs SDL-name inference), not WHAT the table is. Two refs that point at
+     * the same SQL identity must compare equal regardless of how the classifier sourced the
+     * name; otherwise structural cross-checks like
+     * "@mutation payload field returns the input's @table" misfire when one side carries
+     * Authored and the other FromSdlName for the same physical table.
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof TableRef other)) return false;
+        return java.util.Objects.equals(tableName, other.tableName)
+            && java.util.Objects.equals(javaFieldName, other.javaFieldName)
+            && java.util.Objects.equals(tableClass, other.tableClass)
+            && java.util.Objects.equals(recordClass, other.recordClass)
+            && java.util.Objects.equals(constantsClass, other.constantsClass)
+            && java.util.Objects.equals(primaryKeyColumns, other.primaryKeyColumns);
+    }
+
+    @Override
+    public int hashCode() {
+        return java.util.Objects.hash(tableName, javaFieldName, tableClass, recordClass,
+            constantsClass, primaryKeyColumns);
+    }
 }
