@@ -1,7 +1,7 @@
 ---
 id: R194
 title: Reject case-insensitive type-name collisions
-status: Ready
+status: In Review
 bucket: correctness
 priority: 3
 depends-on: []
@@ -35,12 +35,17 @@ consumer-reported repro), and SDL-vs-synth.
 ## Design
 
 One case-folded uniqueness pass over `ctx.typeRegistry.entries()`, run in
-`GraphitronSchemaBuilder` immediately after `ConnectionPromoter.promote`
-returns. For each case-fold collision group, demote every member to
-`UnclassifiedType` carrying `Rejection.invalidSchema(...)` that names the
-group. `GraphitronSchemaValidator.validateUnclassifiedType`
-(`GraphitronSchemaValidator.java:918`) already projects that to a
-`ValidationError`; no validator-side change.
+`GraphitronSchemaBuilder` after `ConnectionPromoter.promote` *and*
+`ConnectionPromoter.rebuildAssembledForConnections` return. (The spec
+originally called for placement immediately after `promote`; running
+after the schema rebuild instead keeps the assembled `GraphQLSchema`
+typeRefs resolvable when a synthesised Connection type is demoted, and
+avoids pruning carrier rewrites that point at the demoted name. The
+validator-side outcome is identical.) For each case-fold collision
+group, demote every member to `UnclassifiedType` carrying
+`Rejection.invalidSchema(...)` that names the group.
+`GraphitronSchemaValidator.validateUnclassifiedType` already projects
+that to a `ValidationError`; no validator-side change.
 
 Demote-all (rather than first-wins) because there's no logical winner
 between two SDL-declared types; renaming either is the fix, and silently
@@ -48,37 +53,38 @@ picking one tilts the schema's public surface against the author. Each
 group member produces its own `ValidationError`, all naming the same
 collision group, so the diagnostic is actionable from either entry point.
 
-`Locale.ROOT` for the fold; GraphQL identifiers are ASCII-only by spec
-rule (`/[_A-Za-z][_0-9A-Za-z]*/`).
+The message specialises by origin: synthesised `ConnectionType`,
+`EdgeType`, and `PageInfoType` arms point at
+`@asConnection(connectionName: ...)` as the actionable fix; SDL-declared
+types get a generic rename hint.
 
-The check applies only to variants that emit a Java file. Add
-`default boolean producesEmittedFile() { return true; }` to the sealed
-`GraphitronType` root, overridden to `false` on `ScalarType` and
-`UnclassifiedType`. Audit the full hierarchy at implementation time in
-case other non-emitting variants exist.
+`Locale.ROOT` for the fold; GraphQL identifiers are ASCII-only per the
+spec rule `[_A-Za-z][_0-9A-Za-z]*`.
 
-## Implementation sites
-
-- `GraphitronSchemaBuilder`: new private
-  `rejectCaseInsensitiveTypeCollisions(BuildContext)` method, invoked
-  after `ConnectionPromoter.promote(ctx)`.
-- `GraphitronType`
-  (`graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronType.java`):
-  add `producesEmittedFile()` with `false` overrides on non-emitting variants.
-- `TypeRegistry`: uses existing `demote(name, UnclassifiedType)`. No surface change.
-- `GraphitronSchemaValidator`: no change.
+The check applies only to variants that emit a Java file. A
+`default boolean producesEmittedFile() { return true; }` on the sealed
+`GraphitronType` root is overridden to `false` on `ScalarType` and
+`UnclassifiedType`; every other variant (TableType, NodeType, every
+ResultType arm, RootType, every InputType arm, TableInputType,
+ConnectionType, EdgeType, PageInfoType, PlainObjectType, EnumType,
+TableInterfaceType, InterfaceType, UnionType, ErrorType) routes through
+the generator's per-type emission paths and stays on the default.
 
 ## Tests
 
-Primary signal: a `CaseInsensitiveTypeClashCase` arm in
-`GraphitronSchemaBuilderTest` with sub-arms for sdlVsSdl, synthVsSynth,
-sdlVsSynth, and a three-way group. Each asserts the colliding names land
-as `UnclassifiedType` and that the `BuildResult` carries an
-`INVALID_SCHEMA` `ValidationError` per member naming the full group.
+Pipeline coverage in `GraphitronSchemaBuilderTest.CaseInsensitiveTypeClashCase`:
 
-Supplementary unit-tier coverage exercises the detector against a
-hand-populated `TypeRegistry`: single-character difference, multi-member
-group, no-clash baseline, non-emitting variants ignored.
+- `sdlVsSdl`: two SDL `@record` types differing only in case both demote
+  to `UnclassifiedType` with messages naming the full group.
+- `synthVsSynth`: two `@asConnection` carriers with case-equivalent
+  `connectionName:` arguments both demote; the message specialises to
+  "synthesised connection type".
+- `sdlVsSynth`: an SDL type case-equal to a synth Connection name
+  demotes both.
+- `threeWayGroup`: three case-equivalent SDL types each surface a
+  `ValidationError` naming all three members.
+- `noClashBaseline`: distinct names produce no collision diagnostics
+  (negative-control).
 
 Compilation and execution tiers not applicable: the rejection prevents
 emission.
@@ -93,13 +99,3 @@ emission.
 - Derived-filename collisions (e.g. `<Type>Fetchers` stems that collide
   via different parents). The type-name check covers the bulk; revisit if
   a real consumer case ever surfaces independently.
-
-## Open questions
-
-1. *Demote-all vs. demote-non-first.* Spec body picks all. Demote-non-first
-   cuts error-noise but picks an arbitrary winner. Genuinely open.
-2. *Message specialisation per origin.* Generic ("type 'X' clashes with
-   'Y'") versus origin-aware ("synthesised connection type 'X' from `Q.f`
-   clashes with SDL type 'Y'", with the `@asConnection(connectionName: …)`
-   hint when applicable). Recommendation: specialise; the synth case has an
-   actionable hint the SDL case doesn't.

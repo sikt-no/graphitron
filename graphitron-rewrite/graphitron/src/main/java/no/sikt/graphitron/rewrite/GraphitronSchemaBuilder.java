@@ -15,6 +15,12 @@ import graphql.schema.idl.errors.SchemaProblem;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.schema.federation.EntityResolutionBuilder;
@@ -23,7 +29,9 @@ import no.sikt.graphitron.rewrite.schema.input.FederationLinkApplier;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -258,6 +266,15 @@ public class GraphitronSchemaBuilder {
             });
         var rewrites = ConnectionPromoter.promote(ctx);
         var rebuiltAssembled = ConnectionPromoter.rebuildAssembledForConnections(ctx.schema, ctx.types, rewrites);
+        // R194: reject case-insensitive type-name collisions. Graphitron emits one Java file per
+        // type-name stem; on case-insensitive filesystems two case-equivalent names would clobber
+        // each other. Runs post-promotion so synth-vs-synth Connection-name clashes (the consumer
+        // repro) are visible; runs post-rebuild so the assembled schema stays consistent with the
+        // pre-demotion registry shape (rebuild only inspects carrier rewrites + ConnectionType /
+        // EdgeType / PageInfoType arms in the type map; demoting after rebuild keeps the
+        // assembled-schema typeRefs resolvable while still routing the collision through the
+        // validator's UnclassifiedType path).
+        rejectCaseInsensitiveTypeCollisions(ctx);
         // Hash-suffix dedup: walk every WithErrorChannel field and apply the collision-suffix
         // rule to ErrorChannel.mappingsConstantName so the resolved name lands on the carrier
         // before the emitter runs. Pass-through for the common case (every payload class has at
@@ -268,6 +285,64 @@ public class GraphitronSchemaBuilder {
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings());
         return new BuildResult(model, rebuiltAssembled);
+    }
+
+    /**
+     * R194: Demotes every type whose name collides case-insensitively with another emit-producing
+     * type. Graphitron emits one Java file per type-name stem, and GraphQL identifiers are
+     * case-sensitive ({@code type Foo} and {@code type foo} parse as distinct types); on
+     * case-insensitive filesystems (APFS, NTFS) the two map to the same filename and clobber each
+     * other. Rather than introduce a content-suffix collision strategy, we reject at build time:
+     * case-only collisions are an API-design smell, and graphitron pushes back rather than papering
+     * over.
+     *
+     * <p>One case-folded pass over {@code ctx.typeRegistry.entries()}, skipping variants for which
+     * {@link GraphitronType#producesEmittedFile()} is {@code false} ({@link
+     * no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType} and {@link UnclassifiedType}
+     * today). For each collision group of two or more members, every member is demoted to
+     * {@link UnclassifiedType} carrying a {@link Rejection#invalidSchema(String)} message that
+     * names the full group; {@link GraphitronSchemaValidator#validateUnclassifiedType} then projects
+     * one {@link ValidationError} per member, so the diagnostic is actionable from either entry
+     * point. Demote-all (rather than first-wins) because there's no logical winner between two
+     * SDL-declared types: silently picking one would tilt the schema's public surface against the
+     * author. Synthesised Connection / Edge / PageInfo arms specialise the message to hint at the
+     * {@code @asConnection(connectionName:)} fix.
+     *
+     * <p>{@link Locale#ROOT} for the fold; GraphQL identifiers are ASCII-only per the spec rule
+     * {@code [_A-Za-z][_0-9A-Za-z]*} (no non-ASCII letters, no locale-dependent folding hazards).
+     */
+    private static void rejectCaseInsensitiveTypeCollisions(BuildContext ctx) {
+        Map<String, List<String>> groups = new LinkedHashMap<>();
+        for (var entry : ctx.typeRegistry.entries().entrySet()) {
+            if (!entry.getValue().producesEmittedFile()) continue;
+            String folded = entry.getKey().toLowerCase(Locale.ROOT);
+            groups.computeIfAbsent(folded, k -> new ArrayList<>()).add(entry.getKey());
+        }
+        for (var group : groups.values()) {
+            if (group.size() < 2) continue;
+            String groupList = group.stream()
+                .map(n -> "'" + n + "'")
+                .collect(Collectors.joining(", "));
+            for (String name : group) {
+                GraphitronType existing = ctx.typeRegistry.get(name);
+                String reason = switch (existing) {
+                    case ConnectionType ignored ->
+                        "synthesised connection type collides case-insensitively with " + groupList
+                            + "; rename the source field or set @asConnection(connectionName: \"...\") to a name that is unique under case-folding";
+                    case EdgeType ignored ->
+                        "synthesised edge type collides case-insensitively with " + groupList
+                            + "; rename the connection (source field or @asConnection(connectionName: \"...\")) so the derived edge name is unique under case-folding";
+                    case PageInfoType ignored ->
+                        "synthesised PageInfo type collides case-insensitively with " + groupList
+                            + "; rename the conflicting SDL type so PageInfo can be synthesised without clash";
+                    default ->
+                        "collides case-insensitively with " + groupList
+                            + "; rename one of the colliding types (case-only differences are not portable across case-insensitive filesystems)";
+                };
+                ctx.typeRegistry.demote(name, new UnclassifiedType(
+                    name, existing.location(), Rejection.invalidSchema(reason)));
+            }
+        }
     }
 
     /**
