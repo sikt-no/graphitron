@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R194` | Reject case-insensitive type-name collisions | Spec | 2026-05-20 | [plan](reject-case-insensitive-synth-type-collisions.md) |
+| `R194` | Reject case-insensitive type-name collisions | Ready | 2026-05-20 | [plan](reject-case-insensitive-synth-type-collisions.md) |
 | `R190` | Single-tenant schema-driven ExecutionInput factory and sealed GraphitronContext | Spec | 2026-05-20 | [plan](single-tenant-execution-input-factory.md) |
 | `R45` | Tenant routing and schema-driven ExecutionInput factory | Spec |  | [plan](tenant-routing-and-execution-input.md) |
 | `R191` | Honor @field(name:) for accessor lookup on free-form @record parents | In Review | 2026-05-20 | [plan](record-parent-field-name-accessor-remap.md) |
