@@ -15,11 +15,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R194` | Reject case-insensitive synthesised type-name collisions | Spec | 2026-05-20 | [plan](reject-case-insensitive-synth-type-collisions.md) |
 | `R190` | Single-tenant schema-driven ExecutionInput factory and sealed GraphitronContext | Spec | 2026-05-20 | [plan](single-tenant-execution-input-factory.md) |
 | `R45` | Tenant routing and schema-driven ExecutionInput factory | Spec |  | [plan](tenant-routing-and-execution-input.md) |
 | `R191` | Honor @field(name:) for accessor lookup on free-form @record parents | In Review | 2026-05-20 | [plan](record-parent-field-name-accessor-remap.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
+| `R187` | Nested @service param-name mismatch shadowed by 'unrecognized sources type' diagnostic | In Review | 2026-05-20 | [plan](service-nested-arg-mismatch-shadowed-by-sources-diagnostic.md) |
+| `R185` | Root @service arg-name mismatch shadowed by Sources-shape diagnostic | In Review | 2026-05-20 | [plan](service-root-arg-mismatch-shadowed-by-sources-diagnostic.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
@@ -30,8 +31,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
-| `R189` | FK-target `@nodeId` input fields on `@mutation` (INSERT / UPDATE / DELETE) | Ready | 2026-05-20 | [plan](mutation-nodeid-fk-target-input-field.md) |
-| `R160` | LSP inlay hints and hover for inferred directives and field/type classification | In Progress | 2026-05-20 <sub>created 2026-05-13</sub> | [plan](lsp-display-inference-and-classification.md) |
+| `R160` | LSP inlay hints and hover for inferred directives and field/type classification | Ready | 2026-05-20 <sub>created 2026-05-13</sub> | [plan](lsp-display-inference-and-classification.md) |
+| `R189` | FK-target `@nodeId` input fields on `@mutation` (INSERT / UPDATE / DELETE) | In Progress | 2026-05-20 | [plan](mutation-nodeid-fk-target-input-field.md) |
 
 ---
 
@@ -126,7 +127,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
-- `R189` [**FK-target `@nodeId` input fields on `@mutation` (INSERT / UPDATE / DELETE)**](mutation-nodeid-fk-target-input-field.md) — Ready, feature
+- `R189` [**FK-target `@nodeId` input fields on `@mutation` (INSERT / UPDATE / DELETE)**](mutation-nodeid-fk-target-input-field.md) — In Progress, feature
 
 ### service
 
@@ -136,6 +137,8 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R45` [**Tenant routing and schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Spec, architecture
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture, blocked by [single-tenant-execution-input-factory](single-tenant-execution-input-factory.md)
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md)
+- `R187` [**Nested @service param-name mismatch shadowed by 'unrecognized sources type' diagnostic**](service-nested-arg-mismatch-shadowed-by-sources-diagnostic.md) — In Review, bug
+- `R185` [**Root @service arg-name mismatch shadowed by Sources-shape diagnostic**](service-root-arg-mismatch-shadowed-by-sources-diagnostic.md) — In Review, bug
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
 - `R193` [**Sealed UnresolvedParam classification for @service parameter rejection arms**](service-param-classification-sealed-hierarchy.md) — Backlog, architecture
@@ -219,7 +222,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
-- `R160` [**LSP inlay hints and hover for inferred directives and field/type classification**](lsp-display-inference-and-classification.md) — In Progress, feature
+- `R160` [**LSP inlay hints and hover for inferred directives and field/type classification**](lsp-display-inference-and-classification.md) — Ready, feature
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
 
 ### (untagged)
@@ -228,7 +231,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
-- `R194` [**Reject case-insensitive synthesised type-name collisions**](reject-case-insensitive-synth-type-collisions.md)
 - `R188` [**Replace @value with PK-default partition + @condition on mutations**](simplify-update-mutations-drop-value.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
 

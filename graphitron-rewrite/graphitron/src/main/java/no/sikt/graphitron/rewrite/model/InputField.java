@@ -22,22 +22,30 @@ public sealed interface InputField extends GraphitronField
                 InputField.LookupKeyField, InputField.SetField {
 
     /**
-     * Carriers admissible as {@code @lookupKey}-bearing input fields on a {@code TableInputArg}.
-     * Sibling sealed root to {@link SetField}: both permit the R130 admitted-carrier set
-     * (post-R131 same-table carriers); reference carriers ({@link ColumnReferenceField} /
-     * {@link CompositeColumnReferenceField}) and {@link NestingField} stay outside the permits
-     * set. Re-admission of reference carriers is R24-shaped follow-on; nested-input is R128's
+     * Carriers admissible as filter input fields on a {@code TableInputArg}. Sibling sealed root
+     * to {@link SetField}: both permit value-bearing scalar carriers ({@link ColumnField} /
+     * {@link CompositeColumnField}) and FK-target reference carriers
+     * ({@link ColumnReferenceField} / {@link CompositeColumnReferenceField}) whose
+     * {@code liftedSourceColumns} live on the input's own table. The admissible-carrier shape
+     * is "no JOIN context at the emit site" — value carriers source the column from
+     * {@link ColumnField#column()} / {@link CompositeColumnField#columns()}, reference carriers
+     * from {@link ColumnReferenceField#liftedSourceColumns()} /
+     * {@link CompositeColumnReferenceField#liftedSourceColumns()}.
+     *
+     * <p>{@link NestingField} stays outside the permits set; nested-input is R128's
      * compound-entity-mutations territory.
      */
-    sealed interface LookupKeyField extends InputField permits ColumnField, CompositeColumnField {}
+    sealed interface LookupKeyField extends InputField permits ColumnField, CompositeColumnField,
+            ColumnReferenceField, CompositeColumnReferenceField {}
 
     /**
-     * Carriers admissible as non-{@code @lookupKey} set-side input fields on a {@code TableInputArg}
-     * (the INSERT column-list / UPDATE SET / UPSERT INSERT-arm dispatch surface).
-     * Permits {@link ColumnField} and {@link CompositeColumnField}; same R130 admitted-carrier
-     * set as {@link LookupKeyField}.
+     * Carriers admissible as set-side input fields on a {@code TableInputArg} (the INSERT
+     * column-list / UPDATE SET / UPSERT INSERT-arm dispatch surface). Same admitted-carrier
+     * set as {@link LookupKeyField}: value-bearing scalar carriers and FK-target reference
+     * carriers whose {@code liftedSourceColumns} live on the input's own table.
      */
-    sealed interface SetField extends InputField permits ColumnField, CompositeColumnField {}
+    sealed interface SetField extends InputField permits ColumnField, CompositeColumnField,
+            ColumnReferenceField, CompositeColumnReferenceField {}
 
     /**
      * A field in a {@code @table}-annotated input type, successfully resolved to a SQL column
@@ -98,7 +106,7 @@ public sealed interface InputField extends GraphitronField
         Optional<ArgConditionRef> condition,
         CallSiteExtraction extraction,
         PathProvenance pathProvenance
-    ) implements InputField {
+    ) implements InputField, LookupKeyField, SetField {
 
         public ColumnReferenceField {
             joinPath = List.copyOf(joinPath);
@@ -172,7 +180,7 @@ public sealed interface InputField extends GraphitronField
         Optional<ArgConditionRef> condition,
         CallSiteExtraction.NodeIdDecodeKeys extraction,
         PathProvenance pathProvenance
-    ) implements InputField {
+    ) implements InputField, LookupKeyField, SetField {
 
         public CompositeColumnReferenceField {
             columns = List.copyOf(columns);

@@ -291,11 +291,14 @@ final class EnumMappingResolver {
             + "raw column read.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "mutation-input.lookup-binding-decoded-record-arity-matches-carrier-columns",
-        description = "DecodedRecordGroup.bindings.size() equals CompositeColumnField.columns.size() "
-            + "by construction (one binding per column, indexed 0..N-1). Lets the lookup-WHERE / "
-            + "row-IN emitter read Record<N> slots positionally without re-checking arity, and "
-            + "lets INSERT/UPDATE/UPSERT walks that dispatch on CompositeColumnField iterate "
-            + "0..columns.size()-1 with record.value(i) reads against the carrier's columns.")
+        description = "DecodedRecordGroup.bindings.size() equals the carrier's column-arity by "
+            + "construction: CompositeColumnField.columns.size() for the same-table arm and "
+            + "CompositeColumnReferenceField.liftedSourceColumns.size() for the FK-target arm "
+            + "(arity-1 reference goes through MapGroup instead). One binding per slot, indexed "
+            + "0..N-1. Lets the lookup-WHERE / row-IN emitter read Record<N> slots positionally "
+            + "without re-checking arity, and lets INSERT/UPDATE/UPSERT walks that dispatch on "
+            + "the composite arms iterate 0..N-1 with record.value(i) reads against the "
+            + "carrier's columns (column() for same-table, liftedSourceColumns() for FK-target).")
     List<InputColumnBindingGroup> buildLookupBindings(GraphitronType.TableInputType tit,
             GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String argName,
             List<String> errors, Set<String> excludeFieldNames) {
@@ -351,9 +354,45 @@ final class EnumMappingResolver {
                     groups.add(new InputColumnBindingGroup.DecodedRecordGroup(
                         sdlField.getName(), ccf.extraction(), recordBindings));
                 }
+                case InputField.ColumnReferenceField crf -> {
+                    // R189: FK-target @nodeId reference carrier, arity-1. The target column is
+                    // the lifted source column on the input's own table (i.e. the FK column),
+                    // not the joined-table column carried by crf.column(). The extraction is
+                    // narrowed to NodeIdDecodeKeys at the DirectFk arm; the resulting binding
+                    // has the same MapGroup shape an arity-1 NodeId-decoded ColumnField produces.
+                    if (crf.list()) {
+                        errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
+                            + "': list-typed input field is not supported in this binding position; "
+                            + "move list cardinality to the outer argument");
+                        continue;
+                    }
+                    groups.add(new InputColumnBindingGroup.MapGroup(List.of(
+                        new InputColumnBinding.MapBinding(sdlField.getName(),
+                            crf.liftedSourceColumns().get(0), crf.extraction()))));
+                }
+                case InputField.CompositeColumnReferenceField ccrf -> {
+                    // R189: FK-target @nodeId reference carrier, arity >= 2. Target columns are
+                    // the lifted source columns on the input's own table (permuted into
+                    // NodeType key order by the DirectFk classifier); pairs slot-for-slot with
+                    // the decoded record's value<i+1>() accessors. Same DecodedRecordGroup
+                    // shape as the same-table CompositeColumnField arm.
+                    if (ccrf.list()) {
+                        errors.add("input type '" + tit.name() + "' field '" + sdlField.getName()
+                            + "': list-typed input field is not supported in this binding position; "
+                            + "move list cardinality to the outer argument");
+                        continue;
+                    }
+                    var recordBindings = new ArrayList<InputColumnBinding.RecordBinding>();
+                    for (int i = 0; i < ccrf.liftedSourceColumns().size(); i++) {
+                        recordBindings.add(new InputColumnBinding.RecordBinding(i,
+                            ccrf.liftedSourceColumns().get(i)));
+                    }
+                    groups.add(new InputColumnBindingGroup.DecodedRecordGroup(
+                        sdlField.getName(), ccrf.extraction(), recordBindings));
+                }
                 case null, default -> {
-                    // Reference, nesting, and unresolved carriers are not admissible binding
-                    // shapes; the caller's structural walk surfaces them as rejections.
+                    // Nesting and unresolved carriers are not admissible binding shapes; the
+                    // caller's structural walk surfaces them as rejections.
                 }
             }
         }
