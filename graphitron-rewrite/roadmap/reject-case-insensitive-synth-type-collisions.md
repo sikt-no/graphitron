@@ -42,8 +42,8 @@ after the schema rebuild instead keeps the assembled `GraphQLSchema`
 typeRefs resolvable when a synthesised Connection type is demoted, and
 avoids pruning carrier rewrites that point at the demoted name. The
 validator-side outcome is identical.) For each case-fold collision
-group, demote every member to `UnclassifiedType` carrying
-`Rejection.invalidSchema(...)` that names the group.
+group, demote every member to `UnclassifiedType` carrying a typed
+`Rejection.InvalidSchema.CaseFoldCollision(group, origin)` rejection.
 `GraphitronSchemaValidator.validateUnclassifiedType` already projects
 that to a `ValidationError`; no validator-side change.
 
@@ -53,22 +53,36 @@ picking one tilts the schema's public surface against the author. Each
 group member produces its own `ValidationError`, all naming the same
 collision group, so the diagnostic is actionable from either entry point.
 
-The message specialises by origin: synthesised `ConnectionType`,
-`EdgeType`, and `PageInfoType` arms point at
-`@asConnection(connectionName: ...)` as the actionable fix; SDL-declared
-types get a generic rename hint.
+`CaseFoldCollision` is a sealed sub-variant of `Rejection.InvalidSchema`
+carrying `List<String> group` (every case-equivalent name in the
+collision, in registry-iteration order) and a `CaseFoldCollision.Origin`
+enum (`SDL`, `SYNTH_CONNECTION`, `SYNTH_EDGE`, `SYNTH_PAGE_INFO`). The
+`message()` override switches on `origin` to specialise the actionable
+fix hint: synthesised Connection / Edge / PageInfo arms point at
+`@asConnection(connectionName: ...)`; SDL types get a generic rename
+hint. The builder computes `origin` via a `switch` on the demoted
+variant's classifier type and constructs one `CaseFoldCollision` per
+member. Carrying the group as typed data, rather than baking it into
+prose, keeps downstream consumers (LSP diagnostics, watch-mode
+formatter) free to render the group structurally.
 
 `Locale.ROOT` for the fold; GraphQL identifiers are ASCII-only per the
 spec rule `[_A-Za-z][_0-9A-Za-z]*`.
 
-The check applies only to variants that emit a Java file. A
-`default boolean producesEmittedFile() { return true; }` on the sealed
-`GraphitronType` root is overridden to `false` on `ScalarType` and
-`UnclassifiedType`; every other variant (TableType, NodeType, every
-ResultType arm, RootType, every InputType arm, TableInputType,
-ConnectionType, EdgeType, PageInfoType, PlainObjectType, EnumType,
-TableInterfaceType, InterfaceType, UnionType, ErrorType) routes through
-the generator's per-type emission paths and stays on the default.
+The check applies only to variants that emit a Java file. The
+file-emission property is a generation-side capability, not a
+classification concern, so it lives on a standalone capability interface
+`EmitsPerTypeFile` (mirroring the codebase's `SqlGeneratingField` /
+`BatchKeyField` precedent) rather than as a default method on the
+`GraphitronType` sealed root. Sealed sub-interfaces `TableBackedType`,
+`ResultType`, and `InputType` extend it (so every arm under each
+inherits the capability); leaf variants `RootType`, `TableInputType`,
+`ConnectionType`, `EdgeType`, `PageInfoType`, `PlainObjectType`,
+`EnumType`, `TableInterfaceType`, `InterfaceType`, `UnionType`, and
+`ErrorType` implement it directly. `ScalarType` (handled by
+`ScalarTypeResolver`, no per-type file) and `UnclassifiedType` (already
+demoted, never reaches emission) deliberately do not. The detector
+filters via `instanceof EmitsPerTypeFile`.
 
 ## Tests
 
@@ -78,9 +92,15 @@ Pipeline coverage in `GraphitronSchemaBuilderTest.CaseInsensitiveTypeClashCase`:
   to `UnclassifiedType` with messages naming the full group.
 - `synthVsSynth`: two `@asConnection` carriers with case-equivalent
   `connectionName:` arguments both demote; the message specialises to
-  "synthesised connection type".
+  `SYNTH_CONNECTION` ("synthesised connection type").
 - `sdlVsSynth`: an SDL type case-equal to a synth Connection name
-  demotes both.
+  demotes both, exercising the `SDL` and `SYNTH_CONNECTION` origin arms
+  in the same group.
+- `synthEdgeVsSdl`: an SDL type case-equal to a synth Edge name (derived
+  from a `connectionName:` argument by replacing `Connection` with
+  `Edge`) demotes both, exercising the `SYNTH_EDGE` origin arm.
+- `synthPageInfoVsSdl`: an SDL type case-equal to the synthesised
+  `PageInfo` demotes both, exercising the `SYNTH_PAGE_INFO` origin arm.
 - `threeWayGroup`: three case-equivalent SDL types each surface a
   `ValidationError` naming all three members.
 - `noClashBaseline`: distinct names produce no collision diagnostics

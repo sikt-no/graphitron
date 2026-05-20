@@ -27,18 +27,10 @@ public sealed interface GraphitronType
     SourceLocation location();
 
     /**
-     * Whether this type contributes a {@code <name>.java} (or related per-type-stem) file to the
-     * generator's emission. {@link ScalarType} and {@link UnclassifiedType} do not; every other
-     * variant does. Read by the case-insensitive type-name collision detector (R194) so the check
-     * only flags variants that would otherwise clobber each other on case-insensitive filesystems.
-     */
-    default boolean producesEmittedFile() { return true; }
-
-    /**
      * A GraphQL type backed by a resolved jOOQ table.
      * All permitted sub-types carry a {@link TableRef} and generate SQL (SELECT or DML).
      */
-    sealed interface TableBackedType extends GraphitronType
+    sealed interface TableBackedType extends GraphitronType, EmitsPerTypeFile
         permits GraphitronType.TableType, GraphitronType.NodeType, GraphitronType.TableInterfaceType {
 
         TableRef table();
@@ -96,7 +88,7 @@ public sealed interface GraphitronType
      * named in {@code @record(record: {className: ...})} at build time. When no {@code className}
      * is provided, the type is classified as {@link PojoResultType} with a {@code null} backing class.
      */
-    sealed interface ResultType extends GraphitronType
+    sealed interface ResultType extends GraphitronType, EmitsPerTypeFile
         permits GraphitronType.JavaRecordType, GraphitronType.PojoResultType,
                 GraphitronType.JooqRecordType, GraphitronType.JooqTableRecordType {
 
@@ -196,7 +188,7 @@ public sealed interface GraphitronType
     record RootType(
         String name,
         SourceLocation location
-    ) implements GraphitronType {}
+    ) implements GraphitronType, EmitsPerTypeFile {}
 
     /**
      * An interface annotated with {@code @table} and {@code @discriminate}, where implementing
@@ -225,7 +217,7 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         List<ParticipantRef> participants
-    ) implements GraphitronType {}
+    ) implements GraphitronType, EmitsPerTypeFile {}
 
     /**
      * A union type whose member types all have {@code @table}.
@@ -236,7 +228,7 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         List<ParticipantRef> participants
-    ) implements GraphitronType {}
+    ) implements GraphitronType, EmitsPerTypeFile {}
 
     /**
      * An object type annotated with {@code @error}. Maps Java exceptions to GraphQL error responses.
@@ -254,7 +246,7 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         List<Handler> handlers
-    ) implements GraphitronType {
+    ) implements GraphitronType, EmitsPerTypeFile {
 
         /**
          * One entry in the {@code handlers} argument of the {@code @error} directive. Sealed by
@@ -328,7 +320,7 @@ public sealed interface GraphitronType
      * named in {@code @record(record: {className: ...})} at build time. When no {@code className}
      * is provided the type is classified as {@link PojoInputType} with a {@code null} backing class.
      */
-    sealed interface InputType extends GraphitronType
+    sealed interface InputType extends GraphitronType, EmitsPerTypeFile
         permits GraphitronType.JavaRecordInputType, GraphitronType.PojoInputType,
                 GraphitronType.JooqRecordInputType, GraphitronType.JooqTableRecordInputType {
 
@@ -412,7 +404,7 @@ public sealed interface GraphitronType
         List<InputField> inputFields,
         GraphQLInputObjectType schemaType,
         InputRecordShape recordShape
-    ) implements GraphitronType, HasInputRecordShape {}
+    ) implements GraphitronType, EmitsPerTypeFile, HasInputRecordShape {}
 
     /**
      * A plain SDL object type — no {@code @table}, {@code @record}, {@code @error}, or other
@@ -432,7 +424,7 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         GraphQLObjectType schemaType
-    ) implements GraphitronType {}
+    ) implements GraphitronType, EmitsPerTypeFile {}
 
     /**
      * A GraphQL enum type. Classifier records it so {@code schema.types()} is complete for
@@ -443,7 +435,7 @@ public sealed interface GraphitronType
         String name,
         SourceLocation location,
         GraphQLEnumType schemaType
-    ) implements GraphitronType {}
+    ) implements GraphitronType, EmitsPerTypeFile {}
 
     /**
      * A GraphQL scalar type whose Java type and {@code GraphQLScalarType} constant have been
@@ -475,9 +467,7 @@ public sealed interface GraphitronType
         SourceLocation location,
         ScalarResolution.Resolved resolution,
         GraphQLScalarType schemaType
-    ) implements GraphitronType {
-        @Override public boolean producesEmittedFile() { return false; }
-    }
+    ) implements GraphitronType {}
 
     /**
      * A type that could not be classified — examples include an unresolvable {@code @table}
@@ -498,7 +488,6 @@ public sealed interface GraphitronType
         Rejection rejection
     ) implements GraphitronType {
         public String reason() { return rejection.message(); }
-        @Override public boolean producesEmittedFile() { return false; }
     }
 
     /**
@@ -527,7 +516,7 @@ public sealed interface GraphitronType
         boolean itemNullable,
         boolean shareable,
         GraphQLObjectType schemaType
-    ) implements GraphitronType {}
+    ) implements GraphitronType, EmitsPerTypeFile {}
 
     /**
      * A Relay edge object type — the inner wrapper whose fields are {@code cursor: String!} and
@@ -545,7 +534,7 @@ public sealed interface GraphitronType
         boolean itemNullable,
         boolean shareable,
         GraphQLObjectType schemaType
-    ) implements GraphitronType {}
+    ) implements GraphitronType, EmitsPerTypeFile {}
 
     /**
      * The Relay {@code PageInfo} object type. Exactly one instance per schema; the classifier
@@ -561,5 +550,5 @@ public sealed interface GraphitronType
         SourceLocation location,
         boolean shareable,
         GraphQLObjectType schemaType
-    ) implements GraphitronType {}
+    ) implements GraphitronType, EmitsPerTypeFile {}
 }

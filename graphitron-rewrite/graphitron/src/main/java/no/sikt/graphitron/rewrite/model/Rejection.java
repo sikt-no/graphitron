@@ -139,7 +139,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * clean directive enumeration ("lookup fields must not return a connection",
      * "result type does not match input cardinality").
      */
-    sealed interface InvalidSchema extends Rejection permits InvalidSchema.DirectiveConflict, InvalidSchema.Structural {
+    sealed interface InvalidSchema extends Rejection permits InvalidSchema.DirectiveConflict, InvalidSchema.CaseFoldCollision, InvalidSchema.Structural {
 
         /**
          * Two or more directives co-occur on the same declaration in a combination
@@ -160,6 +160,63 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
             @Override public Rejection prefixedWith(String prefix) {
                 return new DirectiveConflict(directives, prefix + reason);
+            }
+        }
+
+        /**
+         * Two or more type-name stems are case-equivalent. Graphitron emits one Java file per
+         * type-name stem; on case-insensitive filesystems (APFS, NTFS) the colliding names map to
+         * the same filename and clobber each other. Each member of the collision group is demoted
+         * to {@link GraphitronType.UnclassifiedType} carrying its own {@code CaseFoldCollision}
+         * with this same {@code group} and the demoted member's {@code origin}, so the validator
+         * surfaces one {@link no.sikt.graphitron.rewrite.ValidationError} per member from either
+         * entry point.
+         *
+         * <p>{@code group} carries every case-equivalent type name in registry-iteration order;
+         * {@code origin} names the classifier arm the demoted member came from. {@link #message()}
+         * specialises the actionable fix hint per {@code origin}.
+         *
+         * <p>Producer: {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder} R194 case-fold
+         * uniqueness pass.
+         */
+        record CaseFoldCollision(
+            List<String> group,
+            Origin origin
+        ) implements InvalidSchema {
+            public CaseFoldCollision {
+                group = List.copyOf(group);
+            }
+
+            @Override public String message() {
+                String groupList = group.stream()
+                    .map(n -> "'" + n + "'")
+                    .collect(Collectors.joining(", "));
+                return switch (origin) {
+                    case SYNTH_CONNECTION ->
+                        "synthesised connection type collides case-insensitively with " + groupList
+                            + "; rename the source field or set @asConnection(connectionName: \"...\") to a name that is unique under case-folding";
+                    case SYNTH_EDGE ->
+                        "synthesised edge type collides case-insensitively with " + groupList
+                            + "; rename the connection (source field or @asConnection(connectionName: \"...\")) so the derived edge name is unique under case-folding";
+                    case SYNTH_PAGE_INFO ->
+                        "synthesised PageInfo type collides case-insensitively with " + groupList
+                            + "; rename the conflicting SDL type so PageInfo can be synthesised without clash";
+                    case SDL ->
+                        "collides case-insensitively with " + groupList
+                            + "; rename one of the colliding types (case-only differences are not portable across case-insensitive filesystems)";
+                };
+            }
+
+            @Override public Rejection prefixedWith(String prefix) {
+                // The collision detector is a terminal producer (no wrap sites thread context onto
+                // it), so this path is defensive only. Degrade to Structural carrying the rendered
+                // message; the typed structure is preserved on the unprefixed primary path.
+                return new Structural(prefix + message());
+            }
+
+            /** Origin arm; identifies the classifier arm the demoted member came from. */
+            public enum Origin {
+                SDL, SYNTH_CONNECTION, SYNTH_EDGE, SYNTH_PAGE_INFO
             }
         }
 
@@ -274,6 +331,15 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      */
     static Rejection directiveConflict(List<String> directives, String reason) {
         return new InvalidSchema.DirectiveConflict(directives, reason);
+    }
+
+    /**
+     * {@link InvalidSchema.CaseFoldCollision} factory. Carries the full case-equivalent collision
+     * group and the demoted member's classifier-arm origin so the message renderer can specialise
+     * the actionable fix hint.
+     */
+    static Rejection caseFoldCollision(List<String> group, InvalidSchema.CaseFoldCollision.Origin origin) {
+        return new InvalidSchema.CaseFoldCollision(group, origin);
     }
 
     /**

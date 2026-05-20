@@ -117,6 +117,11 @@ class RejectionSeverityCoverageTest {
         if (permit == Rejection.InvalidSchema.DirectiveConflict.class) {
             return new Rejection.InvalidSchema.DirectiveConflict(List.of("a", "b"), "reason");
         }
+        if (permit == Rejection.InvalidSchema.CaseFoldCollision.class) {
+            return new Rejection.InvalidSchema.CaseFoldCollision(
+                List.of("Foo", "foo"),
+                Rejection.InvalidSchema.CaseFoldCollision.Origin.SDL);
+        }
         if (permit == Rejection.Deferred.class) {
             return new Rejection.Deferred(
                 "summary", "plan-slug",

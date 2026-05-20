@@ -26,6 +26,7 @@ Rejection
 │   └─ RecordBindingMultiProducer ← multiple producers reach one SDL type with disagreeing classes
 ├─ InvalidSchema                ← the schema can't accept this combination at all
 │   ├─ DirectiveConflict        ← two directives co-occur in a rejected combination
+│   ├─ CaseFoldCollision        ← two type names are equal under case-folding
 │   └─ Structural               ← rule violation carrying prose only
 └─ Deferred                     ← classifies cleanly but the generator hasn't emitted support yet
 ----
@@ -39,6 +40,8 @@ Rejection
 `AuthorError.RecordBindingMultiProducer` is the fourth `AuthorError` arm, surfacing R96's producer-agreement check: when two or more producers (root producers or parent-accessor chains) reach the same SDL type with disagreeing reflected backing classes, the validator halts with a typed payload naming the SDL type and every disagreeing `ProducerBinding` site. The arm sits under `AuthorError` because the fix is author-correctable (align the producers on a single backing class via the same rename / retype / split toolbox the rest of `AuthorError` supports); the typed `List<ProducerBinding>` payload follows the sub-data pattern that `UnknownName` established.
 
 `InvalidSchema.DirectiveConflict` carries the bare directive names (no leading `@`) plus the prose. The names ride as typed data so an LSP fix-it can offer "remove this directive" without scraping the prose for which one to remove.
+
+`InvalidSchema.CaseFoldCollision` is the case-fold-uniqueness arm: two or more type-name stems collapse to the same identifier on case-insensitive filesystems (APFS, NTFS), which would clobber the emitted Java files. The variant carries the full case-equivalent group as a typed `List<String>` plus a `CaseFoldCollision.Origin` enum (`SDL`, `SYNTH_CONNECTION`, `SYNTH_EDGE`, `SYNTH_PAGE_INFO`) identifying which classifier arm each demoted member came from; `message()` switches on origin to specialise the actionable fix hint (synthesised arms point at `@asConnection(connectionName: ...)`; SDL arms suggest a rename). Carrying the group as structured data lets an LSP fix-it offer "rename one of these" with the candidate list ready, without scraping prose.
 
 `Deferred` classifies cleanly but the generator hasn't shipped emit support for the variant yet. The arm carries a `summary` plus a `planSlug` (the roadmap file basename, no extension) plus a `StubKey`. The stub key is itself a sealed sub-type: a `VariantClass` arm names the stubbed variant class (or carries `null` for inline-defer sites whose rejection names a feature shape); an `EmitBlock` arm names a typed enum value for "this shape can't emit yet" sites inside the emitters. The validator projects every `Deferred` through the same renderer; the typed key lets the LSP offer "open the roadmap item" instead of parsing the path back out.
 
@@ -62,7 +65,7 @@ The diagnostic surface that consumers see, what each rejection class renders as,
 
 == Drift protection
 
-The chapter prose above enumerates `Rejection`'s permits: `AuthorError.UnknownName`, `AuthorError.Structural`, `AuthorError.AccessorMismatch`, `AuthorError.RecordBindingMultiProducer`, `InvalidSchema.DirectiveConflict`, `InvalidSchema.Structural`, and `Deferred`. A new permit on the sealed hierarchy must land with a corresponding mention in this page; otherwise the prose silently goes stale. `SealedHierarchyDocCoverageTest` walks `Rejection.permits()` transitively and asserts each permit name appears in `typed-rejection.adoc`: bidirectional, tied to a closed set the compiler already exhaustivity-checks. A new permit added without a paragraph here fails the test; a permit removed without removing its mention fails too.
+The chapter prose above enumerates `Rejection`'s permits: `AuthorError.UnknownName`, `AuthorError.Structural`, `AuthorError.AccessorMismatch`, `AuthorError.RecordBindingMultiProducer`, `InvalidSchema.DirectiveConflict`, `InvalidSchema.CaseFoldCollision`, `InvalidSchema.Structural`, and `Deferred`. A new permit on the sealed hierarchy must land with a corresponding mention in this page; otherwise the prose silently goes stale. `SealedHierarchyDocCoverageTest` walks `Rejection.permits()` transitively and asserts each permit name appears in `typed-rejection.adoc`: bidirectional, tied to a closed set the compiler already exhaustivity-checks. A new permit added without a paragraph here fails the test; a permit removed without removing its mention fails too.
 
 The sealed-`Resolved` pattern across the thirteen sibling resolvers is described above shape-only; per-resolver arm enumerations (e.g. `LookupKeyDirectiveResolver.Resolved.{Ok, Rejected}`, `ServiceDirectiveResolver.Resolved.{Success.{TableBound | Result | Scalar} | ErrorsLifted | Rejected}`) live as javadoc on each `*DirectiveResolver.Resolved` declaration. There is no single `Resolved` parent class to walk, and the chapter does not pin per-resolver permits.
 
@@ -103,6 +106,10 @@ classDiagram
         +List~String~ directives
         +String reason
     }
+    class CaseFoldCollision {
+        +List~String~ group
+        +Origin origin
+    }
     class Structural_IS["InvalidSchema.Structural"] {
         +String reason
     }
@@ -120,6 +127,7 @@ classDiagram
     AuthorError <|-- AccessorMismatch
     AuthorError <|-- RecordBindingMultiProducer
     InvalidSchema <|-- DirectiveConflict
+    InvalidSchema <|-- CaseFoldCollision
     InvalidSchema <|-- Structural_IS
 
     class LookupKeyResolved["LookupKeyDirectiveResolver.Resolved"] {

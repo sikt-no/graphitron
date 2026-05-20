@@ -7631,6 +7631,60 @@ class GraphitronSchemaBuilderTest {
                         && m.contains("'FooConnection'") && m.contains("'fooConnection'"));
             }),
 
+        SYNTH_EDGE_VS_SDL(
+            "an SDL type case-equal to a synthesised Edge name demotes both via the SYNTH_EDGE origin arm",
+            """
+            type Item @record { v: String }
+            type fooEdge @record { v: String }
+            type Query {
+                foo: [Item!]! @asConnection(connectionName: "FooConnection")
+                stash: fooEdge
+            }
+            """,
+            schema -> {
+                assertThat(schema.type("FooEdge")).isInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("fooEdge")).isInstanceOf(UnclassifiedType.class);
+                var errors = new GraphitronSchemaValidator().validate(schema);
+                var clashMessages = errors.stream()
+                    .filter(e -> e.message().contains("case-insensitively"))
+                    .map(ValidationError::message)
+                    .toList();
+                assertThat(clashMessages)
+                    .anyMatch(m -> m.startsWith("Type 'FooEdge':")
+                        && m.contains("synthesised edge type")
+                        && m.contains("'FooEdge'") && m.contains("'fooEdge'"))
+                    .anyMatch(m -> m.startsWith("Type 'fooEdge':")
+                        && m.contains("collides case-insensitively")
+                        && m.contains("'FooEdge'") && m.contains("'fooEdge'"));
+            }),
+
+        SYNTH_PAGE_INFO_VS_SDL(
+            "an SDL type case-equal to the synthesised PageInfo demotes both via the SYNTH_PAGE_INFO origin arm",
+            """
+            type Item @record { v: String }
+            type pageInfo @record { v: String }
+            type Query {
+                foo: [Item!]! @asConnection
+                stash: pageInfo
+            }
+            """,
+            schema -> {
+                assertThat(schema.type("PageInfo")).isInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("pageInfo")).isInstanceOf(UnclassifiedType.class);
+                var errors = new GraphitronSchemaValidator().validate(schema);
+                var clashMessages = errors.stream()
+                    .filter(e -> e.message().contains("case-insensitively"))
+                    .map(ValidationError::message)
+                    .toList();
+                assertThat(clashMessages)
+                    .anyMatch(m -> m.startsWith("Type 'PageInfo':")
+                        && m.contains("synthesised PageInfo type")
+                        && m.contains("'PageInfo'") && m.contains("'pageInfo'"))
+                    .anyMatch(m -> m.startsWith("Type 'pageInfo':")
+                        && m.contains("collides case-insensitively")
+                        && m.contains("'PageInfo'") && m.contains("'pageInfo'"));
+            }),
+
         THREE_WAY_GROUP(
             "three case-equivalent SDL types each surface a ValidationError naming all three",
             """
