@@ -46,15 +46,35 @@ public final class Hovers {
     ) {
         // The bundled vocabulary is the only one in scope today; the
         // workspace's vocabulary is wired through GraphitronTextDocumentService.
-        return compute(LspVocabulary.load(), file, catalog, snapshot, pos);
+        return compute(LspVocabulary.load(), file, catalog, snapshot, pos, false);
     }
 
+    /**
+     * R160 — {@code classificationHoverEnabled} gates the parallel
+     * {@link DeclarationHovers} dispatch on SDL declaration coordinates. Default false
+     * preserves the no-behaviour-change-by-default contract; the document service flips
+     * it on per {@link no.sikt.graphitron.lsp.state.Workspace#inlayHintConfig()}.
+     */
     public static Optional<Hover> compute(
         LspVocabulary vocabulary, WorkspaceFile file, CompletionData catalog,
         LspSchemaSnapshot snapshot, Point pos
     ) {
+        return compute(vocabulary, file, catalog, snapshot, pos, false);
+    }
+
+    public static Optional<Hover> compute(
+        LspVocabulary vocabulary, WorkspaceFile file, CompletionData catalog,
+        LspSchemaSnapshot snapshot, Point pos, boolean classificationHoverEnabled
+    ) {
         var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
-        if (directiveOpt.isEmpty()) return Optional.empty();
+        if (directiveOpt.isEmpty()) {
+            // R160 — no directive at the cursor; try the classification-hover arm on SDL
+            // declaration coordinates (field-definition / type-definition name tokens).
+            if (classificationHoverEnabled) {
+                return DeclarationHovers.compute(file, snapshot, pos);
+            }
+            return Optional.empty();
+        }
         var directive = directiveOpt.get();
         String directiveName = Nodes.text(directive.nameNode(), file.source());
         var resolution = DirectiveResolution.resolve(vocabulary, snapshot, directiveName);

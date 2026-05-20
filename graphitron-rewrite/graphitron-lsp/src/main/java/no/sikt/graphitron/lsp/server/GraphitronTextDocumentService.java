@@ -168,7 +168,8 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 params.getPosition().getLine(),
                 params.getPosition().getCharacter()).tsPoint();
             return Hovers.compute(workspace.vocabulary(), file, workspace.catalog(),
-                workspace.snapshot(), pos).orElse(null);
+                workspace.snapshot(), pos,
+                workspace.inlayHintConfig().hoverClassification()).orElse(null);
         });
     }
 
