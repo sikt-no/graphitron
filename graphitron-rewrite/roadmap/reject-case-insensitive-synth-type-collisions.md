@@ -1,7 +1,7 @@
 ---
 id: R194
-title: Reject case-insensitive synthesised type-name collisions
-status: Ready
+title: Reject case-insensitive type-name collisions
+status: Spec
 bucket: correctness
 priority: 3
 depends-on: []
@@ -9,250 +9,332 @@ created: 2026-05-20
 last-updated: 2026-05-20
 ---
 
-# Reject case-insensitive synthesised type-name collisions
+# Reject case-insensitive type-name collisions
 
 ## Problem
 
-When two carrier fields on the same parent type differ only in the case of one
-or more letters, `@asConnection`'s default name-synthesis derives two Connection
-(and Edge) type names that are valid-but-only-case-different in GraphQL but
-collide when graphitron writes them out as Java source files on a
-case-insensitive filesystem (macOS APFS default, Windows NTFS default). The
-files clobber each other silently, the consumer build picks up only one of the
-two pairs, and `javac` fails downstream with cascading "cannot find symbol"
-errors that don't name the root cause. Concrete repro reported by a consumer:
+The GraphQL spec makes type names case-sensitive
+(`/[_A-Za-z][_0-9A-Za-z]*/`), and `graphql-java` follows the spec: `type Foo`
+and `type foo` parse as two distinct types. Graphitron then maps each
+emitted-file-producing type name to a Java filename on disk. On
+case-insensitive filesystems (macOS APFS default, Windows NTFS default), any
+two type names that differ only in case map to the *same* filename and clobber
+each other silently. The consumer build then picks up only one of the two
+emitted classes, and `javac` fails downstream with cascading "cannot find
+symbol" errors that don't name the root cause.
 
-```graphql
-extend type Query {
-    poengklasserv2(filter: PoengklasseV2FilterInput): [Poengklasse!]
-        @asConnection @deprecated(reason: "Bruk poengklasserV2")
-    poengklasserV2(filter: PoengklasseV2FilterInput): [Poengklasse!]
-        @asConnection
-}
-```
+The trigger is not synthesis-specific. Three reproducible flavours, all the
+same bug:
 
-`ConnectionPromoter.resolveConnectionName`
-(`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/ConnectionPromoter.java:326`)
-derives:
+1. *SDL-vs-SDL* — author writes two types differing only in case
+   (typo, copy-paste, or two parallel domain concepts with unfortunate naming):
 
-- `Query.poengklasserv2` → `QueryPoengklasserv2Connection` /
-  `QueryPoengklasserv2Edge`
-- `Query.poengklasserV2` → `QueryPoengklasserV2Connection` /
-  `QueryPoengklasserV2Edge`
+   ```graphql
+   type Poengklasse { id: ID! }
+   type poengklasse { id: ID! }
+   ```
 
-Both pairs register cleanly via `TypeRegistry.synthesize` because the registry
-is case-sensitive (`LinkedHashMap` on the String key, see
-`TypeRegistry.java:32`). The build then emits four `.java` files whose case-
-insensitive names match in pairs; one of each pair overwrites the other on
-the consumer's filesystem during code generation. The author's typo
-(`poengklasserv2` vs. `poengklasserV2`) is the underlying cause, but graphitron
-should refuse to participate in producing code that won't compile, not silently
-emit it.
+2. *Synth-vs-synth* — two sibling carriers differ only in case, so
+   `ConnectionPromoter`'s default name-synthesis (`<Parent><Field>Connection`)
+   derives two case-clashing Connection (and Edge) names. Concrete repro
+   reported by a consumer:
+
+   ```graphql
+   extend type Query {
+       poengklasserv2(filter: PoengklasseV2FilterInput): [Poengklasse!]
+           @asConnection @deprecated(reason: "Bruk poengklasserV2")
+       poengklasserV2(filter: PoengklasseV2FilterInput): [Poengklasse!]
+           @asConnection
+   }
+   ```
+
+   `ConnectionPromoter.resolveConnectionName`
+   (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/ConnectionPromoter.java:326`)
+   derives `QueryPoengklasserv2Connection` / `Edge` and
+   `QueryPoengklasserV2Connection` / `Edge`.
+
+3. *SDL-vs-synth* — author declares a type whose name case-folds to the same
+   string as a synthesised Connection/Edge/PageInfo name (e.g. the SDL declares
+   `Querypoengklasserv2connection` while a sibling carrier synthesises
+   `QueryPoengklasserV2Connection`).
+
+In all three, registration succeeds because `TypeRegistry`'s backing map is
+case-sensitive (`LinkedHashMap` on the String key, see
+`TypeRegistry.java:32`), no downstream gate catches the clash
+(`GraphitronSchemaValidator` walks per-type but has nothing keyed on
+case-folded names), and the file-emit step trusts the type name as-given.
+Graphitron should refuse to participate in producing code that won't compile,
+not silently emit it.
 
 ## Today's behaviour
 
-`ConnectionPromoter.promote(BuildContext)`
-(`ConnectionPromoter.java:81`) walks every carrier and registers
-`ConnectionType` / `EdgeType` entries via `ctx.typeRegistry.synthesize(...)`
-keyed by the synthesised name. The registry rejects exact-string duplicates
-(`TypeRegistry.synthesize` throws on a re-classify), but a case-only differing
-name is, by design, a distinct registry key and synthesises happily. No
-downstream gate catches the clash: `GraphitronSchemaValidator` walks the
-type-axis arm by arm but has nothing keyed on case-folded names, and the
-file-emit step trusts the type name as-given.
+Type registration flows through several entry points, all of which terminate
+in `TypeRegistry`'s case-sensitive map:
 
-The same defect exists in the legacy
+- `TypeBuilder` classifies every author-declared SDL type via
+  `ctx.typeRegistry.classify(name, ...)`.
+- `ConnectionPromoter.promote(BuildContext)` (`ConnectionPromoter.java:81`)
+  registers synthesised `ConnectionType` / `EdgeType` / `PageInfoType` via
+  `ctx.typeRegistry.synthesize(...)`, and enriches structural Connection
+  variants via `enrich(...)`.
+- `EntityResolutionBuilder` and `NodeIdLeafResolver` classify federation
+  participants and NodeId-routed types into the same registry.
+
+Each entry point rejects exact-string duplicates by contract
+(`classify` / `synthesize` throw on collision), but a case-only-differing name
+is, by design, a distinct registry key and registers happily.
+`GraphitronSchemaValidator` walks each `GraphitronType` variant in turn but
+holds no cross-type case-fold view, and the file-emit step trusts the type
+name as-given.
+
+The same algorithmic defect exists in the legacy
 `MakeConnections.maybeCreateConnectionType`
-(`graphitron-schema-transform/src/main/java/no/fellesstudentsystem/schema_transformer/transform/MakeConnections.java:272`),
-but legacy modules are out of scope for AI work per `CLAUDE.md`; this item
-fixes the rewrite only. The legacy fix lands separately if and when a human
-maintainer chooses to backport.
+(`graphitron-schema-transform/src/main/java/no/fellesstudentsystem/schema_transformer/transform/MakeConnections.java:272`)
+and likely in the legacy SDL-classification path, but legacy modules are out
+of scope for AI work per `CLAUDE.md`; this item fixes the rewrite only. The
+legacy fix lands separately if and when a human maintainer chooses to
+backport.
 
 ## Design
 
-### Detection: in the promoter, before synthesis
+### Detection: a single post-classification pass
 
-The check belongs in `ConnectionPromoter.promote` next to the existing
-`ctx.typeRegistry.contains(promotion.connectionName())` dedup branch. Two new
-predicates, evaluated as each new name is about to be synthesised:
+The check belongs over the *full* classified type set, not at any one
+registration site. A single case-folded uniqueness pass runs after all
+classifiers have populated `ctx.typeRegistry` ; that means after
+`TypeBuilder` (SDL types), `ConnectionPromoter.promote` (synth + structural
+Connection types), `EntityResolutionBuilder` (federation participants), and
+`NodeIdLeafResolver` (NodeId-routed types). Logical home:
+`GraphitronSchemaBuilder`, immediately after `ConnectionPromoter.promote`
+returns and before the validator runs.
 
-1. Build a case-folded view of the registry's existing keys
-   (`Map<String, String>` from `name.toLowerCase(Locale.ROOT)` → original
-   name), seeded from `ctx.typeRegistry.entries().keySet()` at the start of
-   `promote(...)`.
-2. For each `(connectionName, edgeName)` pair the promoter is about to write:
-   - Exact-match hit (same name) follows the existing
-     `instanceof ConnectionType existing` dedup arm. Unchanged.
-   - Case-folded hit against a *different* exact name is the new failure mode.
-     Surface a typed rejection (below) and skip the `synthesize` call for
-     both `ConnectionType` and `EdgeType` on this carrier so the registry
-     doesn't accumulate inconsistent state.
+Algorithm:
 
-The folded view updates after each successful synthesis so a third carrier
-that collides with the second also surfaces correctly. `Locale.ROOT` because
-the names are ASCII-only by GraphQL spec rule (`/[_A-Za-z][_0-9A-Za-z]*/`); a
-Turkish locale wouldn't change folding outcomes here, but `Locale.ROOT` pins
-the contract.
+1. Walk `ctx.typeRegistry.entries()` (read-only view in insertion order). For
+   each entry whose variant is one that produces an emitted Java file
+   (everything except `UnclassifiedType` and scalar variants ; see
+   *Emission predicate* below), record `name.toLowerCase(Locale.ROOT) → name`
+   into a `Map<String, List<String>>` collision-group multimap.
+2. Each group with size ≥ 2 is a case-clash. For every member of every
+   colliding group, call
+   `typeRegistry.demote(name, new UnclassifiedType(name, location, rejection))`.
+   `demote` is the right operation because `classify` / `synthesize` asserts
+   no prior entry exists, while `demote` asserts a prior entry does ; which is
+   exactly the situation here.
+
+Demoting *every* group member, not just the second-arrived, is the principled
+choice for SDL-vs-SDL collisions: there is no logical "winner" between two
+author-declared types, and silently picking one would tilt the schema's
+public surface against the author's intent. The trade-off is a small amount
+of noise (each member surfaces its own `ValidationError`), each carrying the
+same actionable message naming the full collision group.
+
+`Locale.ROOT` because GraphQL identifier names are ASCII-only by spec rule
+(`/[_A-Za-z][_0-9A-Za-z]*/`). A Turkish locale wouldn't change folding
+outcomes today, but `Locale.ROOT` pins the contract against any future
+identifier-extension RFC.
+
+#### Emission predicate
+
+Not every classified variant produces an emitted Java file. `ScalarType`
+(scalar binding, no class generated) is the main non-emitting case;
+`UnclassifiedType` is also trivially excluded. Every other variant in
+`GraphitronType` ; the output-type family (`PlainObjectType`, `TableType`,
+`NodeType`, `RootType`, `JavaRecordType`, `JooqRecordType`,
+`JooqTableRecordType`, `ErrorType`, `TableInterfaceType`, `InterfaceType`,
+`UnionType`), the input-type family (`JavaRecordInputType`, `PojoInputType`,
+`JooqRecordInputType`, `JooqTableRecordInputType`, `TableInputType`),
+`EnumType`, and the synth-only `ConnectionType` / `EdgeType` / `PageInfoType`
+; produces a file at the type-name stem. The check should consider only
+the emitting variants, otherwise an unemitted clash surfaces as a
+non-actionable error.
+
+Implementer note: express the predicate as a `default true`
+`producesEmittedFile()` method on `GraphitronType`, with `ScalarType` and
+`UnclassifiedType` overriding to `false`, rather than an `instanceof` chain
+in the detector. The latter would couple the case-clash check to the type
+taxonomy in a way that drifts as variants are added. Audit the full sealed
+hierarchy at implementation time and update the override list if any new
+non-emitting variant has appeared since this spec was written.
 
 ### Surface: `UnclassifiedType` carrying `Rejection.invalidSchema`
 
-`TypeRegistry` already has an "this name failed to classify" sink:
+`TypeRegistry` already has a "this name failed to classify" sink:
 `UnclassifiedType` (`GraphitronType.java:485`) carrying a `Rejection` and a
 `SourceLocation`. `GraphitronSchemaValidator.validateUnclassifiedType`
 (`GraphitronSchemaValidator.java:62, 918`) projects it into a
 `ValidationError` keyed off the `Rejection` variant. This is the established
 type-axis path for "the classifier produced no usable variant for this name",
-and it fits the connection-promotion case verbatim: the synthesise call would
-have produced a `ConnectionType`, the case-clash takes that off the table,
-the registry records `UnclassifiedType` instead so the validator surfaces a
+and it fits the case-clash verbatim: the prior classify/synthesize call
+produced a valid variant, the case-clash discovery takes that off the table,
+the registry demotes to `UnclassifiedType` so the validator surfaces a
 diagnostic.
 
 The rejection arm is `Rejection.invalidSchema(...)`
-(`InvalidSchema.Structural`): the author can fix it (rename a field or supply
-`@asConnection(connectionName: "…")`), but it's a structural-rule violation
-rather than a name-against-a-closed-set lookup, so `InvalidSchema.Structural`
-is the right shape rather than `AuthorError.Structural` or any
-`UnknownName` variant. Precedent: the other `Rejection.invalidSchema` sites
-in `GraphitronSchemaValidator` (lookup-field-returning-connection at L410,
-input-cardinality-mismatch at L430) are the same shape: "this combination
-cannot work, period."
+(`InvalidSchema.Structural`): the author can fix it (rename a type, rename a
+carrier field, or supply `@asConnection(connectionName: "…")`), but it's a
+structural-rule violation rather than a name-against-a-closed-set lookup, so
+`InvalidSchema.Structural` is the right shape rather than
+`AuthorError.Structural` or any `UnknownName` variant. Precedent: the other
+`Rejection.invalidSchema` sites in `GraphitronSchemaValidator`
+(lookup-field-returning-connection at L410, input-cardinality-mismatch at
+L430) are the same shape: "this combination cannot work, period."
 
-Message format pins both carrier sites and names the fix:
+Message format names the full collision group and the fix:
 
 ```
-synthesised connection type '<NewName>' clashes with '<ExistingName>' on a
-case-insensitive filesystem; carriers are <Parent>.<field1> and
-<Parent>.<field2>. Rename one field, or set @asConnection(connectionName: "…")
-on one carrier to disambiguate.
+type '<ThisName>' clashes with <comma-separated-other-names> on a
+case-insensitive filesystem (APFS, NTFS); the names case-fold to
+'<lowered>'. Rename one of these types so the names differ by more than
+case.
 ```
 
-`SourceLocation` on the `UnclassifiedType` is the second (losing) carrier
-field's location; both carrier qualified names appear inside the rejection
-message so the diagnostic round-trips both sites.
+For collisions involving synthesised types, the message can append a
+synthesis-aware hint: "synthesised from `<Parent>.<field>` via
+`@asConnection`; set `@asConnection(connectionName: "…")` on the carrier or
+rename the field". The implementer decides whether to fork the message
+format per origin or compute it from `GraphitronType` variants at message
+construction time. Either is fine; the rejection's structured data (the
+collision group as a list of names) is what an LSP fix-it would read, not
+the prose.
 
-### Which synth sites this covers
-
-`ConnectionPromoter` is the only site that *currently* synthesises type names
-from arbitrary author-controlled identifiers (the parent type name and the
-field name). Synthesised `PageInfo` is a fixed string. NodeId-related
-synthesis (per `NodeIdLeafResolver`) doesn't mint new type names. So scoping
-the check to `ConnectionPromoter` covers the actual exposure today.
-
-A future synth site that mints names from author-controlled identifiers
-should reuse the same case-folded check; lifting the predicate onto
-`TypeRegistry` itself (as an opt-in helper, not a default on every
-`synthesize` call) is tracked under *Future evolution* below rather than
-done up front, since there's no second consumer yet.
-
-### Explicit-name escape hatch stays unchanged
-
-`@asConnection(connectionName: "X")` already short-circuits the
-parent-plus-field derivation
-(`ConnectionPromoter.resolveConnectionName`, L327-332). The case-folded check
-applies to the resolved name regardless of derivation path: if the author
-supplies an explicit `connectionName` that happens to case-clash with another
-synth name, that clash also surfaces. The diagnostic message for that arm
-just needs to point at the directive site rather than the derivation; the
-implementer's call whether to fork the message format or keep it generic.
-Genuinely open: see Open question 1 below.
+`SourceLocation` on each `UnclassifiedType` is the demoted type's own
+location (preserved from the prior classification's variant). For
+synthesised Connection/Edge/PageInfo today, that location is `null`; the
+diagnostic still names the type. R194 does not fix the synthesised-type
+location gap; that's a separate concern.
 
 ## Implementation sites
 
-- `ConnectionPromoter.java`: add the case-folded-keys view inside
-  `promote(BuildContext)`, the per-carrier predicate, and the "record
-  `UnclassifiedType` and skip synth" branch. No new file.
-- `BuildContext` or `TypeRegistry`: no surface changes. The existing
-  `typeRegistry.classify(name, new UnclassifiedType(...))` path covers the
-  registration. (`classify` rather than `synthesize` because `synthesize`
-  asserts the variant is `ConnectionType` / `EdgeType` / `PageInfoType` by
-  contract; the failure case is structurally `UnclassifiedType`.)
+- `GraphitronSchemaBuilder`: add a new private method (call it
+  `rejectCaseInsensitiveTypeCollisions(BuildContext ctx)`) that runs the
+  detection pass described above. Call it immediately after
+  `ConnectionPromoter.promote(ctx)` returns. No new file.
+- `GraphitronType` (`graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronType.java`):
+  add a `default boolean producesEmittedFile() { return true; }` accessor on
+  the sealed root, with overrides returning `false` on `UnclassifiedType`,
+  `ScalarType`, and any other non-emitting variant (audit the sealed
+  hierarchy when implementing). This is the "emission predicate" the
+  detector consults.
+- `TypeRegistry`: no surface change. The detector uses the existing
+  `demote(name, UnclassifiedType)` operation.
+- `GraphitronSchemaValidator`: no change. `validateUnclassifiedType` already
+  surfaces the rejection.
 
-That's the full delta. No directive-schema change, no new model file, no
-validator change (`validateUnclassifiedType` already handles the new entry).
+The directive schema is unchanged; no new model variant; no new
+`@LoadBearingClassifierCheck` (the failure mode demotes to `UnclassifiedType`
+rather than relying on a downstream emitter's narrowed shape).
 
 ## Tests
 
-### Unit-tier
+### Pipeline-tier (primary)
 
-- `ConnectionPromoterCaseInsensitiveCollisionTest`: pipeline-shaped unit test
-  on the promoter (parallel to the existing `ConnectionPromoterTest`).
-  Feed an SDL with two `@asConnection` carriers whose default-synthesised
-  names case-clash; assert that `ctx.typeRegistry.get("QueryPoengklasserV2Connection")`
-  is an `UnclassifiedType` whose `rejection()` is
-  `InvalidSchema.Structural` with the expected message format (carrier names
-  present, fix hint present). Also assert the first-arrived carrier's
-  Connection/Edge pair still classifies as `ConnectionType` / `EdgeType` so
-  the diagnostic doesn't take down the unaffected half.
+`GraphitronSchemaBuilderTest` gains a `CaseInsensitiveTypeClashCase`
+enum-style arm, parallel to the existing failure-cases in that file. Each
+sub-arm feeds an SDL through `GraphitronSchemaBuilder.buildContextForTests`
+and asserts that `ctx.typeRegistry.get(<colliding-name>)` is an
+`UnclassifiedType` with a `Rejection.InvalidSchema.Structural`, *and* that
+the resulting `BuildResult` carries a `ValidationError` whose kind is
+`INVALID_SCHEMA` for each colliding name. Sub-arms cover all three flavours
+from the Problem section:
 
-### Pipeline-tier
+- *sdlVsSdl* — two SDL `type Foo` / `type foo` declarations.
+- *synthVsSynth* — the `poengklasserv2` / `poengklasserV2` carrier pair.
+- *sdlVsSynth* — author-declared `Querypoengklasserv2connection`-style type
+  case-clashes with a synthesised carrier name.
+- *threeWay* — three case-equivalent names (e.g. `Foo`, `foo`, `FOO`); the
+  detector demotes all three.
 
-- `GraphitronSchemaBuilderTest` gains a `CaseInsensitiveConnectionClashCase`
-  arm in the same enum style as existing failure cases: feed the same SDL
-  through `GraphitronSchemaBuilder.buildContextForTests`, assert that the
-  resulting `BuildResult` carries a `ValidationError` whose `kind` is
-  `INVALID_SCHEMA` and whose message names both carriers. Pins the validator
-  wiring is intact end-to-end.
+Pipeline-tier covers the validator wiring end-to-end and the cross-classifier
+nature of the check (SDL types arrive via `TypeBuilder`, synth via the
+promoter, all funnel into the same detection pass).
+
+### Unit-tier (supplementary)
+
+A small focused test class (e.g. `CaseInsensitiveTypeCollisionDetectorTest`)
+exercises the detector in isolation against a hand-populated
+`TypeRegistry`: ASCII-identifier folding, single-character case differences,
+multi-member collision groups, no-clash baseline, non-emitting variants
+correctly ignored. Pipeline-tier carries the behaviour signal; unit-tier
+covers the small predicate space cheaply.
 
 ### Compilation-tier and execution-tier
 
-Not applicable: the change is purely a build-time rejection, no emitted code
-path. The point of the rejection is that no code gets emitted at all when
-the clash is present.
+Not applicable: the change is purely a build-time rejection with no emitted
+code path. The point of the rejection is that no code gets emitted at all
+when the clash is present.
 
 ## Done means
 
-- Two sibling carriers whose default-synthesised Connection names case-clash
-  produce a `ValidationError` at build time naming both carriers and the
-  available fixes.
-- The unit-tier and pipeline-tier tests above pass.
-- No emitted Java code change for schemas that don't trip the clash; existing
-  `ConnectionPromoterTest` coverage continues to pass unchanged.
+- Any two emitted-file-producing types whose names case-fold to the same
+  string produce `ValidationError`s at build time naming the full collision
+  group and the available fixes, across SDL-vs-SDL, synth-vs-synth, and
+  mixed-origin pairings.
+- The pipeline-tier and unit-tier tests above pass.
+- No emitted Java code change for schemas that don't trip the clash; the
+  existing `ConnectionPromoterTest` and `GraphitronSchemaBuilderTest`
+  coverage continues to pass unchanged.
 - The diagnostic surfaces at the same build phase as other
   `GraphitronSchemaValidator` errors (no late-fail at file-emit time).
 
 ## Out of scope
 
 - The legacy `MakeConnections` defect under
-  `graphitron-schema-transform/`. Same algorithmic shape, but legacy modules
-  are out of scope for AI work per `CLAUDE.md`. Filing a separate backport
-  item is a human-maintainer call.
-- Generalising the check across `TypeRegistry` to cover hypothetical future
-  synth sites. Tracked under *Future evolution*; no second consumer today.
-- Auto-mangling clash-survivors (e.g. appending `_2`). Rejected at the design
-  conversation: two sibling fields differing only in case is almost always
-  an author mistake, and silent mangling would put a non-author-controlled
-  suffix into the public Relay surface that downstream Relay clients then
-  pin against.
-- Warning on case-clashes between author-declared SDL types and synthesised
-  names. Distinct shape (the author-declared name wins by precedence; the
-  promoter wouldn't synthesise over it). If the author wrote two SDL types
-  that case-clash, graphql-java's own validation should already flag that;
-  if not, it's a separate item.
+  `graphitron-schema-transform/`, and the analogous SDL-type
+  case-sensitivity in legacy classification. Same algorithmic shape, but
+  legacy modules are out of scope for AI work per `CLAUDE.md`. Filing
+  separate backport items is a human-maintainer call.
+- Auto-mangling clash-survivors (e.g. appending `_2`). Rejected at the
+  design conversation: two types differing only in case is almost always an
+  author mistake, and silent mangling would put a non-author-controlled
+  suffix into the schema's public surface that downstream clients then pin
+  against. The schema author renames; graphitron refuses to participate
+  until they do.
 - Catching case-clashes across federation subgraphs. Subgraphs assemble at
   the gateway, not in graphitron; gateway tooling owns that surface.
+  Per-subgraph clashes within a single graphitron build are caught.
+- Catching collisions among *derived* filenames (e.g. `<Type>Fetchers.java`,
+  `<Type>Input.java`) that share a stem but differ by suffix. The
+  type-name-level check covers the bulk; if a derived-name collision ever
+  surfaces independently of a type-name collision, that's a separate item.
+- The previously-out-of-scope SDL-vs-synth case is now *in scope* under the
+  broadened detector; this bullet is intentionally retired from the list.
 
 ## Future evolution
 
-- Lift the case-folded uniqueness predicate onto `TypeRegistry` itself as an
-  opt-in helper (`tryClassifyOrCaseClash(name, type)`) once a second synth
-  site exists. Doing it now would be premature abstraction for one consumer.
-- Optional LSP fix-it: offer "add `@asConnection(connectionName: \"…\")` to
-  one of these carriers" as a code action keyed off the typed
-  `InvalidSchema.Structural` arm. The diagnostic carries enough structured
-  data already (both carrier names) for an LSP consumer to read it back; the
-  fix-it itself is LSP-side work and belongs in a follow-up.
+- Lift the case-folded uniqueness predicate into `TypeRegistry` itself as
+  an opt-in helper (`tryClassifyOrCaseClash(name, type)`) if a second
+  consumer (beyond the post-classification pass introduced here) ever wants
+  the check inline at registration time. The post-classification pass is
+  cheap enough today that an inline check is not warranted.
+- Optional LSP fix-its keyed off the typed `InvalidSchema.Structural` arm:
+  "rename `<X>` to `<X>2`" for SDL-vs-SDL, "add
+  `@asConnection(connectionName: \"…\")` to `<Parent>.<field>`" for
+  synth-involving collisions. The diagnostic carries enough structured data
+  (the collision group as a list of names plus per-type locations) for an
+  LSP consumer to read it back; the fix-it itself is LSP-side work and
+  belongs in a follow-up.
+- Derived-filename collision detection (see *Out of scope*) if a real
+  consumer-reported case ever appears that the type-name check misses.
 
 ## Open questions for the reviewer
 
-1. *Explicit-`connectionName` collision message.* When the clash involves an
-   author-supplied `@asConnection(connectionName: "X")` rather than a
-   derived name, the diagnostic could either keep the generic "case clash
-   between X and Y" message or fork to "explicit connectionName \"X\" clashes
-   with derived \"Y\"". Recommendation: keep generic; the explicit-name path
-   is rare and the message format already names both carriers, which is
-   what an author needs. Reviewer override welcome.
-2. *Locale of the case-fold.* `Locale.ROOT` per the spec body. GraphQL names
-   are ASCII-only so the choice is cosmetic, but a future identifier-name
-   extension (graphql-spec RFC-level) might change that. Genuinely open
-   whether to encode the locale choice in a constant the future spec can
-   point at, or leave it inline.
+1. *Message specialisation per origin.* The detector knows each type's
+   variant (and can therefore distinguish synthesised
+   `ConnectionType`/`EdgeType`/`PageInfoType` from SDL-declared variants).
+   The diagnostic message can either stay generic ("type 'X' clashes with
+   'Y' on a case-insensitive filesystem") or specialise per origin
+   ("synthesised connection type 'X' from `Q.f` clashes with SDL type
+   'Y'"). Recommendation: specialise, because the synth case has an
+   actionable hint (`@asConnection(connectionName: …)`) that the SDL-only
+   case doesn't, and the implementer's switch on the prior variant is
+   cheap. Reviewer override welcome.
+2. *Demote-all vs. demote-non-first for collision groups.* Spec body picks
+   demote-all on the "no logical winner" principle. Demote-non-first is the
+   smaller-error-noise alternative. The choice changes the test assertion
+   shape (one error vs. N) but not the underlying contract. Genuinely open.
+3. *Locale of the case-fold.* `Locale.ROOT` per the spec body. GraphQL
+   names are ASCII-only so the choice is cosmetic, but a future
+   identifier-name extension (graphql-spec RFC-level) might change that.
+   Genuinely open whether to encode the locale choice in a named constant
+   the future spec can point at, or leave it inline.
