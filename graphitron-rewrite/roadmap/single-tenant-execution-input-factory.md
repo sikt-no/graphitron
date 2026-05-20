@@ -94,7 +94,7 @@ Today's default `getTenantId(env)` returns `""`, so the de-facto runtime name is
 - Lift `TypeName javaType` onto `MethodRef.Param.Typed` (`MethodRef.java:238`), captured at the same point `ServiceCatalog.java:250` already captures the `String typeName`. The `TypeName` is built via `TypeName.get(parameterizedType)` rather than parsed back from the rendered string; the precedent is `MethodRef.returnType` (`MethodRef.java:17-22`), whose javadoc spells out why the structured form is stored directly.
 - New classifier step (location: `BuildContext`-adjacent, after the existing `ServiceCatalog.reflectTableMethod` / `reflectServiceMethod` populate the `MethodRef.Param.Typed` set; before generator emission). Produces `Map<String, ResolvedContextArg>` where `ResolvedContextArg(String name, TypeName javaType, List<MethodRef> sites)`, reading `javaType` straight off `Param.Typed.javaType`. Annotated `@LoadBearingClassifierCheck(key = "context-argument.type-agreement", description = "...")`. `javaType` is raw `TypeName` (JavaPoet AST) rather than a sealed sub-taxonomy because the only consumers are emitters that paste it verbatim — into the factory parameter list and the call-site cast literal — and neither forks on its shape. If a later slice (R45's tenant-column work) needs to fork on the type, lift the sub-taxonomy at that point.
 - New factory `Rejection.contextArgumentTypeConflict(String name, List<Map.Entry<MethodRef, String>> sites)` on the `Rejection` sealed interface (`Rejection.java`); reuses `AuthorError.Structural`.
-- The classified map is stored on the build result and read by `GraphitronFacadeGenerator` and `GraphitronContextInterfaceGenerator`.
+- The classified map is stored on the build result and read by `GraphitronFacadeGenerator` and `GraphitronContextInterfaceGenerator`. Rejections from the new classifier check land on the same build-result surface; `GraphitronSchemaValidator.validateSchema` (`GraphitronSchemaValidator.java:36-41`) gains a new cross-cutting check `validateContextArgumentTypeAgreement(schema, errors)` that drains the rejection list into `ValidationError`s, mirroring `validateLocalContextErrorsFieldGuards(schema, errors)` at line 40. This closes the validator-mirrors-classifier loop: the same `Rejection.contextArgumentTypeConflict` the classifier produces surfaces as a build-time error before the factory emitter is ever asked to paste a non-existent `TypeName`.
 
 ### Schema-driven factory (`GraphitronFacadeGenerator.java:54-72`)
 
@@ -127,7 +127,7 @@ No new runtime surface for R190. The `getContextArgument` signature change is in
 
 ### User documentation
 
-Eight pages update in the same commit window as the generator change. The drafts and revision instructions live under "User documentation (first-client check)" below; the two primary rewrites (`graphitron-rewrite/docs/getting-started.adoc`, `graphitron-rewrite/docs/runtime-extension-points.adoc`) move their drafted prose into place, the six adjacent pages take the per-page revisions listed.
+Twelve pages update in the same commit window as the generator change (plus one verified-no-change). The drafts and revision instructions live under "User documentation (first-client check)" below; the two primary rewrites (`graphitron-rewrite/docs/getting-started.adoc`, `graphitron-rewrite/docs/runtime-extension-points.adoc`) move their drafted prose into place, the other ten pages take the per-page revisions listed.
 
 ## Tests
 
@@ -139,7 +139,7 @@ Eight pages update in the same commit window as the generator change. The drafts
 
 ## User documentation (first-client check)
 
-R190 changes the primary onboarding surface (`Graphitron.newExecutionInput`) and the runtime extension model (`GraphitronContext` becomes sealed, `getTenantId` disappears from the single-tenant shape). Per `docs/workflow.adoc` §"Plans with a user-visible surface", the docs draft is the first client of the design; if it doesn't read simply, the design is wrong. Two pages get a substantive rewrite drafted below; six adjacent pages get a smaller revision flagged with the line ranges to touch.
+R190 changes the primary onboarding surface (`Graphitron.newExecutionInput`) and the runtime extension model (`GraphitronContext` becomes sealed, `getTenantId` disappears from the single-tenant shape). Per `docs/workflow.adoc` §"Plans with a user-visible surface", the docs draft is the first client of the design; if it doesn't read simply, the design is wrong. Tracing every `GraphitronContext` / `getTenantId` / `implements GraphitronContext` / `new GraphitronContext() {...}` reference through the manual, R190 touches **twelve pages plus one verified-no-change**. The two primary onboarding rewrites carry drafted replacement prose below; the other ten describe the actual current content of each page and the concrete shape of the revision. This is not a search-and-replace: each page's framing differs, several touch user-facing code blocks whose shape changes, and three pages get a deferral banner because their content is fully rescoped to R45's tenant-column work.
 
 ### Primary rewrite: `graphitron-rewrite/docs/getting-started.adoc` § Hello world
 
@@ -219,16 +219,80 @@ The chapter's `=== Registration`, `=== getDslContext`, `=== getContextArgument`,
 
 The `== Complementary Technologies` section (lines 186-298) stays as-is in shape; the "per-request decisions" bullet (lines 198-201) rephrases from "your `getDslContext` implementation" to "the `DSLContext` you pass into `Graphitron.newExecutionInput`".
 
-### Adjacent pages (revisions, not rewrites)
+### Substantive rewrite: `docs/manual/reference/runtime-api.adoc` § `GraphitronContext` interface (lines 54-136)
 
-* `docs/manual/reference/runtime-api.adoc:54-130`. The `== GraphitronContext interface` section drops the consumer-implementation worked examples. Replace the interface listing (lines 60-66) with the sealed form; replace the registration snippet (lines 80-86) with `Graphitron.newExecutionInput(dsl, ...)`. The `=== getTenantId` subsection (lines 110+) deletes; `=== getContextArgument` grows the `Class<T> expectedType` third parameter and a one-line note that the throw paths are only reachable on a hand-rolled `ExecutionInput.Builder`. The cross-link at line 180 to `how-to/tenant-scoping.adoc` becomes a forward pointer "(reintroduced under R45)".
-* `docs/manual/how-to/tenant-scoping.adoc`. The chapter walks consumers through overriding `getDslContext` and `getTenantId` on `GraphitronContext`. Under R190 the override mechanism is gone and tenant routing is rescoped to R45. Add a banner at the top of the page: "This recipe is being rewritten as part of R45. Until then, single-tenant apps pass one `DSLContext` to `Graphitron.newExecutionInput(...)`." Leave the body in place so historical search hits still land somewhere coherent; the R45 cycle replaces it.
-* `docs/manual/explanation/how-it-works.adoc`. Search-and-replace `implements GraphitronContext` framing in the per-request-values paragraph (one paragraph; locate via the same grep that turned up the other refs). Mentions of `getTenantId` defer to R45.
-* `docs/manual/explanation/batching-model.adoc`. Mentions of `getTenantId(env) + "/"` in the DataLoader-key paragraph drop the prefix term entirely (loader names become just `path`); R45 reintroduces the tenant prefix story.
-* `docs/manual/tutorial/06-going-further.adoc`. One worked code block on a custom `GraphitronContext` impl; replace with the factory call shape.
-* `docs/security.adoc`. Mentions of `GraphitronContext` as a consumer impl in the per-request paragraph; rephrase to "the typed parameters of `Graphitron.newExecutionInput(...)`".
+The page's `== GraphitronContext interface` chapter runs from line 54 (the `==` heading) through line 136 (the end of `=== getValidator`). Today it frames the interface as "the per-request extension point apps implement, register via typed key"; the four method subsections (`getDslContext`, `getContextArgument`, `getTenantId`, `getValidator`) each show a consumer override snippet. Under R190 the framing reverses: consumers no longer implement, the factory IS the wiring, and `getTenantId` disappears entirely. Concrete edits:
 
-Eight pages in total: two non-trivial rewrites (`getting-started.adoc`, `runtime-extension-points.adoc`) with the draft prose above, six smaller revisions listed in this subsection. The implementer is on hook to land all eight in the same commit window as the generator change, so the docs site does not ship in a half-state.
+- Chapter intro (line 56): replace "The per-request extension point that brokers runtime values into generated fetchers:" with "The sealed per-request contract every generated DataFetcher reads from. Apps no longer implement it; the only impl is the generator's own `GraphitronContextImpl` singleton, populated by `Graphitron.newExecutionInput(...)`."
+- Interface code block (lines 58-74): replace with the sealed shape:
++
+[source,java]
+----
+public sealed interface GraphitronContext permits GraphitronContextImpl {
+    default DSLContext getDslContext(DataFetchingEnvironment env) { ... }
+    default <T> T getContextArgument(DataFetchingEnvironment env, String name, Class<T> expectedType) { ... }
+    default Validator getValidator(DataFetchingEnvironment env) { ... }
+}
+----
+- Registration code block + surrounding paragraph (lines 76-86): replace `ExecutionInput.newExecutionInput()...graphQLContext(b -> b.put(GraphitronContext.class, impl))...build()` with `Graphitron.newExecutionInput(dsl, ...)... .query(query).build()`. Rewrite the surrounding paragraph to: "The factory IS the registration point; the parameter list is schema-driven (`DSLContext` first, then one parameter per `contextArgument` named in `@service` / `@tableMethod` / `@condition` directives, alphabetically). Generated fetchers retrieve the impl through a private helper emitted once per `*Fetchers` class (`graphitronContext(env)`); generated helpers that issue SQL on behalf of those fetchers emit the same shim. The sealed-interface + singleton-impl pair means `GraphitronContext` is global to the build, not per-request; all per-request state lives in the `GraphQLContext` the factory populates."
+- `=== getDslContext` (lines 88-94): rewrite the method's role. It is no longer the "seam for connection scope, transaction boundaries, session variables, per-tenant `Configuration` objects". The seam moves to the `defaultDsl` parameter on the factory; the consumer threads its per-request `DSLContext` through that parameter. Draft body: "Reads the per-request `DSLContext` from `env.getGraphQlContext().get(DSLContext.class)`, populated by the factory's `defaultDsl` parameter. The default impl is the only impl; this is not an override point. To return a tenant-specific `DSLContext` per request, build the right `DSLContext` at request entry and pass it to `Graphitron.newExecutionInput(dsl, ...)`." The tenant-scoping xref at the end becomes "(reintroduced under R45's tenant-column work)".
+- `=== getContextArgument` (lines 96-108): replace the worked override snippet with a description of the typed default. Draft: "Grows a third `Class<T> expectedType` parameter so the default body can apply a typed runtime check. The default reads the value from `env.getGraphQlContext()` (under the contextArgument's string name) and runs `expectedType.cast(...)`. A missing entry throws `IllegalStateException` naming the contextArgument and pointing the reader at `Graphitron.newExecutionInput(...)`; a wrong-typed entry throws the JDK's default `ClassCastException`. Both throw paths are only reachable when a consumer hand-rolls an `ExecutionInput.Builder` outside the factory; going through `Graphitron.newExecutionInput(...)` makes the same mistake a compile error at the call site, because the factory's typed parameter slot IS the reflected expected type." The cross-link to `condition-cascade.adoc` stays as-is.
+- `=== getTenantId` (lines 110-123): delete the entire subsection. R45 reintroduces tenant routing on top of the sealed surface.
+- `=== getValidator` (lines 125-136): keep the body unchanged. Add a one-line note that the method is no longer an override point on the sealed interface; custom-validator-factory configuration ships under R192 as a Mojo-driven hook.
+- "See also" cross-link at line 180 (`How-to: Tenant scoping covers `getDslContext` + `getTenantId` cooperation, the cache-key contract, and PostgreSQL row-level security`): rephrase to "covers per-request `DSLContext` routing (recipe is being rewritten under R45; the link resolves but the body shows a deprecation banner)".
+
+### Substantive rewrite: `docs/manual/how-to/test-your-schema.adoc`
+
+The execution-tier test recipe today wires `GraphitronContext` as an anonymous inner class at three test-helper sites (lines 76-79, 199-203, 247-256), registering via `.graphQLContext(b -> b.put(GraphitronContext.class, context))` on a hand-rolled `ExecutionInput.newExecutionInput()`. Under R190 the anonymous-impl pattern is a compile error against a sealed interface; the registration shape changes; and the per-tenant test (lines 247-260) uses a `getTenantId` override that no longer exists. Concrete edits:
+
+- Chapter intro line 11 (`== The setup: Postgres + GraphitronContext + GraphQL`) → `== The setup: Postgres + DSLContext + GraphQL`.
+- Intro bullet line 16 ("A `GraphitronContext` per request, wrapping that `DSLContext` and any context arguments your `@service` and `@condition` methods need.") → "A call to `Graphitron.newExecutionInput(dsl, ...)` per request, threading the `DSLContext` and any `@service` / `@condition` contextArguments through the typed parameter list."
+- First test-helper (lines 75-85): replace `var context = new GraphitronContext() {...}; var input = ExecutionInput.newExecutionInput()... .graphQLContext(b -> b.put(GraphitronContext.class, context)) ...build()` with `var input = Graphitron.newExecutionInput(dsl).query(query).build()`. The local `var context` deletes; the helper holds a `DSLContext` directly.
+- Per-tenant aside line 95: rephrase from "wires the same `dsl` for every test, but production tests that exercise per-tenant routing build a new context per request whose `getDslContext` returns the tenant-specific `DSLContext`" to "wires the same `dsl` for every test, but production tests that exercise per-tenant routing build a per-tenant `DSLContext` at request entry and pass it to `Graphitron.newExecutionInput(perTenantDsl, ...)`. The per-tenant routing recipe is being rewritten under R45 alongside the tenant-column work."
+- Second test-helper (lines 197-209): same shape change as the first.
+- ContextArgument test-helper (lines 230-241): rewrite to take typed values: change `executeWithContext(String query, GraphitronContext context)` to `executeWithContext(String query, String userId)` (or whatever the recipe's example contextArgument is) and replace the `.graphQLContext(b -> b.put(GraphitronContext.class, context))` body with `Graphitron.newExecutionInput(dsl, userId).query(query).build()`. The `GraphitronContext context` parameter drops; the value is a typed factory argument now.
+- Per-tenant context test (lines 245-260): replace the `new GraphitronContext() { ... getTenantId ... }` block with a per-tenant `DSLContext` selection at request entry. Note that the multi-tenant assertion (the `nodes_perTenantPartition_separateBatchPerTenant` shape) is being rewritten under R45 alongside the tenant-column work; until then, this section either drops or carries the R45 deferral banner.
+
+### Tenant-routing pages: deferral banner (rewritten under R45)
+
+Three pages frame their content around `getTenantId`-override mechanics that don't survive R190. Until R45 ships, each gets a banner at the top of the page (or just above the affected section); the body stays in place so search hits land somewhere coherent. Banner draft (use verbatim):
+
+[quote]
+____
+NOTE: This recipe is being rewritten as part of R45's tenant-column work, which reintroduces the tenant-routing surface on top of R190's sealed `GraphitronContext`. Until R45 ships, single-tenant apps pass a single `DSLContext` to `Graphitron.newExecutionInput(dsl, ...)`; the body below describes the pre-R190 override-based mechanism and does not compile against the post-R190 generated `GraphitronContext`.
+____
+
+Apply to:
+- `docs/manual/how-to/tenant-scoping.adoc` — the recipe is end-to-end tenant routing; entire body is pre-R190 shape. Banner at the very top (before line 5).
+- `docs/manual/how-to/apollo-federation.adoc` lines 86-91 — only the per-rep `getTenantId` subsection is affected; the rest of the federation recipe (transport, key declaration, entity fetcher swapping) is unaffected by R190. Smaller in-section banner between the prose paragraph at line 86 and the `[source,java]` block at line 87, scoped to the per-rep tenant routing.
+- `docs/manual/how-to/split-vs-inline.adoc` lines 44-58 — the "Per-tenant key prefix" bullet describes the `getTenantId(env) + "/"` loader-name prefix Graphitron emits today. Under R190 the prefix drops at all five emission sites; loader names become just the path. Recommended: delete the bullet entirely (the registry is request-scoped, so the cross-tenant collision scenario it warned about doesn't arise in practice and was already labelled "rare but possible" at line 56). Alternative if the bullet is wanted as a roadmap pointer: replace with a one-line note "Loader names are path-scoped only in R190; R45 reintroduces the per-tenant key prefix when `<tenantColumn>` is configured."
+
+### Index-page updates (one line each)
+
+- `docs/manual/reference/index.adoc:9` — the "Runtime API reference" bullet enumerates the interface methods as `(getDslContext, getContextArgument, getTenantId, getValidator)`. Drop `getTenantId` from the listing.
+- `docs/manual/how-to/index.adoc:33` — "Tenant scoping: wire `getDslContext` and `getTenantId` on `GraphitronContext` so each request reaches a tenant-specific `DSLContext`." Rephrase to: "Tenant scoping: per-request routing through `Graphitron.newExecutionInput(dsl, ...)`. The full recipe (per-tenant DataLoader partitioning, `@tenantId` directive, `byTenant` factory overload) ships under R45; until then, single-tenant apps pass a single `DSLContext`."
+
+### Small in-prose touch-ups (one or two sentences each)
+
+- `docs/manual/explanation/how-it-works.adoc:32` — "*Calls into jOOQ.* The fetcher reads the per-request `DSLContext` off the `GraphitronContext`, builds a typed query..." → "*Calls into jOOQ.* The fetcher reads the per-request `DSLContext` off the `GraphQLContext` that `Graphitron.newExecutionInput(dsl, ...)` populated, builds a typed query..." The sentence's structure stays; only the source-of-truth name changes.
+- `docs/manual/explanation/batching-model.adoc:45` — "...the xref:../reference/runtime-api.adoc[runtime API] documents the per-request `GraphitronContext` interface; the host application's job is just to provide the `DSLContext` and any context arguments." → "...the xref:../reference/runtime-api.adoc[runtime API] documents the sealed `GraphitronContext` contract; the host application's job is to call `Graphitron.newExecutionInput(dsl, ...)` with the `DSLContext` and any contextArgument values, and the generator wires the per-request `GraphQLContext` from those typed parameters." The tenant-scoping xref later in the paragraph stays (now points at the banner-bearing recipe).
+- `docs/manual/tutorial/06-going-further.adoc:23` — "...walks through copying that pattern into your own project: how to wire `GraphitronContext` against Testcontainers..." → "...walks through copying that pattern into your own project: how to wire `Graphitron.newExecutionInput(dsl, ...)` against Testcontainers..."
+- `docs/security.adoc:21` — "See xref:architecture/runtime-extension-points.adoc[Runtime Extension Points] for how that wires together with `GraphitronContext`." → "See xref:architecture/runtime-extension-points.adoc[Runtime Extension Points] for how that wires through the per-request `DSLContext` you pass to `Graphitron.newExecutionInput(dsl, ...)`." Optional; the existing phrasing is technically still accurate (sealed `GraphitronContext` is the per-request contract), but the rewrite reads better post-R190.
+
+### Verified-no-change (cross-links remain coherent)
+
+`docs/manual/how-to/condition-cascade.adoc:181` and `docs/manual/how-to/add-custom-conditions.adoc:164` cross-link to `tenant-scoping.adoc` and `runtime-api.adoc` for the supplying-side context-argument story. The cross-links remain coherent once those two targets land; no edits needed on the pages themselves.
+
+### Total scope (twelve pages plus one no-change)
+
+Substantive rewrites (four): `getting-started.adoc`, `runtime-extension-points.adoc`, `runtime-api.adoc`, `test-your-schema.adoc`.
+Tenant-routing deferral banners (three): `tenant-scoping.adoc`, `apollo-federation.adoc` (one section only), `split-vs-inline.adoc` (one bullet only).
+Index-page updates (two): `reference/index.adoc`, `how-to/index.adoc`.
+Small in-prose touch-ups (three): `how-it-works.adoc`, `batching-model.adoc`, `06-going-further.adoc`.
+Optional touch-up (one): `security.adoc` (cross-link reads coherently as-is; rewrite is a polish).
+Verified-no-change (two): `condition-cascade.adoc`, `add-custom-conditions.adoc`.
+
+The implementer is on hook to land all twelve in the same commit window as the generator change, so the docs site does not ship in a half-state. If a thirteenth page surfaces during implementation, fold it into the same commit window with the same "first-client check" lens: would a consumer arriving at this page from search read code that compiles against the post-R190 generated `GraphitronContext`?
 
 ## Open questions
 
