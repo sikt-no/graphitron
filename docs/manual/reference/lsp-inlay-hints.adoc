@@ -39,7 +39,7 @@ Adding the canonical argument to the directive removes the hint immediately on n
 
 == Classification hints
 
-Renders on every field declaration and every type declaration. Labels are 1:1 with the generator-side sealed permits and are stable across renames of the underlying types; the user-facing label vocabulary is owned by the LSP module, not by the generator-side type names. The closed-set label vocabulary is enumerated in the spec at https://graphitron.sikt.no/roadmap/plans/lsp-display-inference-and-classification.html[the roadmap item R160].
+Renders on every field declaration and every type declaration. Labels are 1:1 with the generator-side sealed permits and are stable across renames of the underlying types; the user-facing label vocabulary is owned by the LSP module, not by the generator-side type names.
 
 == Classification hover
 

@@ -8,6 +8,8 @@ import org.eclipse.lsp4j.DidChangeConfigurationParams;
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams;
 import org.eclipse.lsp4j.services.WorkspaceService;
 
+import java.util.List;
+
 /**
  * Workspace-level notifications. R160 wires
  * {@link #didChangeConfiguration(DidChangeConfigurationParams)} to refresh the
@@ -43,6 +45,29 @@ public class GraphitronWorkspaceService implements WorkspaceService {
 
     @Override
     public void didChangeWatchedFiles(DidChangeWatchedFilesParams params) {}
+
+    /**
+     * R160 — applies the response to the initialisation-time {@code workspace/configuration}
+     * pull. The {@code results} list is one entry per {@code ConfigurationItem} requested
+     * (today: a single {@code graphitron} section), each a Gson {@link JsonElement} carrying
+     * the value at that path. A null entry, a missing {@code graphitron} object, or a request
+     * the client doesn't satisfy all fall through to the default-off behaviour. Mirrors the
+     * push-side {@link #didChangeConfiguration} so both paths produce the same
+     * {@link InlayHintConfig} for the same client state.
+     */
+    public void applyPulledInlayHintConfig(List<Object> results) {
+        if (workspace == null || results == null || results.isEmpty()) return;
+        Object graphitronSection = results.get(0);
+        if (!(graphitronSection instanceof JsonElement element) || !element.isJsonObject()) return;
+        // Wrap the graphitron-namespaced response into the same {graphitron: {...}} shape the
+        // push-side parser walks, so one code path covers both directions.
+        JsonObject wrapper = new JsonObject();
+        wrapper.add("graphitron", element);
+        InlayHintConfig parsed = parseInlayHintConfig(wrapper);
+        if (parsed != null) {
+            workspace.setInlayHintConfig(parsed);
+        }
+    }
 
     /**
      * Pulls the three R160 toggles off a {@code workspace/didChangeConfiguration}

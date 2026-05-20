@@ -9,6 +9,7 @@ import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.InlayHintConfig;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
+import no.sikt.graphitron.rewrite.catalog.InferredDirectiveArgs;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.eclipse.lsp4j.InlayHint;
@@ -143,20 +144,25 @@ public final class InlayHints {
         for (var directive : directives) {
             if (!intersects(directive.outer(), visibleRange)) continue;
             String directiveName = Nodes.text(directive.nameNode(), file.source());
-            switch (directiveName) {
-                case "table" -> renderInferredTableNameHint(out, file, built, directive);
-                case "field" -> renderInferredFieldNameHint(out, file, built, directive);
-                case "reference" -> renderInferredReferencePathHint(out, file, built, directive);
-                default -> { /* not an inference target */ }
+            // Dispatch is keyed by the canonical-arg table (single source of truth in
+            // InferredDirectiveArgs); the entry's argName tells the renderer which buffer
+            // arg to check, the directive name tells the renderer which projection to read.
+            var entry = InferredDirectiveArgs.findByDirective(directiveName).orElse(null);
+            if (entry == null) continue;
+            switch (entry.directiveName()) {
+                case "table" -> renderInferredTableNameHint(out, file, built, directive, entry.argName());
+                case "field" -> renderInferredFieldNameHint(out, file, built, directive, entry.argName());
+                case "reference" -> renderInferredReferencePathHint(out, file, built, directive, entry.argName());
+                default -> { /* future inference rule landed in InferredDirectiveArgs without a renderer */ }
             }
         }
     }
 
     private static void renderInferredTableNameHint(
         List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
-        Directives.Directive directive
+        Directives.Directive directive, String canonicalArgName
     ) {
-        if (hasNamedArg(directive, "name", file.source())) return;
+        if (hasNamedArg(directive, canonicalArgName, file.source())) return;
         // Resolve the enclosing type and look up its classification for the resolved tableName.
         var enclosingType = TypeContext.enclosingTypeDefinition(directive.outer()).orElse(null);
         if (enclosingType == null) return;
@@ -167,14 +173,14 @@ public final class InlayHints {
         String tableName = tableNameOf(classification);
         if (tableName == null) return;
         out.add(makeHint(file, directive.nameNode(),
-            "name: \"" + tableName + "\"", InlayHintKind.Type));
+            canonicalArgName + ": \"" + tableName + "\"", InlayHintKind.Type));
     }
 
     private static void renderInferredFieldNameHint(
         List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
-        Directives.Directive directive
+        Directives.Directive directive, String canonicalArgName
     ) {
-        if (hasNamedArg(directive, "name", file.source())) return;
+        if (hasNamedArg(directive, canonicalArgName, file.source())) return;
         var enclosingField = TypeContext.enclosingFieldDefinition(directive.outer())
             .or(() -> enclosingInputValueDefinition(directive.outer())).orElse(null);
         if (enclosingField == null) return;
@@ -194,14 +200,14 @@ public final class InlayHints {
         String columnName = columnNameOf(classification);
         if (columnName == null) return;
         out.add(makeHint(file, directive.nameNode(),
-            "name: \"" + columnName + "\"", InlayHintKind.Type));
+            canonicalArgName + ": \"" + columnName + "\"", InlayHintKind.Type));
     }
 
     private static void renderInferredReferencePathHint(
         List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
-        Directives.Directive directive
+        Directives.Directive directive, String canonicalArgName
     ) {
-        if (hasNamedArg(directive, "path", file.source())) return;
+        if (hasNamedArg(directive, canonicalArgName, file.source())) return;
         var enclosingField = TypeContext.enclosingFieldDefinition(directive.outer())
             .or(() -> enclosingInputValueDefinition(directive.outer())).orElse(null);
         if (enclosingField == null) return;
@@ -217,7 +223,7 @@ public final class InlayHints {
         if (classification == null) return;
         List<FieldClassification.FkStep> path = fkPathOf(classification);
         if (path == null || path.isEmpty()) return;
-        StringBuilder sb = new StringBuilder("path: [");
+        StringBuilder sb = new StringBuilder(canonicalArgName + ": [");
         for (int i = 0; i < path.size(); i++) {
             if (i > 0) sb.append(", ");
             var step = path.get(i);
