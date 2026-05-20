@@ -27,10 +27,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
-| `R189` | FK-target `@nodeId` input fields on `@mutation` (INSERT / UPDATE / DELETE) | Spec | 2026-05-20 | [plan](mutation-nodeid-fk-target-input-field.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
+| `R189` | FK-target `@nodeId` input fields on `@mutation` (INSERT / UPDATE / DELETE) | Ready | 2026-05-20 | [plan](mutation-nodeid-fk-target-input-field.md) |
 | `R160` | LSP inlay hints and hover for inferred directives and field/type classification | Ready | 2026-05-20 <sub>created 2026-05-13</sub> | [plan](lsp-display-inference-and-classification.md) |
 
 ---
@@ -127,7 +127,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R135` [**Multi-hop @nodeId pipeline test for FK-target/NodeType-keyColumns permutation**](multi-hop-nodeid-fk-permutation-test.md) — Backlog, validation
 - `R57` [**FK-target argument @nodeId, JOIN-with-translation emission**](nodeid-fk-target-arg-join-translation.md) — Backlog, architecture
 - `R24` [**`NodeIdReferenceField` JOIN-projection form**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
-- `R189` [**FK-target `@nodeId` input fields on `@mutation` (INSERT / UPDATE / DELETE)**](mutation-nodeid-fk-target-input-field.md) — Spec, feature
+- `R189` [**FK-target `@nodeId` input fields on `@mutation` (INSERT / UPDATE / DELETE)**](mutation-nodeid-fk-target-input-field.md) — Ready, feature
 
 ### service
 
