@@ -32,7 +32,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
 | `R160` | LSP inlay hints and hover for inferred directives and field/type classification | In Progress | 2026-05-20 <sub>created 2026-05-13</sub> | [plan](lsp-display-inference-and-classification.md) |
-| `R196` | LSP fails to publish diagnostics after save-triggered build; stale errors persist until next edit | In Review | 2026-05-20 | [plan](lsp-publish-diagnostics-on-build-trigger.md) |
 
 ---
 
@@ -226,7 +225,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
-- `R196` [**LSP fails to publish diagnostics after save-triggered build; stale errors persist until next edit**](lsp-publish-diagnostics-on-build-trigger.md) — In Review, bug
 - `R160` [**LSP inlay hints and hover for inferred directives and field/type classification**](lsp-display-inference-and-classification.md) — In Progress, feature
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
 
