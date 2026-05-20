@@ -288,7 +288,7 @@ public final class Main {
     private static final Map<String, Set<String>> ALLOWED_TRANSITIONS = Map.of(
         "Backlog", Set.of("Spec"),
         "Spec", Set.of("Spec", "Ready"),
-        "Ready", Set.of("In Progress"),
+        "Ready", Set.of("Spec", "In Progress"),
         "In Progress", Set.of("In Review"),
         "In Review", Set.of("Ready")
     );

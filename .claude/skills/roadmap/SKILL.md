@@ -60,6 +60,7 @@ Valid transitions (see `graphitron-rewrite/docs/workflow.adoc`):
 | Backlog       | Spec         | none — author picks up an item and starts a plan body       |
 | Spec          | Spec         | revise; reviewer ≠ last committer of the file               |
 | Spec          | Ready        | sign-off; reviewer ≠ last committer                         |
+| Ready         | Spec         | reopen for re-review (spec needs substantive redesign)      |
 | Ready         | In Progress  | none                                                        |
 | In Progress   | In Review    | none                                                        |
 | In Review     | Ready        | rework; reviewer ≠ implementer                              |
