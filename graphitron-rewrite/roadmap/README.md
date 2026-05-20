@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
+| `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory <sub>blocked by: [single-tenant-execution-input-factory](single-tenant-execution-input-factory.md)</sub> | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R190` | Single-tenant schema-driven ExecutionInput factory and sealed GraphitronContext | Spec | 2026-05-20 | [plan](single-tenant-execution-input-factory.md) |
-| `R45` | Tenant routing and schema-driven ExecutionInput factory | Spec |  | [plan](tenant-routing-and-execution-input.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R186` | Nested input types in @mutation fields | Spec | 2026-05-20 | [plan](nested-input-types-in-mutation-fields.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
@@ -134,9 +134,9 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R201` [**Honor @field(name:) in @error payload construction shape resolution**](honor-field-directive-in-payload-construction-shape.md) — Backlog, bug
 - `R202` [**Honor @field(name:) in @error type extra-field accessor matching against handler source class**](honor-field-directive-in-error-type-source-accessors.md) — Backlog, bug
 - `R200` [**Honor @field(name:) in InputBeanResolver for SDL input bean/record member binding**](honor-field-directive-in-inputbeanresolver.md) — Backlog, bug
+- `R45` [**Multi-tenant routing on top of the schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Spec, architecture, blocked by [single-tenant-execution-input-factory](single-tenant-execution-input-factory.md)
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R190` [**Single-tenant schema-driven ExecutionInput factory and sealed GraphitronContext**](single-tenant-execution-input-factory.md) — Spec, architecture
-- `R45` [**Tenant routing and schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Spec, architecture
 - `R192` [**Mojo-configured custom Bean Validation factory**](custom-validator-factory.md) — Backlog, architecture, blocked by [single-tenant-execution-input-factory](single-tenant-execution-input-factory.md)
 - `R46` [**Multi-tenant fan-out for `@service`**](service-multi-tenant-fanout.md) — Backlog, architecture, blocked by [tenant-routing-and-execution-input](tenant-routing-and-execution-input.md)
 - `R11` [**`DSLContext` on `@condition` / `@tableMethod` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
