@@ -12,6 +12,10 @@ Authoritative descriptions of every directive, every Maven plugin parameter, eve
 
 * xref:mojo-configuration.adoc[Maven plugin configuration]: every parameter on every goal of `graphitron-maven-plugin`. Covers the three goals (`generate`, `validate`, `dev`), the shared `<configuration>` parameters (`outputDirectory`, `outputPackage`, `jooqPackage`, `schemaInputs`, `namedReferences`), the `dev`-only watch parameters (`port`, `debounceMs`, `skipInitial`), and the two complex POM bindings (`<schemaInput>`, `<namedReference>`).
 
+== Editor support
+
+* xref:lsp-inlay-hints.adoc[LSP inlay hints and classification hover]: the three editor-side config keys (`graphitron.inlayHints.inferredDirectives`, `graphitron.inlayHints.classification`, `graphitron.hover.classification`) that surface Graphitron's inference and classification layers inside the editor. Default off; opt in per key.
+
 == Diagnostics
 
 * xref:diagnostics-glossary.adoc[Diagnostics glossary]: every closed-set diagnostic code the validator emits, organised by category. Covers the three top-level rejection kinds (`author-error`, `invalid-schema`, `deferred`), the nine name-lookup attempt kinds (`column`, `table`, `foreign-key`, `service-method`, `lifter-method`, `enum-constant`, `type-name`, `nodeid-key-column`, `dml-kind`), and the four deferred emit-block reasons.
