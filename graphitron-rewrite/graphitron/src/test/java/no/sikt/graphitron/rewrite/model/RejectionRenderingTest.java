@@ -152,6 +152,23 @@ class RejectionRenderingTest {
     }
 
     @Test
+    void prefixedWithPreservesCaseFoldCollisionTypedFields() {
+        var inner = (Rejection.InvalidSchema.CaseFoldCollision) Rejection.caseFoldCollision(
+            List.of("Foo", "foo"),
+            Rejection.InvalidSchema.CaseFoldCollision.Origin.SDL);
+        var prefixed = (Rejection.InvalidSchema.CaseFoldCollision) inner.prefixedWith("Type 'Foo': ");
+        assertThat(prefixed.group()).containsExactly("Foo", "foo");
+        assertThat(prefixed.origin()).isEqualTo(Rejection.InvalidSchema.CaseFoldCollision.Origin.SDL);
+        assertThat(prefixed.message())
+            .startsWith("Type 'Foo': collides case-insensitively with 'Foo', 'foo'");
+        // Re-prefixing accumulates onto the existing prefix; the typed group / origin still survive.
+        var rePrefixed = (Rejection.InvalidSchema.CaseFoldCollision) prefixed.prefixedWith("schema.graphqls: ");
+        assertThat(rePrefixed.group()).containsExactly("Foo", "foo");
+        assertThat(rePrefixed.message())
+            .startsWith("schema.graphqls: Type 'Foo': collides case-insensitively with 'Foo', 'foo'");
+    }
+
+    @Test
     void prefixedWithPreservesDeferredStubKey() {
         var inner = (Rejection.Deferred) Rejection.deferred("X is not yet supported", "", ChildField.SplitTableField.class);
         var prefixed = (Rejection.Deferred) inner.prefixedWith("on Foo.bar: ");

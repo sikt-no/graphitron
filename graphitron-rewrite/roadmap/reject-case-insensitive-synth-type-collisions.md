@@ -1,7 +1,7 @@
 ---
 id: R194
 title: Reject case-insensitive type-name collisions
-status: Ready
+status: In Review
 bucket: correctness
 priority: 3
 depends-on: []
@@ -55,16 +55,23 @@ collision group, so the diagnostic is actionable from either entry point.
 
 `CaseFoldCollision` is a sealed sub-variant of `Rejection.InvalidSchema`
 carrying `List<String> group` (every case-equivalent name in the
-collision, in registry-iteration order) and a `CaseFoldCollision.Origin`
-enum (`SDL`, `SYNTH_CONNECTION`, `SYNTH_EDGE`, `SYNTH_PAGE_INFO`). The
-`message()` override switches on `origin` to specialise the actionable
-fix hint: synthesised Connection / Edge / PageInfo arms point at
-`@asConnection(connectionName: ...)`; SDL types get a generic rename
-hint. The builder computes `origin` via a `switch` on the demoted
-variant's classifier type and constructs one `CaseFoldCollision` per
-member. Carrying the group as typed data, rather than baking it into
-prose, keeps downstream consumers (LSP diagnostics, watch-mode
-formatter) free to render the group structurally.
+collision, in registry-iteration order), a `CaseFoldCollision.Origin`
+enum (`SDL`, `SYNTH_CONNECTION`, `SYNTH_EDGE`, `SYNTH_PAGE_INFO`), and a
+`String prefix` that accumulates wrap-site prose threaded through
+`prefixedWith` (the validator prepends `"Type 'X': "` on every
+diagnostic). The `message()` override prepends `prefix` and switches on
+`origin` to specialise the actionable fix hint: synthesised Connection /
+Edge / PageInfo arms point at `@asConnection(connectionName: ...)`; SDL
+types get a generic rename hint. The builder computes `origin` via a
+`switch` on the demoted variant's classifier type and constructs one
+`CaseFoldCollision` per member (factory entry seeds `prefix = ""`).
+`prefixedWith` returns a new `CaseFoldCollision` with the accumulated
+prefix; the typed `group` and `origin` survive the validator's
+`prefixedWith("Type 'X': ")` wrap so downstream consumers (LSP fix-its,
+watch-mode formatter) can `instanceof CaseFoldCollision` on
+`ValidationError.rejection` and render the collision group structurally
+without re-parsing prose, per the R58 contract that every sealed leaf
+preserves its typed variant under `prefixedWith`.
 
 `Locale.ROOT` for the fold; GraphQL identifiers are ASCII-only per the
 spec rule `[_A-Za-z][_0-9A-Za-z]*`.
@@ -109,45 +116,19 @@ Pipeline coverage in `GraphitronSchemaBuilderTest.CaseInsensitiveTypeClashCase`:
 Compilation and execution tiers not applicable: the rejection prevents
 emission.
 
-## Review feedback (In Review → Ready, 2026-05-20)
+## Implementation status
 
-One material gap surfaced on the In Review pass; the rest of the work landed
-clean (build green, spec ↔ diff aligned, capability interface matches the
-`SqlGeneratingField`/`BatchKeyField` precedent, drift-protection tests
-extended, doc tree + mermaid-class updated).
-
-`CaseFoldCollision.prefixedWith` at
-`graphitron/src/main/java/no/sikt/graphitron/rewrite/model/Rejection.java:210-215`
-degrades to `Structural` and discards the typed `group` / `origin`. This
-breaks the R58 contract: every other sealed leaf (`UnknownName`,
-`DirectiveConflict`, `AccessorMismatch`, `RecordBindingMultiProducer`,
-`Structural`, `Deferred`) returns the same record class with typed
-components intact, and `RejectionRenderingTest` codifies that contract
-with a `prefixedWithPreserves<Variant>TypedFields` case per leaf. The
-variant's javadoc rationalises the degrade as "no wrap sites thread
-context onto it", but `GraphitronSchemaValidator.validateUnclassifiedType`
-(`GraphitronSchemaValidator.java:918-924`) *is* such a wrap site and
-fires on every diagnostic, so the typed structure is lost on the only
-path that reaches `ValidationError.rejection`. That defeats this spec's
-own design rationale ("Carrying the group as typed data... keeps
-downstream consumers (LSP diagnostics, watch-mode formatter) free to
-render the group structurally"): if an LSP fix-it does
-`instanceof CaseFoldCollision` on the validator-projected rejection, it
-will never match.
-
-Next pass: add a `String prefix` field to the record (default `""`),
-accumulate it in `prefixedWith` and prepend it in `message()`; add a
-`prefixedWithPreservesCaseFoldCollisionTypedFields` case to
-`RejectionRenderingTest` mirroring lines 127-160. Wire-format prose tests
-should keep passing exact-match; the only behavioural change is that the
-validator-projected rejection retains `CaseFoldCollision` type rather
-than collapsing to `Structural`.
-
-Phase 1 shipped at 5e5f5e3 (builder pass + 5 pipeline cases); phase 2
-shipped at a1feace (`EmitsPerTypeFile` capability lift, typed
-`CaseFoldCollision` arm, two more origin-arm pipeline cases, doc +
-drift-protection updates). Remaining: the `prefixedWith` type-preservation
-fix described above.
+- Phase 1 shipped at 5e5f5e3: builder pass + initial 5 pipeline cases.
+- Phase 2 shipped at a1feace: `EmitsPerTypeFile` capability lift, typed
+  `CaseFoldCollision` arm, `synthEdgeVsSdl` + `synthPageInfoVsSdl` pipeline
+  cases, doc tree + mermaid-class + severity-coverage updates.
+- Phase 3 shipped at HEAD: `CaseFoldCollision` carries an accumulating
+  `String prefix`; `prefixedWith` returns the same variant rather than
+  degrading to `Structural`, so the typed `group` / `origin` survive the
+  validator's wrap and reach `ValidationError.rejection` per the R58
+  contract. `RejectionRenderingTest.prefixedWithPreservesCaseFoldCollisionTypedFields`
+  pins the contract for this leaf alongside the four existing
+  preservation tests.
 
 ## Out of scope
 
