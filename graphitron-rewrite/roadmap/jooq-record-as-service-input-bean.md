@@ -19,10 +19,10 @@ SDL input type today, even when the input carries the legacy
 directives that already describe the column mapping for the legacy DML
 path. `InputBeanResolver` matches SDL field names directly against
 JavaBean setter names; it consults zero directives. The jOOQ record's
-setters are derived from column names (`UTDANNINGSSTATUSKODE` →
-`setUtdanningsstatuskode`), so SDL fields named `statuskode` /
-`fraDato` / `utdanningsspesifikasjonsId` produce zero matches and the
-binding list is empty, surfacing as
+property names are derived from column names
+(`UTDANNINGSSTATUSKODE` → property `utdanningsstatuskode`), so SDL
+fields named `statuskode` / `fraDato` / `utdanningsspesifikasjonsId`
+produce zero matches and the binding list is empty, surfacing as
 "bean class '…UtdanningsspesifikasjonsstatusRecord' has no fields
 matching the SDL input type 'EndreUtdanningsspesifikasjonsstatusInput'"
 at `InputBeanResolver.java:307`. R194 (the sibling fix) rejects this
@@ -30,19 +30,26 @@ combination loudly; this item is the feature that would make it work.
 
 ## Why this is not "just teach the resolver to read `@field`"
 
-The mapping is not name-to-name. `@field(name: "UTDANNINGSSTATUSKODE")`
-names a database column; to reach the jOOQ setter we need to go
-column → jOOQ `TableField` → setter (jOOQ's column-to-property casing
-is not always invertible via heuristic). `@nodeId(typeName: "X")`
-requires global-ID decoding at the fetcher boundary and PK type
-coercion (the wire value is an opaque string, the target column is a
-`Long`). Both transforms already exist in the legacy DML path
-(`MutationInputResolver`, `EnumMappingResolver.buildLookupBindings`,
-`@table`-driven binding); this item asks whether they should be
-factored out and reused from the `@service` path, or whether `@service`
-should stay strictly POJO-shaped and consumers wanting jOOQ-record
-population should declare their mutation through the DML path
-instead.
+The mechanism is already in the codebase; what's missing is the
+wiring into `InputBeanResolver`'s receiver-is-a-jOOQ-record case.
+`@field(name: "UTDANNINGSSTATUSKODE")` names a database column,
+which jOOQ-generated table classes expose directly as the static
+`TableField` constant `Tables.T.UTDANNINGSSTATUSKODE` (no
+setter-name inversion needed — `Record.set(Field<T>, T)` consumes
+the `TableField` directly).
+`TypeFetcherGenerator.emitSetMapPuts` (around `TypeFetcherGenerator.java:2078`)
+already emits exactly that lookup
+(`Tables.T.<col.javaName()>`) from `setFields()` and feeds it into a
+`Map<Field<?>, Object>` that drives `.set(map)` on the DML chain.
+`@nodeId(typeName: "X")` adds global-ID decoding at the fetcher
+boundary and PK type coercion (wire value is an opaque string, target
+column is a `Long`); that transform also already exists in the DML
+path (`appendDecodeLocal` + the `nidk != null` branch in
+`emitSetMapPuts`). So the question this item asks is not "build the
+machinery" but: should the `@service` path grow a jOOQ-record arm that
+reuses the existing column-binding plumbing, or should we route
+consumers whose Java parameter is a jOOQ record toward the DML path
+(`@mutation(typeName: ...)`) instead?
 
 ## Open design questions for Spec
 
@@ -61,9 +68,12 @@ instead.
   `@reference(name:)`, and other input-side directives need an
   explicit answer.
 - **Type coercion.** SDL `ID!` → PK `Long`, SDL `String` → enum
-  column, SDL `Date` → `LocalDate`, etc. Reuse the existing
-  conversion machinery in the DML path, or write a thinner one
-  scoped to this resolver?
+  column, SDL `Date` → `LocalDate`, etc. Most of this falls out of
+  `Record.set(Field<T>, value)` + `DSL.val(value, field.getDataType())`,
+  which the DML path already uses (`emitSetMapPuts` wraps every put
+  in `DSL.val(..., getDataType())`); the open question is whether
+  the `@service` arm reuses that same wrapping or whether populating
+  a record (vs. building an update SET map) wants a thinner shape.
 - **Sequencing vs R97.** R97 deprecates `@table` on input in favor
   of consumer-derived tables. If R97 lands first, this item's
   directive contract changes (no `@table` on input → table comes
@@ -81,11 +91,17 @@ instead.
 - `InputBeanResolver.java` (`graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/`)
   — the resolver that today reads zero directives.
 - `MutationInputResolver`, `EnumMappingResolver.buildLookupBindings`
-  — the legacy paths whose column-binding and enum-lookup
-  machinery would be reused.
-- Fetcher emit — the generated fetcher would need to wrap the
-  jOOQ-record instantiation and `setX(...)` calls, plus `@nodeId`
-  decoding at the boundary.
+  — the DML paths whose column-binding and enum-lookup machinery
+  would be reused.
+- `TypeFetcherGenerator.emitSetMapPuts` (and the `nidk`/decode
+  helpers it calls) — the existing column → `Tables.T.COL` +
+  `DSL.val(value, field.getDataType())` emission that a
+  jOOQ-record arm of `InputBeanResolver` would call into (likely
+  emitting `record.set(Tables.T.COL, DSL.val(..., dataType))` per
+  field rather than the DML path's `.set(Map)` form).
+- Fetcher emit — the generated fetcher would need to instantiate
+  the jOOQ record, call `record.set(Field, value)` per SDL field
+  via the column lookup, and decode `@nodeId` at the boundary.
 
 ## Out of scope
 
