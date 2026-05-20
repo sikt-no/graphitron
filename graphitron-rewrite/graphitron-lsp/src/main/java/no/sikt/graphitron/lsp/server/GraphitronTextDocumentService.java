@@ -13,6 +13,7 @@ import no.sikt.graphitron.lsp.completions.TableCompletions;
 import no.sikt.graphitron.lsp.definition.Definitions;
 import no.sikt.graphitron.lsp.diagnostics.Diagnostics;
 import no.sikt.graphitron.lsp.hover.Hovers;
+import no.sikt.graphitron.lsp.inlay.InlayHints;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.state.Workspace;
@@ -29,6 +30,8 @@ import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
+import org.eclipse.lsp4j.InlayHint;
+import org.eclipse.lsp4j.InlayHintParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
@@ -142,6 +145,16 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             return Definitions.compute(file, workspace.catalog(), pos)
                 .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
                 .orElseGet(() -> Either.forLeft(List.of()));
+        });
+    }
+
+    @Override
+    public CompletableFuture<List<InlayHint>> inlayHint(InlayHintParams params) {
+        return CompletableFuture.supplyAsync(() -> {
+            var fileOpt = workspace.get(params.getTextDocument().getUri());
+            if (fileOpt.isEmpty()) return List.of();
+            return InlayHints.compute(
+                workspace.inlayHintConfig(), fileOpt.get(), workspace.snapshot(), params.getRange());
         });
     }
 
