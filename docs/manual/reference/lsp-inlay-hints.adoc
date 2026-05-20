@@ -1,0 +1,75 @@
+= LSP inlay hints and classification hover
+:description: Reference for the Graphitron LSP's inlay-hint surface and the classification-hover content, plus the three editor-side config keys that gate them.
+:keywords: graphitron, lsp, inlay hints, hover, classification, configuration
+
+The Graphitron LSP surfaces two layers the schema author normally cannot see: inference (the canonical-argument value Graphitron fills in for `@table` / `@field` / `@reference` when the author omits it) and classification (the sealed-variant identity the classifier assigns to every field and type, fully determining the generated code). Both layers are off by default and light up through editor-side config.
+
+== Three config keys
+
+All three live under the `graphitron.inlayHints` (and `graphitron.hover`) namespace and default to `false`. The LSP pulls them via `workspace/configuration` on initialisation and refreshes them on `workspace/didChangeConfiguration`. A client that does not implement `workspace/configuration` leaves the defaults in effect; no error is surfaced.
+
+[cols="1,1,3"]
+|===
+| Key | Default | Effect
+
+| `graphitron.inlayHints.inferredDirectives`
+| `false`
+| Renders a ghost annotation at `@table` / `@field` / `@reference` sites where the author wrote the directive bare. The annotation shows the resolved value the classifier produced (`name: "customer"`, `path: [{key: "film_language_id_fkey"}]`, etc.).
+
+| `graphitron.inlayHints.classification`
+| `false`
+| Renders a compact classification label at every field declaration and every object / interface / input / union / scalar / enum type declaration. Labels include `"column"`, `"table field"`, `"query node field"`, `"insert mutation"`, `"node type"`, `"table input"`, and the rest of the closed vocabulary.
+
+| `graphitron.hover.classification`
+| `false`
+| Enables rich hover content on field-declaration and type-declaration name tokens. Where the inlay hint shows a compact label, the hover popup unpacks the variant's load-bearing payload (table, column, FK path, target type, error channel, DML verb, ...) as markdown.
+|===
+
+The three toggles are independent: a user who wants ghost annotations for inferred directives but not classification labels gets exactly that.
+
+== Inferred-directive hints
+
+Renders only when the canonical argument is _absent_ from the SDL source. The LSP asks the live tree-sitter parse tree whether the argument node exists in the buffer; when it does not, the LSP looks up the resolved value on the classification projection the build pipeline shipped to it. Three sites today:
+
+* `@table` without `name:` — shows `name: "<table>"` (the table name the classifier resolved).
+* `@field` without `name:` — shows `name: "<column>"` (the column name the classifier resolved).
+* `@reference` without `path:` — shows `path: [{key: "..."}]` or `path: [{table: "..."}]` for each step in the resolved FK chain.
+
+Adding the canonical argument to the directive removes the hint immediately on next paint, without waiting for a regenerate cycle.
+
+== Classification hints
+
+Renders on every field declaration and every type declaration. Labels are 1:1 with the generator-side sealed permits and are stable across renames of the underlying types; the user-facing label vocabulary is owned by the LSP module, not by the generator-side type names. The closed-set label vocabulary is enumerated in the spec at https://graphitron.sikt.no/roadmap/plans/lsp-display-inference-and-classification.html[the roadmap item R160].
+
+== Classification hover
+
+Renders the projection's load-bearing payload as markdown when the cursor is on a field-declaration or type-declaration name token (outside any directive). The hover content includes:
+
+* The friendly label (matching the inlay hint).
+* The qualified coordinate (`ParentType.fieldName` for fields; the type name for types).
+* Per-permit payload: target table, column name, FK chain, participant set, discriminator column, DML verb, error-channel constant, input type name, accessor / column duality for `@record`-parent fields, and so on.
+
+Hover stays distinct from the directive-argument-keyed dispatch (`@table(name:)`, `ExternalCodeReference.method`, ...): the existing directive-arg hovers keep firing when the cursor sits inside a directive, and the classification hover fires only as a fallback on declaration coordinates.
+
+== Stale-snapshot behaviour
+
+Mirroring the existing `userArgHover` and `columnHover` arms, hints render under both `LspSchemaSnapshot.Built.Current` and `LspSchemaSnapshot.Built.Previous` indistinguishably (the "prefer stale info over silence" policy). The next successful generator pass replaces stale with current; the gap is bounded by the dev-pipeline's regenerate cadence, typically a save away.
+
+Under `LspSchemaSnapshot.Unavailable` (pre-build), no hints render. The editor simply does not see the inlay-hint kind, and the classification hover is empty.
+
+== Editor configuration
+
+The keys live under the workspace's settings root. In a VS Code-style `settings.json`:
+
+[source,json]
+----
+{
+  "graphitron.inlayHints.inferredDirectives": true,
+  "graphitron.inlayHints.classification": true,
+  "graphitron.hover.classification": true
+}
+----
+
+The editor's LSP client forwards these to the Graphitron LSP through the `workspace/configuration` request on initialisation and the `workspace/didChangeConfiguration` notification on subsequent flips.
+
+xref:index.adoc[← Back to the reference index]
