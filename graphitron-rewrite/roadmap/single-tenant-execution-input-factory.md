@@ -82,6 +82,10 @@ Five sites today emit `String name = <ctx>.getTenantId(env) + "/" + String.join(
 
 Today's default `getTenantId(env)` returns `""`, so the de-facto runtime name is `"/" + path` — a leading-slash artifact. R190 drops the `<ctx>.getTenantId(env) + "/"` segment at all five sites; the emitted name becomes the path expression alone. DataLoader names lose the leading slash. R45 reintroduces the prefix at all five sites when `<tenantColumn>` is configured, restoring the tenant-partitioned shape.
 
+### Federation entity dispatch grouping
+
+A sixth `getTenantId` call site lives outside the DataLoader-name family: `HandleMethodBody.java:131` emits `String tenantId = graphitronContext(repEnv).getTenantId(repEnv)` and uses that string as the inner key of a `Map<Integer, Map<String, List<Object[]>>>` grouping structure (outer key = alternative index, inner key = tenantId) that the generated federation `_entities` handler builds at decode time and iterates at dispatch time. Removing `getTenantId` from the sealed interface cascades into this site: the call deletes, the inner-tenant level of the grouping collapses, and the dispatch loop drops its inner-map iteration. The runtime behaviour is unchanged for single-tenant apps — today's `""` tenantId would have produced a single-entry inner map per alternative anyway, so collapsing the level is the same dispatch shape with less plumbing. R45 reintroduces the per-tenant grouping when `<tenantColumn>` is configured, restoring the inner-map level.
+
 ### Out of scope
 
 - Tenant column Mojo config (`<tenantColumn>`), tenant-scope classification, `byTenant` factory overload, DataLoader name partitioning by tenant, `@tenantId` ARGUMENT_DEFINITION directive — all R45 after rescope on top of R190.
@@ -123,11 +127,20 @@ Today's default `getTenantId(env)` returns `""`, so the de-facto runtime name is
 
 Each of the five sites listed under "DataLoader name emission" above drops the `<ctx>.getTenantId(env) + "/"` segment. Helper extraction (a shared `DataLoaderNames.untenanted(env)` utility) is optional and can be deferred; the five sites share the same shape and R45 will need to revisit them anyway when it reintroduces the prefix.
 
+### Federation entity dispatch grouping (`HandleMethodBody.java`)
+
+- Delete the `String tenantId = graphitronContext(repEnv).getTenantId(repEnv)` line at `:131`.
+- Collapse `emitGroupingMaps` (`HandleMethodBody.java:62-68`): change the `groups` declaration from `Map<Integer, Map<String, List<Object[]>>>` to `Map<Integer, List<Object[]>>`; the inner `Map<String, List<Object[]>>` type alias deletes with it.
+- Collapse the per-rep grouping call (`HandleMethodBody.java:132-135`): change `groups.computeIfAbsent(altIndex, k -> new LinkedHashMap<>()).computeIfAbsent(tenantId, k -> new ArrayList<>()).add(new Object[]{idx, cols, repEnv})` to `groups.computeIfAbsent(altIndex, k -> new ArrayList<>()).add(new Object[]{idx, cols, repEnv})`.
+- Collapse `emitGroupDispatch` (`HandleMethodBody.java:138-167`): drop the inner `for (innerEntry : altEntry.getValue().entrySet())` loop and the inner-entry parameterised type setup; read `List<Object[]> bindings = altEntry.getValue()` directly off the outer entry. The downstream `Object[] first = bindings.get(0)`, `groupEnv = (DataFetchingEnvironment) first[2]`, and `dsl = graphitronContext(groupEnv).getDslContext(groupEnv)` lines stay shaped as-is.
+- Update the class-level javadoc at `HandleMethodBody.java:13-33` — the `<ol>` step list mentions `getTenantId(repEnv)` per-rep resolution at `<li>2</li>` and `(alternative-index, tenantId)` grouping at `<li>4</li>`. Both bullets reshape: step 2 keeps the per-rep DFE construction (the `repEnv` still carries `arguments(rep)` for any in-rep argument reads even though the consumer no longer reads `getTenantId(repEnv)`), but the `getTenantId(repEnv)` mention deletes; step 4 reshapes to "Group bindings by alternative-index into a `LinkedHashMap`".
+- Sister doc comments at `EntityFetcherDispatchClassGenerator.java:42` and `QueryNodeFetcherClassGenerator.java:130` reference the per-rep DFE construction in terms of `getTenantId(repEnv)` resolution; both rewrite to drop the `getTenantId` mention. The per-rep DFE construction itself stays in both classes (it carries `arguments(rep)` for in-rep argument reads).
+
 ### `graphitron-sakila-example` consumer migration
 
 The example module is the canonical consumer-test reference (per R67 changelog: "doubles as the runnable reference application *and* the recommended consumer test pattern"), so its code is the first non-doc client of the new design at compile time. Sealing `GraphitronContext` and removing the `(GraphitronContext)` factory overload turn ~17 sites into compile errors; the L5 compile gate (`mvn compile -pl :graphitron-sakila-example -Plocal-db`) cannot pass without migrating them in the same commit window as the generator change. Per-site treatment:
 
-- *Anonymous-impl test sites (14 files, single-method override pattern).* Each block today reads:
+- *Anonymous-impl test sites (14 sites across 13 files, single-method override pattern).* Each block today reads:
 +
 [source,java]
 ----
@@ -179,7 +192,7 @@ Twelve pages update in the same commit window as the generator change (plus one 
 
 ## User documentation (first-client check)
 
-R190 changes the primary onboarding surface (`Graphitron.newExecutionInput`) and the runtime extension model (`GraphitronContext` becomes sealed, `getTenantId` disappears from the single-tenant shape). Per `docs/workflow.adoc` §"Plans with a user-visible surface", the docs draft is the first client of the design; if it doesn't read simply, the design is wrong. Tracing every `GraphitronContext` / `getTenantId` / `implements GraphitronContext` / `new GraphitronContext() {...}` reference through the manual, R190 touches **twelve pages plus one verified-no-change**. The two primary onboarding rewrites carry drafted replacement prose below; the other ten describe the actual current content of each page and the concrete shape of the revision. This is not a search-and-replace: each page's framing differs, several touch user-facing code blocks whose shape changes, and three pages get a deferral banner because their content is fully rescoped to R45's tenant-column work.
+R190 changes the primary onboarding surface (`Graphitron.newExecutionInput`) and the runtime extension model (`GraphitronContext` becomes sealed, `getTenantId` disappears from the single-tenant shape). Per `docs/workflow.adoc` §"Plans with a user-visible surface", the docs draft is the first client of the design; if it doesn't read simply, the design is wrong. Tracing every `GraphitronContext` / `getTenantId` / `implements GraphitronContext` / `new GraphitronContext() {...}` reference through the manual, R190 touches **thirteen pages required plus one optional touch-up and one verified-no-change**. The two primary onboarding rewrites carry drafted replacement prose below; the other eleven describe the actual current content of each page and the concrete shape of the revision. This is not a search-and-replace: each page's framing differs, several touch user-facing code blocks whose shape changes, and three pages get a deferral banner because their content is fully rescoped to R45's tenant-column work.
 
 ### Primary rewrite: `graphitron-rewrite/docs/getting-started.adoc` § Hello world
 
@@ -317,8 +330,8 @@ The per-tenant `DSLContext` routing recipe is being rewritten under R45 alongsid
 
 For the single-tenant request-entry shape, see xref:../getting-started.adoc[Getting started] and xref:../reference/runtime-api.adoc[Runtime API reference].
 ____
-- `docs/manual/how-to/apollo-federation.adoc` lines 86-91 — delete the per-rep `getTenantId` subsection outright. The rest of the federation recipe (transport, key declaration, entity fetcher swapping) is unaffected by R190; the deleted subsection is reintroduced under R45 in a shape that matches the post-R190 sealed surface.
-- `docs/manual/how-to/split-vs-inline.adoc` lines 44-58 — delete the "Per-tenant key prefix" bullet entirely. The registry is request-scoped, the cross-tenant collision scenario it warned about doesn't arise in practice (already labelled "rare but possible" at line 56), and under R190 the per-tenant prefix doesn't exist anyway. R45 may reintroduce the bullet when `<tenantColumn>` is configured and the prefix returns at the five emission sites.
+- `docs/manual/how-to/apollo-federation.adoc` lines 84-96 — delete the entire `== Per-tenant entity routing` subsection (heading at line 84 through the closing xref paragraph at line 96). The rest of the federation recipe (transport, key declaration, entity fetcher swapping) is unaffected by R190; the deleted subsection is reintroduced under R45 in a shape that matches the post-R190 sealed surface. Two constraint bullets later in the same file also reference per-rep `getTenantId` cooperation: line 116 ("Per-rep tenant routing reads off `env.getSource()`...") deletes outright; line 122 ("xref:tenant-scoping.adoc[How-to: Tenant scoping] covers per-rep tenant routing, the DataLoader cache-key contract, and the `getTenantId(repEnv)` shape...") rephrases to "xref:tenant-scoping.adoc[How-to: Tenant scoping] covers per-request `DSLContext` routing (recipe is being rewritten under R45)" so the cross-link still resolves but the prose stops naming a method the post-R190 interface no longer carries.
+- `docs/manual/how-to/split-vs-inline.adoc` — three small edits on the same DataLoader-name discussion. (a) The inline code block at lines 44-45 currently renders the pre-R190 emitted form `String name = graphitronContext(env).getTenantId(env) + "/" + String.join("/", env.getExecutionStepInfo().getPath().getKeysOnly())`; rewrite to the post-R190 shape `String name = String.join("/", env.getExecutionStepInfo().getPath().getKeysOnly())` so the page's worked example stays a live mirror of the emitted code. (b) Delete the "Per-tenant key prefix" bullet at line 56 entirely — the registry is request-scoped, the cross-tenant collision scenario it warned about doesn't arise in practice (already labelled "rare but possible"), and under R190 the per-tenant prefix doesn't exist anyway. (c) The closing sentence at line 58 ("The combination 'path-scoped, request-scoped, tenant-prefixed' means inline-style mistakes...") drops the `tenant-prefixed` clause, becoming "The combination 'path-scoped, request-scoped' means inline-style mistakes...". R45 may reintroduce both the bullet and the prefix when `<tenantColumn>` is configured.
 
 ### Index-page updates (one line each)
 
@@ -331,21 +344,22 @@ ____
 - `docs/manual/explanation/batching-model.adoc:45` — "...the xref:../reference/runtime-api.adoc[runtime API] documents the per-request `GraphitronContext` interface; the host application's job is just to provide the `DSLContext` and any context arguments." → "...the xref:../reference/runtime-api.adoc[runtime API] documents the sealed `GraphitronContext` contract; the host application's job is to call `Graphitron.newExecutionInput(dsl, ...)` with the `DSLContext` and any contextArgument values, and the generator wires the per-request `GraphQLContext` from those typed parameters." The tenant-scoping xref later in the paragraph stays (now points at the banner-bearing recipe).
 - `docs/manual/tutorial/06-going-further.adoc:23` — "...walks through copying that pattern into your own project: how to wire `GraphitronContext` against Testcontainers..." → "...walks through copying that pattern into your own project: how to wire `Graphitron.newExecutionInput(dsl, ...)` against Testcontainers..."
 - `docs/security.adoc:21` — "See xref:architecture/runtime-extension-points.adoc[Runtime Extension Points] for how that wires together with `GraphitronContext`." → "See xref:architecture/runtime-extension-points.adoc[Runtime Extension Points] for how that wires through the per-request `DSLContext` you pass to `Graphitron.newExecutionInput(dsl, ...)`." Optional; the existing phrasing is technically still accurate (sealed `GraphitronContext` is the per-request contract), but the rewrite reads better post-R190.
+- `docs/manual/how-to/add-custom-conditions.adoc:166` — the bullet currently reads "A typo in `contextArguments` surfaces as a `null` parameter at request time, not as a build error." R190's typed factory parameter list plus the per-slot `Objects.requireNonNull` change this surface: a typo in the SDL `contextArguments:` list now produces a typed-but-mis-named factory parameter the consumer must populate at compile time, and passing `null` to fill that slot is a tight NPE at the factory call rather than a silent `null` reaching the condition method. Rephrase to: "A typo in `contextArguments` surfaces at compile time as a typed-but-unfamiliar parameter on `Graphitron.newExecutionInput(...)`'s signature: the factory reflects the SDL's `contextArguments:` list verbatim, so a misspelled name produces a factory parameter under the misspelled name. The error you see is the consumer-side compile failure (or, if you populate the slot with `null`, an `NullPointerException` at the factory call), not a silent `null` at request time."
 
 ### Verified-no-change (cross-links remain coherent)
 
-`docs/manual/how-to/condition-cascade.adoc:181` and `docs/manual/how-to/add-custom-conditions.adoc:164` cross-link to `tenant-scoping.adoc` and `runtime-api.adoc` for the supplying-side context-argument story. The cross-links remain coherent once those two targets land; no edits needed on the pages themselves.
+`docs/manual/how-to/condition-cascade.adoc:181` cross-links to `tenant-scoping.adoc` and `runtime-api.adoc` for the supplying-side context-argument story. The cross-link remains coherent once those two targets land; no edits needed on the page itself. (`add-custom-conditions.adoc:164` was previously listed here; line 166 of the same page now requires a touch-up — see "Small in-prose touch-ups" above. The line 164 cross-link itself stays as-is.)
 
-### Total scope (twelve pages plus one no-change)
+### Total scope (thirteen pages plus one optional and one no-change)
 
 Substantive rewrites (four): `getting-started.adoc`, `runtime-extension-points.adoc`, `runtime-api.adoc`, `test-your-schema.adoc`.
-Tenant-routing deferral banners (three): `tenant-scoping.adoc`, `apollo-federation.adoc` (one section only), `split-vs-inline.adoc` (one bullet only).
+Tenant-routing deferral banners (three): `tenant-scoping.adoc`, `apollo-federation.adoc` (one subsection plus two constraint bullets), `split-vs-inline.adoc` (one code snippet, one bullet, one closing-sentence clause).
 Index-page updates (two): `reference/index.adoc`, `how-to/index.adoc`.
-Small in-prose touch-ups (three): `how-it-works.adoc`, `batching-model.adoc`, `06-going-further.adoc`.
+Small in-prose touch-ups (four): `how-it-works.adoc`, `batching-model.adoc`, `06-going-further.adoc`, `add-custom-conditions.adoc`.
 Optional touch-up (one): `security.adoc` (cross-link reads coherently as-is; rewrite is a polish).
-Verified-no-change (two): `condition-cascade.adoc`, `add-custom-conditions.adoc`.
+Verified-no-change (one): `condition-cascade.adoc`.
 
-The implementer is on hook to land all twelve in the same commit window as the generator change, so the docs site does not ship in a half-state. If a thirteenth page surfaces during implementation, fold it into the same commit window with the same "first-client check" lens: would a consumer arriving at this page from search read code that compiles against the post-R190 generated `GraphitronContext`?
+The implementer is on hook to land all thirteen required edits in the same commit window as the generator change, so the docs site does not ship in a half-state. If a fourteenth page surfaces during implementation, fold it into the same commit window with the same "first-client check" lens: would a consumer arriving at this page from search read code that compiles against the post-R190 generated `GraphitronContext`?
 
 ## Open questions
 
