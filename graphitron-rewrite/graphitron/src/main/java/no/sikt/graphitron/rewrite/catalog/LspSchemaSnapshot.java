@@ -70,6 +70,22 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
          */
         Map<String, String> payloadDataFieldByType();
 
+        /**
+         * R160 — per-field LSP classification projection. Keyed by
+         * {@code "ParentType.fieldName"}; value is the {@link FieldClassification} variant
+         * the LSP's inlay-hint and hover arms render. Absent entries mean the classifier
+         * produced no field for that coordinate (e.g., the buffer is mid-edit and
+         * references a field the schema does not yet declare).
+         */
+        Map<String, FieldClassification> fieldClassificationsByCoord();
+
+        /**
+         * R160 — per-type LSP classification projection. Keyed by the SDL type name; value
+         * is the {@link TypeClassification} variant the LSP's inlay-hint and hover arms
+         * render. Absent entries mean the classifier produced no type for that name.
+         */
+        Map<String, TypeClassification> typeClassificationsByName();
+
         default Optional<DirectiveShape> directive(String name) {
             return directives().stream().filter(d -> d.name().equals(name)).findFirst();
         }
@@ -80,6 +96,22 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
          */
         default Optional<TypeBackingShape> typeBacking(String name) {
             return Optional.ofNullable(typesByName().get(name));
+        }
+
+        /**
+         * Convenience lookup; returns {@link Optional#empty()} when no field
+         * classification is on file for the {@code (typeName, fieldName)} coordinate.
+         */
+        default Optional<FieldClassification> fieldClassification(String typeName, String fieldName) {
+            return Optional.ofNullable(fieldClassificationsByCoord().get(typeName + "." + fieldName));
+        }
+
+        /**
+         * Convenience lookup; returns {@link Optional#empty()} when no type classification
+         * is on file for {@code name}.
+         */
+        default Optional<TypeClassification> typeClassification(String name) {
+            return Optional.ofNullable(typeClassificationsByName().get(name));
         }
 
         /**
@@ -100,21 +132,61 @@ public sealed interface LspSchemaSnapshot permits LspSchemaSnapshot.Unavailable,
             return new FieldSourceSigil.SiteContext.Other();
         }
 
-        record Current(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName,
-                       Map<String, String> payloadDataFieldByType) implements Built {
+        record Current(
+            List<DirectiveShape> directives,
+            Map<String, TypeBackingShape> typesByName,
+            Map<String, String> payloadDataFieldByType,
+            Map<String, FieldClassification> fieldClassificationsByCoord,
+            Map<String, TypeClassification> typeClassificationsByName
+        ) implements Built {
             public Current {
                 directives = List.copyOf(directives);
                 typesByName = Map.copyOf(typesByName);
                 payloadDataFieldByType = Map.copyOf(payloadDataFieldByType);
+                fieldClassificationsByCoord = Map.copyOf(fieldClassificationsByCoord);
+                typeClassificationsByName = Map.copyOf(typeClassificationsByName);
+            }
+
+            /**
+             * Convenience constructor for callers (LSP unit tests, ad-hoc fixtures) that only
+             * populate the directive surface, type-backing, and payload-data-field projections.
+             * Fills the R160 classification projections with empty maps.
+             */
+            public Current(
+                List<DirectiveShape> directives,
+                Map<String, TypeBackingShape> typesByName,
+                Map<String, String> payloadDataFieldByType
+            ) {
+                this(directives, typesByName, payloadDataFieldByType, Map.of(), Map.of());
             }
         }
 
-        record Previous(List<DirectiveShape> directives, Map<String, TypeBackingShape> typesByName,
-                        Map<String, String> payloadDataFieldByType) implements Built {
+        record Previous(
+            List<DirectiveShape> directives,
+            Map<String, TypeBackingShape> typesByName,
+            Map<String, String> payloadDataFieldByType,
+            Map<String, FieldClassification> fieldClassificationsByCoord,
+            Map<String, TypeClassification> typeClassificationsByName
+        ) implements Built {
             public Previous {
                 directives = List.copyOf(directives);
                 typesByName = Map.copyOf(typesByName);
                 payloadDataFieldByType = Map.copyOf(payloadDataFieldByType);
+                fieldClassificationsByCoord = Map.copyOf(fieldClassificationsByCoord);
+                typeClassificationsByName = Map.copyOf(typeClassificationsByName);
+            }
+
+            /**
+             * Convenience constructor for callers (LSP unit tests, ad-hoc fixtures) that only
+             * populate the directive surface, type-backing, and payload-data-field projections.
+             * Fills the R160 classification projections with empty maps.
+             */
+            public Previous(
+                List<DirectiveShape> directives,
+                Map<String, TypeBackingShape> typesByName,
+                Map<String, String> payloadDataFieldByType
+            ) {
+                this(directives, typesByName, payloadDataFieldByType, Map.of(), Map.of());
             }
         }
     }
