@@ -22,7 +22,7 @@ This item covers the single-tenant design end-to-end; R45 is rescoped to "given 
 
 `GraphitronFacadeGenerator` today emits two `newExecutionInput` overloads at `GraphitronFacadeGenerator.java:54-72`: `newExecutionInput(GraphitronContext)` taking the full context, and `newExecutionInput(DSLContext)` lambda-adapting `(GraphitronContext) env -> dsl`. R190 collapses these into a single typed overload whose parameter list reflects the schema's declared `contextArguments`.
 
-The codegen walks the SDL, collects every `contextArgument` name referenced by `@service` / `@tableMethod` / `@condition` directives (current call sites: `ServiceDirectiveResolver.java:133`, `TableMethodDirectiveResolver.java:144`, `BuildContext.java:1472`), looks up each name's reflected Java type via `MethodRef.Param.Typed.typeName` (`MethodRef.java:238` — captured as the raw `Type.getTypeName()` string at `ServiceCatalog.java:250`, faithful to parameterised types e.g. `"java.util.List<java.lang.Long>"`), and alphabetical-sorts by name for stable parameter order. The reflected type string is parsed into a JavaPoet `TypeName` for emission.
+The codegen walks the SDL, collects every `contextArgument` name referenced by `@service` / `@tableMethod` / `@condition` directives (current call sites: `ServiceDirectiveResolver.java:133`, `TableMethodDirectiveResolver.java:144`, `BuildContext.java:1502`), looks up each name's reflected Java type via `MethodRef.Param.Typed.typeName` (`MethodRef.java:238` — captured as the raw `Type.getTypeName()` string at `ServiceCatalog.java:250`, faithful to parameterised types e.g. `"java.util.List<java.lang.Long>"`), and alphabetical-sorts by name for stable parameter order. The reflected type string is parsed into a JavaPoet `TypeName` for emission.
 
 For a schema using `@service(contextArguments: ["userInfo", "fnr"])` where `fnr: String` and `userInfo: UserInfo`:
 
@@ -33,33 +33,32 @@ public static ExecutionInput.Builder newExecutionInput(
     UserInfo userInfo);
 ```
 
-`DSLContext defaultDsl` is always first; contextArguments follow alphabetically. The body constructs the sealed-impl carrier and stashes it under `GraphitronContext.class` via the existing `b.put(GraphitronContext.class, context)` convention (`GraphitronFacadeGenerator.java:60-62`). Schemas with zero contextArguments collapse to `newExecutionInput(DSLContext defaultDsl)`.
+`DSLContext defaultDsl` is always first; contextArguments follow alphabetically. The body populates `graphQLContext` directly — graphql-java's `GraphQLContext` is the carrier — putting `defaultDsl` under key `DSLContext.class`, each contextArgument value under its string name, and the stateless singleton `GraphitronContextImpl` under `GraphitronContext.class` (keeping today's `b.put(GraphitronContext.class, context)` convention at `GraphitronFacadeGenerator.java:60-62` and the downstream `graphitronContext(env)` helper shape). Schemas with zero contextArguments collapse to `newExecutionInput(DSLContext defaultDsl)`.
 
 ### Sealed `GraphitronContext`
 
-`GraphitronContextInterfaceGenerator.java:35-117` today emits `public interface GraphitronContext` with four default-or-abstract methods. R190 makes the generated interface `sealed permits GraphitronContextImpl` and adds the impl as a generated record in the same package. Consumers can no longer construct ad-hoc `GraphitronContext` lambdas or anonymous subclasses; the factory is the only path that produces one.
+`GraphitronContextInterfaceGenerator.java:35-117` today emits `public interface GraphitronContext` with four default-or-abstract methods. R190 makes the generated interface `sealed permits GraphitronContextImpl` and adds the impl as a stateless generated singleton in the same package. The impl carries no per-request fields; all per-request values live in the `GraphQLContext` populated by the factory, and every impl method reads from `env.getGraphQlContext()`. Consumers can no longer construct ad-hoc `GraphitronContext` lambdas or anonymous subclasses; the factory is the only path that populates the request.
 
 The method set in single-tenant mode:
 
-- `DSLContext getDslContext(DataFetchingEnvironment env)` — abstract; impl returns the stashed `defaultDsl`.
-- `<T> T getContextArgument(DataFetchingEnvironment env, String name, Class<T> expectedType)` — default; impl reads from the impl's name→value map and runtime-checks the cast (see "Typed `getContextArgument` boundary" below).
+- `DSLContext getDslContext(DataFetchingEnvironment env)` — default; reads `env.getGraphQlContext().get(DSLContext.class)`.
+- `<T> T getContextArgument(DataFetchingEnvironment env, String name, Class<T> expectedType)` — default; reads `env.getGraphQlContext().get(name)` and applies `expectedType.cast(...)` (see "Typed `getContextArgument` boundary" below).
 - `Validator getValidator(DataFetchingEnvironment env)` — default; impl returns `Validation.buildDefaultValidatorFactory().getValidator()` (unchanged; R192 layers an override on top).
 
 `getTenantId(env)` is **not declared** in single-tenant mode — its current default returning `""` is removed. R45 reintroduces it on top of the sealed surface, which is method-set widening (additive) rather than a signature change, so the absence-to-presence transition is non-breaking for code that compiled against R190's shape.
 
 ### Typed `getContextArgument` boundary
 
-`ArgCallEmitter.java:191` and `:285` today emit an untyped two-arg call `<ctx>.getContextArgument(env, "<name>")`, leaving the cast to Java's `<T>` type inference at the consumer-side method-parameter slot. R190 grows the signature with a third `Class<T> expectedType` parameter so the runtime-side diagnostic carries the expected type:
+`ArgCallEmitter.java:191` and `:285` today emit an untyped two-arg call `<ctx>.getContextArgument(env, "<name>")`, leaving the cast to Java's `<T>` type inference at the consumer-side method-parameter slot. R190 grows the signature with a third `Class<T> expectedType` parameter so the default body can apply a typed runtime check:
 
 ```java
 <ctx>.getContextArgument(env, "fnr", String.class)
 ```
 
-The default-method body in the sealed `GraphitronContext` reads the value from the impl's name→value map. Two diagnostic shapes:
+The default body reads `env.getGraphQlContext().get(name)` and runs `expectedType.cast(...)` on the result. Both failure paths below are reachable only when the consumer bypasses the factory (hand-rolls an `ExecutionInput.Builder` and omits the stash); routing through `Graphitron.newExecutionInput(...)` makes a missing or wrong-typed contextArgument a compile error, because the factory's typed parameter slot IS the reflected expected type. The runtime messages therefore stay deliberately terse — the compile-time signal on the factory is the load-bearing diagnostic, not the throw:
 
-- **Missing value** (name absent from the map): `"context value 'fnr' was not supplied; call Graphitron.newExecutionInput(...) — required by com.example.FooService.foo(String)"`. The factory class+method is hard-coded (today's facade is always emitted as `Graphitron.newExecutionInput`); the call-site coordinates come from the `MethodRef` that surfaced the contextArgument in classification, passed through to the diagnostic as part of the `expectedType` literal's emission context (the emitter writes the FQN literal into the message string at codegen, not at runtime).
-
-- **Type mismatch** (`!expectedType.isInstance(value)`): `"context value 'fnr' was supplied as java.lang.Integer; expected java.lang.String at com.example.FooService.foo"`. Belt-and-braces: statically impossible if the consumer routes through the factory (factory parameter type IS the reflected expected type); only reachable if consumer hand-rolls `ExecutionInput.Builder` and bypasses the factory. The factory is the supported entry point; this path documents the unsupported case at runtime.
+- **Missing value** (`value == null`): `IllegalStateException("context value 'fnr' was not supplied; call Graphitron.newExecutionInput(...) to populate it")`. No per-call-site coordinate; the factory's typed signature is what readers reach for.
+- **Type mismatch**: `expectedType.cast(value)` throws the JDK's default `ClassCastException`; no custom wrapping.
 
 ### Cross-site contextArgument type-agreement (load-bearing classifier)
 
@@ -99,15 +98,16 @@ Today's default `getTenantId(env)` returns `""`, so the de-facto runtime name is
 ### Schema-driven factory (`GraphitronFacadeGenerator.java:54-72`)
 
 - Replace the two-overload emission with a single overload: parameter list is `DSLContext defaultDsl` followed by the alphabetical-sorted `(JavaPoet TypeName, name)` pairs from the classified `ResolvedContextArg` map.
-- Factory body: construct `new GraphitronContextImpl(defaultDsl, Map.of(name1, value1, ...))` (or a `LinkedHashMap` literal if `Map.of` arity becomes awkward at >10 args), stash under `GraphitronContext.class`.
+- Factory body: emit a `graphQLContext` builder lambda that puts `defaultDsl` under `DSLContext.class`, each contextArgument value under its string name, and the singleton `GraphitronContextImpl` under `GraphitronContext.class`. String-keyed entries mean `env.getGraphQlContext().get(name)` is the canonical read path; the impl needs no per-request fields.
 - Annotated `@DependsOnClassifierCheck(key = "context-argument.type-agreement", reliesOn = "...")`.
 
 ### Sealed `GraphitronContext` (`GraphitronContextInterfaceGenerator.java:35-117`)
 
 - Add `sealed permits GraphitronContextImpl` to the interface declaration.
 - Drop the `getTenantId(env)` default method.
-- Grow `getContextArgument` to `<T> T getContextArgument(DataFetchingEnvironment env, String name, Class<T> expectedType)`. Default body reads from the impl's name→value map, throwing the documented diagnostic strings on miss / mismatch.
-- Emit a generated record `GraphitronContextImpl(DSLContext defaultDsl, Map<String, Object> contextValues) implements GraphitronContext` in the same package. Record-final closes off subclassing; sealed-interface closes off alternate implementations.
+- Demote `getDslContext` from `abstract` to `default`; body reads `env.getGraphQlContext().get(DSLContext.class)`.
+- Grow `getContextArgument` to `<T> T getContextArgument(DataFetchingEnvironment env, String name, Class<T> expectedType)`. Default body reads `env.getGraphQlContext().get(name)` and applies `expectedType.cast(...)`; `null` becomes the documented `IllegalStateException`, wrong-type falls through to the JDK's `ClassCastException`.
+- Emit a generated stateless singleton `GraphitronContextImpl` in the same package — shape choice (enum singleton, no-component record, or final class with private constructor) deferred to implementation, since all per-request state lives in `GraphQLContext` and the impl carries no fields. Singleton closes off subclassing; sealed-interface closes off alternate implementations.
 
 ### `getContextArgument` typed call sites (`ArgCallEmitter.java:191, :285`)
 
@@ -124,7 +124,7 @@ No new runtime surface for R190. The `getContextArgument` signature change is in
 
 ## Tests
 
-- **Pipeline (L4).** `GraphitronFacadeGeneratorPipelineTest` (or the closest existing test for that generator) gains a case: SDL with multiple `@service(contextArguments: [...])` sites producing the alphabetical-sorted factory parameter list. Snapshot the emitted factory `TypeSpec` and the sealed `GraphitronContext` interface + impl record. Loader-name snapshot for one of the five DataLoader sites pins the un-prefixed shape.
+- **Pipeline (L4).** `GraphitronFacadeGeneratorPipelineTest` (or the closest existing test for that generator) gains a case: SDL with multiple `@service(contextArguments: [...])` sites producing the alphabetical-sorted factory parameter list. Snapshot the emitted factory `TypeSpec` (including the `graphQLContext` builder lambda) and the sealed `GraphitronContext` interface + `GraphitronContextImpl` singleton. Loader-name snapshot for one of the five DataLoader sites pins the un-prefixed shape.
 - **Classification (L2).** `ContextArgumentTypeAgreementTest` (new): two SDL fixtures, one accepted (single typeName per name across `@service` + `@tableMethod` + `@condition`), one rejected (`contextArgumentTypeConflict` with `List<Long>` vs `List<String>`). Assert the rejection's `name` and `sites` fields.
 - **Audit (L2).** `LoadBearingGuaranteeAuditTest` is already wired; the new key `context-argument.type-agreement` lands with one producer and one consumer and the test stays green by construction. If the audit fails after the slice, the producer/consumer annotations are mis-keyed.
 - **Compile (L5).** `graphitron-sakila-example` gains an SDL fragment with at least one `@service(contextArguments: ["userId"])` site so the new factory shape appears in the compile fixture; generated code passes `mvn compile -pl :graphitron-sakila-example -Plocal-db`.
@@ -132,14 +132,12 @@ No new runtime surface for R190. The `getContextArgument` signature change is in
 
 ## Open questions
 
-1. **Impl carrier shape: `Map<String, Object>` vs typed record fields.** Drafted as `Map<String, Object>` keyed by contextArgument name. Alternative: emit the impl record with one typed field per contextArgument (`GraphitronContextImpl(DSLContext defaultDsl, String fnr, UserInfo userInfo)`), with `getContextArgument` switching on name to read the typed field. Map keeps the impl uniform (one record component beyond `defaultDsl`); typed fields push contextArgument names into the impl's type signature too, closer to the spirit of "generation-thinking". Pick during implementation; cross-cuts no other decision.
-
-2. **Diagnostic message: factory name as literal vs generator-emitted constant.** Drafted as the literal `"Graphitron.newExecutionInput(...)"`. Today the facade class+method are fixed by `GraphitronFacadeGenerator`, so the literal is accurate; if facade naming ever gains configurability (different consumer, different class name), the literal goes stale. Cheap to fix when it matters — change the emitter to inject the configured FQN at codegen.
+1. **Diagnostic message: factory name as literal vs generator-emitted constant.** Drafted as the literal `"Graphitron.newExecutionInput(...)"`. Today the facade class+method are fixed by `GraphitronFacadeGenerator`, so the literal is accurate; if facade naming ever gains configurability (different consumer, different class name), the literal goes stale. Cheap to fix when it matters — change the emitter to inject the configured FQN at codegen.
 
 ## Roadmap entries (siblings / dependencies)
 
 - **Splits from** [`tenant-routing-and-execution-input.md`](tenant-routing-and-execution-input.md) (R45). R45 awaits this landing before its Spec rescopes to the multi-tenant additions on top.
 - **Reshapes** [`service-multi-tenant-fanout.md`](service-multi-tenant-fanout.md) (R46) transitively via R45: the public `ContextValueRegistration` permit and `GraphitronContext` extension-point assumptions R46 was built on dissolve here.
-- **Affects** [`helper-emission-non-fetcher-hosts.md`](helper-emission-non-fetcher-hosts.md) (R85). The host-class `graphitronContext(env)` helper-emission gate stays structurally unchanged because the sealed-internal carrier keeps the same method set in single-tenant mode (no `getTenantId` to call). If R45 widens that set, R85 sees the addition cleanly.
+- **Affects** [`helper-emission-non-fetcher-hosts.md`](helper-emission-non-fetcher-hosts.md) (R85). The host-class `graphitronContext(env)` helper-emission gate stays structurally unchanged because the sealed interface keeps the same method set in single-tenant mode (no `getTenantId` to call). If R45 widens that set, R85 sees the addition cleanly.
 - **Coordinates with** [`dslcontext-on-condition-tablemethod.md`](dslcontext-on-condition-tablemethod.md): both touch `ArgCallEmitter`'s param walk; no shared file edits but adjacent emission paths.
 - **Spawns** [`custom-validator-factory.md`](custom-validator-factory.md) (R192) as the carved-out validator-override item.
