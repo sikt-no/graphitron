@@ -25,8 +25,9 @@ fields named `statuskode` / `fraDato` / `utdanningsspesifikasjonsId`
 produce zero matches and the binding list is empty, surfacing as
 "bean class '…UtdanningsspesifikasjonsstatusRecord' has no fields
 matching the SDL input type 'EndreUtdanningsspesifikasjonsstatusInput'"
-at `InputBeanResolver.java:307`. R194 (the sibling fix) rejects this
-combination loudly; this item is the feature that would make it work.
+at `InputBeanResolver.java:307`. R193 (the sealed-`UnresolvedParam`
+classifier) is the natural home for a loud-rejection arm covering this
+case; this item is the feature that would make it work.
 
 ## Why this is not "just teach the resolver to read `@field`"
 
@@ -80,11 +81,12 @@ consumers whose Java parameter is a jOOQ record toward the DML path
   from the consumer field's return type). Likely R97 should land
   first, or this item should adopt R97's consumer-derivation rule
   from day one.
-- **Rejection vs feature.** R194 (separate item) is the small
-  defensive fix: detect jOOQ records by `org.jooq.Record` supertype
-  in `looksLikeBeanCandidate` and reject with a clear message. That
-  ships first regardless of whether this item ever moves out of
-  Backlog.
+- **Rejection vs feature.** R193 (the sealed-`UnresolvedParam`
+  classifier) is the natural place to add the defensive arm: detect
+  jOOQ records by `org.jooq.Record` supertype in
+  `looksLikeBeanCandidate` / the classifier and reject with a clear
+  message. That ships independently regardless of whether this item
+  ever moves out of Backlog.
 
 ## Affected code
 
@@ -105,7 +107,7 @@ consumers whose Java parameter is a jOOQ record toward the DML path
 
 ## Out of scope
 
-- The defensive rejection (R194 sibling).
+- The defensive rejection arm (lands in R193's classifier).
 - Any change to the DML / `@mutation` path's existing behavior.
 - Non-jOOQ ORM record types (Hibernate entities, MyBatis objects,
   etc.) — `@service` continues to accept POJOs and records of any
