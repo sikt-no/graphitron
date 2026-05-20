@@ -41,8 +41,18 @@ public final class TestSchemaHelper {
     }
 
     public static GraphitronSchemaBuilder.Bundle buildBundle(String schemaText, RewriteContext ctx) {
-        TypeDefinitionRegistry registry = new SchemaParser().parse(prelude(schemaText) + schemaText);
-        return GraphitronSchemaBuilder.buildBundle(registry, ctx);
+        return GraphitronSchemaBuilder.buildBundle(parseRegistryWithPrelude(schemaText), ctx);
+    }
+
+    /**
+     * Parses {@code schemaText} into a {@link TypeDefinitionRegistry} after prepending the
+     * directives prelude and the Relay {@code Node} interface (when not already declared).
+     * Exposed so sibling test helpers (e.g. snapshot builders for the R160 projection
+     * truth-table) can drive the same parser without round-tripping through
+     * {@code buildBundle}.
+     */
+    public static TypeDefinitionRegistry parseRegistryWithPrelude(String schemaText) {
+        return new SchemaParser().parse(prelude(schemaText) + schemaText);
     }
 
     private static String prelude(String schemaText) {
