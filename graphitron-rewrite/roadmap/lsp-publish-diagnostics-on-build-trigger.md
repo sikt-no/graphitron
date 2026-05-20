@@ -30,12 +30,12 @@ The fix lifts the convention into a structural rule: every public `Workspace` me
 
 1. Add a single-slot listener: `private volatile Runnable recalculateListener = () -> {};` with `public void setRecalculateListener(Runnable listener)` (replaces, not adds; there is exactly one consumer — the document service). Default no-op so test callers that drive `Workspace` directly need no setup.
 2. Funnel every queue mutation through a private `enqueueAndNotify(...)` helper that performs the mutation under `lock` and then, after releasing the lock, calls `recalculateListener.run()`. The lock-release-before-listener-fire is deliberate: `publishDiagnosticsForRecalculate` calls `Diagnostics.compute` per file, which is heavy enough that holding `lock` across it would serialise build swaps behind diagnostic publishes for no reason. Idempotency on the drain side (a second `drainRecalculate` after the first has emptied the queue returns an empty list) makes the "listener fires twice for two queue mutations interleaved with one drain" race a no-op rather than a correctness hazard.
-3. The six existing public mutators (`didOpen`, `didChange`, `didClose`, `setBuildOutput`, `demoteSnapshot`, `markAllForRecalculation`) each end with one call to `enqueueAndNotify` (which encapsulates the existing `enqueueTouched(...)` / direct adds) so the listener-fire happens uniformly. No public mutator may add to `toRecalculate` outside `enqueueAndNotify`; making `toRecalculate` field-private and accessed only through the helper enforces this at file-local-review time. (Reviewer can grep for `toRecalculate.add` after the change and expect exactly one hit, inside `enqueueAndNotify`.)
+3. The six existing public mutators (`didOpen`, `didChange`, `didClose`, `setBuildOutput`, `demoteSnapshot`, `markAllForRecalculation`) each end with one call to `enqueueAndNotify` (which encapsulates the existing `enqueueTouched(...)` / direct adds) so the listener-fire happens uniformly. `toRecalculate` is already field-private; after this change `enqueueAndNotify` is the only writer of it inside `Workspace.java`. That single-writer fact, not a grep convention, is what makes "no public mutator returns without notifying" the structural invariant rather than a six-site discipline. The helper is the seam by the same logic that motivates introducing the listener at all: if we're lifting "drain follows enqueue" out of author-convention, we don't immediately reintroduce it as "fire-listener follows mutation" at six call sites.
 4. `GraphitronTextDocumentService.setClient(LanguageClient)` — the existing wire-up entry point fired once by `GraphitronLanguageServer.connect` — additionally calls `workspace.setRecalculateListener(this::publishDiagnosticsForRecalculate)`. The explicit `publishDiagnosticsForRecalculate()` calls inside `didOpen` / `didChange` / `didClose` go away; the listener handles all six paths uniformly.
 
 ### Why not Option B (listener fires only from the broken paths)
 
-Considered and rejected. Option B keeps the explicit publish calls in the editor-event arms and adds the listener only to the build-trigger arms. Smaller diff, but it preserves the two-coordination-style asymmetry: the future maintainer reading `didChange` wonders why it calls publish directly when a listener is installed; the future maintainer adding a seventh mutator has to choose which style to follow. Option A (uniform "every mutator notifies") puts the publish concern in one place and makes the invariant grep-visible.
+Considered and rejected. Option B keeps the explicit publish calls in the editor-event arms and adds the listener only to the build-trigger arms. Smaller diff, but it preserves the two-coordination-style asymmetry: the future maintainer reading `didChange` wonders why it calls publish directly when a listener is installed; the future maintainer adding a seventh mutator has to choose which style to follow. Option A (uniform "every mutator notifies") puts the publish concern in one place and makes the invariant a single-writer fact on `toRecalculate` rather than a discipline.
 
 ### Why a `Runnable` rather than a richer event shape
 
@@ -47,7 +47,7 @@ Considered and rejected. Having `DevMojo` call a new `TextDocumentService.publis
 
 ### Threading
 
-`Workspace` is already documented as thread-safe via the internal `lock`. The listener is stored in a `volatile Runnable` (safe publication of the latest registered runnable across threads). Fire-after-lock-release means a build-swap on the watcher thread and an editor event on the lsp4j thread can each run `publishDiagnosticsForRecalculate` without serialising on `lock`; both calls hit `drainRecalculate` (atomic under `lock`), one wins, the other sees an empty list and returns. No double-publish — `drainRecalculate` is single-extraction by design.
+`Workspace` is already documented as thread-safe via the internal `lock`. The listener is stored in a `volatile Runnable` (safe publication of the latest registered runnable across threads). Fire-after-lock-release means a build-swap on the watcher thread and an editor event on the lsp4j thread can each run `publishDiagnosticsForRecalculate` without serialising on `lock`; both calls hit `drainRecalculate` (atomic under `lock`), one wins, the other sees an empty list and returns. The "single-extraction" property the listener path depends on is pinned by the new `drainRecalculateIsIdempotentOnEmptyQueue` test arm below (a second `drainRecalculate` after the first has emptied the queue returns an empty list).
 
 ## Implementation sites
 
@@ -59,32 +59,27 @@ Considered and rejected. Having `DevMojo` call a new `TextDocumentService.publis
 
 ### Unit-tier — `WorkspaceTest`
 
-Pin the load-bearing invariant per public mutator:
+The invariant is uniform across mutators, so the test expresses it uniformly:
 
-- `didOpenFiresRecalculateListener` — register a counting `Runnable`, call `didOpen`, assert fired exactly once.
-- `didChangeFiresRecalculateListener` — drive a `didOpen` then a `didChange` content edit, assert the counter increments by exactly two.
-- `didCloseFiresRecalculateListener` — drive a `didOpen` then a `didClose`, assert fired twice.
-- `setBuildOutputFiresRecalculateListener` — open two files, install the listener (reset counter), call `setBuildOutput`, assert fired once.
-- `demoteSnapshotFiresRecalculateListenerWhenDemoting` — set up a `Built.Current` snapshot via `setBuildOutput`, install listener, call `demoteSnapshot`, assert fired once; separately, on `Unavailable` and `Built.Previous`, `demoteSnapshot` is a no-op so the listener does not fire (the spec's existing demote-is-no-op-on-non-current contract; covered by the existing `WorkspaceTest` shape).
-- `markAllForRecalculationFiresRecalculateListener` — same pattern.
-- `recalculateListenerDefaultsToNoOpForTestHarnesses` — instantiate `Workspace`, immediately call a mutator without `setRecalculateListener`, assert no exception (regression guard against a future implementation that accidentally drops the no-op default and NPEs on the listener field).
+- `everyPublicQueueMutatingMethodFiresTheListener` — `@ParameterizedTest` over a `Stream<Named<Consumer<Workspace>>>` of the six mutators (`didOpen`, `didChange`, `didClose`, `setBuildOutput`, `demoteSnapshot`, `markAllForRecalculation`, each fed the minimum arguments to exercise its enqueue path on a workspace pre-seeded with one open file and, for `demoteSnapshot`, a `Built.Current` snapshot so the demote actually transitions). Register a counting `Runnable`, invoke the mutator, assert listener-fire count delta of exactly 1. One test method, six parametrised cases; a future seventh mutator added to the funnel passes by virtue of being on the funnel.
+- `recalculateListenerDefaultsToNoOpForTestHarnesses` — instantiate `Workspace`, immediately call a mutator without `setRecalculateListener`, assert no exception (regression guard against a future implementation that drops the no-op default and NPEs on the listener field).
+- `drainRecalculateIsIdempotentOnEmptyQueue` — drive a mutator to populate the queue, drain once, drain again, assert the second drain returns an empty list. Pins the single-extraction property the Threading section depends on; not currently covered, the existing test arms all drain at most once per setup.
+- Existing `demoteSnapshotIsNoOpOnUnavailable` / `demoteSnapshotIsNoOpOnPrevious` (or equivalents — `WorkspaceTest` already pins these for the R139 demote-no-op contract) implicitly cover the case that the listener does *not* fire on a no-op demote, since the funnel call in `demoteSnapshot` is gated on the same `instanceof Built.Current` check; if the gate is missing, the demote-no-op assertion in those tests fails first. No new test arm needed for that.
 
-These are direct extensions of the existing `WorkspaceTest` (`graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/WorkspaceTest.java`) and don't need a `LanguageClient` — the counter `Runnable` is sufficient.
+These extend the existing `WorkspaceTest` (`graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/WorkspaceTest.java`) and don't need a `LanguageClient` — the counter `Runnable` is sufficient.
 
 ### Pipeline-tier — new `BuildTriggerPublishesDiagnosticsTest` in `graphitron-lsp/src/test/...`
 
-This is the LSP-side half of R149's deferred end-to-end test, folded into this item because the wire shape it pins (`setBuildOutput → listener → publishDiagnosticsForRecalculate → client.publishDiagnostics`) is exactly the path this fix introduces.
-
-Captured `LanguageClient` stub records `publishDiagnostics(PublishDiagnosticsParams)` calls into a `List<PublishDiagnosticsParams>`. Test flow:
+The pipeline test for the seam this item adds: drive a `setBuildOutput` end-to-end and assert the wire-level `publishDiagnostics` call arrives at the captured `LanguageClient`. Captured stub records `publishDiagnostics(PublishDiagnosticsParams)` calls into a `List<PublishDiagnosticsParams>`. Test flow:
 
 1. Build a `Workspace`, build a `GraphitronTextDocumentService`, install the stub `LanguageClient` via `setClient`.
 2. `workspace.didOpen("file:///a.graphqls", 1, "<sdl>")` — assert one `publishDiagnostics` call for `a.graphqls` with whatever the empty-validation-report diagnostic list is (likely empty).
-3. `workspace.setBuildOutput(<artifacts>, <ValidationReport with one error on a.graphqls>)` — assert a subsequent `publishDiagnostics` call for `a.graphqls` with the error present. (This is the bug-pin: today this assertion fails because the listener does not fire.)
+3. `workspace.setBuildOutput(<artifacts>, <ValidationReport with one error on a.graphqls>)` — assert a subsequent `publishDiagnostics` call for `a.graphqls` with the error present. (Today this assertion fails because the listener does not fire; on the fixed code it passes.)
 4. `workspace.setBuildOutput(<artifacts>, ValidationReport.empty())` — assert the next `publishDiagnostics` for `a.graphqls` ships an empty diagnostic list (the wire-level "clear" signal).
 
 `ValidationReport.empty()` and the existing `ValidationReport.from(errors, warnings)` factory already exist (R147); the test does not need a real generator pass.
 
-The R149 follow-up's other half — `GraphQLRewriteGeneratorTest` for end-to-end `buildOutput()` report population — stays scoped to R149.
+This also retires the LSP-side half of R149 (the deferred end-to-end `publishDiagnostics` wire-test from R147), which targeted exactly this path. R149's other half — `GraphQLRewriteGeneratorTest` asserting `buildOutput()` populates `BuildOutput.report()` from the validator — exercises the producer side, needs a real jOOQ catalog, and stays under R149.
 
 ### Compilation-tier and execution-tier
 
@@ -92,26 +87,20 @@ Not applicable. The change is a wiring fix in the LSP module; no emitted code ch
 
 ## Done means
 
-- The seven `WorkspaceTest` assertions above pass.
+- The new `WorkspaceTest` arms (`everyPublicQueueMutatingMethodFiresTheListener`, `recalculateListenerDefaultsToNoOpForTestHarnesses`, `drainRecalculateIsIdempotentOnEmptyQueue`) pass.
 - `BuildTriggerPublishesDiagnosticsTest` passes; manual repro (open a schema file with a validator error, fix the error, save, observe the squiggle clear without typing again) confirms the user-visible bug is gone.
-- `git grep 'toRecalculate.add'` returns exactly one hit, inside the new `enqueueAndNotify` helper in `Workspace.java`. (Reviewer-grepable shape of the load-bearing invariant.)
-- `git grep 'publishDiagnosticsForRecalculate'` returns exactly one definition site in `GraphitronTextDocumentService.java` and one registration site (`workspace.setRecalculateListener(this::publishDiagnosticsForRecalculate)` in `setClient`). No more inline callers.
+- In `Workspace.java`, `toRecalculate` remains field-private and is written only inside `enqueueAndNotify`; the public mutators each terminate in one call to that helper. The single-writer fact is the reviewer-visible shape of the "no public mutator returns without notifying" invariant.
+- `GraphitronTextDocumentService.setClient` carries the sole `workspace.setRecalculateListener(this::publishDiagnosticsForRecalculate)` registration; the explicit `publishDiagnosticsForRecalculate()` calls inside `didOpen` / `didChange` / `didClose` are gone.
 - Existing `WorkspaceTest`, `DiagnosticsTest`, `ValidatorDiagnosticsTest`, and the rest of the LSP test suite continue to pass unchanged.
 - `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` is green.
 
 ## Out of scope
 
 - The `GraphQLRewriteGeneratorTest` end-to-end `buildOutput()` report-population test from R149. Stays under R149 — it exercises the producer side (validator pass + warnings into `BuildOutput.report()`) and needs a real jOOQ catalog, separate from this item's listener-seam fix.
-- Generalising the listener to a multi-consumer fan-out (`addRecalculateListener` / `List<Runnable>`). There is one consumer today (the document service). Lift only when a second appears.
-- Subscribing the listener to richer event shapes (typed `RecalculateEvent` permits discriminating cause: editor change vs. build swap vs. snapshot demotion). Drain is cause-agnostic; the sub-taxonomy carries no information consumers act on differently. Tracked under *Future evolution*.
+- Generalising the listener to a multi-consumer fan-out (`addRecalculateListener` / `List<Runnable>`). There is one consumer today (the document service); lift when a second appears, as its own Backlog item.
+- Subscribing the listener to richer event shapes (typed `RecalculateEvent` permits discriminating cause: editor change vs. build swap vs. snapshot demotion). Drain is cause-agnostic; the sub-taxonomy carries no information consumers act on differently. Lift when a forcing function appears, as its own Backlog item.
 - Migrating any non-`DevMojo` callers of `markAllForRecalculation` / `demoteSnapshot` / `setBuildOutput`. The only callers today are `DevMojo` and the test harnesses; both keep working as-is.
-
-## Future evolution
-
-- If a non-LSP consumer of `Workspace` mutations surfaces (e.g. a metrics sidecar, a CLI dry-run, a second LSP client wire), promote `setRecalculateListener` to a multi-consumer registration. Today's single-slot setter is correctly the smaller shape.
-- If we ever want to differentiate "fresh build" vs "stale build" vs "editor edit" for telemetry (count save-driven redraws, surface "stale diagnostics" in the UI client), introduce the sealed `RecalculateEvent` then, with each permit carrying the data the new consumer demands. The current `Runnable` is forward-compatible with that change (the listener target just widens its argument list).
 
 ## Open questions for the reviewer
 
-1. *Listener placement: per-mutator funnel vs. a single private `enqueueAndNotify` helper.* The spec body picks the helper because it makes the invariant grep-visible. The alternative — inline `recalculateListener.run()` at the bottom of each public mutator — is one line of duplication per site (six sites). I lean helper; reviewer call.
-2. *Test harness setup pattern.* `BuildTriggerPublishesDiagnosticsTest` will need a captured-`LanguageClient` stub class. The minimal version is an inner class with one `List<PublishDiagnosticsParams>` field overriding `publishDiagnostics`. The reusable version is a top-level test fixture under `graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/support/`. I lean minimal until a second consumer wants it; if the implementer wants the fixture extracted up-front, that's also fine. Not blocking.
+1. *Test harness setup pattern.* `BuildTriggerPublishesDiagnosticsTest` will need a captured-`LanguageClient` stub class. The minimal version is an inner class with one `List<PublishDiagnosticsParams>` field overriding `publishDiagnostics`. The reusable version is a top-level test fixture under `graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/support/`. I lean minimal until a second consumer wants it; if the implementer wants the fixture extracted up-front, that's also fine. Not blocking.
