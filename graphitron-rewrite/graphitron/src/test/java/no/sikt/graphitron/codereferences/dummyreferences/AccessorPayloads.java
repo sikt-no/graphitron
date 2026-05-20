@@ -61,4 +61,11 @@ public final class AccessorPayloads {
      * {@code AccessorDerivation.CardinalityMismatch} arm.
      */
     public record SingleAccessorOnListField(FilmRecord films) {}
+
+    /**
+     * R191 remap case: the accessor name diverges from the GraphQL field name, and the SDL field
+     * carries {@code @field(name: "filmRecord")} to bridge the divergence. Exercises the
+     * directive-driven accessor-name remap on a free-form @record parent.
+     */
+    public record RemappedPayload(FilmRecord filmRecord) {}
 }

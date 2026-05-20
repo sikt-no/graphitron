@@ -3697,7 +3697,7 @@ class FieldBuilder {
                 var tfc = (TableFieldComponents.Ok) components;
                 boolean isLookup = hasLookupKeyAnywhere(fieldDef);
                 String fieldKind = isLookup ? "RecordLookupTableField" : "RecordTableField";
-                var resolution = resolveRecordParentSource(name, tb, objectPath.elements(), parentResultType, fieldKind);
+                var resolution = resolveRecordParentSource(name, columnName, tb, objectPath.elements(), parentResultType, fieldKind);
                 if (resolution instanceof RecordParentSourceResolution.Rejected rj) {
                     yield new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
                 }
@@ -4037,7 +4037,7 @@ class FieldBuilder {
      * {@code fieldKindLabel} parameterises only the leading clause of the rejection.
      */
     private RecordParentSourceResolution resolveRecordParentSource(
-            String fieldName, ReturnTypeRef.TableBoundReturnType tb,
+            String fieldName, String accessorBaseName, ReturnTypeRef.TableBoundReturnType tb,
             List<JoinStep> joinPath, GraphitronType.ResultType parentResultType,
             String fieldKindLabel) {
         var fkSource = deriveFkRecordParentSource(joinPath, parentResultType, tb);
@@ -4046,7 +4046,7 @@ class FieldBuilder {
                 fkSource.sourceKey(), fkSource.loaderRegistration(), joinPath);
         }
 
-        var derived = deriveAccessorRecordParentSource(fieldName, tb, parentResultType);
+        var derived = deriveAccessorRecordParentSource(fieldName, accessorBaseName, tb, parentResultType);
         return switch (derived) {
             case AccessorDerivation.Ok ok -> new RecordParentSourceResolution.Resolved(
                 ok.sourceKey(), ok.loaderRegistration(), List.of(ok.hop()));
@@ -4096,7 +4096,9 @@ class FieldBuilder {
             + "single matching public zero-arg non-bridge non-synthetic instance accessor on the "
             + "parent backing class, (b) returning X, List<X>, or Set<X> for a concrete X "
             + "extending org.jooq.TableRecord, and (c) X's mapped jOOQ table identical to the "
-            + "field's @table return. The two emitter arms (buildAccessorKeySingle / "
+            + "field's @table return. The matched accessor's name is the value of @field(name:) "
+            + "when the directive is present on a free-form @record parent, else the GraphQL "
+            + "field name. The two emitter arms (buildAccessorKeySingle / "
             + "buildAccessorKeyMany in GeneratorUtils) cast env.getSource() to the resolved "
             + "backing class and invoke the accessor by name without instanceof guards or null "
             + "checks; TypeFetcherGenerator.buildRecordBasedDataFetcher materialises the loader "
@@ -4113,7 +4115,7 @@ class FieldBuilder {
             + "an accessor-many SourceKey on a non-list field would emit code expecting "
             + "List<Record> from a loadMany that supplies Record, miscompiling generated *Fetchers.")
     private AccessorDerivation deriveAccessorRecordParentSource(
-            String fieldName, ReturnTypeRef.TableBoundReturnType tb,
+            String fieldName, String accessorBaseName, ReturnTypeRef.TableBoundReturnType tb,
             GraphitronType.ResultType parentResultType) {
         // Resolve parent backing class via sealed switch over GraphitronType.ResultType's four
         // permits. JooqRecordType / JooqTableRecordType participate in the FK-derivation path
@@ -4137,8 +4139,8 @@ class FieldBuilder {
         boolean fieldIsList = tb.wrapper().isList();
         TableRef expectedTable = tb.table();
 
-        List<AccessorMatch> matches = collectAccessorMatches(parentClass, fieldName, fieldIsList,
-            expectedTable.tableName());
+        List<AccessorMatch> matches = collectAccessorMatches(parentClass, fieldName, accessorBaseName,
+            fieldIsList, expectedTable.tableName());
 
         // Reduction over the collected matches.
         List<AccessorMatch> resolvable = matches.stream()
@@ -4211,21 +4213,27 @@ class FieldBuilder {
 
     /**
      * Iterates {@code parentClass}'s public zero-arg non-bridge non-synthetic instance accessors
-     * named after {@code fieldName} (or {@code getX} / {@code isX}), classifies each return type
-     * to a {@link ReturnAxis} of {@code X}, {@code List<X>}, or {@code Set<X>} for some concrete
-     * {@code X extends TableRecord}, and reports the cardinality alignment against {@code fieldIsList}.
-     * When {@code expectedSqlName} is non-null, only matches whose element table's SQL name equals
-     * it are kept (table-bound case); when null, every {@code TableRecord} element matches and the
-     * caller (polymorphic-hub case) discovers the hub from the unique surviving match.
+     * named after {@code accessorBaseName} (or {@code getX} / {@code isX} with the same base),
+     * classifies each return type to a {@link ReturnAxis} of {@code X}, {@code List<X>}, or
+     * {@code Set<X>} for some concrete {@code X extends TableRecord}, and reports the cardinality
+     * alignment against {@code fieldIsList}. {@code accessorBaseName} is the value of
+     * {@code @field(name:)} when the directive is present on the child field, else the GraphQL
+     * field name; this restores symmetry with the scalar/result branch on the same parent shape
+     * which already threads the directive value through {@link #resolveRecordAccessor}.
+     * {@code fieldName} is retained for the cardinality-mismatch text, which quotes the SDL
+     * field name rather than the accessor base. When {@code expectedSqlName} is non-null, only
+     * matches whose element table's SQL name equals it are kept (table-bound case); when null,
+     * every {@code TableRecord} element matches and the caller (polymorphic-hub case) discovers
+     * the hub from the unique surviving match.
      *
      * <p>Shared between {@link #deriveAccessorRecordParentSource} (table-bound, expected-table
      * check) and {@link #derivePolymorphicHubSource} (polymorphic, hub discovery). The reduction
      * step differs across callers; only the per-method match logic is shared.
      */
     private List<AccessorMatch> collectAccessorMatches(Class<?> parentClass, String fieldName,
-            boolean fieldIsList, String expectedSqlName) {
+            String accessorBaseName, boolean fieldIsList, String expectedSqlName) {
         List<AccessorMatch> matches = new ArrayList<>();
-        String ucName = ucFirst(fieldName);
+        String ucBase = ucFirst(accessorBaseName);
         for (java.lang.reflect.Method m : parentClass.getMethods()) {
             if (m.isBridge() || m.isSynthetic()) continue;
             if (m.getParameterCount() != 0) continue;
@@ -4233,9 +4241,9 @@ class FieldBuilder {
             if (Object.class.equals(m.getDeclaringClass())) continue;
 
             String mName = m.getName();
-            boolean nameMatches = mName.equals(fieldName)
-                || mName.equals("get" + ucName)
-                || mName.equals("is" + ucName);
+            boolean nameMatches = mName.equals(accessorBaseName)
+                || mName.equals("get" + ucBase)
+                || mName.equals("is" + ucBase);
             if (!nameMatches) continue;
 
             ReturnAxis axis = classifyAccessorReturn(m.getGenericReturnType());
@@ -4316,7 +4324,11 @@ class FieldBuilder {
                     + "polymorphic child field on @record parent"));
         }
 
-        var resolution = resolvePolymorphicRecordParent(name, returnType.wrapper().isList(), parentResultType);
+        String accessorBaseName = fieldDef.hasAppliedDirective(DIR_FIELD)
+            ? argString(fieldDef, DIR_FIELD, ARG_NAME).orElse(name)
+            : name;
+        var resolution = resolvePolymorphicRecordParent(name, accessorBaseName,
+            returnType.wrapper().isList(), parentResultType);
         if (resolution instanceof PolymorphicRecordParentResolution.Rejected rj) {
             return new UnclassifiedField(parentTypeName, name, location, fieldDef, rj.rejection());
         }
@@ -4380,7 +4392,8 @@ class FieldBuilder {
      * </ul>
      */
     private PolymorphicRecordParentResolution resolvePolymorphicRecordParent(
-            String fieldName, boolean fieldIsList, GraphitronType.ResultType parentResultType) {
+            String fieldName, String accessorBaseName, boolean fieldIsList,
+            GraphitronType.ResultType parentResultType) {
         return switch (parentResultType) {
             case GraphitronType.JooqTableRecordType jtr -> {
                 if (jtr.table() == null) {
@@ -4429,7 +4442,7 @@ class FieldBuilder {
                         + "parentKey + parentResultType analogously to the list arm.",
                         "polymorphic-child-record-parent-single-cardinality"));
                 }
-                yield derivePolymorphicHubSource(fieldName, fieldIsList, parentResultType);
+                yield derivePolymorphicHubSource(fieldName, accessorBaseName, fieldIsList, parentResultType);
             }
             case GraphitronType.JooqRecordType jrt ->
                 new PolymorphicRecordParentResolution.Rejected(Rejection.structural(
@@ -4446,15 +4459,18 @@ class FieldBuilder {
             + "public zero-arg non-bridge non-synthetic instance accessor on the @record-backed "
             + "parent's backing class, (b) returning X, List<X>, or Set<X> for a concrete X "
             + "extending org.jooq.TableRecord, and (c) X's mapped jOOQ table is taken to be the "
-            + "polymorphic hub the participants share an FK to. Identity contract: the accessor's "
-            + "element table is the discovered hub (not pinned against an external @table — there "
+            + "polymorphic hub the participants share an FK to. The matched accessor's name is "
+            + "the value of @field(name:) when the directive is present on a free-form @record "
+            + "parent, else the GraphQL field name. Identity contract: the accessor's "
+            + "element table is the discovered hub (not pinned against an external @table, there "
             + "is none on a polymorphic return). Downstream, resolveChildPolymorphicJoinPaths "
             + "verifies each participant has a unique FK to the discovered hub and rejects "
             + "structurally otherwise; "
             + "GeneratorUtils.buildAccessorKeySingle / buildAccessorKeyMany cast env.getSource() to "
             + "the parent backing class and invoke the accessor by name without instanceof guards.")
     private PolymorphicRecordParentResolution derivePolymorphicHubSource(
-            String fieldName, boolean fieldIsList, GraphitronType.ResultType parentResultType) {
+            String fieldName, String accessorBaseName, boolean fieldIsList,
+            GraphitronType.ResultType parentResultType) {
         String parentFqClassName = switch (parentResultType) {
             case GraphitronType.JavaRecordType jrt -> jrt.fqClassName();
             case GraphitronType.PojoResultType prt -> prt.fqClassName();
@@ -4474,7 +4490,7 @@ class FieldBuilder {
                 + parentFqClassName + "' could not be loaded; " + POLYMORPHIC_HUB_AUTHOR_ERROR_TAIL));
         }
 
-        List<AccessorMatch> matches = collectAccessorMatches(parentClass, fieldName, fieldIsList, null);
+        List<AccessorMatch> matches = collectAccessorMatches(parentClass, fieldName, accessorBaseName, fieldIsList, null);
 
         List<AccessorMatch> resolvable = matches.stream()
             .filter(am -> am instanceof AccessorMatch.Single || am instanceof AccessorMatch.Many)
