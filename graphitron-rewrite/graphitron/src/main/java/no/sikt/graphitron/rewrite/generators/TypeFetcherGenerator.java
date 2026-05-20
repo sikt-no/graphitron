@@ -1799,15 +1799,20 @@ public class TypeFetcherGenerator {
 
     /**
      * True iff any field on {@code fields} bears a {@link CallSiteExtraction.NodeIdDecodeKeys}
-     * carrier (a {@link InputField.ColumnField} with NodeId extraction, or a
-     * {@link InputField.CompositeColumnField}). Drives the bulk-INSERT / bulk-UPSERT lambda
-     * shape choice (single-expression vs block-with-decode-locals).
+     * carrier: a {@link InputField.ColumnField} with NodeId extraction, a
+     * {@link InputField.CompositeColumnField}, or either of the FK-target reference carriers
+     * ({@link InputField.ColumnReferenceField} with NodeId extraction,
+     * {@link InputField.CompositeColumnReferenceField}). Drives the bulk-INSERT / bulk-UPSERT
+     * lambda shape choice (single-expression vs block-with-decode-locals).
      */
     private static boolean anyNodeIdCarrier(List<InputField> fields) {
         for (var f : fields) {
             if (f instanceof InputField.ColumnField cf
                 && cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) return true;
             if (f instanceof InputField.CompositeColumnField) return true;
+            if (f instanceof InputField.ColumnReferenceField crf
+                && crf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) return true;
+            if (f instanceof InputField.CompositeColumnReferenceField) return true;
         }
         return false;
     }
@@ -1881,6 +1886,38 @@ public class TypeFetcherGenerator {
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                     }
                 }
+                case InputField.ColumnReferenceField crf -> {
+                    // R189: FK-target arity-1 reference; same single-cell shape as a NodeId-
+                    // decoded ColumnField, but writes the lifted FK column on the input's own
+                    // table from the decoded record's value1() accessor.
+                    if (!first) b.add(",\n");
+                    first = false;
+                    String recLocal = localPrefix + "_" + fi;
+                    var col = crf.liftedSourceColumns().get(0);
+                    b.add("$L.containsKey($S) ? $T.val($L.value1(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                        mapLocal, crf.name(),
+                        DSL, recLocal,
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                        DSL,
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                }
+                case InputField.CompositeColumnReferenceField ccrf -> {
+                    // R189: FK-target arity >= 2 reference; same per-slot shape as
+                    // CompositeColumnField, but walks liftedSourceColumns() (input's own
+                    // FK columns, permuted into NodeType key order) instead of columns().
+                    String recLocal = localPrefix + "_" + fi;
+                    for (int ci = 0; ci < ccrf.liftedSourceColumns().size(); ci++) {
+                        var col = ccrf.liftedSourceColumns().get(ci);
+                        if (!first) b.add(",\n");
+                        first = false;
+                        b.add("$L.containsKey($S) ? $T.val($L.value$L(), $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                            mapLocal, ccrf.name(),
+                            DSL, recLocal, ci + 1,
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                            DSL,
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                    }
+                }
                 default -> throw new IllegalStateException(
                     "INSERT cell-list dispatch reached unsupported carrier: "
                     + f.getClass().getSimpleName() + "; classifier should have rejected this");
@@ -1915,6 +1952,21 @@ public class TypeFetcherGenerator {
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
                     }
                 }
+                case InputField.ColumnReferenceField crf -> {
+                    if (!first) b.add(", ");
+                    first = false;
+                    b.add("$T.$L.$L",
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(),
+                        crf.liftedSourceColumns().get(0).javaName());
+                }
+                case InputField.CompositeColumnReferenceField ccrf -> {
+                    for (var col : ccrf.liftedSourceColumns()) {
+                        if (!first) b.add(", ");
+                        first = false;
+                        b.add("$T.$L.$L",
+                            tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                    }
+                }
                 default -> throw new IllegalStateException(
                     "INSERT column-list dispatch reached unsupported carrier: "
                     + f.getClass().getSimpleName() + "; classifier should have rejected this");
@@ -1943,6 +1995,8 @@ public class TypeFetcherGenerator {
             CallSiteExtraction.NodeIdDecodeKeys nidk = switch (f) {
                 case InputField.ColumnField cf when cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys n -> n;
                 case InputField.CompositeColumnField ccf -> ccf.extraction();
+                case InputField.ColumnReferenceField crf when crf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys n -> n;
+                case InputField.CompositeColumnReferenceField ccrf -> ccrf.extraction();
                 default -> null;
             };
             if (nidk == null) continue;
@@ -1959,6 +2013,221 @@ public class TypeFetcherGenerator {
                 .endControlFlow();
         }
         return locals.build();
+    }
+
+    /**
+     * R189: target columns a {@code SetField} carrier writes to on the input's own table. The
+     * walk is uniform across all four admissible SetField shapes: value carriers source from
+     * {@code column() / columns()}, reference carriers from {@code liftedSourceColumns()}.
+     */
+    private static List<no.sikt.graphitron.rewrite.model.ColumnRef> setFieldColumns(InputField.SetField sf) {
+        return switch (sf) {
+            case InputField.ColumnField cf -> List.of(cf.column());
+            case InputField.CompositeColumnField ccf -> ccf.columns();
+            case InputField.ColumnReferenceField crf -> crf.liftedSourceColumns();
+            case InputField.CompositeColumnReferenceField ccrf -> ccrf.liftedSourceColumns();
+        };
+    }
+
+    /**
+     * R189: NodeId decode extraction for a {@code SetField} carrier, or {@code null} when the
+     * value is read raw from the input map. Drives whether the SET-emitter site declares a
+     * per-field decode local and reads {@code .value<i+1>()} for each slot, or reads
+     * {@code map.get(name)} verbatim.
+     */
+    private static CallSiteExtraction.NodeIdDecodeKeys setFieldNodeIdExtraction(InputField.SetField sf) {
+        return switch (sf) {
+            case InputField.ColumnField cf
+                when cf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys n -> n;
+            case InputField.CompositeColumnField ccf -> ccf.extraction();
+            case InputField.ColumnReferenceField crf
+                when crf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys n -> n;
+            case InputField.CompositeColumnReferenceField ccrf -> ccrf.extraction();
+            default -> null;
+        };
+    }
+
+    /**
+     * R189: emits {@code Map<Field<?>, Object>} {@code .put(t.col, DSL.val(value, t.col.getDataType()))}
+     * statements for each {@code SetField} on {@code setFields}, guarded by a presence check on
+     * the SDL field name. The walk is uniform across the four admissible SetField shapes:
+     *
+     * <ul>
+     *   <li>Direct ColumnField — one {@code put}; value reads {@code mapLocal.get(name)}.</li>
+     *   <li>NodeId-decoded ColumnField — one {@code put}; declares a per-field decode local
+     *       inside the conditional and reads {@code decodeLocal.value1()}.</li>
+     *   <li>CompositeColumnField — N {@code put}s (one per slot); declares a per-field decode
+     *       local and reads {@code decodeLocal.value<i+1>()} for slot i.</li>
+     *   <li>ColumnReferenceField / CompositeColumnReferenceField — same as the same-table NodeId
+     *       arms but target columns are {@code liftedSourceColumns()} (FK columns on the input's
+     *       own table) rather than {@code column() / columns()}.</li>
+     * </ul>
+     *
+     * <p>{@code presenceLocal} is the local consulted by {@code containsKey} / {@code contains}
+     * (e.g. {@code "in"} for single-row Map, {@code "firstKeys"} for bulk uniform-shape gate);
+     * {@code presenceCall} is the method invoked on it ({@code "containsKey"} for Map,
+     * {@code "contains"} for Set). For Maps, both the gate and the value-read use the same map;
+     * for Sets, the gate uses the set and the value-read uses a separate map local
+     * {@code valueMapLocal}.
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "mutation-input.lookup-binding-decoded-record-arity-matches-carrier-columns",
+        reliesOn = "Iterates setFieldColumns(sf) positionally and reads decodeLocal.value<i+1>() "
+            + "for each slot; the load-bearing classifier guarantee that the composite carriers' "
+            + "column-arity equals the decoded record's arity lets the emitter wire jOOQ's typed "
+            + "value1()..valueN() accessors per slot.")
+    private static void emitSetMapPuts(
+            CodeBlock.Builder block,
+            List<InputField.SetField> setFields,
+            String setsLocal,
+            String presenceLocal,
+            String valueMapLocal,
+            String decodeLocalPrefix,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            TableRef tableRef) {
+        boolean useContainsKey = presenceLocal.equals(valueMapLocal);
+        String presenceCall = useContainsKey ? "containsKey" : "contains";
+        for (int sfi = 0; sfi < setFields.size(); sfi++) {
+            var sf = setFields.get(sfi);
+            var cols = setFieldColumns(sf);
+            var nidk = setFieldNodeIdExtraction(sf);
+            block.beginControlFlow("if ($L.$L($S))", presenceLocal, presenceCall, sf.name());
+            String recLocal = null;
+            if (nidk != null) {
+                recLocal = decodeLocalPrefix + "_" + sfi;
+                appendDecodeLocal(block, recLocal, nidk, valueMapLocal, sf.name());
+            }
+            for (int ci = 0; ci < cols.size(); ci++) {
+                var col = cols.get(ci);
+                if (nidk != null) {
+                    block.addStatement(
+                        "$L.put($T.$L.$L, $T.val($L.value$L(), $T.$L.$L.getDataType()))",
+                        setsLocal,
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                        DSL, recLocal, ci + 1,
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                } else {
+                    block.addStatement(
+                        "$L.put($T.$L.$L, $T.val($L.get($S), $T.$L.$L.getDataType()))",
+                        setsLocal,
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                        DSL, valueMapLocal, sf.name(),
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                }
+            }
+            block.endControlFlow();
+        }
+    }
+
+    /**
+     * R189: emits the UPSERT DO-UPDATE {@code setsUpdate.put(t.col, DSL.excluded(t.col))} statements
+     * for each {@code SetField}, guarded by a presence check on the SDL field name. Walks
+     * {@link #setFieldColumns} so composite and reference carriers emit one entry per target
+     * column.
+     */
+    private static void emitSetExcludedPuts(
+            CodeBlock.Builder block,
+            List<InputField.SetField> setFields,
+            String setsLocal,
+            String presenceLocal,
+            String presenceCall,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            TableRef tableRef) {
+        for (var sf : setFields) {
+            var cols = setFieldColumns(sf);
+            block.beginControlFlow("if ($L.$L($S))", presenceLocal, presenceCall, sf.name());
+            for (var col : cols) {
+                block.addStatement(
+                    "$L.put($T.$L.$L, $T.excluded($T.$L.$L))",
+                    setsLocal,
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                    DSL,
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            }
+            block.endControlFlow();
+        }
+    }
+
+    /**
+     * R189: appends {@code vColNames.add(t.col.getName())} statements for each {@code SetField},
+     * guarded by {@code firstKeys.contains(name)}. One entry per target column on
+     * {@link #setFieldColumns}.
+     */
+    private static void emitSetVColNameAdds(
+            CodeBlock.Builder block,
+            List<InputField.SetField> setFields,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            TableRef tableRef) {
+        for (var sf : setFields) {
+            var cols = setFieldColumns(sf);
+            block.beginControlFlow("if (firstKeys.contains($S))", sf.name());
+            for (var col : cols) {
+                block.addStatement("vColNames.add($T.$L.$L.getName())",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            }
+            block.endControlFlow();
+        }
+    }
+
+    /**
+     * R189: emits {@code cells.add(DSL.val(value, t.col.getDataType()))} statements for each
+     * {@code SetField} on the bulk-UPDATE per-row {@code cells} list, guarded by
+     * {@code firstKeys.contains(name)}. NodeId-decoded carriers declare a per-row decode local
+     * inside the conditional and read {@code decodeLocal.value<i+1>()} per slot; direct carriers
+     * read {@code row.get(name)} verbatim.
+     */
+    private static void emitSetBulkCellAdds(
+            CodeBlock.Builder block,
+            List<InputField.SetField> setFields,
+            String decodeLocalPrefix,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            TableRef tableRef) {
+        for (int sfi = 0; sfi < setFields.size(); sfi++) {
+            var sf = setFields.get(sfi);
+            var cols = setFieldColumns(sf);
+            var nidk = setFieldNodeIdExtraction(sf);
+            block.beginControlFlow("if (firstKeys.contains($S))", sf.name());
+            String recLocal = null;
+            if (nidk != null) {
+                recLocal = decodeLocalPrefix + "_" + sfi;
+                appendDecodeLocal(block, recLocal, nidk, "row", sf.name());
+            }
+            for (int ci = 0; ci < cols.size(); ci++) {
+                var col = cols.get(ci);
+                if (nidk != null) {
+                    block.addStatement("cells.add($T.val($L.value$L(), $T.$L.$L.getDataType()))",
+                        DSL, recLocal, ci + 1,
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                } else {
+                    block.addStatement("cells.add($T.val(row.get($S), $T.$L.$L.getDataType()))",
+                        DSL, sf.name(),
+                        tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                }
+            }
+            block.endControlFlow();
+        }
+    }
+
+    /**
+     * R189: emits {@code sets.put(t.col, v.field(t.col))} statements for each {@code SetField}
+     * on the bulk-UPDATE join-on-v-column SET map, guarded by {@code firstKeys.contains(name)}.
+     * One entry per target column on {@link #setFieldColumns}.
+     */
+    private static void emitSetVFieldPuts(
+            CodeBlock.Builder block,
+            List<InputField.SetField> setFields,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            TableRef tableRef) {
+        for (var sf : setFields) {
+            var cols = setFieldColumns(sf);
+            block.beginControlFlow("if (firstKeys.contains($S))", sf.name());
+            for (var col : cols) {
+                block.addStatement("sets.put($T.$L.$L, v.field($T.$L.$L))",
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            }
+            block.endControlFlow();
+        }
     }
 
     /**
@@ -2013,15 +2282,8 @@ public class TypeFetcherGenerator {
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var postInGuard = CodeBlock.builder();
         postInGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        for (var sf : tia.setFields()) {
-            var cf = (InputField.ColumnField) sf;
-            postInGuard.beginControlFlow("if (in.containsKey($S))", cf.name())
-                .addStatement("sets.put($T.$L.$L, $T.val(in.get($S), $T.$L.$L.getDataType()))",
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
-                    DSL, cf.name(),
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
-                .endControlFlow();
-        }
+        emitSetMapPuts(postInGuard, tia.setFields(), "sets", "in", "in",
+            "__setKey", tablesOnly, tableRef);
         postInGuard.beginControlFlow("if (sets.isEmpty())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
                 "@mutation(typeName: UPDATE) call has no settable fields present; "
@@ -2098,13 +2360,7 @@ public class TypeFetcherGenerator {
             postInGuard.addStatement("vColNames.add($T.$L.$L.getName())",
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
         }
-        for (var sf : tia.setFields()) {
-            var cf = (InputField.ColumnField) sf;
-            postInGuard.beginControlFlow("if (firstKeys.contains($S))", cf.name())
-                .addStatement("vColNames.add($T.$L.$L.getName())",
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
-                .endControlFlow();
-        }
+        emitSetVColNameAdds(postInGuard, tia.setFields(), tablesOnly, tableRef);
 
         // Build per-row v-table cells imperatively, mirroring the column-name walk above so
         // the cell positions line up by construction. DSL.row(Field<?>...) packages the cells;
@@ -2123,14 +2379,7 @@ public class TypeFetcherGenerator {
             var g = groups.get(gi);
             emitLookupKeyCellAdds(postInGuard, g, gi, "row", tablesOnly, tableRef);
         }
-        for (var sf : tia.setFields()) {
-            var cf = (InputField.ColumnField) sf;
-            postInGuard.beginControlFlow("if (firstKeys.contains($S))", cf.name())
-                .addStatement("cells.add($T.val(row.get($S), $T.$L.$L.getDataType()))",
-                    DSL, cf.name(),
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
-                .endControlFlow();
-        }
+        emitSetBulkCellAdds(postInGuard, tia.setFields(), "__bulkSetKey", tablesOnly, tableRef);
         postInGuard.addStatement("vRows.add($T.row(cells.toArray(new $T<?>[0])))", DSL, fieldClass);
         postInGuard.endControlFlow();
         postInGuard.addStatement("$T<?> v = $T.values(vRows.toArray(new $T[0])).as($S, vColNames.toArray(new String[0]))",
@@ -2141,14 +2390,7 @@ public class TypeFetcherGenerator {
         // the matching v-column with the target column's type, so no cast is needed at the
         // .set(Map<? extends Field<?>, ?>) call site.
         postInGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        for (var sf : tia.setFields()) {
-            var cf = (InputField.ColumnField) sf;
-            postInGuard.beginControlFlow("if (firstKeys.contains($S))", cf.name())
-                .addStatement("sets.put($T.$L.$L, v.field($T.$L.$L))",
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
-                .endControlFlow();
-        }
+        emitSetVFieldPuts(postInGuard, tia.setFields(), tablesOnly, tableRef);
         postInGuard.beginControlFlow("if (sets.isEmpty())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
                 "@mutation(typeName: UPDATE) bulk call has no settable fields present in the input rows; "
@@ -2296,15 +2538,10 @@ public class TypeFetcherGenerator {
                 presentKeysLocal = "in.keySet()";
             }
             postInGuard.addStatement("$T<$T<?>, Object> setsUpdate = new $T<>()", MAP, fieldClass, linkedHashMap);
-            for (var sf : tia.setFields()) {
-                var cf = (InputField.ColumnField) sf;
-                postInGuard.beginControlFlow("if ($L.contains($S))", presentKeysLocal, cf.name())
-                    .addStatement("setsUpdate.put($T.$L.$L, $T.excluded($T.$L.$L))",
-                        tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
-                        DSL,
-                        tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
-                    .endControlFlow();
-            }
+            emitSetExcludedPuts(postInGuard, tia.setFields(), "setsUpdate",
+                presentKeysLocal.equals("in.keySet()") ? "in" : presentKeysLocal,
+                presentKeysLocal.equals("in.keySet()") ? "containsKey" : "contains",
+                tablesOnly, tableRef);
             postInGuard.beginControlFlow("if (setsUpdate.isEmpty())")
                 .addStatement("throw new $T($S)", IllegalArgumentException.class,
                     "@mutation(typeName: UPSERT) call has no settable fields present; "
@@ -3754,15 +3991,8 @@ public class TypeFetcherGenerator {
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var preGuard = CodeBlock.builder();
         preGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        for (var sf : tia.setFields()) {
-            var cf = (InputField.ColumnField) sf;
-            preGuard.beginControlFlow("if (in.containsKey($S))", cf.name())
-                .addStatement("sets.put($T.$L.$L, $T.val(in.get($S), $T.$L.$L.getDataType()))",
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
-                    DSL, cf.name(),
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
-                .endControlFlow();
-        }
+        emitSetMapPuts(preGuard, tia.setFields(), "sets", "in", "in",
+            "__setKey", tablesOnly, tableRef);
         preGuard.beginControlFlow("if (sets.isEmpty())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
                 "@mutation(typeName: UPDATE) call has no settable fields present; "
@@ -3793,15 +4023,8 @@ public class TypeFetcherGenerator {
         var preGuard = CodeBlock.builder();
         if (!tia.setFields().isEmpty()) {
             preGuard.addStatement("$T<$T<?>, Object> setsUpdate = new $T<>()", MAP, fieldClass, linkedHashMap);
-            for (var sf : tia.setFields()) {
-                var cf = (InputField.ColumnField) sf;
-                preGuard.beginControlFlow("if (in.containsKey($S))", cf.name())
-                    .addStatement("setsUpdate.put($T.$L.$L, $T.excluded($T.$L.$L))",
-                        tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
-                        DSL,
-                        tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
-                    .endControlFlow();
-            }
+            emitSetExcludedPuts(preGuard, tia.setFields(), "setsUpdate", "in", "containsKey",
+                tablesOnly, tableRef);
             preGuard.beginControlFlow("if (setsUpdate.isEmpty())")
                 .addStatement("throw new $T($S)", IllegalArgumentException.class,
                     "@mutation(typeName: UPSERT) call has no settable fields present; "
@@ -4040,15 +4263,8 @@ public class TypeFetcherGenerator {
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var body = CodeBlock.builder();
         body.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
-        for (var sf : tia.setFields()) {
-            var cf = (InputField.ColumnField) sf;
-            body.beginControlFlow("if (row.containsKey($S))", cf.name())
-                .addStatement("sets.put($T.$L.$L, $T.val(row.get($S), $T.$L.$L.getDataType()))",
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName(),
-                    DSL, cf.name(),
-                    tablesOnly.tablesClass(), tableRef.javaFieldName(), cf.column().javaName())
-                .endControlFlow();
-        }
+        emitSetMapPuts(body, tia.setFields(), "sets", "row", "row",
+            "__setKey", tablesOnly, tableRef);
         body.beginControlFlow("if (sets.isEmpty())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
                 "@mutation(typeName: UPDATE) call has no settable fields present; "

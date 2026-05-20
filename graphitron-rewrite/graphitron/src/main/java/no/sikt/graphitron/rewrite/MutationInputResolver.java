@@ -312,13 +312,19 @@ final class MutationInputResolver {
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "mutation-input.where-columns-cover-pk",
         description = "On DELETE / UPDATE without `multiRow: true`, the union of contributed "
-            + "filter columns (ColumnField.column() and CompositeColumnField.columns()) covers "
-            + "the input @table's primary key. Lets the lookup-WHERE emitter assume the WHERE "
-            + "clause matches at most one row per input row.")
+            + "filter columns covers the input @table's primary key. Filter-column contributions "
+            + "are sourced per carrier: ColumnField.column() (one column), "
+            + "CompositeColumnField.columns() (N columns), "
+            + "ColumnReferenceField.liftedSourceColumns() (one column on the input's own table), "
+            + "and CompositeColumnReferenceField.liftedSourceColumns() (N columns on the input's "
+            + "own table). Lets the lookup-WHERE emitter assume the WHERE clause matches at most "
+            + "one row per input row.")
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "mutation-input.update-set-fields-equal-value-marked",
         description = "On DmlKind.UPDATE, tia.setFields() is exactly the set of input fields "
-            + "carrying @value (in SDL declaration order). On DmlKind.DELETE / DmlKind.INSERT, "
+            + "carrying @value (in SDL declaration order), drawn from the admissible-carrier set "
+            + "(ColumnField / CompositeColumnField / ColumnReferenceField / "
+            + "CompositeColumnReferenceField). On DmlKind.DELETE / DmlKind.INSERT, "
             + "tia.setFields() is empty. Lets each SET-walking emitter trust the partition "
             + "source without checking kind or directive presence.")
     Resolved resolveInput(GraphQLFieldDefinition fieldDef, DmlKind kind) {
@@ -457,26 +463,26 @@ final class MutationInputResolver {
                 }
                 continue;
             }
-            // Reference carriers and nesting fields stay deferred: no forcing-function schema
-            // reaches them today, and re-admission tracks R24's NodeIdReferenceField
-            // join-projection work / R128's compound-entity-mutations territory.
+            // R189: FK-target reference carriers ({@code @nodeId(typeName: T)} pointing at
+            // another @table's NodeType, classified to DirectFk) admit on INSERT, UPDATE and
+            // DELETE. The carrier's liftedSourceColumns live on the input's own table — no JOIN
+            // at the emit site — and the extraction is narrowed to NodeIdDecodeKeys, so the
+            // emitters bind decoded keys against liftedSourceColumns positionally, the same
+            // shape the same-table NodeId carriers (ColumnField / CompositeColumnField with
+            // NodeIdDecodeKeys) already drive.
+            if (f instanceof InputField.ColumnReferenceField
+                || f instanceof InputField.CompositeColumnReferenceField) {
+                continue;
+            }
+            // NestingField stays deferred: nested-input is R128's compound-entity-mutations
+            // territory.
             String reason = switch (f) {
                 case InputField.NestingField nf -> "nested input types in @mutation fields are not yet supported";
-                case InputField.ColumnReferenceField crf ->
-                    "@reference / FK-target @nodeId in @mutation inputs is not yet supported;"
-                    + " tracked in R24's scope when a forcing-function schema appears";
-                case InputField.CompositeColumnReferenceField ccrf ->
-                    "@reference / FK-target @nodeId in @mutation inputs is not yet supported;"
-                    + " tracked in R24's scope when a forcing-function schema appears";
                 default -> "input field shape " + f.getClass().getSimpleName() + " is not yet supported";
             };
-            Rejection rej = (f instanceof InputField.ColumnReferenceField
-                || f instanceof InputField.CompositeColumnReferenceField)
-                ? Rejection.deferred("@mutation input '" + foundTia.typeName() + "' field '"
-                    + f.name() + "': " + reason, "nodeidreferencefield-join-projection-form")
-                : Rejection.structural("@mutation input '" + foundTia.typeName() + "' field '"
-                    + f.name() + "': " + reason);
-            return new Resolved.Rejected(rej);
+            return new Resolved.Rejected(Rejection.structural(
+                "@mutation input '" + foundTia.typeName() + "' field '"
+                + f.name() + "': " + reason));
         }
 
         if (kind == DmlKind.UPDATE) {
