@@ -13,6 +13,7 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.errors.SchemaProblem;
 
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.EmitsPerTypeFile;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -21,6 +22,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.Rejection;
+import no.sikt.graphitron.rewrite.model.Rejection.InvalidSchema.CaseFoldCollision.Origin;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.schema.federation.EntityResolutionBuilder;
@@ -296,14 +298,18 @@ public class GraphitronSchemaBuilder {
      * case-only collisions are an API-design smell, and graphitron pushes back rather than papering
      * over.
      *
-     * <p>One case-folded pass over {@code ctx.typeRegistry.entries()}, skipping variants for which
-     * {@link GraphitronType#producesEmittedFile()} is {@code false} ({@link
+     * <p>One case-folded pass over {@code ctx.typeRegistry.entries()}, skipping variants that do
+     * not implement {@link EmitsPerTypeFile} ({@link
      * no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType} and {@link UnclassifiedType}
      * today). For each collision group of two or more members, every member is demoted to
-     * {@link UnclassifiedType} carrying a {@link Rejection#invalidSchema(String)} message that
-     * names the full group; {@link GraphitronSchemaValidator#validateUnclassifiedType} then projects
-     * one {@link ValidationError} per member, so the diagnostic is actionable from either entry
-     * point. Demote-all (rather than first-wins) because there's no logical winner between two
+     * {@link UnclassifiedType} carrying a typed
+     * {@link Rejection.InvalidSchema.CaseFoldCollision} rejection that names the full group plus
+     * the demoted member's classifier-arm {@link Origin}; the variant's {@code message()} renders
+     * the actionable fix hint per origin.
+     * {@link GraphitronSchemaValidator#validateUnclassifiedType} then projects one
+     * {@link ValidationError} per member, so the diagnostic is actionable from either entry point.
+     *
+     * <p>Demote-all (rather than first-wins) because there's no logical winner between two
      * SDL-declared types: silently picking one would tilt the schema's public surface against the
      * author. Synthesised Connection / Edge / PageInfo arms specialise the message to hint at the
      * {@code @asConnection(connectionName:)} fix.
@@ -314,33 +320,22 @@ public class GraphitronSchemaBuilder {
     private static void rejectCaseInsensitiveTypeCollisions(BuildContext ctx) {
         Map<String, List<String>> groups = new LinkedHashMap<>();
         for (var entry : ctx.typeRegistry.entries().entrySet()) {
-            if (!entry.getValue().producesEmittedFile()) continue;
+            if (!(entry.getValue() instanceof EmitsPerTypeFile)) continue;
             String folded = entry.getKey().toLowerCase(Locale.ROOT);
             groups.computeIfAbsent(folded, k -> new ArrayList<>()).add(entry.getKey());
         }
         for (var group : groups.values()) {
             if (group.size() < 2) continue;
-            String groupList = group.stream()
-                .map(n -> "'" + n + "'")
-                .collect(Collectors.joining(", "));
             for (String name : group) {
                 GraphitronType existing = ctx.typeRegistry.get(name);
-                String reason = switch (existing) {
-                    case ConnectionType ignored ->
-                        "synthesised connection type collides case-insensitively with " + groupList
-                            + "; rename the source field or set @asConnection(connectionName: \"...\") to a name that is unique under case-folding";
-                    case EdgeType ignored ->
-                        "synthesised edge type collides case-insensitively with " + groupList
-                            + "; rename the connection (source field or @asConnection(connectionName: \"...\")) so the derived edge name is unique under case-folding";
-                    case PageInfoType ignored ->
-                        "synthesised PageInfo type collides case-insensitively with " + groupList
-                            + "; rename the conflicting SDL type so PageInfo can be synthesised without clash";
-                    default ->
-                        "collides case-insensitively with " + groupList
-                            + "; rename one of the colliding types (case-only differences are not portable across case-insensitive filesystems)";
+                Origin origin = switch (existing) {
+                    case ConnectionType ignored -> Origin.SYNTH_CONNECTION;
+                    case EdgeType ignored -> Origin.SYNTH_EDGE;
+                    case PageInfoType ignored -> Origin.SYNTH_PAGE_INFO;
+                    default -> Origin.SDL;
                 };
                 ctx.typeRegistry.demote(name, new UnclassifiedType(
-                    name, existing.location(), Rejection.invalidSchema(reason)));
+                    name, existing.location(), Rejection.caseFoldCollision(group, origin)));
             }
         }
     }
