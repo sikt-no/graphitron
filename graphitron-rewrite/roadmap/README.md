@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R191` | Honor @field(name:) for accessor lookup on free-form @record parents | Spec | 2026-05-20 | [plan](record-parent-field-name-accessor-remap.md) |
 | `R45` | Tenant routing and schema-driven ExecutionInput factory | Spec |  | [plan](tenant-routing-and-execution-input.md) |
+| `R191` | Honor @field(name:) for accessor lookup on free-form @record parents | Ready | 2026-05-20 | [plan](record-parent-field-name-accessor-remap.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
@@ -129,7 +129,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R191` [**Honor @field(name:) for accessor lookup on free-form @record parents**](record-parent-field-name-accessor-remap.md) — Spec, bug
+- `R191` [**Honor @field(name:) for accessor lookup on free-form @record parents**](record-parent-field-name-accessor-remap.md) — Ready, bug
 - `R54` [**Rename @externalField (parallel-support, deprecation, migration)**](rename-externalfield-directive.md) — Backlog, cleanup
 - `R190` [**Single-tenant schema-driven ExecutionInput factory and sealed GraphitronContext**](single-tenant-execution-input-factory.md) — Backlog, architecture
 - `R45` [**Tenant routing and schema-driven ExecutionInput factory**](tenant-routing-and-execution-input.md) — Spec, architecture

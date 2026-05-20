@@ -1,7 +1,7 @@
 ---
 id: R191
 title: Honor @field(name:) for accessor lookup on free-form @record parents
-status: Spec
+status: Ready
 bucket: bug
 priority: 5
 theme: service
