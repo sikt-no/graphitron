@@ -6,7 +6,7 @@ bucket: feature
 theme: lsp
 depends-on: []
 created: 2026-05-13
-last-updated: 2026-05-13
+last-updated: 2026-05-20
 ---
 
 # LSP inlay hints and hover for inferred directives and field/type classification
@@ -32,35 +32,41 @@ Graphitron interprets SDL through two layers the user never sees: inference fill
 
 R139 established the data-flow precedent: the LSP consumes **projections** of the post-classification model carried on `LspSchemaSnapshot.Built`, not the model itself. `TypeBackingShape` is the worked example: a sealed family purpose-built for the LSP's `@field(name:)` arm, projected from `GraphitronType` by `CatalogBuilder.projectType`. This item follows the same pattern: rather than threading `GraphitronSchema` through `BuildArtifacts`, extend `LspSchemaSnapshot.Built` with two new projection axes, and have the inlay-hint and hover arms dispatch on those.
 
-There is one shape change in the model layer that this item depends on, lifted up out of the projector: a `Provenance` axis on the inference-touched carriers (`TableRef`, `ColumnRef`, and the `@reference(path:)`-consuming `ChildField` permits). The rationale lives in the next section; without it the projector would re-evaluate the "was the author argument present?" predicate by re-reading the raw `GraphQLDirective` against the classified model, which the "Generation-thinking" principle pushes back on (a predicate two consumers would evaluate the same way belongs on the model field).
+There is one shape change in the model layer that this item depends on, lifted up out of the projector: a pair of carrier-shaped provenance axes (`NameProvenance` on `TableRef` and `ColumnRef`; `PathProvenance` on the `@reference(path:)`-consuming `ChildField` permits). The rationale lives in the next section; without these axes the projector would re-evaluate the "was the author argument present?" predicate by re-reading the raw `GraphQLDirective` against the classified model, reaching back across the parse boundary that classification exists to close.
 
 ### Provenance lifted onto the model
 
-The classifier already has both the raw directive arguments and the resolution rule in one place. Today it records the resolved name on `TableRef.tableName` / `ColumnRef.sqlName` and discards "did this name come from the directive or from the SDL declaration?". Adding a single-bit axis (or, where helpful, a small sealed family) lets future consumers ; a code action that inlines/extracts an inferred name, a build warning when a written `name:` matches the inference and could be dropped, the inlay-hint provider this Spec lands ; read the answer instead of re-deriving it.
+The alternative for the LSP arm is to re-evaluate "was the author argument present?" at projection time by reading the raw `GraphQLDirective` against the classified model. That route reaches back across the parse boundary that classification exists to close (per "Classification belongs at the parse boundary"): the LSP module is downstream of classification, and pulling `GraphQLDirective` into the projector reintroduces the dependency the snapshot's pre-resolved projections are designed to eliminate. The classifier already has both the raw directive arguments and the resolution rule in one place; it records the resolved name on `TableRef.tableName` / `ColumnRef.sqlName` today and discards the directive-vs-SDL provenance. Lifting the answer onto the model carries the boundary forward to the LSP and incidentally enables future consumers (a code action that inlines/extracts an inferred name, a build warning when a written `name:` matches the inference) for free.
+
+Two carrier-shaped sealed families, not one. A unified `Provenance` would let `FromUniqueFk` be statically permitted on `TableRef` and `ColumnRef`, where no inference rule can ever produce it; the type system would accept values the classifier can never construct. Splitting by carrier shape keeps the certainty the classifier already has:
 
 ```
-sealed interface Provenance {
-    record Authored() implements Provenance {}                        // user wrote @table(name: "X") / @field(name: "x") / @reference(path: [...])
-    sealed interface Inferred extends Provenance {                    // graphitron deduced the value
-        permits FromSdlName, FromUniqueFk, ...
-    }
+sealed interface NameProvenance {                                     // axis on @table(name:) / @field(name:) carriers
+    record Authored() implements NameProvenance {}                    // user wrote @table(name: "X") / @field(name: "x")
+    sealed interface Inferred extends NameProvenance permits FromSdlName {}
     record FromSdlName() implements Inferred {}                       // @table on TypeX -> "typex"; @field on fieldX -> "fieldx"
-    record FromUniqueFk(String fkName) implements Inferred {}         // @reference path inferred from the only FK between two tables
-    // ... permits widen as further inference rules join (e.g. @nodeId(typeName:) inference)
 }
+
+sealed interface PathProvenance {                                     // axis on @reference(path:) carriers
+    record Authored() implements PathProvenance {}                    // user wrote @reference(path: [...])
+    sealed interface Inferred extends PathProvenance permits FromUniqueFk {}
+    record FromUniqueFk(String fkName) implements Inferred {}         // path inferred from the only FK between two tables
+}
+// Each family's Inferred permits-clause widens independently as inference rules grow
+// (e.g. a future @nodeId(typeName:) rule lands on NameProvenance, not PathProvenance).
 ```
 
 Three model-shape additions in C1:
 
-- `TableRef` gains a `Provenance` field. Populated by the classifier; today the only inference rule is "table name from SDL type name" (`FromSdlName`), but the sealed family accommodates future rules without revisiting consumer sites.
-- `ColumnRef` gains a `Provenance` field. The `@field(name:)` case follows the same shape: written → `Authored`, omitted → `FromSdlName`.
-- The `@reference(path:)`-consuming permits (today `ChildField.ColumnReferenceField`, `ChildField.CompositeColumnReferenceField`, `ChildField.ParticipantColumnReferenceField`, and the equivalent input-side permits) gain a `Provenance` as a sibling record component alongside the existing `joinPath` (mirroring how `TableRef` and `ColumnRef` gain a sibling field; no new path-wrapper record). The single-hop inference path through `BuildContext.parsePath` is the only `Inferred` arm at filing; the multi-hop path is always `Authored`. The construction-site signal: at the call sites that today invoke `ctx.parsePath(...)` (e.g. `FieldBuilder.java:660`, `:717`, `:3167`, `:4262`, `:4280`, `:4316`; `NodeIdLeafResolver.java:473`; `TypeBuilder.java:320`; `SourceRowDirectiveResolver.java:282`), check `container.getAppliedDirective(DIR_REFERENCE)` for path-argument presence (`appliedDirective != null && appliedDirective.getArgument(ARG_PATH) != null` ⇒ authored; otherwise inferred-eligible) before/around the call, the same shape `BuildContext.parsePath` itself uses at BuildContext.java:835-843; when the path argument is absent and `parsePath` returned a non-empty `elements` list, the synthesized single-hop step is at `parsed.elements().get(0)` as a `JoinStep.FkJoin` whose `fkName()` (or equivalent accessor) populates `Provenance.Inferred.FromUniqueFk.fkName`. When the path argument is present, `Provenance.Authored`. When `parsePath` errored, the containing field is already routed to `UnclassifiedField` and no `Provenance` is constructed (the permit isn't either).
+- `TableRef` gains a `NameProvenance` field. Populated by the classifier; today the only inference rule is "table name from SDL type name" (`FromSdlName`), but the sealed family accommodates future rules without revisiting consumer sites.
+- `ColumnRef` gains a `NameProvenance` field. The `@field(name:)` case follows the same shape: written → `Authored`, omitted → `FromSdlName`.
+- The `@reference(path:)`-consuming permits (today `ChildField.ColumnReferenceField`, `ChildField.CompositeColumnReferenceField`, `ChildField.ParticipantColumnReferenceField`, and the equivalent input-side permits) gain a `PathProvenance` as a sibling record component alongside the existing `joinPath` (mirroring how `TableRef` and `ColumnRef` gain a sibling field; no new path-wrapper record). The single-hop inference path through `BuildContext.parsePath` is the only `Inferred` arm at filing; the multi-hop path is always `Authored`. The construction-site signal: at each `ctx.parsePath(...)` call site (in `FieldBuilder`, `NodeIdLeafResolver`, `TypeBuilder`, and `SourceRowDirectiveResolver`), check `container.getAppliedDirective(DIR_REFERENCE)` for path-argument presence (`appliedDirective != null && appliedDirective.getArgument(ARG_PATH) != null` ⇒ authored; otherwise inferred-eligible) before/around the call, the same shape `BuildContext.parsePath` itself uses at the directive-arg lookup at the head of the method; when the path argument is absent and `parsePath` returned a non-empty `elements` list, the synthesized single-hop step is at `parsed.elements().get(0)` as a `JoinStep.FkJoin` whose `fkName()` (or equivalent accessor) populates `PathProvenance.Inferred.FromUniqueFk.fkName`. When the path argument is present, `PathProvenance.Authored`. When `parsePath` errored, the containing field is already routed to `UnclassifiedField` and no `PathProvenance` is constructed (the permit isn't either).
 
-Adding `Provenance` to these carriers does not change behaviour at any existing consumer ; they read the resolved name without caring about the axis. The compiler enforces the new field at construction time, so the classifier-side population is a small mechanical addition the C1 step lands in lock-step with the model edit.
+Adding `NameProvenance` / `PathProvenance` to these carriers does not change behaviour at any existing consumer ; they read the resolved name without caring about the axis. The compiler enforces the new field at construction time, so the classifier-side population is a small mechanical addition the C1 step lands in lock-step with the model edit.
 
 ### Projection 1: `InferredDirectiveBindings`
 
-Carried on `LspSchemaSnapshot.Built` alongside `directives` and `typesByName`. Records keyed by SDL coordinate, populated only when the corresponding model carrier's `Provenance` is `Inferred`. The producer reads the model bit directly:
+Carried on `LspSchemaSnapshot.Built` alongside `directives` and `typesByName`. Records keyed by SDL coordinate, populated only when the corresponding model carrier's provenance axis is `Inferred`. The producer reads the model bit directly:
 
 ```
 record InferredDirectiveBindings(
@@ -75,80 +81,38 @@ sealed interface InferredReferencePath {
 }
 ```
 
-Coordinate keys use graphql-java's `graphql.schema.FieldCoordinates` (the existing key on `GraphitronSchema.fields`), not a new type. Population happens in a new `CatalogBuilder.projectInferredBindings` walking `bundle.model()`, parallel to `projectTypesByName`. The "author omitted" check is no longer at the projector ; the model already carries the answer; the projector just reads `provenance instanceof Inferred` and copies the resolved name.
+Coordinate keys use graphql-java's `graphql.schema.FieldCoordinates` (the existing key on `GraphitronSchema.fields`), not a new type. Population happens in a new `CatalogBuilder.projectInferredBindings` walking `bundle.model()`, parallel to `projectTypesByName`. The "author omitted" check is no longer at the projector ; the model already carries the answer; the projector just reads `provenance instanceof NameProvenance.Inferred` (for `@table` / `@field` sites) or `instanceof PathProvenance.Inferred` (for `@reference` sites) and copies the resolved name.
 
 Honesty about freshness: the projection lives on `LspSchemaSnapshot.Built`, so a `Built.Previous` snapshot means stale inferences. The inlay-hint provider does not gate on freshness (`Current` vs `Previous`); per principle the LSP prefers stale info over silence, mirroring how `userArgHover` and `columnHover` already behave. `Unavailable` → no hints.
 
 ### Projection 2: `FieldClassification` and `TypeClassification`
 
-Sealed projection-families analogous to `TypeBackingShape`. Each is **1:1 with the generator-side sealed permits** ; one LSP-side record per `GraphitronField` leaf, one LSP-side record per `GraphitronType` leaf. Each permit carries only the LSP-renderable payload (table names, column names, FK names, target type names, error-channel names ; primitives and strings, never `TableRef` / `ColumnRef` / `graphql-java` types). No `displayLabel()` on the permit; label rendering is an LSP-module switch (see "Label rendering" below).
+Sealed projection-families analogous to `TypeBackingShape`. The projection records are sized to **distinct hover-payload shapes**, not 1:1 with the generator-side permits. Permits that differ only in a label dimension ; DML verb (insert / update / delete / upsert), single/list multiplicity on `Query[Node|Nodes]Field` ; collapse onto one LSP record carrying that dimension as a discriminator field; permits whose hover-relevant payload genuinely diverges (split axis on `SplitTableField`, lookup key on `LookupTableField`, error-channel name on a service mutation) get their own record. Each record carries only LSP-renderable payload (table names, column names, FK names, target type names, error-channel names ; primitives, strings, and enums, never `TableRef` / `ColumnRef` / `graphql-java` types). No `displayLabel()` on the records; label rendering is an LSP-module switch (see "Label rendering" below).
 
-The 1:1 choice resolves the cardinality question explicitly: each generator-side permit's hover wants payload distinct from its siblings (a `ChildField.SplitTableField`'s split-axis is hover-relevant; a `ChildField.LookupTableField`'s lookup key is hover-relevant; etc.), so collapsing pairs into one LSP permit forces internal branching in the hover renderer. Following the "Capability vs. sealed-switch confusion" principle: when the consumers (hover, inlay-hint, future arms) dispatch on permit identity, the permit identity is what the projection exposes.
+The exhaustive switch on the generator-side `GraphitronField` permits in `CatalogBuilder.projectFieldClassification` enforces **coverage** (a new permit fails the switch to compile until mapped). What the projection collapses is the *LSP-side cardinality*, not the generator-side coverage; the label switch in `LspClassificationLabels` still dispatches over the full generator-side permit set. The "Sealed hierarchies over enums for typed information" principle pushes back on a 1:1 mirror with duplicate-shape records: each variant should carry exactly the fields it needs, not the union of fields its siblings need.
+
+Worked example: the four `MutationField.DmlTableField` permits (`MutationInsertTableField` / `MutationUpdateTableField` / `MutationDeleteTableField` / `MutationUpsertTableField`) share `(tableName, inputTypeName?, errorChannelName?, dmlKind)`; one LSP record `DmlMutation` with a `DmlKind` discriminator captures the hover content, and `LspClassificationLabels` still emits "insert mutation" / "update mutation" / etc. via its own exhaustive switch on the generator-side permit. Counter-example: `ChildField.SplitTableField`'s split-axis is hover-distinct from `ChildField.TableField`'s plain table-bound payload, so the two stay separate LSP records.
+
+The exact grouping is the C3 implementation pass against the generator-side permits enumerated in the "Label vocabulary" tables below; the principle-aligned default is to collapse where collapsing does not erase a load-bearing distinction.
 
 ```
 sealed interface FieldClassification
     permits FieldClassification.ColumnField,
             FieldClassification.ColumnReferenceField,
-            FieldClassification.ParticipantColumnReferenceField,
-            FieldClassification.CompositeColumnField,
-            FieldClassification.CompositeColumnReferenceField,
-            FieldClassification.SingleRecordTableField,
-            FieldClassification.TableField,
-            FieldClassification.SplitTableField,
-            FieldClassification.LookupTableField,
-            FieldClassification.SplitLookupTableField,
-            FieldClassification.TableMethodField,
-            FieldClassification.RecordTableMethodField,
-            FieldClassification.TableInterfaceField,
-            FieldClassification.InterfaceField,
-            FieldClassification.UnionField,
-            FieldClassification.NestingField,
-            FieldClassification.ConstructorField,
-            FieldClassification.ServiceTableField,
-            FieldClassification.ServiceRecordField,
-            FieldClassification.RecordTableField,
-            FieldClassification.RecordLookupTableField,
-            FieldClassification.RecordField,
-            FieldClassification.ComputedField,
-            FieldClassification.PropertyField,
-            FieldClassification.ErrorsField,
-            FieldClassification.QueryLookupTableField,
-            FieldClassification.QueryTableField,
-            FieldClassification.QueryTableMethodTableField,
-            FieldClassification.QueryNodeField,
-            FieldClassification.QueryNodesField,
-            FieldClassification.QueryTableInterfaceField,
-            FieldClassification.QueryInterfaceField,
-            FieldClassification.QueryUnionField,
-            FieldClassification.QueryServiceTableField,
-            FieldClassification.QueryServiceRecordField,
-            FieldClassification.MutationInsertTableField,
-            FieldClassification.MutationUpdateTableField,
-            FieldClassification.MutationDeleteTableField,
-            FieldClassification.MutationUpsertTableField,
-            FieldClassification.MutationServiceTableField,
-            FieldClassification.MutationServiceRecordField,
-            FieldClassification.MutationDmlRecordField,
-            FieldClassification.MutationBulkDmlRecordField,
-            FieldClassification.InputColumnField,
-            FieldClassification.InputColumnReferenceField,
-            FieldClassification.InputCompositeColumnField,
-            FieldClassification.InputCompositeColumnReferenceField,
-            FieldClassification.InputNestingField,
+            // ... payload-distinct leaves; the C3 grouping pass settles the exact set.
+            FieldClassification.DmlMutation,                    // covers Insert/Update/Delete/Upsert via DmlKind discriminator
+            FieldClassification.QueryNode,                      // covers QueryNodeField/QueryNodesField via boolean isList
             FieldClassification.Unclassified {
-    // permits list mirrors the generator-side leaves of GraphitronField — ChildField's
-    // permits, QueryField's permits (10 leaves under RootField → QueryField), MutationField's
-    // permits (DmlTableField's four DML records plus the four sibling Mutation* records),
-    // InputField's permits, and GraphitronField.UnclassifiedField — and stays in lock-step
-    // via the projector's exhaustive switch (see "Validator-mirrors-classifier alignment" below).
 
     record ColumnField(String tableName, String columnName) implements FieldClassification {}
     record ColumnReferenceField(String tableName, String columnName, String fkName, boolean fkInverse) implements FieldClassification {}
-    // ... one record per permit, payload = the load-bearing fields the hover renders
+    record DmlMutation(String tableName, String inputTypeName, String errorChannelName, DmlKind kind) implements FieldClassification {}
+    record QueryNode(String nodeTypeName, boolean isList) implements FieldClassification {}
+    // ... per-record payload = the load-bearing fields the hover renders.
 }
 ```
 
-`TypeClassification` follows the identical shape with one permit per `GraphitronType` leaf.
+`TypeClassification` follows the same discipline: payload-distinct records over the `GraphitronType` permits. The type-side payload divergence is denser than the field side (record-backed / pojo-backed / jOOQ-table-backed / etc. all carry different load-bearing payload), so most type permits keep their own LSP record; the C3 pass identifies any genuine groupings.
 
 ### Label rendering lives in the LSP module
 
@@ -158,7 +122,7 @@ Label strings (`"column"`, `"joined column"`, `"node type"`, ...) are NOT on the
 
 `FieldClassification` is an LSP-display projection, not a generator branch; the "Validator mirrors classifier invariants" principle does not bite here in its primary form (no validate-time rejection is required). The discipline at play is "Sealed hierarchies over enums for typed information": the projector's exhaustive switch on `GraphitronField` permits (and similarly on `GraphitronType`) trips a compile error when a new permit lands without an LSP-side projection. That is the contract that keeps "new generator-side variant → LSP-side coverage in the same commit" honest.
 
-Concretely: `CatalogBuilder.projectFieldClassification` is a `switch` expression over `GraphitronField` whose arms cover the full permits list. Adding a new permit to `ChildField` fails the projector to compile until the LSP-side mapping is added in the same commit. No new validator hook in `GraphitronSchemaValidator` is needed.
+Concretely: `CatalogBuilder.projectFieldClassification` is a `switch` expression over `GraphitronField` whose arms cover the full permits list. Adding a new permit to `ChildField` fails the projector to compile until the LSP-side mapping is added in the same commit ; whether that mapping is a new payload-distinct LSP record or an arm that returns a shared record with a different discriminator value is a per-permit judgment, but exhaustiveness is what fails to compile. No new validator hook in `GraphitronSchemaValidator` is needed.
 
 ### `BuildArtifacts` does not change shape
 
@@ -197,7 +161,7 @@ Returns the list of `InlayHint`s in `visibleRange` (lsp4j supports range-scoped 
 
 ### Tree-sitter cursor for "was `name:` written"
 
-Not actually needed in the runtime path: the model's `Provenance` axis answers the question at classification time, the projector copies the answer onto `InferredDirectiveBindings`, and the LSP consumer reads the projection and renders. The tree-sitter cursor is still used for *positioning* the hint (where to anchor the ghost annotation in the buffer text), but not for the inference-vs-stated decision. That keeps the LSP arm purely a renderer of a pre-resolved fact and respects "if two consumers would evaluate the same predicate, the branch belongs in the model".
+Not actually needed in the runtime path: the model's `NameProvenance` / `PathProvenance` axes answer the question at classification time, the projector copies the answer onto `InferredDirectiveBindings`, and the LSP consumer reads the projection and renders. The tree-sitter cursor is still used for *positioning* the hint (where to anchor the ghost annotation in the buffer text), but not for the inference-vs-stated decision. That keeps the LSP arm purely a renderer of a pre-resolved fact and respects "if two consumers would evaluate the same predicate, the branch belongs in the model".
 
 ## Config keys and toggles
 
@@ -221,16 +185,16 @@ Under `Unavailable`: no hints. No stale-marker indication; the editor simply doe
 
 ## Implementation plan
 
-1. **C1 ; `Provenance` axis on model carriers.** Add the `Provenance` sealed family under `no.sikt.graphitron.rewrite.model`; add a `Provenance` field to `TableRef`, `ColumnRef`, and to each of the `@reference(path:)`-consuming `ChildField` permits (`ColumnReferenceField`, `CompositeColumnReferenceField`, `ParticipantColumnReferenceField`, and the input-side equivalents under `InputField`) as a sibling record component alongside the existing fields. Populate from the existing classifier paths: `TableRef` construction in `BuildContext`/`TypeBuilder` reads the raw directive-arg presence on `@table(name:)`; `ColumnRef` likewise on `@field(name:)`. For the `@reference`-permit constructors, the same directive-arg-presence check applies: at each `ctx.parsePath(...)` call site, sample `directive.getArgument(ARG_PATH) == null` *before* the call, then on the inferred branch (path arg absent, `parsePath` returned non-empty elements) read the FK name from the synthesized single-hop step at `parsed.elements().get(0)` (a `JoinStep.FkJoin`) into `Provenance.Inferred.FromUniqueFk.fkName`. Read-the-directive-state-at-the-call-site, not `parsed.elements().isEmpty()`: the latter signals the error branch (BuildContext.java:862), not the successful inference branch (BuildContext.java:887, where the inferred FkJoin has been appended). Wear the `provenance-axis-faithful` `@LoadBearingClassifierCheck` at each producer site. No behaviour change at any existing consumer (they keep reading the resolved name).
+1. **C1 ; `NameProvenance` and `PathProvenance` axes on model carriers.** Add the `NameProvenance` and `PathProvenance` sealed families under `no.sikt.graphitron.rewrite.model`; add a `NameProvenance` field to `TableRef` and `ColumnRef`, and a `PathProvenance` field to each of the `@reference(path:)`-consuming `ChildField` permits (`ColumnReferenceField`, `CompositeColumnReferenceField`, `ParticipantColumnReferenceField`, and the input-side equivalents under `InputField`) as a sibling record component alongside the existing fields. Populate from the existing classifier paths: `TableRef` construction in `BuildContext` / `TypeBuilder` reads the raw directive-arg presence on `@table(name:)`; `ColumnRef` likewise on `@field(name:)`. For the `@reference`-permit constructors, the same directive-arg-presence check applies: at each `ctx.parsePath(...)` call site, sample `directive.getArgument(ARG_PATH) == null` *before* the call, then on the inferred branch (path arg absent, `parsePath` returned non-empty elements) read the FK name from the synthesized single-hop step at `parsed.elements().get(0)` (a `JoinStep.FkJoin`) into `PathProvenance.Inferred.FromUniqueFk.fkName`. Read-the-directive-state-at-the-call-site, not `parsed.elements().isEmpty()`: the latter signals the error branch in `parsePath` (no synthesized step), not the successful inference branch (where the synthesized `FkJoin` has been appended to `resolvedElements`). Wear the `provenance-axis-faithful` `@LoadBearingClassifierCheck` at each producer site. No behaviour change at any existing consumer (they keep reading the resolved name).
 2. **C2 ; new projection types in the catalog package.** Land `InferredDirectiveBindings` and the sealed `FieldClassification` / `TypeClassification` families under `no.sikt.graphitron.rewrite.catalog`. Initially unwired. Unit-tier test asserts the sealed structure compiles and each permit's payload fields are reachable.
 3. **C3 ; producer side in `CatalogBuilder`.** Three new methods: `projectInferredBindings(GraphitronSchema)`, `projectFieldClassification(GraphitronField)`, `projectTypeClassification(GraphitronType)`. Exhaustive switches on the generator-side permits. Wear the two `*-classification-payload-faithful` `@LoadBearingClassifierCheck` annotations.
-4. **C4 ; `LspSchemaSnapshot.Built` extension.** Add the three new fields (`inferredBindings`, `fieldClassificationsByCoord`, `typeClassificationsByName`), update `Built.Current` and `Built.Previous` symmetrically, update `CatalogBuilder.buildSnapshot` overloads (the one-arg overload returns empty projections, matching the existing `typesByName == Map.of()` behaviour).
+4. **C4 ; `LspSchemaSnapshot.Built` extension.** Add the three new fields (`inferredBindings`, `fieldClassificationsByCoord`, `typeClassificationsByName`) alongside the existing `directives`, `typesByName`, and `payloadDataFieldByType` carriers, update `Built.Current` and `Built.Previous` symmetrically, update `CatalogBuilder.buildSnapshot` overloads (the one-arg overload returns empty projections, matching the existing `typesByName == Map.of()` behaviour).
 5. **C5 ; `InlayHintConfig` and config pull.** Record holding the three booleans, defaults all `false`. Workspace gets a `volatile InlayHintConfig config` and a `setConfig` swap path. `GraphitronTextDocumentService` requests `workspace/configuration` on initialisation; `didChangeConfiguration` calls `setConfig`.
 6. **C6 ; `InlayHints` provider plus label switch.** Two arms (inferred-directives, classification), gated by config booleans, dispatching on the projections, returning `List<InlayHint>` scoped to the requested range. Label rendering is an exhaustive switch in `LspClassificationLabels` (sibling utility class to `InlayHints`). Hover-side label reuse from the same switch. `GraphitronLanguageServer.initialize` advertises the capability; `GraphitronTextDocumentService.inlayHint` wires the request. Each LSP arm wears the matching `@DependsOnClassifierCheck`.
-7. **C7 ; classification hover.** Hover at field-declaration and type-declaration coordinates ; not directive-arg coordinates, so the existing `LspVocabulary.coordinateAt` / `Behavior` infrastructure does not extend straightforwardly. Two design forks the implementer hits: (a) extend `Behavior` with a non-directive arm vs (b) introduce a parallel hover dispatch keyed on SDL declaration positions. If (b) lands cleaner the implementer flags it; either is acceptable but the choice affects the C7 line-count budget. Renders the `FieldClassification` / `TypeClassification` payload as markdown, reusing `LspClassificationLabels` for the heading.
+7. **C7 ; classification hover.** Hover at field-declaration and type-declaration coordinates ; not directive-arg coordinates, so the existing `LspVocabulary.coordinateAt` / `Behavior` infrastructure does not extend straightforwardly. Design choice: introduce a parallel hover dispatch keyed on SDL declaration positions (alongside the existing `Behavior`-keyed directive-arg dispatch), not a new `Behavior` arm. `Behavior`'s permits are uniformly directive-argument-binding shapes (every existing arm ; `CatalogTableBinding`, `CatalogColumnBinding`, `NodeTypeBinding`, etc. ; names a directive-argument binding); adding a field-declaration or type-declaration arm would widen the family in a carrier-shape direction, which is the parallel-axis smell "Capability vs. sealed-switch confusion" warns about. The parallel dispatch keeps `Behavior` tight and gives the new hover positions a sibling resolver to grow into. Renders the `FieldClassification` / `TypeClassification` payload as markdown, reusing `LspClassificationLabels` for the heading.
 8. **C8 ; docs and config schema.** A new section in `manual/lsp.adoc` (or extension to an existing LSP doc) documents the three config keys, their effect, the stale-snapshot semantics, and the user-visible label vocabulary. The LSP advertises the keys via its initialisation handshake.
 
-C1–C6 ship the first user-visible value (inferred-directive hints + classification inlay labels). C7 layers on rich hover. C8 is the docs handoff. Split-out option: if C7 grows scope materially during In Progress (the `Behavior`-extension fork might not be small), the implementer flags this and we file C7 as a sibling roadmap item rather than holding the rest of the work.
+C1–C6 ship the first user-visible value (inferred-directive hints + classification inlay labels). C7 layers on rich hover. C8 is the docs handoff. Split-out option: if the parallel hover dispatch in C7 grows scope materially during In Progress (the SDL-declaration coordinate resolver is greenfield), the implementer flags this and we file C7 as a sibling roadmap item rather than holding the rest of the work.
 
 ## Test plan
 
@@ -238,7 +202,7 @@ Per the rewrite-design-principles test-tier guide.
 
 **Pipeline-tier truth tables, co-located with the classifier truth tables.** `GraphitronSchemaBuilderTest` already organises classifier coverage as `// ===== <VariantName> =====` blocks (one block per `ChildField` / `RootField` / `MutationField` / `InputField` permit). C3 extends each of those blocks with a sibling assertion that runs the classified field through `CatalogBuilder.projectFieldClassification` and asserts the projected permit and payload. Same for type variants against `projectTypeClassification`. Co-location prevents the parallel-table drift the architect flagged: a future contributor adding a new `ChildField` permit cannot pass review without populating both the classifier-row and the projection-row in the same block.
 
-**Pipeline-tier provenance assertions.** Three new `// ===== Provenance =====` sections in `GraphitronSchemaBuilderTest` (or sibling subsections under the existing blocks), one per inference-touched carrier (`TableRef`, `ColumnRef`, `@reference`-path). Each carries paired SDL fixtures: author wrote the argument → `Provenance.Authored`; author omitted it → `Provenance.Inferred.FromSdlName` (or `FromUniqueFk`). The same fixtures double as input for the inferred-directive projection assertions.
+**Pipeline-tier provenance assertions.** Three new sections in `GraphitronSchemaBuilderTest` (or sibling subsections under the existing blocks), one per inference-touched carrier (`TableRef`, `ColumnRef`, `@reference`-path). Each carries paired SDL fixtures: author wrote the argument → `NameProvenance.Authored` / `PathProvenance.Authored`; author omitted it → `NameProvenance.Inferred.FromSdlName` (for `TableRef` / `ColumnRef`) or `PathProvenance.Inferred.FromUniqueFk` (for the `@reference`-permits). The same fixtures double as input for the inferred-directive projection assertions.
 
 **LSP-tier unit tests** (`graphitron-rewrite/graphitron-lsp/src/test/java/.../inlay/InlayHintsTest.java`): given a fixed `LspSchemaSnapshot.Built.Current` and a `InlayHintConfig`, assert the right hints fire at the right ranges with the right text. Config off → no hints. Config on, projection empty → no hints. Config on, projection populated → hints in the expected order with the labels `LspClassificationLabels` emits. One test per LSP-side permit isn't required at this tier; the truth-table coverage at the pipeline tier already pins the projection identity, so the LSP-tier tests focus on the inlay-arm's dispatch logic (correct ranges, correct config-gating, correct stale-snapshot behaviour) rather than enumerating every permit.
 
@@ -251,13 +215,15 @@ Per the rewrite-design-principles test-tier guide.
 - **One toggle or per-category toggles?** Per-category (three keys: inferred-directives inlay, classification inlay, classification hover). Different audiences, different visual density. See "Config keys and toggles".
 - **Simple class name as label or friendly label?** Friendly label. The label vocabulary is owned by the LSP module ; `LspClassificationLabels` is an exhaustive switch in the LSP module ; not by the generator-side type names. Generator-side renames are free; user-visible names are deliberate.
 - **Stale-snapshot behaviour?** Render unchanged from `Current` (no stale marker). Mirrors existing hover arms. `Unavailable` is no hints.
-- **Should rich-hover classification split out?** Stay together. C7 is one step in the implementation plan. If the implementer hits scope creep on the `Behavior` extension fork, they file a sibling item then.
-- **Lift `Provenance` into the model, or re-derive at projection time?** Lift. The classifier already has the answer; re-deriving violates "Generation-thinking" and locks the LSP into reading raw `GraphQLDirective` nodes. The added model field is small, consumers are unaffected, and a future code-action / build-warning gets the information for free.
-- **`FieldClassification` cardinality (1:1 with generator-side permits, or collapsed)?** 1:1. Each generator-side permit has hover-distinct payload; collapsing would force internal branching in the hover renderer. The principle "Capability vs. sealed-switch confusion" applies: when consumers dispatch on permit identity, the permit identity is what the projection exposes.
+- **Should rich-hover classification split out?** Stay together. C7 is one step in the implementation plan. If the SDL-declaration coordinate resolver in C7 grows scope materially during In Progress, the implementer files a sibling item then.
+- **Lift `Provenance` into the model, or re-derive at projection time?** Lift. Re-deriving at projection time would require importing `GraphQLDirective` into the LSP projector, reaching back across the parse boundary that classification exists to close (per "Classification belongs at the parse boundary"). The lift carries the boundary forward; future code-actions / build-warnings get the information for free.
+- **One unified `Provenance` family, or one per carrier shape?** Two families: `NameProvenance` on `TableRef` / `ColumnRef`, `PathProvenance` on the `@reference`-permits. A unified family with `FromUniqueFk` permitted on all carriers would let the type system accept values the classifier can never construct (a `TableRef` carrying a non-existent inference rule); two families keep the certainty the classifier already has. Per-family `Inferred` permits-clauses widen independently as further inference rules join.
+- **`FieldClassification` cardinality (1:1 with generator-side permits, or payload-distinct)?** Payload-distinct, with discriminator fields collapsing permits that differ only in a label dimension (DML verb, single/list multiplicity). The projector's exhaustive switch over the generator-side permits keeps coverage compile-checked; the LSP-side records carry one distinct hover-payload shape each. Worked example: the four DML mutation permits collapse to one `DmlMutation(tableName, inputTypeName, errorChannelName, DmlKind)` record; the label switch in `LspClassificationLabels` still emits a per-permit label via its own exhaustive switch on the generator-side permit. "Sealed hierarchies over enums for typed information" pushes back on a 1:1 mirror with duplicate-shape records.
+- **C7 `Behavior`-extension vs. parallel hover dispatch?** Parallel hover dispatch (settled at Spec time). `Behavior`'s permits are uniformly directive-argument-binding shapes; the new hover positions are SDL declaration coordinates, not directive-arg coordinates, so they get their own resolver rather than widening `Behavior` in a carrier-shape direction.
 
 ## Label vocabulary
 
-LSP-side classification labels rendered by `LspClassificationLabels`. The projection is 1:1 with the generator-side permits (see "Projection 2"); this table is the LSP-module's label switch laid out as a review artifact, not a permit-collapse table. The projector's exhaustive switch enforces that every generator-side permit has an LSP-side mapping; this table enforces that every LSP-side mapping has a chosen label.
+LSP-side classification labels rendered by `LspClassificationLabels`. **Labels are 1:1 with the generator-side permits** (each row in this table maps to one `case` in the label switch); the **LSP-side projection records** (see "Projection 2") may collapse multiple permits onto one record where the hover-payload shape is the same. The two switches dispatch independently: the projector picks the record-with-discriminator, the label switch picks the label, both exhaustive over the generator-side permits. This table is the LSP-module's label switch laid out as a review artifact; it enforces that every generator-side permit has a chosen label.
 
 Field-side labels (mapped from the `GraphitronField` leaves as enumerated under `ChildField`, `QueryField` (`RootField.QueryField`'s permits), `MutationField`, `InputField`, and `GraphitronField.UnclassifiedField`):
 
@@ -269,6 +235,8 @@ Field-side labels (mapped from the `GraphitronField` leaves as enumerated under 
 | `ChildField.CompositeColumnField` | "composite column" |
 | `ChildField.CompositeColumnReferenceField` | "composite reference column" |
 | `ChildField.SingleRecordTableField` | "single record table field" |
+| `ChildField.SingleRecordIdFieldFromReturning` | "single record id field (RETURNING)" |
+| `ChildField.SingleRecordTableFieldFromReturning` | "single record table field (RETURNING)" |
 | `ChildField.TableField` | "table field" |
 | `ChildField.SplitTableField` | "split table field" |
 | `ChildField.LookupTableField` | "lookup table field" |
@@ -349,4 +317,4 @@ Tables are exhaustive on the current `GraphitronField` and `GraphitronType` perm
 - R139 `lsp-schema-snapshot-side-channel` ; established the dev-pipeline → LSP projection-via-`LspSchemaSnapshot.Built` data flow this item extends.
 - R152 `lsp-nodetype-hover-column-scoping` ; precedent for hover content that consumes snapshot projections.
 - R121 `lsp-diagnostic-redundant-splitquery-on-record` ; precedent for an LSP arm that mirrors a build-tier classifier signal.
-- Design principles: `graphitron-rewrite/docs/rewrite-design-principles.adoc` ; "Generation-thinking" (LSP consumes pre-resolved projections, doesn't recompute; the `Provenance` lift onto `TableRef`/`ColumnRef`/`@reference`-permits is the application of this rule), "Sealed hierarchies over enums for typed information" (`FieldClassification` is 1:1 with the generator-side permits, each carrying typed payload; the projector's exhaustive switch enforces coverage), "Capability vs. sealed-switch confusion" (consumers dispatch on permit identity, so the projection exposes that identity rather than collapsing into capability-shaped records), "Model metadata over parallel type systems" (labels live on a sibling switch in the LSP module, not on the projection records), "Classifier guarantees shape emitter assumptions" (the `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` pair documents the three new keys C1–C3 introduce).
+- Design principles: `graphitron-rewrite/docs/rewrite-design-principles.adoc` ; "Classification belongs at the parse boundary" (the `NameProvenance` / `PathProvenance` lift onto `TableRef`/`ColumnRef`/`@reference`-permits keeps the parse-boundary closed; the LSP projector reads pre-resolved bits, never `GraphQLDirective`), "Sealed hierarchies over enums for typed information" (each LSP-side projection record carries exactly the fields its hover shows; the projector's exhaustive switch over the generator-side permits enforces coverage without forcing a duplicate-shape 1:1 mirror), "Capability vs. sealed-switch confusion" (`Behavior` stays directive-argument-binding shaped; SDL declaration coordinates get a parallel hover dispatch rather than a carrier-shaped widening of `Behavior`), "Model metadata over parallel type systems" (labels live on a sibling switch in the LSP module, not on the projection records), "Classifier guarantees shape emitter assumptions" (the `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` pair documents the three new keys C1–C3 introduce).
