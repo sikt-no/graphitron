@@ -362,7 +362,9 @@ Run `mvn graphitron:dev` in a side terminal. One JVM, one terminal,
 one socket: the goal binds an LSP server on `localhost:8487` and watches
 your `.graphqls` files. Saving a schema regenerates the affected Java
 sources under `target/generated-sources/graphitron`; only changed files
-touch disk.
+touch disk. When your editor is attached to the LSP its save event drives
+the same regen directly, so on every platform you see the edit reflected
+without waiting for the filesystem watcher.
 
 Connect your editor or agent to the LSP by pointing its LSP client at
 `localhost:8487` (TCP). The default port is the only number you need; it
@@ -409,8 +411,8 @@ This subsection is contributor-level material; consumers can skip it. It explain
 
 The `dev` goal runs four cooperating components in one JVM:
 
-* *LSP server* binds the TCP port (default `8487`) and speaks LSP to whatever editor or agent connects. It serves diagnostics, hover, completion, and go-to-definition off the most recent classified `GraphitronSchema` and the validator's report on it. State is in-memory only; no LSP cache lives on disk.
-* *Schema watcher* is a `WatchService` over the consumer's `.graphqls` source roots. On a save, it debounces same-file events that arrive in clusters (some editors emit several `MODIFY` events per save) and signals the generator dispatch.
+* *LSP server* binds the TCP port (default `8487`) and speaks LSP to whatever editor or agent connects. It serves diagnostics, hover, completion, and go-to-definition off the most recent classified `GraphitronSchema` and the validator's report on it. State is in-memory only; no LSP cache lives on disk. Its `didSave` notification is the primary fast path into the generator dispatch when an editor is attached.
+* *Schema watcher* is a `WatchService` over the consumer's `.graphqls` source roots; the headless fallback when no editor is attached. On a save, it debounces same-file events that arrive in clusters (some editors emit several `MODIFY` events per save) and signals the generator dispatch. The LSP `didSave` path feeds the same debounce, so the two routes coalesce on a single regen when both fire.
 * *Classpath watcher* is a `WatchService` over the consumer's compiled jOOQ output (`target/classes/<jooqPackage>/`). When `mvn compile` in another terminal lands new `.class` files for jOOQ tables and columns, the watcher signals the generator dispatch the same way a schema save does. This is what lets a jOOQ schema regen pick up automatically without a `dev`-session restart.
 * *Generator dispatch* is the lifecycle thread that consumes wake-up events from either watcher, loads the (possibly-updated) classpath, runs the generator over the (possibly-updated) `.graphqls` sources, and feeds the resulting `GraphitronSchema` and emit results to the LSP server's in-memory state and to disk via the idempotent writer.
 
@@ -424,7 +426,8 @@ The idempotent-write coupling is what makes the loop usable as an editor backend
 flowchart TD
     subgraph JVM["dev JVM (one process)"]
         Editor["editor / agent"] -. LSP/TCP :8487 .-> LSP["LSP server"]
-        SW["schema watcher<br/>(.graphqls)"] -- debounced<br/>save events --> Disp["generator dispatch"]
+        LSP -- didSave<br/>(primary) --> Disp["generator dispatch"]
+        SW["schema watcher<br/>(.graphqls,<br/>headless fallback)"] -- debounced<br/>save events --> Disp
         CW["classpath watcher<br/>(target/classes/&lt;jooq&gt;)"] -- .class change<br/>events --> Disp
         Disp -- run --> Gen["generator<br/>(classify + emit)"]
         Gen -- in-memory<br/>GraphitronSchema --> LSP

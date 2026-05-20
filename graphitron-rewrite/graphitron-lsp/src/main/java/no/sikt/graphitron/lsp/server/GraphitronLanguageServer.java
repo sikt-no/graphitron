@@ -13,12 +13,19 @@ import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 /**
  * lsp4j entry point. Holds a single {@link Workspace} per server instance
  * (one server per editor connection); the workspace owns parsed files plus
  * the catalog. The {@code dev} Mojo (slice 2) constructs the catalog from
  * the rewrite generator and passes it in here.
+ *
+ * <p>The {@code onSchemaSaved} listener fires from {@code didSave}; the
+ * dev Mojo wires it to the debounced regen trigger, so editor saves drive
+ * regeneration directly rather than waiting for the filesystem watcher.
+ * Headless LSP-only use sites (no dev Mojo) pass no listener and
+ * {@code didSave} is a no-op.
  */
 public class GraphitronLanguageServer implements LanguageServer, LanguageClientAware {
 
@@ -28,12 +35,16 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
     private LanguageClient client;
 
     public GraphitronLanguageServer() {
-        this(new Workspace());
+        this(new Workspace(), uri -> {});
     }
 
     public GraphitronLanguageServer(Workspace workspace) {
+        this(workspace, uri -> {});
+    }
+
+    public GraphitronLanguageServer(Workspace workspace, Consumer<String> onSchemaSaved) {
         this.workspace = workspace;
-        this.textService = new GraphitronTextDocumentService(workspace);
+        this.textService = new GraphitronTextDocumentService(workspace, onSchemaSaved);
     }
 
     public Workspace workspace() {

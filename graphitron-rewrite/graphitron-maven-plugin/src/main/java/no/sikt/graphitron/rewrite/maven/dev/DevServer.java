@@ -15,6 +15,7 @@ import java.net.Socket;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 /**
  * The {@code dev} goal's socket-side surface: binds a {@link ServerSocket}
@@ -40,6 +41,7 @@ public final class DevServer implements AutoCloseable {
 
     private final ServerSocket socket;
     private final Workspace workspace;
+    private final Consumer<String> onSchemaSaved;
     private final ExecutorService acceptExecutor;
     private final ExecutorService connectionExecutor;
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -48,9 +50,13 @@ public final class DevServer implements AutoCloseable {
      * Bind a server on the supplied address. {@link BindException} is
      * surfaced as-is; callers translate it into a Mojo error pointing at
      * the override property.
+     *
+     * <p>The {@code onSchemaSaved} listener is propagated to each per-connection
+     * {@link GraphitronLanguageServer}, where it fires from {@code didSave}.
      */
-    public DevServer(InetSocketAddress address, Workspace workspace) throws IOException {
+    public DevServer(InetSocketAddress address, Workspace workspace, Consumer<String> onSchemaSaved) throws IOException {
         this.workspace = workspace;
+        this.onSchemaSaved = onSchemaSaved;
         this.socket = new ServerSocket();
         try {
             this.socket.bind(address);
@@ -88,7 +94,7 @@ public final class DevServer implements AutoCloseable {
 
     private void serve(Socket client) {
         try {
-            var server = new GraphitronLanguageServer(workspace);
+            var server = new GraphitronLanguageServer(workspace, onSchemaSaved);
             var launcher = new Launcher.Builder<LanguageClient>()
                 .setLocalService(server)
                 .setRemoteInterface(LanguageClient.class)

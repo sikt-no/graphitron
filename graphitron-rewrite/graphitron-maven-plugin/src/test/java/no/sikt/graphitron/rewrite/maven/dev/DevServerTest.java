@@ -39,7 +39,7 @@ class DevServerTest {
             List.of(),
             List.of()
         );
-        try (var server = new DevServer(loopback(0), new Workspace(catalog))) {
+        try (var server = new DevServer(loopback(0), new Workspace(catalog), uri -> {})) {
             assertThat(server.port()).isGreaterThan(0);
 
             try (var socket = new Socket(InetAddress.getLoopbackAddress(), server.port())) {
@@ -68,7 +68,7 @@ class DevServerTest {
     @Test
     void multipleClientsShareWorkspaceState() throws Exception {
         var workspace = new Workspace();
-        try (var server = new DevServer(loopback(0), workspace)) {
+        try (var server = new DevServer(loopback(0), workspace, uri -> {})) {
             try (var s1 = new Socket(InetAddress.getLoopbackAddress(), server.port())) {
                 var p1 = clientProxy(s1);
                 p1.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
@@ -97,10 +97,10 @@ class DevServerTest {
 
     @Test
     void bindingTakenPortFailsWithIoException() throws Exception {
-        try (var first = new DevServer(loopback(0), new Workspace())) {
+        try (var first = new DevServer(loopback(0), new Workspace(), uri -> {})) {
             int port = first.port();
             assertThatThrownBy(() ->
-                new DevServer(loopback(port), new Workspace())
+                new DevServer(loopback(port), new Workspace(), uri -> {})
             ).isInstanceOf(java.io.IOException.class);
         }
     }

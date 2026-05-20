@@ -38,6 +38,7 @@ import org.eclipse.lsp4j.services.TextDocumentService;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 /**
  * Text-document handlers backed by a {@link Workspace}.
@@ -51,10 +52,16 @@ import java.util.concurrent.CompletableFuture;
 public class GraphitronTextDocumentService implements TextDocumentService {
 
     private final Workspace workspace;
+    private final Consumer<String> onSchemaSaved;
     private LanguageClient client;
 
     public GraphitronTextDocumentService(Workspace workspace) {
+        this(workspace, uri -> {});
+    }
+
+    public GraphitronTextDocumentService(Workspace workspace, Consumer<String> onSchemaSaved) {
         this.workspace = workspace;
+        this.onSchemaSaved = onSchemaSaved;
     }
 
     /**
@@ -96,9 +103,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
 
     @Override
     public void didSave(DidSaveTextDocumentParams params) {
-        // Save itself does not change buffer state for the LSP. The dev
-        // goal's filesystem watcher drives regeneration off disk writes,
-        // not off this notification.
+        onSchemaSaved.accept(params.getTextDocument().getUri());
     }
 
     /**

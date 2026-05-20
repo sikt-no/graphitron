@@ -6,6 +6,7 @@ import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
@@ -25,6 +26,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -280,6 +283,33 @@ class TextDocumentServiceTest {
         var diagnostics = clientStub.latestDiagnostics.get(uri);
         assertThat(diagnostics).isNotNull();
         assertThat(diagnostics.getDiagnostics()).isEmpty();
+    }
+
+    @Test
+    void didSave_invokesListenerWithUri() {
+        AtomicInteger calls = new AtomicInteger();
+        AtomicReference<String> seen = new AtomicReference<>();
+        var server = new GraphitronLanguageServer(new Workspace(), uri -> {
+            calls.incrementAndGet();
+            seen.set(uri);
+        });
+
+        String uri = "file:///x.graphqls";
+        server.getTextDocumentService().didSave(new DidSaveTextDocumentParams(
+            new TextDocumentIdentifier(uri)));
+
+        assertThat(calls).hasValue(1);
+        assertThat(seen.get()).isEqualTo(uri);
+    }
+
+    @Test
+    void didSave_noopWhenListenerAbsent() {
+        var server = new GraphitronLanguageServer();
+
+        // Single-arg listener-absent form must not throw and must not require
+        // a connected client. Pins the headless / LSP-only-use contract.
+        server.getTextDocumentService().didSave(new DidSaveTextDocumentParams(
+            new TextDocumentIdentifier("file:///y.graphqls")));
     }
 
     private LanguageServer startServer(GraphitronLanguageServer server) throws Exception {
