@@ -1,7 +1,7 @@
 ---
 id: R197
 title: LSP didSave drives in-process regen trigger
-status: Spec
+status: Ready
 bucket: feature
 priority: 10
 theme: lsp
