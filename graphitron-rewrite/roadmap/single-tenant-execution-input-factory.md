@@ -173,6 +173,28 @@ Comment out the entire test method (annotation through closing brace) with a one
 
 A thirteenth site discovered during implementation that pattern-matches "consumer implements / instantiates `GraphitronContext` directly" folds into the same commit window with the same lens: would this code compile against the post-R190 generated `GraphitronContext`?
 
+### Existing generator-test updates (`graphitron/src/test/`)
+
+The generator unit tests that pin the pre-R190 shape will fail under the new factory, sealed interface, and removed `getTenantId`. Each block below names the test and the post-R190 outcome:
+
+- `GraphitronContextInterfaceGeneratorTest.java:27-32` (`generatedInterface_hasFourMethods`): retitle to `generatedInterface_hasThreeMethods` and drop `"getTenantId"` from the `containsExactlyInAnyOrder` set.
+- `GraphitronContextInterfaceGeneratorTest.java:73-80` (`generatedInterface_hasExactlyOneAbstractMethod`): delete. The load-bearing rationale (the `(GraphitronContext) env -> dsl` lambda form needs exactly one abstract method) disappears with the `newExecutionInput(DSLContext)` lambda overload R190 removes. The replacement invariant — sealed + permits a single generated impl — already lives on the new `GraphitronContextImpl` snapshot under the pipeline-tier coverage and needs no unit-tier proxy.
+- `GraphitronContextInterfaceGeneratorTest.java:82-88` (`getTenantId_hasDefaultImplementationReturningEmptyString`): delete outright; the method no longer exists on the interface.
+- `GraphitronContextInterfaceGeneratorTest.java:60-65` (`getContextArgument_hasDefaultImplementationReadingGraphQLContext`): rename and rewrite — the default body now reads `env.getGraphQlContext().get(name)` and applies `expectedType.cast(...)`. Assert the third parameter `(Class<T> expectedType)` exists and the body contains `expectedType.cast`.
+- `GraphitronFacadeGeneratorTest.java:30-32` (the `containsExactly("buildSchema", "newExecutionInput", "newExecutionInput")` set): collapse to one `newExecutionInput` entry (or extend to N if the test SDL declares contextArguments, in which case the generator emits one factory whose param list reflects them).
+- `GraphitronFacadeGeneratorTest.java:73-83` (`newExecutionInput_hasGraphitronContextAndDSLContextOverloads`): rewrite. Under R190 there is one schema-driven overload; assert the single overload's parameter list reflects the test SDL's contextArguments, alphabetical-sorted, with `DSLContext defaultDsl` first.
+- `GraphitronFacadeGeneratorTest.java:85-92` (`newExecutionInput_bothOverloadsReturnExecutionInputBuilder`): rename to `newExecutionInput_returnsExecutionInputBuilder` and assert the one overload returns `ExecutionInput.Builder`.
+- `TypeFetcherGeneratorTest.java:2044` and `:2210` (body assertions containing `graphitronContext(env).getTenantId(env)`): drop the `getTenantId(env)` clause from the asserted substring (the emitted name becomes path-only). Both sites share the same shape.
+- `DataLoaderFetcherEmitterTest.java:57` (body assertion `name = graphitronContext(env).getTenantId(env) + "/" + java.lang.String.join("/", ...)`): drop the `getTenantId(env) + "/" +` segment from the asserted substring.
+
+### Generator javadoc/comment cleanup
+
+Comment-only sites in already-edited files that reference `getTenantId`. Fold into the same commits that touch the surrounding code:
+
+- `TypeFetcherGenerator.java:4536-4541` — class-level javadoc on `buildDataLoaderName` describes the emitted name as `GraphitronContext.getTenantId(env) + "/" + path`. Rewrite to "path-only".
+- `DataLoaderFetcherEmitter.java:22` — `<li>` bullet in the class-level javadoc says "resolve the path-scoped DataLoader name via `GraphitronContext.getTenantId` + ...". Drop the `getTenantId` mention; the name is path-scoped, full stop.
+- `QueryNodeFetcherClassGenerator.java:145` — javadoc paragraph "keyed by `getTenantId(idEnv) + path`, where `idEnv` is a per-id DFE." Rewrite to "keyed by `path` (computed from the per-id DFE's execution-step-info)" so the per-id DFE construction stays motivated but the `getTenantId` reference disappears.
+
 ### Runtime contract (`graphitron-rewrite-runtime/`)
 
 No new runtime surface for R190. The `getContextArgument` signature change is in the generated interface, not the runtime artifact. R192 introduces the runtime functional interface for the validator factory.
@@ -192,7 +214,7 @@ Twelve pages update in the same commit window as the generator change (plus one 
 
 ## User documentation (first-client check)
 
-R190 changes the primary onboarding surface (`Graphitron.newExecutionInput`) and the runtime extension model (`GraphitronContext` becomes sealed, `getTenantId` disappears from the single-tenant shape). Per `docs/workflow.adoc` §"Plans with a user-visible surface", the docs draft is the first client of the design; if it doesn't read simply, the design is wrong. Tracing every `GraphitronContext` / `getTenantId` / `implements GraphitronContext` / `new GraphitronContext() {...}` reference through the manual, R190 touches **thirteen pages required plus one optional touch-up and one verified-no-change**. The two primary onboarding rewrites carry drafted replacement prose below; the other eleven describe the actual current content of each page and the concrete shape of the revision. This is not a search-and-replace: each page's framing differs, several touch user-facing code blocks whose shape changes, and three pages get a deferral banner because their content is fully rescoped to R45's tenant-column work.
+R190 changes the primary onboarding surface (`Graphitron.newExecutionInput`) and the runtime extension model (`GraphitronContext` becomes sealed, `getTenantId` disappears from the single-tenant shape). Per `docs/workflow.adoc` §"Plans with a user-visible surface", the docs draft is the first client of the design; if it doesn't read simply, the design is wrong. Tracing every `GraphitronContext` / `getTenantId` / `implements GraphitronContext` / `new GraphitronContext() {...}` reference through the manual and the architecture docs, R190 touches **fourteen pages required plus one optional touch-up and one verified-no-change**. The two primary onboarding rewrites carry drafted replacement prose below; the other twelve describe the actual current content of each page and the concrete shape of the revision. This is not a search-and-replace: each page's framing differs, several touch user-facing code blocks whose shape changes, and three pages get a deferral banner because their content is fully rescoped to R45's tenant-column work.
 
 ### Primary rewrite: `graphitron-rewrite/docs/getting-started.adoc` § Hello world
 
@@ -250,6 +272,10 @@ module: a Quarkus + JAX-RS shell over a generated schema, plus in-process query-
 ____
 
 The page's two follow-on subsections (`Tenant-scoped DSLContext`, `Context arguments from a JWT claim`) collapse into the new shape: per-tenant routing belongs to R45, and JWT-claim contextArguments are now factory parameters the consumer populates at request entry. The "tenant-scoped" subsection becomes a one-line forward pointer to R45's how-to; the "JWT-claim contextArgument" subsection becomes a one-paragraph note showing the JWT-claim value passed as the factory's typed parameter.
+
+### Architecture orientation: `graphitron-rewrite/docs/README.adoc:7`
+
+The first "You came here because…" bullet currently reads "You want to *extend the runtime*, implement `GraphitronContext`, route per-tenant `DSLContext`s, register custom scalars, hook in jOOQ listeners. → xref:runtime-extension-points.adoc[Runtime Extension Points]." Under R190, implementing the sealed `GraphitronContext` is no longer the extension model; per-tenant routing moves to R45. Rewrite to: "You want to *extend the runtime*, wire per-request values into `Graphitron.newExecutionInput(...)`, register custom scalars, hook in jOOQ listeners. → xref:runtime-extension-points.adoc[Runtime Extension Points]." (Per-tenant routing reads better re-added under R45 alongside the tenant-column work; until then, the link target's body already carries the deferral framing.)
 
 ### Primary rewrite: `graphitron-rewrite/docs/runtime-extension-points.adoc` § GraphitronContext
 
@@ -350,16 +376,17 @@ ____
 
 `docs/manual/how-to/condition-cascade.adoc:181` cross-links to `tenant-scoping.adoc` and `runtime-api.adoc` for the supplying-side context-argument story. The cross-link remains coherent once those two targets land; no edits needed on the page itself. (`add-custom-conditions.adoc:164` was previously listed here; line 166 of the same page now requires a touch-up — see "Small in-prose touch-ups" above. The line 164 cross-link itself stays as-is.)
 
-### Total scope (thirteen pages plus one optional and one no-change)
+### Total scope (fourteen pages plus one optional and one no-change)
 
 Substantive rewrites (four): `getting-started.adoc`, `runtime-extension-points.adoc`, `runtime-api.adoc`, `test-your-schema.adoc`.
 Tenant-routing deferral banners (three): `tenant-scoping.adoc`, `apollo-federation.adoc` (one subsection plus two constraint bullets), `split-vs-inline.adoc` (one code snippet, one bullet, one closing-sentence clause).
+Architecture orientation (one): `graphitron-rewrite/docs/README.adoc` (one bullet at line 7).
 Index-page updates (two): `reference/index.adoc`, `how-to/index.adoc`.
 Small in-prose touch-ups (four): `how-it-works.adoc`, `batching-model.adoc`, `06-going-further.adoc`, `add-custom-conditions.adoc`.
 Optional touch-up (one): `security.adoc` (cross-link reads coherently as-is; rewrite is a polish).
 Verified-no-change (one): `condition-cascade.adoc`.
 
-The implementer is on hook to land all thirteen required edits in the same commit window as the generator change, so the docs site does not ship in a half-state. If a fourteenth page surfaces during implementation, fold it into the same commit window with the same "first-client check" lens: would a consumer arriving at this page from search read code that compiles against the post-R190 generated `GraphitronContext`?
+The implementer is on hook to land all fourteen required edits in the same commit window as the generator change, so the docs site does not ship in a half-state. If a fifteenth page surfaces during implementation, fold it into the same commit window with the same "first-client check" lens: would a consumer arriving at this page from search read code that compiles against the post-R190 generated `GraphitronContext`?
 
 ## Open questions
 
