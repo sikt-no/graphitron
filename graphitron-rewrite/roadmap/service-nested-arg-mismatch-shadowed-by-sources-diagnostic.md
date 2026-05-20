@@ -1,7 +1,7 @@
 ---
 id: R187
 title: Nested @service param-name mismatch shadowed by 'unrecognized sources type' diagnostic
-status: Spec
+status: In Review
 bucket: bug
 priority: 6
 theme: service
@@ -73,11 +73,12 @@ This item *deliberately* doesn't take that on. R187 is a bug fix with a small, s
 
 ## Implementation
 
-Single-file change in `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/ServiceCatalog.java`:
+Shipped. Single-file change in `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/ServiceCatalog.java`:
 
-- Reorder branches inside `sourcesShape.isEmpty()` per the decision above. The `dtoSourcesRejectionReason` block moves up so it can short-circuit before the arg-mismatch arm; the arg-mismatch arm sheds its `parentPkColumns.isEmpty()` outer gate and runs whenever `!looksLikeSourcesShape(p.getParameterizedType())`.
-- Update the existing comment block at 265-275 ("SOURCES batching is only meaningful when there is a parent table…") to reflect the new framing: the parameter-shape axis is the discriminator, and `parentPkColumns` only affects whether SOURCES batching was a *possible* outcome ahead of the name-mismatch check, not whether the name-mismatch diagnostic is produced.
-- No new helpers, no signature changes, no model changes. The change is local to this one block.
+- Reordered branches inside `sourcesShape.isEmpty()` per the decision. The `dtoSourcesRejectionReason` block moved up so it can short-circuit before the arg-mismatch arm; the arg-mismatch arm shed its `parentPkColumns.isEmpty()` outer gate and now runs whenever `!looksLikeSourcesShape(p.getParameterizedType())`.
+- Updated the comment block (formerly "SOURCES batching is only meaningful when there is a parent table…") to reflect the new framing: the parameter-shape axis is the discriminator, and `parentPkColumns` only affects whether SOURCES batching was a *possible* outcome ahead of the name-mismatch check, not whether the name-mismatch diagnostic is produced.
+
+**Deviation from Spec (DTO-arm gate).** The Spec's step 3 said "move `dtoSourcesRejectionReason` up unconditionally; precedence kept above arg-mismatch". Implementation discovered that this breaks the existing `dtoSources_onRootField_pointsAtArgCtxMismatch` test at `ServiceCatalogTest.java:172-187` (root + `List<DTO>` + named GraphQL arg expects arg-mismatch to win, not the `@sourceRow` hint). The Spec's own "Precedence between DTO-hint and arg-mismatch" section explicitly preserves that test, so the contradiction is in the Design's branch wording, not in the intent. Resolved by gating the DTO arm to nested coordinates only (`if (!parentPkColumns.isEmpty()) { … dtoReason … }`), which gives the matrix the Spec specifies: root + `List<DTO>` → arg-mismatch; nested + `List<DTO>` → `@sourceRow` hint; nested + `LocalDate` → arg-mismatch (the R187 fix); root + `LocalDate` → arg-mismatch (unchanged). No new helpers, no signature changes, no model changes.
 
 ## Tests
 
