@@ -24,7 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
-| `R197` | LSP didSave/didChange drives in-process regen trigger | Spec | 2026-05-20 | [plan](lsp-driven-regen-trigger.md) |
+| `R197` | LSP didSave drives in-process regen trigger | Spec | 2026-05-20 | [plan](lsp-driven-regen-trigger.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R198` | SchemaWatcher on macOS is polling-only; lift FS-bound tests to synthetic dispatch | In Review | 2026-05-20 | [plan](schemawatcher-mac-polling-fallback.md) |
@@ -219,7 +219,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R149` [**End-to-end LSP publish-diagnostics test and buildOutput report-population test for R147**](r147-followup-end-to-end-publish-diagnostics-tests.md) — Backlog, test
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
-- `R197` [**LSP didSave/didChange drives in-process regen trigger**](lsp-driven-regen-trigger.md) — Spec, feature
+- `R197` [**LSP didSave drives in-process regen trigger**](lsp-driven-regen-trigger.md) — Spec, feature
 - `R198` [**SchemaWatcher on macOS is polling-only; lift FS-bound tests to synthetic dispatch**](schemawatcher-mac-polling-fallback.md) — In Review, bug
 - `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
