@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.model;
 import no.sikt.graphitron.javapoet.ClassName;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * A jOOQ table resolved from a {@code @table} directive value.
@@ -78,5 +79,26 @@ public record TableRef(
     public TableRef withProvenance(NameProvenance newProvenance) {
         return new TableRef(tableName, javaFieldName, tableClass, recordClass,
             constantsClass, primaryKeyColumns, newProvenance);
+    }
+
+    // Provenance is LSP metadata, not part of structural identity: two refs to the same
+    // table are equal regardless of whether the SQL name was authored or inferred. The
+    // @service / @mutation payload-table match checks in FieldBuilder rely on this.
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof TableRef other)) return false;
+        return Objects.equals(tableName, other.tableName)
+            && Objects.equals(javaFieldName, other.javaFieldName)
+            && Objects.equals(tableClass, other.tableClass)
+            && Objects.equals(recordClass, other.recordClass)
+            && Objects.equals(constantsClass, other.constantsClass)
+            && Objects.equals(primaryKeyColumns, other.primaryKeyColumns);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(tableName, javaFieldName, tableClass, recordClass,
+            constantsClass, primaryKeyColumns);
     }
 }
