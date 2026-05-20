@@ -1,7 +1,7 @@
 ---
 id: R160
 title: LSP inlay hints and hover for inferred directives and field/type classification
-status: Ready
+status: Spec
 bucket: feature
 theme: lsp
 depends-on: []

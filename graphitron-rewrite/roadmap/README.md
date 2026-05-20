@@ -32,9 +32,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R196` | LSP fails to publish diagnostics after save-triggered build; stale errors persist until next edit | Spec | 2026-05-20 | [plan](lsp-publish-diagnostics-on-build-trigger.md) |
+| `R160` | LSP inlay hints and hover for inferred directives and field/type classification | Spec | 2026-05-20 <sub>created 2026-05-13</sub> | [plan](lsp-display-inference-and-classification.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
-| `R160` | LSP inlay hints and hover for inferred directives and field/type classification | Ready | 2026-05-20 <sub>created 2026-05-13</sub> | [plan](lsp-display-inference-and-classification.md) |
 
 ---
 
@@ -225,7 +225,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
 - `R196` [**LSP fails to publish diagnostics after save-triggered build; stale errors persist until next edit**](lsp-publish-diagnostics-on-build-trigger.md) — Spec, bug
-- `R160` [**LSP inlay hints and hover for inferred directives and field/type classification**](lsp-display-inference-and-classification.md) — Ready, feature
+- `R160` [**LSP inlay hints and hover for inferred directives and field/type classification**](lsp-display-inference-and-classification.md) — Spec, feature
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
 
 ### (untagged)
