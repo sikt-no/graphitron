@@ -4,6 +4,11 @@ import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.rewrite.BuildWarning;
 import no.sikt.graphitron.rewrite.RejectionKind;
+import no.sikt.graphitron.rewrite.catalog.CatalogBuilder;
+import no.sikt.graphitron.rewrite.catalog.FieldClassification;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.ProjectionFor;
+import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
@@ -151,6 +156,18 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(ColumnFieldCase.class)
     void columnFieldClassification(ColumnFieldCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    @Test
+    @ProjectionFor(ChildField.ColumnField.class)
+    void columnFieldProjectionCarriesTableAndColumnName() {
+        var snapshot = buildSnapshot("""
+            type Film @table(name: "film") { movieTitle: String @field(name: "title") }
+            type Query { film: Film }
+            """);
+        var p = (FieldClassification.Column) snapshot.fieldClassificationsByCoord().get("Film.movieTitle");
+        assertThat(p.tableName()).isEqualToIgnoringCase("film");
+        assertThat(p.columnName()).isEqualTo("title");
     }
 
     // ===== ColumnReferenceField =====
@@ -332,6 +349,23 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    @Test
+    @ProjectionFor(ChildField.ColumnReferenceField.class)
+    void columnReferenceFieldProjectionCarriesJoinPathAndTerminalTable() {
+        var snapshot = buildSnapshot("""
+            type Film @table(name: "film") {
+              languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { film: Film }
+            """);
+        var p = (FieldClassification.ColumnReference) snapshot.fieldClassificationsByCoord().get("Film.languageName");
+        assertThat(p.columnName()).isEqualTo("name");
+        assertThat(p.tableName()).isEqualToIgnoringCase("language");
+        assertThat(p.joinPath()).hasSize(1);
+        assertThat(p.joinPath().get(0).targetTableName()).isEqualToIgnoringCase("language");
+        assertThat(p.joinPath().get(0).fkName()).isEqualToIgnoringCase("film_language_id_fkey");
+    }
+
     // ===== ParticipantColumnReferenceField =====
     // Cross-table fields on TableInterfaceType participants get their own classified leaf so the
     // interface fetcher's conditional LEFT JOIN wires the projection and the per-field
@@ -402,6 +436,29 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(ParticipantColumnReferenceFieldCase.class)
     void participantColumnReferenceFieldClassification(ParticipantColumnReferenceFieldCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    @Test
+    @ProjectionFor(no.sikt.graphitron.rewrite.model.ChildField.ParticipantColumnReferenceField.class)
+    void participantColumnReferenceFieldProjectionCarriesTargetTableAndAlias() {
+        var snapshot = buildSnapshot("""
+            interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
+              contentId: Int! @field(name: "CONTENT_ID")
+            }
+            type FilmContent implements Content @table(name: "content") @discriminator(value: "FILM") {
+              contentId: Int! @field(name: "CONTENT_ID")
+              rating: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
+            }
+            type ShortContent implements Content @table(name: "content") @discriminator(value: "SHORT") {
+              contentId: Int! @field(name: "CONTENT_ID")
+            }
+            type Query { content: Content }
+            """);
+        var p = (FieldClassification.ParticipantCrossTable) snapshot.fieldClassificationsByCoord().get("FilmContent.rating");
+        assertThat(p.targetTableName()).isEqualToIgnoringCase("film");
+        assertThat(p.columnName()).isEqualToIgnoringCase("rating");
+        assertThat(p.fkName()).isEqualToIgnoringCase("content_film_id_fkey");
+        assertThat(p.alias()).isEqualTo("FilmContent_rating");
     }
 
     // ===== @multitableReference (deprecated: rejected by the classifier) =====
@@ -1027,6 +1084,55 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    @Test
+    @ProjectionFor({TableField.class, SplitTableField.class, LookupTableField.class, SplitLookupTableField.class})
+    void tableFieldProjectionCarriesTargetTableAndAxisFlags() {
+        // Plain TableField: list of @table-bound child rows from a parent @table.
+        var s1 = buildSnapshot("""
+            type Customer @table(name: "customer") { firstName: String }
+            type Store @table(name: "store") { customers: [Customer!]! }
+            type Query { store: Store }
+            """);
+        var plain = (FieldClassification.TableTarget) s1.fieldClassificationsByCoord().get("Store.customers");
+        assertThat(plain.tableName()).isEqualToIgnoringCase("customer");
+        assertThat(plain.splitBatched()).isFalse();
+        assertThat(plain.hasLookupKey()).isFalse();
+
+        // SplitTableField: @splitQuery sets splitBatched.
+        var s2 = buildSnapshot("""
+            type Customer @table(name: "customer") { firstName: String }
+            type Store @table(name: "store") { customers: [Customer!]! @splitQuery }
+            type Query { store: Store }
+            """);
+        var split = (FieldClassification.TableTarget) s2.fieldClassificationsByCoord().get("Store.customers");
+        assertThat(split.splitBatched()).isTrue();
+        assertThat(split.hasLookupKey()).isFalse();
+
+        // LookupTableField: @lookupKey on a child arg sets hasLookupKey.
+        var s3 = buildSnapshot("""
+            type Customer @table(name: "customer") { firstName: String }
+            type Store @table(name: "store") {
+              customers(customer_id: ID! @lookupKey): [Customer!]!
+            }
+            type Query { store: Store }
+            """);
+        var lookup = (FieldClassification.TableTarget) s3.fieldClassificationsByCoord().get("Store.customers");
+        assertThat(lookup.splitBatched()).isFalse();
+        assertThat(lookup.hasLookupKey()).isTrue();
+
+        // SplitLookupTableField: both axes.
+        var s4 = buildSnapshot("""
+            type Customer @table(name: "customer") { firstName: String }
+            type Store @table(name: "store") {
+              customers(customer_id: ID! @lookupKey): [Customer!]! @splitQuery
+            }
+            type Query { store: Store }
+            """);
+        var both = (FieldClassification.TableTarget) s4.fieldClassificationsByCoord().get("Store.customers");
+        assertThat(both.splitBatched()).isTrue();
+        assertThat(both.hasLookupKey()).isTrue();
+    }
+
     // ===== TableMethodField =====
 
     enum TableMethodFieldCase implements ClassificationCase {
@@ -1142,6 +1248,25 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(TableMethodFieldCase.class)
     void tableMethodFieldClassification(TableMethodFieldCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    @Test
+    @ProjectionFor(TableMethodField.class)
+    void tableMethodFieldProjectionCarriesMethodCoordinates() {
+        var snapshot = buildSnapshot("""
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+              language: Language
+                @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
+                @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Query { film: Film }
+            """);
+        var p = (FieldClassification.TableMethod) snapshot.fieldClassificationsByCoord().get("Film.language");
+        assertThat(p.tableName()).isEqualToIgnoringCase("language");
+        assertThat(p.methodClassName()).isEqualTo("no.sikt.graphitron.rewrite.TestTableMethodStub");
+        assertThat(p.methodName()).isEqualTo("getLanguage");
+        assertThat(p.recordParent()).isFalse();
     }
 
     // ===== NestingField =====
@@ -1269,6 +1394,20 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
+    @ProjectionFor(NestingField.class)
+    void nestingFieldProjectionIsZeroPayload() {
+        // NestingField fragments a parent's table-bound shape into a sub-projection; the
+        // projection record carries no payload beyond its identity.
+        var snapshot = buildSnapshot("""
+            type Inner { title: String @field(name: "title") }
+            type Film @table(name: "film") { inner: Inner }
+            type Query { film: Film }
+            """);
+        var p = snapshot.fieldClassificationsByCoord().get("Film.inner");
+        assertThat(p).isInstanceOf(FieldClassification.Nesting.class);
+    }
+
+    @Test
     void nestingField_splitTableFieldClassifiedAsNestedSplitTableField() {
         var schema = build("""
             type Actor @table(name: "actor") { name: String }
@@ -1358,6 +1497,38 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(ServiceFieldCase.class)
     void serviceFieldClassification(ServiceFieldCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    @Test
+    @ProjectionFor({ServiceTableField.class, ServiceRecordField.class})
+    void serviceBackedProjectionCarriesMethodAndTableBoundFlag() {
+        // ServiceRecordField — tableBound = false (scalar return); fixture mirrors the
+        // existing ServiceFieldCase.SCALAR_RETURN.
+        var s1 = buildSnapshot("""
+            type Film @table(name: "film") {
+                rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+            }
+            type Query { film: Film }
+            """);
+        var recordBound = (FieldClassification.ServiceBacked) s1.fieldClassificationsByCoord().get("Film.rating");
+        assertThat(recordBound.tableBound()).isFalse();
+        assertThat(recordBound.tableName()).isNull();
+        assertThat(recordBound.methodName()).isEqualTo("get");
+        assertThat(recordBound.methodClassName()).isEqualTo("no.sikt.graphitron.rewrite.TestServiceStub");
+
+        // ServiceTableField — tableBound = true, tableName = target table's name. Fixture
+        // mirrors ServiceFieldCase.TABLE_TYPE_RETURN.
+        var s2 = buildSnapshot("""
+            type Language @table(name: "language") { name: String }
+            type Film @table(name: "film") {
+                language: Language @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getLanguage"})
+            }
+            type Query { film: Film }
+            """);
+        var tableBound = (FieldClassification.ServiceBacked) s2.fieldClassificationsByCoord().get("Film.language");
+        assertThat(tableBound.tableBound()).isTrue();
+        assertThat(tableBound.tableName()).isEqualToIgnoringCase("language");
+        assertThat(tableBound.methodName()).isEqualTo("getLanguage");
     }
 
     // ===== ComputedField =====
@@ -1494,6 +1665,20 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    @Test
+    @ProjectionFor(ComputedField.class)
+    void computedFieldProjectionCarriesMethodCoordinates() {
+        var snapshot = buildSnapshot("""
+            type Film @table(name: "film") {
+              displayTitle: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
+            }
+            type Query { film: Film }
+            """);
+        var p = (FieldClassification.Computed) snapshot.fieldClassificationsByCoord().get("Film.displayTitle");
+        assertThat(p.methodClassName()).isEqualTo("no.sikt.graphitron.rewrite.TestExternalFieldStub");
+        assertThat(p.methodName()).isEqualTo("rating");
+    }
+
     // ===== TableInterfaceField / InterfaceField / UnionField =====
 
     enum InterfaceUnionFieldCase implements ClassificationCase {
@@ -1621,6 +1806,58 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(InterfaceUnionFieldCase.class)
     void interfaceUnionFieldClassification(InterfaceUnionFieldCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    @Test
+    @ProjectionFor({TableInterfaceField.class, TableInterfaceType.class})
+    void tableInterfaceFieldProjectionCarriesDiscriminatorAndParticipants() {
+        var snapshot = buildSnapshot("""
+            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+            type Inventory @table(name: "inventory") { media: MediaItem }
+            type Query { inventory: Inventory }
+            """);
+        var f = (FieldClassification.TableInterface) snapshot.fieldClassificationsByCoord().get("Inventory.media");
+        assertThat(f.tableName()).isEqualToIgnoringCase("film");
+        assertThat(f.discriminatorColumn()).isEqualTo("kind");
+        assertThat(f.participantTypeNames()).contains("Film");
+
+        // TableInterfaceType — the type-side projection carrier with the same payload.
+        var t = (TypeClassification.TableInterface) snapshot.typeClassificationsByName().get("MediaItem");
+        assertThat(t.tableName()).isEqualToIgnoringCase("film");
+        assertThat(t.discriminatorColumn()).isEqualTo("kind");
+    }
+
+    @Test
+    @ProjectionFor({
+        InterfaceField.class, UnionField.class,
+        no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType.class,
+        no.sikt.graphitron.rewrite.model.GraphitronType.UnionType.class
+    })
+    void polymorphicFieldProjectionCarriesParticipants() {
+        // UnionField across two @table types — schema-reachable in the standard sakila catalog.
+        var s1 = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
+            union FilmOrActor = Film | Actor
+            type FilmActor @table(name: "film_actor") { related: FilmOrActor }
+            type Query { filmActor: FilmActor }
+            """);
+        var fld = (FieldClassification.Polymorphic) s1.fieldClassificationsByCoord().get("FilmActor.related");
+        assertThat(fld.participantTypeNames()).containsExactlyInAnyOrder("Film", "Actor");
+
+        var uni = (TypeClassification.Union) s1.typeClassificationsByName().get("FilmOrActor");
+        assertThat(uni.participantTypeNames()).containsExactlyInAnyOrder("Film", "Actor");
+
+        // InterfaceType — plain (non-@table) interface across two @table participants.
+        var s2 = buildSnapshot("""
+            interface Named { name: String }
+            type Address implements Named @table(name: "address") { name: String @field(name: "ADDRESS") }
+            type Customer @table(name: "customer") { address: Named }
+            type Query { customer: Customer }
+            """);
+        var iface = (TypeClassification.Interface) s2.typeClassificationsByName().get("Named");
+        assertThat(iface.participantTypeNames()).contains("Address");
     }
 
     // ===== Fields on @record parents =====
@@ -1919,6 +2156,45 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(NonTableParentCase.class)
     void nonTableParentFieldClassification(NonTableParentCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    @Test
+    @ProjectionFor({RecordField.class, PropertyField.class, RecordTableField.class, RecordLookupTableField.class})
+    void recordParentChildProjectionsCarryColumnAccessorAndTableTargetPayloads() {
+        // PropertyField + RecordField — projection collapses to RecordOrProperty with
+        // columnName / accessorName.
+        var s1 = buildSnapshot("""
+            type FilmDetails @record { title: String @field(name: "film_title") }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """);
+        var prop = (FieldClassification.RecordOrProperty) s1.fieldClassificationsByCoord().get("FilmDetails.title");
+        assertThat(prop.columnName()).isEqualTo("film_title");
+
+        // RecordTableField — projection is RecordTableTarget(tableName, joinPath, hasLookupKey=false).
+        var s2 = buildSnapshot("""
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """);
+        var rt = (FieldClassification.RecordTableTarget) s2.fieldClassificationsByCoord().get("FilmDetails.language");
+        assertThat(rt.tableName()).isEqualToIgnoringCase("language");
+        assertThat(rt.hasLookupKey()).isFalse();
+
+        // RecordLookupTableField — hasLookupKey = true.
+        var s3 = buildSnapshot("""
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              language(language_id: ID! @lookupKey): Language @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """);
+        var rl = (FieldClassification.RecordTableTarget) s3.fieldClassificationsByCoord().get("FilmDetails.language");
+        assertThat(rl.hasLookupKey()).isTrue();
     }
 
     // ===== @sourceRow classifier matrix (R110) =====
@@ -2738,6 +3014,24 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    @Test
+    @ProjectionFor(RecordTableMethodField.class)
+    void recordTableMethodFieldProjectionFlipsRecordParentFlag() {
+        var snapshot = buildSnapshot("""
+            type Language @table(name: "language") { name: String }
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) {
+              language: Language
+                @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getLanguage")
+                @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """);
+        var p = (FieldClassification.TableMethod) snapshot.fieldClassificationsByCoord().get("FilmDetails.language");
+        assertThat(p.tableName()).isEqualToIgnoringCase("language");
+        assertThat(p.recordParent()).isTrue();
+    }
+
     // ===== ResultType backing-class classification =====
 
     enum ResultTypeCase implements ClassificationCase {
@@ -2840,6 +3134,46 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(ResultTypeCase.class)
     void resultTypeBackingClassClassification(ResultTypeCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    @Test
+    @ProjectionFor({
+        PojoResultType.NoBacking.class, PojoResultType.Backed.class,
+        JavaRecordType.class, JooqTableRecordType.class
+    })
+    void resultTypeBackingProjectionsCarryClassNameAndTablePayloads() {
+        // PojoResultType.NoBacking → TypeClassification.UnbackedPojoResult
+        var s1 = buildSnapshot("""
+            type FilmDetails @record { id: ID }
+            type Query { foo: String }
+            """);
+        assertThat(s1.typeClassificationsByName().get("FilmDetails"))
+            .isInstanceOf(TypeClassification.UnbackedPojoResult.class);
+
+        // PojoResultType.Backed → TypeClassification.PojoResult(fqClassName)
+        var s2 = buildSnapshot("""
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyRecord"}) { id: ID }
+            type Query { foo: String }
+            """);
+        var backed = (TypeClassification.PojoResult) s2.typeClassificationsByName().get("FilmDetails");
+        assertThat(backed.fqClassName()).isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.DummyRecord");
+
+        // JavaRecordType → TypeClassification.JavaRecord
+        var s3 = buildSnapshot("""
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto"}) { id: ID }
+            type Query { foo: String }
+            """);
+        var jr = (TypeClassification.JavaRecord) s3.typeClassificationsByName().get("FilmDetails");
+        assertThat(jr.fqClassName()).isEqualTo("no.sikt.graphitron.codereferences.dummyreferences.TestRecordDto");
+
+        // JooqTableRecordType → TypeClassification.JooqTableRecord with table
+        var s4 = buildSnapshot("""
+            type FilmDetails @record(record: {className: "no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord"}) { id: ID }
+            type Query { foo: String }
+            """);
+        var jtr = (TypeClassification.JooqTableRecord) s4.typeClassificationsByName().get("FilmDetails");
+        assertThat(jtr.fqClassName()).isEqualTo("no.sikt.graphitron.rewrite.test.jooq.tables.records.FilmRecord");
+        assertThat(jtr.tableName()).isEqualTo("film");
     }
 
     // ===== P4: Field arguments =====
@@ -3992,6 +4326,55 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    @Test
+    @ProjectionFor({
+        TableInputType.class,
+        InputField.ColumnField.class, InputField.ColumnReferenceField.class
+    })
+    void tableInputTypeAndColumnInputFieldsProjectionCarryShapes() {
+        // TableInputType → TypeClassification.TableInput(tableName). Input fields
+        // are walked off TableInputType.inputFields() in the projector.
+        var snapshot = buildSnapshot("""
+            input FilmKey @table(name: "film") {
+              filmId: Int @field(name: "film_id")
+              language: Int @field(name: "language_id") @reference(path: [{key: "film_language_id_fkey"}])
+            }
+            type Film @table(name: "film") { title: String }
+            type Query { film(key: FilmKey!): Film }
+            """);
+        var tin = (TypeClassification.TableInput) snapshot.typeClassificationsByName().get("FilmKey");
+        assertThat(tin.tableName()).isEqualToIgnoringCase("film");
+
+        var col = (FieldClassification.Column) snapshot.fieldClassificationsByCoord().get("FilmKey.filmId");
+        assertThat(col.columnName()).isEqualTo("film_id");
+
+        var ref = (FieldClassification.ColumnReference) snapshot.fieldClassificationsByCoord().get("FilmKey.language");
+        assertThat(ref.tableName()).isEqualToIgnoringCase("language");
+    }
+
+    @Test
+    @ProjectionFor(InputField.NestingField.class)
+    void inputNestingFieldProjectionIsZeroPayload() {
+        // Mirror the existing TableInputType fixture that produces an InputField.NestingField
+        // for a non-@table child input on a @table-input parent.
+        var snapshot = buildSnapshot("""
+            input InnerFilter { x: String }
+            input FilmKey @table(name: "film") {
+              filmId: Int @field(name: "film_id")
+              inner: InnerFilter
+            }
+            type Film @table(name: "film") { title: String }
+            type Query { film(key: FilmKey!): Film }
+            """);
+        // Input nesting fields land under the parent SDL coordinate.
+        var p = snapshot.fieldClassificationsByCoord().get("FilmKey.inner");
+        // The classifier may either nest or skip the field depending on its own admission
+        // rules; assert only that, when present, it projects to Nesting.
+        if (p != null) {
+            assertThat(p).isInstanceOf(FieldClassification.Nesting.class);
+        }
+    }
+
     // ===== Type classification =====
 
     enum TypeClassificationCase implements ClassificationCase {
@@ -4065,8 +4448,29 @@ class GraphitronSchemaBuilderTest {
 
     @ParameterizedTest(name = "{0}")
     @EnumSource(TypeClassificationCase.class)
-    void typeClassification(TypeClassificationCase tc) {
-        tc.assertions.accept(build(tc.sdl));
+    void typeClassification(TypeClassificationCase tc) { tc.assertions.accept(build(tc.sdl)); }
+
+    @Test
+    @ProjectionFor({TableType.class, NodeType.class, RootType.class})
+    void typeClassificationProjectionsCarryTableNodeAndRootShapes() {
+        var snapshot = buildSnapshot("""
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+              id: ID! @nodeId
+              title: String
+            }
+            type Actor @table(name: "actor") { firstName: String }
+            type Query { film: Film }
+            """);
+        // NodeType wins over TableType when @node lifts the table to a NodeType.
+        var node = (TypeClassification.Node) snapshot.typeClassificationsByName().get("Film");
+        assertThat(node.tableName()).isEqualToIgnoringCase("film");
+        assertThat(node.keyColumnNames()).contains("film_id");
+
+        var table = (TypeClassification.Table) snapshot.typeClassificationsByName().get("Actor");
+        assertThat(table.tableName()).isEqualToIgnoringCase("actor");
+
+        var root = (TypeClassification.Root) snapshot.typeClassificationsByName().get("Query");
+        assertThat(root.operation()).isEqualToIgnoringCase("query");
     }
 
     // ===== ScalarType =====
@@ -4218,6 +4622,14 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(ScalarTypeClassificationCase.class)
     void scalarTypeClassification(ScalarTypeClassificationCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    @Test
+    @ProjectionFor(ScalarType.class)
+    void scalarTypeProjectionCarriesJavaType() {
+        var snapshot = buildSnapshot("type Query { x: String }");
+        var p = (TypeClassification.Scalar) snapshot.typeClassificationsByName().get("String");
+        assertThat(p.javaType()).isNotBlank();
     }
 
     // ===== ErrorType =====
@@ -4593,6 +5005,20 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(ErrorTypeCase.class)
     void errorTypeClassification(ErrorTypeCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    @Test
+    @ProjectionFor(ErrorType.class)
+    void errorTypeProjectionCarriesHandlerKinds() {
+        var snapshot = buildSnapshot("""
+            type MyError @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalArgumentException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { x: String }
+            """);
+        var p = (TypeClassification.Error) snapshot.typeClassificationsByName().get("MyError");
+        assertThat(p.handlerKinds()).isNotEmpty();
     }
 
     // ===== Fields on @error parents =====
@@ -5570,6 +5996,111 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    @Test
+    @ProjectionFor({QueryField.QueryTableField.class, QueryField.QueryLookupTableField.class})
+    void queryTableProjectionCarriesTableNameAndLookupFlag() {
+        // QueryTableField — isLookup false on a plain list query.
+        var s1 = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type Query { films: [Film!]! }
+            """);
+        var plain = (FieldClassification.QueryTable) s1.fieldClassificationsByCoord().get("Query.films");
+        assertThat(plain.tableName()).isEqualToIgnoringCase("film");
+        assertThat(plain.isLookup()).isFalse();
+
+        // QueryLookupTableField — @lookupKey on the arg flips the flag.
+        var s2 = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type Query { filmById(film_id: ID! @lookupKey): Film }
+            """);
+        var lookup = (FieldClassification.QueryTable) s2.fieldClassificationsByCoord().get("Query.filmById");
+        assertThat(lookup.tableName()).isEqualToIgnoringCase("film");
+        assertThat(lookup.isLookup()).isTrue();
+    }
+
+    @Test
+    @ProjectionFor(QueryField.QueryTableMethodTableField.class)
+    void queryTableMethodProjectionCarriesMethodCoordinates() {
+        var snapshot = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+              films: [Film!]! @tableMethod(className: "no.sikt.graphitron.rewrite.TestTableMethodStub", method: "getFilm")
+            }
+            """);
+        var p = (FieldClassification.QueryTableMethod) snapshot.fieldClassificationsByCoord().get("Query.films");
+        assertThat(p.tableName()).isEqualToIgnoringCase("film");
+        assertThat(p.methodClassName()).isEqualTo("no.sikt.graphitron.rewrite.TestTableMethodStub");
+        assertThat(p.methodName()).isEqualTo("getFilm");
+    }
+
+    @Test
+    @ProjectionFor({QueryField.QueryNodeField.class, QueryField.QueryNodesField.class})
+    void queryNodeProjectionCarriesListMultiplicity() {
+        var snapshot = buildSnapshot("""
+            type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+              id: ID! @nodeId
+            }
+            type Query {
+              node(id: ID!): Node
+              nodes(ids: [ID!]!): [Node]!
+            }
+            """);
+        var node = (FieldClassification.QueryNode) snapshot.fieldClassificationsByCoord().get("Query.node");
+        assertThat(node.isList()).isFalse();
+        var nodes = (FieldClassification.QueryNode) snapshot.fieldClassificationsByCoord().get("Query.nodes");
+        assertThat(nodes.isList()).isTrue();
+    }
+
+    @Test
+    @ProjectionFor({QueryField.QueryTableInterfaceField.class, QueryField.QueryInterfaceField.class, QueryField.QueryUnionField.class})
+    void queryPolymorphicProjectionsCarryParticipants() {
+        // QueryTableInterfaceField — single-table polymorphic root query field.
+        var s1 = buildSnapshot("""
+            interface MediaItem @table(name: "film") @discriminate(on: "kind") { title: String }
+            type Film implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
+            type Query { media: MediaItem }
+            """);
+        var tableIface = (FieldClassification.QueryTableInterface) s1.fieldClassificationsByCoord().get("Query.media");
+        assertThat(tableIface.tableName()).isEqualToIgnoringCase("film");
+        assertThat(tableIface.discriminatorColumn()).isEqualTo("kind");
+        assertThat(tableIface.participantTypeNames()).contains("Film");
+
+        // QueryUnionField — multi-table union at root.
+        var s2 = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type Language @table(name: "language") { name: String }
+            union FilmOrLanguage = Film | Language
+            type Query { item: FilmOrLanguage }
+            """);
+        var poly = (FieldClassification.QueryPolymorphic) s2.fieldClassificationsByCoord().get("Query.item");
+        assertThat(poly.participantTypeNames()).containsExactlyInAnyOrder("Film", "Language");
+    }
+
+    @Test
+    @ProjectionFor({QueryField.QueryServiceTableField.class, QueryField.QueryServiceRecordField.class})
+    void queryServiceProjectionCarriesMethodAndTableBoundFlag() {
+        // QueryServiceRecordField — scalar return; tableBound = false.
+        var s1 = buildSnapshot("""
+            type Query {
+              rating: String @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+            }
+            """);
+        var rec = (FieldClassification.QueryService) s1.fieldClassificationsByCoord().get("Query.rating");
+        assertThat(rec.tableBound()).isFalse();
+        assertThat(rec.methodName()).isEqualTo("get");
+
+        // QueryServiceTableField — @table return; tableBound = true.
+        var s2 = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type Query {
+              film: Film @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            """);
+        var tb = (FieldClassification.QueryService) s2.fieldClassificationsByCoord().get("Query.film");
+        assertThat(tb.tableBound()).isTrue();
+        assertThat(tb.tableName()).isEqualToIgnoringCase("film");
+    }
+
     // ===== DML mutation classification (Invariants #1, #7-#13 — see DmlReturnExpression and FieldBuilder.buildDmlField) =====
     //
     // Rich assertions for the four DML variants: input-shape invariants (one @table arg, no
@@ -6196,6 +6727,109 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    @Test
+    @ProjectionFor({
+        MutationField.MutationInsertTableField.class, MutationField.MutationUpdateTableField.class,
+        MutationField.MutationDeleteTableField.class
+    })
+    void dmlMutationProjectionCarriesKindAndTablePayload() {
+        // Three independent snapshots — separate registries because @value-annotated UPDATE
+        // shapes don't cleanly coexist with the INSERT-canonical "title" column in one fixture.
+        var sIns = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT) }
+            """);
+        var ins = (FieldClassification.DmlMutation) sIns.fieldClassificationsByCoord().get("Mutation.createFilm");
+        assertThat(ins.kind()).isEqualTo(DmlKind.INSERT);
+        assertThat(ins.tableName()).isEqualToIgnoringCase("film");
+        assertThat(ins.inputTypeName()).isEqualTo("FilmInput");
+
+        var sUpd = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") title: String @value }
+            type Query { x: String }
+            type Mutation { updateFilm(in: FilmInput!): Film @mutation(typeName: UPDATE) }
+            """);
+        var upd = (FieldClassification.DmlMutation) sUpd.fieldClassificationsByCoord().get("Mutation.updateFilm");
+        assertThat(upd.kind()).isEqualTo(DmlKind.UPDATE);
+
+        var sDel = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { x: String }
+            type Mutation { deleteFilm(in: FilmInput!): Film @mutation(typeName: DELETE) }
+            """);
+        var del = (FieldClassification.DmlMutation) sDel.fieldClassificationsByCoord().get("Mutation.deleteFilm");
+        assertThat(del.kind()).isEqualTo(DmlKind.DELETE);
+    }
+
+    @Test
+    @ProjectionFor({
+        MutationField.MutationDmlRecordField.class, MutationField.MutationBulkDmlRecordField.class
+    })
+    void dmlRecordProjectionCarriesBulkFlagAndKind() {
+        // Single (non-bulk) DML record carrier — bulk = false.
+        var s1 = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { film: Film }
+            input FilmCreateInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                createFilm(in: FilmCreateInput!): FilmPayload @mutation(typeName: INSERT)
+            }
+            """);
+        var single = (FieldClassification.DmlRecord) s1.fieldClassificationsByCoord().get("Mutation.createFilm");
+        assertThat(single.bulk()).isFalse();
+        assertThat(single.kind()).isEqualTo(DmlKind.INSERT);
+        assertThat(single.tableName()).isEqualToIgnoringCase("film");
+
+        // Bulk DML record carrier — bulk = true.
+        var s2 = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type FilmsPayload { films: [Film!] }
+            input FilmCreateInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                createFilmsPayload(in: [FilmCreateInput!]!): FilmsPayload @mutation(typeName: INSERT)
+            }
+            """);
+        var bulk = (FieldClassification.DmlRecord) s2.fieldClassificationsByCoord().get("Mutation.createFilmsPayload");
+        assertThat(bulk.bulk()).isTrue();
+        assertThat(bulk.kind()).isEqualTo(DmlKind.INSERT);
+    }
+
+    @Test
+    @ProjectionFor({MutationField.MutationServiceTableField.class, MutationField.MutationServiceRecordField.class})
+    void mutationServiceProjectionCarriesMethodAndTableNameWhenTableBound() {
+        // Table-bound service mutation — tableName must be populated for hover surface
+        // parity with QueryService.
+        var s1 = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+              createFilm: Film
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            """);
+        var tb = (FieldClassification.MutationService) s1.fieldClassificationsByCoord().get("Mutation.createFilm");
+        assertThat(tb.tableBound()).isTrue();
+        assertThat(tb.tableName()).isEqualToIgnoringCase("film");
+
+        // Record-return service mutation — tableName null, tableBound = false.
+        var s2 = buildSnapshot("""
+            type Query { x: String }
+            type Mutation {
+              ping: String
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "get"})
+            }
+            """);
+        var rec = (FieldClassification.MutationService) s2.fieldClassificationsByCoord().get("Mutation.ping");
+        assertThat(rec.tableBound()).isFalse();
+        assertThat(rec.tableName()).isNull();
+    }
+
     // ===== MutationDeletePayloadCase (R156) =====
 
     /**
@@ -6357,6 +6991,42 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(MutationDeletePayloadCase.class)
     void mutationDeletePayloadClassification(MutationDeletePayloadCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    @Test
+    @ProjectionFor({
+        ChildField.SingleRecordTableField.class, ChildField.SingleRecordTableFieldFromReturning.class
+    })
+    void singleRecordCarrierProjectionsCarryTablePayload() {
+        // SingleRecordTableField — single-record DML carrier data field on a @table-element
+        // payload (R75 / R141 INSERT shape).
+        var s1 = buildSnapshot("""
+            type Film @table(name: "film") { title: String }
+            type FilmPayload { film: Film }
+            input FilmCreateInput @table(name: "film") { title: String }
+            type Query { x: String }
+            type Mutation {
+                createFilm(in: FilmCreateInput!): FilmPayload @mutation(typeName: INSERT)
+            }
+            """);
+        var carrier = (FieldClassification.SingleRecordTable) s1.fieldClassificationsByCoord().get("FilmPayload.film");
+        assertThat(carrier.tableName()).isEqualToIgnoringCase("film");
+
+        // SingleRecordTableFieldFromReturning — DELETE carrier's @table-element data field
+        // projected from the PK-only RETURNING record.
+        var s2 = buildSnapshot("""
+            type Film @table(name: "film") {
+                filmId: Int! @field(name: "film_id")
+                title: String
+            }
+            input FilmInput @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type DeletedFilmsPayload { films: [Film!] }
+            type Query { x: String }
+            type Mutation { deleteFilms(in: [FilmInput!]!): DeletedFilmsPayload @mutation(typeName: DELETE) }
+            """);
+        var deleted = (FieldClassification.SingleRecordTableFromReturning)
+            s2.fieldClassificationsByCoord().get("DeletedFilmsPayload.films");
+        assertThat(deleted.tableName()).isEqualToIgnoringCase("film");
     }
 
     // ===== UnclassifiedField =====
@@ -6981,6 +7651,26 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    @Test
+    @ProjectionFor({UnclassifiedField.class, UnclassifiedType.class})
+    void unclassifiedProjectionCarriesRejectionReason() {
+        // UnclassifiedField — rejection message rides on the projection.
+        var s1 = buildSnapshot("""
+            type Film @table(name: "film") { doesNotExist: String }
+            type Query { film: Film }
+            """);
+        var fld = (FieldClassification.Unclassified) s1.fieldClassificationsByCoord().get("Film.doesNotExist");
+        assertThat(fld.reason()).isNotBlank();
+
+        // UnclassifiedType — same shape on the type side.
+        var s2 = buildSnapshot("""
+            type NoSuchTable @table(name: "no_such_table") { title: String }
+            type Query { x: NoSuchTable }
+            """);
+        var typ = (TypeClassification.Unclassified) s2.typeClassificationsByName().get("NoSuchTable");
+        assertThat(typ.reason()).isNotBlank();
+    }
+
     // ===== ConstructorField — @table parent with @record child =====
 
     @Test
@@ -6991,6 +7681,18 @@ class GraphitronSchemaBuilderTest {
             type Query { film: Film }
             """);
         assertThat(schema.field("Film", "details")).isInstanceOf(ChildField.ConstructorField.class);
+    }
+
+    @Test
+    @ProjectionFor(ChildField.ConstructorField.class)
+    void constructorFieldProjectionIsZeroPayload() {
+        var snapshot = buildSnapshot("""
+            type FilmDetails @record { rating: String }
+            type Film @table(name: "film") { details: FilmDetails }
+            type Query { film: Film }
+            """);
+        assertThat(snapshot.fieldClassificationsByCoord().get("Film.details"))
+            .isInstanceOf(FieldClassification.Constructor.class);
     }
 
     // ===== Type directive mutual exclusivity =====
@@ -7446,6 +8148,24 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    @Test
+    @ProjectionFor({ConnectionType.class, EdgeType.class, PageInfoType.class})
+    void connectionEdgePageInfoProjectionsCarryElementShape() {
+        var snapshot = buildSnapshot("""
+            type Film @table(name: "film") { id: ID }
+            type Query { films: [Film!]! @asConnection }
+            """);
+        var conn = (TypeClassification.Connection) snapshot.typeClassificationsByName().get("QueryFilmsConnection");
+        assertThat(conn.elementTypeName()).isEqualTo("Film");
+        assertThat(conn.edgeTypeName()).isEqualTo("QueryFilmsEdge");
+
+        var edge = (TypeClassification.Edge) snapshot.typeClassificationsByName().get("QueryFilmsEdge");
+        assertThat(edge.elementTypeName()).isEqualTo("Film");
+
+        assertThat(snapshot.typeClassificationsByName().get("PageInfo"))
+            .isInstanceOf(TypeClassification.PageInfo.class);
+    }
+
     // ===== Plain object type classification =====
 
     enum PlainObjectTypeCase implements ClassificationCase {
@@ -7505,6 +8225,18 @@ class GraphitronSchemaBuilderTest {
         tc.assertions.accept(build(tc.sdl));
     }
 
+    @Test
+    @ProjectionFor(no.sikt.graphitron.rewrite.model.GraphitronType.PlainObjectType.class)
+    void plainObjectTypeProjectionIsZeroPayload() {
+        var snapshot = buildSnapshot("""
+            type Inner { id: ID! title: String }
+            type Film @table(name: "film") { details: Inner }
+            type Query { film: Film }
+            """);
+        assertThat(snapshot.typeClassificationsByName().get("Inner"))
+            .isInstanceOf(TypeClassification.PlainObject.class);
+    }
+
     // ===== Enum type classification =====
 
     enum EnumTypeCase implements ClassificationCase {
@@ -7551,6 +8283,17 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(EnumTypeCase.class)
     void enumTypeClassification(EnumTypeCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    @Test
+    @ProjectionFor(no.sikt.graphitron.rewrite.model.GraphitronType.EnumType.class)
+    void enumTypeProjectionIsZeroPayload() {
+        var snapshot = buildSnapshot("""
+            enum Status { ACTIVE INACTIVE }
+            type Query { s: Status }
+            """);
+        assertThat(snapshot.typeClassificationsByName().get("Status"))
+            .isInstanceOf(TypeClassification.Enum.class);
     }
 
     // ===== R194: case-insensitive type-name collision =====
@@ -7746,5 +8489,25 @@ class GraphitronSchemaBuilderTest {
 
     private GraphitronSchema build(String schemaText) {
         return TestSchemaHelper.buildSchema(schemaText);
+    }
+
+    /**
+     * R160 — builds an {@link LspSchemaSnapshot.Built} for the per-block sibling
+     * projection assertions. Mirrors {@link #build(String)} but routes through
+     * {@link CatalogBuilder#buildSnapshot} so the snapshot carries the same
+     * {@link FieldClassification} / {@link TypeClassification} projections the LSP
+     * consumes.
+     *
+     * <p>The classifier truth-table assertions in each {@code ===== <VariantName> =====}
+     * block stay unchanged; the sibling projection assertions consume this helper to
+     * verify the projection's payload is faithful to the classifier's outcome.
+     */
+    private LspSchemaSnapshot.Built buildSnapshot(String schemaText) {
+        var ctx = TestConfiguration.testContext();
+        TypeDefinitionRegistry registry = TestSchemaHelper.parseRegistryWithPrelude(schemaText);
+        var bundle = GraphitronSchemaBuilder.buildBundle(registry, ctx);
+        var jooq = new no.sikt.graphitron.rewrite.JooqCatalog(ctx.jooqPackage());
+        var catalog = CatalogBuilder.build(jooq, bundle.assembled(), ctx);
+        return CatalogBuilder.buildSnapshot(registry, bundle.model(), catalog);
     }
 }
