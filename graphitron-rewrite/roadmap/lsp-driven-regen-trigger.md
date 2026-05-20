@@ -83,6 +83,18 @@ coalesces them. If they save different files, both get scheduled; the
 debounce coalesces the actual regen runs. This is the existing FS-watcher
 behaviour; nothing new.
 
+## Shipped
+
+Single-commit phase. Wiring-order resolution flagged at Spec → Ready
+sign-off: the `DebounceExecutor` construction was hoisted from
+`startSchemaWatcher` up into `DevMojo.execute()` so the listener can be
+built before `bindServer`, which receives it as a constructor argument
+and threads it through to `DevServer` → each per-connection
+`GraphitronLanguageServer`. The listener body itself is extracted as a
+package-private static `DevMojo.buildSaveListener(suffixes, debounce, regen)`
+so the matching maven-plugin test exercises it without needing a real
+`MavenSession`.
+
 ## Plan
 
 1. **Listener at the language-server boundary.**

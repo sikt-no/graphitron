@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
+import no.sikt.graphitron.rewrite.maven.watch.DebounceExecutor;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,9 @@ import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -38,7 +42,8 @@ class DevMojoTest {
         // Occupy a port so the Mojo's bind path hits BindException.
         try (var blocker = new DevServer(
             new InetSocketAddress(InetAddress.getLoopbackAddress(), 0),
-            new no.sikt.graphitron.lsp.state.Workspace())) {
+            new no.sikt.graphitron.lsp.state.Workspace(),
+            uri -> {})) {
             int taken = blocker.port();
 
             var mojo = mojoFor(basedir, taken);
@@ -47,6 +52,26 @@ class DevMojoTest {
                 .isInstanceOf(MojoExecutionException.class)
                 .hasMessageContaining(String.valueOf(taken))
                 .hasMessageContaining("-Dgraphitron.dev.port=N");
+        }
+    }
+
+    @Test
+    void saveListener_schemaSuffixSchedulesRegen() throws Exception {
+        // Listener filters by suffix and schedules through the debounce. A
+        // .graphqls URI schedules a regen run; a .md URI is dropped before
+        // the debounce sees it.
+        AtomicInteger regens = new AtomicInteger();
+        try (var debounce = new DebounceExecutor(20)) {
+            Consumer<String> listener = DevMojo.buildSaveListener(
+                Set.of(".graphqls", ".graphql"),
+                debounce,
+                regens::incrementAndGet);
+
+            listener.accept("file:///path/to/schema.graphqls");
+            listener.accept("file:///readme.md");
+
+            Thread.sleep(150);
+            assertThat(regens).hasValue(1);
         }
     }
 

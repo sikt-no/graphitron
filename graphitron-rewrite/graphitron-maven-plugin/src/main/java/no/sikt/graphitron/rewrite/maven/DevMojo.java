@@ -25,6 +25,7 @@ import java.nio.file.Paths;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
  * Single user-facing entry point for editing graphitron schemas. Runs the
@@ -36,7 +37,10 @@ import java.util.concurrent.atomic.AtomicReference;
  *       connects.</li>
  *   <li>Watches {@code <schemaInputs>} for writes matching the configured
  *       {@code <schemaFileExtensions>} (default {@code .graphqls} /
- *       {@code .graphql}) and re-runs the generator on every save (debounced).</li>
+ *       {@code .graphql}) and re-runs the generator on every save (debounced).
+ *       Editor saves arriving over the LSP fire the same trigger directly,
+ *       bypassing the filesystem watcher's latency on platforms where it
+ *       polls (see R198).</li>
  *   <li>Watches every reactor project's {@code target/classes} for
  *       {@code .class} changes and rebuilds the in-process catalog
  *       atomically. Both jOOQ output (tables / columns / FKs) and
@@ -109,7 +113,14 @@ public class DevMojo extends AbstractRewriteMojo {
                 new GraphQLRewriteGenerator.BuildArtifacts(initial.catalog(), current),
                 initial.report());
         }
-        bindServer(workspace);
+        // Build the debounce and save-listener before bindServer so DevServer
+        // can hand the listener to each editor-facing GraphitronLanguageServer.
+        // LSP didSave fires this listener on the same debounce window the
+        // filesystem watcher uses, so the two paths coalesce on a single regen.
+        this.schemaDebounce = new DebounceExecutor(debounceMs);
+        Consumer<String> saveListener = buildSaveListener(
+            initialCtx.schemaFileExtensions(), schemaDebounce, () -> regenerate(workspace));
+        bindServer(workspace, saveListener);
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
         startClasspathWatcher(initialCtx, workspace);
 
@@ -130,9 +141,9 @@ public class DevMojo extends AbstractRewriteMojo {
         }
     }
 
-    private void bindServer(Workspace workspace) throws MojoExecutionException {
+    private void bindServer(Workspace workspace, Consumer<String> saveListener) throws MojoExecutionException {
         try {
-            this.server = new DevServer(new InetSocketAddress(LOOPBACK_HOST, port), workspace);
+            this.server = new DevServer(new InetSocketAddress(LOOPBACK_HOST, port), workspace, saveListener);
         } catch (BindException e) {
             throw new MojoExecutionException(
                 "graphitron:dev: port " + port + " is already in use. "
@@ -150,7 +161,6 @@ public class DevMojo extends AbstractRewriteMojo {
             throw new MojoExecutionException(
                 "graphitron:dev: no watch directories resolved from <schemaInputs>");
         }
-        this.schemaDebounce = new DebounceExecutor(debounceMs);
         try {
             this.schemaWatcher = new SchemaWatcher(
                 roots, schemaDebounce, () -> regenerate(workspace), ctx.schemaFileExtensions());
@@ -300,6 +310,22 @@ public class DevMojo extends AbstractRewriteMojo {
 
     private static String banner(String label) {
         return "── graphitron:dev: " + label + " ──";
+    }
+
+    /**
+     * Listener fed to {@link DevServer} and through it to each
+     * {@link no.sikt.graphitron.lsp.server.GraphitronLanguageServer}. Fires
+     * only for URIs whose path ends with one of the configured schema
+     * extensions; non-schema saves (e.g. {@code .md}) are silently dropped.
+     * The LSP module stays suffix-agnostic — extension-set ownership lives
+     * here, in the Mojo, alongside {@link RewriteContext#schemaFileExtensions()}.
+     */
+    static Consumer<String> buildSaveListener(Set<String> suffixes, DebounceExecutor debounce, Runnable regen) {
+        return uri -> {
+            if (suffixes.stream().anyMatch(uri::endsWith)) {
+                debounce.schedule(regen);
+            }
+        };
     }
 
     private static Set<Path> resolveSchemaRoots(RewriteContext ctx) {
