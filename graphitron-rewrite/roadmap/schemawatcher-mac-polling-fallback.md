@@ -1,7 +1,7 @@
 ---
 id: R198
 title: SchemaWatcher on macOS is polling-only; lift FS-bound tests to synthetic dispatch
-status: Spec
+status: Ready
 bucket: bug
 priority: 15
 theme: lsp
