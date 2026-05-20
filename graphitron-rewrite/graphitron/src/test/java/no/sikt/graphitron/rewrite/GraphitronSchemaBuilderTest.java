@@ -75,6 +75,7 @@ import no.sikt.graphitron.common.configuration.TestConfiguration;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 
 /**
@@ -7549,6 +7550,141 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(EnumTypeCase.class)
     void enumTypeClassification(EnumTypeCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== R194: case-insensitive type-name collision =====
+
+    enum CaseInsensitiveTypeClashCase implements ClassificationCase {
+        SDL_VS_SDL(
+            "two SDL types differing only in case both demote to UnclassifiedType with full-group messages",
+            """
+            type Poengklasse @record { v: String }
+            type poengklasse @record { v: String }
+            type Query { a: Poengklasse b: poengklasse }
+            """,
+            schema -> {
+                assertThat(schema.type("Poengklasse")).isInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("poengklasse")).isInstanceOf(UnclassifiedType.class);
+                var errors = new GraphitronSchemaValidator().validate(schema);
+                assertThat(errors)
+                    .filteredOn(e -> e.message().contains("case-insensitively"))
+                    .extracting(ValidationError::kind, ValidationError::message)
+                    .containsExactlyInAnyOrder(
+                        tuple(RejectionKind.INVALID_SCHEMA,
+                            "Type 'Poengklasse': collides case-insensitively with 'Poengklasse', 'poengklasse'"
+                                + "; rename one of the colliding types (case-only differences are not portable across case-insensitive filesystems)"),
+                        tuple(RejectionKind.INVALID_SCHEMA,
+                            "Type 'poengklasse': collides case-insensitively with 'Poengklasse', 'poengklasse'"
+                                + "; rename one of the colliding types (case-only differences are not portable across case-insensitive filesystems)"));
+            }),
+
+        SYNTH_VS_SYNTH(
+            "two @asConnection carriers whose synth Connection-names differ only in case demote both",
+            """
+            type Item @record { v: String }
+            type Query {
+                foo: [Item!]! @asConnection(connectionName: "FooConnection")
+                bar: [Item!]! @asConnection(connectionName: "fooConnection")
+            }
+            """,
+            schema -> {
+                assertThat(schema.type("FooConnection")).isInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("fooConnection")).isInstanceOf(UnclassifiedType.class);
+                var errors = new GraphitronSchemaValidator().validate(schema);
+                assertThat(errors)
+                    .filteredOn(e -> e.message().contains("case-insensitively"))
+                    .extracting(ValidationError::kind, ValidationError::message)
+                    .contains(
+                        tuple(RejectionKind.INVALID_SCHEMA,
+                            "Type 'FooConnection': synthesised connection type collides case-insensitively with 'FooConnection', 'fooConnection'"
+                                + "; rename the source field or set @asConnection(connectionName: \"...\") to a name that is unique under case-folding"),
+                        tuple(RejectionKind.INVALID_SCHEMA,
+                            "Type 'fooConnection': synthesised connection type collides case-insensitively with 'FooConnection', 'fooConnection'"
+                                + "; rename the source field or set @asConnection(connectionName: \"...\") to a name that is unique under case-folding"));
+            }),
+
+        SDL_VS_SYNTH(
+            "an SDL type whose name case-equals a synthesised Connection-name demotes both",
+            """
+            type Item @record { v: String }
+            type fooConnection @record { v: String }
+            type Query {
+                foo: [Item!]! @asConnection(connectionName: "FooConnection")
+                stash: fooConnection
+            }
+            """,
+            schema -> {
+                assertThat(schema.type("FooConnection")).isInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("fooConnection")).isInstanceOf(UnclassifiedType.class);
+                var errors = new GraphitronSchemaValidator().validate(schema);
+                var clashMessages = errors.stream()
+                    .filter(e -> e.message().contains("case-insensitively"))
+                    .map(ValidationError::message)
+                    .toList();
+                assertThat(clashMessages)
+                    .anyMatch(m -> m.startsWith("Type 'FooConnection':")
+                        && m.contains("synthesised connection type")
+                        && m.contains("'FooConnection'") && m.contains("'fooConnection'"))
+                    .anyMatch(m -> m.startsWith("Type 'fooConnection':")
+                        && m.contains("collides case-insensitively")
+                        && m.contains("'FooConnection'") && m.contains("'fooConnection'"));
+            }),
+
+        THREE_WAY_GROUP(
+            "three case-equivalent SDL types each surface a ValidationError naming all three",
+            """
+            type Foo @record { v: String }
+            type FOO @record { v: String }
+            type foo @record { v: String }
+            type Query { a: Foo b: FOO c: foo }
+            """,
+            schema -> {
+                assertThat(schema.type("Foo")).isInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("FOO")).isInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("foo")).isInstanceOf(UnclassifiedType.class);
+                var errors = new GraphitronSchemaValidator().validate(schema);
+                var clashMessages = errors.stream()
+                    .filter(e -> e.message().contains("case-insensitively"))
+                    .map(ValidationError::message)
+                    .toList();
+                // Every member's message names the full collision group.
+                assertThat(clashMessages).hasSize(3)
+                    .allMatch(m -> m.contains("'Foo'") && m.contains("'FOO'") && m.contains("'foo'"));
+                assertThat(clashMessages).anyMatch(m -> m.startsWith("Type 'Foo':"));
+                assertThat(clashMessages).anyMatch(m -> m.startsWith("Type 'FOO':"));
+                assertThat(clashMessages).anyMatch(m -> m.startsWith("Type 'foo':"));
+            }),
+
+        NO_CLASH_BASELINE(
+            "distinct type names without case-equivalence produce no collision diagnostics",
+            """
+            type Foo @record { v: String }
+            type Bar @record { v: String }
+            type Query { a: Foo b: Bar }
+            """,
+            schema -> {
+                assertThat(schema.type("Foo")).isNotInstanceOf(UnclassifiedType.class);
+                assertThat(schema.type("Bar")).isNotInstanceOf(UnclassifiedType.class);
+                var errors = new GraphitronSchemaValidator().validate(schema);
+                assertThat(errors)
+                    .extracting(ValidationError::message)
+                    .noneMatch(m -> m.contains("case-insensitively"));
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        CaseInsensitiveTypeClashCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedType.class); }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(CaseInsensitiveTypeClashCase.class)
+    void caseInsensitiveTypeClash(CaseInsensitiveTypeClashCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 

@@ -27,6 +27,14 @@ public sealed interface GraphitronType
     SourceLocation location();
 
     /**
+     * Whether this type contributes a {@code <name>.java} (or related per-type-stem) file to the
+     * generator's emission. {@link ScalarType} and {@link UnclassifiedType} do not; every other
+     * variant does. Read by the case-insensitive type-name collision detector (R194) so the check
+     * only flags variants that would otherwise clobber each other on case-insensitive filesystems.
+     */
+    default boolean producesEmittedFile() { return true; }
+
+    /**
      * A GraphQL type backed by a resolved jOOQ table.
      * All permitted sub-types carry a {@link TableRef} and generate SQL (SELECT or DML).
      */
@@ -467,7 +475,9 @@ public sealed interface GraphitronType
         SourceLocation location,
         ScalarResolution.Resolved resolution,
         GraphQLScalarType schemaType
-    ) implements GraphitronType {}
+    ) implements GraphitronType {
+        @Override public boolean producesEmittedFile() { return false; }
+    }
 
     /**
      * A type that could not be classified — examples include an unresolvable {@code @table}
@@ -488,6 +498,7 @@ public sealed interface GraphitronType
         Rejection rejection
     ) implements GraphitronType {
         public String reason() { return rejection.message(); }
+        @Override public boolean producesEmittedFile() { return false; }
     }
 
     /**
