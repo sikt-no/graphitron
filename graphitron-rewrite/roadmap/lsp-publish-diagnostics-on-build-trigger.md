@@ -1,7 +1,7 @@
 ---
 id: R196
 title: LSP fails to publish diagnostics after save-triggered build; stale errors persist until next edit
-status: Spec
+status: Ready
 bucket: bug
 theme: lsp
 depends-on: []
