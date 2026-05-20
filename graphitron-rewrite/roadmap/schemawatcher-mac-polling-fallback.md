@@ -71,14 +71,27 @@ All six steps shipped together (single In Progress commit). Summary:
    `SchemaWatcherTest`. Asserts `PollingWatchService` on macOS,
    `LinuxWatchService` on Linux; silent on other OSes (R89's surface).
 
-6. **Runtime hint** wired in the `SchemaWatcher` constructor: one
-   `LOGGER.info` line when `watchService.getClass().getSimpleName()` contains
-   `"Polling"`, pointing to the LSP path for event-driven regen.
+6. **Runtime hint** wired on the first iteration of `SchemaWatcher.run()`:
+   two `LOGGER.info` lines when `watchService.getClass().getSimpleName()`
+   contains `"Polling"` ; one stating the JDK fact (latency ≈ 10 s), one
+   recommending the LSP for event-driven regen. Fires once per watcher
+   lifetime in production; silent in synthetic-dispatch tests that do not
+   start the loop.
 
-Fork resolved during implementation: widened `SchemaWatcher.dispatch` from
-package-private to `public`, with an updated javadoc that names it a test
-seam. Lets `CatalogRefreshTest` (in `..maven.dev`) drive synthetic events
-without crossing into the watch package or duplicating helpers.
+Fork resolved during implementation, then revised on self-review:
+`SchemaWatcher.dispatch` stays package-private. A test-only
+`DispatchTestSupport` class under `src/test/java/.../maven/watch/` exposes a
+typed bridge (`dispatch(SchemaWatcher, Path, WatchEvent<?>)`) that any
+package can call; `CatalogRefreshTest` in `..maven.dev` routes through it.
+Keeps the "production callers go through `run()`" invariant at the type
+system rather than the comment level, and matches the existing
+`watchedDirs()` precedent in the same class.
+
+Also revised on self-review: the polling-detection log emit moved from the
+constructor to the first iteration of `run()`, so it fires once per watcher
+lifetime in production rather than per construction in tests. The message
+was split into two lines (JDK fact, LSP recommendation) so the JDK fact
+stands alone if the LSP recommendation is later rephrased.
 
 ## Out of scope
 
