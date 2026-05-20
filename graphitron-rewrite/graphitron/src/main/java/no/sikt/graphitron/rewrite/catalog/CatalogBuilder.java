@@ -372,12 +372,15 @@ public final class CatalogBuilder {
                     f.method() != null ? f.method().className() : null,
                     f.method() != null ? f.method().methodName() : null,
                     true,
+                    f.returnType() != null && f.returnType().table() != null
+                        ? f.returnType().table().tableName() : null,
                     errorChannelName(f.errorChannel()));
             case MutationField.MutationServiceRecordField f ->
                 new FieldClassification.MutationService(
                     f.method() != null ? f.method().className() : null,
                     f.method() != null ? f.method().methodName() : null,
                     false,
+                    null,
                     errorChannelName(f.errorChannel()));
             case MutationField.MutationDmlRecordField f ->
                 new FieldClassification.DmlRecord(

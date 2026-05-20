@@ -2,8 +2,11 @@ package no.sikt.graphitron.lsp.server;
 
 import no.sikt.graphitron.lsp.state.Workspace;
 import org.eclipse.lsp4j.CompletionOptions;
+import org.eclipse.lsp4j.ConfigurationItem;
+import org.eclipse.lsp4j.ConfigurationParams;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
+import org.eclipse.lsp4j.InitializedParams;
 import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.services.LanguageClient;
@@ -12,6 +15,7 @@ import org.eclipse.lsp4j.services.LanguageServer;
 import org.eclipse.lsp4j.services.TextDocumentService;
 import org.eclipse.lsp4j.services.WorkspaceService;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
@@ -31,7 +35,7 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
 
     private final Workspace workspace;
     private final GraphitronTextDocumentService textService;
-    private final WorkspaceService workspaceService;
+    private final GraphitronWorkspaceService workspaceService;
     private LanguageClient client;
 
     public GraphitronLanguageServer() {
@@ -65,6 +69,29 @@ public class GraphitronLanguageServer implements LanguageServer, LanguageClientA
         // classification hint surface. The handler is a no-op when all toggles default off.
         capabilities.setInlayHintProvider(true);
         return CompletableFuture.completedFuture(new InitializeResult(capabilities));
+    }
+
+    /**
+     * R160 — pull the three inlay-hint / hover toggles from the client immediately after
+     * the initialize handshake completes. Mirrors the {@code workspace/didChangeConfiguration}
+     * push path so editors that only push on user-initiated edits still see the right state
+     * on first request. Clients that don't implement {@code workspace/configuration} return
+     * a list of nulls (or fail the future); both fall through to the default-off behaviour
+     * via {@link GraphitronWorkspaceService#applyPulledInlayHintConfig(java.util.List)}.
+     */
+    @Override
+    public void initialized(InitializedParams params) {
+        if (client == null) return;
+        var configParams = new ConfigurationParams(List.of(
+            sectionItem("graphitron")
+        ));
+        client.configuration(configParams).thenAccept(workspaceService::applyPulledInlayHintConfig);
+    }
+
+    private static ConfigurationItem sectionItem(String section) {
+        var item = new ConfigurationItem();
+        item.setSection(section);
+        return item;
     }
 
     @Override

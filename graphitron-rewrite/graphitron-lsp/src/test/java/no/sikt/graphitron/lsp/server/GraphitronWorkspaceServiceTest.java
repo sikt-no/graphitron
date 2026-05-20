@@ -83,4 +83,41 @@ class GraphitronWorkspaceServiceTest {
         assertThat(workspace.inlayHintConfig().inferredDirectives()).isTrue();
         assertThat(workspace.inlayHintConfig().classification()).isFalse();
     }
+
+    @Test
+    void applyPulledInlayHintConfigSwapsWorkspaceConfig() {
+        // The pull path receives one JsonElement per requested ConfigurationItem; we ask for
+        // "graphitron" so the response is the graphitron namespace's inner object (not
+        // wrapped). The service re-wraps and routes through the same parser the push path
+        // uses, so both directions land on the same Workspace.setInlayHintConfig.
+        var workspace = new Workspace();
+        var inlay = new JsonObject();
+        inlay.add("classification", new JsonPrimitive(true));
+        var hover = new JsonObject();
+        hover.add("classification", new JsonPrimitive(true));
+        var graphitronSection = new JsonObject();
+        graphitronSection.add("inlayHints", inlay);
+        graphitronSection.add("hover", hover);
+
+        var service = new GraphitronWorkspaceService(workspace);
+        service.applyPulledInlayHintConfig(java.util.List.of(graphitronSection));
+
+        assertThat(workspace.inlayHintConfig().inferredDirectives()).isFalse();
+        assertThat(workspace.inlayHintConfig().classification()).isTrue();
+        assertThat(workspace.inlayHintConfig().hoverClassification()).isTrue();
+    }
+
+    @Test
+    void applyPulledInlayHintConfigToleratesNullAndNonJsonResults() {
+        var workspace = new Workspace();
+        var service = new GraphitronWorkspaceService(workspace);
+        // Client doesn't implement workspace/configuration (returns nulls) or returns the
+        // wrong shape (a string); both fall through to default-off rather than throwing.
+        service.applyPulledInlayHintConfig(java.util.Collections.singletonList(null));
+        assertThat(workspace.inlayHintConfig().anyEnabled()).isFalse();
+        service.applyPulledInlayHintConfig(java.util.List.of("not a json object"));
+        assertThat(workspace.inlayHintConfig().anyEnabled()).isFalse();
+        service.applyPulledInlayHintConfig(java.util.List.of());
+        assertThat(workspace.inlayHintConfig().anyEnabled()).isFalse();
+    }
 }

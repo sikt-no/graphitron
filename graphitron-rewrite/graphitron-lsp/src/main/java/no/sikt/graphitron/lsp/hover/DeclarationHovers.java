@@ -217,7 +217,7 @@ public final class DeclarationHovers {
             case FieldClassification.MutationService s ->
                 sb.append("\n\nService method `").append(nullSafe(s.methodClassName())).append("#")
                   .append(nullSafe(s.methodName())).append("`")
-                  .append(s.tableBound() ? " (table-bound return)" : " (record return)")
+                  .append(s.tableBound() ? " → `" + nullSafe(s.tableName()) + "`" : " (record return)")
                   .append(errorChannelSuffix(s.errorChannelMappingName()));
             case FieldClassification.DmlRecord r ->
                 sb.append("\n\nKind: ").append(r.kind()).append(r.bulk() ? " (bulk)" : "")

@@ -343,11 +343,14 @@ public sealed interface FieldClassification
 
     /**
      * A mutation field backed by a developer-provided {@code @service} method. Covers
-     * {@code MutationField.MutationServiceTableField} ({@code tableBound = true}) and
-     * {@code MutationField.MutationServiceRecordField} ({@code tableBound = false}).
+     * {@code MutationField.MutationServiceTableField} ({@code tableBound = true},
+     * {@code tableName} non-null) and {@code MutationField.MutationServiceRecordField}
+     * ({@code tableBound = false}, {@code tableName} null). Mirrors {@link QueryService}'s
+     * payload shape so the hover surface renders the target table for table-bound service
+     * mutations.
      */
     record MutationService(
-        String methodClassName, String methodName, boolean tableBound,
+        String methodClassName, String methodName, boolean tableBound, String tableName,
         String errorChannelMappingName
     ) implements FieldClassification {}
 
