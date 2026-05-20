@@ -82,6 +82,11 @@ public final class SchemaWatcher implements AutoCloseable {
         for (Path root : roots) {
             registerRecursive(root);
         }
+        if (watchService.getClass().getSimpleName().contains("Polling")) {
+            LOGGER.info(
+                "graphitron:dev: JDK provides a polling WatchService on this platform; schema file change latency ≈ 10 s. "
+                    + "Connect an editor with the Graphitron LSP for event-driven regen.");
+        }
     }
 
     /** Registers {@code root} and every existing subdirectory beneath it. */
@@ -148,11 +153,13 @@ public final class SchemaWatcher implements AutoCloseable {
     }
 
     /**
-     * Package-private so tests can drive a synthetic event into the dispatcher without
-     * waiting on the OS-level {@link WatchService}. Production callers reach this only via
-     * the {@link #run()} loop.
+     * Test seam: drives a synthetic event into the dispatcher without waiting on the
+     * OS-level {@link WatchService}. Production callers reach this only via the
+     * {@link #run()} loop; this is the visible entry point used by tests that pin
+     * unit-tier invariants on the dispatch logic itself (suffix filter, OVERFLOW
+     * reschedule, on-the-fly subdirectory registration).
      */
-    void dispatch(Path dir, WatchEvent<?> event) {
+    public void dispatch(Path dir, WatchEvent<?> event) {
         WatchEvent.Kind<?> kind = event.kind();
         if (kind == StandardWatchEventKinds.OVERFLOW) {
             LOGGER.info("graphitron:dev: OVERFLOW; rescheduling regeneration");

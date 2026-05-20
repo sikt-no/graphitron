@@ -11,8 +11,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchEvent;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,13 +36,11 @@ class CatalogRefreshTest {
 
     private DebounceExecutor debounce;
     private SchemaWatcher watcher;
-    private Thread watcherThread;
 
     @AfterEach
     void tearDown() throws Exception {
         if (watcher != null) watcher.close();
         if (debounce != null) debounce.close();
-        if (watcherThread != null) watcherThread.join(2000);
     }
 
     @Test
@@ -73,11 +72,8 @@ class CatalogRefreshTest {
 
         debounce = new DebounceExecutor(DEBOUNCE_MS);
         watcher = new SchemaWatcher(Set.of(classesDir), debounce, rebuilder, ".class");
-        watcherThread = new Thread(watcher::run, "test-classpath-watcher");
-        watcherThread.setDaemon(true);
-        watcherThread.start();
 
-        Files.writeString(classesDir.resolve("Tables.class"), "stand-in for a real .class file");
+        watcher.dispatch(classesDir, entryCreateEvent(Path.of("Tables.class")));
 
         assertThat(fired.await(WAIT_MS, TimeUnit.MILLISECONDS))
             .as("rebuilder must fire on .class write")
@@ -101,15 +97,28 @@ class CatalogRefreshTest {
         debounce = new DebounceExecutor(DEBOUNCE_MS);
         watcher = new SchemaWatcher(Set.of(classesDir), debounce,
             rebuilds::incrementAndGet, ".class");
-        watcherThread = new Thread(watcher::run, "test-classpath-watcher");
-        watcherThread.setDaemon(true);
-        watcherThread.start();
 
-        Files.writeString(classesDir.resolve("schema.graphqls"), "type Q { x: Int }");
+        watcher.dispatch(classesDir, entryModifyEvent(Path.of("schema.graphqls")));
 
         Thread.sleep(WAIT_MS);
         assertThat(rebuilds.get())
             .as(".graphqls write under a .class watcher must not fire")
             .isZero();
+    }
+
+    private static WatchEvent<?> entryCreateEvent(Path relative) {
+        return new WatchEvent<Path>() {
+            @Override public Kind<Path> kind() { return StandardWatchEventKinds.ENTRY_CREATE; }
+            @Override public int count() { return 1; }
+            @Override public Path context() { return relative; }
+        };
+    }
+
+    private static WatchEvent<?> entryModifyEvent(Path relative) {
+        return new WatchEvent<Path>() {
+            @Override public Kind<Path> kind() { return StandardWatchEventKinds.ENTRY_MODIFY; }
+            @Override public int count() { return 1; }
+            @Override public Path context() { return relative; }
+        };
     }
 }

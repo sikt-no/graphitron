@@ -27,7 +27,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R197` | LSP didSave/didChange drives in-process regen trigger | Spec | 2026-05-20 | [plan](lsp-driven-regen-trigger.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
-| `R198` | SchemaWatcher on macOS is polling-only; lift FS-bound tests to synthetic dispatch | Ready | 2026-05-20 | [plan](schemawatcher-mac-polling-fallback.md) |
+| `R198` | SchemaWatcher on macOS is polling-only; lift FS-bound tests to synthetic dispatch | In Review | 2026-05-20 | [plan](schemawatcher-mac-polling-fallback.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
@@ -220,7 +220,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
 - `R197` [**LSP didSave/didChange drives in-process regen trigger**](lsp-driven-regen-trigger.md) — Spec, feature
-- `R198` [**SchemaWatcher on macOS is polling-only; lift FS-bound tests to synthetic dispatch**](schemawatcher-mac-polling-fallback.md) — Ready, bug
+- `R198` [**SchemaWatcher on macOS is polling-only; lift FS-bound tests to synthetic dispatch**](schemawatcher-mac-polling-fallback.md) — In Review, bug
 - `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
