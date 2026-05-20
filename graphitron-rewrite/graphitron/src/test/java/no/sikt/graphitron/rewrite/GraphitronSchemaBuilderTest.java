@@ -6459,7 +6459,25 @@ class GraphitronSchemaBuilderTest {
                 var f = schema.field("Query", "batchedFilms");
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
-                    .contains("@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters");
+                    .contains("@service at the root does not support List<Row>/List<Record> batch parameters");
+            }),
+
+        SERVICE_AT_ROOT_WITH_TABLERECORD_PARAM_NAME_MISMATCH_REJECTED(
+            "R185: @service at root with List<FilmRecord> parameter whose name doesn't match any GraphQL argument → arg-mismatch diagnostic (not Sources-batch)",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                batchedFilms(input: [ID!]): [Film!]!
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilmsWithTableRecordSources"})
+            }
+            """,
+            schema -> {
+                var f = schema.field("Query", "batchedFilms");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("does not match any GraphQL argument or context key")
+                    .contains("input")
+                    .doesNotContain("does not support List<Row>");
             }),
 
         TABLEMETHOD_WITH_WIDER_RETURN_TYPE_REJECTED(
@@ -6699,7 +6717,7 @@ class GraphitronSchemaBuilderTest {
                 var f = schema.field("Mutation", "batchedMutation");
                 assertThat(f).isInstanceOf(UnclassifiedField.class);
                 assertThat(((UnclassifiedField) f).reason())
-                    .contains("@service at the root does not support List<Row>/List<Record>/List<Object> batch parameters");
+                    .contains("@service at the root does not support List<Row>/List<Record> batch parameters");
             }),
 
         SERVICE_WITH_INNER_GENERIC_MISMATCH_REJECTED(

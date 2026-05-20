@@ -268,15 +268,18 @@ class ServiceCatalog {
                         // the user at the actual mismatch instead of an unrelated SOURCES-flavored
                         // hint (the lifter-directive roadmap doesn't help with arg-name typos).
                         //
-                        // Exception: a SOURCES-shape parameter (List<RowN>, List<RecordN>,
-                        // List<TableRecord>) at root is its own diagnostic — `@service at the root
-                        // does not support List<Row>/List<Record>/List<Object> batch parameters`.
+                        // Exception: an anonymous-key SOURCES-shape parameter (List<RowN> /
+                        // List<RecordN>) at root is its own diagnostic — `@service at the root
+                        // does not support List<Row>/List<Record> batch parameters`. A
+                        // List<TableRecord> at root is the canonical InputBeanResolver shape for
+                        // "list of input objects mapped to records", so it falls through to the
+                        // arg-mismatch block below if the parameter name doesn't bind.
                         // classifySourcesType returns empty for parentPkColumns.isEmpty(), so the
                         // detection happens here on the parameter type directly.
                         if (parentPkColumns.isEmpty() && looksLikeSourcesShape(p.getParameterizedType())) {
                             return new ServiceReflectionResult(null,
                                 Rejection.structural("@service at the root does not support "
-                                + "List<Row>/List<Record>/List<Object> batch parameters — the root "
+                                + "List<Row>/List<Record> batch parameters — the root "
                                 + "has no parent context to batch against"));
                         }
                         if (parentPkColumns.isEmpty()) {
@@ -730,9 +733,13 @@ class ServiceCatalog {
 
     /**
      * Returns true if the parameter type is a {@code List<X>} or {@code Set<X>} where {@code X}
-     * is a {@code RowN}, {@code RecordN}, or concrete {@code TableRecord}. Used by the root-op
-     * diagnostic to detect SOURCES-shape parameters that {@link #classifySourcesType} cannot
-     * fully classify because the parent has no PK to populate the source key.
+     * is a {@code RowN} or {@code RecordN}. Used by the root-op diagnostic to detect the
+     * anonymous-key SOURCES-shape parameters that {@link #classifySourcesType} cannot fully
+     * classify because the parent has no PK to populate the source key. Concrete
+     * {@code TableRecord} subclasses are intentionally excluded: at root, {@code List<XRecord>}
+     * is the canonical {@code InputBeanResolver} shape ("list of input objects mapped to
+     * records"), so it must fall through to the arg-mismatch diagnostic when the parameter
+     * name doesn't bind to a GraphQL argument.
      */
     private static boolean looksLikeSourcesShape(java.lang.reflect.Type paramType) {
         var split = peelContainer(paramType, java.util.EnumSet.of(ContainerKind.LIST, ContainerKind.SET));
@@ -745,8 +752,6 @@ class ServiceCatalog {
                     && rawName.substring("org.jooq.Row".length()).matches("\\d+")) return true;
             if (rawName.startsWith("org.jooq.Record")
                     && rawName.substring("org.jooq.Record".length()).matches("\\d+")) return true;
-        } else if (elementType instanceof Class<?> elementClass) {
-            return org.jooq.TableRecord.class.isAssignableFrom(elementClass);
         }
         return false;
     }
