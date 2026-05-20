@@ -33,7 +33,7 @@ public static ExecutionInput.Builder newExecutionInput(
     UserInfo userInfo);
 ```
 
-`DSLContext defaultDsl` is always first; contextArguments follow alphabetically. The body populates `graphQLContext` directly — graphql-java's `GraphQLContext` is the carrier — putting `defaultDsl` under key `DSLContext.class`, each contextArgument value under its string name, and the stateless singleton `GraphitronContextImpl` under `GraphitronContext.class` (keeping today's `b.put(GraphitronContext.class, context)` convention at `GraphitronFacadeGenerator.java:60-62` and the downstream `graphitronContext(env)` helper shape). Schemas with zero contextArguments collapse to `newExecutionInput(DSLContext defaultDsl)`.
+`DSLContext defaultDsl` is always first; contextArguments follow alphabetically. The body runs `Objects.requireNonNull(<name>, "<name>")` on each contextArgument parameter, then populates `graphQLContext` directly — graphql-java's `GraphQLContext` is the carrier — putting `defaultDsl` under key `DSLContext.class`, each contextArgument value under its string name, and the stateless singleton `GraphitronContextImpl` under `GraphitronContext.class` (keeping today's `b.put(GraphitronContext.class, context)` convention at `GraphitronFacadeGenerator.java:60-62` and the downstream `graphitronContext(env)` helper shape). The per-slot `requireNonNull` closes the gap that the factory's typed parameter list does not by itself prevent: Java permits `null` for a reference-typed parameter, and a silent `null`-put would later misdiagnose at `getContextArgument` as "was not supplied". `requireNonNull` surfaces the failure as a tight `NullPointerException` at the actual call site. Schemas with zero contextArguments collapse to `newExecutionInput(DSLContext defaultDsl)`.
 
 ### Sealed `GraphitronContext`
 
@@ -68,7 +68,7 @@ The factory emitter pastes one `TypeName` per contextArgument name into the gene
 - For each name with more than one distinct `typeName`, verify assignability via reflection on the parsed `Type` — the more-specific type wins if one is assignable to all others (`Long` wins over `Number`); otherwise reject.
 - On reject, produce `Rejection.contextArgumentTypeConflict(name, sites)`, a new `AuthorError` factory on the `Rejection` sealed interface (`Rejection.java:18`). Reuses the existing `AuthorError.Structural` leaf shape; no new variant arm needed.
 
-The classifier method is annotated `@LoadBearingClassifierCheck(key = "context-argument.type-agreement", description = "Cross-site agreement on contextArgument Java types; consumed by the factory emitter")`. The factory-emitting method in `GraphitronFacadeGenerator` is annotated `@DependsOnClassifierCheck(key = "context-argument.type-agreement", reliesOn = "single typeName per name, pasted into the factory signature")`. `LoadBearingGuaranteeAuditTest` (`LoadBearingGuaranteeAuditTest.java:57-67`) enforces the pairing.
+The classifier method is annotated `@LoadBearingClassifierCheck(key = "context-argument.type-agreement", description = "Cross-site agreement on contextArgument Java types; consumed by the factory emitter and the getContextArgument call-site emitter")`. Both the factory-emitting method in `GraphitronFacadeGenerator` and the call-site-emitting code in `ArgCallEmitter` (the `$T.class` literal at the third arg slot) are annotated `@DependsOnClassifierCheck(key = "context-argument.type-agreement", reliesOn = "single TypeName per name, read from ResolvedContextArg.javaType")`. The two emitters MUST read the same `ResolvedContextArg.javaType` field — that single source of truth is what prevents the factory's typed `put` and the call-site's typed `cast` from drifting; if either emitter reconstructs the type from `MethodRef.Param.Typed.typeName` independently, the load-bearing guarantee collapses. `LoadBearingGuaranteeAuditTest` (`LoadBearingGuaranteeAuditTest.java:57-67`) enforces that the producer/consumer pairing is wired.
 
 ### DataLoader name emission
 
@@ -91,14 +91,15 @@ Today's default `getTenantId(env)` returns `""`, so the de-facto runtime name is
 
 ### Catalog / classification (`graphitron/`)
 
-- New classifier step (location: `BuildContext`-adjacent, after the existing `ServiceCatalog.reflectTableMethod` / `reflectServiceMethod` populate the `MethodRef.Param.Typed` set; before generator emission). Produces `Map<String, ResolvedContextArg>` where `ResolvedContextArg(String name, TypeName javaType, List<MethodRef> sites)`. Annotated `@LoadBearingClassifierCheck(key = "context-argument.type-agreement", description = "...")`.
+- New classifier step (location: `BuildContext`-adjacent, after the existing `ServiceCatalog.reflectTableMethod` / `reflectServiceMethod` populate the `MethodRef.Param.Typed` set; before generator emission). Produces `Map<String, ResolvedContextArg>` where `ResolvedContextArg(String name, TypeName javaType, List<MethodRef> sites)`. Annotated `@LoadBearingClassifierCheck(key = "context-argument.type-agreement", description = "...")`. `javaType` is raw `TypeName` (JavaPoet AST) rather than a sealed sub-taxonomy because the only consumers are emitters that paste it verbatim — into the factory parameter list and the call-site cast literal — and neither forks on its shape. If a later slice (R45's tenant-column work) needs to fork on the type, lift the sub-taxonomy at that point.
 - New factory `Rejection.contextArgumentTypeConflict(String name, List<Map.Entry<MethodRef, String>> sites)` on the `Rejection` sealed interface (`Rejection.java`); reuses `AuthorError.Structural`.
 - The classified map is stored on the build result and read by `GraphitronFacadeGenerator` and `GraphitronContextInterfaceGenerator`.
 
 ### Schema-driven factory (`GraphitronFacadeGenerator.java:54-72`)
 
-- Replace the two-overload emission with a single overload: parameter list is `DSLContext defaultDsl` followed by the alphabetical-sorted `(JavaPoet TypeName, name)` pairs from the classified `ResolvedContextArg` map.
-- Factory body: emit a `graphQLContext` builder lambda that puts `defaultDsl` under `DSLContext.class`, each contextArgument value under its string name, and the singleton `GraphitronContextImpl` under `GraphitronContext.class`. String-keyed entries mean `env.getGraphQlContext().get(name)` is the canonical read path; the impl needs no per-request fields.
+- Replace the two-overload emission with a single overload: parameter list is `DSLContext defaultDsl` followed by the alphabetical-sorted `(JavaPoet TypeName, name)` pairs read from `ResolvedContextArg.javaType` (same field `ArgCallEmitter` reads — see "Cross-site contextArgument type-agreement" for why this single source matters).
+- Factory body: emit one `Objects.requireNonNull(<name>, "<name>")` per contextArgument parameter, then a `graphQLContext` builder lambda that puts `defaultDsl` under `DSLContext.class`, each contextArgument value under its string name, and the singleton `GraphitronContextImpl` under `GraphitronContext.class`. String-keyed entries mean `env.getGraphQlContext().get(name)` is the canonical read path; the impl needs no per-request fields.
+- For the diagnostic literal in `getContextArgument`'s missing-value message, emit `Graphitron.newExecutionInput(...)` via a `$T` reference to the facade `ClassName` rather than as a hand-typed string, so the literal moves with the class if facade naming ever changes.
 - Annotated `@DependsOnClassifierCheck(key = "context-argument.type-agreement", reliesOn = "...")`.
 
 ### Sealed `GraphitronContext` (`GraphitronContextInterfaceGenerator.java:35-117`)
@@ -111,8 +112,9 @@ Today's default `getTenantId(env)` returns `""`, so the de-facto runtime name is
 
 ### `getContextArgument` typed call sites (`ArgCallEmitter.java:191, :285`)
 
-- Emit the third arg: the expected-type literal. Use the JavaPoet `TypeName` parsed from `MethodRef.Param.Typed.typeName`; emit `$T.class` with the raw type (parameterised types collapse to their erasure for the runtime `isInstance` check, which is sufficient — the static-side type is already pinned by the consumer-side method parameter).
+- Emit the third arg: the expected-type literal. Read the `TypeName` from `ResolvedContextArg.javaType` on the classified map (not from `MethodRef.Param.Typed.typeName` directly — see the load-bearing-classifier note above); emit `$T.class` with the raw type (parameterised types collapse to their erasure for the runtime cast check, which is sufficient — the static-side type is already pinned by the consumer-side method parameter).
 - Change `CodeBlock.of("$L.getContextArgument(env, $S)", ctx.graphitronContextCall(), param.name())` to `CodeBlock.of("$L.getContextArgument(env, $S, $T.class)", ctx.graphitronContextCall(), param.name(), rawType)`.
+- Annotated `@DependsOnClassifierCheck(key = "context-argument.type-agreement", reliesOn = "...")`.
 
 ### DataLoader name emission (five sites)
 
@@ -126,13 +128,13 @@ No new runtime surface for R190. The `getContextArgument` signature change is in
 
 - **Pipeline (L4).** `GraphitronFacadeGeneratorPipelineTest` (or the closest existing test for that generator) gains a case: SDL with multiple `@service(contextArguments: [...])` sites producing the alphabetical-sorted factory parameter list. Snapshot the emitted factory `TypeSpec` (including the `graphQLContext` builder lambda) and the sealed `GraphitronContext` interface + `GraphitronContextImpl` singleton. Loader-name snapshot for one of the five DataLoader sites pins the un-prefixed shape.
 - **Classification (L2).** `ContextArgumentTypeAgreementTest` (new): two SDL fixtures, one accepted (single typeName per name across `@service` + `@tableMethod` + `@condition`), one rejected (`contextArgumentTypeConflict` with `List<Long>` vs `List<String>`). Assert the rejection's `name` and `sites` fields.
-- **Audit (L2).** `LoadBearingGuaranteeAuditTest` is already wired; the new key `context-argument.type-agreement` lands with one producer and one consumer and the test stays green by construction. If the audit fails after the slice, the producer/consumer annotations are mis-keyed.
+- **Audit (L2).** `LoadBearingGuaranteeAuditTest` is already wired; the new key `context-argument.type-agreement` lands with one producer (the classifier) and two consumers (the factory emitter and the `ArgCallEmitter` call-site emitter) and the test stays green by construction. If the audit fails after the slice, the producer/consumer annotations are mis-keyed.
 - **Compile (L5).** `graphitron-sakila-example` gains an SDL fragment with at least one `@service(contextArguments: ["userId"])` site so the new factory shape appears in the compile fixture; generated code passes `mvn compile -pl :graphitron-sakila-example -Plocal-db`.
 - **Execute (L6).** `graphitron-sakila-example`'s test suite calls `Graphitron.newExecutionInput(dsl, userId)` and verifies the contextArgument round-trips through `getContextArgument` to the user method. A second test exercises the missing-value diagnostic by hand-rolling an `ExecutionInput.Builder` that omits the stash, and asserts the message text matches the documented form (substring match on `"call Graphitron.newExecutionInput(...)"`).
 
 ## Open questions
 
-1. **Diagnostic message: factory name as literal vs generator-emitted constant.** Drafted as the literal `"Graphitron.newExecutionInput(...)"`. Today the facade class+method are fixed by `GraphitronFacadeGenerator`, so the literal is accurate; if facade naming ever gains configurability (different consumer, different class name), the literal goes stale. Cheap to fix when it matters — change the emitter to inject the configured FQN at codegen.
+None outstanding for the single-tenant slice.
 
 ## Roadmap entries (siblings / dependencies)
 
