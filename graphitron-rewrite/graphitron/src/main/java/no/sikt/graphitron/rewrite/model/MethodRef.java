@@ -234,8 +234,32 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
          * <p>{@code typeName} is the fully qualified generic type name as returned by
          * {@link java.lang.reflect.Parameter#getParameterizedType()} followed by
          * {@link java.lang.reflect.Type#getTypeName()}.
+         *
+         * <p>{@code javaType} is the structured JavaPoet {@link TypeName} captured from
+         * {@link java.lang.reflect.Parameter#getParameterizedType()}. Stored alongside the
+         * string-form {@code typeName} so emitters that need a JavaPoet AST (factory parameter
+         * lists, {@code $T.class} cast literals) do not have to re-parse the rendered string.
+         * Mirrors the precedent set by {@link MethodRef#returnType()}.
          */
-        record Typed(String name, String typeName, ParamSource source) implements Param {}
+        record Typed(String name, String typeName, TypeName javaType, ParamSource source) implements Param {
+
+            /**
+             * Convenience constructor for test scaffolding that builds a {@link Typed} without the
+             * full reflected {@link TypeName}: {@code javaType} is best-effort-derived from the
+             * {@code typeName} string via {@link no.sikt.graphitron.javapoet.ClassName#bestGuess}.
+             * Production paths in {@code ServiceCatalog} always pass the structured {@code javaType}
+             * captured from reflection.
+             */
+            public Typed(String name, String typeName, ParamSource source) {
+                this(name, typeName, deriveJavaType(typeName), source);
+            }
+
+            private static TypeName deriveJavaType(String typeName) {
+                int lt = typeName.indexOf('<');
+                String raw = lt < 0 ? typeName : typeName.substring(0, lt);
+                return no.sikt.graphitron.javapoet.ClassName.bestGuess(raw);
+            }
+        }
 
         /**
          * A DataLoader batch-key parameter whose Java type is fully determined by the

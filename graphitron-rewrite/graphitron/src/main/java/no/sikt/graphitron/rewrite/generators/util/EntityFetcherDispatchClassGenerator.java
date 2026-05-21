@@ -30,7 +30,7 @@ import java.util.List;
  *   <li>{@code handle<TypeName>(reps, indices, env, result)} — for each rep, selects the
  *       most-specific resolvable {@link KeyAlternative}, decodes the rep into a column-value
  *       row (DIRECT: copy values; NODE_ID: {@code NodeIdEncoder.decodeValues}), and groups
- *       by {@code (alternative, tenantId)} for batching.</li>
+ *       by alternative-index for batching.</li>
  *   <li>{@code select<TypeName>Alt<N>(bindings, env, dsl, result)} — issues one SELECT per
  *       group via a {@code VALUES (idx, col1, col2, ...)} derived table joined to the type's
  *       jOOQ table, projecting {@code <TypeName>.$fields(...)} plus the literal
@@ -38,10 +38,9 @@ import java.util.List;
  *       {@code idx} column.</li>
  * </ol>
  *
- * <p>Tenant scoping mirrors {@code QueryNodeFetcher.dispatchNodes}: each rep gets a per-rep
- * DFE (with {@code arguments(rep)}) so the consumer's {@code getTenantId(repEnv)} resolves
- * against the individual rep, not the outer representations list. Reps from different
- * tenants land in separate groups; partitioning before SQL keeps tenant isolation intact.
+ * <p>Each rep gets a per-rep DFE (with {@code arguments(rep)}) so any in-rep argument reads
+ * inside the dispatched alternative resolve against the individual rep, not the outer
+ * representations list.
  *
  * <p>{@code resolveType} is exposed as a separate static helper that reads the synthetic
  * {@code __typename} column projected on every entity row. Consumers who override

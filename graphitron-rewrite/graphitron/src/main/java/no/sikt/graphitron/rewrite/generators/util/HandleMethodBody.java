@@ -19,11 +19,12 @@ import java.util.List;
  *   <li>For each rep, walk alternatives in most-specific-first order and pick the first
  *       resolvable alternative whose {@code requiredFields} are all present in the rep
  *       (excluding {@code __typename}). No match → result slot stays {@code null}.</li>
- *   <li>Build a per-rep DFE (rebinding {@code arguments} to the rep's contents) so the
- *       consumer's {@code getTenantId(repEnv)} resolves against the individual rep.</li>
+ *   <li>Build a per-rep DFE (rebinding {@code arguments} to the rep's contents) so any
+ *       in-rep argument reads inside the dispatched alternative resolve against the
+ *       individual rep.</li>
  *   <li>Decode the rep into a column-value row: DIRECT copies rep field values index-by-index;
  *       NODE_ID passes {@code rep.id} through {@code NodeIdEncoder.decodeValues}.</li>
- *   <li>Group bindings by {@code (alternative-index, tenantId)} into nested LinkedHashMaps.</li>
+ *   <li>Group bindings by alternative-index into a {@link java.util.LinkedHashMap}.</li>
  *   <li>For each group, dispatch to {@code select<TypeName>Alt<N>(bindings, groupEnv, dsl, result)}.</li>
  * </ol>
  *
@@ -62,8 +63,7 @@ final class HandleMethodBody {
     private static void emitGroupingMaps(CodeBlock.Builder b) {
         var objectArray = no.sikt.graphitron.javapoet.ArrayTypeName.of(ClassName.get(Object.class));
         var listOfBindings = ParameterizedTypeName.get(LIST, objectArray);
-        var inner = ParameterizedTypeName.get(MAP, ClassName.get(String.class), listOfBindings);
-        var outer = ParameterizedTypeName.get(MAP, ClassName.get(Integer.class), inner);
+        var outer = ParameterizedTypeName.get(MAP, ClassName.get(Integer.class), listOfBindings);
         b.addStatement("$T groups = new $T<>()", outer, LINKED_HASH_MAP);
     }
 
@@ -125,30 +125,25 @@ final class HandleMethodBody {
                 b.addStatement("cols[$L] = rep.get($S)", i, alt.requiredFields().get(i));
             }
         }
-        // Per-rep DFE for tenant resolution.
+        // Per-rep DFE: carries arguments(rep) for any in-rep argument reads inside the
+        // dispatched alternative. Built per-rep (not per-group) so a single representation's
+        // rep map is the one the dispatched fetcher's env sees.
         b.addStatement("$T repEnv = $T.newDataFetchingEnvironment(env).arguments(rep).build()",
             ENV, ENV_IMPL);
-        b.addStatement("String tenantId = graphitronContext(repEnv).getTenantId(repEnv)");
         b.addStatement("groups.computeIfAbsent($L, k -> new $T<>())"
-            + ".computeIfAbsent(tenantId, k -> new $T<>())"
             + ".add(new Object[]{idx, cols, repEnv})",
-            altIndex, LINKED_HASH_MAP, ARRAY_LIST);
+            altIndex, ARRAY_LIST);
     }
 
     private static void emitGroupDispatch(CodeBlock.Builder b, EntityResolution entity) {
         var listOfBindings = ParameterizedTypeName.get(LIST,
             no.sikt.graphitron.javapoet.ArrayTypeName.of(ClassName.get(Object.class)));
-        var inner = ParameterizedTypeName.get(MAP, ClassName.get(String.class), listOfBindings);
         var outerEntry = ParameterizedTypeName.get(
             ClassName.get(java.util.Map.Entry.class),
-            ClassName.get(Integer.class), inner);
-        var innerEntry = ParameterizedTypeName.get(
-            ClassName.get(java.util.Map.Entry.class),
-            ClassName.get(String.class), listOfBindings);
+            ClassName.get(Integer.class), listOfBindings);
         b.beginControlFlow("for ($T altEntry : groups.entrySet())", outerEntry);
         b.addStatement("int altIdx = altEntry.getKey()");
-        b.beginControlFlow("for ($T tenantEntry : altEntry.getValue().entrySet())", innerEntry);
-        b.addStatement("$T bindings = tenantEntry.getValue()", listOfBindings);
+        b.addStatement("$T bindings = altEntry.getValue()", listOfBindings);
         b.addStatement("Object[] first = bindings.get(0)");
         b.addStatement("$T groupEnv = ($T) first[2]", ENV, ENV);
         b.addStatement("$T dsl = graphitronContext(groupEnv).getDslContext(groupEnv)", DSL_CONTEXT);
@@ -163,7 +158,6 @@ final class HandleMethodBody {
                 i, entity.typeName(), "Alt" + i);
         }
         b.add("default -> {\n}\n");
-        b.endControlFlow();
         b.endControlFlow();
         b.endControlFlow();
     }

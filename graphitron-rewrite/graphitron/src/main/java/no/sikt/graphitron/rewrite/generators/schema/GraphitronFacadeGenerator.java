@@ -1,13 +1,19 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.ContextArgumentClassifier;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;
+import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
+import no.sikt.graphitron.rewrite.model.ResolvedContextArg;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 /**
@@ -19,11 +25,15 @@ import java.util.function.Consumer;
  * {@code .subscription()}, {@code .clearDirectives()}, or the replace overload
  * {@code .codeRegistry(GraphQLCodeRegistry)}) lives on the emitted method's own javadoc.
  *
- * <p>The facade also exposes {@code newExecutionInput} factories that pre-wire the
- * per-request {@link no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator
- * GraphitronContext} into the {@code GraphQLContext} and pre-attach an empty
- * {@code DataLoaderRegistry}, hiding the two pieces of boilerplate every app would
- * otherwise repeat per request.
+ * <p>The facade also exposes one schema-driven {@code newExecutionInput} factory whose parameter
+ * list reflects the schema's declared {@code contextArguments}: a {@code DSLContext defaultDsl}
+ * first, then one typed parameter per contextArgument name (alphabetical), reflected through
+ * {@link ContextArgumentClassifier} from the load-bearing type-agreement classifier.
+ *
+ * <p>R190 collapsed the legacy two-overload shape ({@code (GraphitronContext)} +
+ * {@code (DSLContext)}) into this single typed entry point. The sealed
+ * {@code GraphitronContext} now permits only the generated {@code GraphitronContextImpl}
+ * singleton; the factory IS the per-request wiring point.
  */
 public final class GraphitronFacadeGenerator {
 
@@ -31,13 +41,21 @@ public final class GraphitronFacadeGenerator {
 
     private GraphitronFacadeGenerator() {}
 
-    public static List<TypeSpec> generate(String outputPackage, boolean federationLink) {
+    @DependsOnClassifierCheck(
+        key = "context-argument.type-agreement",
+        reliesOn = "Reads ResolvedContextArg.javaType verbatim into the factory's typed parameter "
+            + "list and the graphQLContext.put value; the cross-site agreement classifier "
+            + "guarantees a single TypeName per name, so the factory body never has to pick a "
+            + "winner among disagreeing sites."
+    )
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage, boolean federationLink) {
         String schemaPackage = outputPackage + ".schema";
         var graphQLSchema = ClassName.get("graphql.schema", "GraphQLSchema");
         var schemaBuilder = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
         var customizerType = ParameterizedTypeName.get(ClassName.get(Consumer.class), schemaBuilder);
         var graphitronSchema = ClassName.get(schemaPackage, GraphitronSchemaClassGenerator.CLASS_NAME);
         var graphitronContext = ClassName.get(schemaPackage, GraphitronContextInterfaceGenerator.CLASS_NAME);
+        var graphitronContextImpl = graphitronContext.nestedClass(GraphitronContextInterfaceGenerator.IMPL_CLASS_NAME);
         var executionInput = ClassName.get("graphql", "ExecutionInput");
         var executionInputBuilder = ClassName.get("graphql", "ExecutionInput", "Builder");
         var dataLoaderRegistry = ClassName.get("org.dataloader", "DataLoaderRegistry");
@@ -51,32 +69,20 @@ public final class GraphitronFacadeGenerator {
             .addJavadoc(buildSchemaJavadoc(federationLink))
             .build();
 
-        var newExecutionInputFromContext = MethodSpec.methodBuilder("newExecutionInput")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(executionInputBuilder)
-            .addParameter(graphitronContext, "context")
-            .addStatement(
-                "return $T.newExecutionInput()\n"
-                    + "    .graphQLContext(b -> b.put($T.class, context))\n"
-                    + "    .dataLoaderRegistry(new $T())",
-                executionInput, graphitronContext, dataLoaderRegistry)
-            .addJavadoc(newExecutionInputContextJavadoc())
-            .build();
+        var classification = ContextArgumentClassifier.classify(schema);
+        // TreeMap iteration order is alphabetical by key: same order generated fetchers will
+        // resolve them in, same order the user docs talk about them in, deterministic across runs.
+        List<ResolvedContextArg> contextArgs = classification.resolved().values().stream().toList();
 
-        var newExecutionInputFromDsl = MethodSpec.methodBuilder("newExecutionInput")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(executionInputBuilder)
-            .addParameter(dslContext, "dsl")
-            .addStatement("return newExecutionInput(($T) env -> dsl)", graphitronContext)
-            .addJavadoc(newExecutionInputDslJavadoc())
-            .build();
+        var newExecutionInput = buildNewExecutionInput(
+            graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
+            dataLoaderRegistry, dslContext, contextArgs);
 
         var classBuilder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc(classJavadoc())
             .addMethod(buildSchema)
-            .addMethod(newExecutionInputFromContext)
-            .addMethod(newExecutionInputFromDsl);
+            .addMethod(newExecutionInput);
 
         if (federationLink) {
             var SCHEMA_TRANSFORMER = ClassName.get("com.apollographql.federation.graphqljava", "SchemaTransformer");
@@ -105,8 +111,43 @@ public final class GraphitronFacadeGenerator {
     }
 
     /** Convenience overload for non-federation usage. */
-    public static List<TypeSpec> generate(String outputPackage) {
-        return generate(outputPackage, false);
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
+        return generate(schema, outputPackage, false);
+    }
+
+    private static MethodSpec buildNewExecutionInput(
+            ClassName graphitronContext, ClassName graphitronContextImpl,
+            ClassName executionInput, ClassName executionInputBuilder,
+            ClassName dataLoaderRegistry, ClassName dslContext,
+            List<ResolvedContextArg> contextArgs) {
+        var method = MethodSpec.methodBuilder("newExecutionInput")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(executionInputBuilder)
+            .addParameter(dslContext, "defaultDsl");
+        for (ResolvedContextArg arg : contextArgs) {
+            method.addParameter(arg.javaType(), arg.name());
+        }
+        method.addStatement("$T.requireNonNull(defaultDsl, $S)", Objects.class, "defaultDsl");
+        for (ResolvedContextArg arg : contextArgs) {
+            method.addStatement("$T.requireNonNull($L, $S)", Objects.class, arg.name(), arg.name());
+        }
+
+        // Build the graphQLContext lambda body: stash DSLContext under DSLContext.class, each
+        // contextArgument under its string name, and the singleton GraphitronContextImpl under
+        // GraphitronContext.class. The downstream `graphitronContext(env)` helper retrieves the
+        // singleton by typed key; per-request values flow through env.getGraphQlContext() reads
+        // inside the singleton's default methods.
+        method.addCode("return $T.newExecutionInput()\n", executionInput);
+        method.addCode("    .graphQLContext(b -> {\n");
+        method.addCode("        b.put($T.class, defaultDsl);\n", dslContext);
+        for (ResolvedContextArg arg : contextArgs) {
+            method.addCode("        b.put($S, $L);\n", arg.name(), arg.name());
+        }
+        method.addCode("        b.put($T.class, $T.INSTANCE);\n", graphitronContext, graphitronContextImpl);
+        method.addCode("    })\n");
+        method.addCode("    .dataLoaderRegistry(new $T());\n", dataLoaderRegistry);
+        method.addJavadoc(newExecutionInputJavadoc(contextArgs));
+        return method.build();
     }
 
     private static String classJavadoc() {
@@ -119,31 +160,33 @@ public final class GraphitronFacadeGenerator {
             + "surface over schema construction and per-request input shaping.\n";
     }
 
-    private static String newExecutionInputContextJavadoc() {
-        return "Builds an {@link graphql.ExecutionInput.Builder} pre-wired with the per-request\n"
-            + "{@link GraphitronContext} (placed under the typed key every emitted fetcher reads\n"
-            + "from) and an empty {@link org.dataloader.DataLoaderRegistry} (required by\n"
-            + "graphql-java; generated fetchers populate it lazily on first lookup).\n"
-            + "\n"
-            + "<p>Chain additional {@code .query(...)}, {@code .variables(...)},\n"
-            + "{@code .operationName(...)} calls before {@code .build()}. Extra\n"
-            + "{@code .graphQLContext(b -> b.put(...))} calls <em>merge</em> with the context\n"
-            + "key this factory put. The {@code .dataLoaderRegistry(...)} replace overload\n"
-            + "swaps out the factory's empty registry if you need to supply a pre-populated\n"
-            + "one.\n"
-            + "@param context the per-request {@code GraphitronContext} implementation;\n"
-            + "must not be {@code null}\n"
-            + "@return a builder ready for {@code .query(...).build()}\n";
-    }
-
-    private static String newExecutionInputDslJavadoc() {
-        return "Convenience overload for the single-tenant case: builds an\n"
-            + "{@link graphql.ExecutionInput.Builder} backed by a fixed jOOQ\n"
-            + "{@link org.jooq.DSLContext}. Equivalent to\n"
-            + "{@code newExecutionInput((GraphitronContext) env -> dsl)}.\n"
-            + "@param dsl the {@code DSLContext} every fetch in this request should use;\n"
-            + "must not be {@code null}\n"
-            + "@return a builder ready for {@code .query(...).build()}\n";
+    private static String newExecutionInputJavadoc(List<ResolvedContextArg> contextArgs) {
+        var sb = new StringBuilder();
+        sb.append("Builds an {@link graphql.ExecutionInput.Builder} pre-wired with the per-request\n");
+        sb.append("jOOQ {@code DSLContext} and any declared {@code contextArguments}, plus an empty\n");
+        sb.append("{@link org.dataloader.DataLoaderRegistry} (required by graphql-java; generated\n");
+        sb.append("fetchers populate it lazily on first lookup).\n");
+        sb.append("\n");
+        sb.append("<p>The parameter list reflects the schema's declared {@code contextArguments} in\n");
+        sb.append("alphabetical order. The body null-checks every parameter and populates the per-request\n");
+        sb.append("{@code GraphQLContext}; generated fetchers read each value back through\n");
+        sb.append("{@code getContextArgument(env, name, ExpectedType.class)}. A missing or wrong-typed\n");
+        sb.append("contextArgument is a compile error at the call site, not a runtime surprise.\n");
+        sb.append("\n");
+        sb.append("<p>Chain additional {@code .query(...)}, {@code .variables(...)},\n");
+        sb.append("{@code .operationName(...)} calls before {@code .build()}. Extra\n");
+        sb.append("{@code .graphQLContext(b -> b.put(...))} calls <em>merge</em> with the entries\n");
+        sb.append("this factory put. The {@code .dataLoaderRegistry(...)} replace overload swaps out\n");
+        sb.append("the factory's empty registry if you need to supply a pre-populated one.\n");
+        sb.append("@param defaultDsl the {@code DSLContext} every fetch in this request should use;\n");
+        sb.append("must not be {@code null}\n");
+        for (ResolvedContextArg arg : contextArgs) {
+            sb.append("@param ").append(arg.name())
+              .append(" the per-request value for {@code contextArgument \"")
+              .append(arg.name()).append("\"}; must not be {@code null}\n");
+        }
+        sb.append("@return a builder ready for {@code .query(...).build()}\n");
+        return sb.toString();
     }
 
     private static String buildSchemaJavadoc(boolean federationLink) {
@@ -164,8 +207,8 @@ public final class GraphitronFacadeGenerator {
             + "overload is fine, and is the supported extension point for adding type resolvers\n"
             + "to user-defined interfaces and unions.\n"
             + "\n"
-            + "<p>Per-request runtime values (DSLContext, context arguments, tenant id) travel via\n"
-            + "{@code Graphitron.newExecutionInput(ctx)}, which pre-wires the typed context key\n"
+            + "<p>Per-request runtime values (DSLContext, contextArguments) travel via\n"
+            + "{@code Graphitron.newExecutionInput(...)}, which pre-wires the typed context entries\n"
             + "and a fresh {@code DataLoaderRegistry} that generated fetchers populate lazily.\n"
             + "@param customizer hook applied to the schema builder before build;\n"
             + "must not be {@code null}\n"

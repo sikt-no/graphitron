@@ -12,18 +12,18 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pins {@code Graphitron.newExecutionInput(...)}'s wiring against graphql-java's
- * builder semantics. Two invariants worth catching at build-time rather than
- * leaking into user apps:
+ * Pins {@code Graphitron.newExecutionInput(...)}'s wiring against graphql-java's builder
+ * semantics. R190 collapses the legacy two-overload shape into a single schema-driven
+ * factory whose parameter list reflects the schema's {@code contextArguments} (alphabetical,
+ * after {@code DSLContext defaultDsl}). The sakila-example schema declares zero
+ * contextArguments today, so the factory collapses to {@code newExecutionInput(DSLContext)}.
  *
  * <ul>
- *   <li>{@code .dataLoaderRegistry(custom)} <em>replaces</em> the factory's
- *       fresh registry rather than merging; this is graphql-java's contract,
- *       so passing a custom registry must win unambiguously.</li>
- *   <li>The {@code (DSLContext)} overload binds the lambda to
- *       {@link GraphitronContext} — exercised here as a compile-time fact
- *       (the call site below would not type-check if the lambda inferred to
- *       {@code Function<DataFetchingEnvironment, DSLContext>}).</li>
+ *   <li>{@code .dataLoaderRegistry(custom)} <em>replaces</em> the factory's fresh registry
+ *       rather than merging; this is graphql-java's contract, so passing a custom registry
+ *       must win unambiguously.</li>
+ *   <li>The sealed {@link GraphitronContext} is stashed under its typed key as a singleton;
+ *       the factory IS the wiring point, consumers no longer construct ad-hoc impls.</li>
  * </ul>
  */
 @CompilationTier
@@ -41,7 +41,7 @@ class NewExecutionInputFactoryTest {
     }
 
     @Test
-    void dslOverload_attachesEmptyDataLoaderRegistryByDefault() {
+    void factoryAttachesEmptyDataLoaderRegistryByDefault() {
         DSLContext dsl = DSL.using(SQLDialect.POSTGRES);
         var input = Graphitron.newExecutionInput(dsl).query("{ __typename }").build();
         assertThat(input.getDataLoaderRegistry()).isNotNull();
@@ -49,10 +49,17 @@ class NewExecutionInputFactoryTest {
     }
 
     @Test
-    void contextOverload_putsContextUnderTypedKey() {
-        GraphitronContext ctx = env -> DSL.using(SQLDialect.POSTGRES);
-        var input = Graphitron.newExecutionInput(ctx).query("{ __typename }").build();
-        assertThat(input.getGraphQLContext().<GraphitronContext>get(GraphitronContext.class))
-            .isSameAs(ctx);
+    void factoryStashesSealedSingletonUnderTypedKey() {
+        DSLContext dsl = DSL.using(SQLDialect.POSTGRES);
+        var input = Graphitron.newExecutionInput(dsl).query("{ __typename }").build();
+        GraphitronContext ctx = input.getGraphQLContext().get(GraphitronContext.class);
+        assertThat(ctx).isSameAs(GraphitronContext.GraphitronContextImpl.INSTANCE);
+    }
+
+    @Test
+    void factoryStashesDslContextUnderTypedKey() {
+        DSLContext dsl = DSL.using(SQLDialect.POSTGRES);
+        var input = Graphitron.newExecutionInput(dsl).query("{ __typename }").build();
+        assertThat(input.getGraphQLContext().<DSLContext>get(DSLContext.class)).isSameAs(dsl);
     }
 }

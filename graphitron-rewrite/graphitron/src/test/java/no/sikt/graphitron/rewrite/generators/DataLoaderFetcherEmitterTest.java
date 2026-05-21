@@ -54,7 +54,7 @@ class DataLoaderFetcherEmitterTest {
         String src = spec.toString();
         assertThat(src).contains("public static java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>> films(");
         assertThat(src).contains("graphql.schema.DataFetchingEnvironment env");
-        assertThat(src).contains("name = graphitronContext(env).getTenantId(env) + \"/\" + java.lang.String.join(\"/\", env.getExecutionStepInfo().getPath().getKeysOnly())");
+        assertThat(src).contains("name = java.lang.String.join(\"/\", env.getExecutionStepInfo().getPath().getKeysOnly())");
         assertThat(src).contains("org.dataloader.DataLoaderFactory.newDataLoader(");
         assertThat(src).contains("return loader.load(key, env)");
     }

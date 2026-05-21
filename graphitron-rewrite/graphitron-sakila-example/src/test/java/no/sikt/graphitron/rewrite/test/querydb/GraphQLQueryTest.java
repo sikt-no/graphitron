@@ -87,25 +87,7 @@ class GraphQLQueryTest {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> execute(String query) {
-        var context = new GraphitronContext() {
-            @Override
-            public DSLContext getDslContext(DataFetchingEnvironment env) {
-                return dsl;
-            }
-            @Override
-            public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
-                return null;
-            }
-        };
-
-        // DataLoader registry is per-request; Split* fetchers call computeIfAbsent on it.
-        // graphql-java requires one explicitly even for non-DataLoader queries.
-        var input = ExecutionInput.newExecutionInput()
-            .query(query)
-            .graphQLContext(builder -> builder.put(GraphitronContext.class, context))
-            .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
-            .build();
-
+        var input = Graphitron.newExecutionInput(dsl).query(query).build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
         return result.getData();
@@ -116,40 +98,8 @@ class GraphQLQueryTest {
      * on errors — for tests that expect a failure path (e.g. Relay first+last validation).
      */
     private graphql.ExecutionResult executeRaw(String query) {
-        var context = new GraphitronContext() {
-            @Override
-            public DSLContext getDslContext(DataFetchingEnvironment env) {
-                return dsl;
-            }
-            @Override
-            public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
-                return null;
-            }
-        };
-
-        var input = ExecutionInput.newExecutionInput()
-            .query(query)
-            .graphQLContext(builder -> builder.put(GraphitronContext.class, context))
-            .build();
-
+        var input = Graphitron.newExecutionInput(dsl).query(query).build();
         return graphql.execute(input);
-    }
-
-    /**
-     * Executes a query with a caller-supplied {@link GraphitronContext} (e.g. one whose
-     * {@code getTenantId} partitions per id). Asserts no errors. Used by the
-     * {@code Query.nodes} per-tenant fan-out test.
-     */
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> executeWithContext(String query, GraphitronContext context) {
-        var input = ExecutionInput.newExecutionInput()
-            .query(query)
-            .graphQLContext(builder -> builder.put(GraphitronContext.class, context))
-            .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
-            .build();
-        var result = graphql.execute(input);
-        assertThat(result.getErrors()).isEmpty();
-        return result.getData();
     }
 
     // ===== Multi-field root query =====
@@ -2420,38 +2370,12 @@ class GraphQLQueryTest {
         assertThat(QUERY_COUNT.get()).isEqualTo(2);
     }
 
-    @Test
-    void nodes_perTenantPartition_separateBatchPerTenant() {
-        // Custom GraphitronContext maps each id to a tenant. 4 customer ids, 2 per tenant.
-        // Expect 2 SQL queries (one Customer batch per tenant). The cbbc103 bug (resolve
-        // tenant against the outer ids[] argument) would put all four into one loader → 1
-        // query. Broken batching would be 4.
-        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
-        String c2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 2);
-        String c3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 3);
-        String c4 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 4);
-        Map<String, String> idToTenant = Map.of(
-            c1, "tenantA", c3, "tenantA",
-            c2, "tenantB", c4, "tenantB");
-
-        var perIdTenantContext = new GraphitronContext() {
-            @Override public DSLContext getDslContext(DataFetchingEnvironment env) { return dsl; }
-            @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) { return null; }
-            @Override public String getTenantId(DataFetchingEnvironment env) {
-                String id = env.getArgument("id");
-                return id == null ? "" : idToTenant.getOrDefault(id, "");
-            }
-        };
-
-        QUERY_COUNT.set(0);
-        executeWithContext(
-            "{ nodes(ids: [\"" + c1 + "\", \"" + c2 + "\", \"" + c3 + "\", \"" + c4 + "\"]) {"
-            + " __typename ... on Customer { firstName } } }",
-            perIdTenantContext);
-        assertThat(QUERY_COUNT.get())
-            .as("two tenants, one Customer batch each")
-            .isEqualTo(2);
-    }
+    // Commented out under R190: getTenantId override and per-tenant DataLoader partitioning are
+    // reintroduced under R45 (see graphitron-rewrite/roadmap/tenant-routing-and-execution-input.md).
+    // The QUERY_COUNT == 2 assertion shape stays as the canonical execution-tier proof R45 will
+    // re-anchor on once `<tenantColumn>` is configurable on the @table directive.
+    // @Test
+    // void nodes_perTenantPartition_separateBatchPerTenant() { ... }
 
     @Test
     void stores_synthesisedConnection_cursorRoundTrip() {
