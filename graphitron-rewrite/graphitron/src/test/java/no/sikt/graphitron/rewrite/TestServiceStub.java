@@ -244,6 +244,18 @@ class TestServiceStub {
     }
 
     /**
+     * R214 fixture: takes a single {@link TestInputBean} parameter whose name does not match
+     * any conventional GraphQL argument name. Used to assert the arity-unique inference: when
+     * the field declares exactly one argument and the method takes exactly one non-Table /
+     * non-DSLContext / non-Context parameter, the pair binds positionally without
+     * {@code argMapping}, even when the slot is a named input object whose Java mapping is
+     * not resolvable to a canonical scalar type.
+     */
+    public static String runWithInputBeanRenamed(TestInputBean payload) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Takes a {@code List<TestInputBean>}. Used by the R150 classifier test to verify that the
      * plural arg shape resolves to a single InputBean extraction (the list-shape is read from
      * the Java type at emit time).

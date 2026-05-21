@@ -1039,22 +1039,31 @@ class ServiceCatalog {
     }
 
     /**
-     * Augments {@code existing} with bindings inferred from a type-unique pairing between
-     * unbound Java parameters and unclaimed GraphQL slots. For each Java type {@code T},
-     * if there is exactly one unbound Java parameter of type {@code T} and exactly one
-     * unclaimed slot whose GraphQL type maps to {@code T} via {@link #mapToJavaTypeName},
-     * a binding from that parameter name to that slot is added. Asymmetric counts (two
-     * params, one slot of the same type; or one param, two slots) are treated as ambiguous
-     * and skipped; the caller falls back to name-based matching and surfaces the existing
-     * diagnostic.
+     * Augments {@code existing} with bindings inferred from a unique pairing between unbound
+     * Java parameters and unclaimed GraphQL slots. Two layered rules:
+     *
+     * <ol>
+     *   <li><b>Arity-unique:</b> when exactly one unbound Java parameter remains AND exactly one
+     *       unclaimed GraphQL slot remains, bind them positionally. This handles the canonical
+     *       case where the only possible mapping is the one the developer wrote, regardless of
+     *       whether the slot's GraphQL type has a canonical Java mapping (named input objects,
+     *       enums, etc. all qualify).</li>
+     *   <li><b>Type-unique:</b> when multiple slots / parameters remain, for each Java type
+     *       {@code T} that appears exactly once among unbound parameters AND exactly once among
+     *       unclaimed slots (where the slot's GraphQL type maps to {@code T} via
+     *       {@link #mapToJavaTypeName}), bind that pair. Asymmetric counts (two String params,
+     *       one String slot) leave the pair unbound; the caller's per-parameter loop surfaces
+     *       the existing name-mismatch diagnostic.</li>
+     * </ol>
      *
      * <p>{@code Table<?>} and {@code DSLContext} parameters are skipped because they're
      * resolved by type elsewhere; parameters whose name matches a declared context key are
      * skipped because the existing name-based binding wins. Parameters with no compiler-set
      * name are skipped (the {@code -parameters} diagnostic still fires from the per-parameter
-     * loop). {@link #mapToJavaTypeName} returns {@code null} for enums, named input objects,
-     * and unclassified scalars, so slots of those shapes are silently ignored here — the
-     * type-string equality check would be unsound without a canonical Java mapping.
+     * loop). Parameters whose Java type matches a recognised SOURCES shape
+     * ({@link #couldBeSourcesShape}: {@code List<RowN>}, {@code List<RecordN>},
+     * {@code List<TableRecord>} and Set equivalents) are skipped so the SOURCES classifier
+     * downstream retains precedence at child coordinates.
      */
     private Map<String, PathExpr> inferBindingsByType(
             java.lang.reflect.Method javaMethod,
@@ -1071,8 +1080,8 @@ class ServiceCatalog {
         // A slot only counts as claimed when some Java parameter actually targets it. An
         // identity binding for a slot whose name doesn't match any parameter is a no-op
         // (left over from {@link ArgBindingMap#of} populating identity entries for every
-        // slot in scope), and leaving it as "claimed" would suppress legitimate type-based
-        // inference for that slot.
+        // slot in scope), and leaving it as "claimed" would suppress legitimate inference
+        // for that slot.
         var claimedSlots = new HashSet<String>();
         for (var entry : existing.entrySet()) {
             if (paramNames.contains(entry.getKey())) {
@@ -1080,16 +1089,15 @@ class ServiceCatalog {
             }
         }
 
-        var slotsByType = new LinkedHashMap<String, List<String>>();
-        for (var entry : slotTypes.entrySet()) {
-            if (claimedSlots.contains(entry.getKey())) continue;
-            String javaTypeName = mapToJavaTypeName(entry.getValue());
-            if (javaTypeName == null) continue;
-            slotsByType.computeIfAbsent(javaTypeName, k -> new ArrayList<>()).add(entry.getKey());
+        var unclaimedSlotNames = new ArrayList<String>();
+        for (var slotName : slotTypes.keySet()) {
+            if (!claimedSlots.contains(slotName)) {
+                unclaimedSlotNames.add(slotName);
+            }
         }
-        if (slotsByType.isEmpty()) return existing;
+        if (unclaimedSlotNames.isEmpty()) return existing;
 
-        var paramsByType = new LinkedHashMap<String, List<String>>();
+        var unboundParams = new ArrayList<java.lang.reflect.Parameter>();
         for (var p : javaMethod.getParameters()) {
             if (org.jooq.Table.class.isAssignableFrom(p.getType())) continue;
             if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) continue;
@@ -1097,12 +1105,46 @@ class ServiceCatalog {
             String pName = p.getName();
             if (existing.containsKey(pName)) continue;
             if (ctxKeys.contains(pName)) continue;
-            String pType = p.getParameterizedType().getTypeName();
-            paramsByType.computeIfAbsent(pType, k -> new ArrayList<>()).add(pName);
+            if (couldBeSourcesShape(p.getParameterizedType())) continue;
+            unboundParams.add(p);
         }
-        if (paramsByType.isEmpty()) return existing;
+        if (unboundParams.isEmpty()) return existing;
 
         var augmented = new LinkedHashMap<>(existing);
+
+        // Arity-unique branch: one unbound parameter, one unclaimed slot. Bind positionally
+        // when the slot's GraphQL type has no canonical Java scalar mapping (named input
+        // object, enum) AND the parameter's Java type is not a canonical scalar — that's the
+        // input-bean case the unambiguousReachablePath hint can't disambiguate. When the slot
+        // does have a canonical mapping, fall through to the type-unique branch so a real
+        // type mismatch surfaces the existing diagnostic; when the parameter is a canonical
+        // scalar against a non-scalar slot, defer to the unambiguousReachablePath dot-path
+        // suggestion which captures the developer's likely intent (a nested field pull).
+        if (unboundParams.size() == 1 && unclaimedSlotNames.size() == 1) {
+            String slotName = unclaimedSlotNames.get(0);
+            String slotJavaType = mapToJavaTypeName(slotTypes.get(slotName));
+            String paramType = unboundParams.get(0).getParameterizedType().getTypeName();
+            boolean slotIsNamedInputOrEnum = slotJavaType == null;
+            boolean paramIsCanonicalScalar = isCanonicalScalarJavaTypeName(paramType);
+            if (slotIsNamedInputOrEnum && !paramIsCanonicalScalar) {
+                augmented.put(unboundParams.get(0).getName(), PathExpr.head(slotName));
+                return augmented;
+            }
+        }
+
+        // Type-unique branch: for each Java type T appearing exactly once on both sides
+        // (where the slot has a canonical Java mapping), bind the pair.
+        var slotsByType = new LinkedHashMap<String, List<String>>();
+        for (var slotName : unclaimedSlotNames) {
+            String javaTypeName = mapToJavaTypeName(slotTypes.get(slotName));
+            if (javaTypeName == null) continue;
+            slotsByType.computeIfAbsent(javaTypeName, k -> new ArrayList<>()).add(slotName);
+        }
+        var paramsByType = new LinkedHashMap<String, List<String>>();
+        for (var p : unboundParams) {
+            String pType = p.getParameterizedType().getTypeName();
+            paramsByType.computeIfAbsent(pType, k -> new ArrayList<>()).add(p.getName());
+        }
         for (var paramEntry : paramsByType.entrySet()) {
             if (paramEntry.getValue().size() != 1) continue;
             var slots = slotsByType.get(paramEntry.getKey());
@@ -1110,6 +1152,47 @@ class ServiceCatalog {
             augmented.put(paramEntry.getValue().get(0), PathExpr.head(slots.get(0)));
         }
         return augmented;
+    }
+
+    /**
+     * True when {@code javaTypeName} is one of the boxed Java types graphql-java produces for
+     * the GraphQL spec built-in scalars ({@code Int}/{@code Float}/{@code String}/{@code Boolean}
+     * /{@code ID}). Used by {@link #inferBindingsByType}'s arity-unique branch to gate against
+     * binding a scalar-typed Java parameter directly to a named input object slot — for that
+     * shape the developer almost always wants a dot-path into a nested field, which the
+     * existing {@link #unambiguousReachablePath} diagnostic already surfaces.
+     */
+    private static boolean isCanonicalScalarJavaTypeName(String javaTypeName) {
+        return "java.lang.String".equals(javaTypeName)
+            || "java.lang.Integer".equals(javaTypeName)
+            || "java.lang.Double".equals(javaTypeName)
+            || "java.lang.Boolean".equals(javaTypeName);
+    }
+
+    /**
+     * True when the parameter's Java type matches a recognised SOURCES shape — {@code List<RowN>},
+     * {@code List<RecordN>}, {@code List<TableRecord>}, or the {@code Set<>} equivalents.
+     * {@link #inferBindingsByType} consults this to keep SOURCES-shape parameters out of the
+     * inferred-binding candidate set, so the per-parameter loop's SOURCES classifier still wins
+     * at child coordinates. The narrower {@link #looksLikeSourcesShape} only covers
+     * {@code RowN} / {@code RecordN}; the TableRecord arm here matches the third element-type
+     * arm of {@link #classifySourcesType}.
+     */
+    private static boolean couldBeSourcesShape(java.lang.reflect.Type paramType) {
+        var split = peelContainer(paramType, java.util.EnumSet.of(ContainerKind.LIST, ContainerKind.SET));
+        if (split.isEmpty()) return false;
+        java.lang.reflect.Type elementType = split.get().elementType();
+        if (elementType instanceof java.lang.reflect.ParameterizedType ept
+                && ept.getRawType() instanceof Class<?> rawClass) {
+            String rawName = rawClass.getName();
+            if (rawName.startsWith("org.jooq.Row")
+                    && rawName.substring("org.jooq.Row".length()).matches("\\d+")) return true;
+            if (rawName.startsWith("org.jooq.Record")
+                    && rawName.substring("org.jooq.Record".length()).matches("\\d+")) return true;
+        }
+        if (elementType instanceof Class<?> ec
+                && org.jooq.TableRecord.class.isAssignableFrom(ec)) return true;
+        return false;
     }
 
     /**

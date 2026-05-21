@@ -689,6 +689,58 @@ class ServiceCatalogTest {
     }
 
     @Test
+    void reflectServiceMethod_arityUniqueWithNamedInputObject_infersBindingWithoutArgMapping() {
+        // R214 (extension): a Mutation-shaped @service field declares one GraphQL argument
+        // whose type is a named input object (no canonical Java scalar mapping). The Java
+        // method declares one non-Table / non-DSLContext / non-Context parameter whose name
+        // does not match. With exactly one unbound parameter and exactly one unclaimed slot,
+        // the arity-unique branch binds them positionally — the long-form "rename or
+        // argMapping" diagnostic no longer fires for this shape.
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("RunInput")
+            .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("value").type(graphql.Scalars.GraphQLString).build())
+            .build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+        var argByJavaName = bindings(Map.of("input", "input"));
+
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "runWithInputBeanRenamed", argByJavaName, Set.of(), List.of(), null, slot);
+
+        assertThat(result.failed()).isFalse();
+        var params = result.ref().params();
+        assertThat(params).hasSize(1);
+        assertThat(params.get(0).name()).isEqualTo("payload");
+        assertThat(params.get(0).source()).isInstanceOf(ParamSource.Arg.class);
+        assertThat(((ParamSource.Arg) params.get(0).source()).graphqlArgName()).isEqualTo("input");
+    }
+
+    @Test
+    void reflectServiceMethod_arityUnique_scalarParamAgainstNamedInputSlot_defersToDotPathHint() {
+        // R214 floor: arity-unique inference does NOT fire when the slot is a named input
+        // object AND the Java parameter is a canonical scalar (String / Integer / Double /
+        // Boolean). The developer almost always wants a dot-path binding into a nested field
+        // in this shape, and the existing unambiguousReachablePath suggestion is the
+        // appropriate fix-it. Asserts that the diagnostic still surfaces under this gate.
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("ScalarHolder")
+            .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("value").type(graphql.Scalars.GraphQLString).build())
+            .build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+        var argByJavaName = bindings(Map.of("input", "input"));
+
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getByIdWithDsl", argByJavaName, Set.of(), List.of(), null, slot);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("argMapping: \"id: input.value\"");
+    }
+
+    @Test
     void reflectTableMethod_typeUniqueSignature_infersBindingWithoutArgMapping() {
         // R214: arg-level @condition where the Java parameter name (whatever) does not match
         // the GraphQL argument name (opptaksNavn), but the signature is type-unambiguous —
