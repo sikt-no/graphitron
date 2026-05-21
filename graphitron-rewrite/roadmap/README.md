@@ -21,8 +21,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R13` | Faceted search on `@asConnection` | Spec |  | [plan](faceted-search.md) |
 | `R63` | Type UPSERT dialect requirement on the model | Spec |  | [plan](dml-dialect-requirement-on-model.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
-| `R204` | Validate uniform env.getSource() domain return type across OutputField producers on an SDL type | Spec | 2026-05-21 | [plan](mixed-dml-service-producer-conflict-diagnostic.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
+| `R204` | Validate uniform env.getSource() domain return type across OutputField producers on an SDL type | Ready | 2026-05-21 | [plan](mixed-dml-service-producer-conflict-diagnostic.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R205` | @condition on a plain-input-type input field is silently dropped when no matching column exists | Spec | 2026-05-21 | [plan](condition-on-plain-input-field-silent-drop.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
@@ -153,7 +153,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R172` [**Audit: forbid service-side references to <outputPackage>.inputs.***](inputs-package-internal-use-audit.md) — Backlog, architecture
 - `R122` [**Compound mutations: parent entity row + child normalised rows in one INSERT**](compound-entity-mutations.md) — Backlog, architecture
 - `R92` [**Surface database CHECK constraints as Jakarta validation rules**](catalog-check-constraint-validation.md) — Spec, architecture
-- `R204` [**Validate uniform env.getSource() domain return type across OutputField producers on an SDL type**](mixed-dml-service-producer-conflict-diagnostic.md) — Spec, cleanup
+- `R204` [**Validate uniform env.getSource() domain return type across OutputField producers on an SDL type**](mixed-dml-service-producer-conflict-diagnostic.md) — Ready, cleanup
 - `R145` [**Cardinality safety story for UPSERT under the multiRow: regime**](mutation-cardinality-safety-upsert.md) — Backlog, architecture
 - `R146` [**Unique-index coverage as an alternative to PK for mutation cardinality safety**](mutation-cardinality-safety-unique-index.md) — Backlog, architecture
 

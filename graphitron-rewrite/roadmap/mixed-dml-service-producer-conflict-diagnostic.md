@@ -1,7 +1,7 @@
 ---
 id: R204
 title: Validate uniform env.getSource() domain return type across OutputField producers on an SDL type
-status: Spec
+status: Ready
 bucket: cleanup
 priority: 10
 theme: mutations-errors
