@@ -29,7 +29,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
 | `R203` | Publish graphitron-tree-sitter-natives jar; retire vendored C build in graphitron-lsp | In Progress | 2026-05-21 <sub>created 2026-05-20</sub> | [plan](publish-tree-sitter-natives-jar.md) |
-| `R205` | Plain-input filter fields drop resolved-column implicit predicates and Unresolved diagnostics | In Review | 2026-05-21 | [plan](condition-on-plain-input-field-silent-drop.md) |
 
 ---
 
@@ -236,7 +235,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R209` [**FieldRegistry classify-input trace loses typed Rejection payload**](field-registry-typed-rejection-trace.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
-- `R205` [**Plain-input filter fields drop resolved-column implicit predicates and Unresolved diagnostics**](condition-on-plain-input-field-silent-drop.md)
 - `R188` [**Replace @value with PK-default partition + @condition on mutations**](simplify-update-mutations-drop-value.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
 
