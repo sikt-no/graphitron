@@ -1149,9 +1149,33 @@ class ServiceCatalog {
             if (paramEntry.getValue().size() != 1) continue;
             var slots = slotsByType.get(paramEntry.getKey());
             if (slots == null || slots.size() != 1) continue;
+            // The user's rule: "one and only one possible mapping". A top-level slot is one
+            // possible mapping; any reachable nested field of the same Java type inside any
+            // unclaimed slot is another. When both exist, the binding is ambiguous and the
+            // inference yields so the existing unambiguousReachablePath suggestion can render
+            // the dot-path alternative.
+            if (anyReachableNestedMatch(paramEntry.getKey(), unclaimedSlotNames, slotTypes)) continue;
             augmented.put(paramEntry.getValue().get(0), PathExpr.head(slots.get(0)));
         }
         return augmented;
+    }
+
+    /**
+     * True when any unclaimed slot's input-object type contains a reachable nested field whose
+     * GraphQL type maps to {@code targetTypeName}. Mirrors the search in
+     * {@link #unambiguousReachablePath} but stops at the first hit — for ambiguity detection in
+     * {@link #inferBindingsByType} we only need existence, not uniqueness.
+     */
+    private boolean anyReachableNestedMatch(
+            String targetTypeName, List<String> unclaimedSlotNames,
+            Map<String, GraphQLInputType> slotTypes) {
+        var matches = new ArrayList<String>(1);
+        for (var slotName : unclaimedSlotNames) {
+            searchSlotForMatchingPath(slotName, slotTypes.get(slotName), targetTypeName,
+                new ArrayList<>(), new HashSet<>(), matches);
+            if (!matches.isEmpty()) return true;
+        }
+        return false;
     }
 
     /**

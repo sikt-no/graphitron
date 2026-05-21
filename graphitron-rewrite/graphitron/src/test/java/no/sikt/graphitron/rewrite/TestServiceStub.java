@@ -256,6 +256,19 @@ class TestServiceStub {
     }
 
     /**
+     * R214 fixture: single non-Table / non-DSLContext / non-Context {@code String} parameter
+     * whose name does not match any conventional GraphQL argument or slot. Used to assert
+     * that the type-unique inference yields when an unclaimed sibling slot is a named input
+     * object containing a reachable nested field of the same Java type — the binding is
+     * then ambiguous (top-level positional + nested dot-path are both reachable), and the
+     * inference must defer to name-based matching and let {@link ServiceCatalog#unambiguousReachablePath}
+     * surface the dot-path suggestion.
+     */
+    public static String getByFilmId(String filmId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Takes a {@code List<TestInputBean>}. Used by the R150 classifier test to verify that the
      * plural arg shape resolves to a single InputBean extraction (the list-shape is read from
      * the Java type at emit time).
