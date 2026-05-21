@@ -28,10 +28,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
-| `R216` | LSP classification + inferred-directive arms walk type extensions, not just definitions | Spec | 2026-05-21 | [plan](lsp-classification-walks-type-extensions.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
 | `R215` | Column-binding requirement captured at classification, not derived at usage | Ready | 2026-05-21 | [plan](column-binding-at-classification-not-usage.md) |
+| `R216` | LSP classification + inferred-directive arms walk type extensions, not just definitions | Ready | 2026-05-21 | [plan](lsp-classification-walks-type-extensions.md) |
 
 ---
 
@@ -231,7 +231,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R121` [**LSP diagnostic for redundant @splitQuery on @record-parent fields**](lsp-diagnostic-redundant-splitquery-on-record.md) — Backlog, feature
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
 - `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
-- `R216` [**LSP classification + inferred-directive arms walk type extensions, not just definitions**](lsp-classification-walks-type-extensions.md) — Spec, bug
+- `R216` [**LSP classification + inferred-directive arms walk type extensions, not just definitions**](lsp-classification-walks-type-extensions.md) — Ready, bug
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
 
