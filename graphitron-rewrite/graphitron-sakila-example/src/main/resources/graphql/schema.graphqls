@@ -9,6 +9,13 @@ directive @auth(role: String!) on FIELD_DEFINITION
 
 type Query {
     customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]! @auth(role: "admin")
+    # R190 fixture: the one @service(contextArguments: ...) site in the example schema.
+    # Drives the generated Graphitron.newExecutionInput(DSLContext, String userId) factory's
+    # typed userId slot; the L6 round-trip + missing-value diagnostic tests exercise this field.
+    greetingByUser: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService",
+        method: "greet"
+    }, contextArguments: ["userId"])
     films(
         rating: MpaaRating @field(name: "RATING"),
         textRating: TextRating @field(name: "TEXT_RATING"),

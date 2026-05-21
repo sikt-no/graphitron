@@ -33,7 +33,7 @@ class NewExecutionInputFactoryTest {
     void dataLoaderRegistry_overrideReplacesFactoryDefault() {
         DSLContext dsl = DSL.using(SQLDialect.POSTGRES);
         DataLoaderRegistry custom = new DataLoaderRegistry();
-        var input = Graphitron.newExecutionInput(dsl)
+        var input = Graphitron.newExecutionInput(dsl, "test-user")
             .query("{ __typename }")
             .dataLoaderRegistry(custom)
             .build();
@@ -43,7 +43,7 @@ class NewExecutionInputFactoryTest {
     @Test
     void factoryAttachesEmptyDataLoaderRegistryByDefault() {
         DSLContext dsl = DSL.using(SQLDialect.POSTGRES);
-        var input = Graphitron.newExecutionInput(dsl).query("{ __typename }").build();
+        var input = Graphitron.newExecutionInput(dsl, "test-user").query("{ __typename }").build();
         assertThat(input.getDataLoaderRegistry()).isNotNull();
         assertThat(input.getDataLoaderRegistry().getDataLoaders()).isEmpty();
     }
@@ -51,7 +51,7 @@ class NewExecutionInputFactoryTest {
     @Test
     void factoryStashesSealedSingletonUnderTypedKey() {
         DSLContext dsl = DSL.using(SQLDialect.POSTGRES);
-        var input = Graphitron.newExecutionInput(dsl).query("{ __typename }").build();
+        var input = Graphitron.newExecutionInput(dsl, "test-user").query("{ __typename }").build();
         GraphitronContext ctx = input.getGraphQLContext().get(GraphitronContext.class);
         assertThat(ctx).isSameAs(GraphitronContext.GraphitronContextImpl.INSTANCE);
     }
@@ -59,7 +59,7 @@ class NewExecutionInputFactoryTest {
     @Test
     void factoryStashesDslContextUnderTypedKey() {
         DSLContext dsl = DSL.using(SQLDialect.POSTGRES);
-        var input = Graphitron.newExecutionInput(dsl).query("{ __typename }").build();
+        var input = Graphitron.newExecutionInput(dsl, "test-user").query("{ __typename }").build();
         assertThat(input.getGraphQLContext().<DSLContext>get(DSLContext.class)).isSameAs(dsl);
     }
 }

@@ -81,7 +81,7 @@ class DmlBulkMutationsExecutionTest {
 
     private graphql.ExecutionResult executeRaw(String query) { return run(query); }
 
-    private graphql.ExecutionResult run(String query) {        var input = Graphitron.newExecutionInput(dsl).query(query).build();
+    private graphql.ExecutionResult run(String query) {        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
         return graphql.execute(input);
     }
 

@@ -65,7 +65,7 @@ class SingleRecordPayloadDmlTest {
         return executeRaw(query, /*expectErrors=*/ false).data;
     }
 
-    private RawResult executeRaw(String query, boolean expectErrors) {        var input = Graphitron.newExecutionInput(dsl).query(query).build();
+    private RawResult executeRaw(String query, boolean expectErrors) {        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
         var result = graphql.execute(input);
         if (!expectErrors) {
             assertThat(result.getErrors()).as("graphql errors: " + result.getErrors()).isEmpty();

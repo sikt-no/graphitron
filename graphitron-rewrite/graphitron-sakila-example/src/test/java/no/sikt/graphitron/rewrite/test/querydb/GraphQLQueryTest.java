@@ -87,7 +87,7 @@ class GraphQLQueryTest {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> execute(String query) {
-        var input = Graphitron.newExecutionInput(dsl).query(query).build();
+        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
         return result.getData();
@@ -98,7 +98,7 @@ class GraphQLQueryTest {
      * on errors — for tests that expect a failure path (e.g. Relay first+last validation).
      */
     private graphql.ExecutionResult executeRaw(String query) {
-        var input = Graphitron.newExecutionInput(dsl).query(query).build();
+        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
         return graphql.execute(input);
     }
 

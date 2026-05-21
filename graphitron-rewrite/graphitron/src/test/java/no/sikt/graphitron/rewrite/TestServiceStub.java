@@ -31,6 +31,20 @@ class TestServiceStub {
     /** No-arg, returns {@code String} — used for parameter-classification tests. */
     public static String get() { throw new UnsupportedOperationException(); }
 
+    /**
+     * R190 fixture: {@code @service} with one {@code String userId} contextArgument; pairs with
+     * {@link #getRatingByFnr} on the cross-site factory pipeline test (different name, different
+     * type, so the factory's parameter list reflects both alphabetically).
+     */
+    public static String getRatingByUser(String userId) { throw new UnsupportedOperationException(); }
+
+    /**
+     * R190 fixture: {@code @service} with a {@code Long fnr} contextArgument; pairs with
+     * {@link #getRatingByUser} so the factory's emitted parameter list carries both
+     * {@code (DSLContext defaultDsl, Long fnr, String userId)} in alphabetical order.
+     */
+    public static String getRatingByFnr(Long fnr) { throw new UnsupportedOperationException(); }
+
     /** No-arg, returns {@code String} — used for mutation parameter-classification tests. */
     public static String run() { throw new UnsupportedOperationException(); }
 
