@@ -20,29 +20,52 @@ Two latent inconsistencies pile on top of the missing-extensions bug, and we tre
 
 ## Shape of the fix
 
-### One shared kind constant in `parsing/`
+### A `DeclarationKind` enum in `parsing/`
 
-Introduce `TypeDeclarations` in `graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/parsing/TypeDeclarations.java` (new file) carrying:
+The divergence the bug surfaced is one source-of-truth question ("what tree-sitter kinds count as a type declaration?") evaluated three times with three different answers. The natural axis isn't a `Set<String>` — it's a closed family of kinds with structural predicates (`isExtension()`, `isCarrier()`). Pick the closed-family shape now so the next consumer ("kinds that admit `@table`", "kinds with `directives` children", etc.) lands as an enum predicate instead of yet another `Set`.
 
-- `TypeDeclarations.KINDS` — all 12 strings (the 6 `*_type_definition` + the 6 `*_type_extension` siblings).
-- `TypeDeclarations.CARRIER_KINDS` — the 6 strings that admit a `fields_definition` / `input_fields_definition` child: `object_type_definition`, `interface_type_definition`, `input_object_type_definition` plus their `_extension` siblings. Used by the field-name hover ancestor-walk.
-- `TypeDeclarations.enclosing(Node)` — walks ancestors and returns the nearest node whose `getType()` is in `KINDS`. Replaces `TypeContext.enclosingTypeDefinition`.
-- `TypeDeclarations.walkAll(Node, Consumer<Node>)` — replaces `InlayHints.walkTypeDefinitions`.
+Introduce `DeclarationKind` in `graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/parsing/DeclarationKind.java` (new file), a Java `enum` with 12 constants — one per tree-sitter kind — each carrying its tree-sitter string and the two predicates the LSP currently splits on:
+
+```java
+public enum DeclarationKind {
+    OBJECT_DEF      ("object_type_definition",       /*carrier*/ true,  /*extension*/ false),
+    INTERFACE_DEF   ("interface_type_definition",    true,  false),
+    INPUT_OBJECT_DEF("input_object_type_definition", true,  false),
+    UNION_DEF       ("union_type_definition",        false, false),
+    SCALAR_DEF      ("scalar_type_definition",       false, false),
+    ENUM_DEF        ("enum_type_definition",         false, false),
+    OBJECT_EXT      ("object_type_extension",        true,  true),
+    INTERFACE_EXT   ("interface_type_extension",     true,  true),
+    INPUT_OBJECT_EXT("input_object_type_extension",  true,  true),
+    UNION_EXT       ("union_type_extension",         false, true),
+    SCALAR_EXT      ("scalar_type_extension",        false, true),
+    ENUM_EXT        ("enum_type_extension",          false, true);
+
+    public boolean isCarrier()   { /* admits fields_definition / input_fields_definition */ }
+    public boolean isExtension() { /* belongs to the _type_extension family */ }
+
+    public static Optional<DeclarationKind> of(String treeSitterKind) { /* lookup */ }
+    public static Optional<DeclarationKind> of(Node node) { return of(node.getType()); }
+}
+```
+
+Co-locate the two walks the LSP needs on the same module so callers don't reach for `Set.contains` themselves:
+
+- `DeclarationKind.enclosing(Node inner) -> Optional<Node>` — walks ancestors and returns the nearest node `n` with `DeclarationKind.of(n).isPresent()`. Replaces `TypeContext.enclosingTypeDefinition`.
+- `DeclarationKind.walkAll(Node root, Consumer<Node>)` — replaces `InlayHints.walkTypeDefinitions`; visits every descendant whose kind resolves.
 
 Tree-sitter-graphql produces each `_type_extension` kind with the same `name`, `fields_definition` / `input_fields_definition`, and `directives` children as its definition sibling, so a single walker and a single `childOfKind(...)` reader work for both shapes.
 
-Rename consequence: `TypeContext.enclosingTypeDefinition` becomes `TypeDeclarations.enclosing` (or a thin delegating alias on `TypeContext` if it shortens the diff at consumers; otherwise replace at every call site). The local `TYPE_DEFINITION_KINDS` sets in `InlayHints`, `TypeContext`, and the local string lists in `DeclarationHovers` are deleted.
+Rename consequence: `TypeContext.enclosingTypeDefinition` is replaced at every call site by `DeclarationKind.enclosing`. The local `TYPE_DEFINITION_KINDS` sets in `InlayHints` and `TypeContext`, plus the inlined string lists in `DeclarationHovers`, are deleted.
 
-### Sites that consume the shared constant
-
-After the rename, every site below references `TypeDeclarations`:
+### Sites that consume the enum
 
 | # | Site | File:line | Today | After |
 |---|---|---|---|---|
-| 1 | `walkTypeDefinitions` | `inlay/InlayHints.java:49-56`, 294-301 | 6 definition kinds | `TypeDeclarations.KINDS`, `walkAll` |
-| 2 | `enclosingTypeDefinition` | `parsing/TypeContext.java:22-50` | 5 definition kinds (no union) | `TypeDeclarations.KINDS`, `TypeDeclarations.enclosing` |
-| 3 | type-name switch in `findContaining` | `hover/DeclarationHovers.java:69-75` | 6 definition kinds | `TypeDeclarations.KINDS.contains(parent.getType())` |
-| 4 | `fieldHover` ancestor-walk | `hover/DeclarationHovers.java:78-96` (kind check at 81-83) | 3 carrier definition kinds | `TypeDeclarations.CARRIER_KINDS.contains(kind)` |
+| 1 | `walkTypeDefinitions` | `inlay/InlayHints.java:49-56`, 294-301 | 6 definition kinds in a private `Set<String>` | `DeclarationKind.walkAll(root, ...)` |
+| 2 | `enclosingTypeDefinition` | `parsing/TypeContext.java:22-50` | 5 definition kinds (no union) in a private `Set<String>` | `DeclarationKind.enclosing(node)` |
+| 3 | type-name switch in `findContaining` | `hover/DeclarationHovers.java:69-75` | hard-coded 6-arm string switch | `DeclarationKind.of(parent).isPresent()` |
+| 4 | `fieldHover` ancestor-walk | `hover/DeclarationHovers.java:78-96` (kind check at 81-83) | inline `equals` on 3 carrier definition kinds | `DeclarationKind.of(parent).filter(DeclarationKind::isCarrier).isPresent()` |
 
 ### Downstream callers that ride the broadened helper
 
@@ -58,7 +81,7 @@ These are not new edit sites — they call the renamed helper as-is — but each
 
 ### Snapshot-routed `tableNameOf`
 
-Today `TypeContext.tableNameOf(typeDef, source)` reads `@table(name:)` from `typeDef`'s own `directives` child (`TypeContext.java:89-101`). Once `TypeDeclarations.enclosing` can return an extension node, two callers will receive an extension whose own `directives` child has no `@table`, even when the matching `type Foo @table(...)` definition lives in another file — and the helper would return empty for both completion and go-to-definition.
+Today `TypeContext.tableNameOf(typeDef, source)` reads `@table(name:)` from `typeDef`'s own `directives` child (`TypeContext.java:89-101`). Once `DeclarationKind.enclosing` can return an extension node, two callers will receive an extension whose own `directives` child has no `@table`, even when the matching `type Foo @table(...)` definition lives in another file — and the helper would return empty for both completion and go-to-definition.
 
 Rework the helper to resolve by *type name* against the classification snapshot:
 
@@ -91,12 +114,12 @@ This collapses the surprise the original spec called out: `tableNameOf` returns 
 
 Three tiers carry parity coverage for the extension case. Each is named below; each names a test class that already exists today (`InlayHintsTest`, `DeclarationHoversTest`, `DiagnosticsTest`), and adds methods to that class.
 
-- **`InlayHintsTest`** — add a fixture with `extend type Query { ... }` containing fields with bare `@field` / `@reference`, pinning that (a) the classification label renders on the extension's type-name token, (b) field-level classification labels render on each field inside, (c) the inferred-directive ghost annotations resolve. A second fixture exercises `extend type Customer { newColumn: String @field }` where `Customer` is `@table`-classified, pinning that field-level classification + inferred `@field(name:)` resolve through name-keyed snapshot lookup even when the AST node passed to `enclosingTypeDeclaration` is the extension.
+- **`InlayHintsTest`** — add a fixture with `extend type Query { ... }` containing fields with bare `@field` / `@reference`, pinning that (a) the classification label renders on the extension's type-name token, (b) field-level classification labels render on each field inside, (c) the inferred-directive ghost annotations resolve. A second fixture exercises `extend type Customer { newColumn: String @field }` where `Customer` is `@table`-classified, pinning that field-level classification + inferred `@field(name:)` resolve through name-keyed snapshot lookup even when the AST node passed to `DeclarationKind.enclosing` is the extension.
 - **`DeclarationHoversTest`** — classification-hover parity inside an extension: cursor on the extension's type-name token (yields the type-classification card), cursor on a field name inside the extension (yields the field-classification card).
-- **`DiagnosticsTest`** — `@field(name:)` member validation inside `extend type Customer { bad: String @field(name: "no_such_col") }` produces the canonical "unknown column" diagnostic; a parallel positive case (valid column) stays silent. Catches the silent-regression vector across the wider `enclosingTypeDeclaration` consumer set — diagnostics are the most likely path to surface a downstream consumer that doesn't tolerate an extension node.
+- **`DiagnosticsTest`** — `@field(name:)` member validation inside `extend type Customer { bad: String @field(name: "no_such_col") }` produces the canonical "unknown column" diagnostic; a parallel positive case (valid column) stays silent. Catches the silent-regression vector across the wider `DeclarationKind.enclosing` consumer set — diagnostics are the most likely path to surface a downstream consumer that doesn't tolerate an extension node.
 
 ## Out of scope (called out, not regressed)
 
 - **Generator-side admission of `extend type Foo @table(name:"x") { ... }`**. Today the classifier does not see `@table` declared on an extension; the LSP's snapshot-routed `tableNameOf` therefore stays silent on an extension that declares `@table` without a corresponding `@table`-bearing definition. Lifting that constraint is a classifier-side change with its own roadmap item if anyone wants it; the LSP-walk fix here intentionally does not pre-empt that decision.
 - Tree-sitter kinds that don't correspond to declaration coordinates (e.g. `schema_extension`); those carry no classification today.
-- Completion / go-to-def fixture expansion beyond what `DiagnosticsTest` covers. The diagnostic test is the canary; completions and go-to-def share the same `enclosingTypeDeclaration` + snapshot-routed `tableNameOf` plumbing, so a green diagnostic test is reasonable evidence the other consumers work too. The implementer may add focused cases if they hit a surprise during implementation.
+- Completion / go-to-def fixture expansion beyond what `DiagnosticsTest` covers. The diagnostic test is the canary; completions and go-to-def share the same `DeclarationKind.enclosing` + snapshot-routed `tableNameOf` plumbing, so a green diagnostic test is reasonable evidence the other consumers work too. The implementer may add focused cases if they hit a surprise during implementation.
