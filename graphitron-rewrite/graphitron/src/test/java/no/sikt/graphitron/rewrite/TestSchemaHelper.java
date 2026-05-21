@@ -63,6 +63,19 @@ public final class TestSchemaHelper {
         return out;
     }
 
+    /**
+     * Number of lines the inline-test prelude prepends to {@code schemaText} before
+     * graphql-java parses the combined document. Tests that pin a concrete
+     * {@code SourceLocation.getLine()} against a fixture add this offset to the
+     * carrier field's user-relative line number.
+     */
+    public static int preludeLineCount(String schemaText) {
+        String p = prelude(schemaText);
+        int n = 0;
+        for (int i = 0; i < p.length(); i++) if (p.charAt(i) == '\n') n++;
+        return n;
+    }
+
     private static String loadDirectives() {
         try (InputStream is = RewriteSchemaLoader.class.getResourceAsStream("directives.graphqls")) {
             if (is == null) throw new IllegalStateException("directives.graphqls not found on classpath");

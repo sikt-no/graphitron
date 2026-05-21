@@ -74,6 +74,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
@@ -8306,7 +8307,7 @@ class GraphitronSchemaBuilderTest {
             type poengklasse @record { v: String }
             type Query { a: Poengklasse b: poengklasse }
             """,
-            schema -> {
+            (schema, sdl) -> {
                 assertThat(schema.type("Poengklasse")).isInstanceOf(UnclassifiedType.class);
                 assertThat(schema.type("poengklasse")).isInstanceOf(UnclassifiedType.class);
                 var errors = new GraphitronSchemaValidator().validate(schema);
@@ -8331,7 +8332,7 @@ class GraphitronSchemaBuilderTest {
                 bar: [Item!]! @asConnection(connectionName: "fooConnection")
             }
             """,
-            schema -> {
+            (schema, sdl) -> {
                 assertThat(schema.type("FooConnection")).isInstanceOf(UnclassifiedType.class);
                 assertThat(schema.type("fooConnection")).isInstanceOf(UnclassifiedType.class);
                 var errors = new GraphitronSchemaValidator().validate(schema);
@@ -8345,6 +8346,23 @@ class GraphitronSchemaBuilderTest {
                         tuple(RejectionKind.INVALID_SCHEMA,
                             "Type 'fooConnection': synthesised connection type collides case-insensitively with 'FooConnection', 'fooConnection'"
                                 + "; rename the source field or set @asConnection(connectionName: \"...\") to a name that is unique under case-folding"));
+                // R206: synthesised Connection's SourceLocation pins at the @asConnection carrier
+                // field. preludeLineCount accounts for directives.graphqls + the Node-interface
+                // line the test helper prepends; line 3 of the user SDL is the `foo` carrier and
+                // line 4 is `bar`. Column 5 is "    foo:" (4-space indent + 1-indexed column).
+                int preludeLines = TestSchemaHelper.preludeLineCount(sdl);
+                var fooErr = errors.stream()
+                    .filter(e -> e.coordinate().equals("FooConnection") && e.message().contains("case-insensitively"))
+                    .findFirst().orElseThrow();
+                assertThat(fooErr.location()).isNotNull();
+                assertThat(fooErr.location().getLine()).isEqualTo(preludeLines + 3);
+                assertThat(fooErr.location().getColumn()).isEqualTo(5);
+                var barErr = errors.stream()
+                    .filter(e -> e.coordinate().equals("fooConnection") && e.message().contains("case-insensitively"))
+                    .findFirst().orElseThrow();
+                assertThat(barErr.location()).isNotNull();
+                assertThat(barErr.location().getLine()).isEqualTo(preludeLines + 4);
+                assertThat(barErr.location().getColumn()).isEqualTo(5);
             }),
 
         SDL_VS_SYNTH(
@@ -8357,7 +8375,7 @@ class GraphitronSchemaBuilderTest {
                 stash: fooConnection
             }
             """,
-            schema -> {
+            (schema, sdl) -> {
                 assertThat(schema.type("FooConnection")).isInstanceOf(UnclassifiedType.class);
                 assertThat(schema.type("fooConnection")).isInstanceOf(UnclassifiedType.class);
                 var errors = new GraphitronSchemaValidator().validate(schema);
@@ -8372,6 +8390,17 @@ class GraphitronSchemaBuilderTest {
                     .anyMatch(m -> m.startsWith("Type 'fooConnection':")
                         && m.contains("collides case-insensitively")
                         && m.contains("'FooConnection'") && m.contains("'fooConnection'"));
+                // R206: synth-Connection side now carries the @asConnection carrier-field location;
+                // SDL side already carried its own parse location and is unchanged.
+                var synthErr = errors.stream()
+                    .filter(e -> e.coordinate().equals("FooConnection") && e.message().contains("case-insensitively"))
+                    .findFirst().orElseThrow();
+                assertThat(synthErr.location()).isNotNull();
+                assertThat(synthErr.location().getColumn()).isEqualTo(5);
+                var sdlErr = errors.stream()
+                    .filter(e -> e.coordinate().equals("fooConnection") && e.message().contains("case-insensitively"))
+                    .findFirst().orElseThrow();
+                assertThat(sdlErr.location()).isNotNull();
             }),
 
         SYNTH_EDGE_VS_SDL(
@@ -8384,7 +8413,7 @@ class GraphitronSchemaBuilderTest {
                 stash: fooEdge
             }
             """,
-            schema -> {
+            (schema, sdl) -> {
                 assertThat(schema.type("FooEdge")).isInstanceOf(UnclassifiedType.class);
                 assertThat(schema.type("fooEdge")).isInstanceOf(UnclassifiedType.class);
                 var errors = new GraphitronSchemaValidator().validate(schema);
@@ -8399,6 +8428,17 @@ class GraphitronSchemaBuilderTest {
                     .anyMatch(m -> m.startsWith("Type 'fooEdge':")
                         && m.contains("collides case-insensitively")
                         && m.contains("'FooEdge'") && m.contains("'fooEdge'"));
+                // R206: synth-Edge side now carries the @asConnection carrier-field location;
+                // SDL side already carried its own parse location and is unchanged.
+                var synthErr = errors.stream()
+                    .filter(e -> e.coordinate().equals("FooEdge") && e.message().contains("case-insensitively"))
+                    .findFirst().orElseThrow();
+                assertThat(synthErr.location()).isNotNull();
+                assertThat(synthErr.location().getColumn()).isEqualTo(5);
+                var sdlErr = errors.stream()
+                    .filter(e -> e.coordinate().equals("fooEdge") && e.message().contains("case-insensitively"))
+                    .findFirst().orElseThrow();
+                assertThat(sdlErr.location()).isNotNull();
             }),
 
         SYNTH_PAGE_INFO_VS_SDL(
@@ -8411,7 +8451,7 @@ class GraphitronSchemaBuilderTest {
                 stash: pageInfo
             }
             """,
-            schema -> {
+            (schema, sdl) -> {
                 assertThat(schema.type("PageInfo")).isInstanceOf(UnclassifiedType.class);
                 assertThat(schema.type("pageInfo")).isInstanceOf(UnclassifiedType.class);
                 var errors = new GraphitronSchemaValidator().validate(schema);
@@ -8426,6 +8466,17 @@ class GraphitronSchemaBuilderTest {
                     .anyMatch(m -> m.startsWith("Type 'pageInfo':")
                         && m.contains("collides case-insensitively")
                         && m.contains("'PageInfo'") && m.contains("'pageInfo'"));
+                // R206: synth-PageInfo deliberately has null location. A single PageInfo serves
+                // every connection in the schema, so no carrier site is the actionable one — the
+                // SDL member's parse location anchors the diagnostic. Locks in the Plan §2 choice.
+                var synthErr = errors.stream()
+                    .filter(e -> e.coordinate().equals("PageInfo") && e.message().contains("case-insensitively"))
+                    .findFirst().orElseThrow();
+                assertThat(synthErr.location()).isNull();
+                var sdlErr = errors.stream()
+                    .filter(e -> e.coordinate().equals("pageInfo") && e.message().contains("case-insensitively"))
+                    .findFirst().orElseThrow();
+                assertThat(sdlErr.location()).isNotNull();
             }),
 
         THREE_WAY_GROUP(
@@ -8436,7 +8487,7 @@ class GraphitronSchemaBuilderTest {
             type foo @record { v: String }
             type Query { a: Foo b: FOO c: foo }
             """,
-            schema -> {
+            (schema, sdl) -> {
                 assertThat(schema.type("Foo")).isInstanceOf(UnclassifiedType.class);
                 assertThat(schema.type("FOO")).isInstanceOf(UnclassifiedType.class);
                 assertThat(schema.type("foo")).isInstanceOf(UnclassifiedType.class);
@@ -8460,7 +8511,7 @@ class GraphitronSchemaBuilderTest {
             type Bar @record { v: String }
             type Query { a: Foo b: Bar }
             """,
-            schema -> {
+            (schema, sdl) -> {
                 assertThat(schema.type("Foo")).isNotInstanceOf(UnclassifiedType.class);
                 assertThat(schema.type("Bar")).isNotInstanceOf(UnclassifiedType.class);
                 var errors = new GraphitronSchemaValidator().validate(schema);
@@ -8470,8 +8521,8 @@ class GraphitronSchemaBuilderTest {
             });
 
         final String sdl;
-        final Consumer<GraphitronSchema> assertions;
-        CaseInsensitiveTypeClashCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+        final BiConsumer<GraphitronSchema, String> assertions;
+        CaseInsensitiveTypeClashCase(String description, String sdl, BiConsumer<GraphitronSchema, String> assertions) {
             this.sdl = sdl;
             this.assertions = assertions;
         }
@@ -8482,7 +8533,7 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(CaseInsensitiveTypeClashCase.class)
     void caseInsensitiveTypeClash(CaseInsensitiveTypeClashCase tc) {
-        tc.assertions.accept(build(tc.sdl));
+        tc.assertions.accept(build(tc.sdl), tc.sdl);
     }
 
     // ===== Helper =====
