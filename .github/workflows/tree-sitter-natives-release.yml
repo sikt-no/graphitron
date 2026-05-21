@@ -1,9 +1,25 @@
 name: tree-sitter natives release
 
-# Builds and publishes `no.sikt:graphitron-tree-sitter-natives:<version>`
-# to Maven Central. Operator guide (when to bump which digit, what each
-# stage verifies, recovery from a broken release):
-# https://graphitron.sikt.no/architecture/tree-sitter-natives-release.html
+# Builds + publishes `no.sikt:graphitron-tree-sitter-natives:<version>` to
+# Maven Central. Manual trigger only: cutting a release is a deliberate
+# human-driven action — bump the version in
+# `graphitron-rewrite/graphitron-tree-sitter-natives/pom.xml`, push, then
+# trigger this workflow from the Actions UI. Tagging is optional; the
+# artifact is identified by Maven version.
+#
+# Three stages, all gated on the previous succeeding:
+#   1. build-matrix: five native runners, each compiles parser + runtime
+#      with `tree-sitter build` and verifies symbol exports.
+#   2. package-deploy: ubuntu-latest assembles the five-platform jar,
+#      asserts layout, signs, and pushes to Maven Central.
+#   3. post-deploy-verify: five native runners resolve the freshly-
+#      published jar from a clean local m2 and load+parse a trivial
+#      GraphQL document against the platform-appropriate binary.
+#
+# Stage 3 is the authoritative "the jar works end-to-end on every
+# supported platform" gate. If any platform fails after a successful
+# deploy, bump `<build-n>` and re-release; the failing version stays on
+# Central as a tombstone but graphitron-lsp pins to the working build.
 
 on:
   workflow_dispatch:
@@ -12,10 +28,6 @@ on:
         description: 'Upstream tree-sitter CLI tag to build with (must match runtime version pinned in pom.xml).'
         required: true
         default: 'v0.26.9'
-      dry-run:
-        description: 'Skip deploy + post-deploy verify (run only build matrix, package, and jar-layout assertion).'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -66,15 +78,13 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/ts-cli"
           cd "$RUNNER_TEMP/ts-cli"
-          asset="${{ matrix.cli-asset }}"
-          url="https://github.com/tree-sitter/tree-sitter/releases/download/${{ inputs.tree-sitter-cli-version }}/${asset}"
-          curl -fsSL -o "$asset" "$url"
-          if [[ "$asset" == *.zip ]]; then
-            unzip -q "$asset"
+          url="https://github.com/tree-sitter/tree-sitter/releases/download/${{ inputs.tree-sitter-cli-version }}/${{ matrix.cli-asset }}"
+          curl -fsSL -o asset "$url"
+          if [[ "${{ matrix.cli-asset }}" == *.zip ]]; then
+            unzip -q asset
           else
-            # gunzip needs the .gz suffix to know what to do; it strips it on success.
-            gunzip "$asset"
-            mv "${asset%.gz}" "${{ matrix.cli-binary }}"
+            gunzip asset
+            mv asset "${{ matrix.cli-binary }}"
           fi
           chmod +x "${{ matrix.cli-binary }}" || true
           ls -la
@@ -91,6 +101,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/out"
+          # `tree-sitter build` compiles the grammar's parser.c together with
+          # the runtime sources the CLI ships internally, producing one shared
+          # library that exports both `tree_sitter_graphql` and the `ts_*`
+          # runtime symbols. The CLI handles MSVC export annotations on
+          # Windows; using it directly avoids the bonede route's missing
+          # bare `ts_*` exports.
           "$TS_CLI" build --output "$RUNNER_TEMP/out/${{ matrix.lib-name }}" "$GRAMMAR_DIR"
 
       - name: Verify exported symbols (POSIX)
@@ -99,11 +115,16 @@ jobs:
         run: |
           set -euo pipefail
           lib="$RUNNER_TEMP/out/${{ matrix.lib-name }}"
-          # `nm -gU` works on both ELF (binutils) and Mach-O (macOS llvm-nm).
+          # `nm -gU` lists global defined symbols on both ELF (binutils) and
+          # Mach-O (macOS llvm-nm). Assert the grammar entry point AND a
+          # representative ts_* runtime symbol are both exported: that's the
+          # core invariant the bonede Windows DLL violated.
           nm_out="$(nm -gU "$lib" 2>/dev/null || nm -g --defined-only "$lib")"
           echo "$nm_out" | grep -E '(^| )_?tree_sitter_graphql( |$)' >/dev/null \
             || { echo "::error::tree_sitter_graphql not exported in $lib"; exit 1; }
-          echo "OK: tree_sitter_graphql exported"
+          echo "$nm_out" | grep -E '(^| )_?ts_parser_new( |$)' >/dev/null \
+            || { echo "::error::ts_parser_new not exported in $lib (runtime not merged)"; exit 1; }
+          echo "OK: tree_sitter_graphql and ts_parser_new both exported"
 
       - name: Verify exported symbols (Windows)
         if: runner.os == 'Windows'
@@ -120,7 +141,11 @@ jobs:
             Write-Error "tree_sitter_graphql not exported in $lib"
             exit 1
           }
-          Write-Output "OK: tree_sitter_graphql exported"
+          if (-not ($exports -match 'ts_parser_new')) {
+            Write-Error "ts_parser_new not exported in $lib (runtime not merged)"
+            exit 1
+          }
+          Write-Output "OK: tree_sitter_graphql and ts_parser_new both exported"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
@@ -176,7 +201,11 @@ jobs:
           mvn -f "$NATIVES_MODULE/pom.xml" --batch-mode --errors package -DskipTests
 
       - name: Assert jar layout
-        # Exactly five lib/<os>-<arch>/<file> entries; any other lib/* path is a bug.
+        # Exactly five lib/<os>-<arch>/<file> entries and nothing else under
+        # lib/. The package phase wrote them into target/classes earlier; the
+        # default-jar execution bundled target/classes verbatim, plus
+        # META-INF metadata. We accept META-INF/* and the five lib entries;
+        # any other lib/* path is a workflow bug.
         run: |
           set -euo pipefail
           jar_path="$(ls $NATIVES_MODULE/target/graphitron-tree-sitter-natives-*.jar)"
@@ -198,7 +227,6 @@ jobs:
           echo "OK: jar layout matches exactly the five expected lib/<os>-<arch>/ entries"
 
       - name: Deploy to Maven Central
-        if: ${{ !inputs.dry-run }}
         run: |
           mvn -f "$NATIVES_MODULE/pom.xml" --batch-mode --errors deploy -DskipTests
         env:
@@ -219,7 +247,6 @@ jobs:
   post-deploy-verify:
     name: Verify ${{ matrix.platform }} from Central
     needs: package-deploy
-    if: ${{ !inputs.dry-run }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -244,35 +271,6 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
 
-      - name: Install libtree-sitter (Linux)
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libtree-sitter0
-
-      - name: Install libtree-sitter (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euo pipefail
-          brew install tree-sitter
-
-      - name: Install libtree-sitter (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install tree-sitter:x64-windows
-          $binDir = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin"
-          if (-not (Test-Path "$binDir/tree-sitter.dll")) {
-            Write-Error "tree-sitter.dll not found in $binDir after vcpkg install"
-            exit 1
-          }
-          # Append to PATH so the verifier JVM's System.loadLibrary chain finds it.
-          Add-Content -Path $env:GITHUB_PATH -Value $binDir
-
       - name: Resolve published jar into a clean local m2
         shell: bash
         run: |
@@ -280,7 +278,9 @@ jobs:
           version="${{ needs.package-deploy.outputs.version }}"
           repo="$RUNNER_TEMP/m2-clean"
           mkdir -p "$repo"
-          # Retry loop covers central-publishing-maven-plugin's autoPublish propagation delay.
+          # dependency:get retries Central until the just-published artifact
+          # is mirrored (central-publishing-maven-plugin's autoPublish has a
+          # propagation delay).
           attempt=1
           until mvn -B dependency:get \
                   -Dmaven.repo.local="$repo" \
@@ -298,14 +298,20 @@ jobs:
           echo "NATIVES_VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Write verifier harness
-        # Standalone load+parse against the published jar. Inlined to decouple
-        # this stage from any in-flight graphitron-lsp test class.
+        # Standalone Java program (no Maven project) that mirrors the shape of
+        # the graphitron-lsp NativeLibraryBundleTest.runSmokeTest helper Phase 3
+        # will land: load BundledLibraryLookup-equivalent resource for the
+        # current platform out of the natives jar, Language.load with
+        # "tree_sitter_graphql", parse a tiny document, assert root + no errors.
+        # Inlined here rather than depending on graphitron-lsp test classes so
+        # this stage stays decoupled from any in-flight lsp-side changes.
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p verifier
           cat > verifier/Verify.java <<'JAVA'
           import io.github.treesitter.jtreesitter.Language;
+          import io.github.treesitter.jtreesitter.NativeLibraryLookup;
           import io.github.treesitter.jtreesitter.Parser;
           import io.github.treesitter.jtreesitter.Tree;
           import java.io.InputStream;
@@ -362,6 +368,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # jtreesitter is the FFM-based Java binding; same version graphitron-lsp uses.
           mvn -B dependency:get \
               -Dmaven.repo.local="$M2_REPO" \
               -Dartifact=io.github.tree-sitter:jtreesitter:0.26.0 \
@@ -373,7 +380,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # git-bash on Windows still needs Windows-style ';' classpath separators for the JVM.
+          # Path separator: ';' on Windows, ':' elsewhere. GitHub's bash on Windows is git-bash, which
+          # still expects Windows-style classpath separators when handing the value to a Windows JVM.
           sep=":"
           if [[ "$RUNNER_OS" == "Windows" ]]; then sep=";"; fi
           cp="$JTREESITTER_JAR$sep$NATIVES_JAR"

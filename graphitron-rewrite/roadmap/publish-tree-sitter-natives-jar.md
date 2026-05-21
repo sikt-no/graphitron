@@ -1,7 +1,7 @@
 ---
 id: R203
 title: Publish graphitron-tree-sitter-natives jar; retire vendored C build in graphitron-lsp
-status: Ready
+status: In Progress
 bucket: Backlog
 theme: lsp
 depends-on: []
@@ -34,14 +34,7 @@ Design rationale was explored against three alternatives (committing binaries di
 
 ### Phase 1 — natives module + release workflow
 
-- Create `graphitron-rewrite/graphitron-tree-sitter-natives/pom.xml`. `<packaging>jar</packaging>`, no `<parent>` reference, no Java sources, no test sources. Pom inlines: explicit `<groupId>no.sikt</groupId>` + `<version>0.26.0-1</version>`, `central-publishing-maven-plugin` configuration (the same `publishingServerId=central` / `autoPublish=true` shape the parent's release profile uses), `maven-gpg-plugin` `sign-artifacts` execution (loopback pinentry), `maven-source-plugin` `jar-no-fork` execution (produces a near-empty sources jar; Central requires it), `maven-javadoc-plugin` `jar` execution (produces a near-empty javadoc jar; Central requires it), and `<distributionManagement><repository><id>central</id></repository></distributionManagement>`. Not in the parent's `<modules>` list.
-- Move grammar sources from `graphitron-lsp/src/main/native/grammars/graphql/` to `graphitron-tree-sitter-natives/src/main/native/grammars/graphql/` (`parser.c`, `tree_sitter/parser.h`, `LICENSE`, `UPSTREAM.md`). Leave them in graphitron-lsp until phase 3 deletes them; in phase 1 they exist in both places so the current LSP build keeps working.
-- Add `graphitron-tree-sitter-natives/UPSTREAM.md` describing the bundled tree-sitter runtime version + grammar commit + how to cut a new release (link to the workflow file).
-- Add `.github/workflows/tree-sitter-natives-release.yml`. `on: workflow_dispatch`. Three stages, last is the new post-deploy verification matrix:
-    1. **Build matrix (five native runners).** Each runner downloads the pinned `tree-sitter` CLI release from `github.com/tree-sitter/tree-sitter/releases`, runs `tree-sitter build --output libtree-sitter-graphql.<ext> <grammar-dir>` against the vendored grammar, verifies the produced binary's exported symbols on the spot (`nm -gU` for ELF/Mach-O, `dumpbin /exports` for the Windows DLL; assert both `tree_sitter_graphql` and a sample `ts_*` runtime symbol like `ts_parser_new` are present), and uploads the binary as a workflow artifact named `native-<os>-<arch>`.
-    2. **Package + deploy (ubuntu-latest).** Downloads all five artifacts, places them under `target/classes/lib/<os>-<arch>/`, runs `mvn -f graphitron-rewrite/graphitron-tree-sitter-natives/pom.xml package` to produce the unified jar, asserts jar layout (exactly five `lib/<os>-<arch>/...` entries and no others), then `mvn deploy` to push to Central via the module's inlined `central-publishing-maven-plugin` + `maven-gpg-plugin`.
-    3. **Post-deploy load+parse matrix (five native runners).** After deploy succeeds, a second five-platform matrix resolves `no.sikt:graphitron-tree-sitter-natives:<this-release>` from a clean local m2 (`mvn dependency:get` with a temp `-Dmaven.repo.local`), runs a tiny Java test harness that mirrors `NativeLibraryBundleTest.runSmokeTest`'s shape (load `BundledLibraryLookup` resource for the current platform, `Language.load(symbols, "tree_sitter_graphql")`, parse `"type Query { hello: String }"`, assert `source_file` root + no errors), and fails the workflow if any platform's load+parse fails. This is the post-R203 stand-in for "run NativeLibraryBundleTest on all five platforms in CI": instead of expanding `.github/workflows/rewrite-build.yml`'s per-PR matrix (the binaries don't change per PR), the verification co-locates with the natives release event.
-- The jar-layout assertion lives in the workflow's package stage (above). No `mvn package` smoke test inside the module itself: the module has no Java sources, so package-phase plugins only need to produce the jar; the structural assertion is workflow-side because it depends on the matrix outputs being merged in first.
+Shipped. Landed `graphitron-rewrite/graphitron-tree-sitter-natives/` (standalone pom + vendored grammar sources + module-level `UPSTREAM.md`), `.github/workflows/tree-sitter-natives-release.yml` (build-matrix → package-deploy → post-deploy-verify, all five platforms), and `graphitron-rewrite/docs/tree-sitter-natives-release.adoc`. Vendored grammar lives in both `graphitron-lsp/src/main/native/grammars/graphql/` and the new module until Phase 3 deletes the lsp-side copy. One spec-time gap filled in implementation: `maven-javadoc-plugin jar` produces nothing when no `src/main/java/` exists, so a tiny `no.sikt.graphitron.natives` `package-info.java` was added as a placeholder; without it the javadoc jar is never attached and Central rejects the release. The parent's `<modules>` list still omits the natives module; `mvn -f graphitron-rewrite/pom.xml ...` does not touch it.
 
 ### Phase 2 — first release
 
