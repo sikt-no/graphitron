@@ -530,4 +530,27 @@ public final class ScalarTypeResolver {
         }
         return false;
     }
+
+    /**
+     * True when {@code javaTypeFqn} is the Java type FQN any classified GraphQL scalar in
+     * {@code classifiedTypes} resolves to. Consults consumer-defined scalars (those registered
+     * via {@code @scalarType} or the extended-scalars convention layer carry their resolved
+     * Java FQN as {@link no.sikt.graphitron.rewrite.model.ScalarResolution.Resolved#javaType}),
+     * then falls back to {@link #isSpecBuiltInJavaType} for callers in contexts where the
+     * type registry is empty. Sibling to {@link #builtInJavaType}: the resolver owns both
+     * directions of the scalar-name ↔ scalar-Java-FQN mapping so reflection code, validator
+     * surfaces, and LSP quickfixes share a single source of truth.
+     */
+    public static boolean isClassifiedScalarJavaType(String javaTypeFqn,
+            Iterable<no.sikt.graphitron.rewrite.model.GraphitronType> classifiedTypes) {
+        if (classifiedTypes != null) {
+            for (var t : classifiedTypes) {
+                if (t instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType st
+                        && javaTypeFqn.equals(st.resolution().javaType().toString())) {
+                    return true;
+                }
+            }
+        }
+        return isSpecBuiltInJavaType(javaTypeFqn);
+    }
 }

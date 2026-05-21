@@ -280,6 +280,18 @@ class TestServiceStub {
     }
 
     /**
+     * R214 fixture: single {@code List<Integer>} parameter whose name does not match any
+     * conventional GraphQL argument. Used to assert that the arity-unique branch yields
+     * (defers to the dot-path hint) when the lone unclaimed slot is a named input object
+     * containing a reachable nested {@code [Int!]!} field of matching Java type — the
+     * binding is structurally ambiguous (top-level positional + nested dot-path both reach
+     * the same Java type), so inference must not silently bind to the wrapper.
+     */
+    public static String requestByIds(java.util.List<Integer> requestedIds) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Takes a {@code List<TestInputBean>}. Used by the R150 classifier test to verify that the
      * plural arg shape resolves to a single InputBean extraction (the list-shape is read from
      * the Java type at emit time).
