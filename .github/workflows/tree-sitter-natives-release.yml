@@ -66,13 +66,15 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/ts-cli"
           cd "$RUNNER_TEMP/ts-cli"
-          url="https://github.com/tree-sitter/tree-sitter/releases/download/${{ inputs.tree-sitter-cli-version }}/${{ matrix.cli-asset }}"
-          curl -fsSL -o asset "$url"
-          if [[ "${{ matrix.cli-asset }}" == *.zip ]]; then
-            unzip -q asset
+          asset="${{ matrix.cli-asset }}"
+          url="https://github.com/tree-sitter/tree-sitter/releases/download/${{ inputs.tree-sitter-cli-version }}/${asset}"
+          curl -fsSL -o "$asset" "$url"
+          if [[ "$asset" == *.zip ]]; then
+            unzip -q "$asset"
           else
-            gunzip asset
-            mv asset "${{ matrix.cli-binary }}"
+            # gunzip needs the .gz suffix to know what to do; it strips it on success.
+            gunzip "$asset"
+            mv "${asset%.gz}" "${{ matrix.cli-binary }}"
           fi
           chmod +x "${{ matrix.cli-binary }}" || true
           ls -la
