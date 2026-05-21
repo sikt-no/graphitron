@@ -1778,25 +1778,22 @@ class BuildContext {
             }
         }
         // R209: @condition(override: true) means no implicit column predicate is emitted, so the
-        // field does not need a matching column. Build the condition and emit a ConditionOnlyField;
-        // the explicit method owns the predicate entirely at runtime. If the condition itself fails
-        // to build, fall through to the Unresolved arm (condErrors already populated by
-        // buildInputFieldCondition will surface separately).
+        // field does not need a matching column — the explicit method owns the predicate entirely.
+        // Gate on the directive's override flag first (cheap, no errors-list side effects) so a
+        // failing override:false condition does not silently widen the typed-rejection composite
+        // here at the column-miss fall-through (R205 acceptance test 4 pins the
+        // single-Unresolved-with-non-null-lookupColumn lifting as AuthorError.UnknownName, which
+        // a buildInputFieldCondition call here would collapse to Structural by populating
+        // condErrors alongside the column miss). When the directive carries override:true, build
+        // the condition; if it builds successfully, return ConditionOnlyField; if it fails to
+        // build, the condErrors entry surfaces via the outer composite — same as today.
         var conditionDirective = readConditionDirective(field);
         if (conditionDirective != null && conditionDirective.override()) {
-            int errorsBefore = errors.size();
             Optional<ArgConditionRef> overrideCond = buildInputFieldCondition(field, name, errors);
             if (overrideCond.isPresent()) {
                 return new InputFieldResolution.Resolved(new InputField.ConditionOnlyField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     overrideCond.get()));
-            }
-            if (errors.size() > errorsBefore) {
-                // Condition reflection / arg-mapping failure already lifted into errors; suppress
-                // the redundant "no column found" message so the schema author sees the actionable
-                // root cause without a confusing column-miss alongside it.
-                return new InputFieldResolution.Unresolved(name, null,
-                    "@condition(override: true) failed to build; see condition error above");
             }
         }
         return new InputFieldResolution.Unresolved(name, columnName,
