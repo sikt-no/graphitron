@@ -516,4 +516,18 @@ public final class ScalarTypeResolver {
         BuiltIn entry = SPEC_BUILT_INS.get(scalarName);
         return entry == null ? null : ClassName.get(entry.javaType());
     }
+
+    /**
+     * Inverse of {@link #builtInJavaType}: true when {@code javaTypeFqn} is the Java type FQN
+     * any GraphQL spec built-in scalar maps to ({@code java.lang.String},
+     * {@code java.lang.Integer}, {@code java.lang.Double}, {@code java.lang.Boolean}). Used as
+     * the unit-tier fallback for consumers that want to ask "is this Java type the resolution
+     * of any classified GraphQL scalar?" when {@code ctx.types} is empty.
+     */
+    public static boolean isSpecBuiltInJavaType(String javaTypeFqn) {
+        for (BuiltIn entry : SPEC_BUILT_INS.values()) {
+            if (entry.javaType().getName().equals(javaTypeFqn)) return true;
+        }
+        return false;
+    }
 }

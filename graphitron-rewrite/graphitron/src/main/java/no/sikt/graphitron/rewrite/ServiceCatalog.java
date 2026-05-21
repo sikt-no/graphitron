@@ -1125,8 +1125,8 @@ class ServiceCatalog {
             String slotJavaType = mapToJavaTypeName(slotTypes.get(slotName));
             String paramType = unboundParams.get(0).getParameterizedType().getTypeName();
             boolean slotIsNamedInputOrEnum = slotJavaType == null;
-            boolean paramIsCanonicalScalar = isCanonicalScalarJavaTypeName(paramType);
-            if (slotIsNamedInputOrEnum && !paramIsCanonicalScalar) {
+            boolean paramIsScalarJavaType = isClassifiedScalarJavaTypeName(paramType);
+            if (slotIsNamedInputOrEnum && !paramIsScalarJavaType) {
                 augmented.put(unboundParams.get(0).getName(), PathExpr.head(slotName));
                 return augmented;
             }
@@ -1179,18 +1179,30 @@ class ServiceCatalog {
     }
 
     /**
-     * True when {@code javaTypeName} is one of the boxed Java types graphql-java produces for
-     * the GraphQL spec built-in scalars ({@code Int}/{@code Float}/{@code String}/{@code Boolean}
-     * /{@code ID}). Used by {@link #inferBindingsByType}'s arity-unique branch to gate against
-     * binding a scalar-typed Java parameter directly to a named input object slot — for that
-     * shape the developer almost always wants a dot-path into a nested field, which the
-     * existing {@link #unambiguousReachablePath} diagnostic already surfaces.
+     * True when {@code javaTypeName} is the Java type FQN any classified GraphQL scalar in the
+     * model resolves to. Consults {@code ctx.types} for consumer-defined scalars (those
+     * registered via {@code @scalarType} or the extended-scalars convention layer carry
+     * their resolved Java FQN as {@link no.sikt.graphitron.rewrite.model.ScalarResolution.Resolved#javaType}),
+     * then falls back to the spec-built-in table on {@link ScalarTypeResolver} for unit-tier
+     * callers where {@code ctx.types} is empty. Used by {@link #inferBindingsByType}'s
+     * arity-unique branch to gate against binding a scalar-typed Java parameter directly to a
+     * named input object slot — for that shape the developer almost always wants a dot-path
+     * into a nested field, which the existing {@link #unambiguousReachablePath} diagnostic
+     * already surfaces. Routing through the classifier instead of a hard-coded allow-list
+     * keeps the gate symmetric for consumer-defined scalars (a {@code BigDecimal} param
+     * against a {@code Price} input object now defers to the dot-path hint the same way a
+     * {@code String} param does).
      */
-    private static boolean isCanonicalScalarJavaTypeName(String javaTypeName) {
-        return "java.lang.String".equals(javaTypeName)
-            || "java.lang.Integer".equals(javaTypeName)
-            || "java.lang.Double".equals(javaTypeName)
-            || "java.lang.Boolean".equals(javaTypeName);
+    private boolean isClassifiedScalarJavaTypeName(String javaTypeName) {
+        if (ctx.types != null) {
+            for (var t : ctx.types.values()) {
+                if (t instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType st
+                        && javaTypeName.equals(st.resolution().javaType().toString())) {
+                    return true;
+                }
+            }
+        }
+        return ScalarTypeResolver.isSpecBuiltInJavaType(javaTypeName);
     }
 
     /**
