@@ -1777,7 +1777,7 @@ class BuildContext {
                     keyColumns, shimCond, extraction));
             }
         }
-        // R209: @condition(override: true) means no implicit column predicate is emitted, so the
+        // R210: @condition(override: true) means no implicit column predicate is emitted, so the
         // field does not need a matching column — the explicit method owns the predicate entirely.
         // Gate on the directive's override flag first (cheap, no errors-list side effects) so a
         // failing override:false condition does not silently widen the typed-rejection composite

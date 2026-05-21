@@ -1,7 +1,7 @@
 ---
-id: R209
+id: R210
 title: '@condition(override: true) on input field with no matching column rejected as Unresolved'
-status: Spec
+status: In Review
 bucket: bugs
 depends-on: []
 created: 2026-05-21

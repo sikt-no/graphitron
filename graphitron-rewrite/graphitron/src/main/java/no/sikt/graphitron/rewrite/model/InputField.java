@@ -216,7 +216,7 @@ public sealed interface InputField extends GraphitronField
      * <p>Distinct from {@link ColumnField} with a present {@code override:true} condition: that
      * carrier records the column (used elsewhere by the catalog / fetcher walks) and merely
      * suppresses the implicit predicate at {@code walkInputFieldConditions} time. This variant
-     * exists for the no-column-at-all case (R209).
+     * exists for the no-column-at-all case (R210).
      *
      * <p>Not a {@link LookupKeyField} / {@link SetField}: those rails require a column tuple to
      * drive the VALUES+JOIN or INSERT/UPDATE columnlist; condition-only carriers have neither.

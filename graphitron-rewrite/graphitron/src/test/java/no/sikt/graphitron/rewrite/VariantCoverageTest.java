@@ -83,7 +83,7 @@ class VariantCoverageTest {
             + "lives in the pipeline-tier test that can swap to the nodeidfixture RewriteContext "
             + "rather than in this enum.",
         InputField.ConditionOnlyField.class,
-            "R209: @condition(override: true) input-field-with-no-matching-column carrier. "
+            "R210: @condition(override: true) input-field-with-no-matching-column carrier. "
             + "Covered by GraphitronSchemaBuilderTest's "
             + "plainInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOnlyField "
             + "and tableInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOnlyField "
