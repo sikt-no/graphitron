@@ -1,7 +1,7 @@
 ---
 id: R203
 title: Publish graphitron-tree-sitter-natives jar; retire vendored C build in graphitron-lsp
-status: Ready
+status: In Progress
 bucket: Backlog
 theme: lsp
 depends-on: []
