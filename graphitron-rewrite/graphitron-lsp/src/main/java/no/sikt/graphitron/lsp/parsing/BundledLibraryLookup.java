@@ -12,26 +12,31 @@ import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 
 /**
- * Resolves jtreesitter's runtime symbols against the per-platform shared
- * library this module ships under
- * {@code lib/<os>-<arch>/libtree-sitter-graphql.{so,dylib,dll}}. That library
- * is the unity build of the vendored tree-sitter runtime + the bkegley
- * tree-sitter-graphql grammar, so it exports both the {@code ts_*} runtime
- * functions jtreesitter looks up at static-init time and the
- * {@code tree_sitter_graphql} entry point {@link GraphqlLanguage} loads.
+ * Resolves the {@code tree_sitter_graphql} grammar entry point against the
+ * per-platform shared library that ships in
+ * {@code no.sikt:graphitron-tree-sitter-natives}. The natives jar carries one
+ * grammar binary per supported platform under
+ * {@code lib/<os>-<arch>/libtree-sitter-graphql.{so,dylib}} (POSIX) or
+ * {@code lib/<os>-<arch>/tree-sitter-graphql.dll} (Windows).
  *
- * <p>jtreesitter's default {@code ChainedLibraryLookup} (an implementation
- * detail of the {@code internal} package) consults registered
- * {@link NativeLibraryLookup} services first; this class is registered via
- * {@code META-INF/services/io.github.treesitter.jtreesitter.NativeLibraryLookup}
- * so its lookup runs before jtreesitter falls back to looking for a separate
- * {@code libtree-sitter} on the {@code java.library.path}.
+ * <p>The tree-sitter runtime itself ({@code libtree-sitter}, exporting the
+ * {@code ts_*} symbols) is <em>not</em> bundled. jtreesitter's
+ * {@code package-info} documents the three loading mechanisms it composes
+ * for the runtime: registered {@link NativeLibraryLookup} SPI services first
+ * (this class is one), {@code SymbolLookup.libraryLookup} on the OS search
+ * path / {@code java.library.path}, then the JVM-default
+ * {@code Linker.defaultLookup}. This class contributes the grammar; the
+ * runtime is sourced from the consumer's OS install (apt
+ * {@code libtree-sitter0} on Linux, brew {@code tree-sitter} on macOS,
+ * vcpkg or pinned upstream build on Windows). When the system runtime is
+ * missing, {@link GraphqlLanguage} surfaces a startup-failure that names
+ * the per-platform install command rather than letting jtreesitter raise
+ * an opaque {@link UnsatisfiedLinkError}.
  *
- * <p>The library is extracted from the classpath to a temporary file the
- * first time the lookup is asked for it; subsequent lookups reuse the same
- * file. This is the standard pattern for shipping a native lib inside a jar
- * and the {@code Arena} jtreesitter passes in keeps the mapping alive for
- * the JVM's lifetime.
+ * <p>The grammar library is extracted from the classpath to a temporary
+ * file the first time the lookup is asked for it; subsequent lookups reuse
+ * the same file. The {@link Arena} jtreesitter passes in keeps the mapping
+ * alive for the JVM's lifetime.
  */
 public final class BundledLibraryLookup implements NativeLibraryLookup {
 
@@ -62,7 +67,7 @@ public final class BundledLibraryLookup implements NativeLibraryLookup {
                 try (InputStream in = cl.getResourceAsStream(RESOURCE_PATH)) {
                     if (in == null) {
                         throw new IllegalStateException("missing classpath resource: " + RESOURCE_PATH
-                            + "; the build-native-* Maven profile did not run for this platform");
+                            + "; the graphitron-tree-sitter-natives jar does not appear to be on the classpath");
                     }
                     Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
                 }
@@ -82,21 +87,21 @@ public final class BundledLibraryLookup implements NativeLibraryLookup {
         if (os.contains("linux") && (arch.equals("amd64") || arch.equals("x86_64"))) {
             dir = "linux-x86_64";
             libName = "libtree-sitter-graphql.so";
-        } else if (os.contains("mac") && (arch.equals("amd64") || arch.equals("x86_64"))) {
-            dir = "macos-x86_64";
-            libName = "libtree-sitter-graphql.dylib";
+        } else if (os.contains("linux") && arch.equals("aarch64")) {
+            dir = "linux-aarch64";
+            libName = "libtree-sitter-graphql.so";
         } else if (os.contains("mac") && arch.equals("aarch64")) {
             dir = "macos-aarch64";
             libName = "libtree-sitter-graphql.dylib";
+        } else if (os.contains("windows") && (arch.equals("amd64") || arch.equals("x86_64"))) {
+            dir = "windows-x86_64";
+            // Windows DLLs follow platform convention: no "lib" prefix.
+            libName = "tree-sitter-graphql.dll";
         } else {
-            // Windows lands in a follow-up; until build-native.bat and the matching
-            // Maven profile exist, fail fast with a message that points at the
-            // missing build infrastructure rather than a confusing
-            // UnsatisfiedLinkError later.
             throw new UnsupportedOperationException(
-                "no bundled tree-sitter-graphql native library for os.name=" + os
-                    + ", os.arch=" + arch + "; supported: linux-x86_64, macos-x86_64, "
-                    + "macos-aarch64.");
+                "no graphitron-tree-sitter-natives grammar binary for os.name=" + os
+                    + ", os.arch=" + arch + "; supported: linux-x86_64, linux-aarch64, "
+                    + "macos-aarch64, windows-x86_64.");
         }
         return "lib/" + dir + "/" + libName;
     }

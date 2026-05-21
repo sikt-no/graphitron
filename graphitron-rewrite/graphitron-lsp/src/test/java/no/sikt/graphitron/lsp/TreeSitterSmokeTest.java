@@ -8,10 +8,11 @@ import io.github.treesitter.jtreesitter.Language;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies that the bonede tree-sitter Java binding loads its native libraries
- * and that the tree-sitter-graphql grammar parses a trivial schema. If this
- * test fails on a platform, the binding's bundled natives don't cover that
- * platform and we need a different distribution strategy.
+ * Verifies that jtreesitter loads the graphitron-tree-sitter-natives grammar
+ * binary against an OS-installed libtree-sitter and that the
+ * tree-sitter-graphql grammar parses a trivial schema. If this test fails on
+ * a platform, either the natives jar does not cover that platform or the
+ * system libtree-sitter is missing on the test runner.
  */
 class TreeSitterSmokeTest {
 

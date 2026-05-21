@@ -243,9 +243,14 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
+          # apt's libtree-sitter0 is 0.20.x, predates ts_language_abi_version that jtreesitter 0.26 needs.
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y libtree-sitter0
+          VERSION=v0.26.9
+          TMPDIR=$(mktemp -d) && trap "rm -rf $TMPDIR" EXIT
+          git clone --depth=1 --branch=$VERSION https://github.com/tree-sitter/tree-sitter $TMPDIR/ts
+          make -C $TMPDIR/ts
+          sudo make -C $TMPDIR/ts install
+          sudo ldconfig
 
       - name: Install libtree-sitter (macOS)
         if: runner.os == 'macOS'

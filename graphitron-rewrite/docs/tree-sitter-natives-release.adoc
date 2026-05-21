@@ -107,10 +107,11 @@ Three steps, the second being the GitHub Actions trigger.
    with GPG and publishes via `central-publishing-maven-plugin` with
    `autoPublish=true`.
 .. *Post-deploy load+parse matrix* (four native runners). After deploy
-   succeeds, each runner installs `libtree-sitter` from the OS package
-   manager (`apt install libtree-sitter0` on Linux, `brew install
+   succeeds, each runner installs `libtree-sitter`: source build from
+   upstream on Linux (apt's `libtree-sitter0` is 0.20.x and predates
+   `ts_language_abi_version` that jtreesitter 0.26 needs), `brew install
    tree-sitter` on macOS, `vcpkg install tree-sitter:x64-windows` on
-   Windows), resolves the freshly-published jar from a clean local m2
+   Windows. Then resolves the freshly-published jar from a clean local m2
    (with retries against Central's propagation delay), then runs a tiny
    FFM-based Java verifier that loads the platform-appropriate grammar
    binary, calls `Language.load(symbols, "tree_sitter_graphql")`, parses

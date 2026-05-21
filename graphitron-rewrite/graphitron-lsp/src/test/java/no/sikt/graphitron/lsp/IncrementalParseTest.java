@@ -12,8 +12,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * from-scratch parse, but reuses subtree structure where possible.
  *
  * <p>This is the backbone of the Rust LSP's per-keystroke responsiveness;
- * proving it works through the bonede binding closes one of the biggest
- * questions about porting performance.
+ * proving it works through the jtreesitter binding plus the
+ * graphitron-tree-sitter-natives grammar binary and an OS-installed
+ * libtree-sitter runtime closes one of the biggest questions about
+ * porting performance.
  */
 class IncrementalParseTest {
 
