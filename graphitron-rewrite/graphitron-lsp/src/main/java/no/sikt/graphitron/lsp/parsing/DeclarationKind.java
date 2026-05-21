@@ -2,7 +2,6 @@ package no.sikt.graphitron.lsp.parsing;
 
 import io.github.treesitter.jtreesitter.Node;
 
-import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -104,23 +103,13 @@ public enum DeclarationKind {
 
     /**
      * Visits every descendant of {@code root} (inclusive) whose kind resolves to a
-     * {@link DeclarationKind}. Deduplicates by node identity so a self-walking root that
-     * happens to be a declaration kind itself is not emitted twice.
+     * {@link DeclarationKind}.
      */
     public static void walkAll(Node root, Consumer<Node> sink) {
-        var seen = new LinkedHashSet<Node>();
-        walk(root, node -> {
-            if (of(node).isPresent() && seen.add(node)) {
-                sink.accept(node);
-            }
-        });
-    }
-
-    private static void walk(Node node, Consumer<Node> visitor) {
-        visitor.accept(node);
-        for (int i = 0; i < node.getChildCount(); i++) {
-            Node child = node.getChild(i).orElse(null);
-            if (child != null) walk(child, visitor);
+        if (of(root).isPresent()) sink.accept(root);
+        for (int i = 0; i < root.getChildCount(); i++) {
+            Node child = root.getChild(i).orElse(null);
+            if (child != null) walkAll(child, sink);
         }
     }
 }
