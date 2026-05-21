@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Standalone Maven module that publishes per-platform tree-sitter native
+  libraries as a single jar to Maven Central, consumed by graphitron-lsp.
+
+  Intentionally NOT a child of graphitron-rewrite-parent. Trunk's parent runs
+  at 10-SNAPSHOT and declares no <snapshotRepository>, so inheriting from it
+  would publish a natives jar whose parent reference is unresolvable for any
+  Central consumer and lock the natives release cadence to the next 10.x
+  rewrite release. The release plumbing (gpg, central-publishing, source,
+  javadoc, deploy) is therefore inlined below rather than picked up from the
+  parent's `release` profile, and the parent's <modules> list deliberately
+  omits this module so `mvn install -f graphitron-rewrite/pom.xml -Plocal-db`
+  pays zero build cost.
+
+  Version scheme is <tree-sitter-runtime-version>-<build-n>; first release is
+  0.26.0-1. Bump <build-n> for any binary change (grammar update, build flag,
+  recompile); bump <runtime-version> when the bundled runtime version moves.
+  See UPSTREAM.md and graphitron-rewrite/docs/tree-sitter-natives-release.adoc.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>no.sikt</groupId>
+    <artifactId>graphitron-tree-sitter-natives</artifactId>
+    <version>0.26.0-1</version>
+    <packaging>jar</packaging>
+
+    <name>${project.groupId}:${project.artifactId}</name>
+    <description>
+        Per-platform tree-sitter native libraries for graphitron-lsp:
+        the tree-sitter 0.26.0 runtime + the bkegley tree-sitter-graphql
+        grammar, compiled into one shared library per supported platform
+        (linux-x86_64, linux-aarch64, macos-x86_64, macos-aarch64,
+        windows-x86_64) and shipped under lib/&lt;os&gt;-&lt;arch&gt;/ in the jar.
+    </description>
+    <url>https://github.com/sikt-no/graphitron</url>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <connection>scm:git:git://github.com/sikt-no/graphitron.git</connection>
+        <developerConnection>scm:git:ssh://github.com:sikt-no/graphitron.git</developerConnection>
+        <url>https://github.com/sikt-no/graphitron/tree/main</url>
+    </scm>
+
+    <developers>
+        <developer>
+            <name>Sikt - Norwegian Agency for Shared Services in Education and Research</name>
+            <email>kontakt@sikt.no</email>
+            <organization>Sikt</organization>
+            <organizationUrl>https://sikt.no</organizationUrl>
+        </developer>
+    </developers>
+
+    <distributionManagement>
+        <repository>
+            <id>central</id>
+        </repository>
+    </distributionManagement>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.5.0</version>
+                <!-- No Java sources or test sources; bind no extra goals. The
+                     plugin's default-jar execution still runs in package and
+                     bundles whatever lives under target/classes (the binaries
+                     placed there by the release workflow). -->
+            </plugin>
+
+            <plugin>
+                <!-- Near-empty sources jar. Maven Central rejects releases
+                     without a sources jar even when there are no Java sources;
+                     failOnError=false keeps `jar-no-fork` from aborting on the
+                     missing src/main/java/. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-source-plugin</artifactId>
+                <version>3.4.0</version>
+                <executions>
+                    <execution>
+                        <id>attach-sources</id>
+                        <goals>
+                            <goal>jar-no-fork</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <!-- Near-empty javadoc jar. Same Central requirement as above;
+                     failOnError=false stops the plugin from aborting when it
+                     finds no Java files under src/main/java/. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>3.12.0</version>
+                <configuration>
+                    <failOnError>false</failOnError>
+                    <failOnWarnings>false</failOnWarnings>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-gpg-plugin</artifactId>
+                <version>3.2.8</version>
+                <executions>
+                    <execution>
+                        <id>sign-artifacts</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>sign</goal>
+                        </goals>
+                        <configuration>
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.sonatype.central</groupId>
+                <artifactId>central-publishing-maven-plugin</artifactId>
+                <version>0.10.0</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <publishingServerId>central</publishingServerId>
+                    <autoPublish>true</autoPublish>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <version>3.1.4</version>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

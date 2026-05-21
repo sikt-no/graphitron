@@ -1,0 +1,389 @@
+name: tree-sitter natives release
+
+# Builds + publishes `no.sikt:graphitron-tree-sitter-natives:<version>` to
+# Maven Central. Manual trigger only: cutting a release is a deliberate
+# human-driven action — bump the version in
+# `graphitron-rewrite/graphitron-tree-sitter-natives/pom.xml`, push, then
+# trigger this workflow from the Actions UI. Tagging is optional; the
+# artifact is identified by Maven version.
+#
+# Three stages, all gated on the previous succeeding:
+#   1. build-matrix: five native runners, each compiles parser + runtime
+#      with `tree-sitter build` and verifies symbol exports.
+#   2. package-deploy: ubuntu-latest assembles the five-platform jar,
+#      asserts layout, signs, and pushes to Maven Central.
+#   3. post-deploy-verify: five native runners resolve the freshly-
+#      published jar from a clean local m2 and load+parse a trivial
+#      GraphQL document against the platform-appropriate binary.
+#
+# Stage 3 is the authoritative "the jar works end-to-end on every
+# supported platform" gate. If any platform fails after a successful
+# deploy, bump `<build-n>` and re-release; the failing version stays on
+# Central as a tombstone but graphitron-lsp pins to the working build.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tree-sitter-cli-version:
+        description: 'Upstream tree-sitter CLI tag to build with (must match runtime version pinned in pom.xml).'
+        required: true
+        default: 'v0.26.9'
+
+permissions:
+  contents: read
+
+env:
+  NATIVES_MODULE: graphitron-rewrite/graphitron-tree-sitter-natives
+  GRAMMAR_DIR: graphitron-rewrite/graphitron-tree-sitter-natives/src/main/native/grammars/graphql
+
+jobs:
+  build-matrix:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-latest
+            lib-name: libtree-sitter-graphql.so
+            cli-asset: tree-sitter-linux-x64.gz
+            cli-binary: tree-sitter
+          - platform: linux-aarch64
+            runner: ubuntu-24.04-arm
+            lib-name: libtree-sitter-graphql.so
+            cli-asset: tree-sitter-linux-arm64.gz
+            cli-binary: tree-sitter
+          - platform: macos-x86_64
+            runner: macos-13
+            lib-name: libtree-sitter-graphql.dylib
+            cli-asset: tree-sitter-macos-x64.gz
+            cli-binary: tree-sitter
+          - platform: macos-aarch64
+            runner: macos-14
+            lib-name: libtree-sitter-graphql.dylib
+            cli-asset: tree-sitter-macos-arm64.gz
+            cli-binary: tree-sitter
+          - platform: windows-x86_64
+            runner: windows-latest
+            lib-name: tree-sitter-graphql.dll
+            cli-asset: tree-sitter-windows-x64.zip
+            cli-binary: tree-sitter.exe
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download tree-sitter CLI (${{ inputs.tree-sitter-cli-version }})
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ts-cli"
+          cd "$RUNNER_TEMP/ts-cli"
+          url="https://github.com/tree-sitter/tree-sitter/releases/download/${{ inputs.tree-sitter-cli-version }}/${{ matrix.cli-asset }}"
+          curl -fsSL -o asset "$url"
+          if [[ "${{ matrix.cli-asset }}" == *.zip ]]; then
+            unzip -q asset
+          else
+            gunzip asset
+            mv asset "${{ matrix.cli-binary }}"
+          fi
+          chmod +x "${{ matrix.cli-binary }}" || true
+          ls -la
+          echo "TS_CLI=$RUNNER_TEMP/ts-cli/${{ matrix.cli-binary }}" >> "$GITHUB_ENV"
+
+      - name: Verify CLI runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$TS_CLI" --version
+
+      - name: Build ${{ matrix.lib-name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out"
+          # `tree-sitter build` compiles the grammar's parser.c together with
+          # the runtime sources the CLI ships internally, producing one shared
+          # library that exports both `tree_sitter_graphql` and the `ts_*`
+          # runtime symbols. The CLI handles MSVC export annotations on
+          # Windows; using it directly avoids the bonede route's missing
+          # bare `ts_*` exports.
+          "$TS_CLI" build --output "$RUNNER_TEMP/out/${{ matrix.lib-name }}" "$GRAMMAR_DIR"
+
+      - name: Verify exported symbols (POSIX)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          lib="$RUNNER_TEMP/out/${{ matrix.lib-name }}"
+          # `nm -gU` lists global defined symbols on both ELF (binutils) and
+          # Mach-O (macOS llvm-nm). Assert the grammar entry point AND a
+          # representative ts_* runtime symbol are both exported: that's the
+          # core invariant the bonede Windows DLL violated.
+          nm_out="$(nm -gU "$lib" 2>/dev/null || nm -g --defined-only "$lib")"
+          echo "$nm_out" | grep -E '(^| )_?tree_sitter_graphql( |$)' >/dev/null \
+            || { echo "::error::tree_sitter_graphql not exported in $lib"; exit 1; }
+          echo "$nm_out" | grep -E '(^| )_?ts_parser_new( |$)' >/dev/null \
+            || { echo "::error::ts_parser_new not exported in $lib (runtime not merged)"; exit 1; }
+          echo "OK: tree_sitter_graphql and ts_parser_new both exported"
+
+      - name: Verify exported symbols (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $lib = "$env:RUNNER_TEMP/out/${{ matrix.lib-name }}"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsroot = & "$vswhere" -latest -property installationPath
+          $dumpbin = Get-ChildItem -Path "$vsroot\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe |
+                     Select-Object -First 1 -ExpandProperty FullName
+          if (-not $dumpbin) { Write-Error "dumpbin.exe not found"; exit 1 }
+          $exports = & "$dumpbin" /exports "$lib"
+          if (-not ($exports -match 'tree_sitter_graphql')) {
+            Write-Error "tree_sitter_graphql not exported in $lib"
+            exit 1
+          }
+          if (-not ($exports -match 'ts_parser_new')) {
+            Write-Error "ts_parser_new not exported in $lib (runtime not merged)"
+            exit 1
+          }
+          Write-Output "OK: tree_sitter_graphql and ts_parser_new both exported"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.platform }}
+          path: ${{ runner.temp }}/out/${{ matrix.lib-name }}
+          if-no-files-found: error
+          retention-days: 7
+
+  package-deploy:
+    name: Package + deploy to Maven Central
+    needs: build-matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Java for publishing
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Download all native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: native-artifacts/
+          pattern: native-*
+
+      - name: Stage binaries under target/classes/lib/<os>-<arch>/
+        run: |
+          set -euo pipefail
+          base="$NATIVES_MODULE/target/classes/lib"
+          mkdir -p "$base"
+          for platform in linux-x86_64 linux-aarch64 macos-x86_64 macos-aarch64 windows-x86_64; do
+            src="native-artifacts/native-$platform"
+            if [[ ! -d "$src" ]]; then
+              echo "::error::missing artifact directory $src"
+              exit 1
+            fi
+            mkdir -p "$base/$platform"
+            cp -v "$src"/* "$base/$platform/"
+          done
+          find "$base" -type f | sort
+
+      - name: Package jar
+        run: |
+          mvn -f "$NATIVES_MODULE/pom.xml" --batch-mode --errors package -DskipTests
+
+      - name: Assert jar layout
+        # Exactly five lib/<os>-<arch>/<file> entries and nothing else under
+        # lib/. The package phase wrote them into target/classes earlier; the
+        # default-jar execution bundled target/classes verbatim, plus
+        # META-INF metadata. We accept META-INF/* and the five lib entries;
+        # any other lib/* path is a workflow bug.
+        run: |
+          set -euo pipefail
+          jar_path="$(ls $NATIVES_MODULE/target/graphitron-tree-sitter-natives-*.jar)"
+          echo "Inspecting $jar_path"
+          unzip -l "$jar_path"
+          lib_entries="$(unzip -l "$jar_path" | awk '{print $4}' | grep -E '^lib/' || true)"
+          expected="lib/linux-aarch64/libtree-sitter-graphql.so
+          lib/linux-x86_64/libtree-sitter-graphql.so
+          lib/macos-aarch64/libtree-sitter-graphql.dylib
+          lib/macos-x86_64/libtree-sitter-graphql.dylib
+          lib/windows-x86_64/tree-sitter-graphql.dll"
+          expected="$(echo "$expected" | sed 's/^ *//' | sort)"
+          actual="$(echo "$lib_entries" | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::jar lib/ contents do not match expected five entries"
+            diff <(echo "$expected") <(echo "$actual") || true
+            exit 1
+          fi
+          echo "OK: jar layout matches exactly the five expected lib/<os>-<arch>/ entries"
+
+      - name: Deploy to Maven Central
+        run: |
+          mvn -f "$NATIVES_MODULE/pom.xml" --batch-mode --errors deploy -DskipTests
+        env:
+          MAVEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Read published version
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(grep -m1 '<version>' $NATIVES_MODULE/pom.xml | sed -E 's|.*<version>([^<]+)</version>.*|\1|')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Published version: $version"
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+  post-deploy-verify:
+    name: Verify ${{ matrix.platform }} from Central
+    needs: package-deploy
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-latest
+          - platform: linux-aarch64
+            runner: ubuntu-24.04-arm
+          - platform: macos-x86_64
+            runner: macos-13
+          - platform: macos-aarch64
+            runner: macos-14
+          - platform: windows-x86_64
+            runner: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+
+      - name: Resolve published jar into a clean local m2
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.package-deploy.outputs.version }}"
+          repo="$RUNNER_TEMP/m2-clean"
+          mkdir -p "$repo"
+          # dependency:get retries Central until the just-published artifact
+          # is mirrored (central-publishing-maven-plugin's autoPublish has a
+          # propagation delay).
+          attempt=1
+          until mvn -B dependency:get \
+                  -Dmaven.repo.local="$repo" \
+                  -Dartifact=no.sikt:graphitron-tree-sitter-natives:$version \
+                  -DremoteRepositories=central::default::https://repo.maven.apache.org/maven2; do
+            if (( attempt >= 12 )); then
+              echo "::error::artifact $version not available on Central after $attempt attempts"
+              exit 1
+            fi
+            echo "attempt $attempt failed; sleeping 60s before retry"
+            attempt=$(( attempt + 1 ))
+            sleep 60
+          done
+          echo "M2_REPO=$repo" >> "$GITHUB_ENV"
+          echo "NATIVES_VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Write verifier harness
+        # Standalone Java program (no Maven project) that mirrors the shape of
+        # the graphitron-lsp NativeLibraryBundleTest.runSmokeTest helper Phase 3
+        # will land: load BundledLibraryLookup-equivalent resource for the
+        # current platform out of the natives jar, Language.load with
+        # "tree_sitter_graphql", parse a tiny document, assert root + no errors.
+        # Inlined here rather than depending on graphitron-lsp test classes so
+        # this stage stays decoupled from any in-flight lsp-side changes.
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p verifier
+          cat > verifier/Verify.java <<'JAVA'
+          import io.github.treesitter.jtreesitter.Language;
+          import io.github.treesitter.jtreesitter.NativeLibraryLookup;
+          import io.github.treesitter.jtreesitter.Parser;
+          import io.github.treesitter.jtreesitter.Tree;
+          import java.io.InputStream;
+          import java.lang.foreign.Arena;
+          import java.lang.foreign.SymbolLookup;
+          import java.nio.file.Files;
+          import java.nio.file.Path;
+          import java.nio.file.StandardCopyOption;
+          import java.util.Locale;
+
+          public final class Verify {
+              public static void main(String[] args) throws Exception {
+                  String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+                  String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+                  String dir, libName;
+                  if (os.contains("linux") && (arch.equals("amd64") || arch.equals("x86_64"))) {
+                      dir = "linux-x86_64"; libName = "libtree-sitter-graphql.so";
+                  } else if (os.contains("linux") && arch.equals("aarch64")) {
+                      dir = "linux-aarch64"; libName = "libtree-sitter-graphql.so";
+                  } else if (os.contains("mac") && (arch.equals("amd64") || arch.equals("x86_64"))) {
+                      dir = "macos-x86_64"; libName = "libtree-sitter-graphql.dylib";
+                  } else if (os.contains("mac") && arch.equals("aarch64")) {
+                      dir = "macos-aarch64"; libName = "libtree-sitter-graphql.dylib";
+                  } else if (os.contains("windows") && (arch.equals("amd64") || arch.equals("x86_64"))) {
+                      dir = "windows-x86_64"; libName = "tree-sitter-graphql.dll";
+                  } else {
+                      throw new IllegalStateException("unsupported os/arch: " + os + "/" + arch);
+                  }
+                  String resource = "lib/" + dir + "/" + libName;
+                  Path extracted = Files.createTempFile("verify-", "-" + libName);
+                  try (InputStream in = Verify.class.getClassLoader().getResourceAsStream(resource)) {
+                      if (in == null) throw new IllegalStateException("missing classpath resource: " + resource);
+                      Files.copy(in, extracted, StandardCopyOption.REPLACE_EXISTING);
+                  }
+                  try (Arena arena = Arena.ofConfined()) {
+                      SymbolLookup symbols = SymbolLookup.libraryLookup(extracted, arena);
+                      Language language = Language.load(symbols, "tree_sitter_graphql");
+                      try (Parser parser = new Parser(language)) {
+                          Tree tree = parser.parse("type Query { hello: String }").orElseThrow();
+                          try (tree) {
+                              String type = tree.getRootNode().getType();
+                              boolean hasError = tree.getRootNode().hasError();
+                              if (!"source_file".equals(type)) throw new IllegalStateException("root type: " + type);
+                              if (hasError) throw new IllegalStateException("parse produced errors");
+                              System.out.println("OK: parsed source_file with no errors on " + dir);
+                          }
+                      }
+                  }
+              }
+          }
+          JAVA
+
+      - name: Resolve jtreesitter (runtime dep for the verifier)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # jtreesitter is the FFM-based Java binding; same version graphitron-lsp uses.
+          mvn -B dependency:get \
+              -Dmaven.repo.local="$M2_REPO" \
+              -Dartifact=io.github.tree-sitter:jtreesitter:0.26.0 \
+              -DremoteRepositories=central::default::https://repo.maven.apache.org/maven2
+          echo "JTREESITTER_JAR=$M2_REPO/io/github/tree-sitter/jtreesitter/0.26.0/jtreesitter-0.26.0.jar" >> "$GITHUB_ENV"
+          echo "NATIVES_JAR=$M2_REPO/no/sikt/graphitron-tree-sitter-natives/$NATIVES_VERSION/graphitron-tree-sitter-natives-$NATIVES_VERSION.jar" >> "$GITHUB_ENV"
+
+      - name: Compile + run verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Path separator: ';' on Windows, ':' elsewhere. GitHub's bash on Windows is git-bash, which
+          # still expects Windows-style classpath separators when handing the value to a Windows JVM.
+          sep=":"
+          if [[ "$RUNNER_OS" == "Windows" ]]; then sep=";"; fi
+          cp="$JTREESITTER_JAR$sep$NATIVES_JAR"
+          javac -cp "$cp" -d verifier verifier/Verify.java
+          java --enable-native-access=ALL-UNNAMED -cp "verifier$sep$cp" Verify

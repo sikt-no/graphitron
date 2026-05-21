@@ -1,0 +1,143 @@
+= tree-sitter natives release
+
+How to cut a new release of `no.sikt:graphitron-tree-sitter-natives`, when
+to bump which version digit, and what the release workflow verifies.
+
+This is internal-to-the-rewrite operational documentation, not a user-facing
+chapter. The published artifact is consumed only by graphitron-lsp; consumers
+of graphitron's generator surface never see it directly.
+
+== What the artifact is
+
+A single jar that ships per-platform tree-sitter shared libraries under
+`lib/<os>-<arch>/`:
+
+[cols="1,2"]
+|===
+| Platform | Resource path
+
+| `linux-x86_64`   | `lib/linux-x86_64/libtree-sitter-graphql.so`
+| `linux-aarch64`  | `lib/linux-aarch64/libtree-sitter-graphql.so`
+| `macos-x86_64`   | `lib/macos-x86_64/libtree-sitter-graphql.dylib`
+| `macos-aarch64`  | `lib/macos-aarch64/libtree-sitter-graphql.dylib`
+| `windows-x86_64` | `lib/windows-x86_64/tree-sitter-graphql.dll`
+|===
+
+Each binary is the upstream tree-sitter runtime (currently `0.26.0`) merged
+with the vendored bkegley tree-sitter-graphql grammar (commit
+`5e66e96`) into one unified shared library. Both the runtime's `ts_*`
+symbols and the grammar's `tree_sitter_graphql` entry point export from the
+same library, so `BundledLibraryLookup` in graphitron-lsp registers one
+`SymbolLookup.libraryLookup` per platform without chaining.
+
+The build uses the upstream `tree-sitter build` CLI rather than a hand-rolled
+`cc` / `cl.exe` invocation, which is what gives us a working Windows DLL
+with `ts_*` symbols correctly exported (the bonede route fails on this).
+
+== Versioning
+
+Format: `<runtime-version>-<build-n>`. First release: `0.26.0-1`.
+
+[cols="1,2"]
+|===
+| Change | Version bump
+
+| Grammar update (new `parser.c`)              | `<build-n>` (e.g. `0.26.0-1` → `0.26.0-2`)
+| Build-flag change                            | `<build-n>`
+| Recompile with no source change              | `<build-n>`
+| Upstream tree-sitter runtime update          | `<runtime-version>` resets `<build-n>` to `1` (e.g. `0.26.0-3` → `0.27.0-1`)
+|===
+
+Snapshots are not used. The natives module ships releases only, and a
+release that turns out to be broken on one platform after deploy stays on
+Central as a tombstone; graphitron-lsp pins to the working build that
+follows.
+
+== Cutting a release
+
+Three steps, the second being the GitHub Actions trigger.
+
+. *Bump the version* in
+  `graphitron-rewrite/graphitron-tree-sitter-natives/pom.xml`. If the
+  runtime version moved, also update the matching pin in
+  `src/main/native/grammars/graphql/UPSTREAM.md` and the module-level
+  `UPSTREAM.md`. Commit on a normal feature branch and push.
+
+. *Trigger the workflow.* In the GitHub Actions UI for `sikt-no/graphitron`,
+  run `.github/workflows/tree-sitter-natives-release.yml` via
+  `workflow_dispatch`. The single input is the upstream `tree-sitter` CLI
+  release tag (e.g. `v0.26.9`); pick a CLI release whose bundled runtime
+  matches the `<runtime-version>` portion of the pom version.
+
+. *Watch the three stages.* The workflow only deploys if every stage
+  succeeds:
++
+.. *Build matrix* (five native runners). Each runner downloads the pinned
+   `tree-sitter` CLI, runs `tree-sitter build` against the vendored
+   grammar, then asserts both `tree_sitter_graphql` (grammar entry point)
+   and `ts_parser_new` (representative runtime symbol) are exported from
+   the produced binary. Symbol-table check uses `nm -gU` on POSIX and
+   `dumpbin /exports` on Windows. The artifact is uploaded as
+   `native-<platform>`.
+.. *Package + deploy* (ubuntu-latest). Downloads all five binary artifacts,
+   stages them under `target/classes/lib/<os>-<arch>/`, runs
+   `mvn package`, and asserts the produced jar contains exactly the five
+   `lib/<os>-<arch>/...` entries and no others. Then `mvn deploy` signs
+   with GPG and publishes via `central-publishing-maven-plugin` with
+   `autoPublish=true`.
+.. *Post-deploy load+parse matrix* (five native runners). After deploy
+   succeeds, each runner resolves the freshly-published jar from a clean
+   local m2 (with retries against Central's propagation delay), then
+   runs a tiny FFM-based Java verifier that loads the platform-appropriate
+   binary, calls `Language.load(symbols, "tree_sitter_graphql")`, parses
+   `"type Query { hello: String }"`, and asserts the root is `source_file`
+   with no errors.
+
+If stage 3 fails on any platform, bump `<build-n>` and re-release. The
+failing version stays on Central; downstream `graphitron-lsp` pins to
+the next working `<build-n>`.
+
+== Why the build infrastructure looks the way it does
+
+Three design choices worth knowing about for anyone maintaining this:
+
+. *Standalone pom, no parent inheritance.* The natives module lives in the
+  `graphitron-rewrite/` directory but its `pom.xml` does not declare
+  `<parent>graphitron-rewrite-parent</parent>`. Trunk's parent runs at
+  `10-SNAPSHOT` and declares no `<snapshotRepository>`; inheriting would
+  publish a natives jar whose parent reference is unresolvable for any
+  Central consumer. The release plumbing (`maven-gpg-plugin`,
+  `central-publishing-maven-plugin`, `maven-source-plugin`,
+  `maven-javadoc-plugin`, `maven-deploy-plugin`) is inlined into the
+  module's pom for the same reason. The parent's `<modules>` list also
+  does not include this module, so the regular reactor build
+  (`mvn install -f graphitron-rewrite/pom.xml -Plocal-db`) pays zero cost
+  for it.
+
+. *No CI build per PR.* The binaries don't change per PR (they're a
+  published artifact, not a per-build output), so expanding
+  `.github/workflows/rewrite-build.yml` to a five-platform matrix would
+  mostly re-verify a stable input. Instead, the verification matrix lives
+  in this workflow and runs against the actual published artifact at
+  release time. In normal CI, only the `linux-x86_64` arm of
+  `NativeLibraryBundleTest` executes per PR (the four others are gated
+  by `@EnabledOnOs` to their respective hosts and run on this workflow's
+  post-deploy matrix).
+
+. *Built with the upstream CLI, not hand-rolled compiler invocations.*
+  `tree-sitter build` knows how to do MSVC `__declspec(dllexport)` for
+  Windows, which the upstream tree-sitter C sources don't carry on their
+  own. The bonede `tree-sitter-graphql` jar we previously evaluated ships
+  a Windows DLL that exports `Java_org_treesitter_*` JNI wrappers but
+  zero bare `ts_*` runtime symbols, which is why the natives module
+  exists at all.
+
+== Where the binaries live before deploy
+
+Not committed. The five binaries are produced fresh on five native
+runners per release and merged into the jar during the package+deploy
+stage. The vendored sources under
+`graphitron-rewrite/graphitron-tree-sitter-natives/src/main/native/grammars/graphql/`
+are the only inputs that live in git; the tree-sitter runtime sources are
+also not vendored, because `tree-sitter build` includes its own runtime
+per invocation.
