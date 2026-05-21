@@ -123,7 +123,7 @@ jobs:
           Write-Output "OK: tree_sitter_graphql exported"
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.platform }}
           path: ${{ runner.temp }}/out/${{ matrix.lib-name }}
@@ -150,7 +150,7 @@ jobs:
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       - name: Download all native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: native-artifacts/
           pattern: native-*
