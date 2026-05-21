@@ -40,6 +40,26 @@ The `ALTER USER` step is required because JDBC connects via 127.0.0.1 using scra
 authentication, while `sudo -u postgres psql` uses peer auth. The `local-db` Maven profile
 uses `postgres`/`postgres` credentials.
 
+### libtree-sitter runtime
+
+`graphitron-lsp`'s `NativeLibraryBundleTest` loads the grammar binary from
+`graphitron-tree-sitter-natives`; jtreesitter 0.26 then resolves runtime symbols against an
+OS-installed `libtree-sitter`. Ubuntu apt's `libtree-sitter0` is pinned to 0.20.x which
+predates `ts_language_abi_version`, so build from upstream source at the version matching
+the natives jar's parser ABI:
+
+```bash
+VERSION=v0.26.9
+TMPDIR=$(mktemp -d) && trap "rm -rf $TMPDIR" EXIT
+git clone --depth=1 --branch=$VERSION https://github.com/tree-sitter/tree-sitter $TMPDIR/ts
+make -C $TMPDIR/ts
+sudo make -C $TMPDIR/ts install
+sudo ldconfig
+```
+
+This mirrors the `Build + install libtree-sitter from source` step in
+`.github/workflows/rewrite-build.yml`, so the web sandbox and CI exercise the same runtime.
+
 ## Building graphitron-rewrite
 
 The rewrite aggregator builds standalone from `graphitron-rewrite/pom.xml`; no
