@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 6
 theme: service
-depends-on: [single-tenant-execution-input-factory]
+depends-on: []
 created: 2026-05-20
 last-updated: 2026-05-20
 ---

@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 5
 theme: service
-depends-on: ["single-tenant-execution-input-factory"]
+depends-on: []
 last-updated: 2026-05-20
 ---
 
