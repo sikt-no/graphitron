@@ -1,7 +1,7 @@
 ---
 id: R215
 title: Column-binding requirement captured at classification, not derived at usage
-status: Spec
+status: Ready
 bucket: architecture
 depends-on: []
 created: 2026-05-21
