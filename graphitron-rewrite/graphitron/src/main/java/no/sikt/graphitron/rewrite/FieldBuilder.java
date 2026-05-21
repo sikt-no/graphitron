@@ -1484,15 +1484,17 @@ class FieldBuilder {
      * optional {@code condition}. When present, the filter is rewrapped with a
      * {@link CallSiteExtraction.NestedInputField} extraction and added to {@code out}.
      *
-     * <p><b>Implicit conditions</b> — when {@code implicitBodyParams} is non-null (i.e. the
-     * input is a {@code @table}-annotated {@link ArgumentRef.InputTypeArg.TableInputArg}), every
-     * un-annotated {@link InputField.ColumnField} and {@link InputField.ColumnReferenceField}
-     * that carries no {@code @condition} annotation, is not already consumed by a {@code @lookupKey}
-     * binding, and is not suppressed by an enclosing {@code override: true}, gets an implicit
-     * column-equality predicate — a {@link BodyParam} with a
-     * {@link CallSiteExtraction.NestedInputField} extraction — added to {@code implicitBodyParams}.
-     * Fields that carry an explicit {@code @condition} (any override value) never also emit an
-     * implicit predicate.
+     * <p><b>Implicit conditions</b> — every un-annotated {@link InputField.ColumnField} and
+     * {@link InputField.ColumnReferenceField} that carries no {@code @condition} annotation, is
+     * not already consumed by a {@code @lookupKey} binding, and is not suppressed by an enclosing
+     * {@code override: true}, gets an implicit column-equality predicate, a {@link BodyParam}
+     * with a {@link CallSiteExtraction.NestedInputField} extraction, added to
+     * {@code implicitBodyParams}. {@code implicitBodyParams} is required non-null at entry
+     * (enforced by {@link java.util.Objects#requireNonNull}); R205 unified the
+     * {@link ArgumentRef.InputTypeArg.TableInputArg} and
+     * {@link ArgumentRef.InputTypeArg.PlainInputArg} branches so both emit implicit predicates
+     * symmetrically. Fields that carry an explicit {@code @condition} (any override value) never
+     * also emit an implicit predicate.
      *
      * <p>{@code enclosingOverride} propagates the override flag down through
      * {@link InputField.NestingField} children: once set to {@code true} it stays {@code true}

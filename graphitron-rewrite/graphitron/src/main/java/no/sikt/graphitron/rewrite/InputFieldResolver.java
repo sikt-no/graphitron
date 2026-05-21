@@ -38,7 +38,9 @@ final class InputFieldResolver {
     /** Sealed result of {@link #resolve}; siblings {@link OrderByResolver.Resolved}. */
     sealed interface Resolution {
         record Ok(List<InputField> fields) implements Resolution {}
-        record Rejected(Rejection rejection) implements Resolution {}
+        record Rejected(Rejection rejection) implements Resolution {
+            public String message() { return rejection.message(); }
+        }
     }
 
     private final BuildContext ctx;
@@ -73,9 +75,13 @@ final class InputFieldResolver {
         if (failures.isEmpty() && condErrors.isEmpty()) {
             return new Resolution.Ok(List.copyOf(classified));
         }
-        // Single column-miss, no condition errors: lift as typed UnknownName so LSP fix-its
-        // and watch-mode formatters consume the structured attempt + candidates payload.
-        if (condErrors.isEmpty() && failures.size() == 1 && failures.get(0).lookupColumn() != null) {
+        // A typed `unknownColumn` arm carries exactly one (attempt, candidates) payload, so
+        // we can only lift to it when there's a single column-miss failure and no condition
+        // errors competing for the structured slot; everything else folds to structural prose.
+        boolean canLiftToUnknownName = condErrors.isEmpty()
+            && failures.size() == 1
+            && failures.get(0).lookupColumn() != null;
+        if (canLiftToUnknownName) {
             var u = failures.get(0);
             String summary = prefix + "input field '" + u.fieldName() + "'";
             return new Resolution.Rejected(Rejection.unknownColumn(
