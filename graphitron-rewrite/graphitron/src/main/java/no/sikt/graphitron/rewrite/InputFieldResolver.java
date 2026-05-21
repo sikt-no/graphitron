@@ -6,7 +6,6 @@ import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -53,11 +52,18 @@ final class InputFieldResolver {
      * Classifies the fields of a plain (non-{@code @table}) input type {@code typeName} against
      * the resolving table {@code rt}.
      *
+     * <p>{@code enclosingOverride} threads the call site's cascade flag (the field-level
+     * {@code @condition(override:true)} on the enclosing query field ORed with the consuming
+     * argument's arg-level override) into the classifier's {@link ClassifyContext}. R215: the
+     * classifier's variant decisions today do not branch on this value (column-miss uniformly
+     * lifts to {@link InputField.UnboundField}); the flag rides through for nested-input cascade
+     * propagation and future-growth axes.
+     *
      * <p>Returns {@link Resolution.Ok} with an empty list when {@code rt} is {@code null} or the
      * schema type is not an input object (no work to do). Returns {@link Resolution.Rejected}
      * when at least one field fails column resolution or any {@code @condition} reflection fails.
      */
-    Resolution resolve(String typeName, TableRef rt) {
+    Resolution resolve(String typeName, TableRef rt, boolean enclosingOverride) {
         if (rt == null) return new Resolution.Ok(List.of());
         var rawType = ctx.schema.getType(typeName);
         if (!(rawType instanceof GraphQLInputObjectType iot)) return new Resolution.Ok(List.of());
@@ -65,7 +71,8 @@ final class InputFieldResolver {
         var classified = new ArrayList<InputField>();
         var failures = new ArrayList<InputFieldResolution.Unresolved>();
         for (var f : iot.getFieldDefinitions()) {
-            var res = ctx.classifyInputField(f, typeName, rt, new LinkedHashSet<>(), condErrors);
+            var res = ctx.classifyInputField(f, typeName, rt,
+                ClassifyContext.withEnclosingOverride(enclosingOverride), condErrors);
             switch (res) {
                 case InputFieldResolution.Resolved r -> classified.add(r.field());
                 case InputFieldResolution.Unresolved u -> failures.add(u);

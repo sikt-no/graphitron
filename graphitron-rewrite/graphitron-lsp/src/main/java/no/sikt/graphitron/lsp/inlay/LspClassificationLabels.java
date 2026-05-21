@@ -47,7 +47,7 @@ public final class LspClassificationLabels {
             case FieldClassification.ServiceBacked x -> FieldClassification.ServiceBacked.class.getSimpleName();
             case FieldClassification.RecordOrProperty x -> FieldClassification.RecordOrProperty.class.getSimpleName();
             case FieldClassification.Computed x -> FieldClassification.Computed.class.getSimpleName();
-            case FieldClassification.InputCondition x -> FieldClassification.InputCondition.class.getSimpleName();
+            case FieldClassification.InputUnbound x -> FieldClassification.InputUnbound.class.getSimpleName();
             case FieldClassification.Errors x -> FieldClassification.Errors.class.getSimpleName();
             case FieldClassification.SingleRecordTable x -> FieldClassification.SingleRecordTable.class.getSimpleName();
             case FieldClassification.SingleRecordIdFromReturning x -> FieldClassification.SingleRecordIdFromReturning.class.getSimpleName();

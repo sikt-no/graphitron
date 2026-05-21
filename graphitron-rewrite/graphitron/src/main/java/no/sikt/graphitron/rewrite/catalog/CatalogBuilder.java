@@ -418,10 +418,11 @@ public final class CatalogBuilder {
                     fkSteps(f.joinPath()));
             case InputField.NestingField ignored ->
                 new FieldClassification.Nesting();
-            case InputField.ConditionOnlyField f ->
-                new FieldClassification.InputCondition(
-                    f.condition().filter() != null ? f.condition().filter().className() : null,
-                    f.condition().filter() != null ? f.condition().filter().methodName() : null);
+            case InputField.UnboundField f ->
+                new FieldClassification.InputUnbound(
+                    f.condition().map(c -> c.filter().className()).orElse(null),
+                    f.condition().map(c -> c.filter().methodName()).orElse(null),
+                    f.condition().map(c -> c.override()).orElse(false));
 
             // --- Unclassified ---
             case GraphitronField.UnclassifiedField f ->

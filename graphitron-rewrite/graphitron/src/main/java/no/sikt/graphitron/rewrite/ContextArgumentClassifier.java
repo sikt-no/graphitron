@@ -137,7 +137,7 @@ public final class ContextArgumentClassifier {
             case InputField.CompositeColumnField ignored -> { /* no condition slot */ }
             case InputField.CompositeColumnReferenceField ignored -> { /* no condition slot */ }
             case InputField.NestingField f -> f.condition().ifPresent(ac -> collectFromMethodRef(ac.filter(), byName));
-            case InputField.ConditionOnlyField f -> collectFromMethodRef(f.condition().filter(), byName);
+            case InputField.UnboundField f -> f.condition().ifPresent(ac -> collectFromMethodRef(ac.filter(), byName));
             default -> { /* non-input fields handled by collectFromField */ }
         }
     }

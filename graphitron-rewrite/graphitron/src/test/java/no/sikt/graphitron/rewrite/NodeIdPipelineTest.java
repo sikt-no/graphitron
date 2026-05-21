@@ -376,20 +376,33 @@ class NodeIdPipelineTest {
             }),
 
         ACCESSOR_MISSING(
-            "plain ID field on a table without node-id metadata → TableInputType fails, type becomes UnclassifiedType",
+            "plain ID field on a table without node-id metadata → TableInputType with UnboundField "
+                + "(R215 §3 defers column-coverage to consumption; the field is admitted at type-build "
+                + "and a non-override consumer rejects)",
             """
             input Foo @table(name: "qux") { id: ID! }
             type Query { x: String }
             """,
-            schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class)),
+            schema -> {
+                var tit = (GraphitronType.TableInputType) schema.type("Foo");
+                assertThat(tit.inputFields()).hasSize(1);
+                assertThat(tit.inputFields().get(0))
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.UnboundField.class);
+            }),
 
         LIST_VARIANT(
-            "list ID input skips the node-id check (list gate) → UnclassifiedType",
+            "list ID input skips the node-id check (list gate) → TableInputType with UnboundField "
+                + "(R215 §3 defers column-coverage to consumption)",
             """
             input Foo @table(name: "bar") { id: [ID!]! }
             type Query { x: String }
             """,
-            schema -> assertThat(schema.type("Foo")).isInstanceOf(GraphitronType.UnclassifiedType.class));
+            schema -> {
+                var tit = (GraphitronType.TableInputType) schema.type("Foo");
+                assertThat(tit.inputFields()).hasSize(1);
+                assertThat(tit.inputFields().get(0))
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.UnboundField.class);
+            });
 
         final String sdl;
         final Consumer<GraphitronSchema> assertions;

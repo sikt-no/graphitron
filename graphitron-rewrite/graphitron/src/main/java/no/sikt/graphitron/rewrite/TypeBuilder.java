@@ -1034,7 +1034,11 @@ class TypeBuilder {
         var conditionErrors = new ArrayList<String>();
         var resolvedFields = new ArrayList<InputField>();
         for (var f : fields) {
-            var resolution = ctx.classifyInputField(f, name, tableRef, new java.util.LinkedHashSet<>(), conditionErrors);
+            // R215 §3: @table input column-coverage is deferred to consumption. The classifier
+            // already lifts column-miss to InputField.UnboundField; non-column-miss failures
+            // (notGenerated, @reference path, NodeId resolution, circular nesting) remain
+            // Unresolved and surface here.
+            var resolution = ctx.classifyInputField(f, name, tableRef, ClassifyContext.root(), conditionErrors);
             switch (resolution) {
                 case InputFieldResolution.Resolved r -> resolvedFields.add(r.field());
                 case InputFieldResolution.Unresolved u -> failures.add(u);

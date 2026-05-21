@@ -4071,16 +4071,16 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * R210: {@code @condition(override: true)} on a plain-input field whose name does not match
-     * any column on the resolving table classifies as {@link InputField.ConditionOnlyField} —
+     * R210/R215: {@code @condition(override: true)} on a plain-input field whose name does not
+     * match any column on the resolving table classifies as {@link InputField.UnboundField} —
      * the column is unused by construction (override suppresses the implicit predicate), so
      * requiring it to resolve would reject schemas where the condition method owns the
      * predicate entirely. The projected filter list carries only the explicit
      * {@link ConditionFilter}, no {@link GeneratedConditionFilter} / {@link BodyParam}.
      */
     @Test
-    @ProjectionFor(InputField.ConditionOnlyField.class)
-    void plainInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOnlyField() {
+    @ProjectionFor(InputField.UnboundField.class)
+    void plainInput_overrideTrueWithoutMatchingColumn_classifiesAsUnboundField() {
         // Mirrors alf's opptak-subgraph SakFilterV2Input.sakskode shape: bare String field with
         // @condition(override: true) and no @field(name:); the resolving table has no column
         // matching the field name. Pre-R210, R205 rejected this with "no column 'sakskode' found
@@ -4108,12 +4108,13 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * R210: same shape on a {@code @table} input — the {@code classifyInputFieldInternal} path
-     * is shared between plain and {@code @table} inputs, so the symmetry holds at the @table
-     * call site too.
+     * R210/R215: same shape on a {@code @table} input — the {@code classifyInputFieldInternal}
+     * path is shared between plain and {@code @table} inputs, so the symmetry holds at the
+     * @table call site too. Under R215 the carrier folds into {@link InputField.UnboundField}
+     * with {@code condition} present and {@code override = true}.
      */
     @Test
-    void tableInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOnlyField() {
+    void tableInput_overrideTrueWithoutMatchingColumn_classifiesAsUnboundField() {
         var schema = build("""
             input FilmFilter @table(name: "film") {
               filmId: Int! @field(name: "film_id")
@@ -4125,12 +4126,14 @@ class GraphitronSchemaBuilderTest {
             """);
         var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("FilmFilter");
         assertThat(it.inputFields()).hasSize(2);
-        var cof = it.inputFields().stream()
-            .filter(InputField.ConditionOnlyField.class::isInstance)
-            .map(InputField.ConditionOnlyField.class::cast)
+        var uf = it.inputFields().stream()
+            .filter(InputField.UnboundField.class::isInstance)
+            .map(InputField.UnboundField.class::cast)
             .findFirst().orElseThrow();
-        assertThat(cof.name()).isEqualTo("syntheticName");
-        assertThat(cof.condition().filter().methodName()).isEqualTo("syntheticNameCondition");
+        assertThat(uf.name()).isEqualTo("syntheticName");
+        assertThat(uf.condition()).isPresent();
+        assertThat(uf.condition().get().filter().methodName()).isEqualTo("syntheticNameCondition");
+        assertThat(uf.condition().get().override()).isTrue();
     }
 
     /**
@@ -4202,6 +4205,203 @@ class GraphitronSchemaBuilderTest {
         assertThat(uf.reason()).contains("plain input type 'PlainFilter'", "filmId");
     }
 
+    // ===== R215 acceptance tests =====
+
+    /**
+     * R215 #1 — Plain input + arg-level {@code @condition(override: true)} + non-binding field
+     * is admitted. Pre-R215 this rejected with "no column 'foo' found" because the classifier had
+     * no awareness of the enclosing cascade; under R215 the classifier emits {@code UnboundField}
+     * and the consumer's {@code enclosingOverride = true} admits without an implicit predicate.
+     */
+    @Test
+    void r215_plainInputArgLevelOverrideAdmitsNonBindingField() {
+        var schema = build("""
+            input PlainFilter { foo: String }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+              films(filter: PlainFilter
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"}, override: true)
+              ): [Film!]!
+            }
+            """);
+        // Schema must build cleanly; the consumer admits PlainFilter.foo as UnboundField.
+        var f = schema.field("Query", "films");
+        assertThat(f).isInstanceOf(QueryField.QueryTableField.class);
+        var qtf = (QueryField.QueryTableField) f;
+        // The arg-level @condition emits one explicit ConditionFilter; no implicit BodyParam fires
+        // for foo because the cascade suppresses it.
+        var hasGcf = qtf.filters().stream().anyMatch(GeneratedConditionFilter.class::isInstance);
+        assertThat(hasGcf).isFalse();
+        assertThat(qtf.filters().stream().filter(ConditionFilter.class::isInstance).count()).isEqualTo(1L);
+    }
+
+    /**
+     * R215 #3 — {@code @table} input + non-binding field consumed by a non-override arg rejects
+     * at the consumer with the field name in the rejection prose (R213's location-attribution
+     * work folds in here in principle; the SourceLocation thread-through is a follow-up).
+     */
+    @Test
+    void r215_tableInputNonBindingFieldRejectsAtConsumer() {
+        var schema = build("""
+            input FilmInput @table(name: "film") { foo: String }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: FilmInput): [Film!]! }
+            """);
+        // Type-build admits FilmInput as TableInputType containing UnboundField (R215 §3).
+        var tit = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("FilmInput");
+        assertThat(tit.inputFields().get(0)).isInstanceOf(InputField.UnboundField.class);
+        // Consumer rejects: walkInputFieldConditions sees UnboundField with condition.empty()
+        // and enclosingOverride == false → adds rejection.
+        var uf = (UnclassifiedField) schema.field("Query", "films");
+        assertThat(uf.rejection()).isInstanceOf(Rejection.AuthorError.UnknownName.class);
+        var un = (Rejection.AuthorError.UnknownName) uf.rejection();
+        assertThat(un.attempt()).isEqualTo("foo");
+        assertThat(un.message()).contains("FilmInput", "input field 'foo'");
+    }
+
+    /**
+     * R215 #4 — {@code @table} input + non-binding field consumed by an override-cascade arg is
+     * admitted. Same FilmInput as the rejection test, but the consuming arg carries
+     * {@code @condition(override: true)}: the cascade resolves the UnboundField and no implicit
+     * predicate fires.
+     */
+    @Test
+    void r215_tableInputNonBindingFieldAdmittedUnderOverrideCascade() {
+        var schema = build("""
+            input FilmInput @table(name: "film") { foo: String }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+              films(filter: FilmInput
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"}, override: true)
+              ): [Film!]!
+            }
+            """);
+        var f = schema.field("Query", "films");
+        assertThat(f).isInstanceOf(QueryField.QueryTableField.class);
+    }
+
+    /**
+     * R215 #5 — Validator catches {@code @condition(override: false)} on a non-binding plain
+     * input field. The classifier produces {@code UnboundField} with condition present and
+     * override false; the validator's per-input-field walk surfaces a ValidationError at the
+     * field's source location.
+     */
+    @Test
+    void r215_validatorRejectsOverrideFalseOnNonBindingField() {
+        var schema = build("""
+            input FilmInput @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              syntheticName: String
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "syntheticNameCondition"}, override: false)
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { x: String }
+            """);
+        var errors = new GraphitronSchemaValidator().validate(schema);
+        boolean hasUnboundOverrideFalseError = errors.stream()
+            .anyMatch(ve -> ve.rejection().message().contains("syntheticName")
+                && ve.rejection().message().contains("@condition(override: false)"));
+        assertThat(hasUnboundOverrideFalseError)
+            .as("expected ValidationError on FilmInput.syntheticName for @condition(override: false) with no resolving column")
+            .isTrue();
+    }
+
+    /**
+     * R215 #6 — {@code @condition} on a mutation input field rejects. The mutation classifier
+     * catches the {@code @condition(override: false)} arm at SDL walk time; the resulting
+     * UnclassifiedField surfaces in the validator's output as a ValidationError. The
+     * {@code @condition(override: true)} arm admits on UPDATE / DELETE (see test 7).
+     */
+    @Test
+    void r215_validatorRejectsConditionOverrideFalseOnMutationInputField() {
+        var schema = build("""
+            input FilmUpdate @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              title: String @value
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"})
+            }
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") }
+            type Mutation {
+              updateFilm(in: FilmUpdate!): ID @mutation(typeName: UPDATE)
+            }
+            type Query { x: String }
+            """);
+        var uf = (UnclassifiedField) schema.field("Mutation", "updateFilm");
+        assertThat(uf.reason()).contains("title");
+        assertThat(uf.reason()).containsAnyOf(
+            "@condition on a mutation input field is not supported",
+            "@value and @condition on the same input field");
+    }
+
+    /**
+     * R215 #7 — {@code @mutation(typeName: UPDATE) + @condition(override: true)} on a non-PK
+     * field admits. The mutation classifier admits the UnboundField as a filter-side carrier;
+     * the developer takes over the WHERE half via the explicit condition method.
+     */
+    @Test
+    void r215_mutationUpdateConditionOverrideTrueOnNonPkFieldAdmits() {
+        var schema = build("""
+            input FilmUpdate @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              title: String @value
+              syntheticName: String
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "syntheticNameCondition"}, override: true)
+            }
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") }
+            type Mutation {
+              updateFilm(in: FilmUpdate!): ID @mutation(typeName: UPDATE)
+            }
+            type Query { x: String }
+            """);
+        var f = schema.field("Mutation", "updateFilm");
+        assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.MutationField.MutationUpdateTableField.class);
+    }
+
+    /**
+     * R215 #8 — Same shape on a INSERT mutation rejects. INSERT has no WHERE clause for the
+     * override condition to bind into.
+     */
+    @Test
+    void r215_mutationInsertConditionOverrideTrueRejects() {
+        var schema = build("""
+            input FilmInsert @table(name: "film") {
+              title: String
+              syntheticName: String
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "syntheticNameCondition"}, override: true)
+            }
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") }
+            type Mutation {
+              insertFilm(in: FilmInsert!): ID @mutation(typeName: INSERT)
+            }
+            type Query { x: String }
+            """);
+        var uf = (UnclassifiedField) schema.field("Mutation", "insertFilm");
+        assertThat(uf.reason()).contains("syntheticName");
+        assertThat(uf.reason()).contains("INSERT");
+    }
+
+    /**
+     * R215 #10 — Nested plain inputs propagate the cascade through {@code NestingField}. A
+     * plain input nested under an arg-level {@code @condition(override: true)} admits a
+     * non-binding inner field; the cascade resolves it via the consumer-side walker's
+     * {@code nestOverride} composition.
+     */
+    @Test
+    void r215_nestedPlainInputPropagatesCascade() {
+        var schema = build("""
+            input Inner { bar: String }
+            input Outer { details: Inner }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+              films(filter: Outer
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"}, override: true)
+              ): [Film!]!
+            }
+            """);
+        var f = schema.field("Query", "films");
+        assertThat(f).isInstanceOf(QueryField.QueryTableField.class);
+    }
+
     // ===== P4b: TableInputType classification =====
 
     enum TableInputTypeCase implements ClassificationCase {
@@ -4225,13 +4425,21 @@ class GraphitronSchemaBuilderTest {
         },
 
         EXPLICIT_TABLE_UNRESOLVED_COLUMN(
-            "input type with @table but unknown column → UnclassifiedType",
+            "input type with @table but unknown column → TableInputType with UnboundField (R215 §3 "
+                + "defers column-coverage to consumption; the type-build pass admits the field, "
+                + "and a non-override consumer rejects at the field's source location)",
             """
             input CustomerInput @table(name: "customer") { noSuchField: Int! }
             type Query { x: String }
             """,
-            schema -> assertThat(schema.type("CustomerInput"))
-                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class)),
+            schema -> {
+                var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("CustomerInput");
+                assertThat(it.inputFields()).hasSize(1);
+                var uf = (no.sikt.graphitron.rewrite.model.InputField.UnboundField) it.inputFields().get(0);
+                assertThat(uf.name()).isEqualTo("noSuchField");
+                assertThat(uf.attemptedColumnName()).isEqualTo("noSuchField");
+                assertThat(uf.condition()).isEmpty();
+            }),
 
         EXPLICIT_TABLE_UNRESOLVED_TABLE(
             "input type with @table pointing to unknown DB table → UnclassifiedType",
@@ -4335,7 +4543,9 @@ class GraphitronSchemaBuilderTest {
         },
 
         NESTED_INPUT_FIELD_UNKNOWN_COLUMN(
-            "nested plain input type with unresolvable column → UnclassifiedType on parent",
+            "nested plain input type with unresolvable column → TableInputType with UnboundField "
+                + "inside the NestingField (R215 §3 defers column-coverage to consumption; the "
+                + "@table input is admitted, and a non-override consumer rejects)",
             """
             input BadInput { noSuch: String @field(name: "no_such_column") }
             input FilmInput @table(name: "film") {
@@ -4344,8 +4554,16 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { x: String }
             """,
-            schema -> assertThat(schema.type("FilmInput"))
-                .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType.class)),
+            schema -> {
+                var tit = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("FilmInput");
+                var nf = tit.inputFields().stream()
+                    .filter(no.sikt.graphitron.rewrite.model.InputField.NestingField.class::isInstance)
+                    .map(no.sikt.graphitron.rewrite.model.InputField.NestingField.class::cast)
+                    .findFirst().orElseThrow();
+                assertThat(nf.fields()).hasSize(1);
+                assertThat(nf.fields().get(0))
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.InputField.UnboundField.class);
+            }),
 
         ARG_CONDITION_OVERRIDE(
             "input type used on an argument with @condition(override: true) → PojoInputType (skip table validation)",
