@@ -23,10 +23,10 @@ The input-type classification surface has been the most-churned model area in th
 | `PojoInputType` | POJO (or null) | no | no |
 | `JavaRecordInputType` | Java record | no | no |
 | `JooqRecordInputType` | jOOQ `Record<?>` | no | no |
-| `JooqTableRecordInputType` | jOOQ `TableRecord<?>` | yes — from backing class | no |
-| `TableInputType` | (graphitron-emitted from R94) | yes — from `@table` directive **or** consumer chain | yes — `List<InputField>` |
+| `JooqTableRecordInputType` | jOOQ `TableRecord<?>` | yes, from backing class | no |
+| `TableInputType` | (graphitron-emitted from R94) | yes, from `@table` directive **or** consumer chain | yes, `List<InputField>` |
 
-Three axes — *backing-class kind*, *table-binding (and where the binding came from)*, *whether fields are eagerly column-classified* — collapsed onto five permit identities. The cross product is sparse and lopsided:
+Three axes (*backing-class kind*, *table-binding and where the binding came from*, *whether fields are eagerly column-classified*) collapsed onto five permit identities. The cross product is sparse and lopsided:
 
 - The "table-bound × non-jOOQ-TableRecord-backed × eager-classified" cell is `TableInputType`.
 - The "table-bound × jOOQ-TableRecord-backed" cell is `JooqTableRecordInputType`, and **the table comes from a different source** (reflection on the backing class vs `@table` directive vs consumer inference).
@@ -34,20 +34,20 @@ Three axes — *backing-class kind*, *table-binding (and where the binding came 
 
 Two further signals point at the encoding being the wrong shape:
 
-1. `TypeBuilder.buildInputType` (`TypeBuilder.java:1000-1026`) already classifies a directiveless input as `TableInputType` when exactly one consumer's return type is a `@table` type, via `findReturnTablesForInput` (an O(N) back-scan over all schema fields). Whether an SDL input is "table-bound" is *already* a property of the consumer chain, not the input declaration — encoded as a back-scan that runs once per input rather than once per use.
+1. `TypeBuilder.buildInputType` (`TypeBuilder.java:1000-1026`) already classifies a directiveless input as `TableInputType` when exactly one consumer's return type is a `@table` type, via `findReturnTablesForInput` (an O(N) back-scan over all schema fields). Whether an SDL input is "table-bound" is *already* a property of the consumer chain, not the input declaration; it is encoded today as a back-scan that runs once per input rather than once per use.
 
-2. R215's lift (In Review) admits `InputField.UnboundField` into `TableInputType.inputFields()`, so the column-coverage invariant that previously distinguished `TableInputType` from `InputType` (one classifies columns eagerly, the other doesn't) has eroded. The classifier-side commitment is now "best-effort eager, deferred to consumption on miss" — which collapses the third axis.
+2. R215's lift (In Review) admits `InputField.UnboundField` into `TableInputType.inputFields()`, so the column-coverage invariant that previously distinguished `TableInputType` from `InputType` (one classifies columns eagerly, the other doesn't) has eroded. The classifier-side commitment is now "best-effort eager, deferred to consumption on miss", which collapses the third axis.
 
 The capability marker `HasInputRecordShape` (`HasInputRecordShape.java:17-22`) already has to list five permits to span both branches; R171 (Backlog) names this as the immediate symptom and proposes a `sealed interface InputLikeType` parent. That fix is structural and leaves the cross-product encoding intact.
 
-Eight consumer sites discriminate on the split today:
+Nine consumer sites discriminate on the split today:
 
-- `GraphitronSchemaValidator.java:80-81` — case arms on `InputType` and `TableInputType`.
-- `MutationInputResolver.java:368` — `instanceof GraphitronType.TableInputType` gate.
+- `GraphitronSchemaValidator.java:80-81`: case arms on `InputType` and `TableInputType`.
+- `MutationInputResolver.java:368`: `instanceof GraphitronType.TableInputType` gate.
 - `EnumMappingResolver.buildLookupBindings(GraphitronType.TableInputType, ...)` (`EnumMappingResolver.java:303`).
-- `CatalogBuilder.java:206 / 498 / 570 / 639` — four switch sites on `TableInputType`.
-- `FieldBuilder.java:967` — `instanceof GraphitronType.TableInputType` arm in `classifyInputFieldOnArg`.
-- `TypeBuilder.java:209-210` — the type-pivot in the synthesis pass.
+- `CatalogBuilder.java:206 / 498 / 570 / 639`: four switch sites on `TableInputType`.
+- `FieldBuilder.java:967`: `instanceof GraphitronType.TableInputType` arm in `classifyInputFieldOnArg`.
+- `TypeBuilder.java:209-210`: the type-pivot in the synthesis pass.
 
 Each consumer asks "does the input have a table?" by switching on the permit identity. None of them care about the backing-class kind on the unbound side.
 
@@ -58,7 +58,7 @@ The pivot separates the *consumer-independent* surface (a fact about the SDL inp
 ```java
 sealed interface Input extends GraphitronType, EmitsPerTypeFile permits Input.Of {
 
-    InputRecordShape recordShape();          // R94 — always present
+    InputRecordShape recordShape();          // R94, always present
     Optional<BackingClass> backingClass();   // axis 1
     GraphQLInputObjectType schemaType();
 }
@@ -97,17 +97,19 @@ The `Input` record carries only what's true of the SDL declaration in isolation:
 ```java
 record InputTypeArg(
     String name,
-    String typeName,
+    Input input,                           // back-reference to the consumer-independent record
     boolean nonNull,
     boolean list,
     Optional<TableBinding> binding,
     List<InputField> classifiedFields,
     Optional<ArgConditionRef> argCondition,
-    SchemaCoordinate consumer,             // visit-site coordinate; LSP hover + diagnostics
+    SchemaCoordinate consumer,             // visit-site coordinate; LSP hover and diagnostics
     // Mutation-only partitions, R144:
     List<InputField.LookupKeyField> lookupKeyFields,
     List<InputField.SetField> setFields
 ) implements ArgumentRef {
+    @Override public String typeName() { return input.name(); }
+
     public InputTypeArg {
         // Cross-axis invariant pinned for the duration of the pivot. Key:
         //   input-arg.binding-absent-implies-no-classified-fields
@@ -127,7 +129,7 @@ record TableBinding(TableRef table, Optional<SourceLocation> directiveLocation) 
 
 `InputTypeArg` carries what's true of *this argument occurrence* of the input: whether it's table-bound here (it may be at one call site and not at another), and the column-classified fields that fall out when it is. The `consumer` slot is the visiting coordinate (e.g. `Query.films`), surfaced for LSP hover and diagnostics; carrying it on the arg itself instead of on `TableBinding` keeps the binding's shape minimal.
 
-`TableBinding` carries the resolved `TableRef` plus an `Optional<SourceLocation>` for the originating `@table` directive when one drove the resolution. Absent location means the binding was consumer-derived or backing-class-derived — the distinction is recoverable from `arg.input().backingClass() instanceof JooqTableRecord` if any consumer ever needs it; the architectural review's read is that no current consumer does, so the binding type stays narrow.
+`TableBinding` carries the resolved `TableRef` plus an `Optional<SourceLocation>` for the originating `@table` directive when one drove the resolution. Absent location means the binding was consumer-derived or backing-class-derived; the distinction is recoverable from `arg.input().backingClass() instanceof JooqTableRecord` if any consumer ever needs it, and the architectural review's read is that no current consumer does, so the binding type stays narrow.
 
 ### What collapses
 
@@ -141,7 +143,7 @@ record TableBinding(TableRef table, Optional<SourceLocation> directiveLocation) 
 | `HasInputRecordShape` capability marker (5 permits) | direct slot on `Input` |
 | `ArgumentRef.InputTypeArg.TableInputArg` | merged into `InputTypeArg` |
 | `ArgumentRef.InputTypeArg.PlainInputArg` | merged into `InputTypeArg` (with `binding = empty`) |
-| 8 `instanceof TableInputType` discriminations | `arg.binding().isPresent()` at the consumption point |
+| 9 consumer-side discriminations on `TableInputType` (instanceof gates and switch arms) | `arg.binding().isPresent()` at the consumption point |
 | `TypeBuilder.findReturnTablesForInput` back-scan | resolved at the visit site under R166 walk |
 
 The cross-cutting `GraphitronSchemaValidator.validateTableInputType` arm becomes a `walkInputs` pass that visits every `InputTypeArg` and dispatches on `binding` presence; the per-permit-identity dispatch retires.
@@ -164,42 +166,42 @@ Five consequences fall out structurally:
 
 | Item | Absorption mode |
 |---|---|
-| R171 (sealed `InputLikeType` parent) | Dissolves — capability declarations land on `Input` directly; the parent-root fix becomes moot. |
+| R171 (sealed `InputLikeType` parent) | Dissolves: capability declarations land on `Input` directly; the parent-root fix becomes moot. |
 | R97 (deprecate `@table` on input types) | Phase 2 falls out structurally. `argMapping` grouping (Phase 1) and directive-scope narrowing (Phase 3) remain as follow-up. |
 | R213 (rejections at consumer field) | Visit-time source location. |
 | R209 (FieldRegistry classify-input trace) | Typed rejection lift becomes trivial at the per-arg visit site. |
-| R166 Phase 2 (`InputTypeGenerator` under visitor) | Subset — the input-side slice of R166's broader visitor-driven emission. |
-| R221 (validator walks `PlainInputArg.fields()` for `UnboundField` rejection) | Dissolves — `GraphitronSchemaValidator.validateTableInputType` becomes `validateInputArg` (Phase 4) that walks every `InputTypeArg.classifiedFields` uniformly. The `TableInputType.inputFields()` vs `PlainInputArg.fields()` split that motivated R221 retires under the pivot's unified `InputTypeArg`. |
+| R166 Phase 2 (`InputTypeGenerator` under visitor) | Subset: the input-side slice of R166's broader visitor-driven emission. |
+| R221 (validator walks `PlainInputArg.fields()` for `UnboundField` rejection) | Dissolves: `GraphitronSchemaValidator.validateTableInputType` becomes `validateInputArg` (Phase 4) that walks every `InputTypeArg.classifiedFields` uniformly. The `TableInputType.inputFields()` vs `PlainInputArg.fields()` split that motivated R221 retires under the pivot's unified `InputTypeArg`. |
 
 Items adjacent but not absorbed:
 
-- **R220 / R193** (`ServiceCatalog` predicate consolidation, sealed `UnresolvedParam`) — same disease (one-dimensional encoding of multi-dimensional space), different file. The pivot primes the pattern; those items apply it on the consumer-side surface independently.
-- **R164** — this item proves out the dimensional pattern on the smaller input surface. R164 then applies the pattern to the larger field hierarchy with the precedent already in tree.
-- **R98** (multi-source input validation) — once `HasInputRecordShape` becomes a direct slot on `Input`, attaching `ConstraintSet` to it is a one-site change. Lands as a follow-up.
-- **R200 / R195** (honor `@field(name:)` in `InputBeanResolver`) — these are about *naming binding* between SDL fields and Java members on the backing class. The pivot doesn't change naming resolution; both items stay in scope on `InputBeanResolver`.
+- **R220 / R193** (`ServiceCatalog` predicate consolidation, sealed `UnresolvedParam`): same disease (one-dimensional encoding of multi-dimensional space), different file. The pivot primes the pattern; those items apply it on the consumer-side surface independently.
+- **R164**: this item proves out the dimensional pattern on the smaller input surface. R164 then applies the pattern to the larger field hierarchy with the precedent already in tree.
+- **R98** (multi-source input validation): once `HasInputRecordShape` becomes a direct slot on `Input`, attaching `ConstraintSet` to it is a one-site change. Lands as a follow-up.
+- **R200 / R195** (honor `@field(name:)` in `InputBeanResolver`): these are about *naming binding* between SDL fields and Java members on the backing class. The pivot doesn't change naming resolution; both items stay in scope on `InputBeanResolver`.
 
 ## Cross-axis invariants
 
 The dimensional split admits states the old model could not. Three load-bearing invariants pin those states explicitly, each carried as a `@LoadBearingClassifierCheck` key whose producer is the visitor (Phase 3 onward) and whose consumers are the per-arg emitters:
 
-1. **`input-arg.binding-absent-implies-no-classified-fields`** — `InputTypeArg.binding.isEmpty() ⇒ classifiedFields.isEmpty()`. Pinned as a compact-constructor invariant on `InputTypeArg` from Phase 1 onward so the Phase 1-2 adapter cannot construct illegal states.
-2. **`input.record-shape-derived-from-backing`** — `Input.recordShape()` and `Input.backingClass()` cannot drift. Producer: classifier; consumers: `InputRecordGenerator`, the per-arg materialiser.
-3. **`input.per-type-emit-ignores-per-arg-classification`** — `InputRecordGenerator` and `InputTypeGenerator` read only `Input` (never `InputTypeArg`); per-arg consumers read only `InputTypeArg` (never the consumer-position-dependent classification cached on an `Input`). The reachability degenerate-state (an `Input` with no `InputTypeArg` occurrences emits per-type but has no classified consumption) is consistent by construction once this key holds. Pinned with `@DependsOnClassifierCheck` on the two per-type generator entry points.
+1. **`input-arg.binding-absent-implies-no-classified-fields`**: `InputTypeArg.binding.isEmpty() ⇒ classifiedFields.isEmpty()`. Pinned as a compact-constructor invariant on `InputTypeArg` from Phase 1 onward so the Phase 1-2 adapter cannot construct illegal states. The compact constructor is the runtime safety net; the `@LoadBearingClassifierCheck` annotation lands on the Phase 3 visitor producer site, since that is where the audit walker pins the producer-consumer chain.
+2. **`input.record-shape-derived-from-backing`**: `Input.recordShape()` and `Input.backingClass()` cannot drift. Producer: classifier; consumers: `InputRecordGenerator`, the per-arg materialiser.
+3. **`input.per-type-emit-ignores-per-arg-classification`**: `InputRecordGenerator` and `InputTypeGenerator` read only `Input` (never `InputTypeArg`); per-arg consumers read only `InputTypeArg` (never the consumer-position-dependent classification cached on an `Input`). The reachability degenerate-state (an `Input` with no `InputTypeArg` occurrences emits per-type but has no classified consumption) is consistent by construction once this key holds. Pinned with `@DependsOnClassifierCheck` on the two per-type generator entry points.
 
 The Phase 1-2 adapter shims must satisfy all three keys as part of their "lossless round-trip" criterion; otherwise the legacy validator's invariants are bypassed by callers that construct the new types directly. The audit walker (`LoadBearingGuaranteeAuditTest`) is the safety net.
 
 ## Phasing
 
-Five phases, each independently shippable and individually reversible.
+Five phases plus an optional sixth, each independently shippable and individually reversible.
 
 ### Phase 1: introduce `Input` and `BackingClass` alongside existing permits
 
 - Add `sealed interface Input` and the `BackingClass` family to `model/`.
-- Implement an adapter that constructs an `Input` from each of the five existing permits (lossless round-trip).
+- Implement an adapter that constructs an `Input` from each of the five existing permits. The adapter is lossless on the consumer-independent half (name, location, recordShape, backingClass); for `TableInputType`, the consumer-dependent half (table binding, eager-classified fields) is carried over in Phase 2 via the `InputTypeArg` adapter and is out of scope here.
 - Add a `Map<String, Input>` slot on `GraphitronSchema` populated from the existing types map.
 - No consumer migrates yet; the adapter is the bridge.
 
-Acceptance: every classified input today produces an equivalent `Input` via the adapter; no behaviour change.
+Acceptance: every classified input today produces an equivalent `Input` via the adapter; the adapter pair (Phase 1 plus Phase 2) is lossless against the legacy classification; no behaviour change.
 
 ### Phase 2: introduce `InputTypeArg` with dimensional axes
 
@@ -213,7 +215,7 @@ Acceptance: every classified arg today produces an equivalent `InputTypeArg` via
 ### Phase 3: visitor-driven per-arg classification
 
 - Add `GraphQLSchemaVisitor`-based walker seeded from root operations.
-- At each `argument` visit on an `INPUT_OBJECT`-typed arg, produce the `InputTypeArg` directly — resolving `TableBinding` from (a) the input's `@table` directive when present (carries the directive's `SourceLocation`); (b) the input's `BackingClass.JooqTableRecord.table` when the backing class supplies one; (c) the enclosing field's return type when neither of the above applies and the consumer's return type is `@table`-bound (consumer-derived inference). When none of the three apply, `binding` is empty and `classifiedFields` is empty.
+- At each `argument` visit on an `INPUT_OBJECT`-typed arg, produce the `InputTypeArg` directly, resolving `TableBinding` from (a) the input's `@table` directive when present (carries the directive's `SourceLocation`); (b) the input's `BackingClass.JooqTableRecord.table` when the backing class supplies one; (c) the enclosing field's return type when neither of the above applies and the consumer's return type is `@table`-bound (consumer-derived inference). When none of the three apply, `binding` is empty and `classifiedFields` is empty.
 - Retire `TypeBuilder.findReturnTablesForInput`. Per-input-type table classification disappears; per-arg replaces it.
 - **Annotation continuity:** migrate R215's two `@LoadBearingClassifierCheck` keys (`input-field.unbound-implies-no-column`, `input-field.unbound-with-override-condition-admits-on-mutation-update-delete`) from the legacy `BuildContext.classifyInputFieldInternal` producer-site to the new visitor entry point. Run `LoadBearingGuaranteeAuditTest` before and after to confirm no orphaned consumers. Same for the three new keys introduced under Cross-axis invariants.
 - Wire R97 Phase 2's consumer-derived inference here. Test: cross-consumer divergence fixture (one input used by two consumers with different tables) classifies successfully per-arg.
@@ -224,12 +226,12 @@ Acceptance: every Sakila and `graphitron-fixtures-codegen` fixture compiles unch
 
 Move each consumer off the legacy permit discrimination onto the new slots. Order chosen to keep blast radius small per PR:
 
-- `MutationInputResolver` — reads `arg.binding()` and `arg.classifiedFields()` directly.
-- `EnumMappingResolver.buildLookupBindings` — signature lifts from `(TableInputType, ...)` to `(InputTypeArg, ...)`.
-- `FieldBuilder.classifyInputFieldOnArg` — drops the `instanceof TableInputType` arm.
-- `GraphitronSchemaValidator.validateTableInputType` — becomes `validateInputArg`, dispatches on `binding` presence.
-- `CatalogBuilder` four sites — each reads from `Input` or `InputTypeArg`.
-- `InputRecordGenerator`, `InputTypeGenerator` — read `Input.recordShape()` and `Input.schemaType()` directly; permit-identity dispatch retires.
+- `MutationInputResolver`: reads `arg.binding()` and `arg.classifiedFields()` directly.
+- `EnumMappingResolver.buildLookupBindings`: signature lifts from `(TableInputType, ...)` to `(InputTypeArg, ...)`.
+- `FieldBuilder.classifyInputFieldOnArg`: drops the `instanceof TableInputType` arm.
+- `GraphitronSchemaValidator.validateTableInputType`: becomes `validateInputArg`, dispatches on `binding` presence.
+- `CatalogBuilder` four sites: each reads from `Input` or `InputTypeArg`.
+- `InputRecordGenerator`, `InputTypeGenerator`: read `Input.recordShape()` and `Input.schemaType()` directly; permit-identity dispatch retires.
 
 Compiler exhaustiveness on the sealed `Input` interface is the safety net for each migration.
 
@@ -254,10 +256,10 @@ Can land independently after Phase 5; not a blocker for the structural pivot.
 
 ## Dependencies and sequencing
 
-- **R215** (`column-binding-at-classification-not-usage`, In Review) — the `UnboundField` deferral R215 introduces is the same column-coverage relaxation the pivot generalises to "no per-input-type column classification at all." Two `@LoadBearingClassifierCheck` keys R215 shipped (`input-field.unbound-implies-no-column` and `input-field.unbound-with-override-condition-admits-on-mutation-update-delete`) name `BuildContext.classifyInputFieldInternal` as the producer; under this pivot's Phase 3 the producer site moves into the visitor walk. `LoadBearingGuaranteeAuditTest` does not detect producer drift (only missing producers), so Phase 3 carries an explicit commitment to migrate both annotation producer-sites to the new visitor entry point and to re-run the audit per phase. Easier to spec and review with R215 already in tree; not a hard build-order prerequisite, but the annotation continuity is.
-- **R94** (shipped) — the `HasInputRecordShape` slot R94 lifted onto every input variant becomes a direct field on `Input`. No new prerequisite; the new `input.record-shape-derived-from-backing` key formalises the invariant R94 left in prose.
-- **R166 Phase 1** (reachability slot) — orthogonal. The visitor scaffolding this item lands can be reused by R166 Phase 1, or R166 Phase 1 can land standalone first and this item piggybacks. Spec-stage call.
-- **R164** — this item is the *partial* proof-of-concept. What transfers cleanly: the dimensional decomposition discipline (one sealed sub-taxonomy per dimension, not one sealed sub-taxonomy of the cross product), the phased adapter approach, the consumer-migration ordering, the `@LoadBearingClassifierCheck` continuity. What does **not** transfer: the two-level split (`Input` consumer-independent / `InputTypeArg` per-occurrence) is specific to input usage; fields are properties of the SDL field declaration with no per-consumer level to lift onto. R164's authors should model on the dimensional + phasing halves, not on the two-level split.
+- **R215** (`column-binding-at-classification-not-usage`, In Review): the `UnboundField` deferral R215 introduces is the same column-coverage relaxation the pivot generalises to "no per-input-type column classification at all." Two `@LoadBearingClassifierCheck` keys R215 shipped (`input-field.unbound-implies-no-column` and `input-field.unbound-with-override-condition-admits-on-mutation-update-delete`) name `BuildContext.classifyInputFieldInternal` as the producer; under this pivot's Phase 3 the producer site moves into the visitor walk. `LoadBearingGuaranteeAuditTest` does not detect producer drift (only missing producers), so Phase 3 carries an explicit commitment to migrate both annotation producer-sites to the new visitor entry point and to re-run the audit per phase. Easier to spec and review with R215 already in tree; not a hard build-order prerequisite, but the annotation continuity is.
+- **R94** (shipped): the `HasInputRecordShape` slot R94 lifted onto every input variant becomes a direct field on `Input`. No new prerequisite; the new `input.record-shape-derived-from-backing` key formalises the invariant R94 left in prose.
+- **R166 Phase 1** (reachability slot): orthogonal. The visitor scaffolding this item lands can be reused by R166 Phase 1, or R166 Phase 1 can land standalone first and this item piggybacks. Spec-stage call.
+- **R164**: this item is the *partial* proof-of-concept. What transfers cleanly: the dimensional decomposition discipline (one sealed sub-taxonomy per dimension, not one sealed sub-taxonomy of the cross product), the phased adapter approach, the consumer-migration ordering, the `@LoadBearingClassifierCheck` continuity. What does **not** transfer: the two-level split (`Input` consumer-independent / `InputTypeArg` per-occurrence) is specific to input usage; fields are properties of the SDL field declaration with no per-consumer level to lift onto. R164's authors should model on the dimensional and phasing halves, not on the two-level split.
 
 Likely scope: 1-2 weeks of focused work, somewhat smaller than R164's 2-4 weeks because the consumer surface is narrower and the existing model is already mid-erosion (R215 did the precondition work).
 
@@ -270,11 +272,11 @@ Likely scope: 1-2 weeks of focused work, somewhat smaller than R164's 2-4 weeks 
 
 ## Out of scope
 
-- **Field-side dimensional pivot** — R164. This item validates the pattern; R164 applies it to the field surface.
-- **`ServiceCatalog` predicate consolidation** — R220 / R193. Same disease in a different file.
-- **`argMapping` grouping syntax** — R97 Phase 1. Separable; the per-arg classification slot the pivot introduces is the natural home for the grouping outcome, but the syntax + parser work is independent.
-- **Visitor-driven emission for non-input types** — broader R166. The input-side slice is what this item absorbs.
-- **Reachability pruning across all type kinds** — R166 Phase 1. Orthogonal; this item only prunes inputs via the visit gate.
+- **Field-side dimensional pivot**: R164. This item validates the pattern; R164 applies it to the field surface.
+- **`ServiceCatalog` predicate consolidation**: R220 / R193. Same disease in a different file.
+- **`argMapping` grouping syntax**: R97 Phase 1. Separable; the per-arg classification slot the pivot introduces is the natural home for the grouping outcome, but the syntax and parser work is independent.
+- **Visitor-driven emission for non-input types**: broader R166. The input-side slice is what this item absorbs.
+- **Reachability pruning across all type kinds**: R166 Phase 1. Orthogonal; this item only prunes inputs via the visit gate.
 
 ## Risk
 
@@ -286,9 +288,9 @@ Likely scope: 1-2 weeks of focused work, somewhat smaller than R164's 2-4 weeks 
 ## Tests
 
 - **Pipeline-tier (regression):** every existing `graphitron-fixtures-codegen` fixture and Sakila fixture compiles unchanged through the pivot. Output diffs against trunk must be empty.
-- **Pipeline-tier (new):** consumer-derived path — input with no `@table` directive used by a single `@table`-returning consumer produces an `InputTypeArg` with `binding.isPresent()` and `binding.get().directiveLocation().isEmpty()` (consumer-derived). R97 Phase 2's acceptance fixture lands here.
-- **Pipeline-tier (new):** cross-consumer divergence — one input used by two consumers with different return tables produces two `InputTypeArg` occurrences with distinct bindings. Today's `InputType` collapse becomes per-arg success.
-- **Pipeline-tier (new):** unreached input — an SDL input declared but never referenced from any reachable consumer produces an `Input` record with no `InputTypeArg`; `InputRecordGenerator` still emits, downstream classifiers see no per-arg work.
+- **Pipeline-tier (new):** consumer-derived path. Input with no `@table` directive used by a single `@table`-returning consumer produces an `InputTypeArg` with `binding.isPresent()` and `binding.get().directiveLocation().isEmpty()` (consumer-derived). R97 Phase 2's acceptance fixture lands here.
+- **Pipeline-tier (new):** cross-consumer divergence. One input used by two consumers with different return tables produces two `InputTypeArg` occurrences with distinct bindings. Today's `InputType` collapse becomes per-arg success.
+- **Pipeline-tier (new):** unreached input. An SDL input declared but never referenced from any reachable consumer produces an `Input` record with no `InputTypeArg`; `InputRecordGenerator` still emits, downstream classifiers see no per-arg work.
 - **Pipeline-tier (new):** typed rejection on column-miss carries `Rejection.AuthorError.UnknownName` with the directive's source location (R209 lands here).
 - **Compilation-tier:** every `graphitron-sakila-example` compile target stays green.
 - **Execution-tier:** every existing execution test passes unchanged. No new execute-tier fixtures are required by the pivot itself.
@@ -299,4 +301,4 @@ R164 frames the disease: a sealed hierarchy that tries to represent multiple ind
 
 The cure is the same in both organs: separate the dimensions onto orthogonal slots, with a sealed sub-taxonomy *per dimension* rather than a sealed sub-taxonomy of the *cross product*. This item ships the cure on the input surface where the cross product is smallest (5 permits encoding 3 axes), then R164 ships the same cure on the field surface where it's largest (46 permits across 3 sealed hierarchies encoding 5+ axes). R220 / R193 then apply it to the consumer-side classifier predicates.
 
-The principle is not "minimise the model" — it's "make the model honest about what it's saying." The cross-product encoding hides axes; the dimensional encoding surfaces them. Hidden axes drift, surfaced axes get the compiler's help.
+The principle is not "minimise the model"; it is "make the model honest about what it's saying." The cross-product encoding hides axes; the dimensional encoding surfaces them. Hidden axes drift, surfaced axes get the compiler's help.
