@@ -1,7 +1,7 @@
 ---
 id: R216
 title: LSP classification + inferred-directive arms walk type extensions, not just definitions
-status: Ready
+status: In Progress
 bucket: bug
 theme: lsp
 depends-on: []
