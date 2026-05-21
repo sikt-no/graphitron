@@ -174,7 +174,9 @@ jobs:
         # Exactly four lib/<os>-<arch>/<file> entries; any other lib/* path is a bug.
         run: |
           set -euo pipefail
-          jar_path="$(ls $NATIVES_MODULE/target/graphitron-tree-sitter-natives-*.jar)"
+          # Pin to the main artifact; the broad glob also matches -sources.jar and -javadoc.jar.
+          version="$(grep -m1 '<version>' $NATIVES_MODULE/pom.xml | sed -E 's|.*<version>([^<]+)</version>.*|\1|')"
+          jar_path="$NATIVES_MODULE/target/graphitron-tree-sitter-natives-${version}.jar"
           echo "Inspecting $jar_path"
           unzip -l "$jar_path"
           lib_entries="$(unzip -l "$jar_path" | awk '{print $4}' | grep -E '^lib/' || true)"
