@@ -102,10 +102,7 @@ record InputTypeArg(
     boolean list,
     Optional<TableBinding> binding,
     List<InputField> classifiedFields,
-    Optional<ArgConditionRef> argCondition,
-    // Mutation-only partitions, R144:
-    List<InputField.LookupKeyField> lookupKeyFields,
-    List<InputField.SetField> setFields
+    Optional<ArgConditionRef> argCondition
 ) implements ArgumentRef {
     @Override public String typeName() { return input.name(); }
 
@@ -170,6 +167,7 @@ Anything not in this table is read from `Input.schemaType()` exactly as today, s
 | `HasInputRecordShape` capability marker (5 permits) | direct slot on `Input` |
 | `ArgumentRef.InputTypeArg.TableInputArg` | merged into `InputTypeArg` |
 | `ArgumentRef.InputTypeArg.PlainInputArg` | merged into `InputTypeArg` (with `binding = empty`) |
+| `TableInputArg.lookupKeyFields` / `setFields` slots (R144 DmlKind-driven partition) | retired from the model; `MutationInputResolver` derives the partition on demand from `classifiedFields` plus the consuming verb's `DmlKind`. See "What this absorbs" below. |
 | 9 consumer-side discriminations on `TableInputType` (instanceof gates and switch arms) | `arg.binding().isPresent()` at the consumption point |
 | `TypeBuilder.findReturnTablesForInput` back-scan | resolved at the visit site under R166 walk |
 
@@ -199,6 +197,7 @@ Five consequences fall out structurally:
 | R209 (FieldRegistry classify-input trace) | Typed rejection lift becomes trivial at the per-arg visit site. |
 | R166 Phase 2 (`InputTypeGenerator` under visitor) | Subset: the input-side slice of R166's broader visitor-driven emission. |
 | R221 (validator walks `PlainInputArg.fields()` for `UnboundField` rejection) | Dissolves: `GraphitronSchemaValidator.validateTableInputType` becomes `validateInputArg` (Phase 4) that walks every `InputTypeArg.classifiedFields` uniformly. The `TableInputType.inputFields()` vs `PlainInputArg.fields()` split that motivated R221 retires under the pivot's unified `InputTypeArg`. |
+| R144 (lookup-key / set-field partition stored on `TableInputArg`) | Reverses: the partition leaves the classifier-side model and moves to the consumer. `InputTypeArg.classifiedFields` carries the single sealed list; `MutationInputResolver` derives the WHERE-vs-SET partition at consumption from `classifiedFields` plus the verb's `DmlKind`. See the R144 rationale paragraph below. |
 
 Items adjacent but not absorbed:
 
@@ -206,6 +205,16 @@ Items adjacent but not absorbed:
 - **R164**: this item proves out the dimensional pattern on the smaller input surface. R164 then applies the pattern to the larger field hierarchy with the precedent already in tree.
 - **R98** (multi-source input validation): once `HasInputRecordShape` becomes a direct slot on `Input`, attaching `ConstraintSet` to it is a one-site change. Lands as a follow-up.
 - **R200 / R195** (honor `@field(name:)` in `InputBeanResolver`): these are about *naming binding* between SDL fields and Java members on the backing class. The pivot doesn't change naming resolution; both items stay in scope on `InputBeanResolver`.
+
+### Why R144's partition reverses
+
+R144 committed the WHERE-vs-SET partition at classify time, on the carrier itself: `TableInputArg.lookupKeyFields()` and `TableInputArg.setFields()` are populated by a DmlKind-aware factory (`ArgumentRef.java:284-312`), and `MutationInputResolver` reads the partition as fact. Two problems show up under the pivot.
+
+First, the partition is a property of the *consumer*, not of the *arg*: the same input used by `Mutation.updateFilm` (UPDATE) and `Mutation.deleteFilm` (DELETE) belongs in different partitions at each site. Today's model handles this because the partition lives on `TableInputArg` (per-arg-occurrence), which masks the underlying mistake. The pivot's dimensional principle ("one slot per dimension; the consumer's concern is on the consumer") makes the shape visible: WHERE-vs-SET is the mutation emitter's concern, not the classifier's.
+
+Second, the partition is *denormalized*: `InputField.LookupKeyField` and `InputField.SetField` are intersection-marker interfaces on the same concrete `ColumnField`/`CompositeColumnField`/etc., which means the typed lists store the same fields, partitioned. R144's factory does the partitioning; consumers read it. Reverting the commitment is cheap (the factory logic moves into `MutationInputResolver`, the only consumer of `lookupKeyFields()` / `setFields()`), and it eliminates the intersection-marker leak at the model-shape level.
+
+The intersection-marker pattern on `InputField` (ColumnField IS-A both LookupKeyField and SetField) stays in place under R222 since making those disjoint is a separate model refactor; this item only moves *where* the partition decision is made, not *how* the underlying types express eligibility.
 
 ## Cross-axis invariants
 
@@ -255,7 +264,7 @@ Acceptance: every Sakila and `graphitron-fixtures-codegen` fixture compiles unch
 
 Move each remaining consumer off the legacy permit discrimination onto the new slots. Order chosen to keep blast radius small per PR; the R215 follow-ups deferred during R215's review fold in at the listed slots:
 
-- `MutationInputResolver`: reads `arg.binding()` and `arg.classifiedFields()` directly. **R215 follow-up:** the deferred `MutationField.{Value, Condition}` projection lands here if it has not already shipped standalone.
+- `MutationInputResolver`: reads `arg.binding()` and `arg.classifiedFields()` directly. **R144 partition relocated:** the DmlKind-aware WHERE-vs-SET partition logic moves from `ArgumentRef.java:284-312` (the legacy `TableInputArg` factory) into this resolver. The two readers of `lookupKeyFields()` / `setFields()` (`MutationInputResolver.java:543` and the cousin sites the same file already owns) consume the partition at the site that decides the verb. No new consumer surface is added. **R215 follow-up:** the deferred `MutationField.{Value, Condition}` projection lands here if it has not already shipped standalone.
 - `FieldBuilder.classifyInputFieldOnArg`: drops the `instanceof TableInputType` arm.
 - `GraphitronSchemaValidator.validateTableInputType`: becomes `validateInputArg`, dispatches on `binding` presence. **R221 absorbed:** the validator now walks `arg.classifiedFields()` uniformly across all `InputTypeArg`s; the `PlainInputArg.fields()` vs `TableInputType.inputFields()` split that motivated R221 has retired in Phase 2-3.
 - `CatalogBuilder` four sites: each reads from `Input` or `InputTypeArg`.
