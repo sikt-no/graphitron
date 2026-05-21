@@ -1,7 +1,7 @@
 ---
 id: R206
 title: Synthesised connection/edge types carry carrier-field source location
-status: Ready
+status: In Review
 bucket: validation
 theme: structural-refactor
 depends-on: []
@@ -11,7 +11,7 @@ last-updated: 2026-05-21
 
 # Synthesised connection/edge types carry carrier-field source location
 
-`ConnectionPromoter.promote` synthesises `ConnectionType` and `EdgeType` records for every `@asConnection` carrier (and a `PageInfoType` once, when at least one connection is promoted). All three records have a `SourceLocation location` field, but the promoter passes `null` at every synthesis site (`ConnectionPromoter.java:118-135, 141-142`). When `GraphitronSchemaBuilder.rejectCaseInsensitiveTypeCollisions` finds a case-folded collision between two synthesised connection names (e.g. `QueryPoengklasserv2Connection` vs `QueryPoengklasserV2Connection`), it demotes each member to `UnclassifiedType(name, existing.location(), Rejection.caseFoldCollision(...))` (`GraphitronSchemaBuilder.java:337-338`). With `existing.location()` returning `null`, the resulting `ValidationError` has no source position and an LSP/editor consumer can't jump to the field that caused the type to be synthesised. The error message names the colliding type but the user has to grep the SDL to find the carrier.
+`ConnectionPromoter.promote` synthesises `ConnectionType` and `EdgeType` records for every `@asConnection` carrier (and a `PageInfoType` once, when at least one connection is promoted). All three records have a `SourceLocation location` field, but the promoter passes `null` at every synthesis site (`ConnectionPromoter.java:118-135, 141-142`). When `GraphitronSchemaBuilder.rejectCaseInsensitiveTypeCollisions` finds a case-folded collision between two synthesised connection names (e.g. `QueryPoengklasserv2Connection` vs `QueryPoengklasserV2Connection`), it demotes each member to `UnclassifiedType(name, existing.location(), Rejection.caseFoldCollision(...))` (`GraphitronSchemaBuilder.java:430-431`). With `existing.location()` returning `null`, the resulting `ValidationError` has no source position and an LSP/editor consumer can't jump to the field that caused the type to be synthesised. The error message names the colliding type but the user has to grep the SDL to find the carrier.
 
 The root cause is that the synthesised types lack provenance back to the field definition that triggered synthesis. Each unique connection name is produced by at least one `@asConnection` carrier (or a structural connection-shaped field); that carrier's `FieldDefinition` AST node has a `SourceLocation` available via `field.getDefinition().getSourceLocation()` in graphql-java. Threading that location into the `ConnectionType` and `EdgeType` records at synthesis time costs nothing at runtime, makes the `existing.location()` lookup in the collision pass already-correct, and surfaces an actionable position on every diagnostic that flows through `UnclassifiedType.location()`.
 

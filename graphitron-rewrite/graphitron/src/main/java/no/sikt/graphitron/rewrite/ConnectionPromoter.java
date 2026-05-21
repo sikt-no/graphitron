@@ -75,8 +75,18 @@ final class ConnectionPromoter {
      * the SDL.
      *
      * <p>Dedups by name: a single synthesised {@code QueryStoresConnection} entry covers every
-     * carrier that points at it. {@link PageInfoType} is registered once at most, and only when
-     * at least one Connection is promoted and the SDL doesn't already declare {@code PageInfo}.
+     * carrier that points at it. First-write-wins on dedupe — the synthesised type's
+     * {@code location} pins to the first carrier that triggered synthesis, and later carriers
+     * sharing the name short-circuit on the {@link ConnectionType} early-{@code continue} below
+     * without overwriting it. Once R208 retires {@code @asConnection(connectionName:)}, every
+     * connection name is unambiguously produced by exactly one carrier and the dedupe is purely
+     * a structural-vs-directive overlap (which still resolves to the first writer).
+     *
+     * <p>{@link PageInfoType} is registered once at most, and only when at least one Connection is
+     * promoted and the SDL doesn't already declare {@code PageInfo}. The synthesised PageInfo's
+     * {@code location} is deliberately {@code null}: a single PageInfo serves every connection in
+     * the schema, so no carrier site is the actionable one — diagnostics on a synth-vs-SDL
+     * PageInfo collision anchor on the SDL member's parse location instead.
      */
     static List<CarrierRewrite> promote(BuildContext ctx) {
         var rewrites = new ArrayList<CarrierRewrite>();
@@ -115,8 +125,9 @@ final class ConnectionPromoter {
                 // Structural connections: SDL declares the Connection / Edge object types with
                 // no domain directive, so the first pass classifies them as PlainObjectType;
                 // promotion replaces that with the typed ConnectionType / EdgeType (an enrich).
+                var carrierLocation = BuildContext.locationOf(fieldDef);
                 var connectionType = new ConnectionType(
-                    promotion.connectionName(), null,
+                    promotion.connectionName(), carrierLocation,
                     promotion.elementTypeName(), promotion.edgeName(),
                     promotion.itemNullable(), promotion.shareable(), connSchema);
                 if (ctx.typeRegistry.contains(promotion.connectionName())) {
@@ -125,7 +136,7 @@ final class ConnectionPromoter {
                     ctx.typeRegistry.synthesize(promotion.connectionName(), connectionType);
                 }
                 var edgeType = new EdgeType(
-                    promotion.edgeName(), null,
+                    promotion.edgeName(), carrierLocation,
                     promotion.elementTypeName(), promotion.itemNullable(),
                     promotion.shareable(), edgeSchema);
                 if (ctx.typeRegistry.contains(promotion.edgeName())) {
