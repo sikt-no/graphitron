@@ -30,7 +30,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
 | `R211` | @condition(override:true) build failure surfaces misleading no-column-found message | In Review | 2026-05-21 | [plan](condition-override-true-misleading-column-miss-message.md) |
-| `R203` | Publish graphitron-tree-sitter-natives jar; retire vendored C build in graphitron-lsp | In Review | 2026-05-21 <sub>created 2026-05-20</sub> | [plan](publish-tree-sitter-natives-jar.md) |
 
 ---
 
@@ -227,7 +226,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
 - `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
-- `R203` [**Publish graphitron-tree-sitter-natives jar; retire vendored C build in graphitron-lsp**](publish-tree-sitter-natives-jar.md) — In Review, Backlog
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
 
 ### (untagged)
