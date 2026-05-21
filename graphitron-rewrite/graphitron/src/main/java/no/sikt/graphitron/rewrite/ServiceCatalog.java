@@ -242,18 +242,21 @@ class ServiceCatalog {
                 if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) {
                     String paramName = p.isNamePresent() ? p.getName() : "dsl";
                     params.add(new MethodRef.Param.Typed(paramName,
-                        p.getParameterizedType().getTypeName(), new ParamSource.DslContext()));
+                        p.getParameterizedType().getTypeName(),
+                        TypeName.get(p.getParameterizedType()),
+                        new ParamSource.DslContext()));
                     continue;
                 }
                 String pName = p.isNamePresent() ? p.getName() : null;
                 String displayName = pName != null ? pName : p.getType().getSimpleName();
                 String typeName = p.getParameterizedType().getTypeName();
+                TypeName javaType = TypeName.get(p.getParameterizedType());
                 PathExpr resolvedPath = pName != null ? argByJavaName.get(pName) : null;
                 if (resolvedPath != null) {
-                    params.add(new MethodRef.Param.Typed(displayName, typeName,
+                    params.add(new MethodRef.Param.Typed(displayName, typeName, javaType,
                         new ParamSource.Arg(argExtraction(typeName, ctx.codegenLoader()), resolvedPath)));
                 } else if (pName != null && ctxKeys.contains(pName)) {
-                    params.add(new MethodRef.Param.Typed(displayName, typeName, new ParamSource.Context()));
+                    params.add(new MethodRef.Param.Typed(displayName, typeName, javaType, new ParamSource.Context()));
                 } else {
                     Optional<SourcesShape> sourcesShape = classifySourcesType(p.getParameterizedType(), parentPkColumns);
                     if (sourcesShape.isEmpty()) {
@@ -563,7 +566,9 @@ class ServiceCatalog {
                     }
                     String paramName = p.isNamePresent() ? p.getName() : "table";
                     params.add(new MethodRef.Param.Typed(paramName,
-                        p.getParameterizedType().getTypeName(), new ParamSource.Table()));
+                        p.getParameterizedType().getTypeName(),
+                        TypeName.get(p.getParameterizedType()),
+                        new ParamSource.Table()));
                     foundTable = true;
                     continue;
                 }
@@ -574,12 +579,13 @@ class ServiceCatalog {
                         + "' — compile with -parameters flag (see warning above for instructions)"));
                 }
                 String typeName = p.getParameterizedType().getTypeName();
+                TypeName javaType = TypeName.get(p.getParameterizedType());
                 PathExpr resolvedPath = argByJavaName.get(pName);
                 if (resolvedPath != null) {
-                    params.add(new MethodRef.Param.Typed(pName, typeName,
+                    params.add(new MethodRef.Param.Typed(pName, typeName, javaType,
                         new ParamSource.Arg(argExtraction(typeName, ctx.codegenLoader()), resolvedPath)));
                 } else if (ctxKeys.contains(pName)) {
-                    params.add(new MethodRef.Param.Typed(pName, typeName, new ParamSource.Context()));
+                    params.add(new MethodRef.Param.Typed(pName, typeName, javaType, new ParamSource.Context()));
                 } else {
                     return new ServiceReflectionResult(null,
                         Rejection.structural("parameter '" + pName + "' in method '" + methodName
@@ -674,7 +680,9 @@ class ServiceCatalog {
             }
             String paramName = p.isNamePresent() ? p.getName() : "table";
             List<MethodRef.Param> params = List.of(new MethodRef.Param.Typed(
-                paramName, p.getParameterizedType().getTypeName(), new ParamSource.Table()));
+                paramName, p.getParameterizedType().getTypeName(),
+                TypeName.get(p.getParameterizedType()),
+                new ParamSource.Table()));
             TypeName returnTypeName = TypeName.get(genericReturn);
             return new ServiceReflectionResult(
                 new MethodRef.StaticOnly(className, methodName, returnTypeName, params, List.of()),

@@ -66,20 +66,11 @@ class FederationEntitiesDispatchTest {
         if (postgres != null) postgres.stop();
     }
 
-    private GraphitronContext context() {
-        return new GraphitronContext() {
-            @Override public DSLContext getDslContext(DataFetchingEnvironment env) { return dsl; }
-            @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) { return null; }
-        };
-    }
-
     @SuppressWarnings("unchecked")
     private Map<String, Object> execute(String query, Map<String, Object> variables) {
-        var input = ExecutionInput.newExecutionInput()
+        var input = Graphitron.newExecutionInput(dsl)
             .query(query)
             .variables(variables)
-            .graphQLContext(b -> b.put(GraphitronContext.class, context()))
-            .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
             .build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
@@ -247,44 +238,12 @@ class FederationEntitiesDispatchTest {
             .doesNotContain("first_name").doesNotContain("last_name");
     }
 
-    /**
-     * Multi-tenancy partition: a single {@code _entities} call with two reps of the same
-     * __typename whose ids resolve to different tenants issues two SELECTs (one per tenant),
-     * not one. The dispatcher's per-rep DFE rebinds {@code arguments} to the rep map so the
-     * consumer's {@code getTenantId(repEnv)} resolves against each individual rep.
-     */
-    @Test
-    void entities_multiTenancyPartition_oneSelectPerTenant() {
-        String c1 = NodeIdEncoder.encode("Customer", 1);
-        String c2 = NodeIdEncoder.encode("Customer", 2);
-        Map<String, String> idToTenant = Map.of(c1, "tenantA", c2, "tenantB");
-
-        var perRepTenantContext = new GraphitronContext() {
-            @Override public DSLContext getDslContext(DataFetchingEnvironment env) { return dsl; }
-            @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) { return null; }
-            @Override public String getTenantId(DataFetchingEnvironment env) {
-                String id = env.getArgument("id");
-                return id == null ? "" : idToTenant.getOrDefault(id, "");
-            }
-        };
-
-        var input = ExecutionInput.newExecutionInput()
-            .query("query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
-                + " __typename ... on Customer { firstName } } }")
-            .variables(Map.of("reps", List.of(
-                Map.of("__typename", "Customer", "id", c1),
-                Map.of("__typename", "Customer", "id", c2))))
-            .graphQLContext(b -> b.put(GraphitronContext.class, perRepTenantContext))
-            .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
-            .build();
-
-        QUERY_COUNT.set(0);
-        var result = graphql.execute(input);
-        assertThat(result.getErrors()).isEmpty();
-        assertThat(QUERY_COUNT.get())
-            .as("two tenants, one Customer SELECT each")
-            .isEqualTo(2);
-    }
+    // Commented out under R190: getTenantId override and per-tenant DataLoader partitioning are
+    // reintroduced under R45 (see graphitron-rewrite/roadmap/tenant-routing-and-execution-input.md).
+    // The QUERY_COUNT == 2 assertion shape stays as the canonical execution-tier proof R45 will
+    // re-anchor on once `<tenantColumn>` is configurable on the @table directive.
+    // @Test
+    // void entities_multiTenancyPartition_oneSelectPerTenant() { ... }
 
     /**
      * Multi-alternative dispatch: Film carries both a synthesised NODE_ID alternative
@@ -451,10 +410,8 @@ class FederationEntitiesDispatchTest {
         }));
         var customGraphql = GraphQL.newGraphQL(customised).build();
         QUERY_COUNT.set(0);
-        var input = ExecutionInput.newExecutionInput()
+        var input = Graphitron.newExecutionInput(dsl)
             .query("{ _entities(representations: [{__typename: \"Film\", filmId: 1}]) { __typename } }")
-            .graphQLContext(b -> b.put(GraphitronContext.class, context()))
-            .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
             .build();
         customGraphql.execute(input);
         assertThat(customCalled.get())

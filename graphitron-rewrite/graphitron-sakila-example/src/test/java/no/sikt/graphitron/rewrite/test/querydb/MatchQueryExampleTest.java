@@ -79,15 +79,7 @@ class MatchQueryExampleTest {
     }
 
     private Map<String, Object> execute(String query) {
-        GraphitronContext context = new GraphitronContext() {
-            @Override public DSLContext getDslContext(DataFetchingEnvironment env) { return dsl; }
-            @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) { return null; }
-        };
-        ExecutionInput input = ExecutionInput.newExecutionInput()
-            .query(query)
-            .graphQLContext(b -> b.put(GraphitronContext.class, context))
-            .dataLoaderRegistry(new DataLoaderRegistry())
-            .build();
+        ExecutionInput input = Graphitron.newExecutionInput(dsl).query(query).build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
         return result.getData();

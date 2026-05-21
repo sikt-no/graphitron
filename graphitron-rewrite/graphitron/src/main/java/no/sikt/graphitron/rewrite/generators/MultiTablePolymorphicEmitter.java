@@ -807,8 +807,8 @@ public final class MultiTablePolymorphicEmitter {
             .addParameter(ENV, "env");
 
         builder.addStatement(
-            "$T name = $L.getTenantId(env) + $S + $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
-            String.class, ctx.graphitronContextCall(), "/", String.class, "/");
+            "$T name = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
+            String.class, String.class, "/");
         builder.addCode(
             "$T loader = env.getDataLoaderRegistry()\n"
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
@@ -873,8 +873,8 @@ public final class MultiTablePolymorphicEmitter {
             .addParameter(ENV, "env");
 
         builder.addStatement(
-            "$T name = $L.getTenantId(env) + $S + $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
-            String.class, ctx.graphitronContextCall(), "/", String.class, "/");
+            "$T name = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
+            String.class, String.class, "/");
         builder.addCode(
             "$T loader = env.getDataLoaderRegistry()\n"
             + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",

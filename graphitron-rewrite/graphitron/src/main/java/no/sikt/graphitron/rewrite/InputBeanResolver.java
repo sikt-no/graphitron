@@ -181,7 +181,8 @@ final class InputBeanResolver {
                 return new Result.Failed(f.rejection());
             }
             var ib = ((Built.Ok) built).bean();
-            newParams.add(new MethodRef.Param.Typed(p.name(), p.typeName(),
+            var typed = (MethodRef.Param.Typed) p;
+            newParams.add(new MethodRef.Param.Typed(typed.name(), typed.typeName(), typed.javaType(),
                 new ParamSource.Arg(ib, arg.path())));
         }
         return new Result.Ok(new MethodRef.Service(method.className(), method.methodName(),

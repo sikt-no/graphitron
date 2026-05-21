@@ -65,16 +65,7 @@ class SingleRecordPayloadDmlTest {
         return executeRaw(query, /*expectErrors=*/ false).data;
     }
 
-    private RawResult executeRaw(String query, boolean expectErrors) {
-        var context = new GraphitronContext() {
-            @Override public DSLContext getDslContext(DataFetchingEnvironment env) { return dsl; }
-            @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) { return null; }
-        };
-        var input = ExecutionInput.newExecutionInput()
-            .query(query)
-            .graphQLContext(builder -> builder.put(GraphitronContext.class, context))
-            .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
-            .build();
+    private RawResult executeRaw(String query, boolean expectErrors) {        var input = Graphitron.newExecutionInput(dsl).query(query).build();
         var result = graphql.execute(input);
         if (!expectErrors) {
             assertThat(result.getErrors()).as("graphql errors: " + result.getErrors()).isEmpty();

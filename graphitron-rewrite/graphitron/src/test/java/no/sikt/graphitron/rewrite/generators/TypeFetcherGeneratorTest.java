@@ -2040,8 +2040,7 @@ class TypeFetcherGeneratorTest {
             null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var fetcher = method(spec, "related").code().toString();
         assertThat(fetcher)
-            .as("DataLoader name uses tenant + path key, matching every batched fetcher in the codebase")
-            .contains("graphitronContext(env).getTenantId(env)")
+            .as("DataLoader name uses path-only key (R190 dropped the tenant prefix)")
             .contains("env.getExecutionStepInfo().getPath().getKeysOnly()");
         assertThat(fetcher)
             .as("Loader value type is List<Record> per parent")
@@ -2206,8 +2205,7 @@ class TypeFetcherGeneratorTest {
             null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "relatedConnection").code().toString();
         assertThat(body)
-            .as("DataLoader name: tenant-scoped path key")
-            .contains("graphitronContext(env).getTenantId(env)")
+            .as("DataLoader name: path-only key (R190 dropped the tenant prefix)")
             .contains("env.getExecutionStepInfo().getPath().getKeysOnly()");
         assertThat(body)
             .as("DataLoader<Row1<Timestamp>, ConnectionResult> registration")

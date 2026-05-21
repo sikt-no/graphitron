@@ -12,23 +12,26 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 class GraphitronContextInterfaceGeneratorTest {
 
     @Test
-    void generate_returnsExactlyOneType() {
+    void generate_returnsExactlyOneTopLevelType() {
+        // R190: the impl is nested inside the interface (same-compilation-unit permits), so
+        // only one top-level TypeSpec is emitted.
         assertThat(GraphitronContextInterfaceGenerator.generate()).hasSize(1);
     }
 
     @Test
-    void generatedType_isInterfaceNamedGraphitronContext() {
+    void generatedType_isSealedInterfaceNamedGraphitronContext() {
         TypeSpec spec = GraphitronContextInterfaceGenerator.generate().get(0);
         assertThat(spec.name()).isEqualTo("GraphitronContext");
         assertThat(spec.kind()).isEqualTo(TypeSpec.Kind.INTERFACE);
-        assertThat(spec.modifiers()).contains(Modifier.PUBLIC);
+        assertThat(spec.modifiers()).contains(Modifier.PUBLIC, Modifier.SEALED);
     }
 
     @Test
-    void generatedInterface_hasFourMethods() {
+    void generatedInterface_hasThreeMethods() {
         TypeSpec spec = GraphitronContextInterfaceGenerator.generate().get(0);
+        // R190: getTenantId is gone (R45 reintroduces it on top of the sealed surface).
         assertThat(spec.methodSpecs()).extracting(m -> m.name())
-            .containsExactlyInAnyOrder("getDslContext", "getContextArgument", "getTenantId", "getValidator");
+            .containsExactlyInAnyOrder("getDslContext", "getContextArgument", "getValidator");
     }
 
     @Test
@@ -40,13 +43,16 @@ class GraphitronContextInterfaceGeneratorTest {
     }
 
     @Test
-    void getDslContext_returnsDSLContextAndTakesEnv() {
+    void getDslContext_isDefaultReturningDSLContextAndTakesEnv() {
         var method = findMethod("getDslContext");
         assertThat(method.returnType().toString()).isEqualTo("org.jooq.DSLContext");
         assertThat(method.parameters()).hasSize(1);
         assertThat(method.parameters().get(0).type().toString())
             .isEqualTo("graphql.schema.DataFetchingEnvironment");
-        assertThat(method.modifiers()).contains(Modifier.ABSTRACT);
+        // R190: getDslContext is a default method now; the impl reads off the GraphQLContext.
+        assertThat(method.modifiers()).contains(Modifier.DEFAULT);
+        assertThat(method.code().toString())
+            .contains("env.getGraphQlContext().get(org.jooq.DSLContext.class)");
     }
 
     @Test
@@ -54,37 +60,45 @@ class GraphitronContextInterfaceGeneratorTest {
         var method = findMethod("getContextArgument");
         assertThat(method.returnType().toString()).isEqualTo("T");
         assertThat(method.typeVariables()).extracting(v -> v.name()).containsExactly("T");
-        assertThat(method.parameters()).extracting(p -> p.name()).containsExactly("env", "name");
+        // R190: the third parameter is the typed runtime guard Class<T> expectedType.
+        assertThat(method.parameters()).extracting(p -> p.name())
+            .containsExactly("env", "name", "expectedType");
+        assertThat(method.parameters().get(2).type().toString()).isEqualTo("java.lang.Class<T>");
     }
 
     @Test
-    void getContextArgument_hasDefaultImplementationReadingGraphQLContext() {
+    void getContextArgument_defaultBodyReadsGraphQLContextAndCastsToExpectedType() {
         var method = findMethod("getContextArgument");
         assertThat(method.modifiers()).contains(Modifier.DEFAULT).doesNotContain(Modifier.ABSTRACT);
-        assertThat(method.code().toString()).contains("env.getGraphQlContext().get(name)");
+        String body = method.code().toString();
+        assertThat(body)
+            .contains("env.getGraphQlContext().get(name)")
+            .contains("expectedType.cast")
+            .contains("call Graphitron.newExecutionInput(...) to populate it");
     }
 
-    /**
-     * Load-bearing: the {@code Graphitron.newExecutionInput(DSLContext)} lambda form
-     * {@code (GraphitronContext) env -> dsl} relies on this interface having exactly
-     * one abstract method. Adding another abstract method silently breaks the lambda
-     * form; any such change must update {@code GraphitronFacadeGenerator} in tandem.
-     */
     @Test
-    void generatedInterface_hasExactlyOneAbstractMethod() {
+    void generatedInterface_hasNoAbstractMethods() {
+        // R190: every method on the sealed interface is default; the sealed-interface + singleton
+        // impl shape replaces the legacy "one abstract method for the lambda overload" invariant.
         TypeSpec spec = GraphitronContextInterfaceGenerator.generate().get(0);
         var abstractMethods = spec.methodSpecs().stream()
             .filter(m -> m.modifiers().contains(Modifier.ABSTRACT))
             .toList();
-        assertThat(abstractMethods).hasSize(1);
+        assertThat(abstractMethods).isEmpty();
     }
 
     @Test
-    void getTenantId_hasDefaultImplementationReturningEmptyString() {
-        var method = findMethod("getTenantId");
-        assertThat(method.modifiers()).contains(Modifier.DEFAULT);
-        assertThat(method.returnType().toString()).isEqualTo("java.lang.String");
-        assertThat(method.code().toString()).contains("return \"\"");
+    void generatedInterface_nestsGraphitronContextImpl() {
+        // The sealed interface implicitly permits subclasses declared in the same compilation
+        // unit; nesting the impl gives us that without javapoet permits support.
+        TypeSpec spec = GraphitronContextInterfaceGenerator.generate().get(0);
+        var nested = spec.typeSpecs().stream()
+            .filter(t -> "GraphitronContextImpl".equals(t.name()))
+            .findFirst()
+            .orElseThrow();
+        assertThat(nested.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL);
+        assertThat(nested.fieldSpecs()).extracting(f -> f.name()).contains("INSTANCE");
     }
 
     private static no.sikt.graphitron.javapoet.MethodSpec findMethod(String name) {

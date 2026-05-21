@@ -19,7 +19,7 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.ENV;
  * {@link #build}. The five concrete fetcher shapes share the same outer dance:
  *
  * <ol>
- *   <li>resolve the path-scoped DataLoader name via {@code GraphitronContext.getTenantId} +
+ *   <li>resolve the path-scoped DataLoader name via
  *       {@code env.getExecutionStepInfo().getPath()}</li>
  *   <li>register / look up the typed {@code DataLoader<K, V>} on the registry, picking the
  *       factory ({@code newDataLoader} vs {@code newMappedDataLoader}) by
@@ -111,7 +111,7 @@ public final class DataLoaderFetcherEmitter {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(outerReturnType)
             .addParameter(ENV, "env")
-            .addCode(buildDataLoaderName(graphitronContextCall))
+            .addCode(buildDataLoaderName())
             .addCode(
                 "$T loader = env.getDataLoaderRegistry()\n" +
                 "    .computeIfAbsent(name, k -> $T.$L($L));\n",
@@ -130,10 +130,10 @@ public final class DataLoaderFetcherEmitter {
      * same DataLoader; aliased uses of the same field get distinct path segments and distinct
      * loaders.
      */
-    private static CodeBlock buildDataLoaderName(CodeBlock graphitronContextCall) {
+    private static CodeBlock buildDataLoaderName() {
         return CodeBlock.builder()
-            .addStatement("$T name = $L.getTenantId(env) + $S + $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
-                String.class, graphitronContextCall, "/", String.class, "/")
+            .addStatement("$T name = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
+                String.class, String.class, "/")
             .build();
     }
 

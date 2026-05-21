@@ -1,10 +1,12 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
 import org.junit.jupiter.api.Test;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
@@ -12,24 +14,28 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 @UnitTier
 class GraphitronFacadeGeneratorTest {
 
+    private static GraphitronSchema emptySchema() {
+        return new GraphitronSchema(Map.of(), Map.of());
+    }
+
     @Test
     void generate_returnsExactlyOneClassNamedGraphitron() {
-        List<TypeSpec> result = GraphitronFacadeGenerator.generate("com.example");
+        List<TypeSpec> result = GraphitronFacadeGenerator.generate(emptySchema(), "com.example");
         assertThat(result).hasSize(1);
         assertThat(result.get(0).name()).isEqualTo("Graphitron");
     }
 
     @Test
     void generatedClass_isPublicFinal() {
-        var spec = GraphitronFacadeGenerator.generate("com.example").get(0);
+        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example").get(0);
         assertThat(spec.modifiers()).contains(Modifier.PUBLIC, Modifier.FINAL);
     }
 
     @Test
-    void generatedClass_exposesBuildSchemaAndNewExecutionInputMethods() {
-        var spec = GraphitronFacadeGenerator.generate("com.example").get(0);
+    void generatedClass_exposesBuildSchemaAndOneNewExecutionInputMethod() {
+        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example").get(0);
         assertThat(spec.methodSpecs()).extracting(m -> m.name())
-            .containsExactly("buildSchema", "newExecutionInput", "newExecutionInput");
+            .containsExactly("buildSchema", "newExecutionInput");
     }
 
     @Test
@@ -67,39 +73,52 @@ class GraphitronFacadeGeneratorTest {
             .contains("UnaryOperator");
     }
 
-    // ===== newExecutionInput factories =====
+    // ===== newExecutionInput =====
 
     @Test
-    void newExecutionInput_hasGraphitronContextAndDSLContextOverloads() {
-        var newExecutionInputs = GraphitronFacadeGenerator.generate("com.example").get(0).methodSpecs().stream()
+    void newExecutionInput_emptySchemaCollapsesToSingleDslContextParameter() {
+        var newExecutionInput = GraphitronFacadeGenerator.generate(emptySchema(), "com.example").get(0).methodSpecs().stream()
             .filter(m -> m.name().equals("newExecutionInput"))
-            .toList();
-        assertThat(newExecutionInputs).hasSize(2);
-        var paramTypes = newExecutionInputs.stream()
-            .map(m -> m.parameters().get(0).type().toString())
-            .toList();
-        assertThat(paramTypes).containsExactlyInAnyOrder(
-            "com.example.schema.GraphitronContext",
-            "org.jooq.DSLContext");
+            .findFirst()
+            .orElseThrow();
+        assertThat(newExecutionInput.parameters()).hasSize(1);
+        assertThat(newExecutionInput.parameters().get(0).name()).isEqualTo("defaultDsl");
+        assertThat(newExecutionInput.parameters().get(0).type().toString()).isEqualTo("org.jooq.DSLContext");
     }
 
     @Test
-    void newExecutionInput_bothOverloadsReturnExecutionInputBuilder() {
-        var newExecutionInputs = GraphitronFacadeGenerator.generate("com.example").get(0).methodSpecs().stream()
+    void newExecutionInput_returnsExecutionInputBuilder() {
+        var newExecutionInput = GraphitronFacadeGenerator.generate(emptySchema(), "com.example").get(0).methodSpecs().stream()
             .filter(m -> m.name().equals("newExecutionInput"))
-            .toList();
-        assertThat(newExecutionInputs).hasSize(2);
-        for (var method : newExecutionInputs) {
-            assertThat(method.returnType().toString()).isEqualTo("graphql.ExecutionInput.Builder");
-            assertThat(method.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
-        }
+            .findFirst()
+            .orElseThrow();
+        assertThat(newExecutionInput.returnType().toString()).isEqualTo("graphql.ExecutionInput.Builder");
+        assertThat(newExecutionInput.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+    }
+
+    @Test
+    void newExecutionInput_bodyPutsDslContextAndSingletonImplOnGraphQLContext() {
+        var body = GraphitronFacadeGenerator.generate(emptySchema(), "com.example").get(0).methodSpecs().stream()
+            .filter(m -> m.name().equals("newExecutionInput"))
+            .findFirst()
+            .orElseThrow()
+            .code()
+            .toString();
+        // The body null-checks defaultDsl, populates the graphQLContext with the DSLContext.class
+        // key and the singleton GraphitronContextImpl under GraphitronContext.class, and attaches
+        // a fresh DataLoaderRegistry.
+        assertThat(body)
+            .contains("java.util.Objects.requireNonNull(defaultDsl")
+            .contains("b.put(org.jooq.DSLContext.class, defaultDsl)")
+            .contains("com.example.schema.GraphitronContext.GraphitronContextImpl.INSTANCE")
+            .contains("new org.dataloader.DataLoaderRegistry()");
     }
 
     // ===== federation overload =====
 
     @Test
     void nonFederation_exposesSingleBuildSchemaMethod() {
-        var spec = GraphitronFacadeGenerator.generate("com.example", false).get(0);
+        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", false).get(0);
         var buildSchemaCount = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("buildSchema"))
             .count();
@@ -108,7 +127,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void federation_exposesTwoBuildSchemaMethods() {
-        var spec = GraphitronFacadeGenerator.generate("com.example", true).get(0);
+        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true).get(0);
         var buildSchemaCount = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("buildSchema"))
             .count();
@@ -117,7 +136,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void federation_secondBuildSchemaMethod_hasFederationCustomizerParameter() {
-        var methods = GraphitronFacadeGenerator.generate("com.example", true).get(0).methodSpecs().stream()
+        var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true).get(0).methodSpecs().stream()
             .filter(m -> m.name().equals("buildSchema"))
             .toList();
         var twoArg = methods.get(1);
@@ -128,7 +147,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void federation_secondBuildSchemaMethod_delegatesToGraphitronSchemaBuildTwoArg() {
-        var methods = GraphitronFacadeGenerator.generate("com.example", true).get(0).methodSpecs().stream()
+        var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true).get(0).methodSpecs().stream()
             .filter(m -> m.name().equals("buildSchema"))
             .toList();
         var body = methods.get(1).code().toString();
@@ -137,7 +156,7 @@ class GraphitronFacadeGeneratorTest {
     }
 
     private static no.sikt.graphitron.javapoet.MethodSpec findFirstMethod(String name, boolean federation) {
-        return GraphitronFacadeGenerator.generate("com.example", federation).get(0).methodSpecs().stream()
+        return GraphitronFacadeGenerator.generate(emptySchema(), "com.example", federation).get(0).methodSpecs().stream()
             .filter(m -> m.name().equals(name))
             .findFirst()
             .orElseThrow();

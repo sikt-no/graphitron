@@ -215,7 +215,8 @@ final class EnumMappingResolver {
             if (textMapping == null) return p;
             String mapFieldName = fieldDef.getName().toUpperCase() + "_"
                 + arg.graphqlArgName().toUpperCase() + "_MAP";
-            return (MethodRef.Param) new MethodRef.Param.Typed(p.name(), p.typeName(),
+            var typed = (MethodRef.Param.Typed) p;
+            return (MethodRef.Param) new MethodRef.Param.Typed(typed.name(), typed.typeName(), typed.javaType(),
                 new ParamSource.Arg(new CallSiteExtraction.TextMapLookup(mapFieldName, textMapping),
                     arg.path()));
         }).toList();

@@ -35,7 +35,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * a minority resolve a name against a closed set and carry the lookup attempt
      * + candidates. Each sub-arm's accessors apply uniformly to that arm.
      */
-    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer {
+    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict {
 
         /**
          * The classifier resolved a name (column, table, FK, service method,
@@ -126,6 +126,46 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
             @Override public Rejection prefixedWith(String prefix) {
                 return new RecordBindingMultiProducer(prefix + sdlTypeName, bindings);
+            }
+        }
+
+        /**
+         * Two or more directive sites reference the same {@code contextArgument} name with
+         * mutually-incompatible Java types. R190's load-bearing classifier check
+         * ({@code context-argument.type-agreement}) walks every
+         * {@link MethodRef.Param.Typed} whose source is {@link ParamSource.Context}, keys by
+         * parameter name, and requires every site to declare the same structural
+         * {@link no.sikt.graphitron.javapoet.TypeName}. The factory emitter pastes that single
+         * type verbatim into the generated {@code Graphitron.newExecutionInput(...)} parameter
+         * list, and the call-site emitter pastes it as the {@code $T.class} literal at the
+         * {@code getContextArgument} call: any disagreement collapses the load-bearing guarantee.
+         *
+         * <p>Carries the contextArgument name plus the typed {@link ConflictSite} list (typed
+         * structured data, not prose) so downstream tooling switches on the arm rather than
+         * parsing prose. Producer site of the
+         * {@code context-argument.type-agreement} load-bearing classifier check.
+         */
+        record TypeConflict(String contextArgumentName, List<ConflictSite> sites)
+                implements AuthorError {
+            public TypeConflict {
+                sites = List.copyOf(sites);
+            }
+
+            @Override public String message() {
+                var sb = new StringBuilder()
+                    .append("contextArgument '").append(contextArgumentName)
+                    .append("' has disagreeing Java types across directive sites:");
+                for (ConflictSite cs : sites) {
+                    sb.append("\n  - ").append(cs.site().className()).append('.').append(cs.site().methodName())
+                      .append(" declared ").append(cs.declared().toString());
+                }
+                sb.append("\n  Resolve by aligning every directive site that references '")
+                  .append(contextArgumentName).append("' on a single Java type.");
+                return sb.toString();
+            }
+
+            @Override public Rejection prefixedWith(String prefix) {
+                return new TypeConflict(prefix + contextArgumentName, sites);
             }
         }
     }
@@ -322,6 +362,15 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      */
     static Rejection accessorMismatch(String reason) {
         return new AuthorError.AccessorMismatch(reason);
+    }
+
+    /**
+     * {@link AuthorError.TypeConflict} factory. Produced by the cross-site
+     * {@code contextArgument} type-agreement classifier when two or more directive sites
+     * reference the same name with mutually-incompatible Java types.
+     */
+    static Rejection contextArgumentTypeConflict(String name, List<ConflictSite> sites) {
+        return new AuthorError.TypeConflict(name, sites);
     }
 
     /** {@link InvalidSchema.Structural} factory; the majority shape. */

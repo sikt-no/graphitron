@@ -126,29 +126,25 @@ public class QueryNodeFetcherClassGenerator {
         var mapStrListInt   = ParameterizedTypeName.get(MAP, STRING_CLASS, listOfInteger);
         var mapStrListStr   = ParameterizedTypeName.get(MAP, STRING_CLASS, listOfString);
 
-        // Per-id fan-out into tenant-scoped DataLoaders. The loader name is built per id from
-        // a per-id DFE (arguments rebound to {id: <thisId>}) so getTenantId resolves against
-        // the individual id rather than the outer ids[]. Ids that resolve to the same tenant
-        // share a loader and batch into one hasIds query; ids from different tenants land in
-        // separate loaders. This also makes batchEnv.getKeyContextsList().get(0) safe inside
-        // the batch lambda: every key in a given loader shares a tenant by construction.
+        // Per-id fan-out into per-path DataLoaders. The loader name is the path expression
+        // computed from the per-id DFE's execution-step-info; each id gets a per-id DFE so the
+        // dispatched alternative sees arguments rebound to {id: <thisId>}. Ids that share the
+        // same path land in one loader and batch into one hasIds query.
         //
         // Assumes the DataLoaderRegistry is request-scoped (the standard graphql-java pattern,
         // one registry per ExecutionInput). A registry shared across requests would let loaders
         // and their first-key contexts survive between calls — that's an app-level misconfig,
-        // not a generator concern, but it would break the tenant-scoping invariant.
+        // not a generator concern.
         var dispatchNodes = MethodSpec.methodBuilder(DISPATCH_NODES_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(cfListRecord)
             .addParameter(ENV, "env")
-            .addJavadoc("Dispatches a Relay {@code Query.nodes(ids:)} call via per-tenant DataLoaders\n"
-                + "keyed by {@code getTenantId(idEnv) + path}, where {@code idEnv} is a per-id DFE.\n"
-                + "Ids resolving to the same tenant share a loader and batch into a single\n"
-                + "{@link #rowsNodes} call, which synthesises representations and dispatches\n"
-                + "through {@code EntityFetcherDispatch.resolveByReps} (one SELECT per\n"
-                + "{@code (type, alternative, tenantId)} group via the shared dispatcher).\n"
-                + "Ids from different tenants get separate loaders. Returns {@code null}\n"
-                + "entries for null/garbage/unknown IDs (Relay spec).\n")
+            .addJavadoc("Dispatches a Relay {@code Query.nodes(ids:)} call via per-path DataLoaders\n"
+                + "keyed by {@code path} (computed from the per-id DFE's execution-step-info).\n"
+                + "Ids batch into a single {@link #rowsNodes} call, which synthesises\n"
+                + "representations and dispatches through {@code EntityFetcherDispatch.resolveByReps}\n"
+                + "(one SELECT per {@code (type, alternative)} group via the shared dispatcher).\n"
+                + "Returns {@code null} entries for null/garbage/unknown IDs (Relay spec).\n")
             .addStatement("$T ids = env.getArgument($S)", listOfString, "ids")
             .addStatement("if (ids == null || ids.isEmpty()) return $T.completedFuture($T.of())", COMPLETABLE_FUTURE, LIST)
             .addStatement("$T path = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
@@ -158,8 +154,7 @@ public class QueryNodeFetcherClassGenerator {
             .addCode("        if (id == null) return $T.completedFuture(($T) null);\n", COMPLETABLE_FUTURE, RECORD)
             .addCode("        $T idEnv = $T.newDataFetchingEnvironment(env).arguments($T.of($S, id)).build();\n",
                 ENV, ENV_IMPL, MAP, "id")
-            .addCode("        $T name = graphitronContext(idEnv).getTenantId(idEnv) + $S + path;\n",
-                String.class, "/")
+            .addCode("        $T name = path;\n", String.class)
             .addCode("        $T loader = idEnv.getDataLoaderRegistry().computeIfAbsent(name, k ->\n", loaderType)
             .addCode("            $T.newDataLoader(($T keys, $T batchEnv) -> {\n",
                 DATA_LOADER_FACTORY, listOfString, BATCH_LOADER_ENV)

@@ -160,8 +160,8 @@ final class ConditionResolver {
     ConditionFilter rewrapForNested(ConditionFilter src, String outerArgName, List<String> leafPath) {
         var rewritten = new ArrayList<MethodRef.Param>();
         for (var p : src.params()) {
-            if (p.source() instanceof ParamSource.Arg arg) {
-                rewritten.add(new MethodRef.Param.Typed(p.name(), p.typeName(),
+            if (p instanceof MethodRef.Param.Typed typed && p.source() instanceof ParamSource.Arg arg) {
+                rewritten.add(new MethodRef.Param.Typed(typed.name(), typed.typeName(), typed.javaType(),
                     new ParamSource.Arg(new CallSiteExtraction.NestedInputField(outerArgName, leafPath),
                         arg.path())));
             } else {

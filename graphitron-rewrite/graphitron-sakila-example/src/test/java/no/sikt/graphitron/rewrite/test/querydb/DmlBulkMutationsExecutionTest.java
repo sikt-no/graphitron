@@ -81,16 +81,7 @@ class DmlBulkMutationsExecutionTest {
 
     private graphql.ExecutionResult executeRaw(String query) { return run(query); }
 
-    private graphql.ExecutionResult run(String query) {
-        var context = new GraphitronContext() {
-            @Override public DSLContext getDslContext(DataFetchingEnvironment env) { return dsl; }
-            @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) { return null; }
-        };
-        var input = ExecutionInput.newExecutionInput()
-            .query(query)
-            .graphQLContext(builder -> builder.put(GraphitronContext.class, context))
-            .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
-            .build();
+    private graphql.ExecutionResult run(String query) {        var input = Graphitron.newExecutionInput(dsl).query(query).build();
         return graphql.execute(input);
     }
 

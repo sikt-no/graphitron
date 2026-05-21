@@ -4534,12 +4534,9 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits the DataLoader name construction for the rewrite emitter. The name is built from
-     * {@code GraphitronContext.getTenantId(env)} + {@code "/"} +
-     * {@code env.getExecutionStepInfo().getPath().getKeysOnly()} joined by {@code "/"} —
-     * tenant-scoped and path-unique. The path is Graphitron-controlled; only the tenant prefix
-     * is pluggable via {@code GraphitronContext#getTenantId} (emitted per app), so implementers
-     * cannot accidentally produce a colliding name.
+     * Emits the DataLoader name construction for the rewrite emitter. The name is path-only —
+     * {@code env.getExecutionStepInfo().getPath().getKeysOnly()} joined by {@code "/"}. The path
+     * is Graphitron-controlled; implementers cannot accidentally produce a colliding name.
      *
      * <p>{@code ResultPath.getKeysOnly()} returns named segments only (list indices stripped),
      * so {@code /films/0/actors} and {@code /films/1/actors} map to the same
@@ -4550,8 +4547,8 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock buildDataLoaderName(TypeFetcherEmissionContext ctx) {
         return CodeBlock.builder()
-            .addStatement("$T name = $L.getTenantId(env) + $S + $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
-                String.class, ctx.graphitronContextCall(), "/", String.class, "/")
+            .addStatement("$T name = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
+                String.class, String.class, "/")
             .build();
     }
 
