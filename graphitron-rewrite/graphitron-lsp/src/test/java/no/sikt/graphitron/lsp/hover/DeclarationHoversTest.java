@@ -37,7 +37,7 @@ class DeclarationHoversTest {
 
         var md = hover.getContents().getRight().getValue();
         assertThat(md)
-            .contains("**table type**")
+            .contains("**TypeClassification.Table**")
             .contains("Table: `film`");
     }
 
@@ -58,7 +58,7 @@ class DeclarationHoversTest {
 
         var md = hover.getContents().getRight().getValue();
         assertThat(md)
-            .contains("**column**")
+            .contains("**FieldClassification.Column**")
             .contains("`Film.title`")
             .contains("Column `title` on `film`");
     }
@@ -120,7 +120,7 @@ class DeclarationHoversTest {
         var hover = DeclarationHovers.compute(file, snapshot, pos).orElseThrow();
         var md = hover.getContents().getRight().getValue();
         assertThat(md)
-            .contains("**insert mutation**")
+            .contains("**FieldClassification.DmlMutation**")
             .contains("Kind: INSERT")
             .contains("Table: `actor`")
             .contains("Input type: `ActorInput`")

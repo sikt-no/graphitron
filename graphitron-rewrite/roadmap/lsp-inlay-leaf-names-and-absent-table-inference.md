@@ -1,7 +1,7 @@
 ---
 id: R217
 title: LSP inlay classification labels surface model leaf names; inferred-@table renders on declarations when directive is absent
-status: Ready
+status: In Review
 bucket: lsp
 priority: 3
 theme: lsp

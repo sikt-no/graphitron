@@ -66,7 +66,9 @@ public final class InlayHints {
         key = "type-classification-payload-faithful",
         reliesOn = "Reads tableName off TypeClassification.Table / Node / TableInterface / TableInput "
             + "projection records without dispatching back on the generator-side permit. The "
-            + "inferred-directive arm renders the resolved @table name from this projection."
+            + "inferred-directive arm renders the resolved @table name from this projection; "
+            + "R217's absent-directive arm reads the same tableName() off the same projection "
+            + "records when the SDL type carries no @table directive at all."
     )
     public static List<InlayHint> compute(
         InlayHintConfig config, WorkspaceFile file, LspSchemaSnapshot snapshot, Range visibleRange
@@ -156,6 +158,79 @@ public final class InlayHints {
                 default -> { /* future inference rule landed in InferredDirectiveArgs without a renderer */ }
             }
         }
+        collectAbsentDirectiveHints(out, file, built, root, visibleRange);
+    }
+
+    // ===== Absent-directive arm (R217) =====
+
+    /**
+     * Second pass for entries flagged {@link InferredDirectiveArgs.Entry#renderWhenAbsent()}.
+     * Walks type-definition nodes (parallel to the classification arm) and, for each
+     * absent-eligible entry, emits a synthetic full-directive hint when the type carries
+     * no directive of that name and its classification is in the entry's eligibility set.
+     */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "type-classification-payload-faithful",
+        reliesOn = "Reads tableName off TypeClassification.Table / Node / TableInterface / TableInput "
+            + "to render @table(name: \"...\") when the SDL type omits the directive entirely."
+    )
+    private static void collectAbsentDirectiveHints(
+        List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
+        Node root, Range visibleRange
+    ) {
+        boolean anyAbsentEligible = false;
+        for (var entry : InferredDirectiveArgs.ENTRIES) {
+            if (entry.renderWhenAbsent()) { anyAbsentEligible = true; break; }
+        }
+        if (!anyAbsentEligible) return;
+        walkTypeDefinitions(root, typeDef -> {
+            if (!intersects(typeDef, visibleRange)) return;
+            String typeName = TypeContext.declaredNameOf(typeDef, file.source()).orElse(null);
+            if (typeName == null) return;
+            var classification = built.typeClassificationsByName().get(typeName);
+            if (classification == null) return;
+            Node nameNode = childOfKind(typeDef, "name");
+            if (nameNode == null) return;
+            for (var entry : InferredDirectiveArgs.ENTRIES) {
+                if (!entry.renderWhenAbsent()) continue;
+                if (typeCarriesDirective(typeDef, entry.directiveName(), file.source())) continue;
+                String rendered = renderAbsentEntry(entry, classification);
+                if (rendered == null) continue;
+                out.add(makeHint(file, nameNode, rendered, InlayHintKind.Type));
+            }
+        });
+    }
+
+    /**
+     * Per-entry absent-arm renderer: returns the full {@code @directive(arg: "...")} string
+     * when {@code classification} is in this entry's eligibility set, or {@code null} when
+     * the entry does not apply to this classification. Only {@code @table} renders today
+     * (see R217's judgement calls); a future addition lives here.
+     */
+    private static String renderAbsentEntry(
+        InferredDirectiveArgs.Entry entry, TypeClassification classification
+    ) {
+        return switch (entry.directiveName()) {
+            case "table" -> {
+                String tableName = tableNameOf(classification);
+                yield tableName == null
+                    ? null
+                    : "@" + entry.directiveName() + "(" + entry.argName() + ": \"" + tableName + "\")";
+            }
+            default -> null;
+        };
+    }
+
+    private static boolean typeCarriesDirective(Node typeDef, String directiveName, byte[] source) {
+        Node directives = childOfKind(typeDef, "directives");
+        if (directives == null) return false;
+        for (int i = 0; i < directives.getChildCount(); i++) {
+            Node child = directives.getChild(i).orElse(null);
+            if (child == null || !"directive".equals(child.getType())) continue;
+            Node nameNode = childOfKind(child, "name");
+            if (nameNode != null && directiveName.equals(Nodes.text(nameNode, source))) return true;
+        }
+        return false;
     }
 
     private static void renderInferredTableNameHint(
