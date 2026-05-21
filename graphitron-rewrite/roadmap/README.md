@@ -27,8 +27,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R205` | Plain-input filter fields drop resolved-column implicit predicates and Unresolved diagnostics | Spec | 2026-05-21 | [plan](condition-on-plain-input-field-silent-drop.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
+| `R205` | Plain-input filter fields drop resolved-column implicit predicates and Unresolved diagnostics | Ready | 2026-05-21 | [plan](condition-on-plain-input-field-silent-drop.md) |
 | `R206` | Synthesised connection/edge types carry carrier-field source location | Ready | 2026-05-21 | [plan](synthesised-type-source-location-provenance.md) |
 | `R203` | Publish graphitron-tree-sitter-natives jar; retire vendored C build in graphitron-lsp | In Progress | 2026-05-21 <sub>created 2026-05-20</sub> | [plan](publish-tree-sitter-natives-jar.md) |
 
