@@ -43,6 +43,15 @@ class TestConditionStub {
     }
 
     /**
+     * R190 fixture: {@code @condition} method whose {@code tenantId} parameter is declared as
+     * {@link Long} instead of {@link String}. Pairs with {@link #argConditionWithContext} to force
+     * a cross-site type-agreement conflict in {@link ContextArgumentClassifier} tests.
+     */
+    public static Condition argConditionTenantIdLong(org.jooq.Table<?> table, String cityNames, Long tenantId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Input-field-level {@code @condition} method — receives the target table plus the SDL input
      * field value. Used on {@code filmId} input fields in Phase 4 tests.
      */
