@@ -391,9 +391,16 @@ final class EnumMappingResolver {
                     groups.add(new InputColumnBindingGroup.DecodedRecordGroup(
                         sdlField.getName(), ccrf.extraction(), recordBindings));
                 }
-                case null, default -> {
-                    // Nesting and unresolved carriers are not admissible binding shapes; the
-                    // caller's structural walk surfaces them as rejections.
+                case InputField.NestingField ignored -> {
+                    // Nesting carriers are not admissible binding shapes here; the caller's
+                    // structural walk surfaces them as rejections.
+                }
+                case InputField.ConditionOnlyField ignored -> {
+                    // R209: condition-only carrier has no column binding; not enum-mappable.
+                }
+                case null -> {
+                    // SDL field declared but the input type didn't classify it (Unresolved
+                    // upstream); structural walk surfaces it as a rejection.
                 }
             }
         }

@@ -4134,6 +4134,31 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
+     * R209 boundary test: the override flag is the gate. {@code @condition(override: false)}
+     * (or default) on a plain-input field with no matching column still rejects under R205's
+     * Path B; this test pins the R205↔R209 behaviour boundary by name so a future contributor
+     * cannot quietly relax the override:false case alongside override:true.
+     */
+    @Test
+    void plainInput_overrideFalseWithoutMatchingColumn_stillRejectsAsUnclassifiedField() {
+        var schema = build("""
+            input PlainFilter {
+              sakskode: String
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "sakskodeCondition"})
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: PlainFilter): [Film!]! }
+            """);
+        // override:false (default) means the implicit predicate is still expected to fire
+        // alongside the explicit method; without a resolvable column there is no implicit
+        // predicate to emit, so this is a real build error — same as the bare-unresolved case.
+        var uf = (UnclassifiedField) schema.field("Query", "films");
+        assertThat(uf.rejection()).isInstanceOf(Rejection.AuthorError.UnknownName.class);
+        var un = (Rejection.AuthorError.UnknownName) uf.rejection();
+        assertThat(un.attempt()).isEqualTo("sakskode");
+    }
+
+    /**
      * R209: {@code @condition(override: true)} with a broken condition method still rejects;
      * the override flag only relaxes the column-resolution requirement, not the condition
      * reflection requirement.

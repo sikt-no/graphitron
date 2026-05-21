@@ -38,6 +38,18 @@ R205 build error:
 
 The `sakskode` field has no `@field(name:)` and `sak` has no `sakskode` column. With `override: true`, the `harSakskode` method owns the predicate entirely; codegen should not require column resolution.
 
+## Design alternatives considered
+
+Three shapes were on the table:
+
+1. **`InputField.ConditionOnlyField` permit (chosen).** New sealed leaf on `InputField`; the carrier holds the `ArgConditionRef` and no column data. Pros: walking pattern stays uniform — `walkInputFieldConditions` sees a single `List<InputField>` and dispatches in one switch. Adding the variant is type-system-enforced everywhere `InputField` is consumed (javac fails until every exhaustive switch carries an explicit arm). Cons: six exhaustive switches grow an arm each, four of which do almost nothing (no column to project, no body-param to walk, no enum binding, no fetcher to emit). The variant itself is data-poor — just an `ArgConditionRef` slot — relative to the other `InputField` permits.
+
+2. **`InputFieldResolution.ConditionOnly(ArgConditionRef)` arm.** Third arm on the resolution sealed (siblings: `Resolved | Unresolved`). The classifier returns `ConditionOnly` directly; `InputFieldResolver` / `TypeBuilder.buildTableInputType` route condition-only contributions into a separate channel (a `conditionOnly: List<ArgConditionRef>` slot on `PlainInputArg` / `TableInputArg`, or a direct injection into the `WhereFilter` list at projection time). Pros: structurally honest — the data shape ("no column binding, just a method") is expressed at the resolution boundary where the decision is made, not at the carrier boundary. Removes four no-op switch arms (catalog projection, validator, fetcher, LSP labels). Cons: pushes plumbing into `ArgumentRef.PlainInputArg`/`TableInputArg` (parallel lists); two walking shapes (column carriers + condition-only contributions) instead of one.
+
+3. **Nullable `ColumnField.column`** *(rejected).* Breaks the column-non-null invariant downstream emitters rely on (mutation INSERT column-list dispatch, catalog projection, codegen `cf.column().javaName()`). Pushes the "no column" check into every consumer that touches `column()` rather than concentrating it at the classifier boundary.
+
+The chosen shape (1) optimizes for type-system enforcement at consumer sites at the cost of a data-poor variant; shape (2) optimizes for data shape at the cost of parallel-list plumbing. Shape (1) wins on incremental change cost (one new permit, six explicit arms vs. an `ArgumentRef` shape revision) and on uniform walking — but reviewers may reasonably prefer (2) for principled cleanliness if the carrier-tier vs. resolution-tier distinction is load-bearing for downstream items.
+
 ## Direction
 
 Add a new sealed permit on `InputField`:
