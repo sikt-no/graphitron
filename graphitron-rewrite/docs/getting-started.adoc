@@ -388,54 +388,61 @@ flowchart TD
 `mvn graphitron:dev` runs an LSP server backed by a tree-sitter-based GraphQL
 parser. The grammar binary itself ships with graphitron-lsp via the
 `no.sikt:graphitron-tree-sitter-natives` jar, but the tree-sitter runtime
-(`libtree-sitter`) is sourced from the consumer's OS. The runtime needs to be
-both *installed* and *on the JVM's dynamic library search path*; the second
-half varies by platform because every modern package manager installs into a
-prefix that is not on the default loader path.
+(`libtree-sitter`) is sourced from the consumer's OS.
 
 Required version: `libtree-sitter` `0.25.0` or later (jtreesitter 0.26's
 minimum ABI). Anything older — including Debian/Ubuntu apt's `libtree-sitter0`
 package, which is still pinned to `0.20.x` — fails with
 `Symbol not found: ts_language_abi_version` at LSP startup.
 
+graphitron-lsp probes well-known install prefixes at LSP startup (Apple-silicon
+Homebrew's `/opt/homebrew/lib`, Intel Homebrew's `/usr/local/lib`, vcpkg's
+`<VCPKG_ROOT>/installed/x64-windows/bin` and the default `C:\vcpkg\...` layout,
+and Linux `/usr/local/lib`) and composes a system-installed `libtree-sitter`
+into jtreesitter's SPI lookup if it finds one. The intent: a `brew install
+tree-sitter` on macOS or `vcpkg install tree-sitter:x64-windows` on Windows
+should just work, no env-var wiring needed. The table below covers each
+supported install path plus the fallbacks for non-default layouts where the
+probe can't find the library.
+
 [cols="1,3"]
 |===
 | Platform | Install + library-discovery
 
-| macOS (Apple silicon, Homebrew)
-| `brew install tree-sitter`, then set
-`JAVA_TOOL_OPTIONS="-Djava.library.path=/opt/homebrew/lib"` in your shell rc.
-Apple-silicon's `/opt/homebrew/lib` is not on dyld's default search path, and
-SIP strips `DYLD_LIBRARY_PATH` from the system `java` launcher, so
-`JAVA_TOOL_OPTIONS` is the only env-var path that reliably reaches the
-forked surefire JVM. The flag is picked up by jtreesitter's
-`SymbolLookup.loaderLookup` branch.
-
-| macOS (Intel, Homebrew)
-| `brew install tree-sitter`. `/usr/local/lib` is in dyld's default path; no env-var wiring needed.
+| macOS (Apple silicon or Intel, Homebrew)
+| `brew install tree-sitter`. graphitron-lsp probes `/opt/homebrew/lib` and
+`/usr/local/lib` automatically, so no env-var wiring is needed if Homebrew
+installed to its standard location.
 
 | Windows (vcpkg)
-| `vcpkg install tree-sitter:x64-windows`, then add `$VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin` to `PATH` so the JVM picks up `tree-sitter.dll`.
+| `vcpkg install tree-sitter:x64-windows`. graphitron-lsp picks up the DLL
+from `$VCPKG_ROOT/installed/x64-windows/bin/tree-sitter.dll` (or the legacy
+`$VCPKG_INSTALLATION_ROOT` variable, or the default `C:\vcpkg\...` layout)
+automatically. If vcpkg's `bin` directory is on `PATH`, that also works
+through jtreesitter's normal loader chain.
 
 | NixOS
 | Add `tree-sitter` to your shell inputs and either export
 `LD_LIBRARY_PATH=$\{pkgs.tree-sitter\}/lib` from a `shellHook` or set
 `JAVA_TOOL_OPTIONS="-Djava.library.path=$\{pkgs.tree-sitter\}/lib"`; see
-<<nixos-shell-nix,NixOS shell.nix>> below. Nixpkgs `tree-sitter` is
-`0.25.x` (within jtreesitter 0.26's compat window).
+<<nixos-shell-nix,NixOS shell.nix>> below. Nix-store paths are content-hashed
+so probing isn't tractable; the shellHook is the standard NixOS pattern.
+Nixpkgs `tree-sitter` is `0.25.x` (within jtreesitter 0.26's compat window).
 
 | Linux (Arch, Fedora)
 | `pacman -S tree-sitter` / `dnf install tree-sitter`. Both ship `0.26.x` and install into the system loader path; no env-var wiring needed.
 
 | Linux (Debian/Ubuntu)
-| **apt's `libtree-sitter0` is pinned to `0.20.x`, which is too old.** Build from source: `git clone --depth=1 --branch=v0.26.9 https://github.com/tree-sitter/tree-sitter /tmp/ts && make -C /tmp/ts && sudo make -C /tmp/ts install && sudo ldconfig`. `/usr/local/lib` ends up on `ldconfig`'s cache, so no `JAVA_TOOL_OPTIONS` wiring needed.
-|===
+| **apt's `libtree-sitter0` is pinned to `0.20.x`, which is too old.** Build from source: `git clone --depth=1 --branch=v0.26.9 https://github.com/tree-sitter/tree-sitter /tmp/ts && make -C /tmp/ts && sudo make -C /tmp/ts install && sudo ldconfig`. `/usr/local/lib` is both on `ldconfig`'s cache and on graphitron-lsp's probe list; no `JAVA_TOOL_OPTIONS` wiring needed.
 
-`JAVA_TOOL_OPTIONS` is the most robust env-var-only approach across platforms
-because the JVM reads it at startup and applies the flags before any
-native-lookup work runs. Unlike `DYLD_LIBRARY_PATH` it doesn't trip macOS's
-SIP stripping, and unlike `-DargLine=...` it doesn't depend on the pom's
-surefire `<argLine>` doing `${argLine}` expansion.
+| Non-default install location (any platform)
+| If you installed `libtree-sitter` somewhere the probe doesn't cover, set
+`JAVA_TOOL_OPTIONS="-Djava.library.path=/your/lib/dir"` in your shell rc.
+This is the most robust env-var-only escape hatch across platforms because
+the JVM reads it at startup before any native-lookup work runs — unlike
+`DYLD_LIBRARY_PATH` it doesn't trip macOS's SIP stripping, and unlike
+`LD_LIBRARY_PATH` it survives `sudo` boundaries.
+|===
 
 If the runtime is missing when the LSP starts, graphitron-lsp surfaces a
 startup error naming the install command rather than an opaque
