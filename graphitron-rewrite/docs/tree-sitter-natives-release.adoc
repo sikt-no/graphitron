@@ -18,10 +18,15 @@ under `lib/<os>-<arch>/`:
 
 | `linux-x86_64`   | `lib/linux-x86_64/libtree-sitter-graphql.so`
 | `linux-aarch64`  | `lib/linux-aarch64/libtree-sitter-graphql.so`
-| `macos-x86_64`   | `lib/macos-x86_64/libtree-sitter-graphql.dylib`
 | `macos-aarch64`  | `lib/macos-aarch64/libtree-sitter-graphql.dylib`
 | `windows-x86_64` | `lib/windows-x86_64/tree-sitter-graphql.dll`
 |===
+
+macOS is Apple-silicon-only. Sikt graphitron-lsp developers all run M1
+or newer, the macos-13 (Intel) GitHub-hosted runner is the slowest queue
+on the platform, and graphitron-lsp is internal-only per the spec's
+"Out of scope" list. Adding `macos-x86_64` back means re-enabling that
+matrix entry and bumping the jar-layout assertion expectations.
 
 Each binary is the vendored bkegley tree-sitter-graphql grammar (commit
 `5e66e96`) compiled against the upstream tree-sitter parser ABI (currently
@@ -89,19 +94,19 @@ Three steps, the second being the GitHub Actions trigger.
 . *Watch the three stages.* The workflow only deploys if every stage
   succeeds:
 +
-.. *Build matrix* (five native runners). Each runner downloads the pinned
+.. *Build matrix* (four native runners). Each runner downloads the pinned
    `tree-sitter` CLI, runs `tree-sitter build` against the vendored
    grammar, then asserts the produced binary exports
    `tree_sitter_graphql`. Symbol-table check uses `nm -gU` on POSIX and
    `dumpbin /exports` on Windows. The artifact is uploaded as
    `native-<platform>`.
-.. *Package + deploy* (ubuntu-latest). Downloads all five binary artifacts,
+.. *Package + deploy* (ubuntu-latest). Downloads all four binary artifacts,
    stages them under `target/classes/lib/<os>-<arch>/`, runs
-   `mvn package`, and asserts the produced jar contains exactly the five
+   `mvn package`, and asserts the produced jar contains exactly the four
    `lib/<os>-<arch>/...` entries and no others. Then `mvn deploy` signs
    with GPG and publishes via `central-publishing-maven-plugin` with
    `autoPublish=true`.
-.. *Post-deploy load+parse matrix* (five native runners). After deploy
+.. *Post-deploy load+parse matrix* (four native runners). After deploy
    succeeds, each runner installs `libtree-sitter` from the OS package
    manager (`apt install libtree-sitter0` on Linux, `brew install
    tree-sitter` on macOS, `vcpkg install tree-sitter:x64-windows` on
@@ -137,11 +142,11 @@ Three design choices worth knowing about for anyone maintaining this:
 
 . *No CI build per PR.* The binaries don't change per PR (they're a
   published artifact, not a per-build output), so expanding
-  `.github/workflows/rewrite-build.yml` to a five-platform matrix would
+  `.github/workflows/rewrite-build.yml` to a four-platform matrix would
   mostly re-verify a stable input. Instead, the verification matrix lives
   in this workflow and runs against the actual published artifact at
   release time. In normal CI, only the `linux-x86_64` arm of
-  `NativeLibraryBundleTest` executes per PR (the four others are gated
+  `NativeLibraryBundleTest` executes per PR (the three others are gated
   by `@EnabledOnOs` to their respective hosts and run on this workflow's
   post-deploy matrix).
 
@@ -155,7 +160,7 @@ Three design choices worth knowing about for anyone maintaining this:
 
 == Where the binaries live before deploy
 
-Not committed. The five binaries are produced fresh on five native
+Not committed. The four binaries are produced fresh on four native
 runners per release and merged into the jar during the package+deploy
 stage. The vendored grammar sources under
 `graphitron-rewrite/graphitron-tree-sitter-natives/src/main/native/grammars/graphql/`
