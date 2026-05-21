@@ -24,7 +24,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
-| `R214` | Column-binding requirement captured at classification, not derived at usage | Spec | 2026-05-21 | [plan](column-binding-at-classification-not-usage.md) |
+| `R215` | Column-binding requirement captured at classification, not derived at usage | Spec | 2026-05-21 | [plan](column-binding-at-classification-not-usage.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
@@ -234,7 +234,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R211` [**@condition(override:true) build failure surfaces misleading no-column-found message**](condition-override-true-misleading-column-miss-message.md)
 - `R207` [**Audit design-doc claims for implementation conformance**](design-doc-implementation-conformance-audit.md)
 - `R180` [**Centralize ResultType column-read emission for @record parents**](record-parent-column-read-helper.md)
-- `R214` [**Column-binding requirement captured at classification, not derived at usage**](column-binding-at-classification-not-usage.md)
+- `R215` [**Column-binding requirement captured at classification, not derived at usage**](column-binding-at-classification-not-usage.md)
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
 - `R209` [**FieldRegistry classify-input trace loses typed Rejection payload**](field-registry-typed-rejection-trace.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
