@@ -756,6 +756,36 @@ class ServiceCatalogTest {
     }
 
     @Test
+    void reflectServiceMethod_arityUnique_listParamMatchingNestedListField_yieldsAsAmbiguous() {
+        // R214 floor (round-2 finding): the arity-unique branch must also check for
+        // reachable nested matches of the parameter's Java type, not only the type-unique
+        // branch. Here a single List<Integer> parameter sits against a single named input
+        // object slot whose nested [Int!]! field maps to the same Java type. Without the
+        // guard, arity-unique would silently bind the list to the wrapper; with the guard,
+        // inference yields and the existing unambiguousReachablePath suggestion surfaces
+        // the dot-path alternative.
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("IdsHolder")
+            .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("values")
+                .type(graphql.schema.GraphQLList.list(
+                    graphql.schema.GraphQLNonNull.nonNull(graphql.Scalars.GraphQLInt)))
+                .build())
+            .build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+        var argByJavaName = bindings(Map.of("input", "input"));
+
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "requestByIds", argByJavaName, Set.of(), List.of(), null, slot);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("parameter 'requestedIds'")
+            .contains("argMapping: \"requestedIds: input.values\"");
+    }
+
+    @Test
     void reflectServiceMethod_typeUnique_topLevelPlusNestedReachable_yieldsAsAmbiguous() {
         // R214 ambiguity floor: when a top-level slot and a reachable nested field both map
         // to the unbound parameter's Java type, there are two possible mappings — the user's

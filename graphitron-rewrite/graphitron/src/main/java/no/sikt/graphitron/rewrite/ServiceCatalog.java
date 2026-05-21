@@ -1114,19 +1114,24 @@ class ServiceCatalog {
 
         // Arity-unique branch: one unbound parameter, one unclaimed slot. Bind positionally
         // when the slot's GraphQL type has no canonical Java scalar mapping (named input
-        // object, enum) AND the parameter's Java type is not a canonical scalar — that's the
-        // input-bean case the unambiguousReachablePath hint can't disambiguate. When the slot
-        // does have a canonical mapping, fall through to the type-unique branch so a real
-        // type mismatch surfaces the existing diagnostic; when the parameter is a canonical
-        // scalar against a non-scalar slot, defer to the unambiguousReachablePath dot-path
-        // suggestion which captures the developer's likely intent (a nested field pull).
+        // object, enum) AND the parameter's Java type is not a canonical scalar AND no
+        // reachable nested field of the parameter's Java type exists inside the slot — that
+        // covers the input-bean case the unambiguousReachablePath hint can't disambiguate.
+        // When the slot does have a canonical mapping, fall through to the type-unique
+        // branch so a real type mismatch surfaces the existing diagnostic; when the
+        // parameter is a canonical scalar against a non-scalar slot or there is a competing
+        // nested-reachable field of the parameter's type, defer to the
+        // unambiguousReachablePath dot-path suggestion which captures the developer's likely
+        // intent (a nested field pull).
         if (unboundParams.size() == 1 && unclaimedSlotNames.size() == 1) {
             String slotName = unclaimedSlotNames.get(0);
             String slotJavaType = mapToJavaTypeName(slotTypes.get(slotName));
             String paramType = unboundParams.get(0).getParameterizedType().getTypeName();
             boolean slotIsNamedInputOrEnum = slotJavaType == null;
             boolean paramIsScalarJavaType = isClassifiedScalarJavaTypeName(paramType);
-            if (slotIsNamedInputOrEnum && !paramIsScalarJavaType) {
+            if (slotIsNamedInputOrEnum
+                    && !paramIsScalarJavaType
+                    && !anyReachableNestedMatch(paramType, unclaimedSlotNames, slotTypes)) {
                 augmented.put(unboundParams.get(0).getName(), PathExpr.head(slotName));
                 return augmented;
             }
@@ -1179,30 +1184,14 @@ class ServiceCatalog {
     }
 
     /**
-     * True when {@code javaTypeName} is the Java type FQN any classified GraphQL scalar in the
-     * model resolves to. Consults {@code ctx.types} for consumer-defined scalars (those
-     * registered via {@code @scalarType} or the extended-scalars convention layer carry
-     * their resolved Java FQN as {@link no.sikt.graphitron.rewrite.model.ScalarResolution.Resolved#javaType}),
-     * then falls back to the spec-built-in table on {@link ScalarTypeResolver} for unit-tier
-     * callers where {@code ctx.types} is empty. Used by {@link #inferBindingsByType}'s
-     * arity-unique branch to gate against binding a scalar-typed Java parameter directly to a
-     * named input object slot — for that shape the developer almost always wants a dot-path
-     * into a nested field, which the existing {@link #unambiguousReachablePath} diagnostic
-     * already surfaces. Routing through the classifier instead of a hard-coded allow-list
-     * keeps the gate symmetric for consumer-defined scalars (a {@code BigDecimal} param
-     * against a {@code Price} input object now defers to the dot-path hint the same way a
-     * {@code String} param does).
+     * Adapter onto {@link ScalarTypeResolver#isClassifiedScalarJavaType}. The resolver owns the
+     * predicate; this method threads {@code ctx.types.values()} in so the inference's
+     * arity-unique gate consults the same source of truth that {@link #mapToJavaTypeName}
+     * routes through for the forward direction.
      */
     private boolean isClassifiedScalarJavaTypeName(String javaTypeName) {
-        if (ctx.types != null) {
-            for (var t : ctx.types.values()) {
-                if (t instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType st
-                        && javaTypeName.equals(st.resolution().javaType().toString())) {
-                    return true;
-                }
-            }
-        }
-        return ScalarTypeResolver.isSpecBuiltInJavaType(javaTypeName);
+        return ScalarTypeResolver.isClassifiedScalarJavaType(
+            javaTypeName, ctx.types == null ? null : ctx.types.values());
     }
 
     /**
