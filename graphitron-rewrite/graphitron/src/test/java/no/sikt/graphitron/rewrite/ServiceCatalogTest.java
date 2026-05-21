@@ -717,6 +717,34 @@ class ServiceCatalogTest {
     }
 
     @Test
+    void reflectServiceMethod_typeUnique_topLevelPlusNestedReachable_yieldsAsAmbiguous() {
+        // R214 ambiguity floor: when a top-level slot and a reachable nested field both map
+        // to the unbound parameter's Java type, there are two possible mappings — the user's
+        // rule says fall back to name-based matching. The type-unique branch must yield so
+        // the existing unambiguousReachablePath suggestion can render the dot-path
+        // alternative; binding silently to the top-level slot would hide that the developer
+        // might have intended the nested binding.
+        var filmInput = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("FilmInput")
+            .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("filmId").type(graphql.Scalars.GraphQLID).build())
+            .build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("id", graphql.Scalars.GraphQLID);
+        slot.put("input", filmInput);
+        var argByJavaName = bindings(Map.of("id", "id", "input", "input"));
+
+        var result = newCatalog().reflectServiceMethod(
+            STUB_CLASS, "getByFilmId", argByJavaName, Set.of(), List.of(), null, slot);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("parameter 'filmId'")
+            .contains("does not match any GraphQL argument")
+            .contains("argMapping: \"filmId: input.filmId\"");
+    }
+
+    @Test
     void reflectServiceMethod_arityUnique_scalarParamAgainstNamedInputSlot_defersToDotPathHint() {
         // R214 floor: arity-unique inference does NOT fire when the slot is a named input
         // object AND the Java parameter is a canonical scalar (String / Integer / Double /
