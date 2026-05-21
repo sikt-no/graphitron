@@ -97,6 +97,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 ### Other
 
+- `R205` [**@condition on a plain-input-type input field is silently dropped when no matching column exists**](condition-on-plain-input-field-silent-drop.md): A `@condition` directive on an `INPUT_FIELD_DEFINITION` inside a plain (non-`@table`) filter input type is silently discarded at classification time when the input field's name does not resolve to a column on the surrounding query's table. The schema compiles, the generator emits `return DSL.noCondition();` for the query's `<query>Condition(...)` method, and at runtime the filter does nothing — even though `directives.graphqls` declares `@condition` valid on `INPUT_FIELD_DEFINITION` and the user supplied a complete condition method reference. <sub>updated 2026-05-21</sub>
 - `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md): graphql-java's `FieldDefinition.getSourceLocation()` (and the same call on type, input-field, and enum-value definitions) returns the start of the *description block* when one is present, not the line of the field name. Build-time validator logs and the R147 LSP diagnostic surface both inherit this: an error on a documented field highlights the opening `"""` of the doc block rather than the field, which is misleading in the console and visually wrong in the editor squiggle. <sub>updated 2026-05-12</sub>
 - `R149` [**End-to-end LSP publish-diagnostics test and buildOutput report-population test for R147**](r147-followup-end-to-end-publish-diagnostics-tests.md): R147's spec called for two tests that the implementation deferred: <sub>updated 2026-05-12</sub>
 - `R164` [**Field model: three-dimension pivot**](field-model-two-axis-pivot.md): The code graphitron emits today is close to what we want. The runtime DataFetchers, the jOOQ QueryBuilders, and the validation / error wiring all work and are recognisable; the trouble is the *model* describing them. This pivot reorganises the model into the three dimensions the emit already lives along: the DataFetcherBuilder dimension (runtime fetcher), the QueryBuilder dimension (jOOQ SQL), and the ValidationBuilder dimension (validation steps and error routing). Nothing about what gets emitted changes; the sealed hierarchy gets honest about what it's already saying. <sub>updated 2026-05-15, created 2026-05-14</sub>
@@ -229,6 +230,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### (untagged)
 
+- `R205` [**@condition on a plain-input-type input field is silently dropped when no matching column exists**](condition-on-plain-input-field-silent-drop.md)
 - `R180` [**Centralize ResultType column-read emission for @record parents**](record-parent-column-read-helper.md)
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
