@@ -72,10 +72,7 @@ public final class DataLoaderFetcherEmitter {
      *                              {@link LoaderRegistration#container()} and
      *                              {@code load} vs {@code loadMany} via
      *                              {@link LoaderRegistration#dispatch()}.
-     * @param graphitronContextCall the call expression for the per-class
-     *                              {@code graphitronContext(env)} helper. Used in the path-scoped
-     *                              DataLoader name construction (tenantId prefix + path keys).
-     * @param batchLoaderLambda     the BatchLoader lambda CodeBlock — caller builds via
+     * @param batchLoaderLambda     the BatchLoader lambda CodeBlock, caller builds via
      *                              {@link RowsMethodCall#batchLoaderLambda}.
      * @param keyExtraction         pre-built CodeBlock declaring the {@code key} or {@code keys}
      *                              local that the dispatch consumes. Per-field-shape variation
@@ -97,7 +94,6 @@ public final class DataLoaderFetcherEmitter {
             TypeName loaderValueType,
             TypeName outerReturnType,
             LoaderRegistration registration,
-            CodeBlock graphitronContextCall,
             CodeBlock batchLoaderLambda,
             CodeBlock keyExtraction,
             CodeBlock asyncWrapTail) {
@@ -124,8 +120,8 @@ public final class DataLoaderFetcherEmitter {
     }
 
     /**
-     * Emits the path-scoped DataLoader name local: tenant prefix + slash + path keys joined by
-     * slash. {@code ResultPath.getKeysOnly()} returns named segments only (list indices stripped),
+     * Emits the path-scoped DataLoader name local: path keys joined by slash.
+     * {@code ResultPath.getKeysOnly()} returns named segments only (list indices stripped),
      * so {@code /films/0/actors} and {@code /films/1/actors} share a key list and route to the
      * same DataLoader; aliased uses of the same field get distinct path segments and distinct
      * loaders.

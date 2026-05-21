@@ -18,15 +18,22 @@ import java.util.Map;
  * lookups and {@link #fieldsOf} for O(1) per-type lookups (pre-grouped at construction time).
  *
  * <p>{@link #warnings} carries non-fatal advisories the builder accumulated during
- * classification — shape-parallel to the errors {@code GraphitronSchemaValidator} produces, but
+ * classification, shape-parallel to the errors {@code GraphitronSchemaValidator} produces but
  * never fail the build. Surfaced by the plugin's mojos to the Maven log.
+ *
+ * <p>{@link #contextArguments} is the cached output of {@link ContextArgumentClassifier}'s
+ * cross-site type-agreement walk, computed once at construction time. Both downstream consumers
+ * (the validator's {@code validateContextArgumentTypeAgreement} drain and
+ * {@code GraphitronFacadeGenerator}'s factory parameter emission) read this field directly
+ * rather than re-classifying, so a "single producer" guarantee holds across the two consumers.
  */
 public record GraphitronSchema(
     Map<String, GraphitronType> types,
     Map<FieldCoordinates, GraphitronField> fields,
     Map<String, List<GraphitronField>> fieldsByType,
     Map<String, EntityResolution> entitiesByType,
-    List<BuildWarning> warnings
+    List<BuildWarning> warnings,
+    ContextArgumentClassifier.Classification contextArguments
 ) {
 
     /**
@@ -35,11 +42,12 @@ public record GraphitronSchema(
      * No entity resolutions, no warnings.
      */
     public GraphitronSchema(Map<String, GraphitronType> types, Map<FieldCoordinates, GraphitronField> fields) {
-        this(types, fields, groupByType(fields), Map.of(), List.of());
+        this(types, fields, groupByType(fields), Map.of(), List.of(),
+            ContextArgumentClassifier.classify(fields.values()));
     }
 
     /**
-     * Three-arg convenience constructor used by {@link GraphitronSchemaBuilder} — same
+     * Three-arg convenience constructor used by {@link GraphitronSchemaBuilder}: same
      * field-grouping as the two-arg form but preserves the {@code warnings} list the builder
      * accumulated during classification.
      */
@@ -47,7 +55,8 @@ public record GraphitronSchema(
                             Map<FieldCoordinates, GraphitronField> fields,
                             Map<String, EntityResolution> entitiesByType,
                             List<BuildWarning> warnings) {
-        this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings));
+        this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
+            ContextArgumentClassifier.classify(fields.values()));
     }
 
     private static Map<String, List<GraphitronField>> groupByType(Map<FieldCoordinates, GraphitronField> fields) {

@@ -15,6 +15,8 @@ import no.sikt.graphitron.rewrite.model.WhereFilter;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,24 +25,27 @@ import java.util.TreeMap;
 /**
  * Cross-site {@code contextArgument} type-agreement classifier.
  *
- * <p>Walks every {@link MethodRef} reachable from a {@link GraphitronSchema} (the schema's
- * fields and their condition filters), collects every {@link MethodRef.Param.Typed} whose source
- * is {@link ParamSource.Context}, keys by parameter name, and requires every site to declare the
+ * <p>Walks every {@link MethodRef} reachable from a classified field set (the schema's fields and
+ * their condition filters), collects every {@link MethodRef.Param.Typed} whose source is
+ * {@link ParamSource.Context}, keys by parameter name, and requires every site to declare the
  * same structural {@link TypeName}. The classifier returns both:
  *
  * <ul>
- *   <li>{@link Classification#resolved} — alphabetically sorted map of contextArgument names
- *       that resolved unambiguously to a single {@link TypeName}. Consumed by the schema-driven
- *       factory emitter ({@code Graphitron.newExecutionInput(...)}) and the call-site emitter
- *       ({@code $T.class} literal at the {@code getContextArgument} call). Both emitters read
- *       {@link ResolvedContextArg#javaType} directly: that single source of truth is what
- *       prevents the factory's typed {@code put} and the call-site's typed {@code cast} from
- *       drifting.</li>
- *   <li>{@link Classification#conflicts} — the typed
+ *   <li>{@link Classification#resolved}, alphabetically sorted map of contextArgument names that
+ *       resolved unambiguously to a single {@link TypeName}. Consumed by the schema-driven factory
+ *       emitter ({@code Graphitron.newExecutionInput(...)}) and the call-site emitter (the Java
+ *       cast literal at the {@code getContextArgument} call). Both emitters read
+ *       {@link ResolvedContextArg#javaType} directly: that single source of truth is what prevents
+ *       the factory's typed {@code put} and the call-site's typed cast from drifting.</li>
+ *   <li>{@link Classification#conflicts}, the typed
  *       {@link Rejection.AuthorError.TypeConflict} rejections for every name with disagreeing
  *       sites. The validator drains these into {@link ValidationError}s via
  *       {@code GraphitronSchemaValidator.validateContextArgumentTypeAgreement}.</li>
  * </ul>
+ *
+ * <p>The classifier is invoked once at parse boundary by {@link GraphitronSchema}'s constructor;
+ * the cached {@link Classification} hangs off {@link GraphitronSchema#contextArguments()} and is
+ * read by both downstream consumers (validator + facade emitter) without re-classifying.
  */
 @LoadBearingClassifierCheck(
     key = "context-argument.type-agreement",
@@ -59,15 +64,27 @@ public final class ContextArgumentClassifier {
         List<Rejection> conflicts
     ) {
         public Classification {
-            resolved = Map.copyOf(resolved);
+            // LinkedHashMap (not Map.copyOf) so the alphabetical TreeMap iteration order the
+            // classifier built survives the defensive copy. Map.copyOf returns an unmodifiable map
+            // whose iteration order is unspecified per JDK 16+ docs and can drift across runs.
+            resolved = Collections.unmodifiableMap(new LinkedHashMap<>(resolved));
             conflicts = List.copyOf(conflicts);
         }
     }
 
     public static Classification classify(GraphitronSchema schema) {
+        return classify(schema.fields().values());
+    }
+
+    /**
+     * Same as {@link #classify(GraphitronSchema)} but takes the classified fields directly. Used
+     * by {@link GraphitronSchema}'s constructor to compute the {@link Classification} eagerly
+     * during schema construction, before the schema record is fully assembled.
+     */
+    public static Classification classify(Collection<GraphitronField> fields) {
         // Working map: name -> per-site (MethodRef, TypeName) pair in encounter order.
         var byName = new LinkedHashMap<String, List<ConflictSite>>();
-        for (var field : schema.fields().values()) {
+        for (var field : fields) {
             collectFromField(field, byName);
         }
         // Walk types so that input-field-level @condition filters reachable only through
@@ -75,7 +92,7 @@ public final class ContextArgumentClassifier {
         // Today's projection step appends them to SqlGeneratingField.filters() so the field-walk
         // catches them, but visiting input fields directly via their condition() accessor is
         // shape-symmetric and resilient to any future drift in the projection.
-        for (var field : schema.fields().values()) {
+        for (var field : fields) {
             collectFromInputFieldCondition(field, byName);
         }
         // Stable alphabetical output for deterministic factory parameter ordering.

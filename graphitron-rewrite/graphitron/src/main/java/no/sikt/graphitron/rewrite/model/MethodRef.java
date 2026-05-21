@@ -85,7 +85,8 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
     default List<CallParam> callParams() {
         return params().stream()
             .filter(p -> p.source() instanceof ParamSource.Arg || p.source() instanceof ParamSource.Context)
-            .map(p -> new CallParam(callParamName(p), toCallSiteExtraction(p), false, p.typeName()))
+            .map(p -> new CallParam(callParamName(p), toCallSiteExtraction(p), false,
+                p.typeName(), ((Param.Typed) p).javaType()))
             .toList();
     }
 

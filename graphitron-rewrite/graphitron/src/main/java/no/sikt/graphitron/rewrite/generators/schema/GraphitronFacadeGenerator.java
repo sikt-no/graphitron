@@ -5,7 +5,6 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.rewrite.ContextArgumentClassifier;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;
 import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
@@ -27,8 +26,8 @@ import java.util.function.Consumer;
  *
  * <p>The facade also exposes one schema-driven {@code newExecutionInput} factory whose parameter
  * list reflects the schema's declared {@code contextArguments}: a {@code DSLContext defaultDsl}
- * first, then one typed parameter per contextArgument name (alphabetical), reflected through
- * {@link ContextArgumentClassifier} from the load-bearing type-agreement classifier.
+ * first, then one typed parameter per contextArgument name (alphabetical), read from the cached
+ * {@link GraphitronSchema#contextArguments()} classification.
  *
  * <p>R190 collapsed the legacy two-overload shape ({@code (GraphitronContext)} +
  * {@code (DSLContext)}) into this single typed entry point. The sealed
@@ -69,10 +68,12 @@ public final class GraphitronFacadeGenerator {
             .addJavadoc(buildSchemaJavadoc(federationLink))
             .build();
 
-        var classification = ContextArgumentClassifier.classify(schema);
         // TreeMap iteration order is alphabetical by key: same order generated fetchers will
         // resolve them in, same order the user docs talk about them in, deterministic across runs.
-        List<ResolvedContextArg> contextArgs = classification.resolved().values().stream().toList();
+        // Read off the schema's cached classification rather than re-running the classifier:
+        // GraphitronSchemaValidator.validateContextArgumentTypeAgreement reads the same field,
+        // so both consumers see one producer.
+        List<ResolvedContextArg> contextArgs = schema.contextArguments().resolved().values().stream().toList();
 
         var newExecutionInput = buildNewExecutionInput(
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
@@ -169,9 +170,10 @@ public final class GraphitronFacadeGenerator {
         sb.append("\n");
         sb.append("<p>The parameter list reflects the schema's declared {@code contextArguments} in\n");
         sb.append("alphabetical order. The body null-checks every parameter and populates the per-request\n");
-        sb.append("{@code GraphQLContext}; generated fetchers read each value back through\n");
-        sb.append("{@code getContextArgument(env, name, ExpectedType.class)}. A missing or wrong-typed\n");
-        sb.append("contextArgument is a compile error at the call site, not a runtime surprise.\n");
+        sb.append("{@code GraphQLContext}; generated fetchers read each value back via\n");
+        sb.append("{@code getContextArgument(env, name)} with an explicit Java cast at the call site.\n");
+        sb.append("A missing or wrong-typed contextArgument is a compile error at the typed factory call\n");
+        sb.append("site, not a runtime surprise.\n");
         sb.append("\n");
         sb.append("<p>Chain additional {@code .query(...)}, {@code .variables(...)},\n");
         sb.append("{@code .operationName(...)} calls before {@code .build()}. Extra\n");

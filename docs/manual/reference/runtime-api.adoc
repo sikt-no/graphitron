@@ -63,13 +63,13 @@ public sealed interface GraphitronContext {
         return env.getGraphQlContext().get(DSLContext.class);
     }
 
-    default <T> T getContextArgument(DataFetchingEnvironment env, String name, Class<T> expectedType) {
+    default Object getContextArgument(DataFetchingEnvironment env, String name) {
         Object value = env.getGraphQlContext().get(name);
         if (value == null) {
             throw new IllegalStateException("context value '" + name
                 + "' was not supplied; call Graphitron.newExecutionInput(...) to populate it");
         }
-        return expectedType.cast(value);
+        return value;
     }
 
     default Validator getValidator(DataFetchingEnvironment env) {
@@ -100,7 +100,7 @@ Reads the per-request `DSLContext` from `env.getGraphQlContext().get(DSLContext.
 
 === `getContextArgument`
 
-Grows a third `Class<T> expectedType` parameter so the default body can apply a typed runtime check. The default reads the value from `env.getGraphQlContext()` (under the contextArgument's string name) and runs `expectedType.cast(...)`. A missing entry throws `IllegalStateException` naming the contextArgument and pointing the reader at `Graphitron.newExecutionInput(...)`; a wrong-typed entry throws the JDK's default `ClassCastException`. Both throw paths are only reachable when a consumer hand-rolls an `ExecutionInput.Builder` outside the factory; going through `Graphitron.newExecutionInput(...)` makes the same mistake a compile error at the call site, because the factory's typed parameter slot IS the reflected expected type.
+Reads the value from `env.getGraphQlContext()` (under the contextArgument's string name) and returns it as `Object`; the cast to the expected Java type happens at the generated call site (`(String) graphitronContext(env).getContextArgument(env, "userId")`). A missing entry throws `IllegalStateException` naming the contextArgument and pointing the reader at `Graphitron.newExecutionInput(...)`; a wrong-typed entry surfaces as `ClassCastException` at the generated cast. Both throw paths are only reachable when a consumer hand-rolls an `ExecutionInput.Builder` outside the factory; going through `Graphitron.newExecutionInput(...)` makes the same mistake a compile error at the call site, because the factory's typed parameter slot IS the reflected expected type. The framework's redact path replaces the prose message with a correlation-id reference before it reaches the consumer, so the runtime throw is server-log surface only; the typed factory is the load-bearing diagnostic.
 
 xref:../how-to/condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the call-site shape; the supplying side is the factory's typed parameter slot.
 

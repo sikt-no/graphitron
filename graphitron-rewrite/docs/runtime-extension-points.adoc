@@ -25,7 +25,7 @@ off.
 // GENERATED (illustrative shape; full method set evolves with the schema)
 public sealed interface GraphitronContext {
     default DSLContext getDslContext(DataFetchingEnvironment env) { ... }
-    default <T> T getContextArgument(DataFetchingEnvironment env, String name, Class<T> expectedType) { ... }
+    default Object getContextArgument(DataFetchingEnvironment env, String name) { ... }
     default Validator getValidator(DataFetchingEnvironment env) { ... }
 
     final class GraphitronContextImpl implements GraphitronContext {
@@ -35,7 +35,7 @@ public sealed interface GraphitronContext {
 }
 ----
 
-`getContextArgument` takes the expected Java type as its third parameter; the default body reads the value from `env.getGraphQlContext()` and applies `expectedType.cast(...)`. A missing entry throws `IllegalStateException` naming the contextArgument; a wrong-typed entry throws the JDK's default `ClassCastException`. Both paths are only reachable when a consumer hand-rolls an `ExecutionInput.Builder` outside `Graphitron.newExecutionInput(...)`; the typed factory makes the same mistake a compile error at the call site.
+`getContextArgument` reads the value from `env.getGraphQlContext()` and returns it as `Object`; the cast to the expected Java type happens at the generated call site (`(String) graphitronContext(env).getContextArgument(env, "userId")`). A missing entry throws `IllegalStateException` naming the contextArgument and pointing at `Graphitron.newExecutionInput(...)`; a wrong-typed entry surfaces as `ClassCastException` at the generated cast. Both paths are only reachable when a consumer hand-rolls an `ExecutionInput.Builder` outside `Graphitron.newExecutionInput(...)`; the typed factory makes the same mistake a compile error at the call site. The framework's redact path replaces the prose message with a correlation-id reference before it reaches the consumer, so the runtime throw is server-log surface only; the typed factory's parameter list is the load-bearing diagnostic.
 
 === Where the interface comes from
 
@@ -86,8 +86,8 @@ sequenceDiagram
     DSL->>DB: SQL (driven by selection set)
     DB-->>DSL: Result&lt;Record&gt;
     DSL-->>Fetcher: rows
-    Fetcher->>Ctx: getContextArgument(env, "userId", String.class)<br/>(if @condition uses contextArguments)
-    Ctx-->>Fetcher: claim value (typed cast)
+    Fetcher->>Ctx: getContextArgument(env, "userId")<br/>(if @condition uses contextArguments)
+    Ctx-->>Fetcher: claim value (Java cast applied at call site)
     Fetcher-->>Engine: Result&lt;Record&gt; / ConnectionResult
     Engine-->>Client: response (graphql-java traverses records via field DataFetchers)
 ----
@@ -121,12 +121,12 @@ contextArguments: ["userId"])` produces:
 ----
 // GENERATED
 condition = condition.and(AccessControl.visibleToUser(table,
-    graphitronContext(env).getContextArgument(env, "userId", String.class)));
+    (String) graphitronContext(env).getContextArgument(env, "userId")));
 ----
 
-The third `Class<T> expectedType` parameter is reflected from the developer
-method's parameter type, so the runtime cast matches the compile-time signature
-the consumer wrote against. The supplying side is the factory's typed parameter
+The Java cast at the generated call site is reflected from the developer
+method's parameter type, so it matches the compile-time signature the consumer
+wrote against. The supplying side is the factory's typed parameter
 slot: `Graphitron.newExecutionInput(dsl, userId)` with `userId: String` reflects
 straight into the consumer's method, and a typo in the SDL `contextArguments:`
 list surfaces as a compile error at the factory call (not a `null` at request

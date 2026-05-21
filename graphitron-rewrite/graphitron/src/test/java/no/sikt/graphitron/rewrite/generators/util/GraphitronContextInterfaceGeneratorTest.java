@@ -56,24 +56,28 @@ class GraphitronContextInterfaceGeneratorTest {
     }
 
     @Test
-    void getContextArgument_isGenericWithTypeParameterT() {
+    void getContextArgument_takesEnvAndNameOnlyAndReturnsObject() {
         var method = findMethod("getContextArgument");
-        assertThat(method.returnType().toString()).isEqualTo("T");
-        assertThat(method.typeVariables()).extracting(v -> v.name()).containsExactly("T");
-        // R190: the third parameter is the typed runtime guard Class<T> expectedType.
+        // R190-followup: the Class<T> expectedType slot moved to a Java cast at the generated
+        // call site; the singleton returns Object and the throw on missing-value stays as the
+        // server-log diagnostic.
+        assertThat(method.returnType().toString()).isEqualTo("java.lang.Object");
+        assertThat(method.typeVariables()).isEmpty();
         assertThat(method.parameters()).extracting(p -> p.name())
-            .containsExactly("env", "name", "expectedType");
-        assertThat(method.parameters().get(2).type().toString()).isEqualTo("java.lang.Class<T>");
+            .containsExactly("env", "name");
+        assertThat(method.parameters().get(0).type().toString())
+            .isEqualTo("graphql.schema.DataFetchingEnvironment");
+        assertThat(method.parameters().get(1).type().toString())
+            .isEqualTo("java.lang.String");
     }
 
     @Test
-    void getContextArgument_defaultBodyReadsGraphQLContextAndCastsToExpectedType() {
+    void getContextArgument_defaultBodyReadsGraphQLContextAndThrowsOnMissing() {
         var method = findMethod("getContextArgument");
         assertThat(method.modifiers()).contains(Modifier.DEFAULT).doesNotContain(Modifier.ABSTRACT);
         String body = method.code().toString();
         assertThat(body)
             .contains("env.getGraphQlContext().get(name)")
-            .contains("expectedType.cast")
             .contains("call Graphitron.newExecutionInput(...) to populate it");
     }
 

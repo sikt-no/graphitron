@@ -30,7 +30,6 @@ class DataLoaderFetcherEmitterTest {
     private static final TypeName ASYNC_RESULT     = ParameterizedTypeName.get(
         CF, ParameterizedTypeName.get(DFR, LIST_OF_RECORD));
 
-    private static final CodeBlock CTX_CALL = CodeBlock.of("graphitronContext(env)");
     private static final CodeBlock LAMBDA   = CodeBlock.of("(keys, batchEnv) -> { /* lambda */ }");
     private static final CodeBlock KEY_EXTRACTION = CodeBlock.builder()
         .addStatement("$T key = ((org.jooq.Record) env.getSource()).get($S)", Integer.class, "language_id")
@@ -49,7 +48,7 @@ class DataLoaderFetcherEmitterTest {
             "films",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            CTX_CALL, LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL);
+            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL);
 
         String src = spec.toString();
         assertThat(src).contains("public static java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<java.util.List<org.jooq.Record>>> films(");
@@ -68,7 +67,7 @@ class DataLoaderFetcherEmitterTest {
             "filmsByActor",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            CTX_CALL, LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL);
+            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL);
 
         String src = spec.toString();
         assertThat(src).contains("org.dataloader.DataLoaderFactory.newMappedDataLoader(");
@@ -84,7 +83,7 @@ class DataLoaderFetcherEmitterTest {
             "films",
             KEY, RECORD, ASYNC_RESULT,
             reg,
-            CTX_CALL, LAMBDA, KEYS_EXTRACTION, TRIVIAL_TAIL);
+            LAMBDA, KEYS_EXTRACTION, TRIVIAL_TAIL);
 
         String src = spec.toString();
         assertThat(src).contains("return loader.loadMany(keys, java.util.Collections.nCopies(keys.size(), env))");
@@ -99,7 +98,7 @@ class DataLoaderFetcherEmitterTest {
             "films",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            CTX_CALL, LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL);
+            LAMBDA, KEY_EXTRACTION, TRIVIAL_TAIL);
 
         // DataLoader<Integer, List<Record>> — first generic = key, second = loader's per-key V.
         assertThat(spec.toString())
@@ -116,7 +115,7 @@ class DataLoaderFetcherEmitterTest {
             "films",
             KEY, LIST_OF_RECORD, ASYNC_RESULT,
             reg,
-            CTX_CALL, LAMBDA, KEY_EXTRACTION, customTail);
+            LAMBDA, KEY_EXTRACTION, customTail);
 
         String src = spec.toString();
         assertThat(src).contains("return loader.load(key, env)");
