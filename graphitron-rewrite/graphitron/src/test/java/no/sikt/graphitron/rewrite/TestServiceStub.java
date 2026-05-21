@@ -269,6 +269,17 @@ class TestServiceStub {
     }
 
     /**
+     * R214 fixture: single {@link java.math.BigDecimal} parameter — used to assert that the
+     * arity-unique gate routes through {@code ctx.types} rather than a hard-coded spec
+     * built-in allow-list. With a consumer-defined {@code Decimal -> BigDecimal} scalar
+     * registered, a {@code BigDecimal} parameter against a named input object slot defers
+     * to the dot-path hint exactly as a {@code String} parameter does.
+     */
+    public static String getByPrice(java.math.BigDecimal price) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Takes a {@code List<TestInputBean>}. Used by the R150 classifier test to verify that the
      * plural arg shape resolves to a single InputBean extraction (the list-shape is read from
      * the Java type at emit time).

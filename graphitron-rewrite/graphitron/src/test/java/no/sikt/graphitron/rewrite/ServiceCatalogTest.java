@@ -717,6 +717,45 @@ class ServiceCatalogTest {
     }
 
     @Test
+    void reflectServiceMethod_arityUnique_consumerScalarParam_routesThroughClassifier() {
+        // R214: the arity-unique gate must treat consumer-defined scalars symmetrically with
+        // spec built-ins. With a Decimal -> BigDecimal scalar registered in ctx.types, a
+        // BigDecimal parameter against a named input object slot defers to the dot-path
+        // hint the same way a String parameter does — proving the predicate routes through
+        // the model's scalar classification rather than a hard-coded allow-list.
+        var ctx = new BuildContext(null, null, stubRewriteContext());
+        var decimalScalar = graphql.schema.GraphQLScalarType.newScalar()
+            .name("Decimal").coercing(graphql.schema.GraphQLScalarType.newScalar()
+                .name("_").coercing(new graphql.schema.Coercing<Object, Object>() {}).build().getCoercing())
+            .build();
+        ctx.typeRegistry.classify("Decimal", new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(
+            "Decimal",
+            new graphql.language.SourceLocation(1, 1),
+            new no.sikt.graphitron.rewrite.model.ScalarResolution.Resolved(
+                ClassName.get(java.math.BigDecimal.class),
+                ClassName.bestGuess("dummy.Owner"),
+                "DECIMAL"),
+            decimalScalar));
+
+        var inputType = graphql.schema.GraphQLInputObjectType.newInputObject()
+            .name("PriceHolder")
+            .field(graphql.schema.GraphQLInputObjectField.newInputObjectField()
+                .name("amount").type(decimalScalar).build())
+            .build();
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("input", inputType);
+        var argByJavaName = bindings(Map.of("input", "input"));
+
+        var result = new ServiceCatalog(ctx).reflectServiceMethod(
+            STUB_CLASS, "getByPrice", argByJavaName, Set.of(), List.of(), null, slot);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("parameter 'price'")
+            .contains("does not match any GraphQL argument");
+    }
+
+    @Test
     void reflectServiceMethod_typeUnique_topLevelPlusNestedReachable_yieldsAsAmbiguous() {
         // R214 ambiguity floor: when a top-level slot and a reachable nested field both map
         // to the unbound parameter's Java type, there are two possible mappings — the user's
