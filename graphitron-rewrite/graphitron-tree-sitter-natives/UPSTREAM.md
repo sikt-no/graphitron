@@ -20,9 +20,11 @@ grammar's `tree_sitter_graphql` entry point only. The tree-sitter runtime
 itself (`libtree-sitter`) is **not** bundled. graphitron-lsp relies on
 jtreesitter's `ChainedLibraryLookup` to find an OS-installed
 `libtree-sitter` (`brew install tree-sitter` on macOS,
-`apt install libtree-sitter0` on Linux, vcpkg or upstream build on
-Windows). The runtime is a system dependency of graphitron-lsp, not of
-this jar.
+`pacman -S tree-sitter` / `dnf install tree-sitter` on Arch/Fedora,
+nixpkgs `tree-sitter` on NixOS, source build on Debian/Ubuntu — their
+apt's `libtree-sitter0` is 0.20.x and predates `ts_language_abi_version`
+that jtreesitter 0.26 needs; vcpkg or upstream build on Windows). The
+runtime is a system dependency of graphitron-lsp, not of this jar.
 
 ## Coordinates
 

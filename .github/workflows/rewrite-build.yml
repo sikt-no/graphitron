@@ -45,6 +45,21 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
           cache: maven
+      - name: Build + install libtree-sitter from source
+        # graphitron-lsp's NativeLibraryBundleTest loads the grammar binary from
+        # graphitron-tree-sitter-natives; jtreesitter 0.26 then looks up runtime
+        # symbols against an OS-installed libtree-sitter. Ubuntu apt's
+        # libtree-sitter0 is pinned to 0.20.x which predates ts_language_abi_version,
+        # so we build the runtime from upstream source at the version matching
+        # the natives jar's parser ABI.
+        run: |
+          set -euo pipefail
+          VERSION=v0.26.9
+          TMPDIR=$(mktemp -d) && trap "rm -rf $TMPDIR" EXIT
+          git clone --depth=1 --branch=$VERSION https://github.com/tree-sitter/tree-sitter $TMPDIR/ts
+          make -C $TMPDIR/ts
+          sudo make -C $TMPDIR/ts install
+          sudo ldconfig
       - name: Apply graphitron-sakila-db init.sql
         # The local-db profile expects database `rewrite_test` to exist with the rewrite-test
         # schema applied. The Postgres service container creates the database; this step
@@ -70,7 +85,7 @@ jobs:
             -Dexec.args='leaf-coverage graphitron-rewrite'
       - name: Upload leaf-coverage artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/claude/graphitron-rewrite'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: inference-axis-coverage
           path: graphitron-rewrite/roadmap/inference-axis-coverage.adoc
@@ -93,7 +108,7 @@ jobs:
       - name: Download leaf-coverage artifact
         # Lands at graphitron-rewrite/roadmap/inference-axis-coverage.adoc and
         # overwrites the committed placeholder in this checkout.
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: inference-axis-coverage
           path: graphitron-rewrite/roadmap/

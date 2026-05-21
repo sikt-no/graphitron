@@ -12,19 +12,21 @@ import java.lang.foreign.SymbolLookup;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Verifies the Phase 6 native plumbing end-to-end on whichever host CI is
- * running on: the per-platform Maven profile produced a shared library under
- * {@code target/classes/lib/<os>-<arch>/}, the {@code BundledLibraryLookup} SPI
- * extracts it at runtime, and jtreesitter loads {@code tree_sitter_graphql}
- * against it and parses a trivial GraphQL document.
+ * Verifies the end-to-end native plumbing on whichever host CI is running on:
+ * the {@code graphitron-tree-sitter-natives} jar carries a grammar binary
+ * under {@code lib/<os>-<arch>/}, {@code BundledLibraryLookup} extracts it
+ * at runtime, and jtreesitter loads {@code tree_sitter_graphql} against it
+ * (with the system-installed {@code libtree-sitter} providing the runtime
+ * symbols) and parses a trivial GraphQL document.
  *
- * <p>Coverage for Linux x86_64 / macOS x86_64 / macOS arm64 lives in three
- * separate {@code @EnabledOnOs} test methods so a single CI matrix run
- * exercises exactly one of them per host. Windows is a follow-up to R18 Phase
- * 6; the SPI throws a pointed {@code UnsupportedOperationException} on
- * unsupported hosts, which the existing platform-gated tests do not exercise.
+ * <p>Coverage for each supported platform lives in a separate
+ * {@code @EnabledOnOs} method so a CI matrix run exercises exactly one per
+ * host. In regular per-PR CI only the {@code linux-x86_64} method executes;
+ * the {@code linux-aarch64}, {@code macos-aarch64}, and {@code windows-x86_64}
+ * methods run on their respective platforms in the natives release
+ * workflow's post-deploy matrix.
  */
-class NativeBuildSmokeTest {
+class NativeLibraryBundleTest {
 
     @Test
     @EnabledOnOs(value = OS.LINUX, architectures = "amd64")
@@ -33,14 +35,20 @@ class NativeBuildSmokeTest {
     }
 
     @Test
-    @EnabledOnOs(value = OS.MAC, architectures = "x86_64")
-    void macosX86_64SharedLibraryLoadsAndParses() {
+    @EnabledOnOs(value = OS.LINUX, architectures = "aarch64")
+    void linuxAarch64SharedLibraryLoadsAndParses() {
         runSmokeTest();
     }
 
     @Test
     @EnabledOnOs(value = OS.MAC, architectures = "aarch64")
     void macosAarch64SharedLibraryLoadsAndParses() {
+        runSmokeTest();
+    }
+
+    @Test
+    @EnabledOnOs(value = OS.WINDOWS, architectures = {"amd64", "x86_64"})
+    void windowsX86_64SharedLibraryLoadsAndParses() {
         runSmokeTest();
     }
 
