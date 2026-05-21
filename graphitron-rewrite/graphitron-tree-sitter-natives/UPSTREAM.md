@@ -1,13 +1,18 @@
 # graphitron-tree-sitter-natives
 
 Standalone Maven module that publishes a single jar containing per-platform
-tree-sitter shared libraries for five host platforms:
+tree-sitter shared libraries for four host platforms:
 
 - `linux-x86_64` → `lib/linux-x86_64/libtree-sitter-graphql.so`
 - `linux-aarch64` → `lib/linux-aarch64/libtree-sitter-graphql.so`
-- `macos-x86_64` → `lib/macos-x86_64/libtree-sitter-graphql.dylib`
 - `macos-aarch64` → `lib/macos-aarch64/libtree-sitter-graphql.dylib`
 - `windows-x86_64` → `lib/windows-x86_64/tree-sitter-graphql.dll`
+
+Apple-silicon-only on macOS: Sikt graphitron-lsp developers all run M1
+or newer, the macos-13 (Intel) GitHub-hosted runner is the slowest queue
+on the platform, and graphitron-lsp is internal-only per the spec's
+"Out of scope" list, so Intel-Mac coverage costs significant CI time
+without a known consumer.
 
 Each binary is the vendored bkegley tree-sitter-graphql grammar compiled
 against the upstream tree-sitter `0.26.0` parser ABI, exposing the
@@ -41,7 +46,7 @@ See `graphitron-rewrite/docs/tree-sitter-natives-release.adoc` for the
 human-driven release procedure. The short version: bump the version in
 `pom.xml`, push, manually trigger
 `.github/workflows/tree-sitter-natives-release.yml` from the GitHub
-Actions UI. The workflow builds on five native runners, packages and
+Actions UI. The workflow builds on four native runners, packages and
 deploys via the central-publishing-maven-plugin, then runs a post-deploy
 load+parse matrix against the freshly-published jar on each platform.
 
@@ -62,7 +67,9 @@ touch it.
 
 - `pom.xml` — the standalone module pom.
 - `src/main/native/grammars/graphql/` — vendored bkegley grammar sources
-  (`parser.c`, `tree_sitter/parser.h`, `LICENSE`, `UPSTREAM.md`).
+  under the `src/` layout `tree-sitter build` expects: `src/grammar.json`,
+  `src/node-types.json`, `src/parser.c`, `src/tree_sitter/parser.h`, plus
+  `LICENSE` and `UPSTREAM.md` at the top of the grammar dir.
 - The per-platform binaries are *not* committed. The release workflow
-  produces them on five native runners and merges them into the jar
+  produces them on four native runners and merges them into the jar
   during the package+deploy stage.

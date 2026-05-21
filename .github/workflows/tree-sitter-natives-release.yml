@@ -42,11 +42,6 @@ jobs:
             lib-name: libtree-sitter-graphql.so
             cli-asset: tree-sitter-linux-arm64.gz
             cli-binary: tree-sitter
-          - platform: macos-x86_64
-            runner: macos-13
-            lib-name: libtree-sitter-graphql.dylib
-            cli-asset: tree-sitter-macos-x64.gz
-            cli-binary: tree-sitter
           - platform: macos-aarch64
             runner: macos-14
             lib-name: libtree-sitter-graphql.dylib
@@ -160,7 +155,7 @@ jobs:
           set -euo pipefail
           base="$NATIVES_MODULE/target/classes/lib"
           mkdir -p "$base"
-          for platform in linux-x86_64 linux-aarch64 macos-x86_64 macos-aarch64 windows-x86_64; do
+          for platform in linux-x86_64 linux-aarch64 macos-aarch64 windows-x86_64; do
             src="native-artifacts/native-$platform"
             if [[ ! -d "$src" ]]; then
               echo "::error::missing artifact directory $src"
@@ -176,7 +171,7 @@ jobs:
           mvn -f "$NATIVES_MODULE/pom.xml" --batch-mode --errors package -DskipTests
 
       - name: Assert jar layout
-        # Exactly five lib/<os>-<arch>/<file> entries; any other lib/* path is a bug.
+        # Exactly four lib/<os>-<arch>/<file> entries; any other lib/* path is a bug.
         run: |
           set -euo pipefail
           jar_path="$(ls $NATIVES_MODULE/target/graphitron-tree-sitter-natives-*.jar)"
@@ -186,16 +181,15 @@ jobs:
           expected="lib/linux-aarch64/libtree-sitter-graphql.so
           lib/linux-x86_64/libtree-sitter-graphql.so
           lib/macos-aarch64/libtree-sitter-graphql.dylib
-          lib/macos-x86_64/libtree-sitter-graphql.dylib
           lib/windows-x86_64/tree-sitter-graphql.dll"
           expected="$(echo "$expected" | sed 's/^ *//' | sort)"
           actual="$(echo "$lib_entries" | sort)"
           if [[ "$actual" != "$expected" ]]; then
-            echo "::error::jar lib/ contents do not match expected five entries"
+            echo "::error::jar lib/ contents do not match expected four entries"
             diff <(echo "$expected") <(echo "$actual") || true
             exit 1
           fi
-          echo "OK: jar layout matches exactly the five expected lib/<os>-<arch>/ entries"
+          echo "OK: jar layout matches exactly the four expected lib/<os>-<arch>/ entries"
 
       - name: Deploy to Maven Central
         if: ${{ !inputs.dry-run }}
@@ -229,8 +223,6 @@ jobs:
             runner: ubuntu-latest
           - platform: linux-aarch64
             runner: ubuntu-24.04-arm
-          - platform: macos-x86_64
-            runner: macos-13
           - platform: macos-aarch64
             runner: macos-14
           - platform: windows-x86_64
@@ -325,8 +317,6 @@ jobs:
                       dir = "linux-x86_64"; libName = "libtree-sitter-graphql.so";
                   } else if (os.contains("linux") && arch.equals("aarch64")) {
                       dir = "linux-aarch64"; libName = "libtree-sitter-graphql.so";
-                  } else if (os.contains("mac") && (arch.equals("amd64") || arch.equals("x86_64"))) {
-                      dir = "macos-x86_64"; libName = "libtree-sitter-graphql.dylib";
                   } else if (os.contains("mac") && arch.equals("aarch64")) {
                       dir = "macos-aarch64"; libName = "libtree-sitter-graphql.dylib";
                   } else if (os.contains("windows") && (arch.equals("amd64") || arch.equals("x86_64"))) {

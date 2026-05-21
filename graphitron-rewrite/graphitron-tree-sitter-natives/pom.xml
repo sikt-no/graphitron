@@ -38,7 +38,7 @@
         Per-platform tree-sitter-graphql grammar binaries for graphitron-lsp:
         the bkegley tree-sitter-graphql grammar compiled against the
         tree-sitter 0.26.0 parser ABI, one shared library per supported
-        platform (linux-x86_64, linux-aarch64, macos-x86_64, macos-aarch64,
+        platform (linux-x86_64, linux-aarch64, macos-aarch64,
         windows-x86_64), shipped under lib/&lt;os&gt;-&lt;arch&gt;/ in the jar.
         The tree-sitter runtime (libtree-sitter) is NOT bundled; consumers
         provide it via the OS package manager and jtreesitter's chain
