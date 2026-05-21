@@ -20,21 +20,28 @@ upstreams are dormant; bkegley is the more recent of the two.
 
 ## Layout
 
-Only the files needed to build the parser into a shared library are
-vendored:
+Vendored files match the `<grammar-dir>/src/` layout the upstream
+`tree-sitter build` CLI expects:
 
-- `parser.c`: generated parser, `LANGUAGE_VERSION 13` (within the
+- `src/grammar.json`: generated grammar description. `tree-sitter build`
+  reads it to determine the language name and parser metadata; the CLI
+  fails fast with `No such file or directory ... src/grammar.json` if
+  it is missing.
+- `src/node-types.json`: generated node type catalog, also produced by
+  `tree-sitter generate` alongside `grammar.json`.
+- `src/parser.c`: generated parser, `LANGUAGE_VERSION 13` (within the
   `13..15` window jtreesitter 0.26 supports as
   `MIN_COMPATIBLE_LANGUAGE_VERSION..LANGUAGE_VERSION`).
-- `tree_sitter/parser.h`: parser-side header (`TSStateId`, `TSSymbol`,
+- `src/tree_sitter/parser.h`: parser-side header (`TSStateId`, `TSSymbol`,
   parse-state structs). Distinct from the tree-sitter runtime's internal
   `lib/src/parser.h`, which the upstream `tree-sitter build` CLI bundles
   on its own per release-workflow invocation.
 
-Other files in the upstream (`grammar.js`, `binding.gyp`, `bindings/`,
-`queries/`, `corpus/`, `examples/`, `lua/`, `plugin/`) are not vendored:
-they target the Node / Cargo / Lua tooling we don't use and don't drive
-our build.
+All four files are co-generated from `grammar.js` at the same upstream
+commit and update together. Other files in the upstream (`grammar.js`,
+`binding.gyp`, `bindings/`, `queries/`, `corpus/`, `examples/`, `lua/`,
+`plugin/`) are not vendored: they target the Node / Cargo / Lua tooling
+we don't use and don't drive our build.
 
 ## Build
 
@@ -52,9 +59,9 @@ matrix and `../../../UPSTREAM.md` at the module root for the release cadence.
 
 The upstream is dormant. If a grammar change is needed:
 
-1. Edit `grammar.js` in a fork and run `tree-sitter generate` to produce a
-   new `parser.c`. Drop the regenerated `parser.c` here and refresh this
-   file's commit pin to the new fork.
+1. Edit `grammar.js` in a fork and run `tree-sitter generate`. Drop the
+   regenerated `src/grammar.json`, `src/node-types.json`, and
+   `src/parser.c` here and refresh this file's commit pin to the new fork.
 2. Verify the existing tree-sitter queries in
    `graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/parsing/` still
    match the produced node names.
