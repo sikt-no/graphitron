@@ -1,33 +1,9 @@
 name: tree-sitter natives release
 
-# Builds + publishes `no.sikt:graphitron-tree-sitter-natives:<version>` to
-# Maven Central. Manual trigger only: cutting a release is a deliberate
-# human-driven action — bump the version in
-# `graphitron-rewrite/graphitron-tree-sitter-natives/pom.xml`, push, then
-# trigger this workflow from the Actions UI. Tagging is optional; the
-# artifact is identified by Maven version.
-#
-# Three stages, all gated on the previous succeeding:
-#   1. build-matrix: five native runners, each compiles the grammar's
-#      `parser.c` with `tree-sitter build` and verifies the
-#      `tree_sitter_graphql` entry point is exported.
-#   2. package-deploy: ubuntu-latest assembles the five-platform jar,
-#      asserts layout, signs, and pushes to Maven Central.
-#   3. post-deploy-verify: five native runners install `libtree-sitter`
-#      from the OS package manager, resolve the freshly-published jar
-#      from a clean local m2, and load+parse a trivial GraphQL document
-#      against the platform-appropriate grammar binary.
-#
-# The artifact ships only the per-platform grammar library; the
-# tree-sitter runtime itself is sourced from the consumer's OS via
-# jtreesitter's built-in chain (`SymbolLookup.libraryLookup` →
-# `System.loadLibrary("tree-sitter")` → `Linker.defaultLookup`). Stage 3
-# exercises that exact path against an OS-installed `libtree-sitter`.
-#
-# Stage 3 is the authoritative "the jar works end-to-end on every
-# supported platform" gate. If any platform fails after a successful
-# deploy, bump `<build-n>` and re-release; the failing version stays on
-# Central as a tombstone but graphitron-lsp pins to the working build.
+# Builds and publishes `no.sikt:graphitron-tree-sitter-natives:<version>`
+# to Maven Central. Operator guide (when to bump which digit, what each
+# stage verifies, recovery from a broken release):
+# https://graphitron.sikt.no/architecture/tree-sitter-natives-release.html
 
 on:
   workflow_dispatch:
@@ -109,11 +85,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/out"
-          # `tree-sitter build` compiles the grammar's parser.c into a single
-          # shared library that exports `tree_sitter_graphql`. The runtime
-          # itself (`libtree-sitter`) is not linked in; jtreesitter's
-          # ChainedLibraryLookup finds it from the consumer's OS at load time.
-          # The CLI handles MSVC export annotations on Windows uniformly.
           "$TS_CLI" build --output "$RUNNER_TEMP/out/${{ matrix.lib-name }}" "$GRAMMAR_DIR"
 
       - name: Verify exported symbols (POSIX)
@@ -122,10 +93,7 @@ jobs:
         run: |
           set -euo pipefail
           lib="$RUNNER_TEMP/out/${{ matrix.lib-name }}"
-          # `nm -gU` lists global defined symbols on both ELF (binutils) and
-          # Mach-O (macOS llvm-nm). Assert the grammar entry point is
-          # exported; runtime symbols are intentionally absent from the
-          # grammar-only library (the runtime lives on the consumer's OS).
+          # `nm -gU` works on both ELF (binutils) and Mach-O (macOS llvm-nm).
           nm_out="$(nm -gU "$lib" 2>/dev/null || nm -g --defined-only "$lib")"
           echo "$nm_out" | grep -E '(^| )_?tree_sitter_graphql( |$)' >/dev/null \
             || { echo "::error::tree_sitter_graphql not exported in $lib"; exit 1; }
@@ -202,11 +170,7 @@ jobs:
           mvn -f "$NATIVES_MODULE/pom.xml" --batch-mode --errors package -DskipTests
 
       - name: Assert jar layout
-        # Exactly five lib/<os>-<arch>/<file> entries and nothing else under
-        # lib/. The package phase wrote them into target/classes earlier; the
-        # default-jar execution bundled target/classes verbatim, plus
-        # META-INF metadata. We accept META-INF/* and the five lib entries;
-        # any other lib/* path is a workflow bug.
+        # Exactly five lib/<os>-<arch>/<file> entries; any other lib/* path is a bug.
         run: |
           set -euo pipefail
           jar_path="$(ls $NATIVES_MODULE/target/graphitron-tree-sitter-natives-*.jar)"
@@ -291,9 +255,6 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # vcpkg is preinstalled on windows-latest images at $env:VCPKG_INSTALLATION_ROOT.
-          # Build tree-sitter as a dynamic library, then put its bin directory on PATH
-          # so jtreesitter's System.loadLibrary("tree-sitter") chain finds it.
           $ErrorActionPreference = "Stop"
           & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install tree-sitter:x64-windows
           $binDir = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin"
@@ -301,9 +262,8 @@ jobs:
             Write-Error "tree-sitter.dll not found in $binDir after vcpkg install"
             exit 1
           }
-          # Make the DLL discoverable for the verifier JVM in subsequent steps.
+          # Append to PATH so the verifier JVM's System.loadLibrary chain finds it.
           Add-Content -Path $env:GITHUB_PATH -Value $binDir
-          Write-Output "PATH += $binDir (contains tree-sitter.dll)"
 
       - name: Resolve published jar into a clean local m2
         shell: bash
@@ -312,9 +272,7 @@ jobs:
           version="${{ needs.package-deploy.outputs.version }}"
           repo="$RUNNER_TEMP/m2-clean"
           mkdir -p "$repo"
-          # dependency:get retries Central until the just-published artifact
-          # is mirrored (central-publishing-maven-plugin's autoPublish has a
-          # propagation delay).
+          # Retry loop covers central-publishing-maven-plugin's autoPublish propagation delay.
           attempt=1
           until mvn -B dependency:get \
                   -Dmaven.repo.local="$repo" \
@@ -332,13 +290,8 @@ jobs:
           echo "NATIVES_VERSION=$version" >> "$GITHUB_ENV"
 
       - name: Write verifier harness
-        # Standalone Java program (no Maven project) that mirrors the shape of
-        # the graphitron-lsp NativeLibraryBundleTest.runSmokeTest helper Phase 3
-        # will land: load BundledLibraryLookup-equivalent resource for the
-        # current platform out of the natives jar, Language.load with
-        # "tree_sitter_graphql", parse a tiny document, assert root + no errors.
-        # Inlined here rather than depending on graphitron-lsp test classes so
-        # this stage stays decoupled from any in-flight lsp-side changes.
+        # Standalone load+parse against the published jar. Inlined to decouple
+        # this stage from any in-flight graphitron-lsp test class.
         shell: bash
         run: |
           set -euo pipefail
@@ -401,7 +354,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # jtreesitter is the FFM-based Java binding; same version graphitron-lsp uses.
           mvn -B dependency:get \
               -Dmaven.repo.local="$M2_REPO" \
               -Dartifact=io.github.tree-sitter:jtreesitter:0.26.0 \
@@ -413,8 +365,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Path separator: ';' on Windows, ':' elsewhere. GitHub's bash on Windows is git-bash, which
-          # still expects Windows-style classpath separators when handing the value to a Windows JVM.
+          # git-bash on Windows still needs Windows-style ';' classpath separators for the JVM.
           sep=":"
           if [[ "$RUNNER_OS" == "Windows" ]]; then sep=";"; fi
           cp="$JTREESITTER_JAR$sep$NATIVES_JAR"
