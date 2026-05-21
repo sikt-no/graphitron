@@ -1007,7 +1007,15 @@ class FieldBuilder {
                         + "@lookupKey to the surrounding ARGUMENT_DEFINITION instead."));
                 }
             }
-            return switch (inputFieldResolver.resolve(typeName, rt)) {
+            // R215: thread the call site's cascade override flag into the classifier. The
+            // plain-input field-level @condition(override:true) on the enclosing query field is
+            // already folded into fieldOverride; the consuming argument's arg-level override
+            // composes with it. Either flag flipping true suppresses the implicit predicate for
+            // every classified field, so column-miss UnboundFields at this level are admitted by
+            // the consumer's walk.
+            boolean enclosingOverride = fieldOverride
+                || argCondition.map(c -> c.override()).orElse(false);
+            return switch (inputFieldResolver.resolve(typeName, rt, enclosingOverride)) {
                 case InputFieldResolver.Resolution.Ok ok -> new ArgumentRef.InputTypeArg.PlainInputArg(
                     name, typeName, nonNull, list, argCondition, ok.fields());
                 case InputFieldResolver.Resolution.Rejected r -> new ArgumentRef.UnclassifiedArg(
@@ -1358,8 +1366,21 @@ class FieldBuilder {
                         }
                     }
                     var implicitParams = new ArrayList<BodyParam>();
+                    int errorsBefore = errors.size();
+                    // Distinguish real-@table inputs from promoted-plain inputs in error prose.
+                    // A plain input type used by a single @table-bound query field is promoted to
+                    // TableInputType (TypeBuilder.buildInputType); from the author's perspective
+                    // it's still a "plain input type", so the rejection prose reflects the SDL view.
+                    boolean hasTableDirective = ctx.schema.getType(tia.typeName())
+                            instanceof graphql.schema.GraphQLInputObjectType iot
+                        && iot.hasAppliedDirective(BuildContext.DIR_TABLE);
+                    String tiaSummary = hasTableDirective
+                        ? "@table input '" + tia.typeName() + "'"
+                        : "plain input type '" + tia.typeName() + "'";
                     walkInputFieldConditions(tia.fields(), tia.name(), List.of(),
-                        enclosingOverride, lookupBoundNames, implicitParams, argConditions);
+                        enclosingOverride, lookupBoundNames, implicitParams, argConditions, errors,
+                        tia.inputTable(), tiaSummary);
+                    if (errors.size() > errorsBefore) hadError = true;
                     bodyParams.addAll(implicitParams);
                 }
                 case ArgumentRef.InputTypeArg.PlainInputArg pia -> {
@@ -1370,8 +1391,11 @@ class FieldBuilder {
                     boolean enclosingOverride = fieldOverride
                         || pia.argCondition().map(ArgConditionRef::override).orElse(false);
                     var implicitParams = new ArrayList<BodyParam>();
+                    int errorsBefore = errors.size();
                     walkInputFieldConditions(pia.fields(), pia.name(), List.of(),
-                        enclosingOverride, Set.of(), implicitParams, argConditions);
+                        enclosingOverride, Set.of(), implicitParams, argConditions, errors, rt,
+                        "plain input type '" + pia.typeName() + "'");
+                    if (errors.size() > errorsBefore) hadError = true;
                     bodyParams.addAll(implicitParams);
                 }
                 case ArgumentRef.UnclassifiedArg u -> {
@@ -1509,6 +1533,13 @@ class FieldBuilder {
      * {@code fields}; empty at the top level.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "input-field.unbound-implies-no-column",
+        reliesOn = "The UnboundField arm reads condition.isPresent() && override to decide between "
+            + "emitting the explicit ConditionFilter and routing to the consumer-side rejection "
+            + "channel. No column lookup is re-run at this site; the classifier's guarantee that "
+            + "UnboundField never carries a column binding is what lets the arm trust "
+            + "uf.attemptedColumnName() as the Levenshtein-hint payload without re-resolving.")
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "nodeid-fk.direct-fk-keys-match",
         reliesOn = "implicitBodyParam / compositeImplicitBodyParam consume"
             + " InputField.{Column,CompositeColumn}ReferenceField carriers built only on the"
@@ -1529,8 +1560,12 @@ class FieldBuilder {
             List<InputField> fields, String outerArgName, List<String> pathPrefix,
             boolean enclosingOverride, Set<String> lookupBoundNames,
             List<BodyParam> implicitBodyParams,
-            List<ConditionFilter> out) {
+            List<ConditionFilter> out,
+            List<Rejection> walkRejections,
+            TableRef resolvingTable,
+            String containerSummary) {
         requireNonNull(implicitBodyParams, "implicitBodyParams");
+        requireNonNull(walkRejections, "walkRejections");
         for (var f : fields) {
             var leafPath = new ArrayList<>(pathPrefix);
             leafPath.add(f.name());
@@ -1568,7 +1603,8 @@ class FieldBuilder {
                     boolean nestOverride = enclosingOverride
                         || nf.condition().map(ArgConditionRef::override).orElse(false);
                     walkInputFieldConditions(nf.fields(), outerArgName, leafPath,
-                        nestOverride, lookupBoundNames, implicitBodyParams, out);
+                        nestOverride, lookupBoundNames, implicitBodyParams, out, walkRejections,
+                        resolvingTable, containerSummary);
                 }
                 case InputField.CompositeColumnField ccf -> {
                     ccf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
@@ -1592,13 +1628,60 @@ class FieldBuilder {
                             ccrf.extraction(), outerArgName, leafPath));
                     }
                 }
-                case InputField.ConditionOnlyField cof -> {
-                    // R210: @condition(override: true) on a field with no resolving column.
-                    // Only the explicit method fires; no implicit body param by construction.
-                    out.add(conditionResolver.rewrapForNested(cof.condition().filter(), outerArgName, leafPath));
+                case InputField.UnboundField uf -> {
+                    // R215: UnboundField is the no-column-bound carrier. Three reachable shapes:
+                    //   - condition.isPresent() && override:true → emit the explicit ConditionFilter
+                    //     (no implicit body param by construction).
+                    //   - condition.isEmpty() && enclosingOverride → admitted; no emission (the
+                    //     cascade owns suppression of the implicit predicate).
+                    //   - condition.isEmpty() && !enclosingOverride → reject at the field's
+                    //     source location with the "did you mean" hint against the attempted
+                    //     column name. The rejection rides on walkRejections so the caller can
+                    //     surface it as an UnclassifiedField on the enclosing query field.
+                    //
+                    // condition.isPresent() && !override is structurally invalid (validator-side
+                    // catch — see GraphitronSchemaValidator.validateInputUnboundField); the
+                    // consumer treats it like the rejected empty-condition case as a safety net.
+                    if (uf.condition().isPresent() && uf.condition().get().override()) {
+                        out.add(conditionResolver.rewrapForNested(uf.condition().get().filter(), outerArgName, leafPath));
+                    } else if (!enclosingOverride) {
+                        // Defer the rejection to the caller via the walk-rejections channel.
+                        walkRejections.add(unboundFieldConsumerRejection(uf, resolvingTable, containerSummary));
+                    }
                 }
             }
         }
+    }
+
+    /**
+     * R215 consumer-side rejection for an {@link InputField.UnboundField} reached at a call site
+     * with no enclosing {@code @condition(override: true)} cascade. The field carries no column
+     * binding and either no {@code @condition} of its own or one with {@code override:false}
+     * (the latter is also caught by the validator at the directive's location). The rejection
+     * prose names the field as {@code <parentTypeName>.<name>} so log readers can locate it
+     * without consulting the surrounding UnclassifiedField context.
+     *
+     * <p>When {@link InputField.UnboundField#attemptedColumnName()} is non-null and a resolving
+     * table is in hand, the rejection lifts to {@link Rejection.AuthorError.UnknownName} with the
+     * attempted column name and the Levenshtein candidates against the table; LSP fix-its and
+     * watch-mode formatters consume the structured payload. Otherwise (no attempt, or no table
+     * context) it folds to a structural rejection.
+     */
+    private Rejection unboundFieldConsumerRejection(InputField.UnboundField uf, TableRef resolvingTable,
+                                                    String containerSummary) {
+        String attempted = uf.attemptedColumnName();
+        String summary = containerSummary + ": input field '" + uf.name() + "'";
+        if (attempted != null && resolvingTable != null) {
+            return Rejection.unknownColumn(summary, attempted,
+                ctx.catalog.columnSqlNamesOf(resolvingTable.tableName()));
+        }
+        if (attempted == null) {
+            return Rejection.structural(summary
+                + ": has no column binding and no @condition; the field cannot resolve "
+                + "without an enclosing @condition(override: true) cascade");
+        }
+        return Rejection.structural(summary + ": no column '" + attempted
+            + "' found on the resolving table");
     }
 
     /**

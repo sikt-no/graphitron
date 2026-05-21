@@ -20,6 +20,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_MULTI_ROW;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
@@ -310,6 +311,16 @@ final class MutationInputResolver {
      *             {@link DmlKind#DELETE} / {@link DmlKind#UPSERT}
      */
     @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "input-field.unbound-with-override-condition-admits-on-mutation-update-delete",
+        description = "InputField.UnboundField with condition.isPresent() && override:true admits "
+            + "on @mutation(typeName: UPDATE | DELETE); the developer takes over the WHERE half via "
+            + "the explicit condition method (R215). INSERT rejects (no WHERE clause for the "
+            + "override to bind into). The admitted carrier participates only on the filter side; "
+            + "the SET-walking emitter never sees it because @value-marked partition is computed "
+            + "from the SDL @value directive set independently. Without this admission, schemas "
+            + "with developer-owned filter logic on mutation inputs would have no way to express "
+            + "the override.")
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
         key = "mutation-input.where-columns-cover-pk",
         description = "On DELETE / UPDATE without `multiRow: true`, the union of contributed "
             + "filter columns covers the input @table's primary key. Filter-column contributions "
@@ -398,6 +409,23 @@ final class MutationInputResolver {
                     }
                     valueMarkedNames.add(sdlField.getName());
                 }
+                // R215: @condition(override: false) on a mutation input field is filter-shape that
+                // would compete with the mutation's verb-specific WHERE shape; reject at classify
+                // time with the field's source location. The @condition(override: true) case
+                // routes through the classifier's UnboundField collapse and is admitted by the
+                // per-field admission loop below on UPDATE / DELETE.
+                if (hasCondition && !hasValue) {
+                    var condDir = sdlField.getAppliedDirective(DIR_CONDITION);
+                    var overrideArg = condDir != null ? condDir.getArgument(ARG_OVERRIDE) : null;
+                    boolean override = overrideArg != null && Boolean.TRUE.equals(overrideArg.getValue());
+                    if (!override) {
+                        return new Resolved.Rejected(Rejection.structural(
+                            "@mutation input '" + argTypeName + "' field '" + sdlField.getName()
+                            + "': @condition on a mutation input field is not supported "
+                            + "(mutations write values; only @condition(override: true) is admitted "
+                            + "on UPDATE / DELETE to let the developer take over the WHERE half)"));
+                    }
+                }
             }
 
             var bindingErrors = new java.util.ArrayList<String>();
@@ -473,6 +501,27 @@ final class MutationInputResolver {
             if (f instanceof InputField.ColumnReferenceField
                 || f instanceof InputField.CompositeColumnReferenceField) {
                 continue;
+            }
+            // R215: UnboundField with @condition(override: true) admits on UPDATE / DELETE; the
+            // developer takes over the WHERE half via the explicit condition method. INSERT has
+            // no WHERE clause for the override to bind into, so the carrier rejects there.
+            // UnboundField with condition.isEmpty() or @condition(override:false) is never a
+            // valid mutation input shape — the field has nothing to write and no filter slot.
+            if (f instanceof InputField.UnboundField uf) {
+                if (uf.condition().isPresent() && uf.condition().get().override()) {
+                    if (kind == DmlKind.INSERT) {
+                        return new Resolved.Rejected(Rejection.structural(
+                            "@mutation input '" + foundTia.typeName() + "' field '" + uf.name()
+                            + "': @condition(override: true) on a @mutation(typeName: INSERT) "
+                            + "input field is not supported; INSERT has no WHERE clause for the "
+                            + "override condition to bind into"));
+                    }
+                    continue;
+                }
+                return new Resolved.Rejected(Rejection.structural(
+                    "@mutation input '" + foundTia.typeName() + "' field '" + uf.name()
+                    + "': field has no column binding and no @condition(override: true); "
+                    + "mutation input fields must bind a column or carry an override condition"));
             }
             // NestingField stays deferred: nested-input is R128's compound-entity-mutations
             // territory.

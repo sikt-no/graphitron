@@ -395,8 +395,8 @@ final class EnumMappingResolver {
                     // Nesting carriers are not admissible binding shapes here; the caller's
                     // structural walk surfaces them as rejections.
                 }
-                case InputField.ConditionOnlyField ignored -> {
-                    // R210: condition-only carrier has no column binding; not enum-mappable.
+                case InputField.UnboundField ignored -> {
+                    // R215: unbound carrier has no column binding; not enum-mappable.
                 }
                 case null -> {
                     // SDL field declared but the input type didn't classify it (Unresolved

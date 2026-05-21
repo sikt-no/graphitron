@@ -1533,13 +1533,18 @@ class BuildContext {
      * {@code condition} field empty — the field still classifies as its structural variant.
      * Column-miss and path-resolution failures return {@link InputFieldResolution.Unresolved}.
      *
-     * <p>{@code expandingTypes} guards against circular plain-input nesting; callers start
-     * with an empty set.
+     * <p>{@code ctx} (R215) bundles the structural facts threaded through recursive descent that
+     * a single field's local view cannot recover: {@link ClassifyContext#expandingTypes} guards
+     * against circular plain-input nesting (callers start with {@link ClassifyContext#root()}),
+     * and {@link ClassifyContext#enclosingOverride} threads the cascade flag for future-growth
+     * axes. The classifier's variant decisions today do not branch on {@code enclosingOverride}
+     * (column-miss uniformly lifts to {@link InputField.UnboundField}); the consumer's
+     * cascade-aware switch reads the carrier plus its own call-site {@code enclosingOverride}.
      */
     InputFieldResolution classifyInputField(
             GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable,
-            Set<String> expandingTypes, List<String> errors) {
-        var resolution = classifyInputFieldInternal(field, parentTypeName, resolvedTable, expandingTypes, errors);
+            ClassifyContext ctx, List<String> errors) {
+        var resolution = classifyInputFieldInternal(field, parentTypeName, resolvedTable, ctx, errors);
         // Trace-only: input fields are stored embedded in their parent type rather than in a
         // central map, so the registry doesn't own their persistence; this is the canonical
         // emission point.
@@ -1549,6 +1554,17 @@ class BuildContext {
         return resolution;
     }
 
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "input-field.unbound-implies-no-column",
+        description = "Classifier emits InputField.UnboundField if and only if the field cannot "
+            + "bind a SQL column on the resolving table (R215). Consumers (walkInputFieldConditions, "
+            + "MutationInputResolver, LookupMappingResolver, EnumMappingResolver, CatalogBuilder) "
+            + "switch on the variant to decide admit-vs-reject without re-running column lookup; "
+            + "the structural answer is recorded once at classify time. Two reachable sub-shapes: "
+            + "condition.isPresent() && override:true (the explicit method owns the WHERE predicate; "
+            + "subsumes R210's ConditionOnlyField and R215 §5's ColumnField+override:true collapse) "
+            + "and condition.isEmpty() (cascade-admitted-at-consumer or validator-rejected, depending "
+            + "on the enclosing call site).")
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "nodeid-fk.direct-fk-keys-match",
         reliesOn = "The @nodeId FK-target arms in inputFieldFromNodeIdResolved construct"
@@ -1570,7 +1586,7 @@ class BuildContext {
             + " the static helpers happens from this classifier any more.")
     private InputFieldResolution classifyInputFieldInternal(
             GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable,
-            Set<String> expandingTypes, List<String> errors) {
+            ClassifyContext ctx, List<String> errors) {
         String name = field.getName();
         if (field.hasAppliedDirective(DIR_NOT_GENERATED)) {
             return new InputFieldResolution.Unresolved(name, null,
@@ -1625,16 +1641,22 @@ class BuildContext {
         var baseType = GraphQLTypeUtil.unwrapAll(type);
         if (baseType instanceof GraphQLInputObjectType nestedInputType
                 && !nestedInputType.hasAppliedDirective(DIR_TABLE)) {
-            if (expandingTypes.contains(typeName)) {
+            if (ctx.isExpanding(typeName)) {
                 return new InputFieldResolution.Unresolved(name, null,
                     "circular input type reference detected while expanding '" + typeName + "'");
             }
-            var newExpanding = new LinkedHashSet<>(expandingTypes);
-            newExpanding.add(typeName);
+            // R215: read the field's own @condition override flag (cheap, no errors side effects)
+            // so the recursive descent threads the cascade through nested fields. The classifier
+            // does not branch on enclosingOverride for variant decisions, but the consumer's
+            // cascade-aware switch reads it.
+            var nestCondDirective = readConditionDirective(field);
+            boolean nestOverride = nestCondDirective != null && nestCondDirective.override();
+            var nestedCtx = ctx.expanding(typeName)
+                .withOverride(ctx.enclosingOverride() || nestOverride);
             var failures = new ArrayList<InputFieldResolution.Unresolved>();
             var resolvedFields = new ArrayList<InputField>();
             for (var nested : nestedInputType.getFieldDefinitions()) {
-                var res = classifyInputField(nested, typeName, resolvedTable, newExpanding, errors);
+                var res = classifyInputField(nested, typeName, resolvedTable, nestedCtx, errors);
                 switch (res) {
                     case InputFieldResolution.Resolved r -> resolvedFields.add(r.field());
                     case InputFieldResolution.Unresolved u -> failures.add(u);
@@ -1736,6 +1758,16 @@ class BuildContext {
         if (colEntry.isPresent()) {
             var e = colEntry.get();
             Optional<ArgConditionRef> cond = buildInputFieldCondition(field, name, errors);
+            // R215 §5: @condition(override: true) on a field collapses to UnboundField regardless
+            // of whether the column resolves. The column is unused by construction (the explicit
+            // condition method owns the predicate entirely), so recording it on a ColumnField is
+            // dead storage. UnboundField is the canonical structural answer; the consumer's switch
+            // becomes one-axis exhaustive over enclosingOverride × variant.
+            if (cond.isPresent() && cond.get().override()) {
+                return new InputFieldResolution.Resolved(new InputField.UnboundField(
+                    parentTypeName, name, locationOf(field), typeName, nonNull, list,
+                    cond, columnName));
+            }
             return new InputFieldResolution.Resolved(new InputField.ColumnField(
                 parentTypeName, name, locationOf(field), typeName, nonNull, list,
                 new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()), cond,
@@ -1778,46 +1810,23 @@ class BuildContext {
                     keyColumns, shimCond, extraction));
             }
         }
-        // R210: @condition(override: true) means no implicit column predicate is emitted, so the
-        // field does not need a matching column — the explicit method owns the predicate entirely.
-        // Gate on the directive's override flag first (cheap, no errors-list side effects) so a
-        // failing override:false condition does not silently widen the typed-rejection composite
-        // here at the column-miss fall-through (R205 acceptance test 4 pins the
-        // single-Unresolved-with-non-null-lookupColumn lifting as AuthorError.UnknownName, which
-        // a buildInputFieldCondition call here would collapse to Structural by populating
-        // condErrors alongside the column miss). When the directive carries override:true, build
-        // the condition; if it builds successfully, return ConditionOnlyField; if it fails to
-        // build, R211 redirects the column-miss arm to a placeholder Unresolved (lookupColumn null)
-        // so the actionable condition error in condErrors is what the author sees, not a misleading
-        // "no column found" line for a column that is unused by construction. The override:false
-        // leg never enters this branch, so R205's typed-rejection lift is structurally untouched.
+        // R215: column-miss lifts to InputField.UnboundField uniformly. The classifier emits the
+        // structural variant once; the validator catches @condition(override:false) shapes at the
+        // directive's location, and the consumer applies the cascade (admit when enclosingOverride
+        // is true, reject at the field's source location otherwise).
+        //
+        // When the field carries @condition (any override flag), build it once so the carrier
+        // records the explicit predicate. A failing condition build still emits UnboundField with
+        // condition.empty() so the consumer-side path stays uniform; the condition error rides on
+        // the errors list independent of variant choice.
         var conditionDirective = readConditionDirective(field);
-        if (conditionDirective != null && conditionDirective.override()) {
-            int errorsBefore = errors.size();
-            Optional<ArgConditionRef> overrideCond = buildInputFieldCondition(field, name, errors);
-            if (overrideCond.isPresent()) {
-                return new InputFieldResolution.Resolved(new InputField.ConditionOnlyField(
-                    parentTypeName, name, locationOf(field), typeName, nonNull, list,
-                    overrideCond.get()));
-            }
-            if (errors.size() > errorsBefore) {
-                // R211: column is unused by construction under override:true; the condition error
-                // already appended by buildInputFieldCondition is the actionable diagnostic.
-                // Returning a redirecting Unresolved with lookupColumn=null suppresses the
-                // misleading "no column 'X' found in table 'Y'" arm. The structural-vs-typed lift
-                // in InputFieldResolver.resolve folds this leg to Rejection.structural (condErrors
-                // non-empty + lookupColumn null), which is the right bucket — the failure shape is
-                // condition-method binding, not unknown-column. The errorsBefore size-delta check
-                // distinguishes "condition error appended" from a hypothetical empty-return-without-
-                // error path; today buildInputFieldCondition populates errors on every empty
-                // return, but the guard keeps the column-miss fallback safe if that contract ever
-                // loosens.
-                return new InputFieldResolution.Unresolved(name, null,
-                    "@condition(override: true) failed to build; see condition error");
-            }
+        Optional<ArgConditionRef> unboundCond = Optional.empty();
+        if (conditionDirective != null) {
+            unboundCond = buildInputFieldCondition(field, name, errors);
         }
-        return new InputFieldResolution.Unresolved(name, columnName,
-            "no column '" + columnName + "' found in table '" + tableName + "'");
+        return new InputFieldResolution.Resolved(new InputField.UnboundField(
+            parentTypeName, name, locationOf(field), typeName, nonNull, list,
+            unboundCond, columnName));
     }
 
     /**

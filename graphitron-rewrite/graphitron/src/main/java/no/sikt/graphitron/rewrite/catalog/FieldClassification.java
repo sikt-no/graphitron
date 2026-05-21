@@ -55,7 +55,7 @@ public sealed interface FieldClassification
             FieldClassification.ServiceBacked,
             FieldClassification.RecordOrProperty,
             FieldClassification.Computed,
-            FieldClassification.InputCondition,
+            FieldClassification.InputUnbound,
             FieldClassification.Errors,
             FieldClassification.SingleRecordTable,
             FieldClassification.SingleRecordIdFromReturning,
@@ -249,11 +249,12 @@ public sealed interface FieldClassification
     record Computed(String methodClassName, String methodName) implements FieldClassification {}
 
     /**
-     * An input field whose only emission is an explicit {@code @condition(override: true)}
-     * method call; no column binding is recorded because {@code override: true} suppresses the
-     * implicit predicate by construction (R210). Covers {@code InputField.ConditionOnlyField}.
+     * An input field that does not bind to a SQL column (R215). Covers {@code InputField.UnboundField}.
+     * {@code methodClassName} / {@code methodName} are populated when the carrier has an explicit
+     * {@code @condition}; {@code override} reflects the directive flag. All three are {@code null}/
+     * {@code false} when the carrier has no condition at all (the cascade-admitted bare-field case).
      */
-    record InputCondition(String methodClassName, String methodName) implements FieldClassification {}
+    record InputUnbound(String methodClassName, String methodName, boolean override) implements FieldClassification {}
 
     /**
      * The {@code errors} field on a payload type, listing the mapped {@code @error}

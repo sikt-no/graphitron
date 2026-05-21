@@ -141,7 +141,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnField f  -> {} // type-narrowed extraction; arity invariant enforced by record ctor
             case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField f -> {} // same as above
             case no.sikt.graphitron.rewrite.model.InputField.NestingField f          -> validateInputNestingField(f, errors);
-            case no.sikt.graphitron.rewrite.model.InputField.ConditionOnlyField f    -> {} // R210: structural only — condition reflection already validated at classify time
+            case no.sikt.graphitron.rewrite.model.InputField.UnboundField f          -> validateInputUnboundField(f, errors);
             case no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField f -> validateUnclassifiedField(f, errors);
         }
         validatePaginationRequiresOrdering(field, errors);
@@ -300,7 +300,35 @@ public class GraphitronSchemaValidator {
     }
 
     private void validateTableInputType(no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType type, List<ValidationError> errors) {
-        // Unresolved tables and unresolved fields are caught by the builder (UnclassifiedType).
+        // R215: input fields are stored embedded in their parent type rather than in the schema's
+        // flat field map, so the validateField walk doesn't reach them; iterate the type's input
+        // fields here to surface UnboundField + @condition(override:false) shapes the classifier
+        // admits structurally but the validator rejects.
+        for (var field : type.inputFields()) {
+            validateInputFieldRecursive(field, errors);
+        }
+    }
+
+    /**
+     * Walks the input-field tree rooted at {@code field}, surfacing R215 validator-side rejections
+     * (currently only {@link no.sikt.graphitron.rewrite.model.InputField.UnboundField} with
+     * {@code @condition(override:false)}). Recurses through
+     * {@link no.sikt.graphitron.rewrite.model.InputField.NestingField} so nested plain inputs
+     * inside an {@code @table} input are walked too.
+     */
+    private void validateInputFieldRecursive(no.sikt.graphitron.rewrite.model.InputField field, List<ValidationError> errors) {
+        switch (field) {
+            case no.sikt.graphitron.rewrite.model.InputField.UnboundField uf -> validateInputUnboundField(uf, errors);
+            case no.sikt.graphitron.rewrite.model.InputField.NestingField nf -> {
+                for (var nested : nf.fields()) {
+                    validateInputFieldRecursive(nested, errors);
+                }
+            }
+            case no.sikt.graphitron.rewrite.model.InputField.ColumnField ignored -> {}
+            case no.sikt.graphitron.rewrite.model.InputField.ColumnReferenceField ignored -> {}
+            case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnField ignored -> {}
+            case no.sikt.graphitron.rewrite.model.InputField.CompositeColumnReferenceField ignored -> {}
+        }
     }
 
     private void validateParticipants(String typeName, java.util.List<no.sikt.graphitron.rewrite.model.ParticipantRef> participants, List<ValidationError> errors) {
@@ -941,6 +969,26 @@ public class GraphitronSchemaValidator {
     }
     private void validateInputNestingField(no.sikt.graphitron.rewrite.model.InputField.NestingField field, List<ValidationError> errors) {
         // Nested field columns are resolved at classification time; no additional structural checks needed.
+    }
+    /**
+     * R215: an {@link no.sikt.graphitron.rewrite.model.InputField.UnboundField} with
+     * {@code @condition(override: false)} present is a structural bug — the field has no column
+     * to bind and the explicit condition method does not own the predicate (override: false
+     * means the implicit column predicate is required to compose with the condition). The
+     * classifier admits this shape so consumer-side rejection paths stay uniform; the validator
+     * rejects it at the field's source location with a directed diagnostic.
+     */
+    private void validateInputUnboundField(no.sikt.graphitron.rewrite.model.InputField.UnboundField field, List<ValidationError> errors) {
+        if (field.condition().isPresent() && !field.condition().get().override()) {
+            errors.add(new ValidationError(
+                field.qualifiedName(),
+                Rejection.structural("Input field '" + field.qualifiedName()
+                    + "': @condition(override: false) on a field with no resolving column is not "
+                    + "supported; either add a matching column to the resolving table, or set "
+                    + "override: true so the condition method owns the WHERE predicate entirely"),
+                field.location()
+            ));
+        }
     }
     private void validateUnclassifiedType(no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType type, List<ValidationError> errors) {
         errors.add(new ValidationError(

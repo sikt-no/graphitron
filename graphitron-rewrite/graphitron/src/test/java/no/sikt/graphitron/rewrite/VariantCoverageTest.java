@@ -82,12 +82,15 @@ class VariantCoverageTest {
             + "Sakila catalog (no synthesized __NODE_TYPE_ID metadata), so the Id admission case "
             + "lives in the pipeline-tier test that can swap to the nodeidfixture RewriteContext "
             + "rather than in this enum.",
-        InputField.ConditionOnlyField.class,
-            "R210: @condition(override: true) input-field-with-no-matching-column carrier. "
-            + "Covered by GraphitronSchemaBuilderTest's "
-            + "plainInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOnlyField "
-            + "and tableInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOnlyField "
-            + "@Test methods (one carries @ProjectionFor(ConditionOnlyField.class)), which "
+        InputField.UnboundField.class,
+            "R215: input field with no column binding. Covers @condition(override: true) "
+            + "with or without a matching column (the §5 collapse of R210's ConditionOnlyField "
+            + "plus ColumnField + override:true), and the cascade-admitted bare-field case where "
+            + "the consumer's enclosing @condition(override: true) suppresses the implicit "
+            + "predicate. Covered by GraphitronSchemaBuilderTest's "
+            + "plainInput_overrideTrueWithoutMatchingColumn_classifiesAsUnboundField "
+            + "and tableInput_overrideTrueWithoutMatchingColumn_classifiesAsUnboundField "
+            + "@Test methods (one carries @ProjectionFor(UnboundField.class)), which "
             + "land outside the enum-style ClassificationCase shape this coverage walker reads."
     );
 

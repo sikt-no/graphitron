@@ -224,7 +224,7 @@ public class TypeFetcherGenerator {
         InputField.CompositeColumnField.class,
         InputField.CompositeColumnReferenceField.class,
         InputField.NestingField.class,
-        InputField.ConditionOnlyField.class);
+        InputField.UnboundField.class);
 
     /**
      * Leaves whose SELECT projection is emitted inline by {@link TypeClassGenerator}'s

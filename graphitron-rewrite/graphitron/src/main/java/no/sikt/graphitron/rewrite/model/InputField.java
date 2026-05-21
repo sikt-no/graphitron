@@ -18,7 +18,7 @@ import java.util.Optional;
 public sealed interface InputField extends GraphitronField
         permits InputField.ColumnField, InputField.ColumnReferenceField,
                 InputField.CompositeColumnField, InputField.CompositeColumnReferenceField,
-                InputField.NestingField, InputField.ConditionOnlyField,
+                InputField.NestingField, InputField.UnboundField,
                 InputField.LookupKeyField, InputField.SetField {
 
     /**
@@ -206,28 +206,44 @@ public sealed interface InputField extends GraphitronField
     ) implements InputField {}
 
     /**
-     * Input field whose only emission is the explicit {@code @condition(override: true)} method;
-     * no column binding is recorded because {@code override: true} suppresses the implicit
-     * predicate by construction. Lands when {@link BuildContext#classifyInputFieldInternal}
-     * reaches the "no column found" fall-through with an {@code override:true} condition on the
-     * field: the column is unused regardless of resolution, so requiring it to resolve would
-     * reject schemas where the condition method owns the predicate entirely.
+     * Input field that does not bind to a SQL column. The defining property is the absence of a
+     * column binding, regardless of whether an explicit {@code @condition} is present (R215).
      *
-     * <p>Distinct from {@link ColumnField} with a present {@code override:true} condition: that
-     * carrier records the column (used elsewhere by the catalog / fetcher walks) and merely
-     * suppresses the implicit predicate at {@code walkInputFieldConditions} time. This variant
-     * exists for the no-column-at-all case (R210).
+     * <p>{@code condition} folds two cases the classifier used to distinguish:
+     * <ul>
+     *   <li>{@code condition.isPresent() && condition.get().override()} — the field carries an
+     *       explicit {@code @condition(override: true)} (with or without a matching column on the
+     *       resolving table). The condition method owns the WHERE predicate entirely; no implicit
+     *       column predicate is emitted by construction. This is the lift of R210's
+     *       {@code ConditionOnlyField} plus R215's {@code ColumnField + override:true} collapse.</li>
+     *   <li>{@code condition.isPresent() && !condition.get().override()} — the field carries
+     *       {@code @condition(override: false)} but has no matching column. Validator-side
+     *       rejection (the classifier admits to keep call-site cascade resolution honest, but
+     *       this shape is a schema author bug and {@link GraphitronSchemaValidator} catches it
+     *       at the directive's location).</li>
+     *   <li>{@code condition.isEmpty()} — the field has no {@code @condition} of its own and no
+     *       column resolves on the {@code @table} input's table. Admitted at consumption when the
+     *       enclosing arg- or field-level {@code @condition(override: true)} cascade resolves it;
+     *       rejected at the field's source location otherwise.</li>
+     * </ul>
      *
      * <p>Not a {@link LookupKeyField} / {@link SetField}: those rails require a column tuple to
-     * drive the VALUES+JOIN or INSERT/UPDATE columnlist; condition-only carriers have neither.
+     * drive the VALUES+JOIN or INSERT/UPDATE columnlist; unbound carriers have neither.
+     *
+     * <p>{@code attemptedColumnName} carries the name the classifier looked up against the
+     * resolving table when {@code condition.isEmpty()} reached the column-miss fall-through; the
+     * consumer-side rejection uses it for the Levenshtein "did you mean" hint. {@code null} when
+     * no column lookup was attempted (override:true with a matching column, where the classifier
+     * collapsed eagerly).
      */
-    record ConditionOnlyField(
+    record UnboundField(
         String parentTypeName,
         String name,
         SourceLocation location,
         String typeName,
         boolean nonNull,
         boolean list,
-        ArgConditionRef condition
+        Optional<ArgConditionRef> condition,
+        String attemptedColumnName
     ) implements InputField {}
 }
