@@ -26,6 +26,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -237,6 +238,7 @@ class ServiceCatalog {
             if (typoGuard != null) {
                 return new ServiceReflectionResult(null, Rejection.structural(typoGuard));
             }
+            argByJavaName = inferBindingsByType(javaMethod, argByJavaName, ctxKeys, slotTypes);
             var params = new ArrayList<MethodRef.Param>();
             for (var p : javaMethod.getParameters()) {
                 if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) {
@@ -508,6 +510,20 @@ class ServiceCatalog {
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
             ArgBindingMap argBindings, Set<String> ctxKeys, ClassName expectedReturnClass,
             TableSlotPolicy tableSlotPolicy) {
+        return reflectTableMethod(className, methodName, argBindings, ctxKeys,
+            expectedReturnClass, tableSlotPolicy, Map.of());
+    }
+
+    /**
+     * Slot-types-aware overload of {@link #reflectTableMethod}. {@code slotTypes} carries the
+     * GraphQL slots in scope at the directive site (single argument for argument-level
+     * {@code @condition}, every field argument for field-level {@code @condition}), and feeds
+     * {@link #inferBindingsByType} so an unbound Java parameter whose type uniquely matches a
+     * single unclaimed slot binds positionally without requiring an {@code argMapping} entry.
+     */
+    ServiceReflectionResult reflectTableMethod(String className, String methodName,
+            ArgBindingMap argBindings, Set<String> ctxKeys, ClassName expectedReturnClass,
+            TableSlotPolicy tableSlotPolicy, Map<String, GraphQLInputType> slotTypes) {
         var argByJavaName = argBindings.byJavaName();
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, Rejection.structural("table method reference is incomplete"));
@@ -552,6 +568,7 @@ class ServiceCatalog {
             if (tableTypoGuard != null) {
                 return new ServiceReflectionResult(null, Rejection.structural(tableTypoGuard));
             }
+            argByJavaName = inferBindingsByType(javaMethod, argByJavaName, ctxKeys, slotTypes);
             var params = new ArrayList<MethodRef.Param>();
             boolean foundTable = false;
             for (var p : javaMethod.getParameters()) {
@@ -1019,6 +1036,80 @@ class ServiceCatalog {
             trail.remove(trail.size() - 1);
             visited.remove(inputObj.getName());
         }
+    }
+
+    /**
+     * Augments {@code existing} with bindings inferred from a type-unique pairing between
+     * unbound Java parameters and unclaimed GraphQL slots. For each Java type {@code T},
+     * if there is exactly one unbound Java parameter of type {@code T} and exactly one
+     * unclaimed slot whose GraphQL type maps to {@code T} via {@link #mapToJavaTypeName},
+     * a binding from that parameter name to that slot is added. Asymmetric counts (two
+     * params, one slot of the same type; or one param, two slots) are treated as ambiguous
+     * and skipped; the caller falls back to name-based matching and surfaces the existing
+     * diagnostic.
+     *
+     * <p>{@code Table<?>} and {@code DSLContext} parameters are skipped because they're
+     * resolved by type elsewhere; parameters whose name matches a declared context key are
+     * skipped because the existing name-based binding wins. Parameters with no compiler-set
+     * name are skipped (the {@code -parameters} diagnostic still fires from the per-parameter
+     * loop). {@link #mapToJavaTypeName} returns {@code null} for enums, named input objects,
+     * and unclassified scalars, so slots of those shapes are silently ignored here — the
+     * type-string equality check would be unsound without a canonical Java mapping.
+     */
+    private Map<String, PathExpr> inferBindingsByType(
+            java.lang.reflect.Method javaMethod,
+            Map<String, PathExpr> existing,
+            Set<String> ctxKeys,
+            Map<String, GraphQLInputType> slotTypes) {
+        if (slotTypes == null || slotTypes.isEmpty()) return existing;
+
+        var paramNames = Arrays.stream(javaMethod.getParameters())
+            .filter(java.lang.reflect.Parameter::isNamePresent)
+            .map(java.lang.reflect.Parameter::getName)
+            .collect(Collectors.toCollection(HashSet::new));
+
+        // A slot only counts as claimed when some Java parameter actually targets it. An
+        // identity binding for a slot whose name doesn't match any parameter is a no-op
+        // (left over from {@link ArgBindingMap#of} populating identity entries for every
+        // slot in scope), and leaving it as "claimed" would suppress legitimate type-based
+        // inference for that slot.
+        var claimedSlots = new HashSet<String>();
+        for (var entry : existing.entrySet()) {
+            if (paramNames.contains(entry.getKey())) {
+                claimedSlots.add(entry.getValue().headName());
+            }
+        }
+
+        var slotsByType = new LinkedHashMap<String, List<String>>();
+        for (var entry : slotTypes.entrySet()) {
+            if (claimedSlots.contains(entry.getKey())) continue;
+            String javaTypeName = mapToJavaTypeName(entry.getValue());
+            if (javaTypeName == null) continue;
+            slotsByType.computeIfAbsent(javaTypeName, k -> new ArrayList<>()).add(entry.getKey());
+        }
+        if (slotsByType.isEmpty()) return existing;
+
+        var paramsByType = new LinkedHashMap<String, List<String>>();
+        for (var p : javaMethod.getParameters()) {
+            if (org.jooq.Table.class.isAssignableFrom(p.getType())) continue;
+            if (org.jooq.DSLContext.class.isAssignableFrom(p.getType())) continue;
+            if (!p.isNamePresent()) continue;
+            String pName = p.getName();
+            if (existing.containsKey(pName)) continue;
+            if (ctxKeys.contains(pName)) continue;
+            String pType = p.getParameterizedType().getTypeName();
+            paramsByType.computeIfAbsent(pType, k -> new ArrayList<>()).add(pName);
+        }
+        if (paramsByType.isEmpty()) return existing;
+
+        var augmented = new LinkedHashMap<>(existing);
+        for (var paramEntry : paramsByType.entrySet()) {
+            if (paramEntry.getValue().size() != 1) continue;
+            var slots = slotsByType.get(paramEntry.getKey());
+            if (slots == null || slots.size() != 1) continue;
+            augmented.put(paramEntry.getValue().get(0), PathExpr.head(slots.get(0)));
+        }
+        return augmented;
     }
 
     /**

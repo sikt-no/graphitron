@@ -1506,7 +1506,8 @@ class BuildContext {
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
             argBindings, Set.copyOf(cond.contextArguments()), null,
-            ServiceCatalog.TableSlotPolicy.REQUIRED);
+            ServiceCatalog.TableSlotPolicy.REQUIRED,
+            java.util.Map.of(field.getName(), field.getType()));
         if (result.failed()) {
             errors.add("input field '" + inputFieldName + "' @condition: " + result.rejection().message());
             return Optional.empty();

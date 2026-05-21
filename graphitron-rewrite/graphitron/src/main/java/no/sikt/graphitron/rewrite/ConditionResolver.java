@@ -103,9 +103,10 @@ final class ConditionResolver {
             return new ArgConditionResult.Rejected(Rejection.structural("argument '" + argName + "' @condition: " + p.message()));
         }
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
+        var slotTypes = java.util.Map.of(argName, arg.getType());
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
             argBindings, Set.copyOf(cond.contextArguments()), null,
-            ServiceCatalog.TableSlotPolicy.REQUIRED);
+            ServiceCatalog.TableSlotPolicy.REQUIRED, slotTypes);
         if (result.failed()) {
             return new ArgConditionResult.Rejected(result.rejection().prefixedWith("argument '" + argName + "' @condition: "));
         }
@@ -140,7 +141,7 @@ final class ConditionResolver {
         var argBindings = ((ArgBindingMap.Result.Ok) bindingResult).map();
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
             argBindings, Set.copyOf(cond.contextArguments()), null,
-            ServiceCatalog.TableSlotPolicy.REQUIRED);
+            ServiceCatalog.TableSlotPolicy.REQUIRED, FieldBuilder.argSlotTypes(fieldDef));
         if (result.failed()) {
             return new FieldConditionResult.Rejected(result.rejection().prefixedWith("field '" + fieldDef.getName() + "' @condition: "));
         }
