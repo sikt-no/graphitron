@@ -1,7 +1,7 @@
 ---
 id: R205
-title: "@condition on a plain-input-type input field is silently dropped when no matching column exists"
-status: Backlog
+title: '@condition on a plain-input-type input field is silently dropped when no matching column exists'
+status: Spec
 bucket: bugs
 depends-on: []
 created: 2026-05-21
