@@ -4381,6 +4381,52 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
+     * R215 #11 — Inner explicit {@code @condition} on an {@code UnboundField} fires under an
+     * outer {@code @condition(override: true)} cascade. Per the cascade-divergence doc
+     * (manual/how-to/migrating-from-legacy.adoc, "behavior-divergence-condition-cascade"),
+     * {@code override: true} suppresses only the rewrite's implicit column predicate; every
+     * {@code @condition} the author writes still produces SQL.
+     *
+     * <p>Pre-fix the consumer arm silently dropped the inner {@code @condition(override: false)}
+     * when the cascade resolved the outer override; the fix mirrors the {@link
+     * no.sikt.graphitron.rewrite.model.InputField.ColumnField} arm structure by emitting the
+     * explicit {@code @condition} unconditionally and deciding rejection separately.
+     *
+     * <p>Note for R221 (validator walks PlainInputArg.fields() for UnboundField rejection): the
+     * shape here is structurally malformed ({@code override:false} on a no-column field), so once
+     * the validator's plain-input walk lands it will reject at the directive's location and this
+     * test's expectation should flip to {@code UnclassifiedField}. Until then the consumer-arm
+     * emit-anyway behavior honors the doc contract at runtime even though the schema is buggy.
+     */
+    @Test
+    void r215_innerExplicitConditionFiresOnUnboundFieldUnderOverrideCascade() {
+        var schema = build("""
+            input PlainFilter {
+              syntheticName: String
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "syntheticNameCondition"}, override: false)
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query {
+              films(filter: PlainFilter
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"}, override: true)
+              ): [Film!]!
+            }
+            """);
+        var f = schema.field("Query", "films");
+        assertThat(f).isInstanceOf(QueryField.QueryTableField.class);
+        var qtf = (QueryField.QueryTableField) f;
+        // Two explicit ConditionFilters: outer arg-level @condition(override: true) and inner
+        // field-level @condition. No GeneratedConditionFilter (no implicit predicate fires: the
+        // outer override suppresses it, and the inner field has no column anyway).
+        assertThat(qtf.filters().stream().filter(ConditionFilter.class::isInstance).count())
+            .as("outer arg-level @condition plus inner field-level @condition both emit ConditionFilters")
+            .isEqualTo(2L);
+        assertThat(qtf.filters().stream().anyMatch(GeneratedConditionFilter.class::isInstance))
+            .as("no implicit body params on UnboundField under cascade")
+            .isFalse();
+    }
+
+    /**
      * R215 #10 — Nested plain inputs propagate the cascade through {@code NestingField}. A
      * plain input nested under an arg-level {@code @condition(override: true)} admits a
      * non-binding inner field; the cascade resolves it via the consumer-side walker's
