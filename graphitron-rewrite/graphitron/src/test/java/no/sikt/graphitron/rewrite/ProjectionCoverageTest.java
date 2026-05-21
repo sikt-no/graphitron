@@ -62,11 +62,6 @@ class ProjectionCoverageTest {
             "Input-side jOOQ TableRecord fixture; covered structurally by the codegen "
             + "tier but not as a standalone classification-test fixture under the default "
             + "catalog."),
-        Map.entry(GraphitronType.PojoInputType.class,
-            "PojoInputType lands via a @record-bound input fixture; the type-level "
-            + "classifier produces it but pipeline-tier fixtures cover it implicitly "
-            + "through their input-field walks rather than as a top-level projection "
-            + "assertion target."),
         Map.entry(ChildField.ErrorsField.class,
             "Permit added in R12 (error-handling-parity) C2 alongside the ErrorChannel "
             + "slot; classifier doesn't produce it until C3 lifts the five "

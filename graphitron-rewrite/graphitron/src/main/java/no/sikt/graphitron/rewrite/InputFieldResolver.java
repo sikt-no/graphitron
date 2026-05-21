@@ -2,11 +2,13 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLInputObjectType;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Classifies the fields of a plain (non-{@code @table}) input type at the call site against a
@@ -17,30 +19,27 @@ import java.util.List;
  * {@link FieldBuilder#classifyArgument} routes a {@code GraphitronType.InputType} or
  * {@code UnclassifiedType} (input-resolution-failed) argument through the plain-input path.
  *
- * <p>The actual per-field classification is delegated to
- * {@link BuildContext#classifyInputField}; this resolver is the small wrapper that:
- * <ul>
- *   <li>Skips the work entirely when {@code rt} is {@code null} or the type is not an input
- *       object (returns {@link List#of()}).</li>
- *   <li>Iterates the schema-level field definitions, building each {@link InputField} via the
- *       context-level classifier.</li>
- *   <li>Collects per-field condition errors into a per-call buffer, then re-prefixes them with
- *       {@code "plain input type '<typeName>': "} before appending to the caller's accumulating
- *       errors list.</li>
- *   <li>Silently skips fields that fail column resolution — their conditions cannot be built,
- *       and the caller's accumulating errors list will surface the structural problem via the
- *       outer-argument classification path. {@code @notGenerated} fields are rejected up front
- *       by {@link FieldBuilder#classifyArgument} as an
- *       {@link ArgumentRef.UnclassifiedArg}, so they never reach this classifier.</li>
- * </ul>
+ * <p>Returns a sealed {@link Resolution}: {@link Resolution.Ok} when every field classifies
+ * cleanly (including the empty-fields case where {@code rt} is {@code null} or the schema type is
+ * not an input object), {@link Resolution.Rejected} when any field fails to resolve against the
+ * target table or any {@code @condition} reflection fails. Mirrors
+ * {@link OrderByResolver.Resolved} on the orderBy side.
  *
- * <p>No sealed result wrapper: the projection is total — every input shape produces a list
- * (possibly empty). The errors-list mutation pattern is preserved because the per-field errors
- * are emitted by {@link BuildContext#classifyInputField} into a buffer, then forwarded with a
- * uniform prefix; threading sealed results through the per-field walk would force every field's
- * potential error to surface as a top-level rejection, which is a behaviour change.
+ * <p>Any {@link InputFieldResolution.Unresolved} is a build error: bare-field-without-{@code @condition}
+ * signals binding intent just as much as {@code @condition}-annotated does. The single-Unresolved
+ * column-miss case lifts as {@link Rejection#unknownColumn} so LSP fix-its and watch-mode
+ * formatters consume the structured {@code attempt + candidates}; everything else lifts as
+ * {@link Rejection#structural} with joined prose. {@code @condition} reflection failures fold
+ * into the same {@link Resolution.Rejected} arm via the resolver's private {@code condErrors}
+ * buffer; no second mutation channel escapes.
  */
 final class InputFieldResolver {
+
+    /** Sealed result of {@link #resolve}; siblings {@link OrderByResolver.Resolved}. */
+    sealed interface Resolution {
+        record Ok(List<InputField> fields) implements Resolution {}
+        record Rejected(Rejection rejection) implements Resolution {}
+    }
 
     private final BuildContext ctx;
 
@@ -50,23 +49,44 @@ final class InputFieldResolver {
 
     /**
      * Classifies the fields of a plain (non-{@code @table}) input type {@code typeName} against
-     * the resolving table {@code rt}. Returns {@link List#of()} when {@code rt} is {@code null}
-     * or the schema type is not an input object. Per-field condition-build errors are appended
-     * to {@code errors} prefixed with {@code "plain input type '<typeName>': "}.
+     * the resolving table {@code rt}.
+     *
+     * <p>Returns {@link Resolution.Ok} with an empty list when {@code rt} is {@code null} or the
+     * schema type is not an input object (no work to do). Returns {@link Resolution.Rejected}
+     * when at least one field fails column resolution or any {@code @condition} reflection fails.
      */
-    List<InputField> resolve(String typeName, TableRef rt, List<String> errors) {
-        if (rt == null) return List.of();
+    Resolution resolve(String typeName, TableRef rt) {
+        if (rt == null) return new Resolution.Ok(List.of());
         var rawType = ctx.schema.getType(typeName);
-        if (!(rawType instanceof GraphQLInputObjectType iot)) return List.of();
+        if (!(rawType instanceof GraphQLInputObjectType iot)) return new Resolution.Ok(List.of());
         var condErrors = new ArrayList<String>();
         var classified = new ArrayList<InputField>();
+        var failures = new ArrayList<InputFieldResolution.Unresolved>();
         for (var f : iot.getFieldDefinitions()) {
             var res = ctx.classifyInputField(f, typeName, rt, new LinkedHashSet<>(), condErrors);
-            if (res instanceof InputFieldResolution.Resolved r) {
-                classified.add(r.field());
+            switch (res) {
+                case InputFieldResolution.Resolved r -> classified.add(r.field());
+                case InputFieldResolution.Unresolved u -> failures.add(u);
             }
         }
-        condErrors.forEach(e -> errors.add("plain input type '" + typeName + "': " + e));
-        return List.copyOf(classified);
+        String prefix = "plain input type '" + typeName + "': ";
+        if (failures.isEmpty() && condErrors.isEmpty()) {
+            return new Resolution.Ok(List.copyOf(classified));
+        }
+        // Single column-miss, no condition errors: lift as typed UnknownName so LSP fix-its
+        // and watch-mode formatters consume the structured attempt + candidates payload.
+        if (condErrors.isEmpty() && failures.size() == 1 && failures.get(0).lookupColumn() != null) {
+            var u = failures.get(0);
+            String summary = prefix + "input field '" + u.fieldName() + "'";
+            return new Resolution.Rejected(Rejection.unknownColumn(
+                summary, u.lookupColumn(), ctx.catalog.columnJavaNamesOf(rt.tableName())));
+        }
+        var parts = new ArrayList<String>();
+        for (var u : failures) {
+            parts.add("input field '" + u.fieldName() + "': " + u.reason());
+        }
+        parts.addAll(condErrors);
+        return new Resolution.Rejected(Rejection.structural(
+            prefix + parts.stream().collect(Collectors.joining("; "))));
     }
 }

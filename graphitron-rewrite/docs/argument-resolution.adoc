@@ -271,6 +271,10 @@ intermediate nesting-field's `override: true`.
 | Yes | Present (no override)   | Suppressed  | Emitted |
 | Yes | Present (override:true) | Suppressed  | Emitted |
 
+Enforced by the symmetric-implicit-predicate-emission pipeline test added in
+R205 (`plainInput_resolvedColumnWithoutCondition_emitsImplicitBodyParam`),
+which pins identical implicit-condition emission for `@table` and plain inputs.
+
 "Emitted" in the explicit-method column means the method call lands in the
 `List<WhereFilter>` returned by `projectFilters`; downstream emitters AND
 all present filters together (see §Emission). The earlier column label
@@ -396,20 +400,6 @@ code.
   rejected on blast-radius grounds: a reflection failure is a
   caller-fixable error, not a schema-structural one, so it should not
   invalidate the input type's other fields.
-
-- **Plain-input classification failure: per-field skip, not whole-arg
-  failure.** `FieldBuilder.classifyPlainInputFields` skips individual
-  fields that fail column resolution (they are not added to
-  `PlainInputArg.fields`) and appends the failure reason to the
-  field-level `errors` list. The plain-input arg itself stays classified.
-  Rationale: plain inputs are legitimately reused across heterogeneous
-  call sites (e.g. `PlainFilmIdInput` used on both `films(filter: ...)`
-  against `film` and `languages(filter: ...)` against `language`, which
-  has no `film_id` column). Whole-arg failure would reject the Language
-  call site even though the Film call site is valid; per-field skip lets
-  each call site retain the fields that resolve against its own table.
-  `@table` inputs keep the stricter whole-type `UnclassifiedType`
-  behaviour via `TypeBuilder.buildInputField`.
 
 - **`ArgCallEmitter` shape for nested input-field extraction: new sealed
   variant `CallSiteExtraction.NestedInputField(outerArgName, path)`.**
