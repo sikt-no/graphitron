@@ -179,7 +179,8 @@ jobs:
           jar_path="$NATIVES_MODULE/target/graphitron-tree-sitter-natives-${version}.jar"
           echo "Inspecting $jar_path"
           unzip -l "$jar_path"
-          lib_entries="$(unzip -l "$jar_path" | awk '{print $4}' | grep -E '^lib/' || true)"
+          # Filter out the bare lib/ and lib/<os>-<arch>/ directory entries unzip -l also prints.
+          lib_entries="$(unzip -l "$jar_path" | awk '{print $4}' | grep -E '^lib/.+[^/]$' || true)"
           expected="lib/linux-aarch64/libtree-sitter-graphql.so
           lib/linux-x86_64/libtree-sitter-graphql.so
           lib/macos-aarch64/libtree-sitter-graphql.dylib
