@@ -3,9 +3,7 @@ package no.sikt.graphitron.rewrite.generators.util;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.javapoet.TypeVariableName;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -52,15 +50,11 @@ public class GraphitronContextInterfaceGenerator {
                 + "under the {@code DSLContext.class} typed key.\n")
             .build();
 
-        var T = TypeVariableName.get("T");
-        var classOfT = ParameterizedTypeName.get(ClassName.get(Class.class), T);
         var getContextArgument = MethodSpec.methodBuilder("getContextArgument")
             .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
-            .addTypeVariable(T)
-            .returns(T)
+            .returns(Object.class)
             .addParameter(ENV, "env")
             .addParameter(String.class, "name")
-            .addParameter(classOfT, "expectedType")
             .addStatement("Object value = env.getGraphQlContext().get(name)")
             .beginControlFlow("if (value == null)")
             .addStatement("throw new $T($S + name + $S)",
@@ -68,16 +62,21 @@ public class GraphitronContextInterfaceGenerator {
                 "context value '",
                 "' was not supplied; call Graphitron.newExecutionInput(...) to populate it")
             .endControlFlow()
-            .addStatement("return expectedType.cast(value)")
+            .addStatement("return value")
             .addJavadoc("Resolves the named {@code contextArgument} value (see {@code @condition},\n"
                 + "{@code @service} and {@code @tableMethod} directives) for this fetch. The default\n"
-                + "reads the value from the request's {@code GraphQLContext} under the given key and\n"
-                + "applies {@code expectedType.cast(...)}: a missing entry throws\n"
-                + "{@link IllegalStateException}; a wrong-typed entry throws the JDK's default\n"
-                + "{@link ClassCastException}. Both throw paths are only reachable when a consumer\n"
-                + "hand-rolls an {@code ExecutionInput.Builder} outside\n"
-                + "{@code Graphitron.newExecutionInput(...)}; the typed factory makes the same\n"
-                + "mistake a compile error at the call site.\n")
+                + "reads the value from the request's {@code GraphQLContext} under the given key; a\n"
+                + "missing entry throws {@link IllegalStateException} naming the contextArgument and\n"
+                + "pointing at {@code Graphitron.newExecutionInput(...)}. The cast to the expected\n"
+                + "Java type happens at the generated call site, so a wrong-typed entry surfaces as a\n"
+                + "{@link ClassCastException} there.\n"
+                + "\n"
+                + "<p><b>Server-log surface only.</b> The framework's redact path replaces the prose\n"
+                + "message with a correlation-id reference before it reaches the consumer; the typed\n"
+                + "{@code Graphitron.newExecutionInput(...)} factory is the load-bearing diagnostic\n"
+                + "for missing or wrong-typed contextArguments. Both throw paths here are only\n"
+                + "reachable when a consumer hand-rolls an {@code ExecutionInput.Builder} outside the\n"
+                + "factory.\n")
             .build();
 
         // Lazy default validator: holder-class idiom guarantees one-time initialisation per JVM

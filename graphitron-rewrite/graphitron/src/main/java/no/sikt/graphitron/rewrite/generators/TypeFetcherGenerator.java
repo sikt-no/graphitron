@@ -4386,7 +4386,6 @@ public class TypeFetcherGenerator {
             fieldName,
             keyType, valueType, asyncResultType(valueType),
             registration,
-            ctx.graphitronContextCall(),
             RowsMethodCall.batchLoaderLambda(bkf.rowsMethodName(), keyType, registration),
             GeneratorUtils.buildKeyExtraction(sourceKey, prt),
             asyncWrapTail(valueType, outputPackage, errorChannel));
@@ -4527,7 +4526,6 @@ public class TypeFetcherGenerator {
             fieldName,
             keyType, valueType, asyncResultType(valueType),
             registration,
-            ctx.graphitronContextCall(),
             RowsMethodCall.batchLoaderLambda(bkf.rowsMethodName(), keyType, registration),
             keyExtraction,
             asyncWrapTail(valueType, outputPackage, Optional.empty()));
@@ -4599,7 +4597,6 @@ public class TypeFetcherGenerator {
             field.name(),
             keyType, valueType, asyncResultType(resultValueType),
             registration,
-            ctx.graphitronContextCall(),
             RowsMethodCall.batchLoaderLambda(field.rowsMethodName(), keyType, registration),
             GeneratorUtils.buildRecordParentKeyExtraction(sourceKey, resultType),
             asyncWrapTail(resultValueType, outputPackage, Optional.empty()));

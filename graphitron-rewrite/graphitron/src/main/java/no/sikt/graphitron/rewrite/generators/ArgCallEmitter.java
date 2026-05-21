@@ -185,9 +185,9 @@ public final class ArgCallEmitter {
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "context-argument.type-agreement",
         reliesOn = "Reads the structured TypeName from MethodRef.Param.Typed.javaType and emits "
-            + "its raw form as the $T.class literal at the getContextArgument call. The cross-site "
-            + "agreement classifier guarantees every Context-sourced param with the same name "
-            + "carries the same TypeName, so the cast literal cannot drift from the factory's "
+            + "its raw form as the Java cast literal at the getContextArgument call site. The "
+            + "cross-site agreement classifier guarantees every Context-sourced param with the "
+            + "same name carries the same TypeName, so the cast cannot drift from the factory's "
             + "typed put."
     )
     private static CodeBlock emitForParam(TypeFetcherEmissionContext ctx, MethodRef.Param param, CodeBlock tableExpression,
@@ -196,8 +196,8 @@ public final class ArgCallEmitter {
         return switch (source) {
             case ParamSource.Arg arg -> emitArgExpression(ctx, arg, param, conditionsClassName);
             case ParamSource.Context ignored ->
-                CodeBlock.of("$L.getContextArgument(env, $S, $T.class)",
-                    ctx.graphitronContextCall(), param.name(), rawTypeOf(param));
+                CodeBlock.of("($T) $L.getContextArgument(env, $S)",
+                    rawTypeOf(param), ctx.graphitronContextCall(), param.name());
             case ParamSource.DslContext ignored ->
                 CodeBlock.of("dsl");
             case ParamSource.Table ignored -> {
@@ -291,8 +291,8 @@ public final class ArgCallEmitter {
                     param.name(), ClassName.bestGuess(conditionsClassName), tl.mapFieldName(),
                     String.class, param.name());
             case CallSiteExtraction.ContextArg ignored ->
-                CodeBlock.of("$L.getContextArgument(env, $S, $T.class)",
-                    ctx.graphitronContextCall(), param.name(), rawTypeOfCallParam(param));
+                CodeBlock.of("($T) $L.getContextArgument(env, $S)",
+                    rawTypeOfCallParam(param), ctx.graphitronContextCall(), param.name());
             case CallSiteExtraction.JooqConvert jc -> param.list()
                 ? CodeBlock.of("$L.stream().map($L.$L.getDataType()::convert).toList()",
                     toCamelCase(param.name()) + "Keys", srcAlias, jc.columnJavaName())
@@ -589,13 +589,18 @@ public final class ArgCallEmitter {
     }
 
     /**
-     * Returns the raw {@link TypeName} for the {@code $T.class} literal at a
-     * {@link CallSiteExtraction.ContextArg} call site reached via {@link CallParam}.
-     * {@link CallParam#typeName()} is documented as a simple class name with no generic
-     * parameters, so {@link ClassName#bestGuess(String)} suffices.
+     * Returns the raw {@link TypeName} for the Java cast literal at a
+     * {@link CallSiteExtraction.ContextArg} call site reached via {@link CallParam}. Reads the
+     * structured {@link TypeName} off {@link CallParam#javaType()} (populated by
+     * {@link MethodRef#callParams()} from {@link MethodRef.Param.Typed#javaType()}) and collapses
+     * any parameterised type to its erasure: the same lift {@link #rawTypeOf} applies to the
+     * {@link MethodRef.Param.Typed} arm above, so both Context arms read identical structural
+     * data rather than re-parsing the string form via {@link ClassName#bestGuess(String)}.
      */
     private static TypeName rawTypeOfCallParam(CallParam param) {
-        return ClassName.bestGuess(rawComponent(param.typeName()));
+        TypeName t = param.javaType();
+        if (t instanceof ParameterizedTypeName p) return p.rawType();
+        return t;
     }
 
     /**

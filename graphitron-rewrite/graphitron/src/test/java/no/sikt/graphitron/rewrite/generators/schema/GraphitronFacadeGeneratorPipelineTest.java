@@ -11,13 +11,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * L4 pipeline tests for {@link GraphitronFacadeGenerator}: drive the generator against a real
- * classified schema with multiple {@code @service(contextArguments: [...])} sites and pin both
- * the alphabetical-sorted factory parameter list and the {@code graphQLContext} builder body.
+ * classified schema with multiple {@code @service(contextArguments: [...])} sites and pin the
+ * alphabetical-sorted factory parameter list (names + types + modifiers).
  *
  * <p>Sibling to the unit-tier {@code GraphitronFacadeGeneratorTest}, which uses an empty schema
  * to pin the empty-contextArgs collapse to {@code newExecutionInput(DSLContext)}. This test
- * exercises the multi-arg shape end-to-end through the classifier — same code paths the
+ * exercises the multi-arg shape end-to-end through the classifier, the same code paths the
  * production generator runs.
+ *
+ * <p>Body-shape behaviour (null-checks, GraphQLContext put pattern, DataLoaderRegistry attach) is
+ * covered by the L5 compile gate plus the L6 round-trip in {@code FilmContextArgumentRoundTripTest};
+ * body-string assertions are intentionally absent here per the no-code-string-assertion rule.
  */
 @PipelineTier
 class GraphitronFacadeGeneratorPipelineTest {
@@ -55,44 +59,5 @@ class GraphitronFacadeGeneratorPipelineTest {
         assertThat(newExecutionInput.parameters()).extracting(p -> p.type().toString())
             .containsExactly("org.jooq.DSLContext", "java.lang.Long", "java.lang.String");
         assertThat(newExecutionInput.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
-    }
-
-    @Test
-    void factory_bodyNullChecksEveryParameterAndPopulatesGraphQLContext() {
-        // The body shape: requireNonNull on every parameter, then a graphQLContext builder lambda
-        // that puts DSLContext.class, each contextArg under its string name, and the singleton
-        // GraphitronContextImpl under GraphitronContext.class.
-        String sdl = """
-            type Film @table(name: "film") {
-                rating: String @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub",
-                    method: "getRatingByUser"
-                }, contextArguments: ["userId"])
-            }
-            type Query { film: Film }
-            """;
-        var schema = TestSchemaHelper.buildSchema(sdl);
-        var spec = GraphitronFacadeGenerator.generate(schema, "com.example").get(0);
-
-        String body = spec.methodSpecs().stream()
-            .filter(m -> m.name().equals("newExecutionInput"))
-            .findFirst()
-            .orElseThrow()
-            .code()
-            .toString();
-
-        // Null-check tier: defaultDsl + each contextArg
-        assertThat(body)
-            .contains("java.util.Objects.requireNonNull(defaultDsl, \"defaultDsl\")")
-            .contains("java.util.Objects.requireNonNull(userId, \"userId\")");
-
-        // graphQLContext body: DSLContext.class typed key, string key per contextArg, singleton put
-        assertThat(body)
-            .contains("b.put(org.jooq.DSLContext.class, defaultDsl)")
-            .contains("b.put(\"userId\", userId)")
-            .contains("com.example.schema.GraphitronContext.GraphitronContextImpl.INSTANCE");
-
-        // DataLoaderRegistry attached lazily
-        assertThat(body).contains("new org.dataloader.DataLoaderRegistry()");
     }
 }

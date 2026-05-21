@@ -89,7 +89,7 @@ class FilmContextArgumentRoundTripTest {
         IllegalStateException thrown = org.assertj.core.api.Assertions.catchThrowableOfType(
             IllegalStateException.class,
             () -> GraphitronContext.GraphitronContextImpl.INSTANCE
-                .getContextArgument(env, "userId", String.class));
+                .getContextArgument(env, "userId"));
         assertThat(thrown).isNotNull();
         assertThat(thrown.getMessage())
             .as("missing-value diagnostic names the contextArgument and the factory")

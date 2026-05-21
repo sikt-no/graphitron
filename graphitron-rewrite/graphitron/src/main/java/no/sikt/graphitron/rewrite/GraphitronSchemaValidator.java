@@ -43,19 +43,22 @@ public class GraphitronSchemaValidator {
     }
 
     /**
-     * Cross-cutting check: drains the {@link ContextArgumentClassifier}'s typed
+     * Cross-cutting check: drains the cached {@link ContextArgumentClassifier} output's typed
      * {@link Rejection.AuthorError.TypeConflict} list into {@link ValidationError}s, mirroring
      * the validator-mirrors-classifier shape of
      * {@link #validateLocalContextErrorsFieldGuards}. The classifier walks every
      * {@link no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed} whose source is
      * {@link no.sikt.graphitron.rewrite.model.ParamSource.Context} and rejects when two or more
-     * directive sites reference the same name with disagreeing Java types — closing the loop
+     * directive sites reference the same name with disagreeing Java types, closing the loop
      * before the factory emitter is ever asked to paste a non-existent {@code TypeName} into
      * {@code Graphitron.newExecutionInput(...)}.
+     *
+     * <p>Reads {@link GraphitronSchema#contextArguments()}, which the schema's constructor
+     * populated once at parse boundary, so the validator and {@code GraphitronFacadeGenerator}
+     * see the identical classification rather than each re-running the walk.
      */
     private void validateContextArgumentTypeAgreement(GraphitronSchema schema, List<ValidationError> errors) {
-        var classification = ContextArgumentClassifier.classify(schema);
-        for (Rejection conflict : classification.conflicts()) {
+        for (Rejection conflict : schema.contextArguments().conflicts()) {
             errors.add(new ValidationError(
                 "<schema>",
                 conflict,

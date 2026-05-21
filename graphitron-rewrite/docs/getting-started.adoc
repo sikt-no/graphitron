@@ -43,7 +43,7 @@ public static ExecutionInput.Builder newExecutionInput(
     UserInfo userInfo);
 ----
 
-A missing or wrong-typed contextArgument is a compile error at the call site, not a runtime surprise: the factory's typed parameter list is the load-bearing diagnostic. The body null-checks each parameter (`Objects.requireNonNull`) and populates the per-request `GraphQLContext`; generated fetchers read each value back through `getContextArgument(env, name, ExpectedType.class)`.
+A missing or wrong-typed contextArgument is a compile error at the call site, not a runtime surprise: the factory's typed parameter list is the load-bearing diagnostic. The body null-checks each parameter (`Objects.requireNonNull`) and populates the per-request `GraphQLContext`; generated fetchers read each value back via `getContextArgument(env, name)` with an explicit Java cast at the call site (`(ExpectedType) graphitronContext(env).getContextArgument(env, name)`).
 
 If you bypass the factory and hand-roll an `ExecutionInput.Builder` (for example, to construct a test fixture without `Graphitron`), and a contextArgument slot ends up missing, the generated fetcher throws at first read:
 
@@ -226,7 +226,7 @@ ExecutionInput input = Graphitron.newExecutionInput(dsl, userId)
     .build();
 ----
 
-The factory's parameter order follows the SDL's `contextArguments` list (alphabetical), and each slot's Java type is reflected from the developer method's signature. A typo in `contextArguments:` becomes a compile error at this call site (typed-but-unfamiliar parameter name in the factory's signature), not a silent `null` at request time. The generator emits the read-back site (`getContextArgument(env, "userId", String.class)`) so the value flows through to your `@service` or `@condition` method unchanged.
+The factory's parameter order follows the SDL's `contextArguments` list (alphabetical), and each slot's Java type is reflected from the developer method's signature. A typo in `contextArguments:` becomes a compile error at this call site (typed-but-unfamiliar parameter name in the factory's signature), not a silent `null` at request time. The generator emits the read-back site (`(String) graphitronContext(env).getContextArgument(env, "userId")`) so the value flows through to your `@service` or `@condition` method unchanged.
 
 == Customizer safe surface
 
