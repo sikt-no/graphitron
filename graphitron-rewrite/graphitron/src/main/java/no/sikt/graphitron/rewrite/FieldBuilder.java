@@ -1629,24 +1629,31 @@ class FieldBuilder {
                     }
                 }
                 case InputField.UnboundField uf -> {
-                    // R215: UnboundField is the no-column-bound carrier. Three reachable shapes:
-                    //   - condition.isPresent() && override:true → emit the explicit ConditionFilter
-                    //     (no implicit body param by construction).
-                    //   - condition.isEmpty() && enclosingOverride → admitted; no emission (the
-                    //     cascade owns suppression of the implicit predicate).
-                    //   - condition.isEmpty() && !enclosingOverride → reject at the field's
-                    //     source location with the "did you mean" hint against the attempted
-                    //     column name. The rejection rides on walkRejections so the caller can
-                    //     surface it as an UnclassifiedField on the enclosing query field.
+                    // R215: UnboundField is the no-column-bound carrier. Per condition-cascade
+                    // docs (manual/how-to/migrating-from-legacy.adoc,
+                    // "behavior-divergence-condition-cascade") every @condition the author
+                    // writes produces SQL; the override flag controls only the *implicit*
+                    // column predicate, which UnboundField doesn't have. So the cascade case
+                    // (inner @condition under outer override:true) still fires the inner method.
                     //
-                    // condition.isPresent() && !override is structurally invalid (validator-side
-                    // catch — see GraphitronSchemaValidator.validateInputUnboundField); the
-                    // consumer treats it like the rejected empty-condition case as a safety net.
-                    if (uf.condition().isPresent() && uf.condition().get().override()) {
-                        out.add(conditionResolver.rewrapForNested(uf.condition().get().filter(), outerArgName, leafPath));
-                    } else if (!enclosingOverride) {
-                        // Defer the rejection to the caller via the walk-rejections channel.
+                    // Reject at the consumer outside the cascade when either the shape is
+                    // structurally malformed (condition.isPresent() && !override on a no-column
+                    // field; override:false implies the implicit predicate is required to
+                    // compose, and there's no column to bind) or the field has no filter
+                    // contribution at all (condition.isEmpty()). The first arm is the
+                    // validator's job per spec but the validator's plain-input walk doesn't
+                    // exist yet (R221: validator-walks-plain-input-unbound-fields); the
+                    // consumer-side reject acts as a safety net for plain inputs until R221
+                    // lands. @table inputs are caught by GraphitronSchemaValidator.validateInputUnboundField
+                    // at the directive's location independent of this path.
+                    boolean rejectAtConsumer = !enclosingOverride
+                        && (uf.condition().isEmpty()
+                            || !uf.condition().get().override());
+                    if (rejectAtConsumer) {
                         walkRejections.add(unboundFieldConsumerRejection(uf, resolvingTable, containerSummary));
+                    } else {
+                        uf.condition().ifPresent(c -> out.add(
+                            conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
                     }
                 }
             }
