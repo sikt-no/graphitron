@@ -8,13 +8,21 @@ name: tree-sitter natives release
 # artifact is identified by Maven version.
 #
 # Three stages, all gated on the previous succeeding:
-#   1. build-matrix: five native runners, each compiles parser + runtime
-#      with `tree-sitter build` and verifies symbol exports.
+#   1. build-matrix: five native runners, each compiles the grammar's
+#      `parser.c` with `tree-sitter build` and verifies the
+#      `tree_sitter_graphql` entry point is exported.
 #   2. package-deploy: ubuntu-latest assembles the five-platform jar,
 #      asserts layout, signs, and pushes to Maven Central.
-#   3. post-deploy-verify: five native runners resolve the freshly-
-#      published jar from a clean local m2 and load+parse a trivial
-#      GraphQL document against the platform-appropriate binary.
+#   3. post-deploy-verify: five native runners install `libtree-sitter`
+#      from the OS package manager, resolve the freshly-published jar
+#      from a clean local m2, and load+parse a trivial GraphQL document
+#      against the platform-appropriate grammar binary.
+#
+# The artifact ships only the per-platform grammar library; the
+# tree-sitter runtime itself is sourced from the consumer's OS via
+# jtreesitter's built-in chain (`SymbolLookup.libraryLookup` →
+# `System.loadLibrary("tree-sitter")` → `Linker.defaultLookup`). Stage 3
+# exercises that exact path against an OS-installed `libtree-sitter`.
 #
 # Stage 3 is the authoritative "the jar works end-to-end on every
 # supported platform" gate. If any platform fails after a successful
@@ -101,12 +109,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/out"
-          # `tree-sitter build` compiles the grammar's parser.c together with
-          # the runtime sources the CLI ships internally, producing one shared
-          # library that exports both `tree_sitter_graphql` and the `ts_*`
-          # runtime symbols. The CLI handles MSVC export annotations on
-          # Windows; using it directly avoids the bonede route's missing
-          # bare `ts_*` exports.
+          # `tree-sitter build` compiles the grammar's parser.c into a single
+          # shared library that exports `tree_sitter_graphql`. The runtime
+          # itself (`libtree-sitter`) is not linked in; jtreesitter's
+          # ChainedLibraryLookup finds it from the consumer's OS at load time.
+          # The CLI handles MSVC export annotations on Windows uniformly.
           "$TS_CLI" build --output "$RUNNER_TEMP/out/${{ matrix.lib-name }}" "$GRAMMAR_DIR"
 
       - name: Verify exported symbols (POSIX)
@@ -116,15 +123,13 @@ jobs:
           set -euo pipefail
           lib="$RUNNER_TEMP/out/${{ matrix.lib-name }}"
           # `nm -gU` lists global defined symbols on both ELF (binutils) and
-          # Mach-O (macOS llvm-nm). Assert the grammar entry point AND a
-          # representative ts_* runtime symbol are both exported: that's the
-          # core invariant the bonede Windows DLL violated.
+          # Mach-O (macOS llvm-nm). Assert the grammar entry point is
+          # exported; runtime symbols are intentionally absent from the
+          # grammar-only library (the runtime lives on the consumer's OS).
           nm_out="$(nm -gU "$lib" 2>/dev/null || nm -g --defined-only "$lib")"
           echo "$nm_out" | grep -E '(^| )_?tree_sitter_graphql( |$)' >/dev/null \
             || { echo "::error::tree_sitter_graphql not exported in $lib"; exit 1; }
-          echo "$nm_out" | grep -E '(^| )_?ts_parser_new( |$)' >/dev/null \
-            || { echo "::error::ts_parser_new not exported in $lib (runtime not merged)"; exit 1; }
-          echo "OK: tree_sitter_graphql and ts_parser_new both exported"
+          echo "OK: tree_sitter_graphql exported"
 
       - name: Verify exported symbols (Windows)
         if: runner.os == 'Windows'
@@ -141,11 +146,7 @@ jobs:
             Write-Error "tree_sitter_graphql not exported in $lib"
             exit 1
           }
-          if (-not ($exports -match 'ts_parser_new')) {
-            Write-Error "ts_parser_new not exported in $lib (runtime not merged)"
-            exit 1
-          }
-          Write-Output "OK: tree_sitter_graphql and ts_parser_new both exported"
+          Write-Output "OK: tree_sitter_graphql exported"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
@@ -271,6 +272,39 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
 
+      - name: Install libtree-sitter (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libtree-sitter0
+
+      - name: Install libtree-sitter (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install tree-sitter
+
+      - name: Install libtree-sitter (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # vcpkg is preinstalled on windows-latest images at $env:VCPKG_INSTALLATION_ROOT.
+          # Build tree-sitter as a dynamic library, then put its bin directory on PATH
+          # so jtreesitter's System.loadLibrary("tree-sitter") chain finds it.
+          $ErrorActionPreference = "Stop"
+          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install tree-sitter:x64-windows
+          $binDir = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows/bin"
+          if (-not (Test-Path "$binDir/tree-sitter.dll")) {
+            Write-Error "tree-sitter.dll not found in $binDir after vcpkg install"
+            exit 1
+          }
+          # Make the DLL discoverable for the verifier JVM in subsequent steps.
+          Add-Content -Path $env:GITHUB_PATH -Value $binDir
+          Write-Output "PATH += $binDir (contains tree-sitter.dll)"
+
       - name: Resolve published jar into a clean local m2
         shell: bash
         run: |
@@ -311,7 +345,6 @@ jobs:
           mkdir -p verifier
           cat > verifier/Verify.java <<'JAVA'
           import io.github.treesitter.jtreesitter.Language;
-          import io.github.treesitter.jtreesitter.NativeLibraryLookup;
           import io.github.treesitter.jtreesitter.Parser;
           import io.github.treesitter.jtreesitter.Tree;
           import java.io.InputStream;

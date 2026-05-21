@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Standalone Maven module that publishes per-platform tree-sitter native
-  libraries as a single jar to Maven Central, consumed by graphitron-lsp.
+  Standalone Maven module that publishes the per-platform tree-sitter-graphql
+  grammar binaries as a single jar to Maven Central, consumed by graphitron-lsp.
+  The tree-sitter runtime (libtree-sitter) itself is NOT bundled; jtreesitter's
+  ChainedLibraryLookup finds it from the consumer's OS at load time.
 
   Intentionally NOT a child of graphitron-rewrite-parent. Trunk's parent runs
   at 10-SNAPSHOT and declares no <snapshotRepository>, so inheriting from it
@@ -14,8 +16,10 @@
   pays zero build cost.
 
   Version scheme is <tree-sitter-runtime-version>-<build-n>; first release is
-  0.26.0-1. Bump <build-n> for any binary change (grammar update, build flag,
-  recompile); bump <runtime-version> when the bundled runtime version moves.
+  0.26.0-1. The <runtime-version> portion is the tree-sitter parser ABI the
+  grammar was built against, not a runtime we ship. Bump <build-n> for any
+  grammar-binary change (grammar update, build flag, recompile); bump
+  <runtime-version> when retargeting the grammar to a newer tree-sitter ABI.
   See UPSTREAM.md and graphitron-rewrite/docs/tree-sitter-natives-release.adoc.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -31,11 +35,14 @@
 
     <name>${project.groupId}:${project.artifactId}</name>
     <description>
-        Per-platform tree-sitter native libraries for graphitron-lsp:
-        the tree-sitter 0.26.0 runtime + the bkegley tree-sitter-graphql
-        grammar, compiled into one shared library per supported platform
-        (linux-x86_64, linux-aarch64, macos-x86_64, macos-aarch64,
-        windows-x86_64) and shipped under lib/&lt;os&gt;-&lt;arch&gt;/ in the jar.
+        Per-platform tree-sitter-graphql grammar binaries for graphitron-lsp:
+        the bkegley tree-sitter-graphql grammar compiled against the
+        tree-sitter 0.26.0 parser ABI, one shared library per supported
+        platform (linux-x86_64, linux-aarch64, macos-x86_64, macos-aarch64,
+        windows-x86_64), shipped under lib/&lt;os&gt;-&lt;arch&gt;/ in the jar.
+        The tree-sitter runtime (libtree-sitter) is NOT bundled; consumers
+        provide it via the OS package manager and jtreesitter's chain
+        resolves it at load time.
     </description>
     <url>https://github.com/sikt-no/graphitron</url>
 

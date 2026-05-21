@@ -9,13 +9,15 @@ tree-sitter shared libraries for five host platforms:
 - `macos-aarch64` → `lib/macos-aarch64/libtree-sitter-graphql.dylib`
 - `windows-x86_64` → `lib/windows-x86_64/tree-sitter-graphql.dll`
 
-Each binary is the upstream tree-sitter 0.26.0 runtime + the vendored
-bkegley tree-sitter-graphql grammar compiled into one unified shared
-library, exposing both the runtime's `ts_*` symbols and the grammar's
-`tree_sitter_graphql` entry point. The merged-library shape lets
-`BundledLibraryLookup` in graphitron-lsp register one
-`SymbolLookup.libraryLookup` per platform instead of chaining separate
-runtime / grammar lookups.
+Each binary is the vendored bkegley tree-sitter-graphql grammar compiled
+against the upstream tree-sitter `0.26.0` parser ABI, exposing the
+grammar's `tree_sitter_graphql` entry point only. The tree-sitter runtime
+itself (`libtree-sitter`) is **not** bundled. graphitron-lsp relies on
+jtreesitter's `ChainedLibraryLookup` to find an OS-installed
+`libtree-sitter` (`brew install tree-sitter` on macOS,
+`apt install libtree-sitter0` on Linux, vcpkg or upstream build on
+Windows). The runtime is a system dependency of graphitron-lsp, not of
+this jar.
 
 ## Coordinates
 
@@ -23,11 +25,15 @@ runtime / grammar lookups.
 no.sikt:graphitron-tree-sitter-natives:<runtime-version>-<build-n>
 ```
 
-First release: `0.26.0-1`. Bump `<build-n>` for any binary change (grammar
-update, build-flag change, recompiled artifact for any reason). Bump
-`<runtime-version>` when the bundled tree-sitter runtime moves to a new
-upstream release. Snapshots are not used; this artifact ships releases
-only.
+First release: `0.26.0-1`. The `<runtime-version>` portion is the
+tree-sitter parser ABI the grammar was compiled against (currently
+`0.26.0`); a consumer with an OS-installed `libtree-sitter` older than
+this fails at `Language.load` with a clear ABI-mismatch error. Bump
+`<build-n>` for any change to the grammar binaries (grammar source
+update, build-flag change, recompile). Bump `<runtime-version>` when we
+retarget the grammar to a newer tree-sitter ABI (which is when the
+`tree-sitter` CLI's bundled runtime moves under us). Snapshots are not
+used; this artifact ships releases only.
 
 ## Cutting a new release
 
