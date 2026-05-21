@@ -128,6 +128,29 @@ class RejectionSeverityCoverageTest {
                             List.of(), List.of()),
                         no.sikt.graphitron.javapoet.ClassName.get(Long.class))));
         }
+        if (permit == Rejection.AuthorError.MultiProducerDomainTypeDisagreement.class) {
+            // R204: cross-producer DomainReturnType disagreement. Two participants on the same
+            // SDL payload type with disagreeing arms is the minimum shape that exercises the
+            // multi-arm message rendering; both samples below construct the typed payload arms
+            // the validator emits.
+            var filmTable = new no.sikt.graphitron.rewrite.model.TableRef(
+                "film", "FILM",
+                no.sikt.graphitron.javapoet.ClassName.bestGuess("com.example.jooq.tables.Film"),
+                no.sikt.graphitron.javapoet.ClassName.bestGuess("com.example.jooq.tables.records.FilmRecord"),
+                no.sikt.graphitron.javapoet.ClassName.bestGuess("com.example.jooq.Tables"),
+                List.of());
+            return new Rejection.AuthorError.MultiProducerDomainTypeDisagreement(
+                "FilmListPayload",
+                List.of(
+                    new Rejection.AuthorError.MultiProducerDomainTypeDisagreement.Participant(
+                        "Mutation", "createFilms",
+                        new no.sikt.graphitron.rewrite.model.DomainReturnType.Record(filmTable)),
+                    new Rejection.AuthorError.MultiProducerDomainTypeDisagreement.Participant(
+                        "Mutation", "runFilms",
+                        new no.sikt.graphitron.rewrite.model.DomainReturnType.TableRecord(
+                            no.sikt.graphitron.javapoet.ClassName.bestGuess(
+                                "com.example.jooq.tables.records.FilmRecord")))));
+        }
         if (permit == Rejection.InvalidSchema.Structural.class) {
             return new Rejection.InvalidSchema.Structural("reason");
         }

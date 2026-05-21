@@ -170,21 +170,15 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
     }
 
     /**
-     * Mixed-producer carrier reject (DML-first registration): a DML mutation registers the
-     * carrier coord with {@code Wrap.Record}; a sibling @service mutation returning the same
-     * carrier with {@code Wrap.TableRecord} is rejected at classify time with a diagnostic
-     * naming both producer mutations.
+     * R204 mixed-producer carrier reject (DML-first declaration order). Pins that the validator
+     * detects the conflict regardless of declaration order; the sibling test pins the other
+     * direction.
+     *
+     * <p>Both producer mutations demote to {@link UnclassifiedField} carrying a
+     * {@code MultiProducerDomainTypeDisagreement} rejection; the message names the payload SDL
+     * type, both producer coords, and both {@code DomainReturnType} arms ({@code Record(film)}
+     * and {@code TableRecord(FilmRecord)}).
      */
-    // R178 step 1 (DML-only cutover): the mixed @service + DML conflict on the same payload
-    // SDL type is no longer detected through the carrier-walk's compare-then-write
-    // `carrier-data-field.single-producer-kind` check, because the DML side now classifies
-    // through the unified path (no field-level write to the carrier coord). The conflict's
-    // structural replacement lands when the @service-carrier path retires in R178 step 2;
-    // until then the build silently overwrites at the data-field coord (the second producer's
-    // registration wins via reclassify(null)). These two order-independence pins are
-    // @Disabled with a TODO; the same scenarios re-pin in step 2 against the unified-path
-    // producer-conflict diagnostic.
-    @org.junit.jupiter.api.Disabled("R178 step 2: retire @service-carrier path and re-pin mixed-producer conflict diagnostic")
     @Test
     void serviceProducer_mixedWithDml_dmlFirst_rejects() {
         var schema = TestSchemaHelper.buildSchema("""
@@ -199,29 +193,26 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             }
             """);
 
-        // The DML mutation classified first (declaration order) and wrote Wrap.Record at the
-        // (FilmListPayload, films) coord. The @service mutation sees the existing Wrap.Record
-        // and rejects.
+        var dmlMut = schema.field("Mutation", "createFilms");
         var serviceMut = schema.field("Mutation", "runFilms");
+        assertThat(dmlMut).isInstanceOf(UnclassifiedField.class);
         assertThat(serviceMut).isInstanceOf(UnclassifiedField.class);
-        var reason = ((UnclassifiedField) serviceMut).rejection().message();
-        assertThat(reason).contains("runFilms", "createFilms", "Wrap.Record", "Wrap.TableRecord");
 
-        // The first producer's classification still stands: the data field carries the DML's
-        // Wrap.Record registration.
-        var dataField = schema.field("FilmListPayload", "films");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
-        var srtf = (ChildField.SingleRecordTableField) dataField;
-        assertThat(srtf.sourceKey().wrap()).isInstanceOf(SourceKey.Wrap.Record.class);
+        var dmlReason = ((UnclassifiedField) dmlMut).rejection().message();
+        var serviceReason = ((UnclassifiedField) serviceMut).rejection().message();
+        // Both surfaces carry the same conflict payload; assert one and let the symmetry pin
+        // hold the other arm.
+        assertThat(dmlReason)
+            .contains("FilmListPayload", "createFilms", "runFilms", "Record(film)", "TableRecord(FilmRecord)");
+        assertThat(serviceReason)
+            .contains("FilmListPayload", "createFilms", "runFilms", "Record(film)", "TableRecord(FilmRecord)");
     }
 
     /**
-     * Mixed-producer carrier reject (@service-first registration): an @service mutation
-     * registers the carrier coord with {@code Wrap.TableRecord(FilmRecord)}; a sibling DML
-     * mutation returning the same carrier with {@code Wrap.Record} is rejected at classify
-     * time with a diagnostic naming both producer mutations. Order-independence pin.
+     * R204 mixed-producer carrier reject (@service-first declaration order). Pins that the
+     * validator detects the conflict regardless of declaration order; the sibling test pins
+     * the other direction.
      */
-    @org.junit.jupiter.api.Disabled("R178 step 2: retire @service-carrier path and re-pin mixed-producer conflict diagnostic")
     @Test
     void serviceProducer_mixedWithDml_serviceFirst_rejects() {
         var schema = TestSchemaHelper.buildSchema("""
@@ -236,18 +227,13 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
             }
             """);
 
-        // The @service mutation classified first and wrote Wrap.TableRecord at the coord. The
-        // DML mutation sees the existing Wrap.TableRecord and rejects.
         var dmlMut = schema.field("Mutation", "createFilms");
+        var serviceMut = schema.field("Mutation", "runFilms");
         assertThat(dmlMut).isInstanceOf(UnclassifiedField.class);
-        var reason = ((UnclassifiedField) dmlMut).rejection().message();
-        assertThat(reason).contains("createFilms", "runFilms", "Wrap.Record", "Wrap.TableRecord");
+        assertThat(serviceMut).isInstanceOf(UnclassifiedField.class);
 
-        // The first producer's classification still stands: the data field carries the
-        // @service's Wrap.TableRecord registration.
-        var dataField = schema.field("FilmListPayload", "films");
-        assertThat(dataField).isInstanceOf(ChildField.SingleRecordTableField.class);
-        var srtf = (ChildField.SingleRecordTableField) dataField;
-        assertThat(srtf.sourceKey().wrap()).isInstanceOf(SourceKey.Wrap.TableRecord.class);
+        var dmlReason = ((UnclassifiedField) dmlMut).rejection().message();
+        assertThat(dmlReason)
+            .contains("FilmListPayload", "createFilms", "runFilms", "Record(film)", "TableRecord(FilmRecord)");
     }
 }

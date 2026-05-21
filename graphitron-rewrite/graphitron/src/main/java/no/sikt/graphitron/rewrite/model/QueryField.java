@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.javapoet.ClassName;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -42,6 +44,9 @@ public sealed interface QueryField extends RootField
         public String lookupMethodName() {
             return "lookup" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
         }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
     }
 
     record QueryTableField(
@@ -52,7 +57,11 @@ public sealed interface QueryField extends RootField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination
-    ) implements QueryField, SqlGeneratingField {}
+    ) implements QueryField, SqlGeneratingField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
+    }
 
     /**
      * A root query field using {@code @tableMethod}. The developer provides a pre-filtered
@@ -83,21 +92,33 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.TableBoundReturnType returnType,
         MethodRef method,
         Optional<ErrorChannel> errorChannel
-    ) implements QueryField, MethodBackedField, WithErrorChannel {}
+    ) implements QueryField, MethodBackedField, WithErrorChannel {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
+    }
 
     record QueryNodeField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.PolymorphicReturnType returnType
-    ) implements QueryField {}
+    ) implements QueryField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
+        }
+    }
 
     record QueryNodesField(
         String parentTypeName,
         String name,
         SourceLocation location,
         ReturnTypeRef.PolymorphicReturnType returnType
-    ) implements QueryField {}
+    ) implements QueryField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
+        }
+    }
 
     record QueryTableInterfaceField(
         String parentTypeName,
@@ -110,7 +131,11 @@ public sealed interface QueryField extends RootField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination
-    ) implements QueryField, SqlGeneratingField {}
+    ) implements QueryField, SqlGeneratingField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
+    }
 
     /**
      * A root query field returning a multi-table {@link GraphitronType.InterfaceType}.
@@ -128,6 +153,9 @@ public sealed interface QueryField extends RootField
         public QueryInterfaceField {
             participants = List.copyOf(participants);
         }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
+        }
     }
 
     /**
@@ -144,6 +172,9 @@ public sealed interface QueryField extends RootField
     ) implements QueryField {
         public QueryUnionField {
             participants = List.copyOf(participants);
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OutputField.OBJECT_CLASS);
         }
     }
 
@@ -165,7 +196,17 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef.TableBoundReturnType returnType,
         MethodRef method,
         Optional<ErrorChannel> errorChannel
-    ) implements QueryField, MethodBackedField, WithErrorChannel {}
+    ) implements QueryField, MethodBackedField, WithErrorChannel {
+        /**
+         * R204: see {@link ChildField.ServiceTableField#domainReturnType()} — the typed
+         * {@code XRecord} is consumer-equivalent to a {@code Record(table)} via subtyping,
+         * and the @table-bound SDL type's child datafetchers read columns by name through
+         * the generic {@code Record} interface.
+         */
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
+    }
 
     /**
      * A root query field backed by a developer-provided service method, returning a non-table type.
@@ -185,5 +226,9 @@ public sealed interface QueryField extends RootField
         ReturnTypeRef returnType,
         MethodRef method,
         Optional<ErrorChannel> errorChannel
-    ) implements QueryField, MethodBackedField, WithErrorChannel {}
+    ) implements QueryField, MethodBackedField, WithErrorChannel {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OutputField.peelToClassName(method.returnType()));
+        }
+    }
 }

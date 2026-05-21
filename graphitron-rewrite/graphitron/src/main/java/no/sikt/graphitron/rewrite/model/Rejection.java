@@ -35,7 +35,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * a minority resolve a name against a closed set and carry the lookup attempt
      * + candidates. Each sub-arm's accessors apply uniformly to that arm.
      */
-    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict {
+    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement {
 
         /**
          * The classifier resolved a name (column, table, FK, service method,
@@ -167,6 +167,61 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
             @Override public Rejection prefixedWith(String prefix) {
                 return new TypeConflict(prefix + contextArgumentName, sites);
             }
+        }
+
+        /**
+         * R204: two or more {@link OutputField} producers reach the same SDL return type with
+         * disagreeing {@link DomainReturnType} arms. Each producer's emitted resolver puts a
+         * different Java value at {@code env.getSource()} for that SDL type's child datafetchers;
+         * the generator commits to one Java type per child-field coord at emit time, so whichever
+         * producer the runtime invokes second feeds a datafetcher generated for the other's
+         * record shape (returning silently wrong data or NPEing on a column the fetcher expects).
+         *
+         * <p>Carries the SDL return type name plus a typed list of {@link Participant} entries
+         * (one per producer in the conflict group); downstream tooling switches on the arm
+         * rather than parsing prose. Producer site of the
+         * {@code output-fields.uniform-domain-return-type} load-bearing classifier check.
+         *
+         * <p>The same rejection is attached to every demoted producer in the group, so each
+         * surfaces independently in the validator's per-{@link GraphitronField.UnclassifiedField}
+         * pass; the message names every participant (including the field itself) so the author
+         * can resolve the conflict by aligning any one of them.
+         */
+        record MultiProducerDomainTypeDisagreement(
+            String sdlTypeName,
+            List<Participant> participants
+        ) implements AuthorError {
+            public MultiProducerDomainTypeDisagreement {
+                participants = List.copyOf(participants);
+            }
+
+            @Override public String message() {
+                var sb = new StringBuilder()
+                    .append("type '").append(sdlTypeName)
+                    .append("' is produced with disagreeing env.getSource() Java domain types:");
+                for (Participant p : participants) {
+                    sb.append("\n  - ").append(p.parentTypeName()).append('.').append(p.fieldName())
+                      .append(" → ").append(p.domainReturnType());
+                }
+                sb.append("\n  Resolve by aligning the producers on a single env.getSource() Java type.");
+                return sb.toString();
+            }
+
+            @Override public Rejection prefixedWith(String prefix) {
+                return new MultiProducerDomainTypeDisagreement(prefix + sdlTypeName, participants);
+            }
+
+            /**
+             * One producer in a multi-producer-domain-type-disagreement group. Names the field
+             * coord and the {@link DomainReturnType} arm it answers; the same {@code Participant}
+             * value appears on every demoted producer in the group so downstream tooling can
+             * cross-reference siblings.
+             */
+            public record Participant(
+                String parentTypeName,
+                String fieldName,
+                DomainReturnType domainReturnType
+            ) {}
         }
     }
 

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.javapoet.ClassName;
 
 import java.util.List;
 import java.util.Optional;
@@ -9,7 +10,7 @@ import java.util.Optional;
  * A field on a non-root output type. Source context (table-mapped or result-mapped) is
  * determined by the parent {@link no.sikt.graphitron.rewrite.model.GraphitronType} at generation time.
  */
-public sealed interface ChildField extends GraphitronField
+public sealed interface ChildField extends OutputField
     permits ChildField.ColumnField, ChildField.ColumnReferenceField,
             ChildField.ParticipantColumnReferenceField,
             ChildField.CompositeColumnField, ChildField.CompositeColumnReferenceField,
@@ -75,6 +76,9 @@ public sealed interface ChildField extends GraphitronField
         @Override public List<WhereFilter> filters() { return List.of(); }
         @Override public OrderBySpec orderBy() { return new OrderBySpec.None(); }
         @Override public PaginationSpec pagination() { return null; }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
     }
 
     /**
@@ -106,7 +110,11 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.ScalarReturnType returnType,
         CallSiteCompaction.NodeIdEncodeKeys encode
-    ) implements ChildField {}
+    ) implements ChildField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(STRING_CLASS);
+        }
+    }
 
     /**
      * R156 — the single data field on a payload-returning DELETE carrier whose data field is a
@@ -143,6 +151,9 @@ public sealed interface ChildField extends GraphitronField
         public SingleRecordTableFieldFromReturning {
             projection = List.copyOf(projection);
         }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
     }
 
     /**
@@ -159,7 +170,16 @@ public sealed interface ChildField extends GraphitronField
         String columnName,
         ColumnRef column,
         CallSiteCompaction compaction
-    ) implements ChildField {}
+    ) implements ChildField {
+        @Override public DomainReturnType domainReturnType() {
+            // NodeIdEncodeKeys compaction encodes the column value to a Base64 String at runtime;
+            // the env.getSource() shape downstream is String, not the underlying column class.
+            if (compaction instanceof CallSiteCompaction.NodeIdEncodeKeys) {
+                return new DomainReturnType.Plain(STRING_CLASS);
+            }
+            return new DomainReturnType.Plain(ClassName.bestGuess(column.columnClass()));
+        }
+    }
 
     /**
      * A single-column output carrier on a table-backed parent reached through a {@code @reference}
@@ -177,7 +197,14 @@ public sealed interface ChildField extends GraphitronField
         ColumnRef column,
         List<JoinStep> joinPath,
         CallSiteCompaction compaction
-    ) implements ChildField {}
+    ) implements ChildField {
+        @Override public DomainReturnType domainReturnType() {
+            if (compaction instanceof CallSiteCompaction.NodeIdEncodeKeys) {
+                return new DomainReturnType.Plain(STRING_CLASS);
+            }
+            return new DomainReturnType.Plain(ClassName.bestGuess(column.columnClass()));
+        }
+    }
 
     /**
      * A scalar field on a {@link GraphitronType.TableInterfaceType} participant that
@@ -202,6 +229,9 @@ public sealed interface ChildField extends GraphitronField
     ) implements ChildField {
         /** The cross table joined to project this field — equivalent to {@code fkJoin().targetTable()}. */
         public TableRef targetTable() { return fkJoin.targetTable(); }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(ClassName.bestGuess(column.columnClass()));
+        }
     }
 
     /**
@@ -227,6 +257,9 @@ public sealed interface ChildField extends GraphitronField
                     "CompositeColumnReferenceField requires arity >= 2 (got " + columns.size() + "); arity-1 routes to ColumnReferenceField");
             }
         }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(STRING_CLASS);
+        }
     }
 
     /**
@@ -251,6 +284,9 @@ public sealed interface ChildField extends GraphitronField
                 throw new IllegalArgumentException(
                     "CompositeColumnField requires arity >= 2 (got " + columns.size() + "); arity-1 routes to ColumnField");
             }
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(STRING_CLASS);
         }
     }
 
@@ -298,7 +334,11 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination
-    ) implements TableTargetField {}
+    ) implements TableTargetField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
+    }
 
     record SplitTableField(
         String parentTypeName,
@@ -320,6 +360,9 @@ public sealed interface ChildField extends GraphitronField
             return Rejection.EmitBlockReason.SPLIT_TABLE_FIELD_CONDITION_JOIN_STEP;
         }
         @Override public String displayLabel() { return "@splitQuery"; }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
     }
 
     record LookupTableField(
@@ -332,7 +375,11 @@ public sealed interface ChildField extends GraphitronField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         LookupMapping lookupMapping
-    ) implements TableTargetField, LookupField {}
+    ) implements TableTargetField, LookupField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
+    }
 
     record SplitLookupTableField(
         String parentTypeName,
@@ -351,6 +398,9 @@ public sealed interface ChildField extends GraphitronField
             return Rejection.EmitBlockReason.SPLIT_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;
         }
         @Override public String displayLabel() { return "@splitQuery @lookupKey"; }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
     }
 
     /**
@@ -383,7 +433,11 @@ public sealed interface ChildField extends GraphitronField
         List<JoinStep> joinPath,
         MethodRef method,
         Optional<ErrorChannel> errorChannel
-    ) implements ChildField, MethodBackedField, WithErrorChannel {}
+    ) implements ChildField, MethodBackedField, WithErrorChannel {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
+    }
 
     /**
      * DTO-parent sibling of {@link TableMethodField}: a child field on a {@code @record} (non-table)
@@ -419,6 +473,9 @@ public sealed interface ChildField extends GraphitronField
             return !returnType().wrapper().isList()
                 || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
         }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
     }
 
     record TableInterfaceField(
@@ -433,7 +490,11 @@ public sealed interface ChildField extends GraphitronField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination
-    ) implements TableTargetField {}
+    ) implements TableTargetField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
+    }
 
     /**
      * A child field on a {@link GraphitronType.TableBackedType} parent returning a multi-table
@@ -471,6 +532,9 @@ public sealed interface ChildField extends GraphitronField
             java.util.Objects.requireNonNull(parentSourceKey, "parentSourceKey");
             java.util.Objects.requireNonNull(parentResultType, "parentResultType");
         }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OBJECT_CLASS);
+        }
     }
 
     /**
@@ -494,6 +558,9 @@ public sealed interface ChildField extends GraphitronField
             java.util.Objects.requireNonNull(parentSourceKey, "parentSourceKey");
             java.util.Objects.requireNonNull(parentResultType, "parentResultType");
         }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OBJECT_CLASS);
+        }
     }
 
     /**
@@ -507,7 +574,21 @@ public sealed interface ChildField extends GraphitronField
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
         List<ChildField> nestedFields
-    ) implements ChildField {}
+    ) implements ChildField {
+        /**
+         * NestingField is a pass-through: the fetcher emits {@code env -> env.getSource()}, so
+         * the children of the nested SDL type receive the parent's record verbatim. The parent's
+         * table varies across nesting-reuse sites (the same nested SDL type can be reached from
+         * multiple {@code @table} parents — see {@code GraphitronSchemaBuilderTest.
+         * SHARED_NESTED_TYPE_ACROSS_PARENTS_COMPATIBLE}); the children read by column name on
+         * the generic jOOQ {@code Record} interface, not by typed {@code Tables.X.COL}. The
+         * domain-return identity is therefore the generic {@code org.jooq.Record}, which any
+         * nesting reuse-site agrees on.
+         */
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(ClassName.get("org.jooq", "Record"));
+        }
+    }
 
     /**
      * A child field whose value is the parent itself, propagated through to a
@@ -520,7 +601,21 @@ public sealed interface ChildField extends GraphitronField
         String name,
         SourceLocation location,
         ReturnTypeRef returnType
-    ) implements ChildField {}
+    ) implements ChildField {
+        /**
+         * R204: the constructor-field emitter passes {@code env.getSource()} through verbatim;
+         * the child SDL type's constructor builds from the parent record. When the return is a
+         * {@code @table}-bound type, the per-field children read columns from the same record
+         * via the generic {@code Record} interface, so the consumer-level identity matches
+         * other table-bound producers' {@link DomainReturnType.Record}{@code (table)}.
+         */
+        @Override public DomainReturnType domainReturnType() {
+            if (returnType instanceof ReturnTypeRef.TableBoundReturnType tbrt) {
+                return new DomainReturnType.Record(tbrt.table());
+            }
+            return new DomainReturnType.Plain(OBJECT_CLASS);
+        }
+    }
 
     /**
      * A child field backed by a developer-provided service method ({@code @service}), where the
@@ -557,6 +652,19 @@ public sealed interface ChildField extends GraphitronField
         @Override
         public String rowsMethodName() {
             return "load" + Character.toUpperCase(name().charAt(0)) + name().substring(1);
+        }
+        /**
+         * R204: although the service method returns the typed {@code XRecord} (or
+         * {@code List<XRecord>}) per the service-producer-strict-return contract, the typed
+         * record IS-A jOOQ {@code Record} and the @table-bound child datafetchers read columns
+         * by name through the generic {@code Record} interface. The consumer-level identity is
+         * therefore {@code Record(table)}, agreeing with the SQL-emit table-bound producers
+         * ({@link TableField}, {@link RecordTableField}, etc.) so a {@code @table}-bound SDL
+         * type reached by both a service and an SQL-emit producer does not surface as a
+         * spurious conflict.
+         */
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
         }
     }
 
@@ -610,6 +718,9 @@ public sealed interface ChildField extends GraphitronField
             if (strict != null) return strict;
             return method().returnType();
         }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OutputField.peelToClassName(method.returnType()));
+        }
     }
 
     record RecordTableField(
@@ -640,6 +751,9 @@ public sealed interface ChildField extends GraphitronField
             return Rejection.EmitBlockReason.RECORD_TABLE_FIELD_CONDITION_JOIN_STEP;
         }
         @Override public String displayLabel() { return "RecordTableField"; }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
     }
 
     record RecordLookupTableField(
@@ -667,6 +781,9 @@ public sealed interface ChildField extends GraphitronField
             return Rejection.EmitBlockReason.RECORD_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;
         }
         @Override public String displayLabel() { return "RecordLookupTableField"; }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
     }
 
     /**
@@ -695,7 +812,11 @@ public sealed interface ChildField extends GraphitronField
         String columnName,
         ColumnRef column,
         AccessorResolution.Resolved accessor
-    ) implements ChildField {}
+    ) implements ChildField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OBJECT_CLASS);
+        }
+    }
 
     /**
      * A child field using {@code @externalField} — the developer provides a static method
@@ -717,7 +838,11 @@ public sealed interface ChildField extends GraphitronField
         ReturnTypeRef returnType,
         List<JoinStep> joinPath,
         MethodRef method
-    ) implements ChildField, MethodBackedField {}
+    ) implements ChildField, MethodBackedField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OutputField.peelToClassName(method.returnType()));
+        }
+    }
 
     /**
      * @param column the resolved parent-table column when the parent is a
@@ -741,7 +866,12 @@ public sealed interface ChildField extends GraphitronField
         String columnName,
         ColumnRef column,
         AccessorResolution.Resolved accessor
-    ) implements ChildField {}
+    ) implements ChildField {
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(
+                column != null ? ClassName.bestGuess(column.columnClass()) : OBJECT_CLASS);
+        }
+    }
 
     /**
      * The {@code errors} field on a payload type. Lift target for the payload-side of a
@@ -781,6 +911,9 @@ public sealed interface ChildField extends GraphitronField
             if (transport == null) {
                 throw new IllegalArgumentException("ErrorsField: transport must be non-null");
             }
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Plain(OBJECT_CLASS);
         }
     }
 

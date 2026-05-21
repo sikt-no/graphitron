@@ -38,6 +38,24 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location();
     }
 
+    /**
+     * R204: the DML mutation's emit shape is {@link DmlReturnExpression}-keyed. {@code Encoded*}
+     * arms (ID-return) emit an encoded {@code String} at {@code env.getSource()}; {@code Projected*}
+     * arms (@table-return) emit a sparse {@code RecordN<...>} projection on the table's PK
+     * columns. Picked at the validator's group-by step so DML siblings reaching the same SDL ID
+     * return type agree with the column-encoded NodeId producers also returning ID.
+     */
+    private static DomainReturnType dmlDomainReturnType(
+            DmlReturnExpression expr,
+            ArgumentRef.InputTypeArg.TableInputArg tableInputArg) {
+        return switch (expr) {
+            case DmlReturnExpression.EncodedSingle ignored -> new DomainReturnType.Plain(OutputField.STRING_CLASS);
+            case DmlReturnExpression.EncodedList ignored   -> new DomainReturnType.Plain(OutputField.STRING_CLASS);
+            case DmlReturnExpression.ProjectedSingle ignored -> new DomainReturnType.Record(tableInputArg.inputTable());
+            case DmlReturnExpression.ProjectedList ignored   -> new DomainReturnType.Record(tableInputArg.inputTable());
+        };
+    }
+
     record MutationInsertTableField(
         String parentTypeName,
         String name,
@@ -45,7 +63,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         DmlReturnExpression returnExpression,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<ErrorChannel> errorChannel
-    ) implements DmlTableField {}
+    ) implements DmlTableField {
+        @Override public DomainReturnType domainReturnType() {
+            return dmlDomainReturnType(returnExpression, tableInputArg);
+        }
+    }
 
     record MutationUpdateTableField(
         String parentTypeName,
@@ -54,7 +76,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         DmlReturnExpression returnExpression,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<ErrorChannel> errorChannel
-    ) implements DmlTableField {}
+    ) implements DmlTableField {
+        @Override public DomainReturnType domainReturnType() {
+            return dmlDomainReturnType(returnExpression, tableInputArg);
+        }
+    }
 
     record MutationDeleteTableField(
         String parentTypeName,
@@ -63,7 +89,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         DmlReturnExpression returnExpression,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<ErrorChannel> errorChannel
-    ) implements DmlTableField {}
+    ) implements DmlTableField {
+        @Override public DomainReturnType domainReturnType() {
+            return dmlDomainReturnType(returnExpression, tableInputArg);
+        }
+    }
 
     record MutationUpsertTableField(
         String parentTypeName,
@@ -72,7 +102,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         DmlReturnExpression returnExpression,
         ArgumentRef.InputTypeArg.TableInputArg tableInputArg,
         Optional<ErrorChannel> errorChannel
-    ) implements DmlTableField {}
+    ) implements DmlTableField {
+        @Override public DomainReturnType domainReturnType() {
+            return dmlDomainReturnType(returnExpression, tableInputArg);
+        }
+    }
 
     /**
      * A mutation field backed by a developer-provided service method, returning a table-mapped type.
@@ -91,7 +125,15 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef.TableBoundReturnType returnType,
         MethodRef method,
         Optional<ErrorChannel> errorChannel
-    ) implements MutationField, MethodBackedField {}
+    ) implements MutationField, MethodBackedField {
+        /**
+         * R204: see {@link ChildField.ServiceTableField#domainReturnType()} — the typed
+         * {@code XRecord} is consumer-equivalent to a {@code Record(table)} via subtyping.
+         */
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
+        }
+    }
 
     /**
      * A mutation field backed by a developer-provided service method, returning a non-table type.
@@ -110,7 +152,25 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         ReturnTypeRef returnType,
         MethodRef method,
         Optional<ErrorChannel> errorChannel
-    ) implements MutationField, MethodBackedField {}
+    ) implements MutationField, MethodBackedField {
+        /**
+         * R204: the carrier-shape case ({@code @service} mutation returning {@code XRecord} or
+         * {@code List<XRecord>} for an SDL payload whose single {@code @table}-typed data field's
+         * record class equals the reflected return-element) puts a typed {@code XRecord} verbatim
+         * at {@code env.getSource()}. The arm answer is {@link DomainReturnType.TableRecord}; the
+         * payload {@link no.sikt.graphitron.javapoet.ClassName} is peeled from
+         * {@link MethodRef#returnType()}'s parameterised shape. For non-carrier service shapes
+         * (return-element is not a jOOQ {@code TableRecord} subclass), the arm choice is still
+         * {@code TableRecord} — the validator's structural equality groups producers by SDL return
+         * type, and only the carrier-shape conflict against {@link MutationDmlRecordField} /
+         * {@link MutationBulkDmlRecordField}'s {@link DomainReturnType.Record} arm is surfaced;
+         * other arrangements either agree (single producer per SDL type) or were already filtered
+         * by upstream classifier rejections.
+         */
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.TableRecord(OutputField.peelToClassName(method.returnType()));
+        }
+    }
 
     /**
      * R75 / Phase 1 — a record-returning DML mutation: the schema field carries
@@ -153,6 +213,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             // so no follow-up SELECT runs after the row is gone. The DELETE-admissibility
             // decision is enforced at FieldBuilder's @mutation classifier (post-R178) on the
             // DmlElementKind dispatch returned by BuildContext.scanStructuralDmlPayload.
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(tableInputArg.inputTable());
         }
     }
 
@@ -255,6 +318,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
                     + "(tableInputArg.list() == true); single-input belongs on "
                     + "MutationDmlRecordField.");
             }
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(tableInputArg.inputTable());
         }
     }
 }

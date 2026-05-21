@@ -266,6 +266,17 @@ public final class FetcherEmitter {
             + "((Record) env.getSource()).into(Tables.X) posture) operate under different "
             + "Reader invariants and read the source through the erased Record shape; the "
             + "typed cast posture here is carrier-specific.")
+    @DependsOnClassifierCheck(
+        key = "output-fields.uniform-domain-return-type",
+        reliesOn = "Emits one source-Java-type per wrap arm without dispatching on the runtime "
+            + "source. The carrier's upstream producer is observed at classify time (DML "
+            + "mutation vs @service-on-Mutation); the R204 validator guarantees that exactly "
+            + "one DomainReturnType arm reaches the carrier's SDL payload type, so the wrap "
+            + "arm picked at emit time matches what the producer will actually put at "
+            + "env.getSource() at request time. Without the check, a second producer reaching "
+            + "the same payload SDL type with a different DomainReturnType would feed this "
+            + "switch's pre-committed source cast a value of the other arm's Java type and "
+            + "ClassCastException at request time.")
     private static CodeBlock buildSingleRecordTableFetcherValue(
             ChildField.SingleRecordTableField srtf, String outputPackage) {
         var sk = srtf.sourceKey();
