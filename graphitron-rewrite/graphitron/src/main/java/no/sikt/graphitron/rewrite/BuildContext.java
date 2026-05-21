@@ -1786,14 +1786,33 @@ class BuildContext {
         // a buildInputFieldCondition call here would collapse to Structural by populating
         // condErrors alongside the column miss). When the directive carries override:true, build
         // the condition; if it builds successfully, return ConditionOnlyField; if it fails to
-        // build, the condErrors entry surfaces via the outer composite — same as today.
+        // build, R211 redirects the column-miss arm to a placeholder Unresolved (lookupColumn null)
+        // so the actionable condition error in condErrors is what the author sees, not a misleading
+        // "no column found" line for a column that is unused by construction. The override:false
+        // leg never enters this branch, so R205's typed-rejection lift is structurally untouched.
         var conditionDirective = readConditionDirective(field);
         if (conditionDirective != null && conditionDirective.override()) {
+            int errorsBefore = errors.size();
             Optional<ArgConditionRef> overrideCond = buildInputFieldCondition(field, name, errors);
             if (overrideCond.isPresent()) {
                 return new InputFieldResolution.Resolved(new InputField.ConditionOnlyField(
                     parentTypeName, name, locationOf(field), typeName, nonNull, list,
                     overrideCond.get()));
+            }
+            if (errors.size() > errorsBefore) {
+                // R211: column is unused by construction under override:true; the condition error
+                // already appended by buildInputFieldCondition is the actionable diagnostic.
+                // Returning a redirecting Unresolved with lookupColumn=null suppresses the
+                // misleading "no column 'X' found in table 'Y'" arm. The structural-vs-typed lift
+                // in InputFieldResolver.resolve folds this leg to Rejection.structural (condErrors
+                // non-empty + lookupColumn null), which is the right bucket — the failure shape is
+                // condition-method binding, not unknown-column. The errorsBefore size-delta check
+                // distinguishes "condition error appended" from a hypothetical empty-return-without-
+                // error path; today buildInputFieldCondition populates errors on every empty
+                // return, but the guard keeps the column-miss fallback safe if that contract ever
+                // loosens.
+                return new InputFieldResolution.Unresolved(name, null,
+                    "@condition(override: true) failed to build; see condition error");
             }
         }
         return new InputFieldResolution.Unresolved(name, columnName,

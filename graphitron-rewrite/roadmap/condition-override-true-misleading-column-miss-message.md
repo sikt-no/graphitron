@@ -1,7 +1,7 @@
 ---
 id: R211
 title: "@condition(override:true) build failure surfaces misleading no-column-found message"
-status: Spec
+status: In Review
 bucket: bugs
 depends-on: []
 created: 2026-05-21

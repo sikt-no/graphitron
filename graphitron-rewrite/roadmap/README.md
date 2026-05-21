@@ -23,13 +23,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec |  | [plan](catalog-check-constraint-validation.md) |
 | `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
-| `R211` | @condition(override:true) build failure surfaces misleading no-column-found message | Spec | 2026-05-21 | [plan](condition-override-true-misleading-column-miss-message.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
+| `R211` | @condition(override:true) build failure surfaces misleading no-column-found message | In Review | 2026-05-21 | [plan](condition-override-true-misleading-column-miss-message.md) |
 | `R203` | Publish graphitron-tree-sitter-natives jar; retire vendored C build in graphitron-lsp | In Review | 2026-05-21 <sub>created 2026-05-20</sub> | [plan](publish-tree-sitter-natives-jar.md) |
 
 ---

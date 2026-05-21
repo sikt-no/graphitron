@@ -4162,6 +4162,12 @@ class GraphitronSchemaBuilderTest {
      * R210: {@code @condition(override: true)} with a broken condition method still rejects;
      * the override flag only relaxes the column-resolution requirement, not the condition
      * reflection requirement.
+     *
+     * <p>R211 tightens the assertion: under override:true the column is unused by construction,
+     * so the "no column 'sakskode' found" arm must not surface alongside the condition error. The
+     * gate's placeholder Unresolved (lookupColumn null) replaces the column-miss line at
+     * {@code BuildContext.classifyInputFieldInternal}; the actionable diagnostic is the condition
+     * error in {@code condErrors}.
      */
     @Test
     void plainInput_overrideTrueWithBrokenCondition_rejectsAsUnclassifiedField() {
@@ -4175,6 +4181,7 @@ class GraphitronSchemaBuilderTest {
             """);
         var uf = (UnclassifiedField) schema.field("Query", "films");
         assertThat(uf.reason()).contains("plain input type 'PlainFilter'", "sakskode");
+        assertThat(uf.reason()).doesNotContain("no column 'sakskode' found");
     }
 
     /**
