@@ -25,6 +25,15 @@ import java.util.List;
  * name inside a type. This projection covers the orthogonal classification axis: <em>what
  * kind of type</em> the SDL author declared. Both projections live next to each other on
  * the snapshot so the LSP arms can read either or both without re-running the classifier.
+ *
+ * <p><b>R217: projection-record simple names are also user-visible.</b> {@code
+ * LspClassificationLabels.projectionTypeLabel} returns each permit's simple name
+ * verbatim, {@code DeclarationHovers} prints {@code TypeClassification.<name>} in hover
+ * headers, and {@code InlayHints}'s absent-{@code @table} arm anchors its synthetic
+ * ghost on the {@code Table} / {@code Node} / {@code TableInterface} / {@code TableInput}
+ * projection records. Renaming a permit (say, {@code TableInput} to
+ * {@code TableBoundInput}) is therefore <em>also</em> a user-visible-string change
+ * touching docs, screenshots, and tutorials, not a purely internal refactor.
  */
 public sealed interface TypeClassification
     permits TypeClassification.Table,

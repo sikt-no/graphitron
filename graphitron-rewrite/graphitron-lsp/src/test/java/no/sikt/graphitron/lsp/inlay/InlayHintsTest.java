@@ -76,7 +76,7 @@ class InlayHintsTest {
         var hints = InlayHints.compute(
             new InlayHintConfig(false, true, false), file, snapshot, fullRange(file));
         var labels = hints.stream().map(h -> labelOf(h)).toList();
-        assertThat(labels).contains("table type", "column");
+        assertThat(labels).contains("Table", "Column");
     }
 
     @Test
@@ -109,8 +109,65 @@ class InlayHintsTest {
         );
         var hints = InlayHints.compute(
             new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+        // Neither the present-but-bare arm (canonical arg present) nor the absent
+        // arm (the directive node itself is present) should produce a @table hint.
         assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .doesNotContain("name: \"film\"");
+            .doesNotContain("name: \"film\"")
+            .noneMatch(label -> label.startsWith("@table"));
+    }
+
+    @Test
+    void absentTableHintRendersOnObjectTypeWithoutDirective() {
+        var file = file("""
+            type Customer {
+                name: String
+            }
+            """);
+        var snapshot = snapshotWith(
+            Map.of(),
+            Map.of("Customer", new TypeClassification.Table("customer"))
+        );
+        var hints = InlayHints.compute(
+            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+        assertThat(hints).extracting(InlayHintsTest::labelOf)
+            .contains("@table(name: \"customer\")");
+    }
+
+    @Test
+    void absentTableHintRendersOnInputTypeWithoutDirective() {
+        var file = file("""
+            input ActorInput {
+                name: String
+            }
+            """);
+        var snapshot = snapshotWith(
+            Map.of(),
+            Map.of("ActorInput", new TypeClassification.TableInput("actor"))
+        );
+        var hints = InlayHints.compute(
+            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+        assertThat(hints).extracting(InlayHintsTest::labelOf)
+            .contains("@table(name: \"actor\")");
+    }
+
+    @Test
+    void absentTableHintSuppressedWhenDirectivePresent() {
+        var file = file("""
+            type Film @table {
+                title: String
+            }
+            """);
+        var snapshot = snapshotWith(
+            Map.of(),
+            Map.of("Film", new TypeClassification.Table("film"))
+        );
+        var hints = InlayHints.compute(
+            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+        // The present-but-bare arm renders "name: \"film\"" docked at the @table node;
+        // the absent arm must not also render a full @table(...) hint on the type name.
+        assertThat(hints).extracting(InlayHintsTest::labelOf)
+            .contains("name: \"film\"")
+            .noneMatch(label -> label.startsWith("@table"));
     }
 
     @Test
@@ -170,7 +227,7 @@ class InlayHintsTest {
             new InlayHintConfig(true, true, false), file, previous, fullRange(file));
         assertThat(hints).isNotEmpty();
         assertThat(hints).extracting(InlayHintsTest::labelOf)
-            .contains("name: \"film\"", "table type", "column");
+            .contains("name: \"film\"", "Table", "Column");
     }
 
     // ===== Test helpers =====

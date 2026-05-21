@@ -116,7 +116,8 @@ public final class DeclarationHovers {
         DeclarationHover.FieldDeclarationHover decl, FieldClassification classification
     ) {
         var sb = new StringBuilder();
-        sb.append("**").append(LspClassificationLabels.projectionLabel(classification)).append("**");
+        sb.append("**").append(FieldClassification.class.getSimpleName()).append(".")
+          .append(LspClassificationLabels.projectionLabel(classification)).append("**");
         sb.append("\n\n`").append(decl.coordinate()).append("`");
         switch (classification) {
             case FieldClassification.Column c ->
@@ -238,7 +239,8 @@ public final class DeclarationHovers {
         DeclarationHover.TypeDeclarationHover decl, TypeClassification classification
     ) {
         var sb = new StringBuilder();
-        sb.append("**").append(LspClassificationLabels.projectionTypeLabel(classification)).append("**");
+        sb.append("**").append(TypeClassification.class.getSimpleName()).append(".")
+          .append(LspClassificationLabels.projectionTypeLabel(classification)).append("**");
         sb.append("\n\n`").append(decl.typeName()).append("`");
         switch (classification) {
             case TypeClassification.Table t ->

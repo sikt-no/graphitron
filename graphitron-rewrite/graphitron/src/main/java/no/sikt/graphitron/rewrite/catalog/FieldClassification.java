@@ -30,6 +30,14 @@ import java.util.List;
  * {@code TableRef} / {@code ColumnRef} / {@code graphql-java} types reach the LSP module.
  * Label strings are not on the projection record; rendering lives in the LSP module as
  * a sibling switch.
+ *
+ * <p><b>R217: projection-record simple names are also user-visible.</b> {@code
+ * LspClassificationLabels.projectionLabel} returns each permit's simple name verbatim,
+ * and {@code DeclarationHovers} prints {@code FieldClassification.<name>} in hover
+ * headers. Renaming a permit (say, {@code TableTarget} to {@code JoinedColumnTarget})
+ * is therefore <em>also</em> a user-visible-string change touching docs, screenshots,
+ * and tutorials, not a purely internal refactor. R217 accepts that coupling as the
+ * mechanism that lets the LSP teach the model.
  */
 public sealed interface FieldClassification
     permits FieldClassification.Column,

@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R217` | LSP inlay classification labels surface model leaf names; inferred-@table renders on declarations when directive is absent | Ready | 2026-05-21 | [plan](lsp-inlay-leaf-names-and-absent-table-inference.md) |
+| `R217` | LSP inlay classification labels surface model leaf names; inferred-@table renders on declarations when directive is absent | In Review | 2026-05-21 | [plan](lsp-inlay-leaf-names-and-absent-table-inference.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R186` | Nested input types in @mutation fields | Spec | 2026-05-20 | [plan](nested-input-types-in-mutation-fields.md) |
@@ -224,7 +224,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### lsp
 
-- `R217` [**LSP inlay classification labels surface model leaf names; inferred-@table renders on declarations when directive is absent**](lsp-inlay-leaf-names-and-absent-table-inference.md) — Ready, lsp
+- `R217` [**LSP inlay classification labels surface model leaf names; inferred-@table renders on declarations when directive is absent**](lsp-inlay-leaf-names-and-absent-table-inference.md) — In Review, lsp
 - `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md) — Backlog, bug
 - `R149` [**End-to-end LSP publish-diagnostics test and buildOutput report-population test for R147**](r147-followup-end-to-end-publish-diagnostics-tests.md) — Backlog, test
 - `R123` [**Parent-context-aware schema coordinates for per-directive Behavior policy**](parent-context-aware-schema-coordinates.md) — Backlog, architecture
