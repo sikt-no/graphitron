@@ -165,7 +165,7 @@ type Query {
 
 Two consequences worth pinning:
 
-* *No build-time validation that the context key is wired.* A typo in `contextArguments` surfaces as a `null` parameter at request time, not as a build error. Either guard with a null check in the condition method (`if (tenantId == null) throw new IllegalStateException(...)`) or rely on a request-time integration test to catch wiring drift.
+* *Compile-time wiring guard.* A typo in `contextArguments` surfaces at compile time as a typed-but-unfamiliar parameter on `Graphitron.newExecutionInput(...)`'s signature: the factory reflects the SDL's `contextArguments:` list verbatim, so a misspelled name produces a factory parameter under the misspelled name. The error you see is the consumer-side compile failure (or, if you pass `null` to fill that slot, an `NullPointerException` at the factory call from the per-slot `Objects.requireNonNull`), not a silent `null` at request time.
 * *`contextArguments:` and `argMapping:` compose.* A single method may take `(table, GraphQL args mapped through argMapping, context args in declared order)` and the rewrite assembles the call site accordingly.
 
 == Constraints

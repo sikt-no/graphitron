@@ -42,7 +42,7 @@ The validator does not enforce the contract at build time; it's a developer disc
 
 At request time, a fresh `DataLoaderRegistry` is created per request and stashed on `ExecutionInput.dataLoaderRegistry`. Graphitron's generated fetchers register their loaders against it; graphql-java drives the dispatch. The registry is per-request to avoid cross-request data leakage and to keep the batch boundary aligned with the request lifecycle.
 
-You don't author DataLoaders by hand; the generator does it. The xref:../reference/runtime-api.adoc[runtime API] documents the per-request `GraphitronContext` interface; the host application's job is just to provide the `DSLContext` and any context arguments. xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers the per-request DSLContext partitioning when batching needs to stay per-tenant.
+You don't author DataLoaders by hand; the generator does it. The xref:../reference/runtime-api.adoc[runtime API] documents the sealed `GraphitronContext` contract; the host application's job is to call `Graphitron.newExecutionInput(dsl, ...)` with the `DSLContext` and any `contextArgument` values, and the generator wires the per-request `GraphQLContext` from those typed parameters. xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers the per-request DSLContext routing recipe (currently a deferral banner pending R45's tenant-column work).
 
 == When you should care
 

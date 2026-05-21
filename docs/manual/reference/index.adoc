@@ -6,7 +6,7 @@ Authoritative descriptions of every directive, every Maven plugin parameter, eve
 
 == Runtime API
 
-* xref:runtime-api.adoc[Runtime API reference]: the `Graphitron.buildSchema(...)` facade (single-arg and federation two-arg overloads), the `GraphitronContext` per-request interface (`getDslContext`, `getContextArgument`, `getTenantId`, `getValidator`), and the `NodeIdEncoder` utility (generic `encode`/`peekTypeId`/`decodeValues` plus per-Node `encode<TypeName>` and `decode<TypeName>` helpers).
+* xref:runtime-api.adoc[Runtime API reference]: the `Graphitron.buildSchema(...)` facade (single-arg and federation two-arg overloads), the `Graphitron.newExecutionInput(...)` schema-driven factory (`DSLContext` first, then typed `contextArgument` slots reflected from your `@service` / `@condition` directives), the sealed `GraphitronContext` per-request interface (`getDslContext`, `getContextArgument`, `getValidator`), and the `NodeIdEncoder` utility (generic `encode`/`peekTypeId`/`decodeValues` plus per-Node `encode<TypeName>` and `decode<TypeName>` helpers).
 
 == Maven plugin
 

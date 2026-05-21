@@ -30,7 +30,7 @@ a|
 * xref:source-row.adoc[Source-row directive]: bridge a non-jOOQ DTO parent to a `@table` child field with `@sourceRow`, optionally composed with `@reference` for multi-hop paths.
 * xref:sort-results.adoc[Sort results]: pick a column source, build stable keyset cursors with explicit tie-breakers, and avoid the collation pitfalls.
 * xref:split-vs-inline.adoc[When to split queries]: choose between inline correlated subqueries and `@splitQuery`-batched fetches.
-* xref:tenant-scoping.adoc[Tenant scoping]: wire `getDslContext` and `getTenantId` on `GraphitronContext` so each request reaches a tenant-specific `DSLContext`.
+* xref:tenant-scoping.adoc[Tenant scoping]: per-request routing through `Graphitron.newExecutionInput(dsl, ...)`. The full recipe (per-tenant DataLoader partitioning, `@tenantId` directive, `byTenant` factory overload) ships under R45; until then, single-tenant apps pass a single `DSLContext`.
 * xref:test-your-schema.adoc[Test your schema]: wire a consumer-side execution-tier test against a real Postgres.
 
 a|

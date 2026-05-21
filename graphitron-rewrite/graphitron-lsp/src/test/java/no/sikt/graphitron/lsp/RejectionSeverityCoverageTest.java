@@ -111,6 +111,23 @@ class RejectionSeverityCoverageTest {
                     String.class, "Query", "filmDetails",
                     "com.example.FilmService", "getFilm", new SourceLocation(1, 1))));
         }
+        if (permit == Rejection.AuthorError.TypeConflict.class) {
+            // R190: cross-site contextArgument type-agreement rejection. Build a minimal
+            // ConflictSite list with two entries so message() renders the multi-site shape.
+            return new Rejection.AuthorError.TypeConflict(
+                "fnr",
+                List.of(
+                    new no.sikt.graphitron.rewrite.model.ConflictSite(
+                        new no.sikt.graphitron.rewrite.model.MethodRef.StaticOnly(
+                            "com.example.S", "m", no.sikt.graphitron.javapoet.ClassName.OBJECT,
+                            List.of(), List.of()),
+                        no.sikt.graphitron.javapoet.ClassName.get(String.class)),
+                    new no.sikt.graphitron.rewrite.model.ConflictSite(
+                        new no.sikt.graphitron.rewrite.model.MethodRef.StaticOnly(
+                            "com.example.T", "m", no.sikt.graphitron.javapoet.ClassName.OBJECT,
+                            List.of(), List.of()),
+                        no.sikt.graphitron.javapoet.ClassName.get(Long.class))));
+        }
         if (permit == Rejection.InvalidSchema.Structural.class) {
             return new Rejection.InvalidSchema.Structural("reason");
         }

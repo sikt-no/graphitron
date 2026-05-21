@@ -13,63 +13,49 @@ generated `Graphitron`, `GraphitronContext`, and related classes.
 
 == Hello world
 
-Implement the generated `GraphitronContext`:
-
-[source,java]
-----
-import com.example.app.schema.GraphitronContext;
-import graphql.schema.DataFetchingEnvironment;
-import org.jooq.DSLContext;
-
-public class AppContext implements GraphitronContext {
-    private final DSLContext dsl;
-
-    public AppContext(DSLContext dsl) { this.dsl = dsl; }
-
-    @Override public DSLContext getDslContext(DataFetchingEnvironment env) { return dsl; }
-
-    @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
-        return null;
-    }
-}
-----
-
-Build the schema and engine once per app, handle each request:
+Build the schema and engine once per app, then create one `ExecutionInput` per request via the schema-driven factory:
 
 [source,java]
 ----
 import com.example.app.Graphitron;
-import com.example.app.schema.GraphitronContext;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.schema.GraphQLSchema;
+import org.jooq.DSLContext;
 
 GraphQLSchema schema = Graphitron.buildSchema(b -> {});
 GraphQL engine = GraphQL.newGraphQL(schema).build();
 
-GraphitronContext ctx = new AppContext(dsl);
-
-ExecutionInput input = Graphitron.newExecutionInput(ctx)
+ExecutionInput input = Graphitron.newExecutionInput(dsl)
     .query(query)
     .build();
 
 var result = engine.execute(input);
 ----
 
-`Graphitron.newExecutionInput(...)` is the one-call factory: it pre-wires the
-`GraphitronContext` under the typed key every emitted fetcher reads from, and
-attaches an empty `DataLoaderRegistry` (graphql-java requires one; generated
-fetchers populate it lazily on first lookup).
-
-Single-tenant apps can skip the `GraphitronContext` implementation entirely
-and pass a `DSLContext` directly:
+`Graphitron.newExecutionInput(...)` is the one-call factory. Its parameter list is _schema-driven_: a `DSLContext` first, then one parameter per `contextArgument` named in your `@service` / `@tableMethod` / `@condition` directives, in alphabetical order, with the reflected Java type. A schema declaring `@service(contextArguments: ["fnr", "userInfo"])` against a method `(String fnr, UserInfo userInfo)` emits:
 
 [source,java]
 ----
-ExecutionInput input = Graphitron.newExecutionInput(dsl)
-    .query(query)
-    .build();
+public static ExecutionInput.Builder newExecutionInput(
+    DSLContext defaultDsl,
+    String fnr,
+    UserInfo userInfo);
 ----
+
+A missing or wrong-typed contextArgument is a compile error at the call site, not a runtime surprise: the factory's typed parameter list is the load-bearing diagnostic. The body null-checks each parameter (`Objects.requireNonNull`) and populates the per-request `GraphQLContext`; generated fetchers read each value back through `getContextArgument(env, name, ExpectedType.class)`.
+
+If you bypass the factory and hand-roll an `ExecutionInput.Builder` (for example, to construct a test fixture without `Graphitron`), and a contextArgument slot ends up missing, the generated fetcher throws at first read:
+
+[source,text]
+----
+java.lang.IllegalStateException: context value 'fnr' was not supplied;
+    call Graphitron.newExecutionInput(...) to populate it
+----
+
+The message names the contextArgument and the factory that supplies it. Going through `Graphitron.newExecutionInput(...)` makes the same mistake a compile error at the call site instead.
+
+The sealed `GraphitronContext` interface (under `<outputPackage>.schema`) is the per-request contract every generated DataFetcher reads from. Apps no longer implement it directly: the factory populates a typed `GraphQLContext` and stashes the singleton `GraphitronContextImpl` under `GraphitronContext.class`. xref:runtime-extension-points.adoc[Runtime Extension Points] covers the contract and the rationale for sealing it.
 
 For a complete app and the recommended test setup, see the
 https://github.com/sikt-no/graphitron/tree/claude/graphitron-rewrite/graphitron-rewrite/graphitron-sakila-example[`graphitron-sakila-example`]
@@ -225,62 +211,22 @@ sequenceDiagram
 
 == Tenant-scoped DSLContext
 
-`getDslContext(env)` is called per resolver invocation, so it can inspect
-the `DataFetchingEnvironment` and return a tenant-specific `DSLContext`:
-
-[source,java]
-----
-public class TenantContext implements GraphitronContext {
-    private final DSLContext shared;
-    private final Map<String, DSLContext> perTenant;
-
-    @Override public DSLContext getDslContext(DataFetchingEnvironment env) {
-        String tenantId = env.getGraphQlContext().get("tenantId");
-        return perTenant.computeIfAbsent(tenantId, id ->
-            shared.configuration().derive(settingsFor(id)).dsl());
-    }
-    // ...
-}
-----
-
-Request entry puts the tenant id into `graphQLContext`; resolvers read
-their `DSLContext` per call. No request-time pre-computation in the
-caller; the logic lives in one place.
+Per-tenant `DSLContext` routing is the subject of R45's tenant-column work; the recipe is being rewritten alongside the `<tenantColumn>` Mojo configuration, the `@tenantId` argument directive, and the `byTenant` factory overload. Until that lands, build the right `DSLContext` at request entry (one connection per tenant, session variables, RLS-aware `Configuration`) and pass it to `Graphitron.newExecutionInput(perTenantDsl, ...)` for the request.
 
 == Context arguments from a JWT claim
 
-Directives like `@condition(contextArguments: ["userId"])` emit a
-`getContextArgument(env, "userId")` call. Your implementation pulls the
-claim off the request-scoped context:
+Directives like `@service(contextArguments: ["userId"])` reflect into the schema-driven factory as typed parameters. Pull the claim from the request at servlet bootstrap and pass it as the matching factory slot:
 
 [source,java]
 ----
-public class JwtContext implements GraphitronContext {
-    @Override @SuppressWarnings("unchecked")
-    public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
-        Map<String, Object> claims = env.getGraphQlContext().get("jwtClaims");
-        return (T) claims.get(name);
-    }
-    // ...
-}
-----
+String userId = verifiedClaims.get("sub");  // JAX-RS / Quarkus / servlet entry
 
-Per-request wiring stashes the JWT claims under a stable key. Extra
-`.graphQLContext(...)` calls *merge* with the factory's existing context put,
-so the typed `GraphitronContext.class` entry and the `"jwtClaims"` string key
-coexist cleanly:
-
-[source,java]
-----
-ExecutionInput input = Graphitron.newExecutionInput(ctx)
+ExecutionInput input = Graphitron.newExecutionInput(dsl, userId)
     .query(query)
-    .graphQLContext(b -> b.put("jwtClaims", verifiedClaims))
     .build();
 ----
 
-Every `@condition contextArguments: ["userId"]` declaration in the SDL
-reaches this method with `name = "userId"`; the generator already emitted
-the call site.
+The factory's parameter order follows the SDL's `contextArguments` list (alphabetical), and each slot's Java type is reflected from the developer method's signature. A typo in `contextArguments:` becomes a compile error at this call site (typed-but-unfamiliar parameter name in the factory's signature), not a silent `null` at request time. The generator emits the read-back site (`getContextArgument(env, "userId", String.class)`) so the value flows through to your `@service` or `@condition` method unchanged.
 
 == Customizer safe surface
 

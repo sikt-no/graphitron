@@ -20,7 +20,7 @@ Error handling::
 The mutations on page 5 happily commit anything that PostgreSQL accepts. Real mutations need to surface validation errors (constraint violations, business-rule failures) as typed GraphQL errors, not opaque exceptions. xref:../how-to/error-channel.adoc[How-to: The errors channel] covers union vs single-type carriers, the cause-chain dispatch loop, and the redact-with-correlation-id fallback.
 
 Test your schema::
-The example module's own tests under `src/test/java/.../querydb/` are the recommended pattern for pinning your schema's behaviour against a real PostgreSQL. xref:../how-to/test-your-schema.adoc[How-to: Test your schema] walks through copying that pattern into your own project: how to wire `GraphitronContext` against Testcontainers, how to assert on response shapes, and how to use the `QUERY_COUNT`/`SQL_LOG` listeners to ratchet round-trip counts.
+The example module's own tests under `src/test/java/.../querydb/` are the recommended pattern for pinning your schema's behaviour against a real PostgreSQL. xref:../how-to/test-your-schema.adoc[How-to: Test your schema] walks through copying that pattern into your own project: how to wire `Graphitron.newExecutionInput(dsl, ...)` against Testcontainers, how to assert on response shapes, and how to use the `QUERY_COUNT`/`SQL_LOG` listeners to ratchet round-trip counts.
 
 == Where the rest of the manual sits
 

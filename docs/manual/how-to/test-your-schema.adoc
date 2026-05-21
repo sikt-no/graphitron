@@ -8,12 +8,12 @@ This recipe walks the canonical setup: starting Postgres, building the schema, e
 
 For the rewrite-internal tier model (unit/pipeline/compilation/execution), see xref:../../../architecture/testing.adoc[the test-tier guide]. This recipe is about the consumer's execution-tier setup, not the rewrite's tier choices.
 
-== The setup: Postgres + GraphitronContext + GraphQL
+== The setup: Postgres + DSLContext + GraphQL
 
 Three things must be in place before a request runs:
 
 * A `DSLContext` pointing at a Postgres instance with your application's schema migrations applied. The example module uses Testcontainers in CI and accepts a `test.db.url` system property for the inner loop; either path produces a `DSLContext` against the same database shape.
-* A `GraphitronContext` per request, wrapping that `DSLContext` and any context arguments your `@service` and `@condition` methods need.
+* A call to `Graphitron.newExecutionInput(dsl, ...)` per request, threading the `DSLContext` and any `@service` / `@condition` `contextArguments` through the typed parameter list.
 * A `GraphQLSchema` produced by your generated `Graphitron.buildSchema(b -> {})` facade. The schema is built once per test class (`@BeforeAll`); requests reuse it.
 
 The skeleton:
@@ -73,17 +73,7 @@ A helper method captures the request shape; tests call it with the GraphQL strin
 [source,java]
 ----
 private Map<String, Object> execute(String query) {
-    var context = new GraphitronContext() {
-        @Override public DSLContext getDslContext(DataFetchingEnvironment env) { return dsl; }
-        @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) { return null; }
-    };
-
-    var input = ExecutionInput.newExecutionInput()
-        .query(query)
-        .graphQLContext(b -> b.put(GraphitronContext.class, context))
-        .dataLoaderRegistry(new DataLoaderRegistry())
-        .build();
-
+    var input = Graphitron.newExecutionInput(dsl).query(query).build();
     var result = graphql.execute(input);
     assertThat(result.getErrors()).isEmpty();
     return result.getData();
@@ -92,9 +82,9 @@ private Map<String, Object> execute(String query) {
 
 Three things to know about this helper:
 
-* *`GraphitronContext` is per-request.* The example wires the same `dsl` for every test, but production tests that exercise per-tenant routing build a new context per request whose `getDslContext` returns the tenant-specific `DSLContext`.
-* *`getContextArgument` is the runtime side of `contextArguments:`.* `@service` and `@condition` directives that declare `contextArguments: ["tenantId"]` read the value through this method per request. Tests that exercise context-argument paths need a non-null implementation; tests that don't use context arguments can return `null`.
-* *`DataLoaderRegistry` is mandatory.* graphql-java requires a registry per request even when the query touches nothing the rewrite would batch through `DataLoader`. The framework calls `computeIfAbsent` on it from every `Split*` fetcher; missing the registry causes an NPE at request time.
+* *`Graphitron.newExecutionInput(...)` is the per-request wiring point.* Its parameter list is schema-driven: a `DSLContext` first, then one typed parameter per `contextArgument` declared in your `@service` / `@condition` / `@tableMethod` directives. The example wires the same `dsl` for every test; production tests that exercise per-tenant routing build a per-tenant `DSLContext` at request entry and pass it as `defaultDsl`. The per-tenant routing recipe is being rewritten under R45 alongside the tenant-column work.
+* *`contextArguments` thread through typed factory slots.* A `@service(contextArguments: ["tenantId"])` site adds a `String tenantId` parameter to the generated factory; the test passes the value directly. There is no per-request anonymous `GraphitronContext` impl; the sealed interface is populated by the factory.
+* *`DataLoaderRegistry` is mandatory and the factory attaches one.* graphql-java requires a registry per request; the factory pre-attaches a fresh `DataLoaderRegistry` so generated `Split*` fetchers can `computeIfAbsent` on it at first lookup. Override via `.dataLoaderRegistry(custom)` only when you need a pre-populated registry; `.graphQLContext(b -> b.put(...))` calls merge with the entries the factory put.
 
 The `assertThat(result.getErrors()).isEmpty()` line is the default safety net. Tests that *expect* an error (validation failure, redacted exception) use a sister method `executeRaw` that returns the raw `ExecutionResult` and asserts on the error list.
 
@@ -196,16 +186,7 @@ Common patterns from the example:
 [source,java]
 ----
 private ExecutionResult executeRaw(String query) {
-    var context = new GraphitronContext() {
-        @Override public DSLContext getDslContext(DataFetchingEnvironment env) { return dsl; }
-        @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) { return null; }
-    };
-
-    var input = ExecutionInput.newExecutionInput()
-        .query(query)
-        .graphQLContext(b -> b.put(GraphitronContext.class, context))
-        .build();
-
+    var input = Graphitron.newExecutionInput(dsl).query(query).build();
     return graphql.execute(input);
 }
 ----
@@ -225,37 +206,23 @@ void connectionField_firstAndLast_areMutuallyExclusive() {
 
 For typed errors flowing through the xref:error-channel.adoc[errors channel], the test asserts on the response data (the `errors:` field on the payload) rather than `result.getErrors()`. The framework redaction path (unmatched exceptions) shows up in `result.getErrors()` with the "An error occurred. Reference: <UUID>." message; tests that exercise the redact path assert the message format and that no original exception details leak.
 
-== Per-tenant context tests
+== Context-argument tests
 
-For `@service` or `@condition` paths that read context arguments, the test supplies a custom `GraphitronContext`:
+For `@service` or `@condition` paths that read context arguments, the helper takes typed values directly and passes them through the schema-driven factory slot:
 
 [source,java]
 ----
-private Map<String, Object> executeWithContext(String query, GraphitronContext context) {
-    var input = ExecutionInput.newExecutionInput()
-        .query(query)
-        .graphQLContext(b -> b.put(GraphitronContext.class, context))
-        .dataLoaderRegistry(new DataLoaderRegistry())
-        .build();
+private Map<String, Object> executeWithContext(String query, String userId) {
+    var input = Graphitron.newExecutionInput(dsl, userId).query(query).build();
     var result = graphql.execute(input);
     assertThat(result.getErrors()).isEmpty();
     return result.getData();
 }
 
 @Test
-void perTenantDispatch_routesPerTenant() {
-    var perTenantContext = new GraphitronContext() {
-        @Override public DSLContext getDslContext(DataFetchingEnvironment env) {
-            String tenant = env.getGraphQlContext().get("tenantId");
-            return tenantContexts.get(tenant);
-        }
-        @Override public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
-            if ("tenantId".equals(name)) return (T) env.getGraphQlContext().get("tenantId");
-            return null;
-        }
-    };
-    Map<String, Object> data = executeWithContext("{ tenants { ... } }", perTenantContext);
-    // Assertions specific to per-tenant routing
+void servicePath_seesContextArgument() {
+    Map<String, Object> data = executeWithContext("{ myFilms { title } }", "user-42");
+    // Assertions specific to the contextArgument path
 }
 ----
 
@@ -284,7 +251,7 @@ The test passes representations via GraphQL variables, and asserts on the dispat
 
 == Pitfalls
 
-* *Forgetting `dataLoaderRegistry`.* graphql-java requires one even for queries that don't traverse `Split*` fields. NPE at request time, message buried in the error list. Add it to the helper unconditionally.
+* *Hand-rolling `ExecutionInput.newExecutionInput()` outside the factory.* The factory attaches the `DataLoaderRegistry` and stashes the singleton `GraphitronContextImpl`; bypassing it produces NPEs at first DataLoader lookup and "context value … was not supplied" `IllegalStateException`s at first `contextArgument` read. Always go through `Graphitron.newExecutionInput(dsl, ...)`.
 * *Per-test connection leak.* `@AfterAll` stops the Testcontainers Postgres; a test that holds `dsl` references past class scope leaks a connection. Use `@BeforeAll` / `@AfterAll` (class-scoped) rather than `@BeforeEach` / `@AfterEach` for the database; per-test work happens inside the request.
 * *`QUERY_COUNT` and `SQL_LOG` are global.* They are static fields on the test class, mutated by the listener that fires on every JDBC statement. Tests that read them must reset (e.g. `QUERY_COUNT.set(0)`, `SQL_LOG.clear()`) immediately before executing the GraphQL query, and the test must run on its own (no parallel test in the class touching the same DB at the same time). The example uses JUnit 5's default sequential execution; if your test class enables parallel execution, switch to per-test counters.
 * *Seed-data drift breaks tests.* Hard-coded row counts (`hasSize(5)`) and specific values (`containsExactly("ACADEMY DINOSAUR", ...)`) tie tests to the seed. Either commit the seed alongside the tests (the example does this) or assert on shape-only (`size > 0`, `every row has a `firstName` key`); avoid the middle ground where the seed is shared but mutable.

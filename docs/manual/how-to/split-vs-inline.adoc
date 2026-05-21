@@ -41,21 +41,19 @@ Every `@splitQuery` fetcher registers a `DataLoader` under a name built at reque
 
 [source,java]
 ----
-String name = graphitronContext(env).getTenantId(env) + "/" + String.join("/",
-    env.getExecutionStepInfo().getPath().getKeysOnly());
+String name = String.join("/", env.getExecutionStepInfo().getPath().getKeysOnly());
 DataLoader<K, V> loader = env.getDataLoaderRegistry()
     .computeIfAbsent(name, k -> DataLoaderFactory.newDataLoader(...));
 ----
 
 (`TypeFetcherGenerator.buildDataLoaderName:2537`.)
 
-Three operational facts follow:
+Two operational facts follow:
 
 * *Cache key is path-scoped, not name-scoped.* `getKeysOnly()` returns the named segments of the result path with list indices stripped: `/films/0/actors` and `/films/1/actors` both map to `[films, actors]`, so all parents in the same list share one DataLoader. Two unrelated fields that happen to be named `actors` on different parents (e.g. `Film.actors`, `Store.actors`) get distinct paths and distinct loaders. Aliased uses get distinct paths *because* aliases land in `getKeysOnly()`: a query selecting `{ heroes: actors { name }, villains: actors { name } }` runs two separate batched queries, not one. This is by design; the alias splits the result tree.
 * *Cache scope is the request.* The `DataLoaderRegistry` lives on the `DataFetchingEnvironment`, which graphql-java rebuilds per request. There is no inter-request caching; each request starts with an empty registry, populates it lazily via `computeIfAbsent`, and discards it on completion. Two requests that select the same field do not share a loader.
-* *Per-tenant key prefix.* `graphitronContext(env).getTenantId(env)` prefixes the name, so multi-tenant deployments running on shared `DataLoaderRegistry` instances (rare but possible) keep tenants' batches separate. With the standard request-scoped registry this is redundant; with a session-scoped or shared registry it prevents cross-tenant key collisions.
 
-The combination "path-scoped, request-scoped, tenant-prefixed" means inline-style mistakes (a per-parent loop calling the same loader with one key at a time) still cost only one batched query per loader, because the loader gathers keys until the framework dispatches. The framework dispatches at the natural barrier graphql-java provides (between selection-set evaluation and field resolution), so split fetchers work correctly under any client query shape.
+The combination "path-scoped, request-scoped" means inline-style mistakes (a per-parent loop calling the same loader with one key at a time) still cost only one batched query per loader, because the loader gathers keys until the framework dispatches. The framework dispatches at the natural barrier graphql-java provides (between selection-set evaluation and field resolution), so split fetchers work correctly under any client query shape.
 
 == Composition with other directives
 

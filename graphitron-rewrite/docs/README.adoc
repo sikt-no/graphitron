@@ -4,7 +4,7 @@ Contributor-facing documentation for the Graphitron generator: how the pipeline 
 
 == You came here because…
 
-You want to *extend the runtime*, implement `GraphitronContext`, route per-tenant `DSLContext`s, register custom scalars, hook in jOOQ listeners. → xref:runtime-extension-points.adoc[Runtime Extension Points].
+You want to *extend the runtime*, wire per-request values into `Graphitron.newExecutionInput(...)`, register custom scalars, hook in jOOQ listeners. → xref:runtime-extension-points.adoc[Runtime Extension Points].
 
 You're *integrating with Apollo Federation*, the `@link` opt-in, the `<schemaInput tag>` flag, providing a custom entity fetcher. → xref:getting-started.adoc#_federation[Getting started → Federation].
 
