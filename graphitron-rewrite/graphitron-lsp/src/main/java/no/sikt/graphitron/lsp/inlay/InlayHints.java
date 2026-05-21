@@ -67,8 +67,9 @@ public final class InlayHints {
         reliesOn = "Reads tableName off TypeClassification.Table / Node / TableInterface / TableInput "
             + "projection records without dispatching back on the generator-side permit. The "
             + "inferred-directive arm renders the resolved @table name from this projection; "
-            + "R217's absent-directive arm reads the same tableName() off the same projection "
-            + "records when the SDL type carries no @table directive at all."
+            + "R217's absent-directive arm dispatches through InferredDirectiveArgs.AbsentArm.TableName "
+            + "which reads the same tableName() off the same projection records when the SDL type "
+            + "carries no @table directive at all."
     )
     public static List<InlayHint> compute(
         InlayHintConfig config, WorkspaceFile file, LspSchemaSnapshot snapshot, Range visibleRange
@@ -164,15 +165,20 @@ public final class InlayHints {
     // ===== Absent-directive arm (R217) =====
 
     /**
-     * Second pass for entries flagged {@link InferredDirectiveArgs.Entry#renderWhenAbsent()}.
+     * Second pass for entries with a non-null {@link InferredDirectiveArgs.Entry#absentArm()}.
      * Walks type-definition nodes (parallel to the classification arm) and, for each
-     * absent-eligible entry, emits a synthetic full-directive hint when the type carries
-     * no directive of that name and its classification is in the entry's eligibility set.
+     * absent-eligible entry, delegates to the entry's {@link InferredDirectiveArgs.AbsentArm}
+     * strategy for the resolved value, emitting a synthetic full-directive hint when the
+     * type carries no directive of that name and the strategy returns a value for the
+     * classification.
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "type-classification-payload-faithful",
-        reliesOn = "Reads tableName off TypeClassification.Table / Node / TableInterface / TableInput "
-            + "to render @table(name: \"...\") when the SDL type omits the directive entirely."
+        reliesOn = "Dispatches into InferredDirectiveArgs.AbsentArm strategies (TableName today) "
+            + "which read tableName off TypeClassification.Table / Node / TableInterface / TableInput "
+            + "to render @table(name: \"...\") when the SDL type omits the directive entirely. The "
+            + "eligibility set and projection-record dispatch live on the strategy itself, not in this "
+            + "renderer."
     )
     private static void collectAbsentDirectiveHints(
         List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
@@ -180,7 +186,7 @@ public final class InlayHints {
     ) {
         boolean anyAbsentEligible = false;
         for (var entry : InferredDirectiveArgs.ENTRIES) {
-            if (entry.renderWhenAbsent()) { anyAbsentEligible = true; break; }
+            if (entry.absentArm() != null) { anyAbsentEligible = true; break; }
         }
         if (!anyAbsentEligible) return;
         walkTypeDefinitions(root, typeDef -> {
@@ -192,33 +198,15 @@ public final class InlayHints {
             Node nameNode = childOfKind(typeDef, "name");
             if (nameNode == null) return;
             for (var entry : InferredDirectiveArgs.ENTRIES) {
-                if (!entry.renderWhenAbsent()) continue;
+                var arm = entry.absentArm();
+                if (arm == null) continue;
                 if (typeCarriesDirective(typeDef, entry.directiveName(), file.source())) continue;
-                String rendered = renderAbsentEntry(entry, classification);
-                if (rendered == null) continue;
-                out.add(makeHint(file, nameNode, rendered, InlayHintKind.Type));
+                arm.resolveAbsentValue(classification).ifPresent(value ->
+                    out.add(makeHint(file, nameNode,
+                        "@" + entry.directiveName() + "(" + entry.argName() + ": \"" + value + "\")",
+                        InlayHintKind.Type)));
             }
         });
-    }
-
-    /**
-     * Per-entry absent-arm renderer: returns the full {@code @directive(arg: "...")} string
-     * when {@code classification} is in this entry's eligibility set, or {@code null} when
-     * the entry does not apply to this classification. Only {@code @table} renders today
-     * (see R217's judgement calls); a future addition lives here.
-     */
-    private static String renderAbsentEntry(
-        InferredDirectiveArgs.Entry entry, TypeClassification classification
-    ) {
-        return switch (entry.directiveName()) {
-            case "table" -> {
-                String tableName = tableNameOf(classification);
-                yield tableName == null
-                    ? null
-                    : "@" + entry.directiveName() + "(" + entry.argName() + ": \"" + tableName + "\")";
-            }
-            default -> null;
-        };
     }
 
     private static boolean typeCarriesDirective(Node typeDef, String directiveName, byte[] source) {
