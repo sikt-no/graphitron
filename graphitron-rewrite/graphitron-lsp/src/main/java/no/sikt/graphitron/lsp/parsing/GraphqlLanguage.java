@@ -9,13 +9,15 @@ import java.util.Locale;
  * Singleton holder for the {@code tree-sitter-graphql} language binding.
  *
  * <p>The grammar binary ships via {@code no.sikt:graphitron-tree-sitter-natives}
- * and is loaded through {@link BundledLibraryLookup}. The tree-sitter runtime
- * itself ({@code libtree-sitter}) is sourced from the consumer's OS via
- * jtreesitter's library-loading chain; this class translates the resulting
- * {@link UnsatisfiedLinkError} (or {@link RuntimeException} wrapping one) into
- * a startup-failure that names the per-platform install command, so an
- * operator running the LSP on a fresh machine sees actionable guidance rather
- * than an opaque link error.
+ * and is loaded through {@link BundledLibraryLookup}, which also probes a
+ * short list of well-known install prefixes (Homebrew on macOS, vcpkg on
+ * Windows, {@code /usr/local/lib} on Linux) for a system-installed
+ * {@code libtree-sitter} and composes that into the SPI lookup. When the
+ * probe misses and jtreesitter's own loader chain also fails, this class
+ * translates the resulting {@link UnsatisfiedLinkError} (or
+ * {@link RuntimeException} wrapping one) into a startup-failure that names
+ * the per-platform install command, so an operator running the LSP on a
+ * fresh machine sees actionable guidance rather than an opaque link error.
  *
  * <p>The {@link Arena#global() global arena} is intentional: the
  * {@link Language} keeps its native pointer alive for the JVM's lifetime,

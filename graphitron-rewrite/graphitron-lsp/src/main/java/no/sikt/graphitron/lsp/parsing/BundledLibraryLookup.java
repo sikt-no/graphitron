@@ -9,7 +9,10 @@ import java.lang.foreign.SymbolLookup;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * Resolves the {@code tree_sitter_graphql} grammar entry point against the
@@ -33,6 +36,19 @@ import java.util.Locale;
  * the per-platform install command rather than letting jtreesitter raise
  * an opaque {@link UnsatisfiedLinkError}.
  *
+ * <p>To shorten the install path on hosts whose package manager lands
+ * {@code libtree-sitter} outside the JVM's default loader search
+ * (Apple-silicon Homebrew's {@code /opt/homebrew/lib}, vcpkg's
+ * {@code <VCPKG_ROOT>/installed/x64-windows/bin}), this class also probes a
+ * short list of well-known install prefixes and, if a {@code libtree-sitter}
+ * is found there, composes its lookup onto the grammar lookup via
+ * {@link SymbolLookup#or}. The probe is best-effort: if nothing matches,
+ * jtreesitter's own chain still runs and a system-path install (Arch
+ * {@code pacman}, Fedora {@code dnf}, Linux source-build into
+ * {@code /usr/local/lib} with {@code ldconfig}) keeps working as before.
+ * The probe lets the most common Homebrew + vcpkg layouts work without any
+ * {@code JAVA_TOOL_OPTIONS} / {@code PATH} wiring on the consumer's side.
+ *
  * <p>The grammar library is extracted from the classpath to a temporary
  * file the first time the lookup is asked for it; subsequent lookups reuse
  * the same file. The {@link Arena} jtreesitter passes in keeps the mapping
@@ -47,7 +63,62 @@ public final class BundledLibraryLookup implements NativeLibraryLookup {
 
     @Override
     public SymbolLookup get(Arena arena) {
-        return SymbolLookup.libraryLookup(extractOnce(), arena);
+        SymbolLookup grammar = SymbolLookup.libraryLookup(extractOnce(), arena);
+        return probeSystemTreeSitter(arena)
+            .map(grammar::or)
+            .orElse(grammar);
+    }
+
+    /**
+     * Best-effort lookup of a system-installed {@code libtree-sitter} from a
+     * short list of well-known install prefixes per host. Returns the first
+     * one that loads; empty if none match. Failures (file missing, dlopen
+     * error, wrong architecture) are silent — the SPI fallback in
+     * jtreesitter still gets to run, and {@link GraphqlLanguage} surfaces
+     * a clean missing-runtime message if nothing finds the library.
+     */
+    private static Optional<SymbolLookup> probeSystemTreeSitter(Arena arena) {
+        for (Path candidate : candidateRuntimePaths()) {
+            if (!Files.isRegularFile(candidate)) {
+                continue;
+            }
+            try {
+                return Optional.of(SymbolLookup.libraryLookup(candidate, arena));
+            } catch (IllegalArgumentException | UnsatisfiedLinkError ignored) {
+                // wrong arch, malformed lib, etc. — try the next candidate.
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static List<Path> candidateRuntimePaths() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (os.contains("mac")) {
+            return List.of(
+                Path.of("/opt/homebrew/lib/libtree-sitter.dylib"),
+                Path.of("/usr/local/lib/libtree-sitter.dylib")
+            );
+        }
+        if (os.contains("windows")) {
+            List<Path> paths = new ArrayList<>();
+            addVcpkgDll(paths, System.getenv("VCPKG_ROOT"));
+            addVcpkgDll(paths, System.getenv("VCPKG_INSTALLATION_ROOT"));
+            paths.add(Path.of("C:\\vcpkg\\installed\\x64-windows\\bin\\tree-sitter.dll"));
+            return List.copyOf(paths);
+        }
+        if (os.contains("linux")) {
+            return List.of(
+                Path.of("/usr/local/lib/libtree-sitter.so"),
+                Path.of("/usr/local/lib/libtree-sitter.so.0")
+            );
+        }
+        return List.of();
+    }
+
+    private static void addVcpkgDll(List<Path> paths, String root) {
+        if (root != null && !root.isBlank()) {
+            paths.add(Path.of(root, "installed", "x64-windows", "bin", "tree-sitter.dll"));
+        }
     }
 
     private static Path extractOnce() {

@@ -62,9 +62,11 @@ Open follow-up for Phase 2: the Windows `vcpkg install tree-sitter:x64-windows` 
 Discovered during Phase 3 dry-run: the spec's working assumption ("jtreesitter's chain finds the OS-installed `libtree-sitter` automatically") only holds on traditional FHS layouts. Two gaps:
 
 - **Debian/Ubuntu LTS apt is incompatible.** `libtree-sitter0` is pinned to `0.20.x` on bookworm / 24.04, predates `ts_language_abi_version` that jtreesitter 0.26 needs. Resolution: source-build from upstream (`v0.26.9`). CI does this; user docs include the same snippet for Debian/Ubuntu developers.
-- **Modern package managers install outside the JVM's default loader path.** Apple-silicon Homebrew lands `libtree-sitter.dylib` in `/opt/homebrew/lib` (not in dyld's default fallback). NixOS lands it under `/nix/store/.../lib` (not on any default path). Developers need `DYLD_LIBRARY_PATH` / `LD_LIBRARY_PATH` wiring; the setup docs and a `shellHook` example for NixOS now spell this out.
+- **Modern package managers install outside the JVM's default loader path.** Apple-silicon Homebrew lands `libtree-sitter.dylib` in `/opt/homebrew/lib` (not in dyld's default fallback). vcpkg lands `tree-sitter.dll` under `<VCPKG_ROOT>/installed/x64-windows/bin` (only on `PATH` if the user wired it). NixOS lands it under `/nix/store/.../lib` (not on any default path; content-hashed so not statically probable).
 
-Both gaps are documentation / CI-config concerns, not code: the design itself (grammar-only natives jar, jtreesitter chain handles the runtime) is sound and was verified end-to-end against `libtree-sitter 0.25.10` on NixOS.
+The Linux gap is a CI-config concern; the modern-package-manager gap is partly a code concern. `BundledLibraryLookup` was extended to probe well-known install prefixes (Homebrew `/opt/homebrew/lib` and `/usr/local/lib` on macOS; vcpkg's `<VCPKG_ROOT|VCPKG_INSTALLATION_ROOT>/installed/x64-windows/bin` and the default `C:\vcpkg\...` layout on Windows; `/usr/local/lib` on Linux) and composes a found `libtree-sitter` onto the grammar SPI lookup via `SymbolLookup.or`. The probe is best-effort and silent on miss: jtreesitter's normal loader chain still runs, NixOS still needs the shellHook, non-default install locations still need `JAVA_TOOL_OPTIONS`, but a vanilla `brew install tree-sitter` on macOS or `vcpkg install tree-sitter:x64-windows` on Windows now works with no env-var wiring.
+
+The design itself (grammar-only natives jar, jtreesitter chain handles the runtime) is sound and was verified end-to-end against `libtree-sitter 0.25.10` on NixOS and `0.26.x` from Apple-silicon Homebrew.
 
 ## Tests
 
