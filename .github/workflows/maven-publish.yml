@@ -20,6 +20,26 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+
+    # Mirrors rewrite-build.yml: jOOQ codegen in graphitron-sakila-db and the
+    # execution-tier tests in graphitron-sakila-example need a real Postgres
+    # under -Plocal-db. The publish job runs `clean deploy`, so the same
+    # services + libtree-sitter setup the regular CI job needs applies here.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rewrite_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v6
 
@@ -34,6 +54,33 @@ jobs:
           server-password: MAVEN_PASSWORD
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Build + install libtree-sitter from source
+        # graphitron-lsp's NativeLibraryBundleTest loads the grammar binary from
+        # graphitron-tree-sitter-natives; jtreesitter 0.26 then looks up runtime
+        # symbols against an OS-installed libtree-sitter. Ubuntu apt's
+        # libtree-sitter0 is pinned to 0.20.x which predates ts_language_abi_version,
+        # so we build the runtime from upstream source at the version matching
+        # the natives jar's parser ABI.
+        run: |
+          set -euo pipefail
+          VERSION=v0.26.9
+          TMPDIR=$(mktemp -d) && trap "rm -rf $TMPDIR" EXIT
+          git clone --depth=1 --branch=$VERSION https://github.com/tree-sitter/tree-sitter $TMPDIR/ts
+          make -C $TMPDIR/ts
+          sudo make -C $TMPDIR/ts install
+          sudo ldconfig
+
+      - name: Apply graphitron-sakila-db init.sql
+        # The local-db profile expects database `rewrite_test` to exist with the rewrite-test
+        # schema applied. The Postgres service container creates the database; this step
+        # loads the public + nodeidfixture + idreffixture + multischema_a + multischema_b
+        # tables that the jOOQ codegen reads.
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -p 5432 -U postgres -d rewrite_test \
+            -f graphitron-rewrite/graphitron-sakila-db/src/main/resources/init.sql
 
       - name: Validate and extract version from release tag
         run: |
@@ -53,7 +100,7 @@ jobs:
           mvn -f graphitron-rewrite/pom.xml versions:set -DnewVersion=$VERSION -DgenerateBackupPoms=false -DprocessAllModules=true
 
       - name: Build and publish release to Maven Central
-        run: mvn -f graphitron-rewrite/pom.xml --batch-mode --errors -Prelease clean deploy
+        run: mvn -f graphitron-rewrite/pom.xml --batch-mode --errors -Prelease,local-db clean deploy
         env:
           MAVEN_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.CENTRAL_PORTAL_TOKEN }}
