@@ -1,5 +1,5 @@
 ---
-id: R214
+id: R215
 title: Column-binding requirement captured at classification, not derived at usage
 status: Spec
 bucket: architecture
