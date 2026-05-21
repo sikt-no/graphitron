@@ -38,13 +38,12 @@ our build.
 
 ## Build
 
-`parser.c` is compiled together with the tree-sitter runtime by the
-upstream `tree-sitter build` CLI into a single per-platform shared library
-exposing both the runtime's `ts_*` symbols and this grammar's
-`tree_sitter_graphql` entry point. The runtime sources themselves are
-*not* vendored here: the CLI inlines its own runtime per invocation, which
-is the whole reason the natives module exists rather than the previous
-`build-native.sh` + vendored runtime tree under graphitron-lsp.
+`parser.c` is compiled by the upstream `tree-sitter build` CLI into a
+per-platform shared library exporting only this grammar's
+`tree_sitter_graphql` entry point. The tree-sitter runtime
+(`libtree-sitter`) is not linked in; jtreesitter's `ChainedLibraryLookup`
+finds it from the consumer's OS at load time. The runtime sources are
+not vendored anywhere in this repo.
 
 See `.github/workflows/tree-sitter-natives-release.yml` for the per-platform
 matrix and `../../../UPSTREAM.md` at the module root for the release cadence.

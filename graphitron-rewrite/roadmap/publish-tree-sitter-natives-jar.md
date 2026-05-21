@@ -1,7 +1,7 @@
 ---
 id: R203
 title: Publish graphitron-tree-sitter-natives jar; retire vendored C build in graphitron-lsp
-status: Ready
+status: In Progress
 bucket: Backlog
 theme: lsp
 depends-on: []
@@ -45,16 +45,11 @@ The remaining design choices fall out cleanly. The bonede route stays rejected f
 
 ## Implementation
 
-### Phase 1 — natives module + release workflow
+### Phase 1 — natives module + release workflow (shipped)
 
-The natives module skeleton and the `tree-sitter-natives-release.yml` workflow already exist on trunk from the first attempt. Most of the existing files are correct under the corrected design; the amendments are surgical.
+Workflow amendments: dropped the `ts_parser_new` symbol-export check on both POSIX `nm` and Windows `dumpbin` branches (grammar lib is parser-only by design; the runtime symbol is intentionally absent). Added `libtree-sitter` install steps to the post-deploy-verify job (`apt install libtree-sitter0` on Linux, `brew install tree-sitter` on macOS, `vcpkg install tree-sitter:x64-windows` on Windows with the resulting `bin` directory appended to `GITHUB_PATH` so the verifier JVM can load it). The inlined `Verify.java` was already grammar-only-load shape; dropped one unused import. Header and build-step comments rewritten to drop the unity-build framing. Module `UPSTREAM.md`, grammar `UPSTREAM.md`, module `pom.xml` description + leading comment, and `graphitron-rewrite/docs/tree-sitter-natives-release.adoc` rewritten to match the grammar-only + OS-runtime story.
 
-- **Workflow build-matrix Symbol-Export Assertion** (`.github/workflows/tree-sitter-natives-release.yml:112-148`): drop the `ts_parser_new` check. The grammar lib is parser-only by design; asserting a runtime symbol is exported is exactly the misunderstanding the prior draft encoded. The remaining check — `tree_sitter_graphql` is exported — stays. Both the POSIX `nm` and Windows `dumpbin` branches simplify accordingly.
-- **Workflow `lib-name` matrix entries** (`.github/workflows/tree-sitter-natives-release.yml:47-71`): rename from `libtree-sitter-graphql.{so,dylib,dll}` / `tree-sitter-graphql.dll` (Windows) to keep the same per-platform filenames; the file shape doesn't change. (Concretely, the existing entries already use the right names — `tree-sitter build` produces these — so this is a no-op; calling out as a verification rather than an edit.)
-- **Workflow Package step** (`.github/workflows/tree-sitter-natives-release.yml:183-227`): stays one binary per platform, five jar entries total. The existing jar-layout assertion is already correct (five `lib/<os>-<arch>/` entries); no edit needed.
-- **Workflow post-deploy verify** (`.github/workflows/tree-sitter-natives-release.yml:247-389`): add a `libtree-sitter` install step per platform before the verifier runs (`sudo apt-get install -y libtree-sitter0` on the two Linux runners; `brew install tree-sitter` on macOS-13 and macOS-14; on `windows-latest`, fetch a prebuilt `tree-sitter.dll` — the simplest path is `vcpkg install tree-sitter` if it's on the runner's image, otherwise a manual download from a pinned upstream source-tarball build artifact we cache out-of-band. Pick the concrete Windows install path at implementation time after probing what's on the GitHub-hosted Windows runner). The inlined `Verify.java` shape stays largely the same but loads only the grammar lib into the SymbolLookup it passes to `Language.load`; jtreesitter's `ChainedLibraryLookup` finds the OS-installed runtime automatically. The verifier's classpath construction step does not change.
-- **Module `UPSTREAM.md`** (`graphitron-rewrite/graphitron-tree-sitter-natives/UPSTREAM.md` and `.../src/main/native/grammars/graphql/UPSTREAM.md`): drop any text about a bundled tree-sitter runtime. The grammar's UPSTREAM.md keeps the bkegley commit pin. The module's UPSTREAM.md documents the tree-sitter ABI version the grammar is built against (`0.26.0` for the first release) and notes that the runtime itself comes from the consumer's OS, not from this jar.
-- **`graphitron-rewrite/docs/tree-sitter-natives-release.adoc`** is rewritten to match the new shape: grammar-only artifact, one binary per platform, five-entry jar layout, no runtime-download story, no SHA256-pin section. The "what the artifact is" table stays but rows lose any libtree-sitter references; the "versioning" section keeps `<runtime-version>-<build-n>` with the clarified meaning ("tree-sitter ABI the grammar targets, not a runtime we ship"); the "why the build infrastructure looks the way it does" section drops the runtime claims and keeps the standalone-pom + no-CI-per-PR + upstream-CLI rationales.
+Open follow-up for Phase 2: the Windows `vcpkg install tree-sitter:x64-windows` path needs validation on the actual `windows-latest` runner during the first release. If vcpkg's registry doesn't carry it or the install fails, the fallback per the spec is a pinned upstream source-tarball build cached out-of-band. The implementation took the vcpkg branch as the simpler default.
 
 ### Phase 2 — first release
 
