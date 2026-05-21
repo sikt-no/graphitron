@@ -13,10 +13,13 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.errors.SchemaProblem;
 
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.DomainReturnType;
 import no.sikt.graphitron.rewrite.model.EmitsPerTypeFile;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
+import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.PageInfoType;
@@ -266,6 +269,7 @@ public class GraphitronSchemaBuilder {
                         FieldCoordinates.coordinates(objType.getName(), fieldDef.getName()),
                         fieldBuilder.classifyField(fieldDef, objType.getName(), parentType, parentBackingClass)));
             });
+        validateUniformDomainReturnType(ctx);
         var rewrites = ConnectionPromoter.promote(ctx);
         var rebuiltAssembled = ConnectionPromoter.rebuildAssembledForConnections(ctx.schema, ctx.types, rewrites);
         // R194: reject case-insensitive type-name collisions. Graphitron emits one Java file per
@@ -287,6 +291,95 @@ public class GraphitronSchemaBuilder {
         var model = new GraphitronSchema(
             ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings());
         return new BuildResult(model, rebuiltAssembled);
+    }
+
+    /**
+     * R204: validates that every {@link OutputField} producer reaching the same SDL return-type
+     * name agrees on its {@link DomainReturnType} sealed arm. Disagreement means the producers
+     * put structurally different Java values at {@code env.getSource()} for the SDL return type's
+     * child datafetchers; the generator commits to one source-Java-type per child-field coord
+     * at emit time and does not branch on runtime source type, so a multi-producer disagreement
+     * would feed a datafetcher generated against the other producer's record shape.
+     *
+     * <p>Demotes every producer in a conflict group to {@link GraphitronField.UnclassifiedField}
+     * carrying a {@link Rejection.AuthorError.MultiProducerDomainTypeDisagreement} payload that
+     * names every conflict participant. The data field on the conflict payload (if any) stays
+     * classified as-is per R204's design fork (a): the build halts on the producer demotions
+     * before any generated code runs, so the orphan wrap arm on the data field is unreachable
+     * and the author's actionable surface is the producers.
+     */
+    @LoadBearingClassifierCheck(
+        key = "output-fields.uniform-domain-return-type",
+        description = "All OutputField producers reaching the same SDL return type expose the "
+            + "same DomainReturnType; child datafetchers emit against one source-Java-type per "
+            + "(SDL parent, field coord) pair and do not branch on runtime source type. "
+            + "Disagreement demotes every participant to UnclassifiedField with a "
+            + "MultiProducerDomainTypeDisagreement rejection.")
+    private static void validateUniformDomainReturnType(BuildContext ctx) {
+        Map<String, List<FieldCoordinates>> bySdlReturnType = new LinkedHashMap<>();
+        for (var entry : ctx.fieldRegistry.entries().entrySet()) {
+            if (!(entry.getValue() instanceof OutputField of)) continue;
+            String sdlReturn = sdlReturnTypeName(ctx.schema, entry.getKey());
+            if (sdlReturn == null) continue;
+            bySdlReturnType.computeIfAbsent(sdlReturn, k -> new ArrayList<>()).add(entry.getKey());
+        }
+        for (var group : bySdlReturnType.entrySet()) {
+            String sdlReturn = group.getKey();
+            List<FieldCoordinates> coords = group.getValue();
+            if (coords.size() < 2) continue;
+
+            java.util.Map<DomainReturnType, List<FieldCoordinates>> byDomain = new LinkedHashMap<>();
+            for (var coord : coords) {
+                var of = (OutputField) ctx.fieldRegistry.get(coord);
+                byDomain.computeIfAbsent(of.domainReturnType(), k -> new ArrayList<>()).add(coord);
+            }
+            if (byDomain.size() < 2) continue;
+
+            // Build the typed participant list once; attach the same rejection to every demoted
+            // producer in the group so each surfaces independently in the validator's per-
+            // UnclassifiedField pass.
+            List<Rejection.AuthorError.MultiProducerDomainTypeDisagreement.Participant> participants =
+                new ArrayList<>(coords.size());
+            for (var coord : coords) {
+                var of = (OutputField) ctx.fieldRegistry.get(coord);
+                participants.add(new Rejection.AuthorError.MultiProducerDomainTypeDisagreement.Participant(
+                    of.parentTypeName(), of.name(), of.domainReturnType()));
+            }
+            var rejection = new Rejection.AuthorError.MultiProducerDomainTypeDisagreement(
+                sdlReturn, participants);
+
+            for (var coord : coords) {
+                var existing = ctx.fieldRegistry.get(coord);
+                ctx.fieldRegistry.reclassify(
+                    coord,
+                    new GraphitronField.UnclassifiedField(
+                        existing.parentTypeName(), existing.name(), existing.location(),
+                        ctx.schema.getObjectType(existing.parentTypeName()) == null
+                            ? null
+                            : ctx.schema.getObjectType(existing.parentTypeName()).getFieldDefinition(existing.name()),
+                        rejection),
+                    existing.getClass());
+            }
+        }
+    }
+
+    /**
+     * Resolves the SDL return-type name (with list / non-null wrappers stripped) for a field coord
+     * <em>only</em> when the unwrapped return is an SDL Object type. Scalars and enums are leaves
+     * (no child datafetchers downstream of {@code env.getSource()}); interfaces and unions resolve
+     * to a concrete implementation type at runtime, and the per-implementation classification
+     * carries its own producer-agreement guarantees. R204's intent is the SDL-Object axis:
+     * "all OutputField producers reaching SDL Object {@code P} agree on the Java type at
+     * {@code env.getSource()} for {@code P}'s child datafetchers."
+     */
+    private static String sdlReturnTypeName(GraphQLSchema schema, FieldCoordinates coord) {
+        var parent = schema.getObjectType(coord.getTypeName());
+        if (parent == null) return null;
+        var fieldDef = parent.getFieldDefinition(coord.getFieldName());
+        if (fieldDef == null) return null;
+        var unwrapped = graphql.schema.GraphQLTypeUtil.unwrapAll(fieldDef.getType());
+        if (!(unwrapped instanceof graphql.schema.GraphQLObjectType obj)) return null;
+        return obj.getName();
     }
 
     /**

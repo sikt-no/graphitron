@@ -9,7 +9,7 @@ import no.sikt.graphitron.rewrite.RejectionKind;
  * Every leaf type is a Java record carrying the properties needed for code generation.
  */
 public sealed interface GraphitronField
-    permits RootField, ChildField, InputField, GraphitronField.UnclassifiedField {
+    permits OutputField, InputField, GraphitronField.UnclassifiedField {
 
     /** The name of the parent GraphQL type that defines this field. */
     String parentTypeName();

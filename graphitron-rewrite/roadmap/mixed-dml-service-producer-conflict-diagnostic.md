@@ -1,7 +1,7 @@
 ---
 id: R204
 title: Validate uniform env.getSource() domain return type across OutputField producers on an SDL type
-status: Ready
+status: In Review
 bucket: cleanup
 priority: 10
 theme: mutations-errors
@@ -74,20 +74,37 @@ Pick (a). The build halts on author errors before any generated code runs, so th
 
 ## Implementation
 
-- Lift `OutputField` as a sealed sub-interface of `GraphitronField`; have `RootField` and `ChildField` extend it. Declare `DomainReturnType domainReturnType()` on `OutputField`; implement on every leaf permit in `RootField` and `ChildField` (complete coverage, no fall-through; coverage pinned by unit tests).
-- Add the sealed `DomainReturnType` (`Record(TableRef) | TableRecord(Class<?>) | Plain(Class<?>)`, plus a fourth arm if implementation surfaces a permit that doesn't fit) under `no.sikt.graphitron.rewrite.model`.
-- Add the validator pass in the schema-builder pipeline after `TypeBuilder.buildTypes()` and per-type field classification complete. The pass walks `registry.entries()`, groups by SDL return-type name, and `FieldRegistry.reclassify`s every participant in a multi-`DomainReturnType` group to an `UnclassifiedField` with a new `Rejection.AuthorError` variant naming all participants and their domain return types.
-- Annotate the validator pass with `@LoadBearingClassifierCheck(key = "output-fields.uniform-domain-return-type", ...)`. Tag the child-datafetcher emit sites that type `env.getSource()` from `OutputField.domainReturnType()` with `@DependsOnClassifierCheck(key = "output-fields.uniform-domain-return-type", reliesOn = "...")`.
-- The R178 step 2 in-source comment block in `SingleRecordTableFieldServiceProducerPipelineTest` (lines 178-186) and the `@org.junit.jupiter.api.Disabled(...)` annotations come out together.
-- Retire the in-place `mixedProducerConflicts` framing previously sketched on `RecordBindingResolver`; the resolver stays "observe per-producer bindings," cross-producer comparison is the validator's job.
+Shipped:
+
+- `OutputField` lifted as a sealed sub-interface of `GraphitronField` (`permits OutputField, InputField, GraphitronField.UnclassifiedField`); `RootField` and `ChildField` both extend it. The abstract method `DomainReturnType domainReturnType()` is declared on `OutputField` and implemented on every leaf permit in `RootField` and `ChildField` (compile-time enforced; reflection meta-test pins runtime coverage as belt-and-suspenders).
+- Sealed `DomainReturnType` lands at `no.sikt.graphitron.rewrite.model.DomainReturnType` with three arms: `Record(TableRef)`, `TableRecord(ClassName)`, `Plain(ClassName)`. **Design fork from the spec draft:** the arm payloads are `ClassName` (javapoet) rather than `Class<?>`. Rationale: avoids classloading at validator time, matches `SourceKey.Wrap.TableRecord`'s existing slot type, and the structural equality the validator needs is FQN string equality on the `ClassName` arms / record value-equality on `TableRef`. Each arm overrides `toString()` to render as `Record(film)` / `TableRecord(FilmRecord)` / `Plain(java.lang.String)` so the rejection message tail names the arm without permit-internal tokens.
+- New `Rejection.AuthorError.MultiProducerDomainTypeDisagreement(String sdlTypeName, List<Participant> participants)` variant, with `Participant(String parentTypeName, String fieldName, DomainReturnType domainReturnType)` as the sub-record. The arm slots under `AuthorError` (the projection in `RejectionKind.of` is transparent); LSP severity coverage lands via the existing `SealedHierarchyDocCoverageTest` + `RejectionSeverityCoverageTest` pair (typed-rejection.adoc and LSP test both updated).
+- Validator pass `GraphitronSchemaBuilder.validateUniformDomainReturnType` runs in the schema-builder pipeline immediately after the per-type field classification loop and before `ConnectionPromoter.promote`. The pass walks `registry.entries()`, filters `instanceof OutputField`, groups by SDL return-type name (with an SDL-Object-only filter: scalars/enums/interfaces/unions skip — they're leaves at the consumer level or resolve to per-implementation arms with their own producer-agreement guarantees), and `FieldRegistry.reclassify`s every participant in a multi-`DomainReturnType` group to `UnclassifiedField` with the new rejection variant. The same rejection payload is shared across every demoted producer so each surfaces independently in the validator's per-`UnclassifiedField` pass.
+- The validator pass is annotated `@LoadBearingClassifierCheck(key = "output-fields.uniform-domain-return-type")`. The single consumer site today is `FetcherEmitter.buildSingleRecordTableFetcherValue` (the data-field-carrier emitter, which switches on `SourceKey.Wrap` to type `env.getSource()` for the child datafetcher); it carries a matching `@DependsOnClassifierCheck`. `LoadBearingGuaranteeAuditTest` passes.
+- The R178 step 2 in-source comment block and `@org.junit.jupiter.api.Disabled` annotations in `SingleRecordTableFieldServiceProducerPipelineTest` were removed; the two formerly-disabled mixed-producer cases now assert against the unified-path diagnostic.
+- The `RecordBindingResolver` stays "observe per-producer bindings"; cross-producer comparison lives on the validator (no `mixedProducerConflicts` framing landed on the resolver).
+
+**Per-permit `domainReturnType()` rationale (design fork from the spec draft's broad-detection wording).** The spec called for detecting "any current or future producer permit" disagreement; in practice the existing sakila example mixes service-table producers (typed `XRecord`) with SQL-emit table producers (sparse `Record`) on the same `@table`-bound SDL type and works at runtime because typed `XRecord` IS-A jOOQ `Record` via subtyping and the children read columns by name through the generic `Record` interface. Distinguishing those at the validator level would surface false-positive conflicts the runtime handles. The shipped per-permit choices keep R204's detection scoped to the case the spec explicitly named (DML `@mutation` carrier vs `@service`-on-Mutation carrier on the same payload SDL type):
+
+- `ServiceTableField` / `MutationServiceTableField` / `QueryServiceTableField` answer `Record(returnType.table())` (consumer-equivalent to typed `XRecord` via subtyping; not `TableRecord(recordClass)` as a naive reading of the spec would suggest).
+- `MutationDmlRecordField` / `MutationBulkDmlRecordField` answer `Record(tableInputArg.inputTable())` (sparse `RecordN` projection).
+- `MutationServiceRecordField` answers `TableRecord(peelToClassName(method.returnType()))` (typed `XRecord` verbatim; this is the carrier-shape producer that's structurally distinct from the DML carrier).
+- DML `@table`-direct permits (`MutationInsertTableField`, etc.) dispatch on `DmlReturnExpression`: `EncodedSingle` / `EncodedList` answer `Plain(STRING)` (encoded NodeId scalar); `ProjectedSingle` / `ProjectedList` answer `Record(tableInputArg.inputTable())`.
+- `NestingField` answers `Plain(org.jooq.Record)` (pass-through; the same nested SDL type is reachable from multiple `@table` parents and the children read by column name on the generic `Record` interface).
+- `ConstructorField` dispatches on `returnType`: `Record(table)` for `TableBoundReturnType` returns, `Plain(Object)` otherwise (pass-through to the constructor-populated child).
+- `ColumnField` / `ColumnReferenceField` dispatch on `compaction`: `NodeIdEncodeKeys` answers `Plain(STRING)` (encoded NodeId), otherwise `Plain(ClassName.bestGuess(column.columnClass()))`.
+- Scalar / encoded permits (`CompositeColumnField`, `CompositeColumnReferenceField`, `SingleRecordIdFieldFromReturning`) answer `Plain(STRING)`; the various SQL-emit table permits answer `Record(returnType.table())`; polymorphic permits (`InterfaceField`, `UnionField`, `QueryInterfaceField`, `QueryUnionField`, `QueryNodeField`, `QueryNodesField`) answer `Plain(Object)`; the various `@record` / accessor permits answer `Plain(Object)` or `Plain(column.columnClass())` where data is available.
+
+The conflict surface for the today-exercised case (`FilmListPayload` reached by both DML `createFilms` and `@service runFilms`) is symmetric: `MutationDmlRecordField` answers `Record(film)`; `MutationServiceRecordField` answers `TableRecord(FilmRecord)`; the validator demotes both.
 
 ## Tests
 
-- Re-enable both `@Disabled` cases. Keep them as separate tests; each test's Javadoc gets a one-line rationale ("Pins that the validator detects the conflict regardless of declaration order; sibling test pins the other direction") so the pair survives future refactors.
-  - Both producer mutations are `UnclassifiedField` (not just the "second"), regardless of ordering.
-  - Each producer's rejection message names the payload SDL type, both producer field coords, and both `DomainReturnType` arms (`Record(...)` / `TableRecord(...)` rather than `Wrap.Record` / `Wrap.TableRecord` permit-internal tokens).
-- Unit-tier coverage for `domainReturnType()` on every `OutputField` leaf permit — one assertion per permit, pinning the answer the permit returns. The "complete coverage of the sealed hierarchy" rule becomes a meta-test (iterate `OutputField`'s permits via reflection, assert each has a corresponding unit-test entry) so a future permit addition without `domainReturnType()` implementation breaks the build.
-- Pipeline-tier passes on both ordering directions; conflict surface is symmetric.
+Shipped:
+
+- `SingleRecordTableFieldServiceProducerPipelineTest`'s two formerly-`@Disabled` cases re-enabled with assertions against the unified-path diagnostic. Each test's Javadoc carries the one-line rationale; both ordering directions pin the symmetric conflict surface and assert each producer's rejection message names the payload SDL type, both producer field coords, and both `DomainReturnType` arms (`Record(film)` / `TableRecord(FilmRecord)`).
+- Unit-tier coverage in `DomainReturnTypeCoverageTest` (`graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/model/`): per-arm structural-equality pins, `toString()` rendering pin (so the rejection message tail stays stable), `MutationDmlRecordField` answers-`Record` pin, and the meta-test that walks every leaf in `OutputField`'s sealed-permit graph via reflection and asserts each declares a non-abstract `domainReturnType` method.
+- `LoadBearingGuaranteeAuditTest`, `SealedHierarchyDocCoverageTest`, `RejectionSeverityCoverageTest` all pass against the new producer/consumer key and the new `Rejection` arm.
+- Full pipeline (`mvn install -Plocal-db -P!docs`) builds clean end-to-end including the sakila example's execution-tier tests.
 
 ## Roadmap entries
 
