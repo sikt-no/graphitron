@@ -64,7 +64,7 @@ class SingleRecordTableFieldServiceProducerExecutionTest {
         if (postgres != null) postgres.stop();
     }
 
-    private Map<String, Object> execute(String query) {        var input = Graphitron.newExecutionInput(dsl).query(query).build();
+    private Map<String, Object> execute(String query) {        var input = Graphitron.newExecutionInput(dsl, "test-user").query(query).build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
         return result.getData();

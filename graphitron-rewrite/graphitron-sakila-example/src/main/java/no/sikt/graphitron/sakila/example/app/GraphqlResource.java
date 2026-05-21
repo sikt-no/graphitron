@@ -61,7 +61,7 @@ public class GraphqlResource {
     }
 
     private Response execute(String query, Map<String, Object> variables, String operationName) {
-        ExecutionInput.Builder input = Graphitron.newExecutionInput(DSL.using(dataSource, SQLDialect.POSTGRES))
+        ExecutionInput.Builder input = Graphitron.newExecutionInput(DSL.using(dataSource, SQLDialect.POSTGRES), "test-user")
             .query(query);
         if (variables != null) {
             input.variables(variables);
