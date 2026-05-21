@@ -29,7 +29,7 @@ Your application starts with `Graphitron.buildSchema(...)` (xref:../reference/ru
 
 . *Lands in graphql-java.* The engine parses the operation, plans an execution, and walks fields top-down.
 . *Hits a Graphitron `DataFetcher`.* For each field that Graphitron generated against, the fetcher Graphitron emitted is invoked with the standard `DataFetchingEnvironment`.
-. *Calls into jOOQ.* The fetcher reads the per-request `DSLContext` off the `GraphitronContext`, builds a typed query (selection-aware: only the columns the client asked for), and executes it.
+. *Calls into jOOQ.* The fetcher reads the per-request `DSLContext` off the `GraphQLContext` that `Graphitron.newExecutionInput(dsl, ...)` populated, builds a typed query (selection-aware: only the columns the client asked for), and executes it.
 . *Batches and projects.* DataLoader-backed fields collect their keys per request and execute one query per batch instead of one per parent row. xref:batching-model.adoc[The batching model] explains the mechanics and the contract.
 . *Returns the projected shape.* The query result is mapped onto the GraphQL response shape; lists, nulls, connections, and federation `_entities` dispatch all flow through the same return path.
 

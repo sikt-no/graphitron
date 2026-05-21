@@ -53,74 +53,56 @@ Without the `@link`, the federation overload isn't emitted, the federation surfa
 
 == `GraphitronContext` interface
 
-Emitted by `GraphitronContextInterfaceGenerator` into `<outputPackage>.schema`. The per-request extension point that brokers runtime values into generated fetchers:
+Emitted by `GraphitronContextInterfaceGenerator` into `<outputPackage>.schema`. The sealed per-request contract every generated DataFetcher reads from. Apps no longer implement it; the only impl is the generator's own `GraphitronContextImpl` singleton (nested inside the interface for same-compilation-unit permits), populated by `Graphitron.newExecutionInput(...)`.
 
 [source,java]
 ----
-public interface GraphitronContext {
+public sealed interface GraphitronContext {
 
-    DSLContext getDslContext(DataFetchingEnvironment env);
+    default DSLContext getDslContext(DataFetchingEnvironment env) {
+        return env.getGraphQlContext().get(DSLContext.class);
+    }
 
-    <T> T getContextArgument(DataFetchingEnvironment env, String name);
-
-    default String getTenantId(DataFetchingEnvironment env) {
-        return "";
+    default <T> T getContextArgument(DataFetchingEnvironment env, String name, Class<T> expectedType) {
+        Object value = env.getGraphQlContext().get(name);
+        if (value == null) {
+            throw new IllegalStateException("context value '" + name
+                + "' was not supplied; call Graphitron.newExecutionInput(...) to populate it");
+        }
+        return expectedType.cast(value);
     }
 
     default Validator getValidator(DataFetchingEnvironment env) {
         return DefaultValidatorHolder.INSTANCE;
     }
+
+    final class GraphitronContextImpl implements GraphitronContext {
+        public static final GraphitronContextImpl INSTANCE = new GraphitronContextImpl();
+        private GraphitronContextImpl() {}
+    }
 }
 ----
 
-Apps register an implementation per request via the typed key `GraphitronContext.class`:
+The factory IS the registration point; the parameter list is schema-driven (`DSLContext` first, then one parameter per `contextArgument` named in `@service` / `@tableMethod` / `@condition` directives, alphabetically):
 
 [source,java]
 ----
-ExecutionInput input = ExecutionInput.newExecutionInput()
+ExecutionInput input = Graphitron.newExecutionInput(dsl, /* contextArgs... */)
     .query(query)
-    .graphQLContext(b -> b.put(GraphitronContext.class, impl))
     .build();
 ----
 
-Generated fetchers retrieve it through a private helper emitted once per `*Fetchers` class (`graphitronContext(env)`); generated helpers that issue SQL on behalf of those fetchers (for example, `ConnectionHelper.totalCount(env)` for `@asConnection` connections) emit the same shim. `GraphitronContext` is *not* a per-app singleton; the same instance can serve every request as long as the methods derive their per-request answer from the `DataFetchingEnvironment`.
+Generated fetchers retrieve the impl through a private helper emitted once per `*Fetchers` class (`graphitronContext(env)`); generated helpers that issue SQL on behalf of those fetchers (for example, `ConnectionHelper.totalCount(env)` for `@asConnection` connections) emit the same shim. The sealed-interface + singleton-impl pair means `GraphitronContext` is global to the build, not per-request; all per-request state lives in the `GraphQLContext` the factory populates.
 
 === `getDslContext`
 
-Returns the jOOQ `DSLContext` Graphitron should run SQL through for this fetch. The implementation can return the same `DSLContext` for every call, a tenant-specific one keyed off `env.getGraphQlContext().get("tenantId")`, or an id-specific one for federation `_entities` per-rep routing -- Graphitron uses whatever it gets without further inspection.
-
-This method is the seam for connection scope, transaction boundaries, session variables (PostgreSQL `SET LOCAL` for row-level security), per-tenant `Configuration` objects, and listener wiring. xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers per-tenant routing; the default implementation is left to the consumer.
-
-`getDslContext` is invoked once per resolver invocation; cache the per-tenant `DSLContext` (e.g. `computeIfAbsent` on a `Map<String, DSLContext>`) rather than rebuilding one per call.
+Reads the per-request `DSLContext` from `env.getGraphQlContext().get(DSLContext.class)`, populated by the factory's `defaultDsl` parameter. The default impl is the only impl; this is not an override point. To return a tenant-specific `DSLContext` per request, build the right `DSLContext` at request entry and pass it to `Graphitron.newExecutionInput(dsl, ...)` (reintroduced under R45's tenant-column work).
 
 === `getContextArgument`
 
-Resolves a named context-argument value for this fetch. Generated fetchers call this method when a directive declares a `contextArguments:` list (`@condition` and `@tableMethod` are the directive sites today):
+Grows a third `Class<T> expectedType` parameter so the default body can apply a typed runtime check. The default reads the value from `env.getGraphQlContext()` (under the contextArgument's string name) and runs `expectedType.cast(...)`. A missing entry throws `IllegalStateException` naming the contextArgument and pointing the reader at `Graphitron.newExecutionInput(...)`; a wrong-typed entry throws the JDK's default `ClassCastException`. Both throw paths are only reachable when a consumer hand-rolls an `ExecutionInput.Builder` outside the factory; going through `Graphitron.newExecutionInput(...)` makes the same mistake a compile error at the call site, because the factory's typed parameter slot IS the reflected expected type.
 
-[source,java]
-----
-@Override @SuppressWarnings("unchecked")
-public <T> T getContextArgument(DataFetchingEnvironment env, String name) {
-    return (T) env.getGraphQlContext().get(name);
-}
-----
-
-The `name` parameter is the string literal from the directive's `contextArguments:` list; you decide where the value comes from (`env.getGraphQlContext()`, a JWT claim, a cached request-scoped map, etc.). Two directives requesting the same name in the same request must see the same value; the typical shape is to read off the GraphQL context map. xref:../how-to/condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the call-site shape.
-
-=== `getTenantId`
-
-Returns the tenant identifier Graphitron prepends onto every DataLoader cache name. Single-tenant apps leave the default empty-string return in place; multi-tenant apps override:
-
-[source,java]
-----
-@Override public String getTenantId(DataFetchingEnvironment env) {
-    return env.getGraphQlContext().get("tenantId");
-}
-----
-
-The tenant prefix is the only pluggable component of the DataLoader name; the path component (`/customer/orders`) is unique per field and is appended automatically.
-
-The id this method returns *must* agree with whatever key `getDslContext` uses to choose its `DSLContext`. Graphitron uses the *first* key's `DSLContext` for an entire batch, so two tenants colliding into one DataLoader silently fall back to whichever id was submitted first; the framework does not detect the disagreement at runtime. xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers the partitioning contract end-to-end, including federation `_entities` per-rep routing where `env.getSource()` carries the representation map.
+xref:../how-to/condition-cascade.adoc[How-to: Stacking and overriding conditions] covers the call-site shape; the supplying side is the factory's typed parameter slot.
 
 === `getValidator`
 
@@ -133,7 +115,7 @@ default Validator getValidator(DataFetchingEnvironment env) {
 }
 ----
 
-`DefaultValidatorHolder` is a holder-class idiom inside the same emitted file; its `INSTANCE` is initialised on the first call to `getValidator` (`Validation.buildDefaultValidatorFactory().getValidator()`) and shared by every subsequent default-using request. Apps that want a custom factory (per-tenant message interpolators, an alternative provider, request-scoped constraint validators) override the method and return their own `Validator`.
+`DefaultValidatorHolder` is a holder-class idiom inside the same emitted file; its `INSTANCE` is initialised on the first call to `getValidator` (`Validation.buildDefaultValidatorFactory().getValidator()`) and shared by every subsequent default-using request. The method is no longer an override point on the sealed interface; custom-validator-factory configuration ships under R192 as a Mojo-driven hook.
 
 == `NodeIdEncoder` utility
 
@@ -177,7 +159,7 @@ A single canonical wire format across every generated dispatcher is what makes n
 * xref:directives/index.adoc[Directive reference] is the SDL-driven half of what generated code looks like; this page is the SDL-independent half.
 * xref:../how-to/test-your-schema.adoc[How-to: Test your schema] covers wiring `Graphitron.buildSchema(...)` and a request-scoped `GraphitronContext` into an execution-tier test.
 * xref:../how-to/custom-scalars.adoc[How-to: Custom scalars] is the canonical use of the `buildSchema` customizer's `additionalType(...)` shape.
-* xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers `getDslContext` + `getTenantId` cooperation, the cache-key contract, and PostgreSQL row-level security.
+* xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers per-request `DSLContext` routing (recipe is being rewritten under R45; the link resolves but the body shows a deferral banner).
 * xref:../how-to/global-id.adoc[How-to: Global object IDs] covers `NodeIdEncoder` end-to-end, including the per-Node helpers, `keyColumns` migrations, and `Query.node` / `Query.nodes` dispatch.
 
 xref:index.adoc[← Reference index]

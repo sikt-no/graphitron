@@ -14,58 +14,43 @@ off.
 
 == GraphitronContext
 
-`GraphitronContext` is the runtime extension point that Graphitron defines.
-Every generated DataFetcher retrieves an implementation per request and calls
-its methods. Generated helper utilities that issue SQL on behalf of those
-fetchers (for example, `ConnectionHelper.totalCount(env)` for `@asConnection`
-connections) follow the same pattern: they emit a private
-`graphitronContext(env)` shim and look up the `DSLContext` per invocation
-rather than capturing one. You control what happens at runtime by providing
-your own implementation; transaction boundaries, connection scope, session
-variables, and listeners are all decided by the `DSLContext` you return, not
-by anything Graphitron emits.
+`GraphitronContext` is the sealed per-request contract every generated DataFetcher reads from. It is _emitted_ per app under `<outputPackage>.schema` and sealed to permit only the generator's own `GraphitronContextImpl` singleton (nested inside the interface to inherit same-compilation-unit permits); apps no longer implement it directly. The extension surface moves to the points where per-request values cross the boundary:
+
+* *Per-request `DSLContext`*: pass it as the first parameter of `Graphitron.newExecutionInput(dsl, ...)`. Per-tenant routing is the subject of R45's tenant-column work; until that lands, single-tenant apps pass a single `DSLContext` per request.
+* *Per-request `contextArgument` values*: pass each one as a typed parameter to `Graphitron.newExecutionInput(...)`. The factory's parameter list reflects the schema's declared `contextArguments` and their reflected Java types, so the consumer's request-entry code threads each value through a typed slot rather than stashing arbitrary entries on `GraphQLContext` by hand.
+* *Custom validator factory*: covered by a follow-up Mojo configuration item (R192). The default reads `Validation.buildDefaultValidatorFactory().getValidator()`; this is unchanged by R190 and the single existing override point is currently unused, so no migration is required.
+
+[source,java]
+----
+// GENERATED (illustrative shape; full method set evolves with the schema)
+public sealed interface GraphitronContext {
+    default DSLContext getDslContext(DataFetchingEnvironment env) { ... }
+    default <T> T getContextArgument(DataFetchingEnvironment env, String name, Class<T> expectedType) { ... }
+    default Validator getValidator(DataFetchingEnvironment env) { ... }
+
+    final class GraphitronContextImpl implements GraphitronContext {
+        public static final GraphitronContextImpl INSTANCE = new GraphitronContextImpl();
+        private GraphitronContextImpl() {}
+    }
+}
+----
+
+`getContextArgument` takes the expected Java type as its third parameter; the default body reads the value from `env.getGraphQlContext()` and applies `expectedType.cast(...)`. A missing entry throws `IllegalStateException` naming the contextArgument; a wrong-typed entry throws the JDK's default `ClassCastException`. Both paths are only reachable when a consumer hand-rolls an `ExecutionInput.Builder` outside `Graphitron.newExecutionInput(...)`; the typed factory makes the same mistake a compile error at the call site.
 
 === Where the interface comes from
-
-*Why per-app emission rather than a shared runtime jar.* Graphitron emits `GraphitronContext` into the consumer's source tree on every generator run, instead of shipping it as an interface in a `graphitron-runtime` library that the consumer would depend on. The choice is deliberate. A shared runtime jar would force every consumer onto the same `DataFetchingEnvironment` import (graphql-java's), the same `DSLContext` import (jOOQ's), and the same method signatures across versions; the emitted form lets each app's interface live in its own package, share its own type aliases, and evolve in lockstep with the schema the generator was run against. The runtime "extension point" is not an inheritance contract that ships independently; it is a typed shape the generator emits, and the consumer implements. No Graphitron runtime classes leak into the consumer's classpath, and the generator stays independent of any jar publication cadence.
 
 The interface is *emitted per app*, not imported from a shared module. Every
 code-generation run produces one `GraphitronContext.java` file under
 `<outputPackage>.schema`, written by
 `GraphitronContextInterfaceGenerator`. The generated interface depends only on
 graphql-java's `DataFetchingEnvironment` and jOOQ's `DSLContext`; it does not
-pull in any Graphitron runtime jar.
+pull in any Graphitron runtime jar. The sealed declaration plus nested impl mean
+the contract is global to the build (one impl per app), with all per-request
+state living in the `GraphQLContext` the factory populates.
 
-[source,java]
-----
-// GENERATED: from GraphitronContextInterfaceGenerator
-public interface GraphitronContext {
-    DSLContext getDslContext(DataFetchingEnvironment env);
-    default <T> T getContextArgument(DataFetchingEnvironment env, String name) {
-        return env.getGraphQlContext().get(name);
-    }
-    default String getTenantId(DataFetchingEnvironment env) { return ""; }
-}
-----
+=== Where each per-request value comes from
 
-`getDslContext` is the only abstract method; the others carry defaults so apps
-that only need to thread a `DSLContext` can pass a lambda
-(`(GraphitronContext) env -> dsl`) or rely on the `Graphitron.newExecutionInput(dsl)`
-factory overload.
-
-=== Registration
-
-Apps register an implementation per request via `Graphitron.newExecutionInput(...)`,
-which puts the context under the typed key every emitted fetcher reads from:
-
-[source,java]
-----
-ExecutionInput input = Graphitron.newExecutionInput(ctx)
-    .query(query)
-    .build();
-----
-
-Generated fetchers retrieve it through a private helper emitted once per
+Generated fetchers retrieve the singleton through a private helper emitted once per
 `*Fetchers` class:
 
 [source,java]
@@ -76,10 +61,11 @@ private static GraphitronContext graphitronContext(DataFetchingEnvironment env) 
 }
 ----
 
-The full minimum viable wiring (instantiating an implementation, building
-the schema, wiring `GraphQL`) lives in
-xref:getting-started.adoc#hello-world[Getting Started > Hello world]. The rest of
-this section documents what each method is for.
+The singleton's default methods then read the per-request values back from
+`env.getGraphQlContext()`: `DSLContext.class` for the per-request `DSLContext`,
+the contextArgument's string name for each typed value the factory put. The full
+minimum viable wiring (building the schema, wiring `GraphQL`, calling the factory)
+lives in xref:getting-started.adoc#hello-world[Getting Started > Hello world].
 
 [#diagram-d4]
 [source,mermaid]
@@ -92,16 +78,16 @@ sequenceDiagram
     participant DSL as DSLContext
     participant DB as PostgreSQL
 
-    Client->>Engine: ExecutionInput<br/>(query, GraphitronContext, DataLoaderRegistry)
+    Client->>Engine: ExecutionInput<br/>(query, populated GraphQLContext, DataLoaderRegistry)
     Engine->>Fetcher: invoke (DataFetchingEnvironment env)
     Fetcher->>Ctx: graphitronContext(env).getDslContext(env)
-    Ctx-->>Fetcher: per-request DSLContext<br/>(tenant routing, RLS session vars)
+    Ctx-->>Fetcher: per-request DSLContext<br/>(read from env.getGraphQlContext().get(DSLContext.class))
     Fetcher->>DSL: select(...).from(...).where(...)
     DSL->>DB: SQL (driven by selection set)
     DB-->>DSL: Result&lt;Record&gt;
     DSL-->>Fetcher: rows
-    Fetcher->>Ctx: getContextArgument(env, "userId")<br/>(if @condition uses contextArguments)
-    Ctx-->>Fetcher: claim value
+    Fetcher->>Ctx: getContextArgument(env, "userId", String.class)<br/>(if @condition uses contextArguments)
+    Ctx-->>Fetcher: claim value (typed cast)
     Fetcher-->>Engine: Result&lt;Record&gt; / ConnectionResult
     Engine-->>Client: response (graphql-java traverses records via field DataFetchers)
 ----
@@ -111,25 +97,21 @@ The diagram shows one fetcher invocation; per-request behaviour (tenant routing 
 === `getDslContext`: database access
 
 Every generated query method calls `getDslContext(env)` to obtain the
-`DSLContext` for executing SQL. Your implementation controls what
-`DSLContext` is returned: connection pooling, session variables, transaction
-boundaries, and jOOQ listeners are all configured here. Graphitron makes no
-assumptions about how the `DSLContext` is configured; it receives one, uses
-it, and does not inspect it.
-
-A tenant-scoped example reading the tenant id off the request-scoped context
-and returning a per-tenant `DSLContext` (with `SET LOCAL` for transaction-
-scoped session variables) is in
-xref:getting-started.adoc#tenant-scoped-dslcontext[Getting Started > Tenant-scoped DSLContext].
-The same shape composes with PostgreSQL row-level security; see
-<<row-level-security,Row-Level Security>> below.
+`DSLContext` for executing SQL. The default impl reads
+`env.getGraphQlContext().get(DSLContext.class)`, populated by the factory's
+`defaultDsl` parameter. This is the only impl; the sealed interface closes off
+ad-hoc overrides. To return a tenant-specific `DSLContext` per request, build
+the right `DSLContext` at request entry and pass it to
+`Graphitron.newExecutionInput(dsl, ...)` (reintroduced under R45's
+tenant-column work). The same shape composes with PostgreSQL row-level
+security; see <<row-level-security,Row-Level Security>> below.
 
 === `getContextArgument`: passing runtime values into generated methods
 
 `getContextArgument` passes values from the GraphQL context into generated
 condition and method calls. It is invoked when a method parameter is
 classified as `ParamSource.Context`, driven by the `contextArguments` field
-on the `@condition` and `@tableMethod` directives.
+on the `@condition`, `@service`, and `@tableMethod` directives.
 
 For example, a field with
 `@condition(condition: "AccessControl.visibleToUser",
@@ -139,47 +121,16 @@ contextArguments: ["userId"])` produces:
 ----
 // GENERATED
 condition = condition.and(AccessControl.visibleToUser(table,
-    graphitronContext(env).getContextArgument(env, "userId")));
+    graphitronContext(env).getContextArgument(env, "userId", String.class)));
 ----
 
-A typical implementation pulls the value off `env.getGraphQlContext()` keyed
-by the contextArgument name, or off a JWT-claims map stashed there at request
-entry. See
-xref:getting-started.adoc#context-arguments-from-a-jwt-claim[Getting Started > Context arguments from a JWT claim]
-for a worked example.
-
-=== `getTenantId`: DataLoader cache isolation
-
-`getTenantId` returns the tenant identifier for the current request, or an
-empty string when tenant scoping does not apply (the default returns `""`).
-Graphitron concatenates this value with the GraphQL field path to build the
-DataLoader registry key for batched fetches:
-
-[source,java]
-----
-// GENERATED: see TypeFetcherGenerator.buildDataLoaderName
-String name = graphitronContext(env).getTenantId(env)
-    + "/" + String.join("/", env.getExecutionStepInfo().getPath().getKeysOnly());
-----
-
-The path component is Graphitron-controlled and cannot be overridden, so two
-DataLoader caches cannot accidentally collide; only the tenant prefix is
-pluggable. Single-tenant apps leave this method on its default; multi-tenant
-apps return a stable id per tenant so two tenants issuing the same query do
-not share a DataLoader cache:
-
-[source,java]
-----
-@Override
-public String getTenantId(DataFetchingEnvironment env) {
-    return env.getGraphQlContext().get("tenantId");
-}
-----
-
-Note: the consumer-side tenant id used by `getDslContext` to choose a
-`DSLContext` and the value returned here are typically the same id read from
-the same place; they are separate methods because their consumers are
-separate (your code vs. Graphitron's DataLoader registry).
+The third `Class<T> expectedType` parameter is reflected from the developer
+method's parameter type, so the runtime cast matches the compile-time signature
+the consumer wrote against. The supplying side is the factory's typed parameter
+slot: `Graphitron.newExecutionInput(dsl, userId)` with `userId: String` reflects
+straight into the consumer's method, and a typo in the SDL `contextArguments:`
+list surfaces as a compile error at the factory call (not a `null` at request
+time).
 
 '''
 
@@ -195,10 +146,11 @@ its configuration.
 * *jOOQ `Configuration`* for cross-cutting jOOQ behaviour: type converters,
   forced types, `RecordMapperProvider`, naming strategies. Configured once
   per app and shared by every `DSLContext` you return from `getDslContext`.
-* *`getDslContext` (i.e., `GraphitronContext`)* for per-request decisions
-  that need the `DataFetchingEnvironment`: which tenant's `DSLContext` to
-  return, which session variables to `SET LOCAL`, which connection to
-  acquire. Anything that varies request-by-request lives here.
+* *The `DSLContext` you pass into `Graphitron.newExecutionInput`* for per-request
+  decisions: which tenant's `DSLContext` to use, which session variables to
+  `SET LOCAL`, which connection to acquire. Anything that varies
+  request-by-request gets composed at request entry and threaded through the
+  factory.
 * *Schema directives* (`@condition`, `@tableMethod`, `@reference`) for
   predicates and joins that are part of the schema's business semantics.
   Anything a schema author should be able to read in the SDL belongs here,
