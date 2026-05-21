@@ -12,6 +12,10 @@ on:
         description: 'Upstream tree-sitter CLI tag to build with (must match runtime version pinned in pom.xml).'
         required: true
         default: 'v0.26.9'
+      dry-run:
+        description: 'Skip deploy + post-deploy verify (run only build matrix, package, and jar-layout assertion).'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -192,6 +196,7 @@ jobs:
           echo "OK: jar layout matches exactly the five expected lib/<os>-<arch>/ entries"
 
       - name: Deploy to Maven Central
+        if: ${{ !inputs.dry-run }}
         run: |
           mvn -f "$NATIVES_MODULE/pom.xml" --batch-mode --errors deploy -DskipTests
         env:
@@ -212,6 +217,7 @@ jobs:
   post-deploy-verify:
     name: Verify ${{ matrix.platform }} from Central
     needs: package-deploy
+    if: ${{ !inputs.dry-run }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
