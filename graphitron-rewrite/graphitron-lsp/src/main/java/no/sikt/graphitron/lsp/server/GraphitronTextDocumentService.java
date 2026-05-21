@@ -142,7 +142,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             var pos = Positions.resolve(file.source(),
                 params.getPosition().getLine(),
                 params.getPosition().getCharacter()).tsPoint();
-            return Definitions.compute(file, workspace.catalog(), pos)
+            return Definitions.compute(file, workspace.catalog(), workspace.snapshot(), pos)
                 .map(loc -> Either.<List<? extends Location>, List<? extends LocationLink>>forLeft(List.of(loc)))
                 .orElseGet(() -> Either.forLeft(List.of()));
         });
@@ -210,7 +210,7 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             if (!tableItems.isEmpty()) return tableItems;
             var fieldItems = FieldCompletions.generate(vocab, data, workspace.snapshot(), context, directive, source);
             if (!fieldItems.isEmpty()) return fieldItems;
-            var refItems = ReferenceCompletions.generate(vocab, data, context, directive, source);
+            var refItems = ReferenceCompletions.generate(vocab, data, workspace.snapshot(), context, directive, source);
             if (!refItems.isEmpty()) return refItems;
             var scalarItems = ScalarTypeCompletions.generate(vocab, data, context, directive, source);
             if (!scalarItems.isEmpty()) return scalarItems;

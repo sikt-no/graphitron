@@ -3,6 +3,7 @@ package no.sikt.graphitron.lsp.hover;
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.inlay.LspClassificationLabels;
+import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
@@ -66,21 +67,20 @@ public final class DeclarationHovers {
         if (node == null || !"name".equals(node.getType())) return Optional.empty();
         Node parent = node.getParent().orElse(null);
         if (parent == null) return Optional.empty();
-        return switch (parent.getType()) {
-            case "field_definition", "input_value_definition" -> fieldHover(node, parent, source);
-            case "object_type_definition", "interface_type_definition", "input_object_type_definition",
-                 "union_type_definition", "scalar_type_definition", "enum_type_definition" ->
-                Optional.of(new DeclarationHover.TypeDeclarationHover(node, Nodes.text(node, source)));
-            default -> Optional.empty();
-        };
+        String parentKind = parent.getType();
+        if ("field_definition".equals(parentKind) || "input_value_definition".equals(parentKind)) {
+            return fieldHover(node, parent, source);
+        }
+        if (DeclarationKind.of(parent).isPresent()) {
+            return Optional.of(new DeclarationHover.TypeDeclarationHover(node, Nodes.text(node, source)));
+        }
+        return Optional.empty();
     }
 
     private static Optional<DeclarationHover> fieldHover(Node nameNode, Node fieldDef, byte[] source) {
         Node parent = fieldDef.getParent().orElse(null);
         while (parent != null) {
-            String kind = parent.getType();
-            if (kind.equals("object_type_definition") || kind.equals("interface_type_definition")
-                || kind.equals("input_object_type_definition")) {
+            if (DeclarationKind.of(parent).filter(DeclarationKind::isCarrier).isPresent()) {
                 Node typeName = childOfKind(parent, "name");
                 if (typeName == null) return Optional.empty();
                 String parentTypeName = Nodes.text(typeName, source);

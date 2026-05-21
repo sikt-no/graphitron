@@ -6,6 +6,7 @@ import graphql.language.InputValueDefinition;
 import graphql.language.NonNullType;
 import graphql.language.SourceLocation;
 import no.sikt.graphitron.lsp.parsing.Behavior;
+import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
@@ -506,9 +507,9 @@ public final class Diagnostics {
         String memberName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (memberName.isEmpty()) return;
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return;
-        var typeDef = TypeContext.enclosingTypeDefinition(directive.outer());
-        if (typeDef.isEmpty()) return;
-        var typeName = TypeContext.declaredNameOf(typeDef.get(), file.source());
+        var typeDecl = DeclarationKind.enclosing(directive.outer());
+        if (typeDecl.isEmpty()) return;
+        var typeName = TypeContext.declaredNameOf(typeDecl.get(), file.source());
         if (typeName.isEmpty()) return;
         var fieldName = TypeContext.enclosingFieldDefinition(directive.outer())
             .flatMap(fd -> TypeContext.fieldNameOf(fd, file.source()))

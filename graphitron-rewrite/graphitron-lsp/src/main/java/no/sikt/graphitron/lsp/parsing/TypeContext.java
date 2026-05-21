@@ -1,53 +1,27 @@
 package no.sikt.graphitron.lsp.parsing;
 
 import io.github.treesitter.jtreesitter.Node;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 
 import java.util.Optional;
-import java.util.Set;
 
 /**
- * Resolves the surrounding GraphQL-type-definition context for a node.
- * Per-directive completion providers use this to figure out which
- * {@code @table}-bound type a {@code @field(name:)} or
- * {@code @reference(...)} sits inside, so column / FK suggestions can be
- * filtered by the relevant table.
+ * Resolves the surrounding GraphQL-type-declaration context for a node. Per-directive completion
+ * providers use this to figure out which {@code @table}-bound type a {@code @field(name:)} or
+ * {@code @reference(...)} sits inside, so column / FK suggestions can be filtered by the
+ * relevant table.
  *
- * <p>The walk goes parent-by-parent until it hits a type-definition node;
- * tree-sitter-graphql produces one of {@code object_type_definition} /
- * {@code interface_type_definition} / {@code input_object_type_definition}
- * for the three places {@code @table} can be applied.
+ * <p>R216 — the enclosing-declaration walk delegates to {@link DeclarationKind#enclosing(Node)}
+ * so both {@code *_type_definition} ("type X { ... }") and {@code *_type_extension}
+ * ("extend type X { ... }") nodes resolve uniformly. {@link #tableNameOf} is snapshot-routed
+ * (asks the classifier's name-keyed projection rather than reading {@code @table(name:)} off the
+ * AST node) so an extension whose definition lives in another file still resolves to the
+ * authoritative table name.
  */
 public final class TypeContext {
 
-    private static final Set<String> TYPE_DEFINITION_KINDS = Set.of(
-        "object_type_definition",
-        "interface_type_definition",
-        "input_object_type_definition",
-        "scalar_type_definition",
-        "enum_type_definition"
-    );
-
     private TypeContext() {}
-
-    /**
-     * Walks ancestors of {@code inner} until a type-definition node is found.
-     * Returns empty if {@code inner} is at the top level (e.g. the cursor sits
-     * on a directive applied to a schema-level element with no enclosing type).
-     */
-    public static Optional<Node> enclosingTypeDefinition(Node inner) {
-        Node node = inner;
-        while (node != null) {
-            if (TYPE_DEFINITION_KINDS.contains(node.getType())) {
-                return Optional.of(node);
-            }
-            Node parent = node.getParent().orElse(null);
-            if (parent == null || parent.equals(node)) {
-                return Optional.empty();
-            }
-            node = parent;
-        }
-        return Optional.empty();
-    }
 
     /**
      * R159 — walks ancestors of {@code inner} until the {@code field_definition} node is found.
@@ -81,32 +55,44 @@ public final class TypeContext {
     }
 
     /**
-     * Returns the SQL table name from the {@code @table(name: "...")}
-     * directive applied to {@code typeDef}, if any. Strips surrounding
-     * quotes from the string literal. Only inspects directives directly
-     * on {@code typeDef} (not directives on nested field definitions).
+     * R216 — resolves the SQL table name for the type declared at {@code typeDecl} by routing
+     * through the classifier's name-keyed projection on the snapshot. Returns empty when the
+     * snapshot is unavailable, the declared name resolves to no classification, or the
+     * classification has no {@code tableName} (e.g. plain object, scalar, enum). Works
+     * uniformly for definition and extension nodes because the projection is keyed on the
+     * declared type name, not on the AST node.
      */
-    public static Optional<String> tableNameOf(Node typeDef, byte[] source) {
-        Node directives = childOfKind(typeDef, "directives");
-        if (directives == null) return Optional.empty();
-        for (int i = 0; i < directives.getChildCount(); i++) {
-            Node child = directives.getChild(i).orElse(null);
-            if (!"directive".equals(child.getType())) continue;
-            Node nameNode = childOfKind(child, "name");
-            if (nameNode == null || !"table".equals(Nodes.text(nameNode, source))) continue;
-            String value = stringArg(child, "name", source);
-            if (value != null) return Optional.of(value);
-        }
-        return Optional.empty();
+    public static Optional<String> tableNameOf(
+        Node typeDecl, byte[] source, LspSchemaSnapshot snapshot
+    ) {
+        if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
+        return declaredNameOf(typeDecl, source)
+            .map(name -> built.typeClassificationsByName().get(name))
+            .flatMap(TypeContext::tableNameFromClassification);
     }
 
     /**
-     * Returns the declared name on {@code typeDef} (e.g. the {@code "BigDecimal"}
-     * in {@code scalar BigDecimal @scalarType(...)}). Reads the first
-     * {@code name} child of any type-definition node.
+     * Switches over the {@link TypeClassification} arms that carry a {@code tableName}. The four
+     * Table-bearing arms (Table, Node, TableInterface, TableInput) lift here so the inlay /
+     * hover / completion / definition / diagnostic surfaces share a single switch.
      */
-    public static Optional<String> declaredNameOf(Node typeDef, byte[] source) {
-        Node nameNode = childOfKind(typeDef, "name");
+    public static Optional<String> tableNameFromClassification(TypeClassification classification) {
+        return switch (classification) {
+            case TypeClassification.Table t -> Optional.ofNullable(t.tableName());
+            case TypeClassification.Node n -> Optional.ofNullable(n.tableName());
+            case TypeClassification.TableInterface ti -> Optional.ofNullable(ti.tableName());
+            case TypeClassification.TableInput ti -> Optional.ofNullable(ti.tableName());
+            default -> Optional.empty();
+        };
+    }
+
+    /**
+     * Returns the declared name on {@code typeDecl} (e.g. the {@code "BigDecimal"} in
+     * {@code scalar BigDecimal @scalarType(...)}, the {@code "Customer"} in
+     * {@code extend type Customer { ... }}). Reads the first {@code name} child.
+     */
+    public static Optional<String> declaredNameOf(Node typeDecl, byte[] source) {
+        Node nameNode = childOfKind(typeDecl, "name");
         if (nameNode == null) return Optional.empty();
         return Optional.of(Nodes.text(nameNode, source));
     }

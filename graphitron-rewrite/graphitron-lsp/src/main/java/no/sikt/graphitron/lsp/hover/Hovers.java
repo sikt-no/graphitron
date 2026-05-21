@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp.hover;
 
 import graphql.language.Description;
 import no.sikt.graphitron.lsp.parsing.Behavior;
+import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.Nodes;
@@ -264,9 +265,9 @@ public final class Hovers {
     ) {
         String memberName = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (!(snapshot instanceof LspSchemaSnapshot.Built built)) return Optional.empty();
-        var typeDef = TypeContext.enclosingTypeDefinition(directive.outer());
-        if (typeDef.isEmpty()) return Optional.empty();
-        var typeName = TypeContext.declaredNameOf(typeDef.get(), file.source());
+        var typeDecl = DeclarationKind.enclosing(directive.outer());
+        if (typeDecl.isEmpty()) return Optional.empty();
+        var typeName = TypeContext.declaredNameOf(typeDecl.get(), file.source());
         if (typeName.isEmpty()) return Optional.empty();
         var backing = built.typesByName().get(typeName.get());
         if (backing == null) return Optional.empty();

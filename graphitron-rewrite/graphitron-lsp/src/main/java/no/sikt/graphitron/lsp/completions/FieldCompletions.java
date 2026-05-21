@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp.completions;
 
 import no.sikt.graphitron.lsp.parsing.Behavior;
+import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
@@ -51,11 +52,11 @@ public final class FieldCompletions {
         if (behavior.isEmpty() || !(behavior.get() instanceof Behavior.CatalogColumnBinding)) {
             return List.of();
         }
-        var typeDef = TypeContext.enclosingTypeDefinition(directive.outer());
-        if (typeDef.isEmpty()) {
+        var typeDecl = DeclarationKind.enclosing(directive.outer());
+        if (typeDecl.isEmpty()) {
             return List.of();
         }
-        var typeName = TypeContext.declaredNameOf(typeDef.get(), source);
+        var typeName = TypeContext.declaredNameOf(typeDecl.get(), source);
         if (typeName.isEmpty()) {
             return List.of();
         }

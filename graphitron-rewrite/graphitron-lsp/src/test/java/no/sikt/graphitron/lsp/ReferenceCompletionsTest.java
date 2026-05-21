@@ -4,6 +4,8 @@ import no.sikt.graphitron.lsp.completions.ReferenceCompletions;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.junit.jupiter.api.Test;
 import io.github.treesitter.jtreesitter.Parser;
 import io.github.treesitter.jtreesitter.Point;
@@ -11,6 +13,7 @@ import io.github.treesitter.jtreesitter.Language;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -82,6 +85,9 @@ class ReferenceCompletionsTest {
 
     @Test
     void unknownTableReturnsEmptyForKey() {
+        // R216 — snapshot is the source of truth for the type-to-table binding. When the
+        // classifier maps Foo to a table the catalog doesn't know about, key completion
+        // returns empty.
         String source = """
             type Foo @table(name: "missing") {
                 bar: Int @reference(path: [{key: ""}])
@@ -91,7 +97,10 @@ class ReferenceCompletionsTest {
         int line = 1;
         int col = lines[line].indexOf('"') + 1;
 
-        var items = run(filmCatalog(), source, new Point(line, col));
+        var fooMissingSnapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(), Map.of(), Map.of(),
+            Map.of(), Map.of("Foo", new TypeClassification.Table("missing")));
+        var items = run(filmCatalog(), source, new Point(line, col), fooMissingSnapshot);
 
         assertThat(items).isEmpty();
     }
@@ -117,6 +126,12 @@ class ReferenceCompletionsTest {
     private static List<org.eclipse.lsp4j.CompletionItem> run(
         CompletionData data, String source, Point cursor
     ) {
+        return run(data, source, cursor, fooFilmSnapshot());
+    }
+
+    private static List<org.eclipse.lsp4j.CompletionItem> run(
+        CompletionData data, String source, Point cursor, LspSchemaSnapshot snapshot
+    ) {
         var parser = new Parser();
         parser.setLanguage(no.sikt.graphitron.lsp.parsing.GraphqlLanguage.get());
         var bytes = source.getBytes(StandardCharsets.UTF_8);
@@ -126,7 +141,13 @@ class ReferenceCompletionsTest {
         var locOpt = VOCAB.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
         var context = no.sikt.graphitron.lsp.completions.CompletionContext.from(locOpt.get(), bytes);
-        return ReferenceCompletions.generate(VOCAB, data, context, directive, bytes);
+        return ReferenceCompletions.generate(VOCAB, data, snapshot, context, directive, bytes);
+    }
+
+    private static LspSchemaSnapshot fooFilmSnapshot() {
+        return new LspSchemaSnapshot.Built.Current(
+            List.of(), Map.of(), Map.of(),
+            Map.of(), Map.of("Foo", new TypeClassification.Table("film")));
     }
 
     private static CompletionData filmCatalog() {
