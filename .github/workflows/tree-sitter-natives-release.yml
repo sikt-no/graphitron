@@ -55,7 +55,7 @@ jobs:
           - platform: windows-x86_64
             runner: windows-latest
             lib-name: tree-sitter-graphql.dll
-            cli-asset: tree-sitter-windows-x64.zip
+            cli-asset: tree-sitter-windows-x64.gz
             cli-binary: tree-sitter.exe
     steps:
       - uses: actions/checkout@v6
