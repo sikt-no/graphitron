@@ -1,7 +1,7 @@
 ---
 id: R206
 title: Synthesised connection/edge types carry carrier-field source location
-status: Spec
+status: Ready
 bucket: validation
 theme: structural-refactor
 depends-on: []
