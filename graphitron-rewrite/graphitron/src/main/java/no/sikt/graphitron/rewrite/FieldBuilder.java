@@ -1593,7 +1593,7 @@ class FieldBuilder {
                     }
                 }
                 case InputField.ConditionOnlyField cof -> {
-                    // R209: @condition(override: true) on a field with no resolving column.
+                    // R210: @condition(override: true) on a field with no resolving column.
                     // Only the explicit method fires; no implicit body param by construction.
                     out.add(conditionResolver.rewrapForNested(cof.condition().filter(), outerArgName, leafPath));
                 }

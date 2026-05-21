@@ -243,7 +243,7 @@ public sealed interface FieldClassification
     /**
      * An input field whose only emission is an explicit {@code @condition(override: true)}
      * method call; no column binding is recorded because {@code override: true} suppresses the
-     * implicit predicate by construction (R209). Covers {@code InputField.ConditionOnlyField}.
+     * implicit predicate by construction (R210). Covers {@code InputField.ConditionOnlyField}.
      */
     record InputCondition(String methodClassName, String methodName) implements FieldClassification {}
 

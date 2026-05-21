@@ -4071,7 +4071,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * R209: {@code @condition(override: true)} on a plain-input field whose name does not match
+     * R210: {@code @condition(override: true)} on a plain-input field whose name does not match
      * any column on the resolving table classifies as {@link InputField.ConditionOnlyField} —
      * the column is unused by construction (override suppresses the implicit predicate), so
      * requiring it to resolve would reject schemas where the condition method owns the
@@ -4083,7 +4083,7 @@ class GraphitronSchemaBuilderTest {
     void plainInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOnlyField() {
         // Mirrors alf's opptak-subgraph SakFilterV2Input.sakskode shape: bare String field with
         // @condition(override: true) and no @field(name:); the resolving table has no column
-        // matching the field name. Pre-R209, R205 rejected this with "no column 'sakskode' found
+        // matching the field name. Pre-R210, R205 rejected this with "no column 'sakskode' found
         // in table 'sak'" because every Unresolved escalated to a build error.
         var schema = build("""
             input PlainFilter {
@@ -4108,7 +4108,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * R209: same shape on a {@code @table} input — the {@code classifyInputFieldInternal} path
+     * R210: same shape on a {@code @table} input — the {@code classifyInputFieldInternal} path
      * is shared between plain and {@code @table} inputs, so the symmetry holds at the @table
      * call site too.
      */
@@ -4134,9 +4134,9 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * R209 boundary test: the override flag is the gate. {@code @condition(override: false)}
+     * R210 boundary test: the override flag is the gate. {@code @condition(override: false)}
      * (or default) on a plain-input field with no matching column still rejects under R205's
-     * Path B; this test pins the R205↔R209 behaviour boundary by name so a future contributor
+     * Path B; this test pins the R205↔R210 behaviour boundary by name so a future contributor
      * cannot quietly relax the override:false case alongside override:true.
      */
     @Test
@@ -4159,7 +4159,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
-     * R209: {@code @condition(override: true)} with a broken condition method still rejects;
+     * R210: {@code @condition(override: true)} with a broken condition method still rejects;
      * the override flag only relaxes the column-resolution requirement, not the condition
      * reflection requirement.
      */
