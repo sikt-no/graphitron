@@ -18,7 +18,7 @@ import java.util.Optional;
 public sealed interface InputField extends GraphitronField
         permits InputField.ColumnField, InputField.ColumnReferenceField,
                 InputField.CompositeColumnField, InputField.CompositeColumnReferenceField,
-                InputField.NestingField,
+                InputField.NestingField, InputField.ConditionOnlyField,
                 InputField.LookupKeyField, InputField.SetField {
 
     /**
@@ -203,5 +203,31 @@ public sealed interface InputField extends GraphitronField
         boolean list,
         List<InputField> fields,
         Optional<ArgConditionRef> condition
+    ) implements InputField {}
+
+    /**
+     * Input field whose only emission is the explicit {@code @condition(override: true)} method;
+     * no column binding is recorded because {@code override: true} suppresses the implicit
+     * predicate by construction. Lands when {@link BuildContext#classifyInputFieldInternal}
+     * reaches the "no column found" fall-through with an {@code override:true} condition on the
+     * field: the column is unused regardless of resolution, so requiring it to resolve would
+     * reject schemas where the condition method owns the predicate entirely.
+     *
+     * <p>Distinct from {@link ColumnField} with a present {@code override:true} condition: that
+     * carrier records the column (used elsewhere by the catalog / fetcher walks) and merely
+     * suppresses the implicit predicate at {@code walkInputFieldConditions} time. This variant
+     * exists for the no-column-at-all case (R209).
+     *
+     * <p>Not a {@link LookupKeyField} / {@link SetField}: those rails require a column tuple to
+     * drive the VALUES+JOIN or INSERT/UPDATE columnlist; condition-only carriers have neither.
+     */
+    record ConditionOnlyField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        String typeName,
+        boolean nonNull,
+        boolean list,
+        ArgConditionRef condition
     ) implements InputField {}
 }

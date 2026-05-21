@@ -95,6 +95,7 @@ public final class LspClassificationLabels {
             case InputField.CompositeColumnField ignored -> "input composite column";
             case InputField.CompositeColumnReferenceField ignored -> "input composite reference column";
             case InputField.NestingField ignored -> "input nesting field";
+            case InputField.ConditionOnlyField ignored -> "input condition-only field";
 
             // --- Unclassified ---
             case GraphitronField.UnclassifiedField f -> "unclassified (" + f.kind().displayName() + ")";
@@ -125,6 +126,7 @@ public final class LspClassificationLabels {
             case FieldClassification.ServiceBacked s -> s.tableBound() ? "service table field" : "service record field";
             case FieldClassification.RecordOrProperty ignored -> "record/property field";
             case FieldClassification.Computed ignored -> "computed field";
+            case FieldClassification.InputCondition ignored -> "condition-only input field";
             case FieldClassification.Errors ignored -> "errors field";
             case FieldClassification.SingleRecordTable ignored -> "single record table field";
             case FieldClassification.SingleRecordIdFromReturning ignored -> "single record id field (RETURNING)";

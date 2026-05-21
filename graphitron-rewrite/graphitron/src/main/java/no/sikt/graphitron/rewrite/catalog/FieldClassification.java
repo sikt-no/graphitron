@@ -47,6 +47,7 @@ public sealed interface FieldClassification
             FieldClassification.ServiceBacked,
             FieldClassification.RecordOrProperty,
             FieldClassification.Computed,
+            FieldClassification.InputCondition,
             FieldClassification.Errors,
             FieldClassification.SingleRecordTable,
             FieldClassification.SingleRecordIdFromReturning,
@@ -238,6 +239,13 @@ public sealed interface FieldClassification
      * time. Covers {@code ChildField.ComputedField}.
      */
     record Computed(String methodClassName, String methodName) implements FieldClassification {}
+
+    /**
+     * An input field whose only emission is an explicit {@code @condition(override: true)}
+     * method call; no column binding is recorded because {@code override: true} suppresses the
+     * implicit predicate by construction (R209). Covers {@code InputField.ConditionOnlyField}.
+     */
+    record InputCondition(String methodClassName, String methodName) implements FieldClassification {}
 
     /**
      * The {@code errors} field on a payload type, listing the mapped {@code @error}
