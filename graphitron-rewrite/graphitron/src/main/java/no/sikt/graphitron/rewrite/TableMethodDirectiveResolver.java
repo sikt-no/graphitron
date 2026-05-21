@@ -152,7 +152,8 @@ final class TableMethodDirectiveResolver {
             className, methodName,
             argBindings, new HashSet<>(contextArgs),
             expectedReturnClass,
-            ServiceCatalog.TableSlotPolicy.FORBIDDEN);
+            ServiceCatalog.TableSlotPolicy.FORBIDDEN,
+            FieldBuilder.argSlotTypes(fieldDef));
         if (result.failed()) {
             return new Resolved.Rejected(result.rejection().prefixedWith("table method could not be resolved — "));
         }

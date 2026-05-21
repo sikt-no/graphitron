@@ -689,6 +689,49 @@ class ServiceCatalogTest {
     }
 
     @Test
+    void reflectTableMethod_typeUniqueSignature_infersBindingWithoutArgMapping() {
+        // R214: arg-level @condition where the Java parameter name (whatever) does not match
+        // the GraphQL argument name (opptaksNavn), but the signature is type-unambiguous —
+        // exactly one Table<?> parameter, exactly one String parameter, and the GraphQL slot
+        // is a single String. The inference pairs them by type without requiring argMapping.
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("opptaksNavn", graphql.Scalars.GraphQLString);
+        var argByJavaName = bindings(Map.of("opptaksNavn", "opptaksNavn"));
+        var result = newCatalog().reflectTableMethod(
+            "no.sikt.graphitron.rewrite.TestConditionStub", "argConditionTypeUnique",
+            argByJavaName, Set.of(), null,
+            ServiceCatalog.TableSlotPolicy.REQUIRED, slot);
+
+        assertThat(result.failed()).isFalse();
+        var params = result.ref().params();
+        assertThat(params).hasSize(2);
+        assertThat(params.get(0).source()).isInstanceOf(ParamSource.Table.class);
+        assertThat(params.get(1).name()).isEqualTo("whatever");
+        assertThat(params.get(1).source()).isInstanceOf(ParamSource.Arg.class);
+        assertThat(((ParamSource.Arg) params.get(1).source()).graphqlArgName()).isEqualTo("opptaksNavn");
+    }
+
+    @Test
+    void reflectTableMethod_typeAmbiguousSignature_fallsBackToNameMatchingDiagnostic() {
+        // R214 floor: when more than one Java parameter shares a type with the only slot of
+        // that type, the inference treats the pairing as ambiguous and falls back to
+        // name-based matching. With two String parameters and one String slot, the
+        // second parameter remains unbound and the existing diagnostic fires.
+        var slot = new java.util.LinkedHashMap<String, graphql.schema.GraphQLInputType>();
+        slot.put("first", graphql.Scalars.GraphQLString);
+        var argByJavaName = bindings(Map.of("first", "first"));
+        var result = newCatalog().reflectTableMethod(
+            "no.sikt.graphitron.rewrite.TestConditionStub", "argConditionTwoStrings",
+            argByJavaName, Set.of(), null,
+            ServiceCatalog.TableSlotPolicy.REQUIRED, slot);
+
+        assertThat(result.failed()).isTrue();
+        assertThat(result.rejection().message())
+            .contains("parameter 'second'")
+            .contains("not a GraphQL argument");
+    }
+
+    @Test
     void reflectTableMethod_nullExpected_skipsValidation() {
         // Condition-method callers (REQUIRED policy) pass null for the expected class since
         // their return shape is Condition, not a table. Pin that null disables strict validation

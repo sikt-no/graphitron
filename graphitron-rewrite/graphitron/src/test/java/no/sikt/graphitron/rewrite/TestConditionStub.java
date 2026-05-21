@@ -125,4 +125,23 @@ class TestConditionStub {
     public static Condition syntheticNameCondition(org.jooq.Table<?> table, String syntheticName) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * R214 fixture: arg-level {@code @condition} whose Java parameter name does not match the
+     * GraphQL argument name, but the signature is type-unambiguous (one {@code Table<?>} plus
+     * one {@code String}). Used to assert that {@code argMapping} can be omitted when the
+     * type-based pairing is unique.
+     */
+    public static Condition argConditionTypeUnique(org.jooq.Table<?> table, String whatever) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R214 fixture: arg-level {@code @condition} with two same-type non-Table parameters. Used
+     * to assert that the inference falls back to name-based matching when type alone is not
+     * sufficient to disambiguate the pairing.
+     */
+    public static Condition argConditionTwoStrings(org.jooq.Table<?> table, String first, String second) {
+        throw new UnsupportedOperationException();
+    }
 }
