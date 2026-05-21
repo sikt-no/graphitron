@@ -383,6 +383,7 @@ flowchart TD
     Sources -- mtime change --> IDE["IDE recompile<br/>(IntelliJ / Quarkus / DevTools)"]
 ----
 
+[#native-runtime-dependency]
 == Native runtime dependency
 
 `mvn graphitron:dev` runs an LSP server backed by a tree-sitter-based GraphQL
