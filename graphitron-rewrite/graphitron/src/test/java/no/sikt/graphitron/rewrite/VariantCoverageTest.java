@@ -81,7 +81,14 @@ class VariantCoverageTest {
             + "The GraphitronSchemaBuilderTest classification-case enum runs against the default "
             + "Sakila catalog (no synthesized __NODE_TYPE_ID metadata), so the Id admission case "
             + "lives in the pipeline-tier test that can swap to the nodeidfixture RewriteContext "
-            + "rather than in this enum."
+            + "rather than in this enum.",
+        InputField.ConditionOnlyField.class,
+            "R209: @condition(override: true) input-field-with-no-matching-column carrier. "
+            + "Covered by GraphitronSchemaBuilderTest's "
+            + "plainInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOnlyField "
+            + "and tableInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOnlyField "
+            + "@Test methods (one carries @ProjectionFor(ConditionOnlyField.class)), which "
+            + "land outside the enum-style ClassificationCase shape this coverage walker reads."
     );
 
     private static final List<Class<?>> ROOTS = List.of(

@@ -177,6 +177,10 @@ public final class DeclarationHovers {
             case FieldClassification.Computed c ->
                 sb.append("\n\nComputed via `").append(nullSafe(c.methodClassName())).append("#")
                   .append(nullSafe(c.methodName())).append("`");
+            case FieldClassification.InputCondition c ->
+                sb.append("\n\nCondition-only input field (override:true) via `")
+                  .append(nullSafe(c.methodClassName())).append("#")
+                  .append(nullSafe(c.methodName())).append("`");
             case FieldClassification.Errors e -> {
                 sb.append("\n\nError types:");
                 for (String name : e.errorTypeNames()) sb.append("\n- `").append(name).append("`");

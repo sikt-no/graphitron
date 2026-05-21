@@ -107,4 +107,22 @@ class TestConditionStub {
     public static Condition lifterFieldCondition(org.jooq.Table<?> table) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * R209 fixture: {@code @condition(override: true)} on an input field whose name does not
+     * match any column on the resolving table. Parameter name {@code sakskode} matches the
+     * GraphQL input field name used in {@link GraphitronSchemaBuilderTest}'s R209 cases.
+     */
+    public static Condition sakskodeCondition(org.jooq.Table<?> table, String sakskode) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * R209 fixture: {@code @condition(override: true)} on a {@code @table}-input field with no
+     * matching column. Parameter name {@code syntheticName} matches the field used by the
+     * @table symmetry test.
+     */
+    public static Condition syntheticNameCondition(org.jooq.Table<?> table, String syntheticName) {
+        throw new UnsupportedOperationException();
+    }
 }

@@ -4071,6 +4071,88 @@ class GraphitronSchemaBuilderTest {
     }
 
     /**
+     * R209: {@code @condition(override: true)} on a plain-input field whose name does not match
+     * any column on the resolving table classifies as {@link InputField.ConditionOnlyField} —
+     * the column is unused by construction (override suppresses the implicit predicate), so
+     * requiring it to resolve would reject schemas where the condition method owns the
+     * predicate entirely. The projected filter list carries only the explicit
+     * {@link ConditionFilter}, no {@link GeneratedConditionFilter} / {@link BodyParam}.
+     */
+    @Test
+    @ProjectionFor(InputField.ConditionOnlyField.class)
+    void plainInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOnlyField() {
+        // Mirrors alf's opptak-subgraph SakFilterV2Input.sakskode shape: bare String field with
+        // @condition(override: true) and no @field(name:); the resolving table has no column
+        // matching the field name. Pre-R209, R205 rejected this with "no column 'sakskode' found
+        // in table 'sak'" because every Unresolved escalated to a build error.
+        var schema = build("""
+            input PlainFilter {
+              sakskode: String
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "sakskodeCondition"}, override: true)
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: PlainFilter): [Film!]! }
+            """);
+        assertThat(schema.type("PlainFilter")).isInstanceOf(PojoInputType.class);
+        var f = (QueryField.QueryTableField) schema.field("Query", "films");
+        // No implicit BodyParam — the field has no column binding; override:true means there's
+        // nothing to suppress either, but the structural result is the same: only the explicit
+        // ConditionFilter is emitted.
+        var hasGcf = f.filters().stream().anyMatch(GeneratedConditionFilter.class::isInstance);
+        assertThat(hasGcf).isFalse();
+        var explicit = f.filters().stream()
+            .filter(ConditionFilter.class::isInstance)
+            .map(ConditionFilter.class::cast)
+            .findFirst().orElseThrow();
+        assertThat(explicit.methodName()).isEqualTo("sakskodeCondition");
+    }
+
+    /**
+     * R209: same shape on a {@code @table} input — the {@code classifyInputFieldInternal} path
+     * is shared between plain and {@code @table} inputs, so the symmetry holds at the @table
+     * call site too.
+     */
+    @Test
+    void tableInput_overrideTrueWithoutMatchingColumn_classifiesAsConditionOnlyField() {
+        var schema = build("""
+            input FilmFilter @table(name: "film") {
+              filmId: Int! @field(name: "film_id")
+              syntheticName: String
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "syntheticNameCondition"}, override: true)
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: FilmFilter): [Film!]! }
+            """);
+        var it = (no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType) schema.type("FilmFilter");
+        assertThat(it.inputFields()).hasSize(2);
+        var cof = it.inputFields().stream()
+            .filter(InputField.ConditionOnlyField.class::isInstance)
+            .map(InputField.ConditionOnlyField.class::cast)
+            .findFirst().orElseThrow();
+        assertThat(cof.name()).isEqualTo("syntheticName");
+        assertThat(cof.condition().filter().methodName()).isEqualTo("syntheticNameCondition");
+    }
+
+    /**
+     * R209: {@code @condition(override: true)} with a broken condition method still rejects;
+     * the override flag only relaxes the column-resolution requirement, not the condition
+     * reflection requirement.
+     */
+    @Test
+    void plainInput_overrideTrueWithBrokenCondition_rejectsAsUnclassifiedField() {
+        var schema = build("""
+            input PlainFilter {
+              sakskode: String
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.NoSuchClass", method: "nope"}, override: true)
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: PlainFilter): [Film!]! }
+            """);
+        var uf = (UnclassifiedField) schema.field("Query", "films");
+        assertThat(uf.reason()).contains("plain input type 'PlainFilter'", "sakskode");
+    }
+
+    /**
      * R205 acceptance test #6 — {@code @condition} reflection failure on a plain-input field
      * folds into the same sealed channel: {@link UnclassifiedField} on the surrounding query.
      */
