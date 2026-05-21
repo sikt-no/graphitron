@@ -127,6 +127,55 @@ class DeclarationHoversTest {
             .contains("Error channel: `ACTOR_PAYLOAD`");
     }
 
+    // ===== R216 — extend type X { ... } parity =====
+
+    @Test
+    void cursorOnTypeExtensionNameProducesTypeClassificationHover() {
+        // extend type whose definition lives elsewhere; classification is name-keyed on the
+        // snapshot so the hover routes through the same projection lookup as the definition arm.
+        var file = file("""
+            extend type Customer {
+                fullName: String
+            }
+            """);
+        // Cursor in 'Customer' on line 0.
+        var pos = pointAt(file, 0, "extend type Cust".length());
+
+        var snapshot = snapshotWith(
+            Map.of(),
+            Map.of("Customer", new TypeClassification.Table("customer")));
+        var hover = DeclarationHovers.compute(file, snapshot, pos).orElseThrow();
+
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md)
+            .contains("**TypeClassification.Table**")
+            .contains("Table: `customer`");
+    }
+
+    @Test
+    void cursorOnFieldNameInsideTypeExtensionProducesFieldClassificationHover() {
+        // Field-coordinate lookup is `ParentType.fieldName`; the parent name is read off the
+        // extension node just like a definition, so the snapshot lookup hits the same key.
+        var file = file("""
+            extend type Customer {
+                fullName: String
+            }
+            """);
+        // Cursor inside 'fullName' on line 1.
+        var pos = pointAt(file, 1, "    fullN".length());
+
+        var snapshot = snapshotWith(
+            Map.of("Customer.fullName", new FieldClassification.Column("customer", "full_name")),
+            Map.of());
+        var hover = DeclarationHovers.compute(file, snapshot, pos).orElseThrow();
+
+        var md = hover.getContents().getRight().getValue();
+        assertThat(md)
+            .contains("**FieldClassification.Column**")
+            .contains("`Customer.fullName`")
+            .contains("Column `full_name` on `customer`");
+    }
+
     // ===== Helpers =====
 
     private static LspSchemaSnapshot.Built snapshotWith(

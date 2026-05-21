@@ -1,10 +1,13 @@
 package no.sikt.graphitron.lsp.definition;
 
+import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -30,14 +33,23 @@ public final class Definitions {
 
     private Definitions() {}
 
-    public static Optional<Location> compute(WorkspaceFile file, CompletionData catalog, Point pos) {
+    @DependsOnClassifierCheck(
+        key = "type-classification-payload-faithful",
+        reliesOn = "Resolves the enclosing type's tableName off TypeClassification.Table / Node / "
+            + "TableInterface / TableInput via TypeContext.tableNameOf for @field(name:) go-to-"
+            + "definition so an extension whose definition lives in another file still routes to "
+            + "the right table's column metadata."
+    )
+    public static Optional<Location> compute(
+        WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot, Point pos
+    ) {
         var directiveOpt = Directives.findContaining(file.tree().getRootNode(), pos);
         if (directiveOpt.isEmpty()) return Optional.empty();
         var directive = directiveOpt.get();
         String name = Nodes.text(directive.nameNode(), file.source());
         return switch (name) {
             case "table" -> tableDefinition(directive, file, catalog, pos);
-            case "field" -> fieldDefinition(directive, file, catalog, pos);
+            case "field" -> fieldDefinition(directive, file, catalog, snapshot, pos);
             case "reference" -> referenceDefinition(directive, file, catalog, pos);
             default -> Optional.empty();
         };
@@ -55,15 +67,16 @@ public final class Definitions {
     }
 
     private static Optional<Location> fieldDefinition(
-        Directives.Directive directive, WorkspaceFile file, CompletionData catalog, Point pos
+        Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
+        LspSchemaSnapshot snapshot, Point pos
     ) {
         Node argValue = stringArgValueAt(directive, "name", pos, file.source());
         if (argValue == null) return Optional.empty();
         String columnName = Nodes.unquote(Nodes.text(argValue, file.source()));
 
-        var typeDef = TypeContext.enclosingTypeDefinition(directive.outer());
-        if (typeDef.isEmpty()) return Optional.empty();
-        var tableName = TypeContext.tableNameOf(typeDef.get(), file.source());
+        var typeDecl = DeclarationKind.enclosing(directive.outer());
+        if (typeDecl.isEmpty()) return Optional.empty();
+        var tableName = TypeContext.tableNameOf(typeDecl.get(), file.source(), snapshot);
         if (tableName.isEmpty()) return Optional.empty();
         var tableOpt = catalog.getTable(tableName.get());
         if (tableOpt.isEmpty()) return Optional.empty();

@@ -16,6 +16,7 @@ import no.sikt.graphitron.lsp.parsing.GraphqlLanguage;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -136,8 +137,11 @@ class CompletionTextEditTest {
         var language = new CompletionData.Table("language", "", CompletionData.SourceLocation.UNKNOWN, List.of(), List.of());
         var data = new CompletionData(List.of(film, language), List.of(), List.of());
 
+        var fooFilmSnapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(), Map.of(), Map.of(),
+            Map.of(), Map.of("Foo", new TypeClassification.Table("film")));
         var items = runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> ReferenceCompletions.generate(VOCAB, data, ctx, dir, bytes));
+            (ctx, dir, bytes) -> ReferenceCompletions.generate(VOCAB, data, fooFilmSnapshot, ctx, dir, bytes));
 
         assertTextEditRange(items, "FILM__FILM_LANGUAGE_ID_FKEY",
             new Range(new Position(line, innerStart), new Position(line, innerStart + "FILM__".length())));

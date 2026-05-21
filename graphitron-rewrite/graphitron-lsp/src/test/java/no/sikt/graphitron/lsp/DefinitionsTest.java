@@ -3,10 +3,13 @@ package no.sikt.graphitron.lsp;
 import no.sikt.graphitron.lsp.definition.Definitions;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
+import no.sikt.graphitron.rewrite.catalog.TypeClassification;
 import org.junit.jupiter.api.Test;
 import io.github.treesitter.jtreesitter.Point;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -31,7 +34,7 @@ class DefinitionsTest {
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         var pos = pointAt(file, 0, "film");
 
-        var loc = Definitions.compute(file, filmCatalog(), pos).orElseThrow();
+        var loc = Definitions.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(FILM_URI);
         assertThat(loc.getRange().getStart().getLine()).isZero();
     }
@@ -40,7 +43,7 @@ class DefinitionsTest {
     void unknownTableReturnsEmpty() {
         var file = file("type Foo @table(name: \"GHOST\") { bar: Int }");
         var pos = pointAt(file, 0, "GHOST");
-        assertThat(Definitions.compute(file, filmCatalog(), pos)).isEmpty();
+        assertThat(Definitions.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos)).isEmpty();
     }
 
     @Test
@@ -52,7 +55,7 @@ class DefinitionsTest {
             """);
         var pos = pointAt(file, 1, "title");
 
-        var loc = Definitions.compute(file, filmCatalog(), pos).orElseThrow();
+        var loc = Definitions.compute(file, filmCatalog(), fooFilmSnapshot(), pos).orElseThrow();
         // Phase 4 sends columns to the same file as the owning table; line
         // refinement waits for JavaParser.
         assertThat(loc.getUri()).isEqualTo(FILM_URI);
@@ -67,7 +70,7 @@ class DefinitionsTest {
             """);
         var pos = pointAt(file, 1, "FILM__FILM_LANGUAGE_ID_FKEY");
 
-        var loc = Definitions.compute(file, filmCatalog(), pos).orElseThrow();
+        var loc = Definitions.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(KEYS_URI);
     }
 
@@ -80,7 +83,7 @@ class DefinitionsTest {
             """);
         var pos = pointAt(file, 1, "language");
 
-        var loc = Definitions.compute(file, filmCatalog(), pos).orElseThrow();
+        var loc = Definitions.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), pos).orElseThrow();
         assertThat(loc.getUri()).isEqualTo(LANGUAGE_URI);
     }
 
@@ -89,7 +92,7 @@ class DefinitionsTest {
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         // Cursor on the @table directive name token, not on its argument.
         int col = "type Foo @t".length();
-        assertThat(Definitions.compute(file, filmCatalog(), new Point(0, col))).isEmpty();
+        assertThat(Definitions.compute(file, filmCatalog(), LspSchemaSnapshot.unavailable(), new Point(0, col))).isEmpty();
     }
 
     @Test
@@ -100,7 +103,7 @@ class DefinitionsTest {
             }
             """);
         var pos = pointAt(file, 1, "GHOST");
-        assertThat(Definitions.compute(file, filmCatalog(), pos)).isEmpty();
+        assertThat(Definitions.compute(file, filmCatalog(), fooFilmSnapshot(), pos)).isEmpty();
     }
 
     @Test
@@ -118,7 +121,13 @@ class DefinitionsTest {
         );
         var file = file("type Foo @table(name: \"film\") { bar: Int }");
         var pos = pointAt(file, 0, "film");
-        assertThat(Definitions.compute(file, unsourcedCatalog, pos)).isEmpty();
+        assertThat(Definitions.compute(file, unsourcedCatalog, LspSchemaSnapshot.unavailable(), pos)).isEmpty();
+    }
+
+    private static LspSchemaSnapshot fooFilmSnapshot() {
+        return new LspSchemaSnapshot.Built.Current(
+            List.of(), Map.of(), Map.of(),
+            Map.of(), Map.of("Foo", new TypeClassification.Table("film")));
     }
 
     private static Point pointAt(WorkspaceFile file, int line, String token) {

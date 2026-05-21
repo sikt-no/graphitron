@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp.completions;
 
 import no.sikt.graphitron.lsp.parsing.Behavior;
+import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
@@ -47,7 +48,7 @@ public final class ScalarTypeCompletions {
         if (behavior.isEmpty() || !(behavior.get() instanceof Behavior.ScalarTypeBinding)) {
             return List.of();
         }
-        String scalarName = TypeContext.enclosingTypeDefinition(directive.outer())
+        String scalarName = DeclarationKind.enclosing(directive.outer())
             .filter(n -> "scalar_type_definition".equals(n.getType()))
             .flatMap(n -> TypeContext.declaredNameOf(n, source))
             .orElse(null);

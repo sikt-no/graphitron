@@ -209,6 +209,68 @@ class InlayHintsTest {
                 .contains("film_language_id_fkey"));
     }
 
+    // ===== R216 — extend type X { ... } parity =====
+
+    @Test
+    void classificationHintsRenderOnTypeExtensionTypeName() {
+        // extend type Query is the dominant root-organisation pattern; the classification label
+        // must render on the extension's type-name token regardless of which file is open.
+        var file = file("""
+            extend type Query {
+                allFilms: [Film!]
+            }
+            """);
+        var snapshot = snapshotWith(
+            Map.of("Query.allFilms", new FieldClassification.QueryTable("film", false)),
+            Map.of("Query", new TypeClassification.Root("QUERY"))
+        );
+        var hints = InlayHints.compute(
+            new InlayHintConfig(false, true, false), file, snapshot, fullRange(file));
+        assertThat(hints).extracting(InlayHintsTest::labelOf)
+            .contains("Root", "QueryTable");
+    }
+
+    @Test
+    void inferredFieldHintRendersInsideTypeExtension() {
+        // extend type Customer where Customer is @table-classified by a definition in another
+        // file: the inferred @field(name:) must resolve via the snapshot's name-keyed lookup
+        // even though DeclarationKind.enclosing returns the extension node (which carries no
+        // @table directive locally).
+        var file = file("""
+            extend type Customer {
+                fullName: String @field
+            }
+            """);
+        var snapshot = snapshotWith(
+            Map.of("Customer.fullName", new FieldClassification.Column("customer", "full_name")),
+            Map.of("Customer", new TypeClassification.Table("customer"))
+        );
+        var hints = InlayHints.compute(
+            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+        assertThat(hints).extracting(InlayHintsTest::labelOf)
+            .contains("name: \"full_name\"");
+    }
+
+    @Test
+    void absentTableHintRendersOnTypeExtensionWithoutDirective() {
+        // The R217 absent-arm rides the broadened walk: extend type Customer whose definition
+        // lives in another file (declared @table there) should still show the inferred
+        // @table(...) ghost on the extension's type-name token.
+        var file = file("""
+            extend type Customer {
+                fullName: String
+            }
+            """);
+        var snapshot = snapshotWith(
+            Map.of(),
+            Map.of("Customer", new TypeClassification.Table("customer"))
+        );
+        var hints = InlayHints.compute(
+            new InlayHintConfig(true, false, false), file, snapshot, fullRange(file));
+        assertThat(hints).extracting(InlayHintsTest::labelOf)
+            .contains("@table(name: \"customer\")");
+    }
+
     @Test
     void hintsRenderUnderPreviousSnapshotForStaleness() {
         var file = file("""

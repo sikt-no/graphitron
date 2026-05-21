@@ -155,6 +155,38 @@ class DiagnosticsTest {
         Map.of());
     }
 
+    // ===== R216 — @field(name:) member validation inside extend type X { ... } =====
+
+    @Test
+    void unknownColumnInsideTypeExtensionProducesError() {
+        // The AST node DeclarationKind.enclosing returns is the extension; member validation
+        // resolves the parent type's backing through the snapshot's name-keyed projection, so
+        // even though @table lives on the definition in another file, the diagnostic fires.
+        var file = file("""
+            extend type Foo {
+                bar: Int @field(name: "GHOST")
+            }
+            """);
+
+        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("GHOST").contains("column");
+    }
+
+    @Test
+    void knownColumnInsideTypeExtensionProducesNoError() {
+        var file = file("""
+            extend type Foo {
+                bar: Int @field(name: "title")
+            }
+            """);
+
+        var diags = compute(file, filmCatalog(), fooTableBacking("film"));
+
+        assertThat(diags).isEmpty();
+    }
+
     // ===== R159 — $source sigil diagnostics =====
 
     @Test

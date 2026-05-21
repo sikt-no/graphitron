@@ -2,6 +2,7 @@ package no.sikt.graphitron.lsp.inlay;
 
 import io.github.treesitter.jtreesitter.Node;
 import io.github.treesitter.jtreesitter.Point;
+import no.sikt.graphitron.lsp.parsing.DeclarationKind;
 import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.Nodes;
 import no.sikt.graphitron.lsp.parsing.Positions;
@@ -18,9 +19,7 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * R160 — LSP inlay-hint provider. Two arms, each gated by an independent config toggle:
@@ -45,15 +44,6 @@ import java.util.Set;
 public final class InlayHints {
 
     private InlayHints() {}
-
-    private static final Set<String> TYPE_DEFINITION_KINDS = Set.of(
-        "object_type_definition",
-        "interface_type_definition",
-        "input_object_type_definition",
-        "union_type_definition",
-        "scalar_type_definition",
-        "enum_type_definition"
-    );
 
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "field-classification-payload-faithful",
@@ -95,7 +85,7 @@ public final class InlayHints {
         List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
         Node root, Range visibleRange
     ) {
-        walkTypeDefinitions(root, typeDef -> {
+        DeclarationKind.walkAll(root, typeDef -> {
             if (!intersects(typeDef, visibleRange)) return;
             TypeContext.declaredNameOf(typeDef, file.source()).ifPresent(typeName -> {
                 var classification = built.typeClassificationsByName().get(typeName);
@@ -189,7 +179,7 @@ public final class InlayHints {
             if (entry.absentArm() != null) { anyAbsentEligible = true; break; }
         }
         if (!anyAbsentEligible) return;
-        walkTypeDefinitions(root, typeDef -> {
+        DeclarationKind.walkAll(root, typeDef -> {
             if (!intersects(typeDef, visibleRange)) return;
             String typeName = TypeContext.declaredNameOf(typeDef, file.source()).orElse(null);
             if (typeName == null) return;
@@ -227,13 +217,13 @@ public final class InlayHints {
     ) {
         if (hasNamedArg(directive, canonicalArgName, file.source())) return;
         // Resolve the enclosing type and look up its classification for the resolved tableName.
-        var enclosingType = TypeContext.enclosingTypeDefinition(directive.outer()).orElse(null);
+        var enclosingType = DeclarationKind.enclosing(directive.outer()).orElse(null);
         if (enclosingType == null) return;
         String typeName = TypeContext.declaredNameOf(enclosingType, file.source()).orElse(null);
         if (typeName == null) return;
         var classification = built.typeClassificationsByName().get(typeName);
         if (classification == null) return;
-        String tableName = tableNameOf(classification);
+        String tableName = TypeContext.tableNameFromClassification(classification).orElse(null);
         if (tableName == null) return;
         out.add(makeHint(file, directive.nameNode(),
             canonicalArgName + ": \"" + tableName + "\"", InlayHintKind.Type));
@@ -247,7 +237,7 @@ public final class InlayHints {
         var enclosingField = TypeContext.enclosingFieldDefinition(directive.outer())
             .or(() -> enclosingInputValueDefinition(directive.outer())).orElse(null);
         if (enclosingField == null) return;
-        var enclosingType = TypeContext.enclosingTypeDefinition(enclosingField).orElse(null);
+        var enclosingType = DeclarationKind.enclosing(enclosingField).orElse(null);
         if (enclosingType == null) return;
         String typeName = TypeContext.declaredNameOf(enclosingType, file.source()).orElse(null);
         if (typeName == null) return;
@@ -274,7 +264,7 @@ public final class InlayHints {
         var enclosingField = TypeContext.enclosingFieldDefinition(directive.outer())
             .or(() -> enclosingInputValueDefinition(directive.outer())).orElse(null);
         if (enclosingField == null) return;
-        var enclosingType = TypeContext.enclosingTypeDefinition(enclosingField).orElse(null);
+        var enclosingType = DeclarationKind.enclosing(enclosingField).orElse(null);
         if (enclosingType == null) return;
         String typeName = TypeContext.declaredNameOf(enclosingType, file.source()).orElse(null);
         if (typeName == null) return;
@@ -303,16 +293,6 @@ public final class InlayHints {
     }
 
     // ===== Projection accessors =====
-
-    private static String tableNameOf(TypeClassification classification) {
-        return switch (classification) {
-            case TypeClassification.Table t -> t.tableName();
-            case TypeClassification.Node n -> n.tableName();
-            case TypeClassification.TableInterface ti -> ti.tableName();
-            case TypeClassification.TableInput ti -> ti.tableName();
-            default -> null;
-        };
-    }
 
     private static String columnNameOf(FieldClassification classification) {
         return switch (classification) {
@@ -347,28 +327,6 @@ public final class InlayHints {
             node = parent;
         }
         return java.util.Optional.empty();
-    }
-
-    /**
-     * Walks all type-definition nodes reachable from {@code root}. Tree-sitter-graphql produces
-     * one definition node per SDL top-level definition; we traverse the {@code document}'s
-     * children and filter by node type.
-     */
-    private static void walkTypeDefinitions(Node root, java.util.function.Consumer<Node> sink) {
-        var seen = new LinkedHashSet<Node>();
-        walk(root, node -> {
-            if (TYPE_DEFINITION_KINDS.contains(node.getType()) && seen.add(node)) {
-                sink.accept(node);
-            }
-        });
-    }
-
-    private static void walk(Node node, java.util.function.Consumer<Node> visitor) {
-        visitor.accept(node);
-        for (int i = 0; i < node.getChildCount(); i++) {
-            Node child = node.getChild(i).orElse(null);
-            if (child != null) walk(child, visitor);
-        }
     }
 
     private static Node childOfKind(Node parent, String kind) {
