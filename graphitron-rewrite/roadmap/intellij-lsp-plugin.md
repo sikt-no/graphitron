@@ -23,7 +23,7 @@ Today's editor instructions in `getting-started.adoc` ("point your LSP client at
 
 ## Background
 
-The existing transport-and-process shape is documented in `graphitron-rewrite/docs/getting-started.adoc` "Dev loop". Four cooperating components live in one JVM: LSP server (TCP), schema watcher, classpath watcher, generator dispatch. State is in-memory only; the warm-JVM model is the reason `DevServer.serve()` constructs a *fresh* `GraphitronLanguageServer` per connection backed by a *shared* `Workspace`, so editor reattach drops the per-connection state without touching the parsed-buffer + catalog substrate. R203 is currently In Progress on the `libtree-sitter` packaging; R99 covers a related multi-module classpath-scan gap. Neither overlaps this item's surface; R212 only adds an editor-side surface, not a generator-side one.
+The existing transport-and-process shape is documented in `graphitron-rewrite/docs/getting-started.adoc` "Dev loop". Four cooperating components live in one JVM: LSP server (TCP), schema watcher, classpath watcher, generator dispatch. State is in-memory only; the warm-JVM model is the reason `DevServer.serve()` constructs a *fresh* `GraphitronLanguageServer` per connection backed by a *shared* `Workspace`, so editor reattach drops the per-connection state without touching the parsed-buffer + catalog substrate. R99 (multi-module classpath-scan gap) is the nearest active LSP-adjacent item; it does not overlap this item's surface. R212 only adds an editor-side surface, not a generator-side one.
 
 The existing stdio entry point at `graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/server/Launcher.java:14-25` is *not* a candidate transport for IntelliJ. It instantiates a fresh `GraphitronLanguageServer` with no shared workspace and no schema watcher — a cold LSP, useful for direct invocation from a test harness but missing every dev-loop affordance. The plugin must wire through `DevServer`, not `Launcher`.
 
@@ -82,7 +82,7 @@ Two new modules under `graphitron-rewrite/`:
 
 Phase 1 (this item): build + sideload `.zip` for internal testing by alf and one or two consumer-team developers. No public artifact, no marketplace listing. Plugin version `0.1.0`.
 
-Phase 2 (separate roadmap item, R213+): custom plugin repository hosted at a Sikt URL (`updatePlugins.xml` + jar). Users add the repo URL under **Settings → Plugins → ⚙ → Manage Plugin Repositories**, then install Graphitron from the IDE's plugin list. This is the path internal-tool plugins typically take and lets us iterate without JetBrains review latency.
+Phase 2 (separate roadmap item, filed when Phase 2 starts): custom plugin repository hosted at a Sikt URL (`updatePlugins.xml` + jar). Users add the repo URL under **Settings → Plugins → ⚙ → Manage Plugin Repositories**, then install Graphitron from the IDE's plugin list. This is the path internal-tool plugins typically take and lets us iterate without JetBrains review latency.
 
 Phase 3 (later, contingent on stability + Community parity via the LSP4IJ fast-follow): JetBrains Marketplace listing.
 
@@ -167,6 +167,6 @@ No unit test for plugin-side code paths in MVP — the platform `LspServer*` typ
 - `graphitron-rewrite/graphitron-tree-sitter-natives/pom.xml` — the precedent for a standalone module published with its own release cadence. R212's `graphitron-lsp-bridge` stays inside the reactor (no release-cadence pressure) but follows the same "small standalone purpose-built module" shape.
 - JetBrains IntelliJ Platform LSP API: `com.intellij.platform.lsp` (Ultimate, 2023.2+; stabilised 2024.1). `LspServerSupportProvider`, `ProjectWideLspServerDescriptor`, `LspServerStarter`.
 - LSP4IJ (Red Hat): the Community-edition path. Plugin id `com.redhat.devtools.lsp4ij`; `ServerDefinition` extension point.
-- R203 (`publish-tree-sitter-natives-jar`), In Progress — the natives jar the dev mojo already depends on. R212 has no compile-time dependency on R203 but the Phase 1 smoke checklist (acceptance test #4) needs an R203-shipped JDK environment to be reproducible on macOS/Windows.
+- R203 (`publish-tree-sitter-natives-jar`), Done — the natives jar the dev mojo already depends on. R212 has no compile-time dependency on R203, but the Phase 1 smoke checklist (acceptance test #4) needs the natives release shipped by R203 to be reproducible on macOS/Windows.
 - R99 (`lsp-submodule-sibling-classpath`), Backlog — orthogonal classpath-scan fix; surfaces under the same multi-module shapes the IntelliJ plugin will mostly see in practice, but the failure mode (empty completions for sibling-module classes) is unrelated to R212's transport work.
 - Internal user report (alf): IntelliJ developers consistently abandon the LSP setup at the "configure TCP server in LSP4IJ" step; the plugin is the documented fix.
