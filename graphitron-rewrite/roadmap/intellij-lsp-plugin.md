@@ -94,7 +94,7 @@ Per `workflow.adoc`'s "Plans with a user-visible surface … include a draft of 
 
 ### Drafted prose for `getting-started.adoc` (new subsection: "IntelliJ users")
 
-> *IntelliJ users.* Install the Graphitron plugin from the Sikt plugin repository (Settings → Plugins → ⚙ → Manage Plugin Repositories → add `https://<sikt-plugin-repo-url>/updatePlugins.xml` → restart). The plugin requires IntelliJ Ultimate 2024.1 or later. Community Edition is not yet supported; an LSP4IJ-based path is on the roadmap.
+> *IntelliJ users.* Install the Graphitron plugin from the Sikt plugin repository (Settings → Plugins → ⚙ → Manage Plugin Repositories → add `https://<sikt-plugin-repo-url>/updatePlugins.xml` → restart). The plugin requires IntelliJ Ultimate 2024.1 or later. Community Edition is not yet supported; an LSP4IJ-based path is planned.
 >
 > Once the plugin is installed, start the dev loop in a side terminal:
 >
@@ -134,7 +134,7 @@ The acceptance-test §§4-6 prose currently lives in the Spec but logically belo
 
 ## Acceptance tests
 
-Bridge tests carry `@UnitTier` (consistent with `testing.adoc`'s "structural invariants on builders / catalogs / writers" framing — the bridge is a small standalone helper, not a pipeline-tier behaviour). The enforcement-walk fixture in `graphitron-rewrite-test` learns about the new module so `graphitron-lsp-bridge`'s tests are included in the "every test carries a tier identity" assertion; without that, the bridge module would tacitly opt out.
+Bridge tests carry `@UnitTier` (consistent with `testing.adoc`'s "structural invariants on builders / catalogs / writers" framing — the bridge is a small standalone helper, not a pipeline-tier behaviour). The tier-enforcement walk is per-module by construction: `graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/internal/TierAnnotationEnforcementTest.java` scans its own module's `target/test-classes` and asserts every test class carries exactly one tier annotation, and `graphitron` has a sibling copy doing the same for its own classpath (per `testing.adoc` § "every in-scope module" rule). The new `graphitron-lsp-bridge` module ships its own sibling copy of `TierAnnotationEnforcementTest` under `graphitron-lsp-bridge/src/test/java/no/sikt/graphitron/lsp/bridge/internal/`, consuming the `@UnitTier` / `@PipelineTier` / `@CompilationTier` / `@ExecutionTier` meta-annotations from `graphitron`'s tests-jar (the same path `graphitron-sakila-example` uses). Without that copy the bridge module would tacitly opt out of the "every test carries a tier identity" invariant.
 
 1. **`@UnitTier` — Bridge: stdin-to-socket and socket-to-stdout copy a full LSP `initialize` exchange byte-for-byte.** Unit test in `graphitron-lsp-bridge`. Spin up a loopback `ServerSocket` on an ephemeral port, write a captured `initialize` request frame onto a `PipedOutputStream` connected to the bridge's `System.in` substitute, read from the bridge's `System.out` substitute, assert the bytes match what the server socket echoed back. Both directions are covered in one test (the bridge runs both copy threads regardless of direction).
 
@@ -161,7 +161,7 @@ No unit test for plugin-side code paths in MVP — the platform `LspServer*` typ
 ## References
 
 - `graphitron-rewrite/graphitron-maven-plugin/src/main/java/no/sikt/graphitron/rewrite/maven/DevMojo.java:62-70` — the `port` parameter and `LOOPBACK_HOST` constants the plugin's settings default mirrors. `graphitron.dev.port` is the canonical override property.
-- `graphitron-rewrite/graphitron-maven-plugin/src/main/java/no/sikt/graphitron/rewrite/maven/dev/DevServer.java:55-77` — the TCP server the bridge connects to. `serve()` constructs a fresh `GraphitronLanguageServer` per connection backed by a shared `Workspace`, so multi-attach (one IntelliJ + one Neovim against the same dev mojo) works out of the box.
+- `graphitron-rewrite/graphitron-maven-plugin/src/main/java/no/sikt/graphitron/rewrite/maven/dev/DevServer.java:95-115` — the per-connection `serve()` method the bridge effectively drives. It constructs a fresh `GraphitronLanguageServer` per connection backed by the constructor-supplied shared `Workspace` (see the constructor doc comment at lines 49-57), so multi-attach (one IntelliJ + one Neovim against the same dev mojo) works out of the box.
 - `graphitron-rewrite/graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/server/Launcher.java:14-25` — the *non*-candidate stdio entry point. Cold LSP, no shared workspace, no watchers; the bridge must hit `DevServer`'s socket, not this main.
 - `graphitron-rewrite/docs/getting-started.adoc` § "Dev loop" — the existing editor-side documentation surface; R212 ships an "IntelliJ users:" subsection pointing at the plugin install path.
 - `graphitron-rewrite/graphitron-tree-sitter-natives/pom.xml` — the precedent for a standalone module published with its own release cadence. R212's `graphitron-lsp-bridge` stays inside the reactor (no release-cadence pressure) but follows the same "small standalone purpose-built module" shape.
