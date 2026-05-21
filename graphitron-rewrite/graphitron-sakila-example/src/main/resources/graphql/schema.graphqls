@@ -77,12 +77,11 @@ type Query {
     # deferred), so the method returns noCondition() and all films are returned.
     filmsWithInputFieldCondition(filter: FilmConditionInput): [Film!]!
     # argres Phase 4: @condition on a plain input field (no @table).
-    # PlainFilmIdInput is used on Film and Language queries → two different return
-    # tables → PojoInputType → PlainInputArg at each call site. For Film, filmId
-    # resolves against film → condition wired (no-op). For Language, filmId does
-    # not exist → field skipped → no condition applied → all languages returned.
+    # PlainFilmIdInput.filmId resolves against film → condition wired and called at runtime.
+    # R205 retired the Language-side counterpart: Path B now rejects mismatched call sites
+    # rather than silently dropping the field, so the cross-table reuse pattern is no
+    # longer legal (and was never load-bearing for production schemas).
     filmsByPlainInput(filter: PlainFilmIdInput): [Film!]!
-    languagesByPlainInput(filter: PlainFilmIdInput): [Language!]!
     # argres Phase 4b: input-field @condition(override: true) on a real column. There is no
     # un-annotated sibling to suppress, so the override flag is a no-op here; runtime effect
     # is identical to a non-override @condition: filmIdCondition fires and filters by the

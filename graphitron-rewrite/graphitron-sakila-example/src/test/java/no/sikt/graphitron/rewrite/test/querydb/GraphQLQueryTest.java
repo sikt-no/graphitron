@@ -1893,26 +1893,13 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void inputFieldCondition_plainInput_filmTable_filtersByFilmId() {
-        // PlainFilmIdInput is used on Film and Language queries → conflict → PojoInputType →
-        // PlainInputArg at each call site. For the Film call site, filmId resolves against
-        // film → ColumnField with condition is classified, walkInputFieldConditions collects
-        // it, and nested-arg extraction delivers the value to filmIdCondition.
+        // PlainFilmIdInput → PojoInputType → PlainInputArg at the call site. filmId resolves
+        // against film → ColumnField with condition is classified, walkInputFieldConditions
+        // collects it, and nested-arg extraction delivers the value to filmIdCondition.
         Map<String, Object> data = execute(
             "{ filmsByPlainInput(filter: {filmId: \"2\"}) { filmId } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByPlainInput");
         assertThat(films).extracting(f -> f.get("filmId")).containsExactly(2);
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void inputFieldCondition_plainInput_languageTable_fieldNotResolved_noFilterApplied_returnsAllLanguages() {
-        // For the Language call site, filmId does not exist in the language table →
-        // classifyPlainInputFields skips the field → PlainInputArg.fields is empty →
-        // walkInputFieldConditions adds nothing → field.filters() is empty → no WHERE.
-        Map<String, Object> data = execute(
-            "{ languagesByPlainInput(filter: {filmId: \"1\"}) { languageId } }");
-        List<Map<String, Object>> languages = (List<Map<String, Object>>) data.get("languagesByPlainInput");
-        assertThat(languages).isNotEmpty();
     }
 
     @Test

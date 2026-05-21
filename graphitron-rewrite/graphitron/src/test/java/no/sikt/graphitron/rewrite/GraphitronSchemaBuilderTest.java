@@ -3657,7 +3657,8 @@ class GraphitronSchemaBuilderTest {
             }),
 
         PLAIN_INPUT_ARG_FIELD_CONDITION_EMITTED(
-            "@condition on a plain input field (conflicting tables, classified per call-site) → condition emitted on the matching call site",
+            "@condition on a plain input field, classified per call-site → condition emitted at the matching "
+                + "call site; R205 Path B rejects the mismatched call site rather than silently dropping it",
             """
             input FilmInput {
               filmId: Int! @field(name: "film_id")
@@ -3674,8 +3675,13 @@ class GraphitronSchemaBuilderTest {
                 var films = (QueryField.QueryTableField) schema.field("Query", "films");
                 assertThat(films.filters()).hasSize(1);
                 assertThat(((ConditionFilter) films.filters().get(0)).methodName()).isEqualTo("inputColumnCondition");
-                var languages = (QueryField.QueryTableField) schema.field("Query", "languages");
-                assertThat(languages.filters()).isEmpty();
+                // R205 path B: the Language call site cannot resolve 'film_id' → UnclassifiedField
+                // with a typed AuthorError.UnknownName rejection.
+                var languages = (UnclassifiedField) schema.field("Query", "languages");
+                assertThat(languages.rejection()).isInstanceOf(Rejection.AuthorError.UnknownName.class);
+                var un = (Rejection.AuthorError.UnknownName) languages.rejection();
+                assertThat(un.attempt()).isEqualTo("film_id");
+                assertThat(un.message()).contains("plain input type 'FilmInput'", "input field 'filmId'");
             }),
 
         // ===== Implicit column conditions for @table input types =====
@@ -3922,6 +3928,164 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(InputTypeCase.class)
     void inputTypeClassification(InputTypeCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== R205: plain-input implicit-predicate symmetry & rejection =====
+
+    /**
+     * R205 acceptance test #1 — the projection test that was missing entirely.
+     * Plain-input field that resolves to a column with no {@code @condition} now emits an
+     * implicit {@code BodyParam.Eq} on the resolved column, matching the {@code @table}-input
+     * symmetric path. Carries {@code @ProjectionFor(PojoInputType.class)}: this is the test
+     * the projection-coverage meta-test now requires.
+     */
+    @Test
+    @ProjectionFor(PojoInputType.class)
+    void plainInput_resolvedColumnWithoutCondition_emitsImplicitBodyParam() {
+        // Two call sites against different return tables force PlainFilter to classify as
+        // PojoInputType (not auto-promoted to TableInputType). film_id exists on both film
+        // and inventory, so the resolved-column path runs at both call sites.
+        var schema = build("""
+            input PlainFilter { filmId: Int! @field(name: "film_id") }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+            type Query {
+              films(filter: PlainFilter): [Film!]!
+              inventory(filter: PlainFilter): [Inventory!]!
+            }
+            """);
+        assertThat(schema.type("PlainFilter")).isInstanceOf(PojoInputType.class);
+        // The films call site emits a single GeneratedConditionFilter carrying one
+        // BodyParam.Eq on film.film_id with a NestedInputField extraction. R205 path B fixes
+        // the bug where this BodyParam was silently dropped on the PlainInputArg path.
+        var f = (QueryField.QueryTableField) schema.field("Query", "films");
+        assertThat(f.filters()).hasSize(1);
+        var gcf = (GeneratedConditionFilter) f.filters().get(0);
+        assertThat(gcf.bodyParams()).hasSize(1);
+        var bp = (BodyParam.Eq) gcf.bodyParams().get(0);
+        assertThat(bp.name()).isEqualTo("filmId");
+        assertThat(bp.column().sqlName()).isEqualTo("film_id");
+        var nif = (CallSiteExtraction.NestedInputField) bp.extraction();
+        assertThat(nif.outerArgName()).isEqualTo("filter");
+        assertThat(nif.path()).containsExactly("filmId");
+    }
+
+    /** R205 acceptance test #2 — explicit-method-plus-implicit composition on a plain input. */
+    @Test
+    void plainInput_explicitMethodAndBareSibling_emitsBothFilters() {
+        // Two call sites force PlainFilter to remain a PojoInputType rather than auto-promote
+        // to TableInputType. film_id exists on both film and inventory; title only on film,
+        // so we use the films call site for the composition assertion.
+        var schema = build("""
+            input PlainFilter {
+              filmId: Int! @field(name: "film_id")
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"})
+              releaseYear: Int @field(name: "release_year")
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") releaseYear: Int @field(name: "release_year") }
+            type Inventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") releaseYear: Int @field(name: "release_year") }
+            type Query {
+              films(filter: PlainFilter): [Film!]!
+              inventoryItems(filter: PlainFilter): [Inventory!]!
+            }
+            """);
+        assertThat(schema.type("PlainFilter")).isInstanceOf(PojoInputType.class);
+        var f = (QueryField.QueryTableField) schema.field("Query", "films");
+        // The annotated filmId field contributes an explicit ConditionFilter; the bare
+        // releaseYear field contributes an implicit BodyParam on film.release_year.
+        var gcf = f.filters().stream()
+            .filter(GeneratedConditionFilter.class::isInstance)
+            .map(GeneratedConditionFilter.class::cast)
+            .findFirst().orElseThrow();
+        assertThat(gcf.bodyParams()).hasSize(1);
+        assertThat(gcf.bodyParams().get(0).name()).isEqualTo("releaseYear");
+        var explicit = f.filters().stream()
+            .filter(fi -> fi instanceof ConditionFilter && !(fi instanceof GeneratedConditionFilter))
+            .map(ConditionFilter.class::cast)
+            .findFirst().orElseThrow();
+        assertThat(explicit.methodName()).isEqualTo("inputColumnCondition");
+    }
+
+    /** R205 acceptance test #3 — override:true on a plain-input field suppresses its implicit. */
+    @Test
+    void plainInput_overrideTrueOnFieldCondition_suppressesImplicitBodyParam() {
+        var schema = build("""
+            input PlainFilter {
+              filmId: Int! @field(name: "film_id")
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"}, override: true)
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: PlainFilter): [Film!]! }
+            """);
+        var f = (QueryField.QueryTableField) schema.field("Query", "films");
+        // Override suppresses the implicit predicate; only the explicit ConditionFilter survives.
+        var hasGcf = f.filters().stream().anyMatch(GeneratedConditionFilter.class::isInstance);
+        assertThat(hasGcf).isFalse();
+        var explicit = f.filters().stream()
+            .filter(ConditionFilter.class::isInstance)
+            .map(ConditionFilter.class::cast)
+            .findFirst().orElseThrow();
+        assertThat(explicit.methodName()).isEqualTo("inputColumnCondition");
+    }
+
+    /**
+     * R205 acceptance test #4 — Unresolved on a plain input field with {@code @condition} rejects
+     * the surrounding query field as {@link UnclassifiedField} carrying a typed
+     * {@link Rejection.AuthorError.UnknownName}.
+     */
+    @Test
+    void plainInput_unresolvedFieldWithCondition_rejectsAsUnclassifiedFieldWithUnknownName() {
+        var schema = build("""
+            input PlainFilter {
+              noSuch: String @field(name: "no_such_column")
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"})
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: PlainFilter): [Film!]! }
+            """);
+        var uf = (UnclassifiedField) schema.field("Query", "films");
+        assertThat(uf.rejection()).isInstanceOf(Rejection.AuthorError.UnknownName.class);
+        var un = (Rejection.AuthorError.UnknownName) uf.rejection();
+        assertThat(un.attempt()).isEqualTo("no_such_column");
+        assertThat(un.candidates()).isNotEmpty();
+        assertThat(un.message()).contains("plain input type 'PlainFilter'", "input field 'noSuch'", "did you mean:");
+    }
+
+    /**
+     * R205 acceptance test #5 — Path B pin: a bare Unresolved (no {@code @condition}) on a plain
+     * input rejects loudly with the same {@link Rejection.AuthorError.UnknownName} shape. Future
+     * contributors cannot quietly reintroduce per-field skip without breaking this test by name.
+     */
+    @Test
+    void plainInput_bareUnresolvedField_rejectsAsUnclassifiedFieldWithUnknownName() {
+        var schema = build("""
+            input PlainFilter { noSuch: String @field(name: "no_such_column") }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: PlainFilter): [Film!]! }
+            """);
+        var uf = (UnclassifiedField) schema.field("Query", "films");
+        assertThat(uf.rejection()).isInstanceOf(Rejection.AuthorError.UnknownName.class);
+        var un = (Rejection.AuthorError.UnknownName) uf.rejection();
+        assertThat(un.attempt()).isEqualTo("no_such_column");
+        assertThat(un.message()).contains("plain input type 'PlainFilter'", "input field 'noSuch'");
+    }
+
+    /**
+     * R205 acceptance test #6 — {@code @condition} reflection failure on a plain-input field
+     * folds into the same sealed channel: {@link UnclassifiedField} on the surrounding query.
+     */
+    @Test
+    void plainInput_conditionReflectionFailure_rejectsAsUnclassifiedField() {
+        var schema = build("""
+            input PlainFilter {
+              filmId: Int! @field(name: "film_id")
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.NoSuchClass", method: "nope"})
+            }
+            type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+            type Query { films(filter: PlainFilter): [Film!]! }
+            """);
+        var uf = (UnclassifiedField) schema.field("Query", "films");
+        assertThat(uf.reason()).contains("plain input type 'PlainFilter'", "filmId");
     }
 
     // ===== P4b: TableInputType classification =====
@@ -5269,15 +5433,16 @@ class GraphitronSchemaBuilderTest {
     /**
      * Verifies that {@code hasLookupKeyAnywhere()} does not recurse infinitely on circular
      * input type references. A depth limit of 10 in {@code inputTypeHasLookupKey()} is the
-     * guard. A field whose input chain reaches the limit without finding {@code @lookupKey}
-     * must be classified as a non-lookup query field (here {@code QueryTableField}) rather
-     * than causing a stack overflow.
+     * guard. Under R205, a plain-input arg whose chain contains a circular reference rejects
+     * loudly as {@code UnclassifiedField} (the inner classifier surfaces the
+     * "circular input type reference detected" diagnostic); the assertion here is that the
+     * build terminates rather than stack-overflowing.
      */
     @Test
     void lookupKeySearch_depthGuardPreventsInfiniteRecursionOnCircularInputTypes() {
         // A → B → A … circular reference; no @lookupKey anywhere in the chain.
-        // The guard stops at depth 10 and returns false, so the field falls through
-        // to QueryTableField classification.
+        // The classifier's circular guard surfaces an Unresolved which the plain-input
+        // resolver lifts as Rejected → UnclassifiedField. The build terminates.
         var schema = build("""
             input A { b: B }
             input B { a: A }
@@ -5286,8 +5451,10 @@ class GraphitronSchemaBuilderTest {
             """);
 
         assertThat(schema.field("Query", "films"))
-            .as("circular input chain with no @lookupKey → QueryTableField, not a stack overflow")
-            .isInstanceOf(QueryField.QueryTableField.class);
+            .as("circular input chain rejects loudly as UnclassifiedField; build terminates")
+            .isInstanceOf(UnclassifiedField.class);
+        var uf = (UnclassifiedField) schema.field("Query", "films");
+        assertThat(uf.reason()).contains("circular input type reference detected");
     }
 
     // ===== Registry validation =====

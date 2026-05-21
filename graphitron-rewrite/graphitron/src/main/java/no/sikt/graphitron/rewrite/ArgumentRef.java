@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
+import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.Set;
@@ -313,9 +314,13 @@ public sealed interface ArgumentRef {
         }
 
         /**
-         * Input type without {@code @table}. Currently silently skipped unless paired with
-         * {@code @condition}; in that case {@code argCondition} projects to a
-         * {@code ConditionFilter}. See {@code docs/argument-resolution.md} out-of-scope note.
+         * Input type without {@code @table}. Resolved against the surrounding query field's
+         * target table by {@link InputFieldResolver}: every classified field contributes the
+         * same implicit / explicit predicates as a {@code @table} input (R205 path B). Any
+         * unresolvable field rejects the surrounding argument as
+         * {@link no.sikt.graphitron.rewrite.ArgumentRef.UnclassifiedArg} carrying a typed
+         * {@link Rejection}, mirroring the {@code @table}-input whole-type rejection at
+         * {@link no.sikt.graphitron.rewrite.TypeBuilder#buildTableInputType}.
          */
         record PlainInputArg(
             String name,
@@ -355,12 +360,20 @@ public sealed interface ArgumentRef {
         enum Role { FIRST, LAST, AFTER, BEFORE }
     }
 
-    /** Argument that could not be classified into any other variant — surfaces as a validation error. */
+    /**
+     * Argument that could not be classified into any other variant; surfaces as a validation
+     * error. Carries a typed {@link Rejection} so structured payloads (e.g.
+     * {@link Rejection.AuthorError.UnknownName} from {@link InputFieldResolver}) ride through
+     * to {@code UnclassifiedField.rejection} without collapsing to a prose-only form.
+     */
     record UnclassifiedArg(
         String name,
         String typeName,
         boolean nonNull,
         boolean list,
-        String reason
-    ) implements ArgumentRef {}
+        Rejection rejection
+    ) implements ArgumentRef {
+        /** Backwards-compatible prose accessor; renders the typed {@link #rejection}. */
+        public String reason() { return rejection.message(); }
+    }
 }

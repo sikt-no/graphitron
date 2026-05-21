@@ -95,6 +95,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static java.util.Objects.requireNonNull;
+
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CLASS_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_CONTEXT_ARGUMENTS;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_ARG_MAPPING;
@@ -657,9 +659,11 @@ class FieldBuilder {
             ASCONNECTION_HYGIENE_LOG.warn(
                 formatAsConnectionSameTableWarning(plan.firstRequiredSameTableHit(), fieldDef.getName()));
         }
-        var errors = new ArrayList<String>();
-        var refs = classifyArguments(fieldDef, table, plan, errors);
-        return projectForFilter(refs, fieldDef, table, returnTypeName, errors);
+        var classifyErrors = new ArrayList<String>();
+        var refs = classifyArguments(fieldDef, table, plan, classifyErrors);
+        var rejections = new ArrayList<Rejection>();
+        for (String e : classifyErrors) rejections.add(Rejection.structural(e));
+        return projectForFilter(refs, fieldDef, table, returnTypeName, rejections);
     }
 
     // ===== Object-return child field classification =====
@@ -988,24 +992,27 @@ class FieldBuilder {
                     .findFirst();
                 if (rejected.isPresent()) {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        "input field '" + rejected.get().getName()
-                        + "': @notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema.");
+                        Rejection.structural("input field '" + rejected.get().getName()
+                        + "': @notGenerated is no longer supported. Remove the directive; fields must be fully described by the schema."));
                 }
                 var retiredLookupKey = iot.getFieldDefinitions().stream()
                     .filter(f -> f.hasAppliedDirective(DIR_LOOKUP_KEY))
                     .findFirst();
                 if (retiredLookupKey.isPresent()) {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        "input field '" + retiredLookupKey.get().getName()
+                        Rejection.structural("input field '" + retiredLookupKey.get().getName()
                         + "': @lookupKey on a mutation input field is no longer supported (R144); "
                         + "remove it (the field is a filter by default), or replace it with "
                         + "@value on UPDATE value fields. On Query-side @table input args, move "
-                        + "@lookupKey to the surrounding ARGUMENT_DEFINITION instead.");
+                        + "@lookupKey to the surrounding ARGUMENT_DEFINITION instead."));
                 }
             }
-            List<InputField> plainFields = inputFieldResolver.resolve(typeName, rt, errors);
-            return new ArgumentRef.InputTypeArg.PlainInputArg(
-                name, typeName, nonNull, list, argCondition, plainFields);
+            return switch (inputFieldResolver.resolve(typeName, rt)) {
+                case InputFieldResolver.Resolution.Ok ok -> new ArgumentRef.InputTypeArg.PlainInputArg(
+                    name, typeName, nonNull, list, argCondition, ok.fields());
+                case InputFieldResolver.Resolution.Rejected r -> new ArgumentRef.UnclassifiedArg(
+                    name, typeName, nonNull, list, r.rejection());
+            };
         }
 
         // @nodeId-decorated ID arg routes through NodeIdLeafResolver to pick same-table
@@ -1021,9 +1028,9 @@ class FieldBuilder {
             // (handled inside the SameTable arm below).
             if (arg.hasAppliedDirective(DIR_FIELD)) {
                 return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                    "@nodeId arg cannot also carry @field(name:); the directives target different"
+                    Rejection.structural("@nodeId arg cannot also carry @field(name:); the directives target different"
                     + " binding axes (key columns come from the resolved NodeType, not the"
-                    + " @field directive)");
+                    + " @field directive)"));
             }
             var resolved = plan.byArgName().get(name);
             if (resolved == null) {
@@ -1031,7 +1038,7 @@ class FieldBuilder {
             }
             switch (resolved) {
                 case NodeIdLeafResolver.Resolved.Rejected r ->
-                    { return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, r.message()); }
+                    { return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list, r.rejection()); }
                 case NodeIdLeafResolver.Resolved.SameTable st -> {
                     // Same-table @nodeId arg = filter semantics (WHERE pk IN (decoded_ids) /
                     // RowIn for composite PKs). A malformed encoded id drops silently to "no
@@ -1062,8 +1069,8 @@ class FieldBuilder {
                     // NodeType key columns.
                     if (arg.hasAppliedDirective(DIR_LOOKUP_KEY)) {
                         return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                            "@lookupKey is meaningless on an FK-target @nodeId arg; FK-target"
-                            + " @nodeId is a filter, not a lookup");
+                            Rejection.structural("@lookupKey is meaningless on an FK-target @nodeId arg; FK-target"
+                            + " @nodeId is a filter, not a lookup"));
                     }
                     var extraction = new CallSiteExtraction.SkipMismatchedElement(direct.decodeMethod());
                     var keys = direct.keyColumns();
@@ -1083,7 +1090,7 @@ class FieldBuilder {
                     // parent_node + child_ref fixture). Emission requires JOIN-with-translation
                     // and is deferred until output-side JOIN-with-projection emission ships.
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        translatedFkRejectionReason(translated.refTypeName(), rt.tableName()));
+                        Rejection.structural(translatedFkRejectionReason(translated.refTypeName(), rt.tableName())));
                 }
             }
         }
@@ -1108,8 +1115,8 @@ class FieldBuilder {
                 // falls through to ColumnArg below.
                 if (keyColumns.size() > 1 && !isLookupKey) {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        "scalar @nodeId arg targeting a composite-PK NodeType is only wired for "
-                        + "@lookupKey; mutation-key and top-level filter paths are not yet supported");
+                        Rejection.structural("scalar @nodeId arg targeting a composite-PK NodeType is only wired for "
+                        + "@lookupKey; mutation-key and top-level filter paths are not yet supported"));
                 }
                 // List + arity-1 without @lookupKey is not yet wired (would be a top-level
                 // filter use case); falls through to column-name resolution which fails cleanly.
@@ -1120,7 +1127,7 @@ class FieldBuilder {
                         rt.tableName(), nodeIdMeta.get().typeId(), keyColumns);
                     if (decodeMethod == null) {
                         return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                            "@nodeId arg: unable to resolve decode helper for table '" + rt.tableName() + "'");
+                            Rejection.structural("@nodeId arg: unable to resolve decode helper for table '" + rt.tableName() + "'"));
                     }
                     var extraction = new CallSiteExtraction.ThrowOnMismatch(decodeMethod);
                     if (keyColumns.size() == 1) {
@@ -1155,7 +1162,7 @@ class FieldBuilder {
                 // though the mismatch is already an error; keeping this consistent keeps the
                 // classify-never-returns-null invariant).
                 return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                    "enum filter validation failed for column '" + columnRef.sqlName() + "'");
+                    Rejection.structural("enum filter validation failed for column '" + columnRef.sqlName() + "'"));
             }
         }
         CallSiteExtraction extraction = enumMappingResolver.deriveExtraction(typeName, columnRef, enumClassName,
@@ -1170,7 +1177,7 @@ class FieldBuilder {
         var rawType = ctx.schema.getType(typeName);
         if (!(rawType instanceof GraphQLInputObjectType inputType)) {
             return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                "@orderBy argument type '" + typeName + "' is not an input type");
+                Rejection.structural("@orderBy argument type '" + typeName + "' is not an input type"));
         }
         String sortFieldName = null;
         String directionFieldName = null;
@@ -1182,24 +1189,24 @@ class FieldBuilder {
             if (isSortEnum) {
                 if (sortFieldName != null) {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        "@orderBy input type '" + typeName + "' must have exactly one sort enum field, but found multiple");
+                        Rejection.structural("@orderBy input type '" + typeName + "' must have exactly one sort enum field, but found multiple"));
                 }
                 sortFieldName = field.getName();
             } else {
                 if (directionFieldName != null) {
                     return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                        "@orderBy input type '" + typeName + "' must have exactly one direction field, but found multiple");
+                        Rejection.structural("@orderBy input type '" + typeName + "' must have exactly one direction field, but found multiple"));
                 }
                 directionFieldName = field.getName();
             }
         }
         if (sortFieldName == null) {
             return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                "@orderBy input type '" + typeName + "' has no sort enum field (no enum values with @order)");
+                Rejection.structural("@orderBy input type '" + typeName + "' has no sort enum field (no enum values with @order)"));
         }
         if (directionFieldName == null) {
             return new ArgumentRef.UnclassifiedArg(name, typeName, nonNull, list,
-                "@orderBy input type '" + typeName + "' has no direction field");
+                Rejection.structural("@orderBy input type '" + typeName + "' has no direction field"));
         }
         return new ArgumentRef.OrderByArg(name, typeName, nonNull, list, sortFieldName, directionFieldName);
     }
@@ -1219,16 +1226,16 @@ class FieldBuilder {
             + "requireSlots(field) yields a non-empty Slot list, so the typed Row<N+1>[] arity "
             + "computation always sees ≥ 2 (idx + ≥ 1 key column) and never emits Row<1>.")
     private TableFieldComponents projectForFilter(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
-                                                  TableRef rt, String returnTypeName, List<String> errors) {
+                                                  TableRef rt, String returnTypeName, List<Rejection> errors) {
         var filters = projectFilters(refs, fieldDef, rt, returnTypeName, errors);
-        if (filters == null) return new TableFieldComponents.Rejected(Rejection.structural(String.join("; ", errors)));
+        if (filters == null) return new TableFieldComponents.Rejected(foldRejections(errors));
         ConditionFilter fieldCondition;
         switch (conditionResolver.resolveField(fieldDef)) {
             case ConditionResolver.FieldConditionResult.None n -> fieldCondition = null;
             case ConditionResolver.FieldConditionResult.Ok ok -> fieldCondition = ok.filter();
             case ConditionResolver.FieldConditionResult.Rejected r -> {
-                errors.add(r.message());
-                return new TableFieldComponents.Rejected(Rejection.structural(String.join("; ", errors)));
+                errors.add(r.rejection());
+                return new TableFieldComponents.Rejected(foldRejections(errors));
             }
         }
         if (fieldCondition != null) {
@@ -1238,8 +1245,8 @@ class FieldBuilder {
         }
         var orderByResolved = orderByResolver.resolve(refs, fieldDef, rt.tableName());
         if (orderByResolved instanceof OrderByResolver.Resolved.Rejected r) {
-            errors.add(r.message());
-            return new TableFieldComponents.Rejected(Rejection.structural(String.join("; ", errors)));
+            errors.add(r.rejection());
+            return new TableFieldComponents.Rejected(foldRejections(errors));
         }
         OrderBySpec orderBy = ((OrderByResolver.Resolved.Ok) orderByResolved).spec();
         var lookupMapping = lookupMappingResolver.resolve(refs, rt);
@@ -1252,12 +1259,26 @@ class FieldBuilder {
         if (hasLookupKeyAnywhere(fieldDef) && emptyMapping) {
             // Prefer the specific binding-failure reason (e.g. @lookupKey on a @reference field)
             // when buildLookupBindings recorded one; fall back to the generic empty-mapping error.
-            String msg = errors.isEmpty()
-                ? "@lookupKey is declared but no argument resolved to a lookup column"
-                : String.join("; ", errors);
-            return new TableFieldComponents.Rejected(Rejection.structural(msg));
+            Rejection r = errors.isEmpty()
+                ? Rejection.structural("@lookupKey is declared but no argument resolved to a lookup column")
+                : foldRejections(errors);
+            return new TableFieldComponents.Rejected(r);
         }
         return new TableFieldComponents.Ok(filters, orderBy, paginationResolver.resolve(refs, fieldDef), lookupMapping);
+    }
+
+    /**
+     * Folds a list of typed {@link Rejection}s into a single one. Single-entry lists forward the
+     * typed value directly so structured payloads (e.g. {@link Rejection.AuthorError.UnknownName})
+     * survive end-to-end to {@code UnclassifiedField.rejection}; multi-entry lists collapse to a
+     * joined {@link Rejection#structural} since no single typed arm can carry multiple distinct
+     * structured payloads.
+     */
+    private static Rejection foldRejections(List<Rejection> errors) {
+        if (errors.size() == 1) return errors.get(0);
+        return Rejection.structural(errors.stream()
+            .map(Rejection::message)
+            .collect(Collectors.joining("; ")));
     }
 
     /**
@@ -1310,7 +1331,7 @@ class FieldBuilder {
             + " on DirectFk) populates the slot from NodeIdLeafResolver.Resolved.FkTarget.DirectFk,"
             + " which only succeeds when every adjacent hop pair satisfies the lift predicate.")
     private List<WhereFilter> projectFilters(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
-                                             TableRef rt, String returnTypeName, List<String> errors) {
+                                             TableRef rt, String returnTypeName, List<Rejection> errors) {
         var bodyParams = new ArrayList<BodyParam>();
         var argConditions = new ArrayList<ConditionFilter>();
         boolean hadError = false;
@@ -1342,18 +1363,23 @@ class FieldBuilder {
                     bodyParams.addAll(implicitParams);
                 }
                 case ArgumentRef.InputTypeArg.PlainInputArg pia -> {
-                    // Plain input types are silently skipped unless paired with @condition;
-                    // see the out-of-scope note in docs/argument-resolution.md.
+                    // Structurally identical to the TableInputArg branch above; the only
+                    // deltas are no @lookupKey binding set (plain inputs don't carry
+                    // LookupKeyFields) and seeding override from pia.argCondition().
                     pia.argCondition().ifPresent(ac -> argConditions.add(ac.filter()));
+                    boolean enclosingOverride = fieldOverride
+                        || pia.argCondition().map(ArgConditionRef::override).orElse(false);
+                    var implicitParams = new ArrayList<BodyParam>();
                     walkInputFieldConditions(pia.fields(), pia.name(), List.of(),
-                        false, Set.of(), null, argConditions);
+                        enclosingOverride, Set.of(), implicitParams, argConditions);
+                    bodyParams.addAll(implicitParams);
                 }
                 case ArgumentRef.UnclassifiedArg u -> {
-                    errors.add("argument '" + u.name() + "': " + u.reason());
+                    errors.add(u.rejection().prefixedWith("argument '" + u.name() + "': "));
                     hadError = true;
                 }
                 case ArgumentRef.ScalarArg.UnboundArg u -> {
-                    errors.add("argument '" + u.name() + "': " + u.reason());
+                    errors.add(Rejection.structural("argument '" + u.name() + "': " + u.reason()));
                     hadError = true;
                 }
                 case ArgumentRef.ScalarArg.ColumnArg ca -> {
@@ -1502,13 +1528,14 @@ class FieldBuilder {
             boolean enclosingOverride, Set<String> lookupBoundNames,
             List<BodyParam> implicitBodyParams,
             List<ConditionFilter> out) {
+        requireNonNull(implicitBodyParams, "implicitBodyParams");
         for (var f : fields) {
             var leafPath = new ArrayList<>(pathPrefix);
             leafPath.add(f.name());
             switch (f) {
                 case InputField.ColumnField cf -> {
                     cf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
-                    if (implicitBodyParams != null && !enclosingOverride
+                    if (!enclosingOverride
                             && cf.condition().isEmpty()
                             && !lookupBoundNames.contains(cf.name())) {
                         // The leaf extraction (Direct or NodeIdDecodeKeys.*) flows through to the
@@ -1521,7 +1548,7 @@ class FieldBuilder {
                 }
                 case InputField.ColumnReferenceField rf -> {
                     rf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
-                    if (implicitBodyParams != null && !enclosingOverride
+                    if (!enclosingOverride
                             && rf.condition().isEmpty()
                             && !lookupBoundNames.contains(rf.name())) {
                         // Predicate fires against liftedSourceColumns — the column tuple on the
@@ -1543,7 +1570,7 @@ class FieldBuilder {
                 }
                 case InputField.CompositeColumnField ccf -> {
                     ccf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
-                    if (implicitBodyParams != null && !enclosingOverride
+                    if (!enclosingOverride
                             && ccf.condition().isEmpty()
                             && !lookupBoundNames.contains(ccf.name())) {
                         implicitBodyParams.add(compositeImplicitBodyParam(
@@ -1553,7 +1580,7 @@ class FieldBuilder {
                 }
                 case InputField.CompositeColumnReferenceField ccrf -> {
                     ccrf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
-                    if (implicitBodyParams != null && !enclosingOverride
+                    if (!enclosingOverride
                             && ccrf.condition().isEmpty()
                             && !lookupBoundNames.contains(ccrf.name())) {
                         // Composite reference is nodeId-only (per record javadoc); read the
