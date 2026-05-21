@@ -30,7 +30,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
 | `R203` | Publish graphitron-tree-sitter-natives jar; retire vendored C build in graphitron-lsp | In Progress | 2026-05-21 <sub>created 2026-05-20</sub> | [plan](publish-tree-sitter-natives-jar.md) |
 | `R205` | Plain-input filter fields drop resolved-column implicit predicates and Unresolved diagnostics | In Review | 2026-05-21 | [plan](condition-on-plain-input-field-silent-drop.md) |
-| `R206` | Synthesised connection/edge types carry carrier-field source location | In Review | 2026-05-21 | [plan](synthesised-type-source-location-provenance.md) |
 
 ---
 
@@ -194,7 +193,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R118` [**Graphitron MCP server: knowledge-base tools for AI agents**](graphitron-mcp-server.md) — Backlog, feature, blocked by [knowledge-base-programme](knowledge-base-programme.md)
 - `R117` [**Graphitron knowledge base programme: DuckDB as queryable model**](knowledge-base-programme.md) — Backlog, architecture
 - `R112` [**Operation-driven test corpus, capability catalog, and runtime trace**](operation-driven-test-corpus.md) — Spec, architecture, blocked by [capability-catalog](capability-catalog.md)
-- `R206` [**Synthesised connection/edge types carry carrier-field source location**](synthesised-type-source-location-provenance.md) — In Review, validation
 
 ### docs
 
