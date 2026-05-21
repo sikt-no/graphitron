@@ -29,9 +29,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R205` | Plain-input filter fields drop resolved-column implicit predicates and Unresolved diagnostics | Spec | 2026-05-21 | [plan](condition-on-plain-input-field-silent-drop.md) |
+| `R203` | Publish graphitron-tree-sitter-natives jar; retire vendored C build in graphitron-lsp | Spec | 2026-05-21 <sub>created 2026-05-20</sub> | [plan](publish-tree-sitter-natives-jar.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
 | `R206` | Synthesised connection/edge types carry carrier-field source location | Spec | 2026-05-21 | [plan](synthesised-type-source-location-provenance.md) |
-| `R203` | Publish graphitron-tree-sitter-natives jar; retire vendored C build in graphitron-lsp | In Progress | 2026-05-21 <sub>created 2026-05-20</sub> | [plan](publish-tree-sitter-natives-jar.md) |
 
 ---
 
@@ -228,7 +228,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R89` [**macOS / Windows CI verification for graphitron-lsp native build**](lsp-native-build-multiplatform-ci.md) — Backlog, Backlog
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
-- `R203` [**Publish graphitron-tree-sitter-natives jar; retire vendored C build in graphitron-lsp**](publish-tree-sitter-natives-jar.md) — In Progress, Backlog
+- `R203` [**Publish graphitron-tree-sitter-natives jar; retire vendored C build in graphitron-lsp**](publish-tree-sitter-natives-jar.md) — Spec, Backlog
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
 
 ### (untagged)
