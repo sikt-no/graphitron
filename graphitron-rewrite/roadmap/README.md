@@ -25,12 +25,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R8` | Docs as an index into classification tests | Ready (deferred) |  | [plan](docs-as-index-into-tests.md) |
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
-| `R230` | Downgrade BodyParam.nonNull for nested input fields under a nullable enclosing arg | Spec | 2026-05-22 | [plan](nested-input-field-nonnull-under-nullable-arg.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
+| `R230` | Downgrade BodyParam.nonNull for nested input fields under a nullable enclosing arg | Ready | 2026-05-22 | [plan](nested-input-field-nonnull-under-nullable-arg.md) |
 | `R229` | EnumTypeGenerator: honor @field(name:) as runtime value | Ready | 2026-05-22 | [plan](enum-type-honor-field-name-on-value.md) |
 
 ---
