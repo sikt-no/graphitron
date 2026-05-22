@@ -129,10 +129,10 @@ record InputFieldDecl(GraphQLInputObjectField rawField) {
     public String name()              { return rawField.getName(); }
     public GraphQLInputType type()    { return rawField.getType(); }
     public SourceLocation location()  { return rawField.getDefinition().getSourceLocation(); }
-    // Convenience accessors for the directives the classifier reads:
-    public Optional<String> columnNameOverride() { /* @field(name: "...") */ }
-    public boolean hasValueDirective()           { /* @value */ }
-    public boolean hasLookupKeyDirective()       { /* @lookupKey */ }
+    // The classifier reads each field's applied directives at Input.classifyAgainst time;
+    // @field(name:) is the column-name override read for column resolution. The wrapper
+    // does not enumerate one accessor per directive; the body of classifyAgainst owns
+    // the directive vocabulary.
 }
 ```
 
@@ -277,7 +277,7 @@ Five consequences fall out structurally:
 | R209 (FieldRegistry classify-input trace) | Typed rejection lift becomes trivial at the per-arg visit site. |
 | R166 Phase 2 (`InputTypeGenerator` under visitor) | Subset: the input-side slice of R166's broader visitor-driven emission. |
 | R221 (validator walks `PlainInputArg.fields()` for `UnboundField` rejection) | Dissolves: `GraphitronSchemaValidator.validateTableInputType` becomes `validateInputArg` (Phase 4) that walks every `InputTypeArg.classifiedFields` uniformly. The `TableInputType.inputFields()` vs `PlainInputArg.fields()` split that motivated R221 retires under the pivot's unified `InputTypeArg`. |
-| R144 (lookup-key / set-field partition stored on `TableInputArg`) | Reverses: the partition leaves the classifier-side model and moves to the consumer. `arg.classifiedFields()` is the single sealed list (derived from `Input.classifyAgainst(arg.effectiveTable())`); `MutationInputResolver` derives the WHERE-vs-SET partition at consumption from that list plus the verb's `DmlKind`. See the R144 rationale paragraph below. |
+| R144 (lookup-key / set-field partition stored on `TableInputArg`; `@value` directive marker on input fields) | Two reversals. (1) The partition leaves the classifier-side model and moves to the consumer. `arg.classifiedFields()` is the single sealed list (derived from `Input.classifyAgainst(arg.effectiveTable())`); `MutationInputResolver` derives the WHERE-vs-SET partition at consumption from that list plus the verb's `DmlKind`. (2) The `@value` directive is dropped. The partition mechanism becomes PK-derivation against the target table's primary-key column set (a fact the jOOQ catalog already carries); no per-input-field marker is needed. R144's cardinality-safety surface (`multiRow`, PK-coverage check) survives unchanged in shape. See the R144 rationale paragraph below. |
 
 Items adjacent but not absorbed:
 
@@ -295,6 +295,14 @@ First, the partition is a property of the *consumer*, not of the *arg*: the same
 Second, the partition is *denormalized*: `InputField.LookupKeyField` and `InputField.SetField` are intersection-marker interfaces on the same concrete `ColumnField`/`CompositeColumnField`/etc., which means the typed lists store the same fields, partitioned. R144's factory does the partitioning; consumers read it. Reverting the commitment is cheap (the factory logic moves into `MutationInputResolver`, the only consumer of `lookupKeyFields()` / `setFields()`), and it eliminates the intersection-marker leak at the model-shape level.
 
 The intersection-marker pattern on `InputField` (ColumnField IS-A both LookupKeyField and SetField) stays in place under R222 since making those disjoint is a separate model refactor; this item only moves *where* the partition decision is made, not *how* the underlying types express eligibility.
+
+### Why R144's `@value` directive retires
+
+Once the partition lives on the consumer (above), the marker that fed it surfaces as the same disease one layer down. `@value` on an input field is rejected on DELETE / INSERT / UPSERT, admitted on UPDATE, and mutually exclusive with `@condition` on the same field. The directive's validity is a function of the consumer's verb, which is exactly the "if two consumers evaluate the same predicate over a model field, the branch belongs in the model" smell the principles list names. A per-input-field directive encoding per-consumer-verb semantics is dimensionally inverted.
+
+The dimensionally honest mechanism, once the catalog is in scope: the WHERE-vs-SET partition on UPDATE is `(arg.classifiedFields(), targetTable.primaryKey())` derivable; PK-column carriers go to WHERE, the rest go to SET. The jOOQ catalog already carries the PK column set; no per-input-field marker is needed to recover the partition. R144's cardinality-safety surface (`multiRow: true` opt-in, the PK-coverage check on UPDATE / DELETE) is orthogonal to the directive and survives unchanged in shape: the trigger is the catalog's PK column set, not the `@value` complement.
+
+Sakila has two `@value` annotations (`FilmUpdateInput.title`, `FilmUpdateInput.description`); both are non-PK columns, so the partition outcome is identical with or without the directive. The fixture sweep that drops them is a one-line edit per site. `docs/manual/reference/directives/value.adoc` retires. Two `@LoadBearingClassifierCheck` keys swap on the same `MutationInputResolver` site: `mutation-input.update-set-fields-equal-value-marked` retires; `mutation-input.update-partition-by-pk-membership` replaces it (PK-column carriers in `classifiedFields` go to WHERE, the rest to SET, on UPDATE; the existing PK-coverage check key stays).
 
 ### Why classifiedFields demotes to a derived view
 
@@ -375,7 +383,7 @@ Acceptance: every Sakila and `graphitron-fixtures-codegen` fixture compiles unch
 
 Move each remaining consumer off the legacy permit discrimination onto the new slots. Order chosen to keep blast radius small per PR; the R215 follow-ups deferred during R215's review fold in at the listed slots:
 
-- `MutationInputResolver`: reads `arg.effectiveTable()` directly and calls `arg.classifiedFields()` (the derived accessor) for the per-arg list. **R144 partition relocated:** the DmlKind-aware WHERE-vs-SET partition logic moves from `ArgumentRef.java:284-312` (the legacy `TableInputArg` factory) into this resolver, operating on the result of `arg.classifiedFields()`. The two readers of `lookupKeyFields()` / `setFields()` (`MutationInputResolver.java:543` and the cousin sites the same file already owns) consume the partition at the site that decides the verb. No new consumer surface is added. **R215 follow-up:** the deferred `MutationField.{Value, Condition}` projection lands here if it has not already shipped standalone.
+- `MutationInputResolver`: reads `arg.effectiveTable()` directly and calls `arg.classifiedFields()` (the derived accessor) for the per-arg list. **R144 partition relocated + `@value` retired:** the DmlKind-aware WHERE-vs-SET partition logic moves from `ArgumentRef.java:284-312` (the legacy `TableInputArg` factory) into this resolver, operating on the result of `arg.classifiedFields()` plus the target table's PK column set (sourced from `JooqCatalog`). The two readers of `lookupKeyFields()` / `setFields()` (`MutationInputResolver.java:543` and the cousin sites the same file already owns) consume the partition at the site that decides the verb. The `@value`-marked-name-set parameter on `TableInputArg.of` / `EnumMappingResolver.buildLookupBindings` disappears; the verb-validity arms in `MutationInputResolver` that reject `@value`-on-DELETE / `@value`-on-INSERT / `@value`+`@condition` retire with the directive. Load-bearing key swap on the same producer site: `mutation-input.update-set-fields-equal-value-marked` retires, `mutation-input.update-partition-by-pk-membership` replaces it. R144's `mutation-input.where-columns-cover-pk` key stays (the cardinality-safety check is orthogonal to the directive). **R215 follow-up:** the deferred `MutationField.{Value, Condition}` projection lands here if it has not already shipped standalone.
 - `FieldBuilder.classifyInputFieldOnArg`: drops the `instanceof TableInputType` arm.
 - `GraphitronSchemaValidator.validateTableInputType`: becomes `validateInputArg`, dispatches on `effectiveTable()` presence. **R221 absorbed:** the validator now walks `arg.classifiedFields()` uniformly across all `InputTypeArg`s; the `PlainInputArg.fields()` vs `TableInputType.inputFields()` split that motivated R221 has retired in Phase 2-3.
 - `CatalogBuilder` four sites: each reads from `Input` or `InputTypeArg`.
@@ -394,15 +402,17 @@ Acceptance: no consumer references `GraphitronType.InputType`, `TableInputType`,
 
 Acceptance: build green; one PR worth of deletions; nothing references the old permits.
 
-### Phase 6 (picks up R97's residue)
+### Phase 6 (picks up R97's residue + retires `@value`)
 
-The directive's runtime effect is already gone (Phase 3 made it a `BuildWarning`); Phase 6 closes the loop on the schema-declaration side.
+Two per-input directives whose semantics belong elsewhere come out in one sweep: `@table` (handled by Phase 3's runtime ignore, finished here on the schema-declaration side) and `@value` (mechanism replaced by PK-derivation in Phase 4, finished here on the directive-declaration side).
 
 - Migrate every `@table`-decorated SDL input across Sakila, `graphitron-fixtures-codegen`, and LSP fixtures to drop the directive. Each removal silences one `BuildWarning`; nothing else changes.
 - Narrow the SDL `@table` directive's scope from `OBJECT | INTERFACE | INPUT_OBJECT` to `OBJECT | INTERFACE`. The directive declaration becomes structurally unable to land on `INPUT_OBJECT`; any consumer schema that still carries `@table` on an input fails to parse with the standard graphql-java location error.
 - Closes R97.
+- Migrate every `@value`-decorated SDL input field across Sakila (`FilmUpdateInput.title`, `FilmUpdateInput.description`) and any fixture schemas to drop the directive. Both Sakila annotations sit on non-PK columns; the partition outcome is identical with or without them.
+- Delete the `@value` directive declaration from `directives.graphqls`; delete `BuildContext.DIR_VALUE` / `ARG_VALUE` and the `assertDirective(ctx, DIR_VALUE)` registration in `GraphitronSchemaBuilder`. Delete `docs/manual/reference/directives/value.adoc`. After this delete, any consumer schema still carrying `@value` fails to parse with the standard graphql-java "unknown directive" error.
 
-Can land independently after Phase 5; not a blocker for the structural pivot. The "optional" framing from earlier drafts is dropped: with the runtime ignore live from Phase 3, leaving the warnings spamming the build indefinitely is its own cost.
+Can land independently after Phase 5; not a blocker for the structural pivot. The "optional" framing from earlier drafts is dropped: with the runtime ignore live from Phase 3 (for `@table`) and the partition mechanism already PK-derived in Phase 4 (for `@value`), leaving the warnings and the now-redundant directive declarations indefinitely is its own cost.
 
 ## Dependencies and sequencing
 
@@ -417,7 +427,7 @@ Likely scope: 1-2 weeks of focused work, somewhat smaller than R164's 2-4 weeks 
 
 - **`Input`** (consumer-independent) vs **`InputTypeArg`** (per-consumer occurrence). The two-level distinction is explicit in the names so readers don't conflate "the SDL input declaration" with "the input at this call site."
 - **`BackingClass`** replaces the four `*InputType` permit names. Reading `input.backingClass()` directly answers "which Java class materialises this input?", which is what consumers of that signal always wanted.
-- **`InputFieldDecl`** is the SDL field declaration on `Input`, pre-binding. Carries name, type, source location, and the directives the classifier reads (`@field(name:)`, `@value`, `@lookupKey`). Distinct from `InputField` (post-classification carrier): `Input.classifyAgainst(table)` is the bridge.
+- **`InputFieldDecl`** is the SDL field declaration on `Input`, pre-binding. Carries name, type, source location, and the wrapped `GraphQLInputObjectField` so the classifier can read applied directives at `Input.classifyAgainst` time. Distinct from `InputField` (post-classification carrier): `Input.classifyAgainst(table)` is the bridge.
 - **`Input.classifyAgainst(Optional<TableRef>)`** is the load-bearing producer of the per-field classified list. Pure function of `(input, table)`; empty table returns the empty list (invariant `input.classify-against-empty-table-returns-empty`). Per-arg consumers read via `InputTypeArg.classifiedFields()`, which delegates. Nothing caches; the derivation is the model.
 - **`ConsumerBinding`** (`TableRef` + `SchemaCoordinate`) is the per-arg consumer-side table binding. Populated iff the enclosing field's `@table` return drives the inference; the coordinate is recorded for diagnostics and LSP hover. There is no payload-less sibling: when the backing class supplies the table, it lives on `BackingClass.JooqTableRecord.table` (consumer-independent) and the arg's `consumerBinding` slot stays empty unless the consumer also asserts a table.
 - **`InputTypeArg.effectiveTable()`** centralises the two-source compose: consumer wins when present, backing-class fills in otherwise. Every downstream consumer reads this accessor; nobody re-implements the predicate.
