@@ -1,7 +1,7 @@
 ---
 id: R223
 title: "roadmap-tool: flag markdown-formatted tables in authored .adoc files"
-status: Ready
+status: In Review
 bucket: cleanup
 theme: docs
 depends-on: []
