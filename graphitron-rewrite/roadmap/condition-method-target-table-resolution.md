@@ -1,5 +1,5 @@
 ---
-id: R231
+id: R232
 title: Resolve @condition-method target table on inner-SELECT FROM
 status: Spec
 bucket: architecture
@@ -132,7 +132,7 @@ The classification-time guards in `FieldBuilder` and `ConditionResolver` are una
 
 The early-return at `InlineColumnReferenceFieldEmitter.java:59-65` (defensive arm pending R129) deletes. The join-loop widens with the same `switch (step)` shape as the inline-TableField emitter (step 4).
 
-R129 (`column-reference-on-scalar-field-condition-join`) closes — the slug folds into R231's implementation per its own body's recommendation ("the natural home may be to fold this slug into the R3 implementation rather than a separate item"). The file deletes on Done; `changelog.md` records the R129 → R231 absorption.
+R129 (`column-reference-on-scalar-field-condition-join`) closes — the slug folds into R232's implementation per its own body's recommendation ("the natural home may be to fold this slug into the R3 implementation rather than a separate item"). The file deletes on Done; `changelog.md` records the R129 → R232 absorption.
 
 ### 8. Stale R3 references — cleanup pass
 
@@ -184,7 +184,7 @@ Pick one variant (suggest `SplitTableField` since that is the variant hit by the
 
 ## Roadmap entries
 
-* This item (R231) — moves to Done on landing.
+* This item (R232) — moves to Done on landing.
 * R129 (`column-reference-on-scalar-field-condition-join`) — file deletes; absorbed per step 7. `changelog.md` records the absorption.
 * No new follow-ups expected; the lift is structurally complete.
 
