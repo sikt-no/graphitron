@@ -118,9 +118,9 @@ public sealed interface InputField extends GraphitronField
      * {@code columns} of arity &ge; 2 (arity-1 routes to {@link ColumnField} instead) plus
      * {@code extraction} narrowed at the type level to
      * {@link CallSiteExtraction.NodeIdDecodeKeys}, which is the only extraction shape producing
-     * a multi-column tuple (Direct, JooqConvert, EnumValueOf, TextMapLookup, ContextArg are
-     * all single-scalar leaf shapes; NestedInputField is a Map-traversal arm that hosts an
-     * inner extraction rather than producing a tuple).
+     * a multi-column tuple (Direct, JooqConvert, EnumValueOf, ContextArg are all single-scalar
+     * leaf shapes; NestedInputField is a Map-traversal arm that hosts an inner extraction
+     * rather than producing a tuple).
      *
      * <p>The body emitter pairs {@link CallSiteExtraction.NodeIdDecodeKeys.SkipMismatchedElement}
      * with {@link BodyParam.RowEq RowEq} (scalar same-table NodeId equality) or

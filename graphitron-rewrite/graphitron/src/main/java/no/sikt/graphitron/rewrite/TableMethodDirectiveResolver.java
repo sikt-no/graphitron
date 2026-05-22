@@ -46,8 +46,8 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  *
  * <p>Implementation note: like {@link ServiceDirectiveResolver}, the helpers this resolver
  * calls back into ({@code parseExternalRef}, {@code fieldArgumentNames},
- * {@code parseContextArguments}, {@code buildWrapper}, {@code enrichArgExtractions}) are
- * package-private members of {@link FieldBuilder}, shared with the other directive resolvers.
+ * {@code parseContextArguments}, {@code buildWrapper}) are package-private members of
+ * {@link FieldBuilder}, shared with the other directive resolvers.
  */
 final class TableMethodDirectiveResolver {
 

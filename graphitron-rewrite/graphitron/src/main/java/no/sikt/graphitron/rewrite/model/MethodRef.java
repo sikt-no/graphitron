@@ -129,10 +129,11 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
 
     /**
      * Sub-interface for the {@code @condition}-incompatible populations: {@link Service} and
-     * {@link StaticOnly}. Consumers like {@link no.sikt.graphitron.rewrite.EnumMappingResolver
-     * #enrichArgExtractions} narrow their parameter type to {@link NonCondition} so that passing
-     * a {@link ConditionFilter} is a compile error rather than a runtime throw — the
-     * unreachable-by-construction case becomes unreachable structurally.
+     * {@link StaticOnly}. Consumers that post-process method parameters (e.g.
+     * {@link no.sikt.graphitron.rewrite.InputBeanResolver}) narrow their parameter type to
+     * {@link NonCondition} so that passing a {@link ConditionFilter} is a compile error rather
+     * than a runtime throw — the unreachable-by-construction case becomes unreachable
+     * structurally.
      */
     sealed interface NonCondition extends MethodRef permits Service, StaticOnly {}
 

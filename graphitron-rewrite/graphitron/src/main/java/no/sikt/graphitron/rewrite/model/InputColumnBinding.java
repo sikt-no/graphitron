@@ -29,7 +29,7 @@ public sealed interface InputColumnBinding permits InputColumnBinding.MapBinding
      *
      * <p>{@code fieldName} is the GraphQL field name (e.g. {@code "filmId"}).
      * {@code extraction} tells the generator how to read the value at the call site
-     * ({@code Direct}, {@code JooqConvert}, {@code EnumValueOf}, {@code TextMapLookup}, …).
+     * ({@code Direct}, {@code JooqConvert}, {@code EnumValueOf}, …).
      */
     record MapBinding(
         String fieldName,

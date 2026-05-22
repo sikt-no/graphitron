@@ -275,7 +275,7 @@ test that pins emit shape is structural support only.
   is invisible to clients on that path. The reported consumer bug
   reproduces only when the field is typed as the enum (the consumer's
   schema is). The structural fix — emit text-mapped-enum fields as the
-  enum type — is filed as R230.
+  enum type — is filed as R231.
 - Pipeline: `GraphitronSchemaBuilderTest.EnumTypeCase.ENUM_WITH_FIELD_NAME_DIRECTIVE`
   pins the classifier output: SDL with `@field(name:)`-marked enum values
   goes through `GraphitronSchemaBuilder`; assert `EnumType.values()`

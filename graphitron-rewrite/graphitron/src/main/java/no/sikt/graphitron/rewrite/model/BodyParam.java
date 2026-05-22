@@ -30,10 +30,7 @@ import java.util.List;
  *       identity for {@link ColumnPredicate}: {@code Eq} / {@code RowEq} are scalar,
  *       {@code In} / {@code RowIn} are list. The slot does not exist as a record component on
  *       the predicate arms — the operator picks the value-arity, not a redundant flag.</li>
- *   <li>{@link #extraction()} — how to extract the value at the fetcher call site; also
- *       carried here so that
- *       {@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator} can generate the
- *       static enum-map field for {@link CallSiteExtraction.TextMapLookup} params. Use
+ *   <li>{@link #extraction()} — how to extract the value at the fetcher call site. Use
  *       {@link CallSiteExtraction.JooqConvert} for {@code ID} arguments that require jOOQ's
  *       {@code DataType.convert()} coercion at the call site.</li>
  * </ul>

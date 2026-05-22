@@ -757,9 +757,10 @@ class ServiceCatalog {
      * Java type. jOOQ-generated enums get {@link CallSiteExtraction.EnumValueOf}; all other
      * types default to {@link CallSiteExtraction.Direct}.
      *
-     * <p>Text-mapped enum detection (String Java type + GraphQL enum with value mappings) requires
-     * GraphQL schema access and is handled as a post-processing step in
-     * {@link FieldBuilder#enrichArgExtractions}.
+     * <p>Text-mapped enums (GraphQL enum bound to a varchar column via {@code @field(name:)})
+     * route through {@code Direct}: graphql-java translates the wire form to the runtime form
+     * at the boundary via {@code GraphQLEnumValueDefinition.value(...)} (R229), so resolvers
+     * receive the runtime string and no extra extraction step is needed.
      */
     static CallSiteExtraction argExtraction(String typeName, ClassLoader codegenLoader) {
         try {

@@ -32,8 +32,8 @@ import java.util.List;
  * <p>{@link #callParams()} is inherited from {@link MethodRef#callParams()}, which skips implicit
  * parameters and maps each extracted parameter's source to the appropriate
  * {@link CallSiteExtraction}. Richer extraction strategies
- * ({@link CallSiteExtraction.EnumValueOf}, {@link CallSiteExtraction.TextMapLookup}) can be set
- * at build time in the builder; the generator requires no changes.
+ * (e.g. {@link CallSiteExtraction.EnumValueOf}) can be set at build time in the builder;
+ * the generator requires no changes.
  */
 public record ConditionFilter(
     String className,
