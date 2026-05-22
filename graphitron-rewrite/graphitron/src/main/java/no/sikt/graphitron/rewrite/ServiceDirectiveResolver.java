@@ -91,15 +91,13 @@ final class ServiceDirectiveResolver {
     private final BuildContext ctx;
     private final ServiceCatalog svc;
     private final FieldBuilder fb;
-    private final EnumMappingResolver enumMapping;
     private final InputBeanResolver inputBeans;
 
     ServiceDirectiveResolver(BuildContext ctx, ServiceCatalog svc, FieldBuilder fb,
-                              EnumMappingResolver enumMapping, InputBeanResolver inputBeans) {
+                              InputBeanResolver inputBeans) {
         this.ctx = ctx;
         this.svc = svc;
         this.fb = fb;
-        this.enumMapping = enumMapping;
         this.inputBeans = inputBeans;
     }
 
@@ -155,8 +153,7 @@ final class ServiceDirectiveResolver {
         if (result.failed()) {
             return new Resolved.Rejected(result.rejection().prefixedWith("service method could not be resolved — "));
         }
-        MethodRef enumEnriched = enumMapping.enrichArgExtractions((MethodRef.Service) result.ref(), fieldDef);
-        var beanResult = inputBeans.enrich((MethodRef.Service) enumEnriched, fieldDef);
+        var beanResult = inputBeans.enrich((MethodRef.Service) result.ref(), fieldDef);
         if (beanResult instanceof InputBeanResolver.Result.Failed f) {
             return new Resolved.Rejected(f.rejection().prefixedWith("service method could not be resolved — "));
         }

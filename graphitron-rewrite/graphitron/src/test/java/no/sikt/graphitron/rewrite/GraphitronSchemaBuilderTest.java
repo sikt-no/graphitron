@@ -6343,7 +6343,7 @@ class GraphitronSchemaBuilderTest {
         },
 
         SERVICE_MUTATION_FIELD_NAME_OVERRIDE_TEXT_ENUM(
-            "R53: argMapping override + text-mapped enum arg → TextMapLookup keyed by the GraphQL arg name (regression guard for enrichArgExtractions)",
+            "R53 + R229: argMapping override + text-mapped enum arg → Direct (graphql-java translates at the boundary; the Java-side map retired)",
             """
             enum SortDir {
                 ASC @field(name: "asc")
@@ -6363,12 +6363,12 @@ class GraphitronSchemaBuilderTest {
                 assertThat(((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p.source()).graphqlArgName())
                     .isEqualTo("direction");
                 var extraction = ((no.sikt.graphitron.rewrite.model.ParamSource.Arg) p.source()).extraction();
-                assertThat(extraction).isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.TextMapLookup.class);
-                var tl = (no.sikt.graphitron.rewrite.model.CallSiteExtraction.TextMapLookup) extraction;
-                // Map field name is derived from the GraphQL arg name (DIRECTION), not the
-                // Java parameter name (MODE). Catches a regression in enrichArgExtractions.
-                assertThat(tl.mapFieldName()).isEqualTo("RUNWITHENUMOVERRIDE_DIRECTION_MAP");
-                assertThat(tl.valueMapping()).containsEntry("ASC", "asc").containsEntry("DESC", "desc");
+                // R229: the schema emit registers .value("asc") / .value("desc") on the
+                // GraphQLEnumValueDefinition, so graphql-java hands the runtime form directly to
+                // env.getArgument(...). The Java method receives the DB string already; no map
+                // lookup needed. Pre-R229 this arm asserted TextMapLookup with mapping
+                // {ASC→"asc", DESC→"desc"} keyed on RUNWITHENUMOVERRIDE_DIRECTION_MAP.
+                assertThat(extraction).isInstanceOf(no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct.class);
             }) {
             @Override public Set<Class<?>> variants() { return Set.of(MutationField.MutationServiceRecordField.class); }
         },
@@ -8787,7 +8787,7 @@ class GraphitronSchemaBuilderTest {
 
     enum EnumTypeCase implements ClassificationCase {
         PLAIN_ENUM(
-            "SDL-declared enum classifies as EnumType with its GraphQLEnumType as schemaType",
+            "SDL-declared enum classifies as EnumType with pre-resolved value specs and GraphQLEnumType retained",
             """
             enum Status { ACTIVE INACTIVE }
             type Query { s: Status }
@@ -8797,12 +8797,16 @@ class GraphitronSchemaBuilderTest {
                     schema.type("Status");
                 assertThat(t.name()).isEqualTo("Status");
                 assertThat(t.schemaType()).isNotNull();
-                assertThat(t.schemaType().getValues()).extracting(v -> v.getName())
+                assertThat(t.values()).extracting(v -> v.sdlName())
                     .containsExactly("ACTIVE", "INACTIVE");
+                // No @field(name:) → runtimeValue falls back to sdlName
+                assertThat(t.values()).allSatisfy(v ->
+                    assertThat(v.runtimeValue()).isEqualTo(v.sdlName()));
+                assertThat(t.values()).allSatisfy(v -> assertThat(v.source()).isNotNull());
             }),
 
         ENUM_WITH_DEPRECATED_VALUE(
-            "deprecation on an enum value survives on schemaType",
+            "deprecation on an enum value lands on the EnumValueSpec's deprecationReason",
             """
             enum Status { ACTIVE OLD @deprecated(reason: "unused") }
             type Query { s: Status }
@@ -8810,7 +8814,28 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var t = (no.sikt.graphitron.rewrite.model.GraphitronType.EnumType)
                     schema.type("Status");
-                assertThat(t.schemaType().getValue("OLD").isDeprecated()).isTrue();
+                var old = t.values().stream().filter(v -> v.sdlName().equals("OLD")).findFirst().orElseThrow();
+                assertThat(old.deprecationReason()).isEqualTo("unused");
+                var active = t.values().stream().filter(v -> v.sdlName().equals("ACTIVE")).findFirst().orElseThrow();
+                assertThat(active.deprecationReason()).isNull();
+            }),
+
+        ENUM_WITH_FIELD_NAME_DIRECTIVE(
+            "R229: @field(name:) on an enum value lifts to EnumValueSpec.runtimeValue at classify time",
+            """
+            enum PersonIdentifikasjon {
+                FODSELSNUMMER @field(name: "FØDSELSNUMMER")
+                ANNET
+            }
+            type Query { id: PersonIdentifikasjon }
+            """,
+            schema -> {
+                var t = (no.sikt.graphitron.rewrite.model.GraphitronType.EnumType)
+                    schema.type("PersonIdentifikasjon");
+                var fodsel = t.values().stream().filter(v -> v.sdlName().equals("FODSELSNUMMER")).findFirst().orElseThrow();
+                assertThat(fodsel.runtimeValue()).isEqualTo("FØDSELSNUMMER");
+                var annet = t.values().stream().filter(v -> v.sdlName().equals("ANNET")).findFirst().orElseThrow();
+                assertThat(annet.runtimeValue()).isEqualTo("ANNET");
             });
 
         final String sdl;

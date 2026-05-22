@@ -527,8 +527,17 @@ class TypeBuilder {
             if (inertness != null) {
                 return new UnclassifiedType(enumType.getName(), locationOf(enumType), Rejection.structural(inertness));
             }
+            var specs = new ArrayList<no.sikt.graphitron.rewrite.model.EnumValueSpec>();
+            for (var value : enumType.getValues()) {
+                String runtimeValue = argString(value, DIR_FIELD, ARG_NAME).orElse(value.getName());
+                String desc = (value.getDescription() != null && !value.getDescription().isEmpty())
+                    ? value.getDescription() : null;
+                String depReason = value.isDeprecated() ? value.getDeprecationReason() : null;
+                specs.add(new no.sikt.graphitron.rewrite.model.EnumValueSpec(
+                    value.getName(), runtimeValue, desc, depReason, value));
+            }
             return new no.sikt.graphitron.rewrite.model.GraphitronType.EnumType(
-                enumType.getName(), locationOf(enumType), enumType);
+                enumType.getName(), locationOf(enumType), List.copyOf(specs), enumType);
         }
         // Directive-argument input types (ErrorHandler, ReferencesForType, etc.) exist only to
         // shape Graphitron's own build-time directives. They must not reach emission, so the

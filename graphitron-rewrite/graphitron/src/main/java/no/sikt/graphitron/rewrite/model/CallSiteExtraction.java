@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.model;
 import no.sikt.graphitron.javapoet.ClassName;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * How to extract one argument value from a GraphQL execution context at the fetcher call site.
@@ -16,18 +15,20 @@ import java.util.Map;
  *   <li>{@link Direct} — {@code env.getArgument("name")}</li>
  *   <li>{@link EnumValueOf} — {@code EnumClass.valueOf(env.<String>getArgument("name"))},
  *       null-guarded when the argument is nullable.</li>
- *   <li>{@link TextMapLookup} — {@code ConditionsClass.MAP_FIELD.get(env.<String>getArgument("name"))},
- *       null-guarded when the argument is nullable. The map is a generated {@code static final}
- *       field on the {@code *Conditions} class.</li>
  *   <li>{@link ContextArg} — {@code graphitronContext(env).getContextArgument(env, "name")}</li>
  *   <li>{@link NestedInputField} — traverse a nested input-object graph starting from a
  *       top-level argument Map and descending through {@code path} keys, null-safe at every
  *       level; used for {@code @condition} on {@code INPUT_FIELD_DEFINITION}.</li>
  * </ul>
+ *
+ * <p>R229 retired the {@code TextMapLookup} permit: graphql-java's
+ * {@code GraphQLEnumValueDefinition.value(...)} now carries the {@code @field(name:)} runtime
+ * form, so graphql-java does the wire-form → runtime-form translation at the boundary and the
+ * Java-side map became an identity lookup. Text-mapped enum args route through {@link Direct}.
  */
 public sealed interface CallSiteExtraction
         permits CallSiteExtraction.Direct, CallSiteExtraction.EnumValueOf,
-                CallSiteExtraction.TextMapLookup, CallSiteExtraction.ContextArg,
+                CallSiteExtraction.ContextArg,
                 CallSiteExtraction.JooqConvert, CallSiteExtraction.NestedInputField,
                 CallSiteExtraction.NodeIdDecodeKeys, CallSiteExtraction.InputBean {
 
@@ -42,19 +43,6 @@ public sealed interface CallSiteExtraction
      * (e.g. {@code "no.example.jooq.enums.MpaaRating"}).
      */
     record EnumValueOf(String enumClassName) implements CallSiteExtraction {}
-
-    /**
-     * Look up the database string for a GraphQL enum value via a generated static map:
-     * {@code ConditionsClass.MAP_FIELD.get(env.<String>getArgument("name"))}.
-     *
-     * <p>{@code mapFieldName} is the name of the generated {@code static final Map<String,String>}
-     * field on the {@code *Conditions} class (e.g. {@code "FILMS_TEXTRATING_MAP"}).
-     *
-     * <p>{@code valueMapping} is the pre-resolved mapping from GraphQL enum value names to
-     * database string values, used by {@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator}
-     * to generate the map's initializer.
-     */
-    record TextMapLookup(String mapFieldName, Map<String, String> valueMapping) implements CallSiteExtraction {}
 
     /**
      * Retrieve a context argument: {@code graphitronContext(env).getContextArgument(env, "name")}.

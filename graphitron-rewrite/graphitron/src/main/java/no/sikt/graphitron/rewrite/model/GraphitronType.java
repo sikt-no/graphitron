@@ -428,12 +428,18 @@ public sealed interface GraphitronType
 
     /**
      * A GraphQL enum type. Classifier records it so {@code schema.types()} is complete for
-     * emission. Per-value directives and deprecation survive through {@code schemaType} — the
-     * emitter reads them directly at generation time.
+     * emission. {@link #values} is the pre-resolved per-value spec list: at classify time the
+     * classifier walks each {@code GraphQLEnumValueDefinition} once and lifts
+     * {@code @field(name:)} into {@link EnumValueSpec#runtimeValue} so the schema emitter and
+     * the filter-axis resolver read the runtime string off the same record component.
+     * {@code schemaType} stays for type-level applied-directive emission
+     * ({@code AppliedDirectiveEmitter.applicationsFor(GraphQLEnumType)}); per-value applied
+     * directives walk {@link EnumValueSpec#source} instead.
      */
     record EnumType(
         String name,
         SourceLocation location,
+        List<EnumValueSpec> values,
         GraphQLEnumType schemaType
     ) implements GraphitronType, EmitsPerTypeFile {}
 

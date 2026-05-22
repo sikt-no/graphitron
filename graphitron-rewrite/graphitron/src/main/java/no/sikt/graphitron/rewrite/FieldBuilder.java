@@ -174,9 +174,8 @@ class FieldBuilder {
         this.ctx = ctx;
         this.svc = svc;
         this.enumMappingResolver = new EnumMappingResolver(ctx);
-        this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this, enumMappingResolver,
-            new InputBeanResolver(ctx));
-        this.tableMethodResolver = new TableMethodDirectiveResolver(ctx, svc, this, enumMappingResolver);
+        this.serviceResolver = new ServiceDirectiveResolver(ctx, svc, this, new InputBeanResolver(ctx));
+        this.tableMethodResolver = new TableMethodDirectiveResolver(ctx, svc, this);
         this.externalFieldResolver = new ExternalFieldDirectiveResolver(ctx, svc, this);
         this.lookupKeyResolver = new LookupKeyDirectiveResolver();
         this.orderByResolver = new OrderByResolver(ctx);
@@ -1173,8 +1172,7 @@ class FieldBuilder {
                     Rejection.structural("enum filter validation failed for column '" + columnRef.sqlName() + "'"));
             }
         }
-        CallSiteExtraction extraction = enumMappingResolver.deriveExtraction(typeName, columnRef, enumClassName,
-            fieldDef.getName().toUpperCase() + "_" + name.toUpperCase() + "_MAP");
+        CallSiteExtraction extraction = enumMappingResolver.deriveExtraction(typeName, columnRef, enumClassName);
         boolean isLookupKey = arg.hasAppliedDirective(DIR_LOOKUP_KEY);
         return new ArgumentRef.ScalarArg.ColumnArg(
             name, typeName, nonNull, list, columnRef, extraction, argCondition, fieldOverride, isLookupKey);
@@ -1297,7 +1295,6 @@ class FieldBuilder {
     private static String javaTypeFor(CallSiteExtraction extraction, ColumnRef column) {
         return switch (extraction) {
             case CallSiteExtraction.EnumValueOf ev -> ev.enumClassName();
-            case CallSiteExtraction.TextMapLookup ignored -> String.class.getName();
             case CallSiteExtraction.JooqConvert ignored -> column.columnClass();
             case CallSiteExtraction.Direct ignored -> column.columnClass();
             case CallSiteExtraction.ContextArg ignored -> column.columnClass();
