@@ -302,16 +302,19 @@ public final class SplitRowsMethodEmitter {
     }
 
     /**
-     * Returns the reason why {@code field} cannot be emitted as a working DataLoader rows method
-     * today — or empty if it is emittable. Shared between this emitter (runtime stub) and
-     * {@code GraphitronSchemaValidator.validateVariantIsImplemented} (build-time error), so the
-     * two stay in lock-step. Moving a branch from here to a real emitter body must update this
-     * predicate in the same commit.
+     * Returns the reason why {@code field} cannot be emitted as a working fetcher body today —
+     * or empty if it is emittable. Shared between this emitter (runtime stub for split-rows
+     * variants), the inline-emitter pair {@code InlineTableFieldEmitter} /
+     * {@code InlineLookupTableFieldEmitter} (runtime stub for inline variants), and
+     * {@code GraphitronSchemaValidator.validateVariantIsImplemented} (build-time error), so all
+     * three sites stay in lock-step. Moving a branch from here to a real emitter body must update
+     * this predicate in the same commit.
      *
      * <p>Dispatches via the {@link no.sikt.graphitron.rewrite.model.ConditionJoinReportable}
-     * capability: the four ChildField variants that share the condition-join predicate
+     * capability: the six ChildField variants that share the condition-join predicate
      * ({@link ChildField.SplitTableField}, {@link ChildField.SplitLookupTableField},
-     * {@link ChildField.RecordTableField}, {@link ChildField.RecordLookupTableField}) all
+     * {@link ChildField.RecordTableField}, {@link ChildField.RecordLookupTableField},
+     * {@link ChildField.TableField}, {@link ChildField.LookupTableField}) all
      * implement it; non-implementing variants fall through to {@code Optional.empty()}. The
      * returned {@link Rejection.Deferred} carries an {@link Rejection.StubKey.EmitBlock} key
      * tagging the per-variant {@link Rejection.EmitBlockReason} value so downstream tooling

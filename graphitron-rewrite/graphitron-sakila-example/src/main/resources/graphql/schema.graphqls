@@ -621,12 +621,6 @@ type Category @table(name: "category") {
     parent:      Category @reference(path: [{key: "category_parent_category_id_fkey"}])
     # G5: self-referential inline TableField (list) — reverse of the same FK
     children:    [Category!]! @reference(path: [{key: "category_parent_category_id_fkey"}]) @defaultOrder(primaryKey: true)
-    # G5 ConditionJoin fixture — classification-only. C3's emitter emits a runtime-throwing stub
-    # for ConditionJoin paths; runtime behaviour lands with classification-vocabulary item 5.
-    similar:     Category @reference(path: [{condition: {
-        className: "no.sikt.graphitron.rewrite.test.conditions.CategoryConditions",
-        method:    "sameNamePrefix"
-    }}])
 }
 
 """
