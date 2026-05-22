@@ -31,7 +31,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
 | `R230` | Downgrade BodyParam.nonNull for nested input fields under a nullable enclosing arg | Ready | 2026-05-22 | [plan](nested-input-field-nonnull-under-nullable-arg.md) |
-| `R229` | EnumTypeGenerator: honor @field(name:) as runtime value | Ready | 2026-05-22 | [plan](enum-type-honor-field-name-on-value.md) |
+| `R229` | EnumTypeGenerator: honor @field(name:) as runtime value | In Progress | 2026-05-22 | [plan](enum-type-honor-field-name-on-value.md) |
 
 ---
 
