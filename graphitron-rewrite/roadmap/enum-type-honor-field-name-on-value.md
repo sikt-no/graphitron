@@ -1,7 +1,7 @@
 ---
 id: R229
 title: "EnumTypeGenerator: honor @field(name:) as runtime value"
-status: Ready
+status: In Progress
 bucket: bug
 depends-on: []
 created: 2026-05-22
