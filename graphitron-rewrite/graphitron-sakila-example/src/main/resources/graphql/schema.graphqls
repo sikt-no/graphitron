@@ -168,6 +168,11 @@ type Query {
     # ColumnField two levels deep. Implicit predicate binds to the outer @table's film_id
     # column; NestedInputField path is ["inner", "filmId"].
     filmsWithNestedImplicit(filter: NestedImplicitInput): [Film!]!
+    # R230: nullable enclosing filter arg + non-null inner list field. Pinned by execution
+    # tier: omitting `filter` must return the unfiltered baseline, not zero rows. Pre-R230
+    # the generator emitted an unguarded `film.film_id.in(null)` which jOOQ renders as
+    # the literal `false`, silently producing the empty set.
+    filmsByEffectiveNullability(filter: FilmIdListFilter): [Film!]!
     # plan-service-root-fetchers.md: @tableMethod root fetcher. Developer returns a
     # Table<FilmRecord>; framework projects via FilmType.$fields(...).
     popularFilms(minRentalRate: Float!): [Film!]!
@@ -1086,6 +1091,15 @@ input NestedImplicitInput @table(name: "film") {
 
 input InnerImplicitInput {
     filmId: ID @field(name: "film_id")
+}
+
+# R230: nullable enclosing filter argument carrying a non-null inner list field. Without the
+# effective-nullability AND in walkInputFieldConditions the generator emits an unguarded
+# `condition.and(film.film_id.in(null))` which jOOQ renders as the literal `false`; omitting
+# `filter` then silently returns zero rows. The execution test pins that omitting `filter`
+# returns the unfiltered baseline rather than empty.
+input FilmIdListFilter @table(name: "film") {
+    filmIds: [Int!]! @field(name: "film_id")
 }
 
 # stub-interface-union-fetchers.md Track A: TableInterfaceType fixture.

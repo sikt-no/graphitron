@@ -15,8 +15,17 @@ import java.util.List;
  *       name for {@link CallSiteExtraction.EnumValueOf}). Row-shape variants
  *       ({@link RowEq} / {@link RowIn}) compute their parameter type from {@code columns}
  *       directly — see {@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator}.</li>
- *   <li>{@link #nonNull()} — when {@code true}, the null guard is omitted and the condition
- *       is always applied; when {@code false}, the condition is wrapped in a null check.</li>
+ *   <li>{@link #nonNull()} — effective runtime nullability at the call site: the AND of the
+ *       binding source's own declared nullability and every enclosing link's nullability
+ *       (top-level argument plus each intermediate {@link InputField.NestingField}). The
+ *       producer ({@code FieldBuilder.projectFilters} for top-level scalar args;
+ *       {@code FieldBuilder.walkInputFieldConditions} for nested input fields) is responsible
+ *       for computing the conjunction;
+ *       {@link no.sikt.graphitron.rewrite.generators.TypeConditionsGenerator} is then allowed
+ *       to assume non-null when the flag is {@code true} and emits an unguarded
+ *       {@code condition.and(...)}; when {@code false} the condition is wrapped in a null
+ *       check. The flag is NOT the binding's own SDL-declared nullability — for that, read
+ *       {@link InputField#nonNull()} directly.</li>
  *   <li>{@link #list()} — whether the parameter is a list. Derived from the predicate-arm
  *       identity for {@link ColumnPredicate}: {@code Eq} / {@code RowEq} are scalar,
  *       {@code In} / {@code RowIn} are list. The slot does not exist as a record component on
@@ -40,7 +49,7 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate {
     /** Whether the parameter is a list (drives the call-site extraction shape too). */
     boolean list();
 
-    /** Whether a runtime null guard is needed. */
+    /** See {@link BodyParam} for the producer / emitter contract. */
     boolean nonNull();
 
     /** How to extract the value at the fetcher call site (NestedInputField for input-type fields). */

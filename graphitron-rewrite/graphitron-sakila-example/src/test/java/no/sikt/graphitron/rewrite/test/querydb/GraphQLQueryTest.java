@@ -503,6 +503,30 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void filmsByEffectiveNullability_omittedFilter_returnsUnfilteredBaseline() {
+        // R230: nullable enclosing `filter: FilmIdListFilter` carries a non-null inner
+        // `filmIds: [Int!]!`. Pre-R230 the generator passed the inner field's own non-null
+        // declaration straight into BodyParam.nonNull, so the condition method emitted an
+        // unguarded `condition.and(film.film_id.in(null))` when the filter Map traversal
+        // returned null. jOOQ renders `.in(null)` as the literal `false`, silently producing
+        // an empty result set. Post-R230 the BodyParam carries effective runtime nullability
+        // (AND of the enclosing chain), so the emitter wraps the condition in a null guard
+        // and the unfiltered baseline (all 5 sakila films) survives.
+        //
+        // This is the only tier that observes jOOQ's `.in(null)` -> `false` rendering:
+        // pipeline tier asserts on the classified BodyParam.nonNull slot, compilation tier
+        // proves the source compiles, but only execution against real Postgres catches the
+        // silent wrong-answer.
+        Map<String, Object> data = execute(
+            "{ filmsByEffectiveNullability { filmId } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmsByEffectiveNullability");
+        assertThat(films)
+            .as("omitting the nullable filter must return the unfiltered baseline of 5 films, "
+                + "not the empty set produced by the pre-R230 `film_id IN (null)` cascade")
+            .hasSize(5);
+    }
+
+    @Test
     void filmsByNodeIdArg_allMalformedIds_returnsNoRows() {
         // R40 phase 2: when every id is malformed, the per-row Skip drops every entry; the
         // effective row count reaches 0 and the call site's `if (rows.length == 0) return

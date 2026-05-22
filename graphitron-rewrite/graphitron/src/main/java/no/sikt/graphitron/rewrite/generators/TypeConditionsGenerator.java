@@ -82,6 +82,16 @@ public class TypeConditionsGenerator {
         return builder.build();
     }
 
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "body-param.nonnull-is-effective-runtime",
+        reliesOn = "Each BodyParam arm reads bp.nonNull() to decide between an unguarded"
+            + " condition = condition.and(...) emission and an if (arg != null) wrapper around the"
+            + " same. The producer guarantees the flag is the AND of the top-level argument's"
+            + " declared nullability and every InputField.NestingField on the path, so the"
+            + " unguarded branch is correct only when every enclosing link is statically non-null"
+            + " — the call-site extraction emitted for NestedInputField parameters returns null"
+            + " whenever any intermediate Map traversal is absent, and an unguarded .in(null) /"
+            + " .eq(DSL.row(null, ..., null)) renders as the literal false in jOOQ.")
     static MethodSpec buildConditionMethod(GeneratedConditionFilter gcf, String outputPackage) {
         var tableRef = gcf.tableRef();
         var jooqTableClass = GeneratorUtils.ResolvedTableNames.ofTable(tableRef).jooqTableClass();
