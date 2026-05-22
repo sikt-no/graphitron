@@ -1,5 +1,5 @@
 ---
-id: R230
+id: R231
 title: "Emit text-mapped-enum fields as the GraphQL enum type, not String"
 status: Backlog
 bucket: architecture
