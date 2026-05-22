@@ -38,11 +38,15 @@ The change does not affect top-level scalar args (`ColumnArg`, `CompositeColumnA
 
 ### Witness on `BodyParam.nonNull`
 
-Tighten the javadoc on `BodyParam.nonNull()` (`BodyParam.java:43-44`) from
+Tighten the javadoc on `BodyParam.nonNull` (the interface-level list-item at `BodyParam.java:18-19`, plus the accessor's one-line summary at `BodyParam.java:43`) from
 
 > When `true`, the null guard is omitted and the condition is always applied; when `false`, the condition is wrapped in a null check.
 
-to make the producer's obligation explicit:
+(at lines 18-19) and
+
+> Whether a runtime null guard is needed.
+
+(at line 43) to make the producer's obligation explicit. Put the full text below on the interface-level list-item (the source of truth); reduce the accessor's one-liner to a forward-pointer (`See {@link BodyParam} for the producer / emitter contract.`) so the prose lives in one place:
 
 > Effective runtime nullability at the call site — the AND of the binding source's own declared nullability and every enclosing link's nullability (top-level argument plus each intermediate `InputField.NestingField`). The producer (`FieldBuilder.projectFilters` for top-level scalar args; `FieldBuilder.walkInputFieldConditions` for nested input fields) is responsible for computing the conjunction; `TypeConditionsGenerator` is then allowed to assume non-null when the flag is true. The flag is NOT the binding's own SDL-declared nullability — for that, read `InputField.nonNull()` directly.
 
@@ -64,7 +68,13 @@ This is the load-bearing witness: it pins what the producer must compute and wha
 
 Pipeline owns the regression assertion; execution carries distinct signal that pipeline cannot reach; compilation rides along on any `-Plocal-db` build and needs no dedicated test of its own.
 
-- **Pipeline (codegen-level, primary).** Add a fixture under `graphitron-rewrite/graphitron/src/test/resources` exercising the schema shape `field(filter: InputType): [T!]` with `InputType.idList: [ID!]!` carrying `@nodeId`. Assert against the classified `BodyParam.nonNull` slot value (must be `false` for the inner field under the nullable enclosing arg) or against the emitted method's `TypeSpec` structural shape (presence of an `if` guard around the `condition.and(...)` statement). Do NOT assert on a rendered code string of the method body — that's banned at every tier per `graphitron-rewrite/docs/rewrite-design-principles.adoc`. Mirror with the unaffected top-level-non-null case (both arg and inner field non-null → `nonNull` stays `true`, no guard) so the fix doesn't over-correct.
+- **Pipeline (codegen-level, primary).** Add a fixture under `graphitron-rewrite/graphitron/src/test/resources` and assert against the classified `BodyParam.nonNull` slot on the projected `GeneratedConditionFilter` (or against the emitted method's `TypeSpec` structural shape — presence/absence of an `if` guard around the `condition.and(...)` statement). Three cases, covering the three transitions in the proposed AND:
+
+    1. **Nullable enclosing arg, non-null inner field** — `field(filter: InputType): [T!]` with `InputType.idList: [ID!]!` carrying `@nodeId`. `BodyParam.nonNull` must be `false`. The primary fix case; without it the generator emits an unguarded `DSL.row(...).in(null)` cascade.
+    2. **Non-null enclosing arg, non-null inner field** — `field(filter: InputType!): [T!]` with `InputType.idList: [ID!]!`. `BodyParam.nonNull` must stay `true`; no `if`-guard regression. Pins the fix against over-correction.
+    3. **Non-null enclosing arg, nullable intermediate `NestingField`, non-null inner field** — `field(filter: InputType!): [T!]` with `InputType.wrapper: WrapperInput` (nullable nested input object, no `@table`) and `WrapperInput.idList: [ID!]!`. `BodyParam.nonNull` must be `false`. This is the case that exercises the recursive AND on the `NestingField` wrapper introduced in "Threading shape" item (2); without it both case-1 and case-2 still pass while a buggy implementation that skips the wrapper-level AND leaves the inner field unguarded.
+
+    Do NOT assert on a rendered code string of the method body — that's banned at every tier per `graphitron-rewrite/docs/rewrite-design-principles.adoc`.
 
 - **Execution (only tier that catches the runtime `.in(null) → false` rendering).** Sakila execution test exercising a list-shaped optional filter input through real Postgres: omit the filter, assert the row count matches the unfiltered baseline rather than zero. Wire through `graphitron-sakila-service` `@condition` fixtures (cf. `InputFieldConditionFixtures` for the established shape). Pipeline cannot observe jOOQ's `.in(null)` rendering decision; execution must.
 
