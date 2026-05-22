@@ -25,7 +25,7 @@ class MdTableToAdocTest {
             Trailing paragraph.
             """;
         String adoc = Main.mdBodyToAdoc(md, Main.ChangelogContext.PLAN);
-        assertThat(adoc).contains("[%autowidth, options=\"header\"]\n|===\n");
+        assertThat(adoc).contains("[options=\"header\"]\n|===\n");
         assertThat(adoc).contains("| A\n| B\n");
         assertThat(adoc).contains("| 1\n| 2\n");
         assertThat(adoc).contains("| 3\n| 4\n");

@@ -863,7 +863,11 @@ public final class Main {
         ChangelogContext ctx
     ) {
         int colCount = Math.max(1, header.size());
-        out.append("[%autowidth, options=\"header\"]\n");
+        // No %autowidth: that sizes the table to its content and overflows narrow
+        // viewports (mobile). The default fills 100% of the container width per
+        // the site CSS, which lets long cells reflow inside the page rather than
+        // pushing the page wider than the viewport.
+        out.append("[options=\"header\"]\n");
         out.append("|===\n");
         for (String cell : header) {
             out.append("| ").append(transformAdocTableCell(cell, ctx)).append('\n');
