@@ -1,7 +1,7 @@
 ---
 id: R222
 title: "Input model: dimensional pivot under visitor-driven classification"
-status: Spec
+status: Ready
 bucket: structural
 priority: 3
 theme: structural-refactor
