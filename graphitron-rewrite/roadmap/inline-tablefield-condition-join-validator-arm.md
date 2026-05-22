@@ -1,7 +1,7 @@
 ---
 id: R228
 title: Build-time rejection for inline TableField / LookupTableField with condition-join step
-status: In Review
+status: Ready
 bucket: validation
 priority: 4
 theme: model-cleanup
@@ -322,3 +322,95 @@ one-line pipeline-tier fixture (a self-join `@reference(path:
   step cannot be emitted until classification-vocabulary item 5 ..." form;
   the shared predicate keeps the same prose so existing operator-side log
   matchers do not break.
+
+---
+
+## Review feedback (In Review → Ready, 2026-05-22)
+
+The implementation at de25b0a is well-shaped: capability extended to six
+variants, two new `EmitBlockReason` values, both inline emitters routed
+through the shared `SplitRowsMethodEmitter.unsupportedReason` predicate, the
+"four variants" javadoc/comment trio bumped to "six", and the pipeline +
+unit-tier tests assert the build-time `Rejection.Deferred` shape per the spec.
+The sakila example cleanup (drop `Category.similar` + `CategoryConditions`)
+is the right consequence of moving runtime-stub → build-time-rejection on that
+shape.
+
+Two issues block approval:
+
+### 1. Build red — `DiagnosticsDocCoverageTest` fails
+
+`mvn -f graphitron-rewrite/pom.xml install -Plocal-db` fails at
+`graphitron-sakila-example` with:
+
+```
+[ERROR]   DiagnosticsDocCoverageTest.everyDiagnosticEnumValueHasADocSectionAndViceVersa:68
+  [diagnostic enum values without a matching heading in diagnostics-glossary.adoc;
+   add the missing paragraph(s)]
+  Expecting empty but was: ["lookup-table-field-condition-join-step",
+                            "table-field-condition-join-step"]
+```
+
+Per `docs/manual/reference/diagnostics-glossary.adoc:169` ("Drift protection"),
+every `Rejection.EmitBlockReason` value must have an anchored
+`=== <kebab-case-name>` heading. The four sibling values
+(`split-table-field-condition-join-step`,
+`split-lookup-table-field-condition-join-step`,
+`record-table-field-condition-join-step`,
+`record-lookup-table-field-condition-join-step`) already have entries at
+`diagnostics-glossary.adoc:147-165`. Add two paragraphs in the same shape
+for the new arms:
+
+```adoc
+[#emit-block-table-field-condition-join-step]
+=== table-field-condition-join-step
+
+An inline `TableField` (no `@splitQuery`, no `@record` parent) reaches a
+`@reference` path with a `@condition` step the inline emitter does not yet
+emit; surfaced as a build-time error mirroring the runtime stub at
+`InlineTableFieldEmitter`. Same family as the split / record arms.
+
+[#emit-block-lookup-table-field-condition-join-step]
+=== lookup-table-field-condition-join-step
+
+An inline `LookupTableField` (list `@lookupKey` site) reaches a `@reference`
+path with a `@condition` step the inline lookup emitter does not yet emit;
+surfaced as a build-time error mirroring the runtime stub at
+`InlineLookupTableFieldEmitter`. The lookup-shape sub-arm.
+```
+
+### 2. Spec body addition: list the glossary file under "Implementation sites"
+
+The original "Implementation sites" list does not name
+`docs/manual/reference/diagnostics-glossary.adoc`, so the implementer can be
+forgiven for missing it. Add a bullet there before the next implementation
+pass so the gate is visible up front:
+
+> - `docs/manual/reference/diagnostics-glossary.adoc`: add a
+>   `=== table-field-condition-join-step` paragraph and a
+>   `=== lookup-table-field-condition-join-step` paragraph in the
+>   "Deferred emit-block reasons" section, in the shape of the four
+>   existing entries at lines 147-165. `DiagnosticsDocCoverageTest`
+>   enforces drift; the build is red without these.
+
+### Notes (not blocking)
+
+- *Test placement.* The spec called for fixtures in `GraphitronSchemaBuilderTest`
+  using `schema.rejections()`, but `GraphitronSchema` carries no such accessor;
+  the implementer correctly redirected to `R58TypedRejectionPipelineTest`
+  ("build schema + run validator + assert typed rejection") and called this out
+  in the commit body. The redirect is correct; the spec's mention of
+  `schema.rejections()` was stale. Leave the test placement as landed.
+- *Sakila example trim.* Removing `Category.similar` and `CategoryConditions`
+  is consistent with the move to build-time rejection. The acceptance gate the
+  spec called for (a `studiekurv`-shaped pipeline-tier fixture) is satisfied
+  by the new `inlineTableField_conditionJoinStep_rejectedAtBuildTime` /
+  `inlineLookupTableField_conditionJoinStep_rejectedAtBuildTime` tests in
+  `R58TypedRejectionPipelineTest`; no separate fixture needed.
+
+### What's needed to re-enter In Review
+
+Add the two glossary paragraphs and confirm `mvn -f graphitron-rewrite/pom.xml
+install -Plocal-db` is green end-to-end. Status: In Review → Ready;
+the four-from-six and other code-side changes at de25b0a are fine and do
+not need redoing.
