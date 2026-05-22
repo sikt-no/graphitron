@@ -740,7 +740,8 @@ public final class Main {
         String[] lines = md.split("\n", -1);
         Pattern fence = Pattern.compile("^```(\\w*)\\s*$");
         Pattern heading = Pattern.compile("^(#+)\\s+(.*)$");
-        for (String raw : lines) {
+        for (int idx = 0; idx < lines.length; idx++) {
+            String raw = lines[idx];
             var fm = fence.matcher(raw);
             if (fm.matches()) {
                 if (!inFence) {
@@ -774,6 +775,22 @@ public final class Main {
                 out.append("=".repeat(emitLevel)).append(' ').append(title).append('\n');
                 continue;
             }
+            // Markdown table: a pipe-delimited header row followed by a separator
+            // row (`|---|---|`). AsciiDoctor renders bare markdown tables as
+            // paragraph text with literal pipes, so convert to a `|===` block.
+            if (MD_TABLE_ROW.matcher(raw).matches()
+                && idx + 1 < lines.length
+                && MD_TABLE_SEP.matcher(lines[idx + 1]).matches()) {
+                java.util.List<String> header = parseMdTableCells(raw);
+                idx++; // consume separator
+                java.util.List<java.util.List<String>> body = new java.util.ArrayList<>();
+                while (idx + 1 < lines.length && MD_TABLE_ROW.matcher(lines[idx + 1]).matches()) {
+                    idx++;
+                    body.add(parseMdTableCells(lines[idx]));
+                }
+                emitAdocTable(out, header, body, ctx);
+                continue;
+            }
             String line = raw;
             if (line.equals("---")) {
                 out.append("'''\n");
@@ -791,6 +808,82 @@ public final class Main {
             out.append(line).append('\n');
         }
         return out.toString();
+    }
+
+    private static final Pattern MD_TABLE_ROW = Pattern.compile("^\\s*\\|.*\\|\\s*$");
+    private static final Pattern MD_TABLE_SEP =
+        Pattern.compile("^\\s*\\|?\\s*:?-+:?\\s*(\\|\\s*:?-+:?\\s*)+\\|?\\s*$");
+
+    /**
+     * Splits a markdown table row into cells. Strips the conventional leading and
+     * trailing pipes, splits on unescaped pipes, and unescapes {@code \|} to a
+     * literal pipe. Pipes appearing inside backtick code spans are treated as
+     * cell content rather than delimiters so cells like {@code `Map<K|V>`}
+     * survive the split intact.
+     */
+    static java.util.List<String> parseMdTableCells(String row) {
+        String s = row.strip();
+        if (s.startsWith("|")) s = s.substring(1);
+        if (s.endsWith("|") && !(s.length() >= 2 && s.charAt(s.length() - 2) == '\\')) {
+            s = s.substring(0, s.length() - 1);
+        }
+        java.util.List<String> cells = new java.util.ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean inCode = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' && i + 1 < s.length() && s.charAt(i + 1) == '|') {
+                cur.append('|');
+                i++;
+            } else if (c == '`') {
+                inCode = !inCode;
+                cur.append(c);
+            } else if (c == '|' && !inCode) {
+                cells.add(cur.toString().strip());
+                cur.setLength(0);
+            } else {
+                cur.append(c);
+            }
+        }
+        cells.add(cur.toString().strip());
+        return cells;
+    }
+
+    /**
+     * Emit an AsciiDoc table block from a parsed markdown table. One cell per line
+     * with a blank line between header and body and between body rows; this keeps
+     * the source readable and matches the style used elsewhere in this file. Cell
+     * content runs through the same markdown→AsciiDoc transforms as body prose
+     * (bold, links, em-dash sweep), and any literal pipes are escaped.
+     */
+    private static void emitAdocTable(
+        StringBuilder out,
+        java.util.List<String> header,
+        java.util.List<java.util.List<String>> body,
+        ChangelogContext ctx
+    ) {
+        int colCount = Math.max(1, header.size());
+        out.append("[%autowidth, options=\"header\"]\n");
+        out.append("|===\n");
+        for (String cell : header) {
+            out.append("| ").append(transformAdocTableCell(cell, ctx)).append('\n');
+        }
+        for (java.util.List<String> row : body) {
+            out.append('\n');
+            for (int c = 0; c < colCount; c++) {
+                String cell = c < row.size() ? row.get(c) : "";
+                out.append("| ").append(transformAdocTableCell(cell, ctx)).append('\n');
+            }
+        }
+        out.append("|===\n");
+    }
+
+    private static String transformAdocTableCell(String cell, ChangelogContext ctx) {
+        String c = cell.replaceAll("\\*\\*([^*]+)\\*\\*", "*$1*");
+        c = transformAdocLinks(c, ctx);
+        c = c.replace("—", ";");
+        c = c.replace("|", "\\|");
+        return c;
     }
 
     private static final Pattern MD_LINK = Pattern.compile("\\[([^\\]]+)\\]\\(([^)]+)\\)");
