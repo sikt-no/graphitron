@@ -31,7 +31,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
-| `R223` | roadmap-tool: flag markdown-formatted tables in authored .adoc files | In Review | 2026-05-22 | [plan](flag-markdown-tables-in-adoc.md) |
 
 ---
 
@@ -213,7 +212,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R8` [**Docs as an index into classification tests**](docs-as-index-into-tests.md) — Ready
 - `R168` [**Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec stage**](effort-blast-radius-classification.md) — Backlog, cleanup
 - `R227` [**mdBodyToAdoc: translate markdown tables to AsciiDoc when rendering roadmap**](translate-md-tables-in-mdbodytoadoc.md) — Backlog, cleanup
-- `R223` [**roadmap-tool: flag markdown-formatted tables in authored .adoc files**](flag-markdown-tables-in-adoc.md) — In Review, cleanup
 
 ### testing
 
