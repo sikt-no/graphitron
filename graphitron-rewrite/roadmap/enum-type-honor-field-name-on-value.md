@@ -16,12 +16,16 @@ last-updated: 2026-05-22
 > the directive-overridden string (e.g. a non-ASCII form like `"FØDSELSNUMMER"`
 > for the SDL value `FODSELSNUMMER`), graphql-java's Coercing layer has no
 > registered `.value(...)` matching the runtime object and fails the field with
-> `Can't serialize value ... Unknown value 'FØDSELSNUMMER'`. The fix reads
-> `@field(name:)` on each enum value and uses the directive value (defaulting
-> to `value.getName()`) as the `.value(...)` argument, leaving `.name(...)` as
-> the SDL identifier. The runtime mapping for enum values already lives in
-> `EnumMappingResolver.buildTextEnumMapping`; this item is the schema-side
-> twin of that classifier output.
+> `Can't serialize value ... Unknown value 'FØDSELSNUMMER'`. The presenting bug
+> is one-sided: the schema emitter ignores the directive while
+> `EnumMappingResolver.buildTextEnumMapping` honours it. The root cause is
+> structural: both consumers re-resolve `@field(name:)` off the raw
+> `GraphQLEnumType` carried on `GraphitronType.EnumType`, with nothing keeping
+> them aligned. R263 added `.value(name)` to the schema emit without going
+> through the existing resolver lookup, which is exactly the drift the model
+> shape invites. The fix lifts the resolution into the classifier so the
+> model carries the runtime string and both consumers read the same record
+> component.
 
 ---
 
@@ -62,7 +66,7 @@ serialization.
 
 GraphQL spec constraint: enum value names must match
 `/[_A-Za-z][_0-9A-Za-z]*/`, so `FØDSELSNUMMER` with `Ø` is never a valid
-`.name(...)` — the directive value is, by definition, the *runtime*
+`.name(...)`; the directive value is, by definition, the *runtime*
 representation, not an alternate SDL name. This is what `.value(...)` is for
 in graphql-java's API.
 
@@ -70,105 +74,158 @@ in graphql-java's API.
 
 ## Design
 
-Single-file change in `EnumTypeGenerator.buildValueDefinition`. Read
-`@field(name:)` off the `GraphQLEnumValueDefinition` exactly as
-`EnumMappingResolver.buildTextEnumMapping` does, fall back to
-`value.getName()` when absent. Use the directive value as the `.value(...)`
-argument; keep `.name(...)` as the SDL identifier unchanged.
+Two consumers already evaluate the same predicate over `@field(name:)` on
+enum values: the schema emitter at
+`EnumTypeGenerator.buildValueDefinition` (currently broken) and the filter
+axis at `EnumMappingResolver.buildTextEnumMapping` (correct). Both reach
+through the raw `GraphQLEnumType schemaType` on
+`GraphitronType.EnumType` (`model/GraphitronType.java:434-438`) and
+re-resolve the directive at consumer time. Per *Generation-thinking*
+(`rewrite-design-principles.adoc` § Generation-thinking; "if two consumers
+evaluate the same predicate over a model field, the branch belongs in the
+model"), the branch belongs on the classifier output, not at two consumer
+sites. The bug returned at R263 because the model shape invites that drift.
 
-The `argString(value, DIR_FIELD, ARG_NAME)` helper and the `DIR_FIELD` /
-`ARG_NAME` constants on `BuildContext` are the existing API for reading this
-directive value; `EnumTypeGenerator` already lives in the same module and
-can import them the same way `EnumMappingResolver` does.
+### Primary: pre-resolve at classify time
 
-Shape after the change:
+Lift the directive read into the classifier and carry the resolved runtime
+string on the model. Both consumers read a record component.
 
 ```java
-private static CodeBlock buildValueDefinition(GraphQLEnumValueDefinition value) {
-    String runtimeValue = BuildContext.argString(value, BuildContext.DIR_FIELD,
-                                                  BuildContext.ARG_NAME)
-                                       .orElse(value.getName());
-    var block = CodeBlock.builder()
-        .add("$T.newEnumValueDefinition()", ENUM_VALUE)
-        .add(".name($S)", value.getName())
-        .add(".value($S)", runtimeValue);
-    // ...description, deprecation, applied directives unchanged...
+// new in no.sikt.graphitron.rewrite.model
+public record EnumValueSpec(
+    String sdlName,                          // wire identifier; GraphQL Name lex rule applies
+    String runtimeValue,                     // @field(name:); falls back to sdlName when absent
+    String description,                      // null when absent
+    String deprecationReason,                // null when not deprecated
+    GraphQLEnumValueDefinition source        // retained for AppliedDirectiveEmitter
+) {}
+
+// model/GraphitronType.java
+record EnumType(
+    String name,
+    SourceLocation location,
+    List<EnumValueSpec> values,              // pre-resolved at classify time
+    GraphQLEnumType schemaType               // retained for AppliedDirectiveEmitter
+) implements GraphitronType, EmitsPerTypeFile {}
+```
+
+Classify-site (`TypeBuilder.java:530`) walks `enumType.getValues()` once
+and builds the `List<EnumValueSpec>` using the same
+`argString(value, DIR_FIELD, ARG_NAME).orElse(value.getName())` resolution
+already in `EnumMappingResolver.buildTextEnumMapping`. The schema emitter
+consumes `et.values()` directly; the filter-axis classifier consumes the
+same list. There is no second directive read, and no place for a future
+generator to skip resolution and reintroduce the drift.
+
+`schemaType` stays on the record because `AppliedDirectiveEmitter` still
+walks the raw `GraphQLEnumValueDefinition` for applied-directive emission
+on the value itself (line 86-88 of `EnumTypeGenerator`). `EnumValueSpec.source()`
+preserves the per-value handle for that walk; consolidating the
+applied-directive emission against the model spec is a separate concern
+and out of scope here.
+
+### Stopgap arm (if the model edit is judged too wide)
+
+If the reviewer decides the model edit is out of scope for a single-symptom
+bug fix, the narrower landing is a package-private helper on `BuildContext`
+that both consumers delegate to:
+
+```java
+// BuildContext.java
+static String enumValueRuntimeString(GraphQLEnumValueDefinition value) {
+    return argString(value, DIR_FIELD, ARG_NAME).orElse(value.getName());
 }
 ```
 
-Note on visibility: `DIR_FIELD` / `ARG_NAME` / `argString` are
-package-private in `BuildContext`. `EnumTypeGenerator` lives under
-`no.sikt.graphitron.rewrite.generators.schema`, a different package. Two
-options:
+`EnumMappingResolver.buildTextEnumMapping` switches to call it;
+`EnumTypeGenerator.buildValueDefinition` calls it for the `.value(...)`
+argument. Both consumers now name the same function rather than
+constructing the same expression twice. This closes the *function*-sharing
+gap; it does not close the *value*-sharing gap (each caller still resolves
+at its own call time, so a future generator can still construct its own
+read). The follow-up to migrate to the primary shape is filed as a separate
+Backlog item before this lands.
 
-1. Promote the three names to public on `BuildContext`. Mechanically
-   smallest; widens the API surface of a class that is internal already.
-2. Add a narrow public static helper to `BuildContext` (or a new
-   package-visible utility) named for the use case, e.g.
-   `BuildContext.enumValueRuntimeString(GraphQLEnumValueDefinition)`,
-   returning the resolved string. Encapsulates the directive lookup so the
-   classifier and the schema emitter call the same function.
+The Open Question below frames the choice between the two arms.
 
-**Recommendation:** option 2. `EnumMappingResolver.buildTextEnumMapping`
-already implements the same lookup; lifting it onto a shared helper makes
-the two call sites use one function rather than two parallel ones. The
-helper is the contract; the schema emitter and the filter classifier
-become consumers.
+### Wire boundary: input parsing reads `.name(...)`, output serialization reads `.value(...)`
 
-`AppliedDirectiveEmitter.applicationsFor(value)` (line 86–88) continues to
-emit the full directive application onto the enum value so consumers can
-still read `@field(name: "FØDSELSNUMMER")` via introspection or applied
+Per *Wire-format encoding is a boundary concern*
+(`rewrite-design-principles.adoc` § Wire-format…), the SDL identifier and
+the runtime representation are two sides of one boundary. The directive
+rewires only one of them.
+
+Input enums arrive as SDL identifiers at the wire boundary (graphql-java's
+parser reads the AST `EnumValue` and matches by `.name(...)`); output
+serialization compares the runtime object against the registered
+`.value(...)`. `@field(name:)` rewires the *runtime* representation only;
+the wire-side identifier is the SDL name on both directions. The fix
+touches `.value(...)` for that reason, not because input is "out of
+scope". The `enumInputStillByName` test below pins the asymmetry.
+
+`AppliedDirectiveEmitter.applicationsFor(value)` continues to emit the
+full directive application onto the enum value, so consumers can still
+read `@field(name: "FØDSELSNUMMER")` via introspection or applied
 directives; the runtime-value lift is additive and does not strip the
 directive itself.
 
-### Where the change does not propagate
-
-- `parseValue` (input enum coercion) is unaffected. The directive is a
-  serialization-side concern for the cases this item addresses; input enums
-  arrive as GraphQL value identifiers and continue to match by name. Pinned
-  by the `enum-input-still-by-name` test below.
-- The legacy `graphitron-codegen-parent` generator is out of scope per
-  `CLAUDE.md`. Any analogous bug there is the legacy maintainers' to
-  reproduce.
-- `EnumMappingResolver`'s callers consume the same mapping for DB-side
-  filter values and `TextMapLookup` extractions; behaviour there is
-  unchanged because they already read the directive. This item brings the
-  schema emit into line with that existing behaviour.
+The legacy `graphitron-codegen-parent` generator is out of scope per
+`CLAUDE.md`. Any analogous bug there is the legacy maintainers' to
+reproduce.
 
 ---
 
 ## Implementation sites
 
+### Primary (pre-resolution)
+
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/EnumValueSpec.java`:
+  new record (fields per Design above).
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/GraphitronType.java`:
+  add `List<EnumValueSpec> values` component to `EnumType` (lines 434-438).
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/TypeBuilder.java`
+  (line 530): walk `enumType.getValues()` and populate the spec list with
+  the directive-resolved runtime string, description, deprecation, and
+  the per-value `GraphQLEnumValueDefinition` source handle.
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/EnumTypeGenerator.java`:
-  `buildValueDefinition` reads the directive value and uses it for
-  `.value(...)`.
-- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/BuildContext.java`:
-  add a small public helper (`enumValueRuntimeString` or similar) wrapping
-  the existing `argString(value, DIR_FIELD, ARG_NAME).orElse(value.getName())`
-  pattern. Optional but recommended (option 2 in Design above).
+  `buildValueDefinition` consumes `EnumValueSpec` instead of the raw
+  `GraphQLEnumValueDefinition`; reads `runtimeValue()` for `.value(...)`
+  and `source()` for the applied-directive emission pass.
 - `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/EnumMappingResolver.java`:
-  switch `buildTextEnumMapping` to call the new helper, so the lookup lives
-  in one place.
+  `buildTextEnumMapping` and `validateEnumFilter` consume the model's
+  `List<EnumValueSpec>` instead of `graphqlEnum.getValues()` plus an
+  `argString` call. Lookup by `sdlName`, read `runtimeValue`.
+- `graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java`:
+  existing `EnumType`-projection test rigs (line 8796 onwards) update to
+  the new component shape.
+
+### Stopgap arm (if reviewer opts for narrower landing)
+
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/BuildContext.java`:
+  new package-private static helper `enumValueRuntimeString` wrapping
+  `argString(value, DIR_FIELD, ARG_NAME).orElse(value.getName())`.
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/EnumTypeGenerator.java`:
+  `buildValueDefinition` calls the helper for the `.value(...)` argument.
+  (Needs visibility hop: either change helper to public on `BuildContext`,
+  or move the helper to a package-visible utility class both packages can
+  reach.)
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/EnumMappingResolver.java`:
+  `buildTextEnumMapping` switches to the helper.
+- A separate Backlog item filed for the pre-resolution migration before
+  this stopgap lands.
 
 ---
 
 ## Tests
 
-Pipeline-tier is the primary behavioural tier per the rewrite test guide.
-Three cases:
+Pipeline-tier is the primary behavioural tier per the rewrite test guide,
+but the behaviour this item delivers ("graphql-java serializes the runtime
+string to the SDL identifier") sits at the execution tier; the pipeline
+test that pins emit shape is structural support only.
 
-- `EnumTypeGeneratorTest.fieldNameDirectiveBecomesRuntimeValue` (pipeline):
-  SDL declares `FODSELSNUMMER @field(name: "FØDSELSNUMMER")`. Run through
-  `GraphitronSchemaBuilder` (or directly through `EnumTypeGenerator`,
-  whichever the existing test setup uses for this generator); assert the
-  emitted `TypeSpec` contains `.name("FODSELSNUMMER").value("FØDSELSNUMMER")`.
-  Inspection through `JavaFile.toJavaFileObject()` + `javac` / Roaster per
-  the code-string-assertion ban, not raw `.toString()` matching.
-- `EnumTypeGeneratorTest.unmarkedValueDefaultsToOwnName` (pipeline):
-  Existing default case. SDL value with no `@field(name:)`; assert
-  `.name("FOO").value("FOO")` is preserved. Pins the fallback.
 - `EnumSerializationExecutionTest.directiveValueRoundTripsThroughCoercing`
-  (execution): build a schema with `EnumWithFieldName` containing
+  (execution; primary): build a schema with an enum whose value declares
   `FODSELSNUMMER @field(name: "FØDSELSNUMMER")`, wire a fetcher that
   returns `"FØDSELSNUMMER"` (the runtime form), execute a query selecting
   the field, assert the response contains `"FODSELSNUMMER"` (the SDL form)
@@ -176,37 +233,59 @@ Three cases:
   regression before it reached a consumer.
 - `EnumSerializationExecutionTest.enumInputStillByName` (execution): a
   mutation argument of the same enum type accepts the SDL identifier
-  `FODSELSNUMMER` as input (not `"FØDSELSNUMMER"`). Pins that the directive
-  doesn't accidentally rewire input coercion.
+  `FODSELSNUMMER` as input (not `"FØDSELSNUMMER"`). Pins the wire-boundary
+  asymmetry the Design section names.
+- *Primary arm only*:
+  `EnumTypeClassificationTest.directiveValueLandsOnEnumValueSpec`
+  (pipeline): SDL with `@field(name:)`-marked enum values goes through
+  `GraphitronSchemaBuilder`; assert `EnumType.values()` carries entries
+  whose `sdlName` is the GraphQL identifier and whose `runtimeValue` is
+  the directive string (or the SDL name when absent). This is the
+  classifier-side pin that emit and filter axes both rely on.
+- *Stopgap arm only*: no additional pipeline test. The structural
+  property ("emitter routes the directive string into `.value(...)`") is
+  not load-bearing in a way the execution test doesn't already cover,
+  and a Roaster walk that extracts the `.value(...)` literal would be a
+  code-string assertion in parser-shaped clothing.
 
-No unit-tier coverage needed: the directive-read helper is a one-liner over
-existing `argString` plumbing, and `EnumMappingResolver.buildTextEnumMapping`
-is already pipeline-tier covered (any regression there would surface in
-existing tests). Compilation-tier coverage rides on the existing
-`graphitron-sakila-example` compile.
+`EnumMappingResolver.buildTextEnumMapping`'s existing pipeline coverage
+catches regressions on the filter-axis side. Compilation-tier coverage
+rides on the existing `graphitron-sakila-example` compile.
 
 ---
 
 ## Phasing
 
-Single landing. The change is one file (plus the optional helper extraction)
-and is purely additive on the schema emit side: enum values without
-`@field(name:)` continue to emit `.name(X).value(X)` exactly as today; only
-the directive-bearing values change their `.value(...)` argument. Risk of
-collateral breakage on existing schemas is bounded to the (small) population
-of enum values that currently declare `@field(name:)`; for those, the runtime
-mapping shifts from "matches SDL identifier" to "matches the directive's
-runtime string", which is the *intended* semantics and the only safe choice
-given that the directive value is the upstream representation.
+Single landing in either arm. The behaviour delivered is identical: enum
+values without `@field(name:)` continue to emit `.name(X).value(X)` exactly
+as today; only the directive-bearing values change their `.value(...)`
+argument from the SDL identifier to the directive's runtime string. Risk
+of collateral breakage on existing schemas is bounded to the (small)
+population of enum values that currently declare `@field(name:)`; for
+those, the runtime mapping shifts to "matches the upstream representation",
+which is the *intended* semantics and the only safe choice given that the
+directive value is the upstream string.
+
+The primary arm touches more files (model record, classify site, two
+consumers, projection test rig) but eliminates the duplicated directive
+read at the source. The stopgap arm touches three files and closes the
+function-sharing gap only, leaving the value-sharing gap for a follow-up
+Backlog item.
 
 ---
 
 ## Open question for the reviewer
 
-*Helper placement.* `BuildContext.enumValueRuntimeString(...)` vs. a method
-on `EnumMappingResolver` vs. inline duplication of the
-`argString(...).orElse(value.getName())` line at the emit site.
-Recommendation is the `BuildContext` helper (option 2 in Design), but the
-emitter→classifier dependency direction is the place to relitigate if
-that's the wrong layering. Reviewer input wanted before implementation
-starts; the choice doesn't affect the behaviour the fix delivers.
+*Primary (pre-resolution) or stopgap (shared helper)?* The principles
+favour pre-resolution: it eliminates the duplicated directive read at the
+source rather than narrowing it, and the bug returned in the first place
+because the model shape invited the drift. The primary edit is bounded:
+one new record, one component on `EnumType`, the classify-site walk at
+`TypeBuilder.java:530`, the schema emitter and the filter-axis resolver
+consuming the new shape, plus updates to the existing `EnumType`
+projection rig in `GraphitronSchemaBuilderTest`. The stopgap is smaller
+(three files, no model change) but leaves the structural cause in place.
+
+Reviewer call. If primary lands here, the spec stays as written. If
+stopgap lands, file a follow-up Backlog item for the pre-resolution
+migration before the stopgap commits so the structural debt is tracked.
