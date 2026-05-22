@@ -21,6 +21,7 @@ import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.ValidationReport;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
+import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.model.Rejection;
@@ -507,6 +508,15 @@ public final class Diagnostics {
             + "@field(name:) validation under a @record-bound Java record parent; emits "
             + "\"Unknown component\" without re-checking that the backing class is a record."
     )
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "field-classification-payload-faithful",
+        reliesOn = "For @reference path fields, consults FieldClassification.{ColumnReference,"
+            + "CompositeColumnReference}.tableName() — projected through "
+            + "CatalogBuilder.terminalTableName — as the authoritative target table for "
+            + "@field(name:) column validation, rather than re-walking the path or falling back "
+            + "to the enclosing type's @table. Mirrors the runtime's "
+            + "ServiceCatalog.resolveColumnForReference terminal-table walk."
+    )
     private static void validateFieldMember(
         Directives.Directive directive, Node valueNode,
         WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot, List<Diagnostic> out
@@ -518,7 +528,7 @@ public final class Diagnostics {
         if (typeDecl.isEmpty()) return;
         var typeName = TypeContext.declaredNameOf(typeDecl.get(), file.source());
         if (typeName.isEmpty()) return;
-        var fieldName = TypeContext.enclosingFieldDefinition(directive.outer())
+        var fieldName = TypeContext.enclosingFieldOrInputValueDefinition(directive.outer())
             .flatMap(fd -> TypeContext.fieldNameOf(fd, file.source()))
             .orElse(null);
         // R159: if the value is the $source sigil, the diagnostic shape is sigil-aware. The
@@ -538,6 +548,45 @@ public final class Diagnostics {
                     no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilNotDefinedHereMessage()));
             }
             return;
+        }
+        // R224: prefer the field classification's tableName() over the enclosing type's @table.
+        // For @reference path fields, the classifier projects the terminal table onto
+        // FieldClassification.{Column,CompositeColumn}Reference; the enclosing type's @table
+        // is the path origin, not the column's owner. Re-using the projection keeps the LSP's
+        // dispatch aligned with the runtime's terminal-table walk
+        // (ServiceCatalog.resolveColumnForReference). Snapshot-uncertainty (empty optional)
+        // falls through to the existing backing-driven dispatch.
+        if (fieldName != null) {
+            var classification = built.fieldClassification(typeName.get(), fieldName);
+            if (classification.isPresent()) {
+                switch (classification.get()) {
+                    case FieldClassification.Column c -> {
+                        validateColumnOnTable(catalog, c.tableName(), memberName, valueNode, file, out);
+                        return;
+                    }
+                    case FieldClassification.ColumnReference c -> {
+                        validateColumnOnTable(catalog, c.tableName(), memberName, valueNode, file, out);
+                        return;
+                    }
+                    case FieldClassification.CompositeColumn c -> {
+                        validateColumnOnTable(catalog, c.tableName(), memberName, valueNode, file, out);
+                        return;
+                    }
+                    case FieldClassification.CompositeColumnReference c -> {
+                        validateColumnOnTable(catalog, c.tableName(), memberName, valueNode, file, out);
+                        return;
+                    }
+                    case FieldClassification.InputUnbound ignored -> {
+                        // The validator already emits a precise message via ValidationReport
+                        // ("plain input type 'T': input field 'X': no column 'Y' reachable via
+                        // @reference path"); a duplicate LSP diagnostic with the wrong table
+                        // would be noise.
+                        return;
+                    }
+                    case FieldClassification.Unclassified ignored -> { return; }
+                    default -> { /* fall through to backing-driven dispatch */ }
+                }
+            }
         }
         var backing = built.typesByName().get(typeName.get());
         if (backing == null) return;
