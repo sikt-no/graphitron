@@ -1375,7 +1375,8 @@ class FieldBuilder {
                         ? "@table input '" + tia.typeName() + "'"
                         : "plain input type '" + tia.typeName() + "'";
                     walkInputFieldConditions(tia.fields(), tia.name(), List.of(),
-                        enclosingOverride, lookupBoundNames, implicitParams, argConditions, errors,
+                        enclosingOverride, tia.nonNull(),
+                        lookupBoundNames, implicitParams, argConditions, errors,
                         tia.inputTable(), tiaSummary);
                     if (errors.size() > errorsBefore) hadError = true;
                     bodyParams.addAll(implicitParams);
@@ -1390,7 +1391,8 @@ class FieldBuilder {
                     var implicitParams = new ArrayList<BodyParam>();
                     int errorsBefore = errors.size();
                     walkInputFieldConditions(pia.fields(), pia.name(), List.of(),
-                        enclosingOverride, Set.of(), implicitParams, argConditions, errors, rt,
+                        enclosingOverride, pia.nonNull(),
+                        Set.of(), implicitParams, argConditions, errors, rt,
                         "plain input type '" + pia.typeName() + "'");
                     if (errors.size() > errorsBefore) hadError = true;
                     bodyParams.addAll(implicitParams);
@@ -1528,7 +1530,33 @@ class FieldBuilder {
      * <p>{@code outerArgName} is the top-level field-argument name (e.g. {@code "filter"}).
      * {@code pathPrefix} is the list of Map keys from {@code outerArgName} down to the parent of
      * {@code fields}; empty at the top level.
+     *
+     * <p>{@code effectiveNonNull} is the conjunction of every enclosing link's declared
+     * nullability — the top-level argument and every {@code NestingField} on the path. The
+     * value passed to {@link BodyParam}'s {@code nonNull} slot at each leaf is
+     * {@code effectiveNonNull && field.nonNull()}; the recursion into a {@link InputField.NestingField}
+     * carries {@code effectiveNonNull && nf.nonNull()} forward. This is the producer side of the
+     * {@code body-param.nonnull-is-effective-runtime} contract: the call-site extraction emitted
+     * for {@code NestedInputField} parameters cascades through {@code instanceof} checks and
+     * returns {@code null} whenever any level is missing, so the emitter is allowed to omit the
+     * runtime null guard only when every enclosing level is statically non-null.
      */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "body-param.nonnull-is-effective-runtime",
+        description = "Producer contract for the BodyParam.nonNull slot across both"
+            + " BodyParam-construction sites: walkInputFieldConditions and the scalar-arg arms of"
+            + " projectFilters (ColumnArg / CompositeColumnArg / ColumnReferenceArg /"
+            + " CompositeColumnReferenceArg). At the implicitBodyParam / compositeImplicitBodyParam"
+            + " callsites here the value flowing into BodyParam is (effectiveNonNull &&"
+            + " field.nonNull()) — the AND of the top-level argument's declared nullability and"
+            + " every InputField.NestingField on the path, narrowed at each recursion into a"
+            + " NestingField. At the scalar-arg arms in projectFilters the enclosing chain has"
+            + " length zero, so the same AND collapses to the arg's own nonNull(), which is what"
+            + " those arms pass through. Across both producers the BodyParam.nonNull slot carries"
+            + " effective runtime nullability at the call site, not the binding's own SDL-declared"
+            + " nullability. TypeConditionsGenerator reads the flag to choose between an unguarded"
+            + " condition.and(...) and an if (arg != null) guard; relaxing this AND on the walker"
+            + " restores the silent .in(null) -> false cascade that motivated R230.")
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "input-field.unbound-implies-no-column",
         reliesOn = "The UnboundField arm reads condition.isPresent() && override to decide between "
@@ -1555,7 +1583,7 @@ class FieldBuilder {
             + " where the lift predicate is vacuous).")
     private void walkInputFieldConditions(
             List<InputField> fields, String outerArgName, List<String> pathPrefix,
-            boolean enclosingOverride, Set<String> lookupBoundNames,
+            boolean enclosingOverride, boolean effectiveNonNull, Set<String> lookupBoundNames,
             List<BodyParam> implicitBodyParams,
             List<ConditionFilter> out,
             List<Rejection> walkRejections,
@@ -1576,7 +1604,8 @@ class FieldBuilder {
                         // BodyParam via NestedInputField(outer, path, leaf), so the call-site
                         // emitter applies the per-element decode chain on the Map traversal result.
                         implicitBodyParams.add(implicitBodyParam(
-                            cf.column(), cf.name(), cf.typeName(), cf.nonNull(), cf.list(),
+                            cf.column(), cf.name(), cf.typeName(),
+                            effectiveNonNull && cf.nonNull(), cf.list(),
                             cf.extraction(), outerArgName, leafPath));
                     }
                 }
@@ -1591,7 +1620,7 @@ class FieldBuilder {
                         // resolved reference column for plain @reference. Single source of truth.
                         implicitBodyParams.add(implicitBodyParam(
                             rf.liftedSourceColumns().get(0), rf.name(), rf.typeName(),
-                            rf.nonNull(), rf.list(),
+                            effectiveNonNull && rf.nonNull(), rf.list(),
                             rf.extraction(), outerArgName, leafPath));
                     }
                 }
@@ -1600,7 +1629,8 @@ class FieldBuilder {
                     boolean nestOverride = enclosingOverride
                         || nf.condition().map(ArgConditionRef::override).orElse(false);
                     walkInputFieldConditions(nf.fields(), outerArgName, leafPath,
-                        nestOverride, lookupBoundNames, implicitBodyParams, out, walkRejections,
+                        nestOverride, effectiveNonNull && nf.nonNull(),
+                        lookupBoundNames, implicitBodyParams, out, walkRejections,
                         resolvingTable, containerSummary);
                 }
                 case InputField.CompositeColumnField ccf -> {
@@ -1609,7 +1639,8 @@ class FieldBuilder {
                             && ccf.condition().isEmpty()
                             && !lookupBoundNames.contains(ccf.name())) {
                         implicitBodyParams.add(compositeImplicitBodyParam(
-                            ccf.columns(), ccf.name(), ccf.nonNull(), ccf.list(),
+                            ccf.columns(), ccf.name(),
+                            effectiveNonNull && ccf.nonNull(), ccf.list(),
                             ccf.extraction(), outerArgName, leafPath));
                     }
                 }
@@ -1621,7 +1652,8 @@ class FieldBuilder {
                         // Composite reference is nodeId-only (per record javadoc); read the
                         // resolver-supplied liftedSourceColumns directly.
                         implicitBodyParams.add(compositeImplicitBodyParam(
-                            ccrf.liftedSourceColumns(), ccrf.name(), ccrf.nonNull(), ccrf.list(),
+                            ccrf.liftedSourceColumns(), ccrf.name(),
+                            effectiveNonNull && ccrf.nonNull(), ccrf.list(),
                             ccrf.extraction(), outerArgName, leafPath));
                     }
                 }
