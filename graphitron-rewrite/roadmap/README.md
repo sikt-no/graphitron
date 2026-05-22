@@ -32,7 +32,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
 | `R223` | roadmap-tool: flag markdown-formatted tables in authored .adoc files | Spec | 2026-05-22 | [plan](flag-markdown-tables-in-adoc.md) |
-| `R225` | LSP severity for Rejection.Deferred should be Error, not Warning | Ready | 2026-05-22 | [plan](lsp-deferred-severity-error.md) |
+| `R225` | LSP severity for Rejection.Deferred should be Error, not Warning | In Review | 2026-05-22 | [plan](lsp-deferred-severity-error.md) |
 
 ---
 
