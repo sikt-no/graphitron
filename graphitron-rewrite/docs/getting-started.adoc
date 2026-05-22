@@ -232,8 +232,10 @@ The factory's parameter order follows the SDL's `contextArguments` list (alphabe
 `Graphitron.buildSchema(Consumer<GraphQLSchema.Builder>)` hands you the
 underlying builder. Use additive methods only:
 
-* `.additionalType(...)` for custom scalars, additional object types, extra
-  input types.
+* `.additionalType(...)` for additional object or input types beyond the
+  reachable set. Custom scalars go through `@scalarType(scalar:)` on the SDL
+  declaration; Graphitron registers the constant for you, and a manual
+  `additionalType` of the same scalar is rejected as a duplicate.
 * `.additionalDirective(...)` for directives beyond the schema's declared
   survivors.
 * `.codeRegistry(UnaryOperator<GraphQLCodeRegistry.Builder>)` for registering

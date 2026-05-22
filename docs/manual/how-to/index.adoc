@@ -15,7 +15,7 @@ a|
 * xref:computed-fields.adoc[Computed fields with `@externalField`]: project a derived column from a developer-supplied jOOQ `Field<T>`.
 * xref:condition-cascade.adoc[Stacking and overriding conditions]: when explicit `@condition` predicates stack with implicit ones, and what `override:` suppresses.
 * xref:connections.adoc[Cursor-paginated connections]: synthesised vs declared connection types, `totalCount` cost, and what the rewrite caps (and doesn't).
-* xref:custom-scalars.adoc[Custom scalars]: declare a custom scalar in the SDL and register a `GraphQLScalarType` through the `Graphitron.buildSchema(...)` customizer.
+* xref:custom-scalars.adoc[Custom scalars]: declare a custom scalar in the SDL and bind it to a `GraphQLScalarType` constant via the `@scalarType(scalar:)` directive.
 * xref:error-channel.adoc[The errors channel]: route Java exceptions through a service payload's `errors:` field as typed data.
 * xref:external-code.adoc[Wire external Java code]: the shared mechanics for `@service`, `@externalField`, `@tableMethod`, `@condition`, `@sourceRow`, `@enum`, and `@record`.
 * xref:federation-keys.adoc[Federation key fields]: declare entity keys with `@key`, layer them onto `@node` types, and stub non-resolvable entities owned by another subgraph.
