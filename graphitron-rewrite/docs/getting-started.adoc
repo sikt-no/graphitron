@@ -64,22 +64,21 @@ query-to-database tests with match-style and approval-style worked examples.
 
 == Custom scalar
 
-Register scalars through the customizer:
+Bind a custom scalar to a `public static final GraphQLScalarType` constant via the `@scalarType(scalar:)` directive on the SDL declaration. Graphitron loads the named class at codegen, reflects on the constant's `Coercing<I, O>` to recover the Java type used for input records, service parameters, and `Field<X>` projections, and registers the constant on the synthesized schema for you. The `buildSchema(...)` customizer does not need to wire the scalar.
 
-[source,java]
+[source,graphql]
 ----
-import graphql.scalars.ExtendedScalars;
-
-GraphQLSchema schema = Graphitron.buildSchema(b -> b
-    .additionalType(ExtendedScalars.UUID)
-    .additionalType(ExtendedScalars.Date));
+scalar UUID @scalarType(scalar: "graphql.scalars.ExtendedScalars.UUID")
+scalar Date @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")
 ----
 
-Every scalar reference in the generated schema uses
-`GraphQLTypeReference.typeRef(name)`; graphql-java resolves the reference
-against your registered `GraphQLScalarType` at build time. An unregistered
-scalar fails at schema-build with graphql-java's native "unresolved type"
-error naming the scalar and the referencing types.
+If `graphql-java-extended-scalars` is on the consumer's compile classpath and the SDL name matches one of the entries in graphitron's convention table (e.g. `UUID`, `Date`, `DateTime`, `BigDecimal`, `Url`, `Json`), the directive is optional: a bare `scalar UUID` resolves automatically. The directive wins over the convention layer, so a consumer who imports extended-scalars but wants `BigDecimal` modeled as their own `Money` wrapper just writes `scalar BigDecimal @scalarType(scalar: "com.example.Scalars.MONEY")`.
+
+Every scalar reference in the generated schema uses `GraphQLTypeReference.typeRef(name)`; graphql-java resolves the reference against the registered `GraphQLScalarType` at build time. An unresolved scalar fails the build with a validation error pointing at `@scalarType(scalar:)` or the extended-scalars convention as the fix; there is no silent fallback to `Object`.
+
+*Migration.* Consumers upgrading from earlier rewrite snapshots must *remove* any manual `.additionalType(ExtendedScalars.GraphQLBigDecimal)` (or other graphitron-resolved scalar constant) calls from their `buildSchema(...)` hooks. graphql-java's `GraphQLSchema.Builder.additionalType` rejects duplicate type-name registrations at build time, so leaving the manual call in turns the upgrade into a `SchemaProblem` rather than silent tolerance.
+
+See link:../manual/reference/directives/scalarType.html[the `@scalarType` directive reference] for the full surface, including the per-arm rejection reasons (`FieldNotFound`, `CoercingErased`, etc.) and the LSP completion behavior on `@scalarType(scalar: |)`.
 
 == Federation
 
