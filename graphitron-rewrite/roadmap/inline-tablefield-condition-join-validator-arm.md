@@ -1,7 +1,7 @@
 ---
 id: R228
 title: Build-time rejection for inline TableField / LookupTableField with condition-join step
-status: Ready
+status: In Review
 bucket: validation
 priority: 4
 theme: model-cleanup

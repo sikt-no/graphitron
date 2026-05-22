@@ -50,12 +50,11 @@ public final class InlineTableFieldEmitter {
      *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
      */
     public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, String parentAlias, String sfName, String outputPackage) {
-        if (JoinPathEmitter.hasConditionJoin(tf.joinPath())) {
+        var stubReason = SplitRowsMethodEmitter.unsupportedReason(tf);
+        if (stubReason.isPresent()) {
             return CodeBlock.builder()
                 .addStatement("throw new $T($S)",
-                    UnsupportedOperationException.class,
-                    "Inline TableField '" + tf.parentTypeName() + "." + tf.name() + "' with a condition-join step "
-                    + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables")
+                    UnsupportedOperationException.class, stubReason.get().message())
                 .build();
         }
         return buildFkOnlyArm(tf, parentAlias, sfName, outputPackage);

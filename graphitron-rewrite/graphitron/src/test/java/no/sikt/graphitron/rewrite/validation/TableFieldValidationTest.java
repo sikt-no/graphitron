@@ -31,6 +31,14 @@ class TableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Actor", TestFixtures.tableRef("actor", "ACTOR", "Actor", List.of()), wrapper);
     }
 
+    // Build-time render of SplitRowsMethodEmitter.unsupportedReason for the inline TableField
+    // variant: displayLabel "Inline TableField" + qualifiedName + shared condition-join prose,
+    // wrapped by the validator's "Field 'X.Y': " prefix. The build-time message matches the
+    // runtime stub message byte-for-byte (joined predicate at JoinPathEmitter.hasConditionJoin).
+    private static final String CONDITION_JOIN_STUB =
+        "Field 'Film.actors': Inline TableField 'Film.actors' with a condition-join step "
+        + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
+
     enum Case implements ValidatorCase {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
@@ -43,11 +51,19 @@ class TableFieldValidationTest {
                 List.of(), new OrderBySpec.None(), null),
             List.of()),
 
-        WITH_CONDITION_ONLY("condition-only join step — no FK",
+        SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — condition-join stub surfaces as build error",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
                 List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
                 List.of(), new OrderBySpec.None(), null),
-            List.of()),
+            List.of(CONDITION_JOIN_STUB)),
+
+        LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
+            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.List(true, true)),
+                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
+                List.of(),
+                new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
+                null),
+            List.of(CONDITION_JOIN_STUB)),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),

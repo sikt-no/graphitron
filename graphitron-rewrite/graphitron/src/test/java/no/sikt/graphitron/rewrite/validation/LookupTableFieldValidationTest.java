@@ -1,10 +1,12 @@
 package no.sikt.graphitron.rewrite.validation;
 
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField.LookupTableField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
@@ -32,6 +34,13 @@ class LookupTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
     }
 
+    // Build-time render of SplitRowsMethodEmitter.unsupportedReason for the inline
+    // LookupTableField variant: displayLabel "Inline LookupTableField" + qualifiedName +
+    // shared condition-join prose, wrapped by the validator's "Field 'X.Y': " prefix.
+    private static final String CONDITION_JOIN_STUB =
+        "Field 'Language.films': Inline LookupTableField 'Language.films' with a condition-join step "
+        + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
+
     enum Case implements ValidatorCase {
 
         // Single-cardinality @lookupKey is now rejected at classifier time (argres Phase 2a C1);
@@ -46,6 +55,12 @@ class LookupTableFieldValidationTest {
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), PK_ORDER, null,
                 EMPTY_LOOKUP),
             List.of()),
+
+        LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
+            new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),
+                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
+                List.of(), PK_ORDER, null, EMPTY_LOOKUP),
+            List.of(CONDITION_JOIN_STUB)),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field (validator mirror of classifier rejection)",
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, 100)), List.of(), List.of(), new OrderBySpec.None(), null,

@@ -334,7 +334,11 @@ public sealed interface ChildField extends OutputField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination
-    ) implements TableTargetField {
+    ) implements TableTargetField, ConditionJoinReportable {
+        @Override public Rejection.EmitBlockReason emitBlockReason() {
+            return Rejection.EmitBlockReason.TABLE_FIELD_CONDITION_JOIN_STEP;
+        }
+        @Override public String displayLabel() { return "Inline TableField"; }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }
@@ -375,7 +379,11 @@ public sealed interface ChildField extends OutputField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         LookupMapping lookupMapping
-    ) implements TableTargetField, LookupField {
+    ) implements TableTargetField, LookupField, ConditionJoinReportable {
+        @Override public Rejection.EmitBlockReason emitBlockReason() {
+            return Rejection.EmitBlockReason.LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;
+        }
+        @Override public String displayLabel() { return "Inline LookupTableField"; }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }

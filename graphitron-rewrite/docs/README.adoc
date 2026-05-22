@@ -60,7 +60,7 @@ The xref:code-generation-triggers.adoc[Code Generation Triggers] page is a zoome
 | Packages those generated jOOQ classes (Sakila-inspired catalog plus the `nodeidfixture` and `idreffixture` sub-schemas) as a jar that downstream tests depend on.
 
 | `graphitron-sakila-service`
-| `@service` / `@externalField` / `@condition` implementations referenced from the example schemas (`FilmService`, `SampleQueryService`, `CategoryConditions`, ...). Compile-scope dep on `graphitron-sakila-db` for the jOOQ tables.
+| `@service` / `@externalField` / `@condition` implementations referenced from the example schemas (`FilmService`, `SampleQueryService`, ...). Compile-scope dep on `graphitron-sakila-db` for the jOOQ tables.
 
 | `graphitron-maven-plugin`
 | Maven plugin: `generate`, `validate`, and `dev` Mojos (the dev mojo provides the watch loop).

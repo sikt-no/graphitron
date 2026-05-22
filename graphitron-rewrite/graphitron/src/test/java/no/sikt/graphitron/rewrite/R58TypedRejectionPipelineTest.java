@@ -140,20 +140,87 @@ class R58TypedRejectionPipelineTest {
     }
 
     @Test
-    void conditionJoinReportable_implementedByExpectedFourVariants() {
-        // Phase G: the ConditionJoinReportable capability replaces the four-overload
-        // SplitRowsMethodEmitter.unsupportedReason and the matching 4-arm
-        // validateVariantIsImplemented chain. The implementing set is exactly the four ChildField
-        // variants whose join paths can carry a condition step; assert the seal stays accurate so
-        // a future leaf addition can't silently bypass the validator gate.
+    void conditionJoinReportable_implementedByExpectedSixVariants() {
+        // R228: extended from four to six variants. The capability now covers both split-rows
+        // variants (which surface the runtime stub through SplitRowsMethodEmitter), both
+        // @record-parent variants (which dispatch through the same emitter), and both
+        // inline-emitter variants (TableField, LookupTableField) so the validator gate fires
+        // on the inline path too. Asserting the seal stays accurate locks in that a future
+        // leaf addition can't silently bypass the validator gate.
         assertThat(ConditionJoinReportable.class).isAssignableFrom(ChildField.SplitTableField.class);
         assertThat(ConditionJoinReportable.class).isAssignableFrom(ChildField.SplitLookupTableField.class);
         assertThat(ConditionJoinReportable.class).isAssignableFrom(ChildField.RecordTableField.class);
         assertThat(ConditionJoinReportable.class).isAssignableFrom(ChildField.RecordLookupTableField.class);
-        // Other ChildField leaves should NOT carry this capability (LookupTableField has a join
-        // path but its emitter doesn't share the condition-join predicate).
-        assertThat(ConditionJoinReportable.class.isAssignableFrom(ChildField.LookupTableField.class)).isFalse();
-        assertThat(ConditionJoinReportable.class.isAssignableFrom(ChildField.TableField.class)).isFalse();
+        assertThat(ConditionJoinReportable.class).isAssignableFrom(ChildField.TableField.class);
+        assertThat(ConditionJoinReportable.class).isAssignableFrom(ChildField.LookupTableField.class);
+    }
+
+    @Test
+    void inlineTableField_conditionJoinStep_rejectedAtBuildTime() {
+        // R228: a plain @table field (no @splitQuery, no @record parent) whose @reference path
+        // carries a @condition step would classify as ChildField.TableField with a
+        // JoinStep.ConditionJoin and previously surface as a runtime UnsupportedOperationException.
+        // The validator now mirrors the inline emitter's stub-emission predicate via the
+        // ConditionJoinReportable capability and emits a Rejection.Deferred at build time,
+        // tagged with EmitBlockReason.TABLE_FIELD_CONDITION_JOIN_STEP.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Query { city: City }
+            type City @table(name: "city") {
+                country: Country @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"}}])
+            }
+            type Country @table(name: "country") { countryName: String @field(name: "country") }
+            """);
+
+        var field = schema.field("City", "country");
+        assertThat(field).isInstanceOf(ChildField.TableField.class);
+
+        var validationErrors = new GraphitronSchemaValidator().validate(schema);
+        var matched = validationErrors.stream()
+            .filter(e -> "City.country".equals(e.coordinate()))
+            .toList();
+        assertThat(matched).isNotEmpty();
+        var ve = matched.get(0);
+        assertThat(ve.message())
+            .contains("Inline TableField 'City.country' with a condition-join step cannot be emitted");
+        assertThat(ve.rejection()).isInstanceOf(Rejection.Deferred.class);
+        var deferred = (Rejection.Deferred) ve.rejection();
+        assertThat(deferred.stubKey()).isInstanceOf(Rejection.StubKey.EmitBlock.class);
+        assertThat(((Rejection.StubKey.EmitBlock) deferred.stubKey()).reason())
+            .isEqualTo(Rejection.EmitBlockReason.TABLE_FIELD_CONDITION_JOIN_STEP);
+    }
+
+    @Test
+    void inlineLookupTableField_conditionJoinStep_rejectedAtBuildTime() {
+        // R228: same arm for the inline LookupTableField variant — list cardinality plus
+        // @lookupKey makes the field classify as ChildField.LookupTableField, and a
+        // @condition step in the reference path now surfaces as a build-time Rejection.Deferred
+        // tagged with EmitBlockReason.LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Query { language: Language }
+            type Language @table(name: "language") {
+                films(film_id: [Int!]! @lookupKey): [Film!]!
+                    @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"}}])
+                    @defaultOrder(primaryKey: true)
+            }
+            type Film @table(name: "film") { title: String }
+            """);
+
+        var field = schema.field("Language", "films");
+        assertThat(field).isInstanceOf(ChildField.LookupTableField.class);
+
+        var validationErrors = new GraphitronSchemaValidator().validate(schema);
+        var matched = validationErrors.stream()
+            .filter(e -> "Language.films".equals(e.coordinate()))
+            .toList();
+        assertThat(matched).isNotEmpty();
+        var ve = matched.get(0);
+        assertThat(ve.message())
+            .contains("Inline LookupTableField 'Language.films' with a condition-join step cannot be emitted");
+        assertThat(ve.rejection()).isInstanceOf(Rejection.Deferred.class);
+        var deferred = (Rejection.Deferred) ve.rejection();
+        assertThat(deferred.stubKey()).isInstanceOf(Rejection.StubKey.EmitBlock.class);
+        assertThat(((Rejection.StubKey.EmitBlock) deferred.stubKey()).reason())
+            .isEqualTo(Rejection.EmitBlockReason.LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP);
     }
 
     @Test

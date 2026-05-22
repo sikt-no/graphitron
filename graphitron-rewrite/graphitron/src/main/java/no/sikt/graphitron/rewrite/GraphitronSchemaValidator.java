@@ -222,7 +222,7 @@ public class GraphitronSchemaValidator {
             emitDeferredError(field, stubbed, errors);
             return;
         }
-        // Intra-variant stubs: the four ChildField variants that share the condition-join
+        // Intra-variant stubs: the six ChildField variants that share the condition-join
         // predicate ({@link ConditionJoinReportable}) all dispatch through the emitter's
         // single capability-keyed unsupportedReason; STUBBED_VARIANTS is class-keyed so
         // cannot distinguish "fully stubbed" from "intra-variant emit-block", and the
