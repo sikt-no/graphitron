@@ -62,12 +62,42 @@ The path-element surface (`@oneOf`-style cleanup of the `{table, key, condition}
 
 ## Implementation
 
-### 1. Model — `ConditionJoin` carries a target
+### 1. Model — split `WithTarget`; `ConditionJoin` carries a target
 
 **File:** `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/JoinStep.java`
 
+Split the existing `WithTarget` capability so target-read and slot-iteration sit on separate interfaces, matching "Capability interfaces and sealed switches serve different roles" (`rewrite-design-principles.adoc:43-47`) and the worked example at `JoinStep.java:81-123`:
+
 ```java
-record ConditionJoin(MethodRef condition, TableRef targetTable, String alias) implements JoinStep {
+/** Hop pre-resolves a target table the prelude joins to. */
+interface HasTargetTable {
+    TableRef targetTable();
+    String alias();
+}
+
+/** Hop also pairs source/target columns for FK-correlation predicates. */
+interface WithTarget extends HasTargetTable {
+    Iterable<? extends JoinSlot> slots();
+    int slotCount();
+    default List<ColumnRef> sourceSideColumns() { /* existing body */ }
+    default List<ColumnRef> targetSideColumns() { /* existing body */ }
+}
+```
+
+`FkJoin` and `LiftedHop` continue to implement `WithTarget` (now via inheritance from `HasTargetTable`). `ConditionJoin` implements `HasTargetTable` directly. Target-only consumers (`JoinPathEmitter.targetJavaClassName`, the alias-declaration loops in inline and split-rows emitters, `validateReferenceLeadsToType`) read uniformly through `HasTargetTable` with no sealed switch. FK-correlation consumers (`emitCorrelationWhere`, `SplitRowsMethodEmitter.emitParentInputAndFkChain`'s slot-based correlation) stay typed against `WithTarget` and route ConditionJoin first hops through the `ParentCorrelation` carrier (step 2).
+
+`ConditionJoin`'s record shape:
+
+```java
+@LoadBearingClassifierCheck(
+    key = "condition-join.target-table-resolved-at-parse",
+    description = "BuildContext.parsePathElement resolves ConditionJoin.targetTable at parse time "
+        + "from the carrier field's return-type @table binding (terminal hop) or by reflecting on "
+        + "the condition method's second parameter (intermediate hop). Both unresolvable cases "
+        + "route through Rejection.AuthorError upstream; the compact constructor below is the "
+        + "structural safety net. Emitters consume cj.targetTable() without null-checks.")
+record ConditionJoin(MethodRef condition, TableRef targetTable, String alias)
+        implements JoinStep, HasTargetTable {
     public ConditionJoin {
         if (condition == null) throw new NullPointerException("ConditionJoin.condition must not be null");
         if (targetTable == null) throw new NullPointerException(
@@ -79,18 +109,55 @@ record ConditionJoin(MethodRef condition, TableRef targetTable, String alias) im
 }
 ```
 
-`ConditionJoin` does **not** implement `WithTarget`. That interface bundles `targetTable()` with `slots()` / `slotCount()` / `sourceSideColumns()` / `targetSideColumns()` — the FK-correlation slot list. Condition joins do not produce slot pairings (the ON clause is the condition method call). Reading `targetTable()` uniformly across all three step variants is a sealed switch over `JoinStep`:
+Consumers that read `targetTable()` from any hop type then carry the matching `@DependsOnClassifierCheck(key = "condition-join.target-table-resolved-at-parse", reliesOn = "…")` so the audit harness's producer/consumer net stays balanced (see step 7's `LoadBearingGuaranteeAuditTest` rule).
+
+### 2. Model — `ParentCorrelation` sub-taxonomy
+
+**File:** `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ParentCorrelation.java` (new)
+
+Lift the binary fork between FK-slot correlation and ConditionJoin-method correlation into the model so the five emitter sites (inline `TableField` / `LookupTableField` / `ColumnReferenceField` step-0 correlation; split-rows `buildListMethod` / `buildSingleMethod` / `buildConnectionMethod`) all read variant identity from one carrier instead of evaluating `instanceof JoinStep.ConditionJoin` over `joinPath.get(0)`. Sealed over two arms:
 
 ```java
-TableRef target = switch (step) {
-    case JoinStep.WithTarget wt -> wt.targetTable();
-    case JoinStep.ConditionJoin cj -> cj.targetTable();
-};
+public sealed interface ParentCorrelation
+        permits ParentCorrelation.OnFkSlots, ParentCorrelation.OnConditionJoin {
+
+    /** First hop is an FK or lifter; existing slot-based correlation. */
+    record OnFkSlots(JoinStep.WithTarget firstHop) implements ParentCorrelation {
+        public OnFkSlots { if (firstHop == null) throw new NullPointerException(); }
+    }
+
+    /** First hop is a condition method; correlation is the condition method call.
+     *  {@code parentTable} is the carrier field's parent type's @table binding;
+     *  {@code parentPkCols} is the parent's PK column list (populated for split-rows
+     *  emission paths, empty list for inline emission paths where parentInput is not
+     *  materialised). */
+    record OnConditionJoin(
+        JoinStep.ConditionJoin firstHop,
+        TableRef parentTable,
+        List<ColumnRef> parentPkCols
+    ) implements ParentCorrelation {
+        public OnConditionJoin {
+            if (firstHop == null) throw new NullPointerException("ParentCorrelation.OnConditionJoin.firstHop must not be null");
+            if (parentTable == null) throw new NullPointerException(
+                "ParentCorrelation.OnConditionJoin.parentTable must not be null; the parser routes the "
+                + "no-parent-table case through Rejection.AuthorError upstream.");
+            parentPkCols = List.copyOf(parentPkCols);
+        }
+    }
+}
 ```
 
-Exhaustive by the sealed permit list. Each consumer that needs the target table widens to this shape; consumers that need slot iteration (the FK-correlation predicate sites) stay typed against `WithTarget` and route ConditionJoin first hops through a separate arm (see step 5).
+Each `ChildField` variant whose `joinPath` enters the affected emitter sites gains a `ParentCorrelation parentCorrelation` field on its record header. The seven variants:
 
-### 2. Path-element parser — resolve `ConditionJoin.targetTable` from the resolution chain
+* `ChildField.TableField`, `ChildField.LookupTableField` (inline emitters; `parentPkCols` empty)
+* `ChildField.SplitTableField`, `ChildField.SplitLookupTableField`, `ChildField.RecordTableField`, `ChildField.RecordLookupTableField` (split-rows emitters; `parentPkCols` populated from `sourceKey.columns()`)
+* `ChildField.ColumnReferenceField` (inline emitter; `parentPkCols` empty)
+
+The field name is `parentCorrelation`; classifier-time guarantee: `parentCorrelation.firstHop() == joinPath.get(0)` (compact-constructor invariant on each variant). The carrier is a denormalised view of data already on `joinPath.get(0)` + `sourceKey` (where present) + the carrier field's parent type's `@table` binding — pre-resolved once at parse time so consumers don't re-derive at each emit site.
+
+`HasTargetTable` (step 1) handles the orthogonal "read this hop's target table" axis; `ParentCorrelation` handles the "what shape does parent correlation take at this path" axis. The two axes are decoupled: any `ChildField` variant can carry `ParentCorrelation.OnConditionJoin` regardless of which intermediate hops appear in the joinPath.
+
+### 3. Path-element parser — resolve `ConditionJoin.targetTable` and synthesise `ParentCorrelation`
 
 **File:** `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/BuildContext.java`
 
@@ -99,47 +166,70 @@ In `parsePathElement` (the `condition:`-only arm currently at `BuildContext.java
 1. **Terminal-hop case (last element of `path`).** Look up the carrier field's return-type `@table` binding (already in `BuildContext` scope via the `currentSourceSqlName` context and the field's typed return). Build the `TableRef` from the catalog. Surface `AUTHOR_ERROR` when the return type has no `@table` binding, with the message in the Design section.
 2. **Intermediate-hop case.** Reflect on the condition method's second parameter. If it is a concrete generated jOOQ table class (`Class<?>` that `JooqCatalog.findTableByClass(c)` resolves), build a `TableRef` from the catalog entry. If it is `Table<?>` (wildcard), surface `AUTHOR_ERROR` per the Design section.
 
-Construct `new ConditionJoin(methodRef, targetTable, alias)` with the resolved target. The arms for `{key:}`, `{table:}`, `{key:, condition:}`, `{table:, condition:}`, `{table:, key:}`, `{table:, key:, condition:}` are not touched; their semantics stay verbatim. Factor out a small `resolveConditionJoinTarget(carrierField, methodRef, isTerminal)` helper so the two arms in the chain stay close to each other and the error messages live in one place.
+Construct `new ConditionJoin(methodRef, targetTable, alias)` with the resolved target. The arms for `{key:}`, `{table:}`, `{key:, condition:}`, `{table:, condition:}`, `{table:, key:}`, `{table:, key:, condition:}` are not touched; their semantics stay verbatim. Factor out a small `resolveConditionJoinTarget(carrierField, methodRef, isTerminal)` helper so the two arms in the chain stay close to each other and the error messages live in one place. Wear `@LoadBearingClassifierCheck(key = "condition-join.target-table-resolved-at-parse", …)` on the helper.
 
-`JooqCatalog` gains one new accessor: `Optional<TableRef> findTableByClass(Class<?> jooqTableClass)`. The class-keyed lookup is symmetric with the existing `findTable(String)`; the catalog already indexes generated tables.
+After the path's `JoinStep` list is built, synthesise `ParentCorrelation` for each carrier field whose variant carries it. Two arms:
 
-### 3. Alias emitter — sealed-switch target read; drop the terminal-table fallback
+* `joinPath.get(0)` is `WithTarget` (FkJoin or LiftedHop): `new ParentCorrelation.OnFkSlots(firstHop)`.
+* `joinPath.get(0)` is `ConditionJoin`: resolve the parent type's `@table` binding (already in scope as the `currentSourceSqlName` context); read parent PK cols from `sourceKey.columns()` for split-rows variants, empty list for inline variants. Construct `new ParentCorrelation.OnConditionJoin(cj, parentTable, parentPkCols)`. Surface `AUTHOR_ERROR` if the parent type has no `@table` binding (the same condition the variant classifier would have flagged; centralise the message at the synthesis site).
+
+`JooqCatalog` gains one new accessor: `Optional<TableEntry> findTableByClass(Class<?> jooqTableClass)`. Class-keyed lookups are schema-unique by construction (each generated jOOQ table class maps to exactly one catalog entry), so the return shape matches `findTable(String, String)` rather than the unqualified `findTable(String)`'s `TableResolution` sub-taxonomy.
+
+### 4. Alias emitter — uniform `HasTargetTable` read
 
 **File:** `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/JoinPathEmitter.java`
 
-`targetJavaClassName` (`JoinPathEmitter.java:56-66`) collapses to a uniform read across all three variants:
+`targetJavaClassName` (`JoinPathEmitter.java:56-66`) reads through `HasTargetTable` (step 1) with no sealed switch:
 
 ```java
-return switch (step) {
-    case JoinStep.WithTarget wt -> wt.targetTable().tableClass().simpleName();
-    case JoinStep.ConditionJoin cj -> cj.targetTable().tableClass().simpleName();
-};
+return ((HasTargetTable) step).targetTable().tableClass().simpleName();
+// or, more idiomatic:
+return step instanceof HasTargetTable ht
+    ? ht.targetTable().tableClass().simpleName()
+    : throw new IllegalStateException("JoinStep variant " + step.getClass() + " is not HasTargetTable");
 ```
 
-The `terminalTable` parameter on `generateAliases` is no longer needed; callers drop it. Same on the `targetJavaClassName` helper. The `hasConditionJoin` predicate retires entirely — its three consumers (validators in step 6, the `InlineColumnReferenceFieldEmitter` defensive arm in step 7) all delete in this pass.
+All three current `JoinStep` permits implement `HasTargetTable` (FkJoin and LiftedHop via `WithTarget`, ConditionJoin directly), so the `instanceof` is exhaustive over the sealed permit list at compile time. Annotate the helper with `@DependsOnClassifierCheck(key = "condition-join.target-table-resolved-at-parse", reliesOn = "Reads ht.targetTable().tableClass() without null-check; depends on the parser's ConditionJoin.targetTable resolution chain. The compact constructor on ConditionJoin is the structural safety net.")`.
 
-### 4. Inline emitters — emit `.join(targetTable).on(method(src, tgt))` for `ConditionJoin` steps
+The `terminalTable` parameter on `generateAliases` is no longer needed; callers drop it. Same on the `targetJavaClassName` helper. The `hasConditionJoin` predicate retires entirely — its three consumers (validators in step 7, the `InlineColumnReferenceFieldEmitter` defensive arm in step 8) all delete in this pass.
+
+### 5. Inline emitters — read `ParentCorrelation` for step-0; widen JOIN chain dispatch
 
 **Files:**
 * `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/InlineTableFieldEmitter.java`
 * `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/InlineLookupTableFieldEmitter.java`
 
-Both inline emitters take symmetric changes. `buildFkOnlyArm` becomes `buildArm` (no longer FK-only). The two loops in each:
+Both inline emitters take symmetric changes. `buildFkOnlyArm` becomes `buildArm` (no longer FK-only). Three changes per emitter:
 
-* **Table-alias declaration** (`InlineTableFieldEmitter.java:77-83` and the parallel block in `InlineLookupTableFieldEmitter`): widen the cast from `(JoinStep.FkJoin) path.get(i)` to a sealed switch reading `targetTable()` (step 1's switch shape). Both `FkJoin` and `ConditionJoin` produce the same `Tables.X.as(parent.getName() + "_xN")` declaration shape. `LiftedHop` stays an `IllegalStateException` in the inline emitters because no current variant routes a lifted hop through them.
-* **JOIN chain** (`buildInnerSelect:117-122` and the parallel block in `InlineLookupTableFieldEmitter`): widen the loop to dispatch on step type. `FkJoin` keeps `.join(alias).onKey(fk.keysClass(), fk.constantName())`; `ConditionJoin` emits `.join(alias).on(<method>(prevAlias, alias))` via `JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), prevAlias, alias)`. Step 0's correlation against the parent: `FkJoin` keeps `emitCorrelationWhere`; `ConditionJoin` at step 0 calls `method(parentAlias, terminalAliasAtStep0)`, which serves as both the JOIN ON predicate and the parent correlation (no separate WHERE clause).
+* **Table-alias declaration** (`InlineTableFieldEmitter.java:77-83` and the parallel block in `InlineLookupTableFieldEmitter`): drop the `(JoinStep.FkJoin) path.get(i)` cast; read `targetTable()` through `HasTargetTable` (step 4's shape). Both `FkJoin` and `ConditionJoin` produce the same `Tables.X.as(parent.getName() + "_xN")` declaration. `LiftedHop` stays an `IllegalStateException` in the inline emitters because no current variant routes a lifted hop through them.
+* **JOIN chain** (`buildInnerSelect:117-122` and the parallel block in `InlineLookupTableFieldEmitter`) for hops 1..N: widen the loop to dispatch on step type. `FkJoin` keeps `.join(alias).onKey(fk.keysClass(), fk.constantName())`; `ConditionJoin` emits `.join(alias).on(<method>(prevAlias, alias))` via `JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), prevAlias, alias)`.
+* **Step-0 parent correlation**: read `field.parentCorrelation()` from the carrier field (step 2's record-field). Sealed switch:
+
+  ```java
+  switch (field.parentCorrelation()) {
+      case ParentCorrelation.OnFkSlots fk ->
+          where.add(JoinPathEmitter.emitCorrelationWhere(fk.firstHop(), firstAlias, parentAlias));
+      case ParentCorrelation.OnConditionJoin cj ->
+          // No separate WHERE; the JOIN's ON clause carries the condition method call.
+          // The inner-SELECT's step-0 .join(firstAlias).on(method(parentAlias, firstAlias))
+          // already covers the correlation.
+          ;
+  }
+  ```
+
+  The inline emitters use `parentAlias` (the SDL-context parent table) directly; `OnConditionJoin.parentTable` matches it by classifier-time guarantee but isn't re-read because the caller already passed it in. `parentPkCols` is unused on the inline path.
 
 The single-cardinality `.limit(1)`, WHERE filters, ORDER BY, and pagination clauses are step-type-agnostic and unchanged.
 
 The `unsupportedReason` stub branches at `InlineTableFieldEmitter.java:53-60` and the parallel block at `InlineLookupTableFieldEmitter.java:64-70` both delete.
 
-### 5. Split-rows emitter — materialise a parent-table alias for ConditionJoin-first paths
+### 6. Split-rows emitter — read `ParentCorrelation` for step-0; materialise parent-alias on the ConditionJoin arm
 
 **File:** `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/SplitRowsMethodEmitter.java`
 
-The split-rows variants (`SplitTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`) join `parentInput` (a VALUES-derived `Table<Record<N+1>>` keyed by `(idx, pk_col1, …)`) to the FK chain on PK columns. For ConditionJoin-first paths, the condition method expects a concrete-typed parent table (`join(Film src, Actor tgt)`), so the emitter materialises a parent-table alias and routes the parent correlation through it.
+The split-rows variants (`SplitTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`) join `parentInput` (a VALUES-derived `Table<Record<N+1>>` keyed by `(idx, pk_col1, …)`) to the FK chain on PK columns. The `ParentCorrelation` sealed switch (step 2) drives the parent-correlation emission shape.
 
-Shape for the FkJoin-first / LiftedHop-first path (unchanged):
+Shape for `ParentCorrelation.OnFkSlots` (unchanged):
 
 ```
 FROM terminalAlias
@@ -147,28 +237,28 @@ JOIN (intermediate FkJoin hops...)
 JOIN parentInput ON firstHop.targetCols = parentInput.pkCols
 ```
 
-Shape for ConditionJoin-first paths:
+Shape for `ParentCorrelation.OnConditionJoin`:
 
 ```
 FROM terminalAlias
-JOIN parentAlias ON conditionMethod(parentAlias, terminalAlias)        // ConditionJoin first hop
+JOIN parentAlias ON conditionMethod(parentAlias, terminalAlias)        // first-hop condition
 JOIN (intermediate FkJoin hops... if any)
 JOIN parentInput ON parentAlias.pk_col1 = parentInput.field("pk_col1", ...)
                 AND parentAlias.pk_col2 = parentInput.field("pk_col2", ...)
                 ...
 ```
 
-The parent-table alias is built from the carrier field's parent type's `@table` binding: `<ParentTable> parentAlias = Tables.<PARENT>.as(fieldName + "_parent")`. The PK columns for the parentInput JOIN come from `sourceKey.columns()` (the parent's PK, already on `sourceKey` for the data-loader path); the parentAlias side reads each by `parentAlias.<col.javaName()>`.
+Both the parent-alias declaration (`<ParentTable> parentAlias = Tables.<PARENT>.as(fieldName + "_parent")`) and the parent-PK column list come from the `ParentCorrelation.OnConditionJoin` record (`parentTable`, `parentPkCols`) — no carrier-field-side derivation at emit time.
 
 Implementation details in `SplitRowsMethodEmitter.emitParentInputAndFkChain`:
 
-* The `JoinStep firstStep = joinPath.get(0)` branch at `:204-208` widens: if `firstStep instanceof JoinStep.ConditionJoin cj`, emit the parent-alias declaration and follow with the JOIN-to-parentInput on the parent's PK columns. Otherwise (FkJoin or LiftedHop), keep the existing `WithTarget` slot-based correlation.
-* The alias-declaration loop at `:260-266` widens to the sealed switch from step 1 to read `targetTable()` from any step type.
+* The step-0 branch at `:204-208` replaces its `firstStep instanceof JoinStep.ConditionJoin` check with a sealed switch on `field.parentCorrelation()`. The `OnFkSlots` arm keeps the existing slot-based correlation; the `OnConditionJoin` arm emits the parent-alias declaration, the `.join(parentAlias).on(cj.firstHop().condition(...))` clause, and the parent-PK JOIN to parentInput.
+* The alias-declaration loop at `:260-266` drops the `(JoinStep.WithTarget)` cast; reads through `HasTargetTable`.
 * The bridging-JOIN loop in `buildListMethod` (`:683-688`) and the analogous loops in `buildSingleMethod` and the connection method widen to dispatch on step type as in the inline JOIN chain.
 
 `unsupportedReason` (`SplitRowsMethodEmitter.java:324-335`) deletes outright. The six `Rejection.EmitBlockReason` values it produced — `TABLE_FIELD_CONDITION_JOIN_STEP`, `LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP`, `SPLIT_TABLE_FIELD_CONDITION_JOIN_STEP`, `SPLIT_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP`, `RECORD_TABLE_FIELD_CONDITION_JOIN_STEP`, `RECORD_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP` — delete with their last producers. The `RecordTableMethodField` arm at `:421-440` is independent (it predates `unsupportedReason` and has its own `unsupportedPath` check); it keeps its own ConditionJoin rejection or gets the same widening — pick consistently with the other Record* variants in this commit.
 
-### 6. Validator — drop deferred-rejection arms
+### 7. Validator — drop deferred-rejection arms
 
 **File:** `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java`
 
@@ -176,25 +266,25 @@ Implementation details in `SplitRowsMethodEmitter.emitParentInputAndFkChain`:
 * `validateSplitTableField` / `validateSplitLookupTableField` / `validateRecordTableField` / `validateRecordLookupTableField` — drop the `unsupportedReason` deferred-rejection consult on each.
 * `validateInlineTableField` / `validateInlineLookupTableField` (the two arms added in R228) — drop their deferred-rejection branches symmetrically.
 
-`validateReferenceLeadsToType` (`:615-630`) currently special-cases `ConditionJoin` because it had no pre-resolved target. The check works without the special-case once ConditionJoin carries a target; the spec leaves the special-case in place because the resolution chain already guarantees the target equals the field's return-type table for terminal hops — making the check tautological — and dropping it is a no-op cleanup not worth the diff. Marked as a follow-up task in the same item file if desired.
+`validateReferenceLeadsToType` (`:615-630`) currently special-cases `ConditionJoin` because it had no pre-resolved target. After step 1, `ConditionJoin implements HasTargetTable`; the special-case folds and the check reads `((HasTargetTable) lastStep).targetTable()` uniformly. For terminal-hop ConditionJoin the check is tautological (parser fills target from the same return-type binding the validator compares against) but the unified shape removes the dead code.
 
 The classification-time guards in `FieldBuilder` and `ConditionResolver` are unaffected; they classify `ConditionJoin` correctly today and only emission was deferred.
 
-### 7. Inline `ChildField.ColumnReferenceField` — widen the join-loop dispatch
+### 8. Inline `ChildField.ColumnReferenceField` — widen the join-loop dispatch; read `ParentCorrelation`
 
 **File:** `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/InlineColumnReferenceFieldEmitter.java`
 
-The defensive `IllegalStateException` at `InlineColumnReferenceFieldEmitter.java:59-63` deletes. The join-loop widens with the same `switch (step)` shape as the inline TableField emitter (step 4). The `@DependsOnClassifierCheck(key = "column-reference-field-no-condition-join-step", …)` annotation at lines 52-56 deletes with the early-return (no remaining producer; symmetric with the `@LoadBearingClassifierCheck` removal in step 6).
+The defensive `IllegalStateException` at `InlineColumnReferenceFieldEmitter.java:59-63` deletes. The join-loop widens with the same step-type dispatch as the inline TableField emitter (step 5); the step-0 correlation reads `field.parentCorrelation()` through the same sealed switch as step 5. The `@DependsOnClassifierCheck(key = "column-reference-field-no-condition-join-step", …)` annotation at lines 52-56 deletes with the early-return (no remaining producer; symmetric with the `@LoadBearingClassifierCheck` removal in step 7).
 
 R129 (`column-reference-on-scalar-field-condition-join`) closes — the slug folds into R232's implementation per its own body's recommendation. The file deletes on Done; `changelog.md` records the R129 → R232 absorption.
 
-### 8. Capability and stale-reference cleanup
+### 9. Capability and stale-reference cleanup
 
 In the same set of commits:
 
-* `ConditionJoinReportable` capability (`graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ConditionJoinReportable.java`) and its three accessors (`joinPath`, `emitBlockReason`, `displayLabel`) delete — no remaining consumers after step 5. The six `ChildField` variants that implement it drop the `implements ConditionJoinReportable` from their record headers (`ChildField.java:337`, `:358`, `:382`, `:404`, `:745`, `:779`) and the `displayLabel()` / `emitBlockReason()` method bodies on each.
+* `ConditionJoinReportable` capability (`graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ConditionJoinReportable.java`) and its three accessors (`joinPath`, `emitBlockReason`, `displayLabel`) delete — no remaining consumers after step 6. The six `ChildField` variants that implement it drop the `implements ConditionJoinReportable` from their record headers (`ChildField.java:337`, `:358`, `:382`, `:404`, `:745`, `:779`) and the `displayLabel()` / `emitBlockReason()` method bodies on each.
 * `R58TypedRejectionPipelineTest.conditionJoinReportable_implementedByExpectedSixVariants` deletes with the capability.
-* `column-reference-on-scalar-field-condition-join.md` (R129) — file deletes per step 7.
+* `column-reference-on-scalar-field-condition-join.md` (R129) — file deletes per step 8.
 * `lsp-diagnostic-redundant-splitquery-on-record.md:13` (R121) — drop the "R3 (`classification-vocabulary-followups`) lands the build-tier warning when …" sentence; the warning has shipped per changelog `162`.
 * `nestingfield-multiparent-tablefield.md:56` and `:134` — replace the dangling `plan-classification-vocabulary-followups.md §7` link with prose stating the convention directly.
 * `fkjoin-alias-dead-storage.md:20` (R120) — keep the "originally item 5 of `classification-vocabulary-followups`" attribution as historical provenance for the open Backlog item.
@@ -204,7 +294,7 @@ In source comments:
 * `InlineTableFieldEmitter.java:29-31` javadoc — delete the "owned by classification-vocabulary item 5" sentence.
 * `InlineLookupTableFieldEmitter.java:36-37` javadoc — delete the analogous "ConditionJoin anywhere in the path triggers a runtime-throwing stub arm" sentence.
 * `JoinPathEmitter.java:60-66` and `:68-76` — delete the `ConditionJoin` empty-string arm, the `hasConditionJoin` predicate, and its "G5 cannot yet emit" javadoc.
-* `GraphitronSchemaValidator.java:545-552` and `:575-583` — `@LoadBearingClassifierCheck` and the deferred-rejection branch delete together (covered in step 6).
+* `GraphitronSchemaValidator.java:545-552` and `:575-583` — `@LoadBearingClassifierCheck` and the deferred-rejection branch delete together (covered in step 7).
 * `JoinStep.java:194-206` — rewrite the `ConditionJoin` record's javadoc to describe the resolution chain (return-type-binding for terminal, method-param reflection for intermediate) instead of the legacy "target not pre-resolved" stub language.
 
 The path-element surface cleanup (the `@oneOf`-style cleanup of `{table, key, condition}` combinations) is filed as a separate Backlog item by the implementer at the start of the work.
@@ -222,7 +312,13 @@ Each named case below flips from a deferred-rejection assertion to "no rejection
 * `RecordLookupTableFieldValidationTest.LIST_WITH_CONDITION_ONLY`
 * `ColumnReferenceFieldValidationTest.CONDITION_METHOD`
 
-`R58TypedRejectionPipelineTest.inlineTableField_conditionJoinStep_rejectedAtBuildTime` and `inlineLookupTableField_conditionJoinStep_rejectedAtBuildTime` rename to `..._emitsCorrelatedSubquery` (or delete if the per-variant validation cases above cover the shape adequately). `conditionJoinReportable_implementedByExpectedSixVariants` deletes with the capability per step 8.
+`R58TypedRejectionPipelineTest.inlineTableField_conditionJoinStep_rejectedAtBuildTime` and `inlineLookupTableField_conditionJoinStep_rejectedAtBuildTime` rename to `..._emitsCorrelatedSubquery` (or delete if the per-variant validation cases above cover the shape adequately). `conditionJoinReportable_implementedByExpectedSixVariants` deletes with the capability per step 9.
+
+### New pipeline-tier coverage — model invariants
+
+* `HasTargetTableInvariantTest` — every `JoinStep` permit implements `HasTargetTable`; reading `targetTable()` from each variant under a `JoinStep`-typed local returns a non-null `TableRef`. Pins the split capability shape (step 1).
+* `ParentCorrelationFirstHopInvariantTest` — for each affected `ChildField` variant in `GraphitronSchemaBuilderTest`, `field.parentCorrelation().firstHop() == field.joinPath().get(0)`. Pins the cross-axis invariant from step 2.
+* `LoadBearingGuaranteeAuditTest` (existing scan) picks up the new `condition-join.target-table-resolved-at-parse` key automatically; the spec adds no new bookkeeping, just verifies the producer/consumer net is balanced.
 
 ### New pipeline-tier coverage — parser resolution chain
 
@@ -245,7 +341,7 @@ Add a fixture under `graphitron-fixtures-codegen` that exercises a `SplitTableFi
 
 Add a condition-join Sakila fixture exercising the `SplitTableField` shape (the variant hit by the `tilgangsstyring-app` real-world example). Candidate: an `Actor.featuredFilms` field via a synthesised condition method on `FilmActor` whose body filters on something the natural FK does not capture (e.g. `release_year`). The execution-tier test exercises:
 
-1. The inner `FROM terminalAlias JOIN parentAlias ON conditionMethod(...) JOIN parentInput ON parentAlias.pk = parentInput.pkCols` shape (step 5's emission).
+1. The inner `FROM terminalAlias JOIN parentAlias ON conditionMethod(...) JOIN parentInput ON parentAlias.pk = parentInput.pkCols` shape (step 6's emission).
 2. The `Result<Record>` rows correctly scatter by `idx` across the parent batch.
 3. The condition method's body actually fires (not a runtime stub).
 
