@@ -31,10 +31,9 @@ import java.util.stream.Collectors;
  * fetcher boundary so the service body never sees a {@code Map}. Post-processes a resolved
  * {@link MethodRef.Service} produced by {@link ServiceCatalog#reflectServiceMethod}.
  *
- * <p>Sibling to {@link EnumMappingResolver#enrichArgExtractions}, with the same pattern: walk the
- * method's parameters and rewrite the {@code CallSiteExtraction.Direct} arms that the catalog
- * could not classify in isolation (no SDL access at reflection time) into a richer extraction
- * that carries the bean instantiation plan. See R150
+ * <p>Walks the method's parameters and rewrites the {@code CallSiteExtraction.Direct} arms that
+ * the catalog could not classify in isolation (no SDL access at reflection time) into a richer
+ * extraction that carries the bean instantiation plan. See R150
  * ({@code roadmap/service-method-input-bean-instantiation.md}) for the design contract.
  *
  * <p>Classification rule (SDL-driven): {@link CallSiteExtraction.Direct} is reserved for GraphQL

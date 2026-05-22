@@ -29,12 +29,12 @@ public final class ArgCallEmitter {
 
     /**
      * Builds the argument list for one condition method call: the table-alias local
-     * first, then one arg per {@link CallParam}. The {@code conditionsClassName} is used
-     * by {@link CallSiteExtraction.TextMapLookup} to reference a static map field on the
-     * class. {@code srcAlias} is the name of the jOOQ table-alias local variable in the
-     * caller's scope (e.g. {@code filmTable}) — passed through to
-     * {@link #buildArgExtraction} so the {@code JooqConvert} branch resolves the same
-     * local.
+     * first, then one arg per {@link CallParam}. {@code srcAlias} is the name of the
+     * jOOQ table-alias local variable in the caller's scope (e.g. {@code filmTable}),
+     * passed through to {@link #buildArgExtraction} so the {@code JooqConvert} branch
+     * resolves the same local. {@code conditionsClassName} is retained on the signature
+     * but no current extraction arm reads it (R229 retired the {@code TextMapLookup}
+     * arm that did).
      */
     public static CodeBlock buildCallArgs(TypeFetcherEmissionContext ctx, List<CallParam> params, String conditionsClassName, String srcAlias) {
         return buildCallArgs(ctx, params, conditionsClassName, srcAlias, null, null);
@@ -87,9 +87,10 @@ public final class ArgCallEmitter {
      * <p>Per-{@link ParamSource} emission:
      * <ul>
      *   <li>{@link ParamSource.Arg} — delegates to {@link #buildArgExtraction} so the
-     *       five-way {@link CallSiteExtraction} switch ({@code Direct}, {@code EnumValueOf},
-     *       {@code TextMapLookup}, {@code ContextArg}, {@code JooqConvert}, {@code NestedInputField})
-     *       is reused. The {@code srcAlias} threaded into {@code buildArgExtraction} is
+     *       {@link CallSiteExtraction} switch ({@code Direct}, {@code EnumValueOf},
+     *       {@code ContextArg}, {@code JooqConvert}, {@code NestedInputField},
+     *       {@code NodeIdDecodeKeys}, {@code InputBean}) is reused. The {@code srcAlias}
+     *       threaded into {@code buildArgExtraction} is
      *       the table local for {@code QueryTableMethodTableField} (the {@code var table = ...}
      *       declared by the per-leaf fetcher) and {@code null} for the service variants
      *       (no source-table context at the root).</li>
@@ -113,8 +114,8 @@ public final class ArgCallEmitter {
      *                          {@code @service} nor {@code @tableMethod} methods declare a Table
      *                          parameter). Retained so a leaked {@link ParamSource.Table} surfaces
      *                          as a clear {@link IllegalStateException} rather than a NPE.
-     * @param conditionsClassName  target for {@link CallSiteExtraction.TextMapLookup}; may be null
-     *                             when no {@code TextMapLookup} extractions exist on the method.
+     * @param conditionsClassName  retained on the signature; no current extraction arm reads it
+     *                             (R229 retired the {@code TextMapLookup} arm that did).
      */
     public static CodeBlock buildMethodBackedCallArgs(TypeFetcherEmissionContext ctx, MethodRef method, CodeBlock tableExpression, String conditionsClassName) {
         return buildMethodBackedCallArgs(ctx, method, tableExpression, null, conditionsClassName);
@@ -145,7 +146,7 @@ public final class ArgCallEmitter {
      *
      * <p>Single-segment {@link PathExpr.Head} (single-name baseline): returns {@code arg.extraction()}
      * unchanged. The downstream emitter dispatches on {@code Direct} / {@code EnumValueOf} /
-     * {@code TextMapLookup} / {@code JooqConvert} as today.
+     * {@code JooqConvert} as today.
      *
      * <p>Multi-segment path with no intermediate list segments: wraps the original extraction
      * as the {@code leaf} of a {@code NestedInputField} whose {@code outerArgName} is the head
