@@ -1,7 +1,7 @@
 ---
 id: R224
 title: Scope @field(name:) validation to the @reference path destination table
-status: Ready
+status: In Progress
 bucket: bug
 priority: 5
 theme: lsp

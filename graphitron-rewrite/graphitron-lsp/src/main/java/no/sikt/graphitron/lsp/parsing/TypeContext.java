@@ -44,6 +44,29 @@ public final class TypeContext {
     }
 
     /**
+     * R224 — walks ancestors of {@code inner} until the enclosing field-bearing node is found,
+     * matching either {@code field_definition} (output type) or {@code input_value_definition}
+     * (input type). Both kinds carry a {@code name} child compatible with {@link #fieldNameOf};
+     * callers that need the SDL field name regardless of input/output orientation route through
+     * this helper.
+     */
+    public static Optional<Node> enclosingFieldOrInputValueDefinition(Node inner) {
+        Node node = inner;
+        while (node != null) {
+            String kind = node.getType();
+            if ("field_definition".equals(kind) || "input_value_definition".equals(kind)) {
+                return Optional.of(node);
+            }
+            Node parent = node.getParent().orElse(null);
+            if (parent == null || parent.equals(node)) {
+                return Optional.empty();
+            }
+            node = parent;
+        }
+        return Optional.empty();
+    }
+
+    /**
      * R159 — reads the field-name child of a {@code field_definition} node. Returns
      * {@link Optional#empty()} when the node has no {@code name} child (shouldn't happen for a
      * well-formed parse but defensive against partial-edit trees).

@@ -306,6 +306,83 @@ class DiagnosticsTest {
         assertThat(diags.get(0).getMessage()).contains("GHOST");
     }
 
+    // ===== R224 — @field(name:) on @reference path field validates against terminal table =====
+
+    @Test
+    void inputTableWithReferencePathValidatesAgainstTerminalTable() {
+        // The enclosing @table is "film"; the @reference path navigates to "language";
+        // the column "NAME" exists on "language" but not on "film". Pre-R224 the LSP
+        // checked the enclosing type's @table and emitted a false-positive
+        // "Unknown column 'NAME' on table 'film'."
+        var file = file("""
+            input FilmInput @table(name: "film") {
+                languageName: String @field(name: "NAME") @reference(path: [{table: "language"}])
+            }
+            """);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("FilmInput", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
+            java.util.Map.of(),
+            java.util.Map.of("FilmInput.languageName",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
+                    "language", "NAME", java.util.List.of())),
+            java.util.Map.of()
+        );
+        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void outputTableWithReferencePathValidatesAgainstTerminalTable() {
+        // Mirror on an output type declaration — covers the
+        // ChildField.ColumnReferenceField projection arm of projectFieldClassification.
+        var file = file("""
+            type Film @table(name: "film") {
+                languageName: String @field(name: "NAME") @reference(path: [{table: "language"}])
+            }
+            """);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("Film", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
+            java.util.Map.of(),
+            java.util.Map.of("Film.languageName",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
+                    "language", "NAME", java.util.List.of())),
+            java.util.Map.of()
+        );
+        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void unresolvedReferencePathColumnSilentOnLspSide() {
+        // Classifier could not assign a variant (Unclassified). The validator's
+        // ValidationReport emits a precise "no column reachable via @reference path"
+        // message; the LSP must not emit a duplicate "Unknown column ... on table '<enclosing>'"
+        // diagnostic naming the wrong table.
+        var file = file("""
+            input FilmInput @table(name: "film") {
+                languageName: String @field(name: "TYPO") @reference(path: [{table: "language"}])
+            }
+            """);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            java.util.List.of(),
+            java.util.Map.of("FilmInput", new no.sikt.graphitron.rewrite.catalog.TypeBackingShape.TableBacking("film")),
+            java.util.Map.of(),
+            java.util.Map.of("FilmInput.languageName",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unclassified("synthetic test reason")),
+            java.util.Map.of()
+        );
+        var diags = compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot);
+
+        assertThat(diags).noneMatch(d -> d.getMessage().contains("Unknown column"));
+    }
+
     @Test
     void emptyArgumentValueProducesNoError() {
         // Mid-edit state: cursor sits in an empty quoted value. We
@@ -1262,6 +1339,34 @@ class DiagnosticsTest {
         );
         var language = new CompletionData.Table(
             "language", "", CompletionData.SourceLocation.UNKNOWN, List.of(), List.of()
+        );
+        return new CompletionData(List.of(film, language), List.of(), List.of());
+    }
+
+    /**
+     * R224 — variant of {@link #filmCatalog()} where {@code language} carries the
+     * {@code NAME} column. Lets the regression tests demonstrate the @reference path
+     * retarget: {@code NAME} exists on {@code language} (the path's terminal) but not
+     * on {@code film} (the enclosing type's @table).
+     */
+    private static CompletionData filmAndLanguageCatalogWithLanguageName() {
+        var film = new CompletionData.Table(
+            "film", "", CompletionData.SourceLocation.UNKNOWN,
+            List.of(
+                CompletionData.Column.of("FILM_ID", "Integer", false, ""),
+                CompletionData.Column.of("TITLE", "String", false, "")
+            ),
+            List.of(
+                CompletionData.Reference.of("language", "FILM__FILM_LANGUAGE_ID_FKEY", false)
+            )
+        );
+        var language = new CompletionData.Table(
+            "language", "", CompletionData.SourceLocation.UNKNOWN,
+            List.of(
+                CompletionData.Column.of("LANGUAGE_ID", "Integer", false, ""),
+                CompletionData.Column.of("NAME", "String", false, "")
+            ),
+            List.of()
         );
         return new CompletionData(List.of(film, language), List.of(), List.of());
     }
