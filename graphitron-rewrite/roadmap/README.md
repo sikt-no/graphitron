@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
 | `R222` | Input model: dimensional pivot under visitor-driven classification | Spec | 2026-05-21 | [plan](input-model-dimensional-pivot.md) |
-| `R228` | Build-time rejection for inline TableField / LookupTableField with condition-join step | Spec | 2026-05-22 | [plan](inline-tablefield-condition-join-validator-arm.md) |
+| `R228` | Build-time rejection for inline TableField / LookupTableField with condition-join step | Ready | 2026-05-22 | [plan](inline-tablefield-condition-join-validator-arm.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R224` | Scope @field(name:) validation to the @reference path destination table | In Review | 2026-05-22 | [plan](lsp-field-reference-column-table.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
@@ -176,7 +176,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### model-cleanup
 
-- `R228` [**Build-time rejection for inline TableField / LookupTableField with condition-join step**](inline-tablefield-condition-join-validator-arm.md) — Spec, validation
+- `R228` [**Build-time rejection for inline TableField / LookupTableField with condition-join step**](inline-tablefield-condition-join-validator-arm.md) — Ready, validation
 - `R129` [**Stub: ConditionJoin path in @reference on ColumnReferenceField**](column-reference-on-scalar-field-condition-join.md) — Backlog, stubs
 - `R195` [**Support jOOQ records as @service input-bean parameters via @field/@nodeId mapping**](jooq-record-as-service-input-bean.md) — Backlog, feature
 - `R181` [**Validate @order/@defaultOrder: empty directive and @index coexistence**](validate-order-directive-args.md) — Backlog, validation
