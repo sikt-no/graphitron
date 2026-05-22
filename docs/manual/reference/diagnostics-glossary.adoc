@@ -164,6 +164,16 @@ A `@record`-parent fetch reaches a `TableField` carrying a `@condition` whose jo
 
 A `@record`-parent lookup reaches a `TableField` lookup whose `@condition` requires a join step the record-parent lookup emitter does not yet emit. The remaining quadrant of the shape: `record` parent + `lookup` site.
 
+[#emit-block-table-field-condition-join-step]
+=== table-field-condition-join-step
+
+An inline `TableField` (no `@splitQuery`, no `@record` parent) reaches a `@reference` path with a `@condition` step the inline emitter does not yet emit; surfaced as a build-time error mirroring the runtime stub at `InlineTableFieldEmitter`. Same family as the split / record arms.
+
+[#emit-block-lookup-table-field-condition-join-step]
+=== lookup-table-field-condition-join-step
+
+An inline `LookupTableField` (list `@lookupKey` site) reaches a `@reference` path with a `@condition` step the inline lookup emitter does not yet emit; surfaced as a build-time error mirroring the runtime stub at `InlineLookupTableFieldEmitter`. The lookup-shape sub-arm.
+
 == Drift protection
 
 `DiagnosticsDocCoverageTest` asserts every value of `RejectionKind`, `Rejection.AttemptKind`, and `Rejection.EmitBlockReason` has an anchored `=== <kebab-case-name>` heading on this page, and every such heading corresponds to an enum value. A new diagnostic added to one of these enums cannot land green without a doc paragraph; an obsolete code's removal forces the heading's removal.
