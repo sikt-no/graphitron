@@ -285,11 +285,6 @@ public final class ArgCallEmitter {
                     "env.getArgument($S) != null ? $T.valueOf(env.<$T>getArgument($S)) : null",
                     param.name(), enumClass, String.class, param.name());
             }
-            case CallSiteExtraction.TextMapLookup tl ->
-                CodeBlock.of(
-                    "env.getArgument($S) != null ? $T.$L.get(env.<$T>getArgument($S)) : null",
-                    param.name(), ClassName.bestGuess(conditionsClassName), tl.mapFieldName(),
-                    String.class, param.name());
             case CallSiteExtraction.ContextArg ignored ->
                 CodeBlock.of("($T) $L.getContextArgument(env, $S)",
                     rawTypeOfCallParam(param), ctx.graphitronContextCall(), param.name());

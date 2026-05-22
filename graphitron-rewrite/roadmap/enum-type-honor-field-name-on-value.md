@@ -125,44 +125,59 @@ preserves the per-value handle for that walk; consolidating the
 applied-directive emission against the model spec is a separate concern
 and out of scope here.
 
-### Stopgap arm (if the model edit is judged too wide)
-
-If the reviewer decides the model edit is out of scope for a single-symptom
-bug fix, the narrower landing is a package-private helper on `BuildContext`
-that both consumers delegate to:
-
-```java
-// BuildContext.java
-static String enumValueRuntimeString(GraphQLEnumValueDefinition value) {
-    return argString(value, DIR_FIELD, ARG_NAME).orElse(value.getName());
-}
-```
-
-`EnumMappingResolver.buildTextEnumMapping` switches to call it;
-`EnumTypeGenerator.buildValueDefinition` calls it for the `.value(...)`
-argument. Both consumers now name the same function rather than
-constructing the same expression twice. This closes the *function*-sharing
-gap; it does not close the *value*-sharing gap (each caller still resolves
-at its own call time, so a future generator can still construct its own
-read). The follow-up to migrate to the primary shape is filed as a separate
-Backlog item before this lands.
-
-The Open Question below frames the choice between the two arms.
-
-### Wire boundary: input parsing reads `.name(...)`, output serialization reads `.value(...)`
+### Wire boundary: `.value()` is the wire-form ↔ runtime-form translation slot
 
 Per *Wire-format encoding is a boundary concern*
-(`rewrite-design-principles.adoc` § Wire-format…), the SDL identifier and
-the runtime representation are two sides of one boundary. The directive
-rewires only one of them.
+(`rewrite-design-principles.adoc` § Wire-format…), `.name()` and `.value()`
+on `GraphQLEnumValueDefinition` are two sides of one boundary, and
+graphql-java already maintains that boundary at the wire layer:
 
-Input enums arrive as SDL identifiers at the wire boundary (graphql-java's
-parser reads the AST `EnumValue` and matches by `.name(...)`); output
-serialization compares the runtime object against the registered
-`.value(...)`. `@field(name:)` rewires the *runtime* representation only;
-the wire-side identifier is the SDL name on both directions. The fix
-touches `.value(...)` for that reason, not because input is "out of
-scope". The `enumInputStillByName` test below pins the asymmetry.
+- `.name(String)` is the SDL identifier. Graphql-java's parser matches AST
+  literals against it, and serialization returns it to the client. This is
+  the wire-form on both directions.
+- `.value(Object)` is the *runtime backing* for that name. Both
+  `parseLiteral` / `parseValue` return `enumValueDefinition.getValue()` to
+  the resolver; serialization compares the runtime object against
+  `.value()` and returns the matching `.name()`. This is the wire ↔ runtime
+  translation point. (See `GraphQLEnumType.parseLiteralImpl` and
+  `getNameByValue` in graphql-java v25.)
+
+Pre-R229 the schema emitter set both slots to the SDL name. That left the
+runtime translation undone at the boundary, so the generator open-coded it
+as `CallSiteExtraction.TextMapLookup`: a static `MAP = {"NC_17": "NC-17",
+…}` referenced from generated condition / service-method code as
+`MAP.get(env.getArgument("textRating"))`. Two-sided structural debt: the
+`.value()` slot was wasted as an echo, and the translation it was meant to
+do was reinvented in a parallel Java map.
+
+Lifting `@field(name:)` into `.value()` puts the translation back at the
+boundary where graphql-java already maintains it. Both directions cross
+the wire ↔ runtime boundary at `.value()`:
+
+|direction | graphql-java does | resolver sees|
+|---|---|---|
+|input (`textRating: NC_17`) | matches `.name="NC_17"`, returns `.value` | `"NC-17"`|
+|output (raw column `"NC-17"`) | matches `.value="NC-17"`, returns `.name` | client sees `"NC_17"`|
+
+The Java-side `TextMapLookup` map performs an identity lookup at this
+point; graphql-java has already done its job. So it collapses into
+`Direct`:
+
+- `EnumMappingResolver.deriveExtraction` drops the `TextMapLookup` branch;
+  text-mapped enums fall through to `Direct`.
+- `EnumMappingResolver.enrichArgExtractions` retires entirely. Its
+  post-hoc String → TextMapLookup rewrite was a workaround for
+  `ServiceCatalog` emitting `Direct` while the value was still wire-form;
+  graphql-java now delivers the runtime form directly.
+- `TypeConditionsGenerator.buildTextEnumMapField` and its `*_MAP` emit
+  path go away; condition classes stop carrying static enum maps.
+- `CallSiteExtraction.TextMapLookup` sealed permit is deleted (unused
+  permits rot).
+
+The `enumInputStillByName` test below pins what stays asymmetric: the
+*wire-form* identifier is still the SDL name on both directions (the user
+types `NC_17` in queries, the user sees `NC_17` in responses). Only the
+*runtime* form changes, and only as far as the resolver-internal contract.
 
 `AppliedDirectiveEmitter.applicationsFor(value)` continues to emit the
 full directive application onto the enum value, so consumers can still
@@ -196,24 +211,29 @@ reproduce.
   `buildTextEnumMapping` and `validateEnumFilter` consume the model's
   `List<EnumValueSpec>` instead of `graphqlEnum.getValues()` plus an
   `argString` call. Lookup by `sdlName`, read `runtimeValue`.
+  `deriveExtraction` drops the `TextMapLookup` branch (text-mapped enums
+  fall through to `Direct`); `enrichArgExtractions` is removed entirely
+  and its callers stop invoking it.
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/model/CallSiteExtraction.java`:
+  drop the `TextMapLookup` sealed permit (no remaining producers).
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeConditionsGenerator.java`:
+  drop `buildTextEnumMapField` and the static `*_MAP` emit path; condition
+  classes stop carrying enum maps.
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/ArgCallEmitter.java`:
+  drop the `TextMapLookup` arm from the extraction switch (mirrors the
+  sealed-permit deletion).
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java`:
+  drop the `TextMapLookup` arm from the param-type switch (mirrors the
+  sealed-permit deletion).
+- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/ServiceDirectiveResolver.java`,
+  `TableMethodDirectiveResolver.java`: drop the `enumMapping.enrichArgExtractions`
+  call sites.
 - `graphitron-rewrite/graphitron/src/test/java/no/sikt/graphitron/rewrite/GraphitronSchemaBuilderTest.java`:
   existing `EnumType`-projection test rigs (line 8796 onwards) update to
-  the new component shape.
-
-### Stopgap arm (if reviewer opts for narrower landing)
-
-- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/BuildContext.java`:
-  new package-private static helper `enumValueRuntimeString` wrapping
-  `argString(value, DIR_FIELD, ARG_NAME).orElse(value.getName())`.
-- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/EnumTypeGenerator.java`:
-  `buildValueDefinition` calls the helper for the `.value(...)` argument.
-  (Needs visibility hop: either change helper to public on `BuildContext`,
-  or move the helper to a package-visible utility class both packages can
-  reach.)
-- `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/EnumMappingResolver.java`:
-  `buildTextEnumMapping` switches to the helper.
-- A separate Backlog item filed for the pre-resolution migration before
-  this stopgap lands.
+  the new component shape. The R53 regression test
+  `SERVICE_MUTATION_FIELD_NAME_OVERRIDE_TEXT_ENUM` (line 6345) flips its
+  assertion from `TextMapLookup` to `Direct`: the same enum-override
+  scenario still works, just through the boundary rather than the map.
 
 ---
 
@@ -224,68 +244,73 @@ but the behaviour this item delivers ("graphql-java serializes the runtime
 string to the SDL identifier") sits at the execution tier; the pipeline
 test that pins emit shape is structural support only.
 
-- `EnumSerializationExecutionTest.directiveValueRoundTripsThroughCoercing`
-  (execution; primary): build a schema with an enum whose value declares
-  `FODSELSNUMMER @field(name: "FØDSELSNUMMER")`, wire a fetcher that
-  returns `"FØDSELSNUMMER"` (the runtime form), execute a query selecting
-  the field, assert the response contains `"FODSELSNUMMER"` (the SDL form)
-  with no `errors` entry. This is the test that would catch the reported
-  regression before it reached a consumer.
-- `EnumSerializationExecutionTest.enumInputStillByName` (execution): a
-  mutation argument of the same enum type accepts the SDL identifier
-  `FODSELSNUMMER` as input (not `"FØDSELSNUMMER"`). Pins the wire-boundary
-  asymmetry the Design section names.
-- *Primary arm only*:
-  `EnumTypeClassificationTest.directiveValueLandsOnEnumValueSpec`
-  (pipeline): SDL with `@field(name:)`-marked enum values goes through
-  `GraphitronSchemaBuilder`; assert `EnumType.values()` carries entries
-  whose `sdlName` is the GraphQL identifier and whose `runtimeValue` is
-  the directive string (or the SDL name when absent). This is the
-  classifier-side pin that emit and filter axes both rely on.
-- *Stopgap arm only*: no additional pipeline test. The structural
-  property ("emitter routes the directive string into `.value(...)`") is
-  not load-bearing in a way the execution test doesn't already cover,
-  and a Roaster walk that extracts the `.value(...)` literal would be a
-  code-string assertion in parser-shaped clothing.
+- Execution: `EnumSerializationExecutionTest.directiveValueRoundTripsThroughCoercing`
+  builds a focused schema (enum `PersonIdentifikasjon` with
+  `FODSELSNUMMER @field(name: "FØDSELSNUMMER")`, query field
+  `type: PersonIdentifikasjon` returning the runtime form), executes
+  `{ type }`, and asserts the response contains `"FODSELSNUMMER"` (SDL
+  form) with no `errors` entry. Pre-R229 this would fail with
+  `Can't serialize value ... Unknown value 'FØDSELSNUMMER'`. This is the
+  boundary contract the lift relies on.
+- Execution: `EnumSerializationExecutionTest.enumInputStillByName` —
+  client sends `echo(input: FODSELSNUMMER)`; the fetcher captures the
+  resolver-side argument. Asserts the captured value is `"FØDSELSNUMMER"`
+  (runtime form, what graphql-java now delivers post-lift) and the
+  response round-trips back to `"FODSELSNUMMER"`. Pins the wire ↔ runtime
+  translation on the input side — the same mechanism that lets graphitron
+  retire the Java-side `TextMapLookup`.
+- Execution: `EnumSerializationExecutionTest.simpleValueRoundTripsWithoutDirective`
+  pins the directive-absent fallback (values without `@field(name:)`
+  continue to use the SDL identifier on both slots).
+- Execution: `GraphQLQueryTest.films_filteredByTextRating` and
+  `films_filteredByTextRating_simpleValue` (pre-existing, Sakila): pin
+  that the input wire-form stays the SDL identifier — `films(textRating: NC_17)`
+  still filters to `ADAPTATION HOLES`. These exercise the input-side
+  effect of dropping `TextMapLookup`: the runtime form flows straight
+  through `Direct` extraction into the SQL WHERE clause.
+- *Out of scope for R229's execution coverage*: end-to-end via Sakila on
+  the *output* side. Graphitron currently lowers text-mapped-enum fields
+  (e.g. `textRating: TextRating`) to GraphQL type `String` at emit time,
+  so graphql-java's Coercing is never engaged and R229's `.value()` lift
+  is invisible to clients on that path. The reported consumer bug
+  reproduces only when the field is typed as the enum (the consumer's
+  schema is). The structural fix — emit text-mapped-enum fields as the
+  enum type — is filed as R230.
+- Pipeline: `GraphitronSchemaBuilderTest.EnumTypeCase.ENUM_WITH_FIELD_NAME_DIRECTIVE`
+  pins the classifier output: SDL with `@field(name:)`-marked enum values
+  goes through `GraphitronSchemaBuilder`; assert `EnumType.values()`
+  carries entries whose `sdlName` is the GraphQL identifier and whose
+  `runtimeValue` is the directive string (or the SDL name when absent).
+  This is the classifier-side pin that emit and filter axes both rely on.
+- Unit: `EnumTypeGeneratorTest.typeMethod_routesFieldNameDirectiveIntoRuntimeValue`
+  pins the schema emit: `.name(SDL)` and `.value(runtime)` land on the
+  generated `<Name>Type.type()` body.
+- The R53 regression test
+  `GraphitronSchemaBuilderTest.MutationFieldCase.SERVICE_MUTATION_FIELD_NAME_OVERRIDE_TEXT_ENUM`
+  flips its assertion: `TextMapLookup` → `Direct`. The scenario
+  (`argMapping` + text-mapped enum arg on a `@service` mutation) still
+  works; the conversion has moved to the wire boundary.
 
-`EnumMappingResolver.buildTextEnumMapping`'s existing pipeline coverage
-catches regressions on the filter-axis side. Compilation-tier coverage
-rides on the existing `graphitron-sakila-example` compile.
+Compilation-tier coverage rides on the existing `graphitron-sakila-example`
+compile.
 
 ---
 
 ## Phasing
 
-Single landing in either arm. The behaviour delivered is identical: enum
-values without `@field(name:)` continue to emit `.name(X).value(X)` exactly
-as today; only the directive-bearing values change their `.value(...)`
-argument from the SDL identifier to the directive's runtime string. Risk
-of collateral breakage on existing schemas is bounded to the (small)
-population of enum values that currently declare `@field(name:)`; for
-those, the runtime mapping shifts to "matches the upstream representation",
-which is the *intended* semantics and the only safe choice given that the
-directive value is the upstream string.
+Single landing. Risk of collateral breakage is bounded to two surfaces:
 
-The primary arm touches more files (model record, classify site, two
-consumers, projection test rig) but eliminates the duplicated directive
-read at the source. The stopgap arm touches three files and closes the
-function-sharing gap only, leaving the value-sharing gap for a follow-up
-Backlog item.
+1. *Output serialization of `@field(name:)`-marked enum values*: the runtime
+   mapping shifts from "matches the SDL identifier" to "matches the upstream
+   representation", which is the *intended* semantics — the directive value
+   is, by definition, the upstream string.
+2. *Input handling of text-mapped enum args*: graphql-java now delivers the
+   runtime form to the resolver, and the Java-side `TextMapLookup` map
+   collapses into `Direct`. The generated condition / service-method code
+   stops doing a redundant `MAP.get(...)` lookup; the value flows straight
+   through. Existing input filtering and service-method calls keep working
+   because the runtime form is what the DB and the developer methods
+   wanted in the first place.
 
----
-
-## Open question for the reviewer
-
-*Primary (pre-resolution) or stopgap (shared helper)?* The principles
-favour pre-resolution: it eliminates the duplicated directive read at the
-source rather than narrowing it, and the bug returned in the first place
-because the model shape invited the drift. The primary edit is bounded:
-one new record, one component on `EnumType`, the classify-site walk at
-`TypeBuilder.java:530`, the schema emitter and the filter-axis resolver
-consuming the new shape, plus updates to the existing `EnumType`
-projection rig in `GraphitronSchemaBuilderTest`. The stopgap is smaller
-(three files, no model change) but leaves the structural cause in place.
-
-Reviewer call. If primary lands here, the spec stays as written. If
-stopgap lands, file a follow-up Backlog item for the pre-resolution
-migration before the stopgap commits so the structural debt is tracked.
+Enum values without `@field(name:)` continue to emit `.name(X).value(X)`
+exactly as today; nothing changes for that population.

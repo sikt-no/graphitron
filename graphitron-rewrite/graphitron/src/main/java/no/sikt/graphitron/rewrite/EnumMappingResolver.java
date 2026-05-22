@@ -1,19 +1,14 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLArgument;
-import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
-import graphql.schema.GraphQLNamedType;
-import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
 import no.sikt.graphitron.rewrite.model.InputField;
-import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.Rejection;
 
 import java.util.ArrayList;
@@ -24,57 +19,41 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
-import static no.sikt.graphitron.rewrite.BuildContext.argString;
 import static no.sikt.graphitron.rewrite.BuildContext.candidateHint;
 
 /**
  * Resolves the enum-mapping axis: GraphQL enum values to Java/DB representations, plus the
- * {@link CallSiteExtraction} derivation and post-hoc method-extraction enrichment that depend
- * on it. Sibling to {@link OrderByResolver}, {@link LookupMappingResolver},
- * {@link PaginationResolver}, {@link ConditionResolver}, {@link InputFieldResolver}, and
- * {@link MutationInputResolver}.
+ * {@link CallSiteExtraction} derivation that depends on it. Sibling to {@link OrderByResolver},
+ * {@link LookupMappingResolver}, {@link PaginationResolver}, {@link ConditionResolver},
+ * {@link InputFieldResolver}, and {@link MutationInputResolver}.
  *
- * <p>Five methods cluster here, all touching the same axis: deriving how a GraphQL value
- * (especially an enum value) is converted before reaching jOOQ or a service method.
+ * <p>Four methods cluster here, all touching the same axis: how a GraphQL value (especially an
+ * enum value) is converted before reaching jOOQ.
  *
  * <ul>
- *   <li>{@link #buildTextEnumMapping} reads a GraphQL enum type and produces a value-name to
- *       DB-string mapping (via {@code @field(name:)} on each enum value, defaulting to the
- *       value name itself). Returns {@code null} when the GraphQL type is not an enum.</li>
+ *   <li>{@link #buildTextEnumMapping} reads a classified {@link GraphitronType.EnumType} and
+ *       produces a value-name to runtime-string mapping; the runtime string is the pre-resolved
+ *       {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue} lifted at classify
+ *       time from {@code @field(name:)} (or the SDL name when the directive is absent).
+ *       Returns {@code null} when the GraphQL type is not a classified enum.</li>
  *   <li>{@link #validateEnumFilter} matches a GraphQL enum against a jOOQ-generated Java enum
  *       column class. Returns a sealed {@link EnumValidation} the caller switches on:
- *       {@link EnumValidation.NotEnum} when the column is not a jOOQ enum (the GraphQL side may
- *       still be one — the caller treats that as "no enum coercion needed"),
+ *       {@link EnumValidation.NotEnum} when the column is not a jOOQ enum,
  *       {@link EnumValidation.Valid} carrying the matched Java enum's fully qualified class name,
- *       or {@link EnumValidation.Mismatch} carrying a single composed rejection message that the
- *       caller appends to its accumulating errors list. Replaces the tri-state
- *       null/fqcn/empty-string sentinel that mirrored {@link ConditionResolver}'s pre-Phase-6c
- *       dual-signal pattern.</li>
+ *       or {@link EnumValidation.Mismatch} carrying a single composed rejection message.</li>
  *   <li>{@link #deriveExtraction} picks the {@link CallSiteExtraction} strategy for a scalar
- *       column-bound value, given the GraphQL type, the target column, the validated enum
- *       class name (when applicable), and the generated static-map field name to use for
- *       text-enum lookups. Total projection: never fails.</li>
- *   <li>{@link #enrichArgExtractions} walks a {@link MethodRef}'s parameters and rewrites each
- *       {@link ParamSource.Arg} of type {@code java.lang.String} whose extraction is
- *       {@link CallSiteExtraction.Direct} and whose corresponding GraphQL argument type is an
- *       enum, replacing the extraction with a {@link CallSiteExtraction.TextMapLookup}. Used
- *       after service-method or table-method reflection to add enum-text mapping to call
- *       sites that {@link ServiceCatalog} couldn't infer.</li>
+ *       column-bound value, given the GraphQL type, the target column, and the validated enum
+ *       class name (when applicable). Total projection: never fails.</li>
  *   <li>{@link #buildLookupBindings} walks a {@link GraphitronType.TableInputType}'s fields
  *       and emits one {@link InputColumnBinding.MapBinding} per {@code @lookupKey}-bearing
- *       scalar column field, deriving each binding's extraction via {@link #deriveExtraction}.
- *       Rejects {@code @lookupKey} on {@code @nodeId}-decoded fields (the encoded id would
- *       not survive the raw-column binding), on non-{@link InputField.ColumnField} entries
- *       (e.g. reference-navigating, nesting fields), and on list-typed input fields. Cluster
- *       member because every binding's extraction routes through the enum-mapping helpers.</li>
+ *       scalar column field, deriving each binding's extraction via {@link #deriveExtraction}.</li>
  * </ul>
  *
- * <p>No sealed result wrapper. Each method's signature reflects the natural shape of its
- * domain: total projections return their value directly, three-state outcomes preserve their
- * sentinel-null/empty-string discrimination, list-returning walks use the errors-list mutation
- * pattern shared with {@link InputFieldResolver#resolve}.
+ * <p>R229 retired {@code enrichArgExtractions} along with the
+ * {@code CallSiteExtraction.TextMapLookup} permit it produced: graphql-java's
+ * {@code GraphQLEnumValueDefinition.value(...)} now carries the {@code @field(name:)} runtime
+ * form, so the wire-form → runtime-form translation happens at graphql-java's boundary and the
+ * Java-side conversion step is no longer needed.
  */
 final class EnumMappingResolver {
 
@@ -110,19 +89,20 @@ final class EnumMappingResolver {
 
     /**
      * Builds a mapping from GraphQL enum value names to database string values when
-     * {@code graphqlTypeName} resolves to a {@link GraphQLEnumType}; returns {@code null}
-     * otherwise. Each value's DB string comes from {@code @field(name:)} on the value, falling
-     * back to the value's own name when the directive is absent.
+     * {@code graphqlTypeName} resolves to a classified {@link GraphitronType.EnumType}; returns
+     * {@code null} otherwise. Each value's DB string is the pre-resolved
+     * {@link no.sikt.graphitron.rewrite.model.EnumValueSpec#runtimeValue} on the model — lifted
+     * once at classify time from {@code @field(name:)}, falling back to the value's own name
+     * when the directive is absent.
      */
     Map<String, String> buildTextEnumMapping(String graphqlTypeName) {
-        var schemaType = ctx.schema.getType(graphqlTypeName);
-        if (!(schemaType instanceof GraphQLEnumType graphqlEnum)) {
+        var modelType = ctx.types.get(graphqlTypeName);
+        if (!(modelType instanceof GraphitronType.EnumType enumType)) {
             return null;
         }
         var mapping = new LinkedHashMap<String, String>();
-        for (var value : graphqlEnum.getValues()) {
-            String dbValue = argString(value, DIR_FIELD, ARG_NAME).orElse(value.getName());
-            mapping.put(value.getName(), dbValue);
+        for (var spec : enumType.values()) {
+            mapping.put(spec.sdlName(), spec.runtimeValue());
         }
         return mapping;
     }
@@ -142,8 +122,8 @@ final class EnumMappingResolver {
         if (!colClass.isEnum()) {
             return NOT_ENUM;
         }
-        var schemaType = ctx.schema.getType(graphqlTypeName);
-        if (!(schemaType instanceof GraphQLEnumType graphqlEnum)) {
+        var modelType = ctx.types.get(graphqlTypeName);
+        if (!(modelType instanceof GraphitronType.EnumType enumType)) {
             return new EnumValidation.Mismatch(Rejection.structural("column '" + column.sqlName() + "' is a jOOQ enum ("
                 + colClass.getSimpleName() + ") but GraphQL type '" + graphqlTypeName + "' is not an enum"));
         }
@@ -151,10 +131,10 @@ final class EnumMappingResolver {
             .map(c -> ((Enum<?>) c).name())
             .collect(Collectors.toSet());
         var mismatches = new ArrayList<String>();
-        for (var value : graphqlEnum.getValues()) {
-            String target = argString(value, DIR_FIELD, ARG_NAME).orElse(value.getName());
+        for (var spec : enumType.values()) {
+            String target = spec.runtimeValue();
             if (!javaConstants.contains(target)) {
-                mismatches.add("'" + value.getName() + "'" + (target.equals(value.getName()) ? "" : " (mapped to '" + target + "')")
+                mismatches.add("'" + spec.sdlName() + "'" + (target.equals(spec.sdlName()) ? "" : " (mapped to '" + target + "')")
                     + candidateHint(target, new ArrayList<>(javaConstants)));
             }
         }
@@ -167,65 +147,26 @@ final class EnumMappingResolver {
     }
 
     /**
-     * Derives the {@link CallSiteExtraction} strategy for a scalar column-bound value given
-     * its GraphQL type and target column. {@code enumClassName} is the FQCN from
+     * Derives the {@link CallSiteExtraction} strategy for a scalar column-bound value given its
+     * GraphQL type and target column. {@code enumClassName} is the FQCN from
      * {@link EnumValidation.Valid}; pass {@code null} when the column is not a jOOQ enum (the
-     * {@link EnumValidation.NotEnum} arm) so the {@code TextMapLookup} / {@code JooqConvert} /
-     * {@code Direct} fallbacks can take over. {@code mapFieldName} is the generated static-map
-     * field name used when the GraphQL type is a text-mapped enum.
+     * {@link EnumValidation.NotEnum} arm) so the {@code JooqConvert} / {@code Direct} fallbacks
+     * can take over.
+     *
+     * <p>R229 retired the text-mapped-enum branch. Graphql-java's
+     * {@code GraphQLEnumValueDefinition.value(...)} now carries the {@code @field(name:)}
+     * runtime form (see {@link no.sikt.graphitron.rewrite.model.EnumValueSpec}), so a text-mapped
+     * enum input arrives at the resolver already in its DB-string form and routes through
+     * {@link CallSiteExtraction.Direct}.
      */
-    CallSiteExtraction deriveExtraction(String typeName, ColumnRef columnRef,
-                                        String enumClassName, String mapFieldName) {
+    CallSiteExtraction deriveExtraction(String typeName, ColumnRef columnRef, String enumClassName) {
         if (enumClassName != null) {
             return new CallSiteExtraction.EnumValueOf(enumClassName);
         }
         if ("ID".equals(typeName)) {
             return new CallSiteExtraction.JooqConvert(columnRef.javaName());
         }
-        var textEnumMapping = buildTextEnumMapping(typeName);
-        if (textEnumMapping != null) {
-            return new CallSiteExtraction.TextMapLookup(mapFieldName, textEnumMapping);
-        }
         return new CallSiteExtraction.Direct();
-    }
-
-    /**
-     * Enriches a {@link MethodRef}'s {@link ParamSource.Arg} parameters: any String-typed Arg
-     * with a {@link CallSiteExtraction.Direct} whose corresponding GraphQL argument is an enum
-     * is rewritten to extract via {@link CallSiteExtraction.TextMapLookup}. Used after a
-     * service or table method has been resolved by {@link ServiceCatalog} (which always emits
-     * {@code Direct}) so the GraphQL enum value is mapped to its DB string before reaching the
-     * generated method body. Other parameter sources ({@link ParamSource.Context},
-     * {@link ParamSource.Table}) and non-String/non-enum Arg sources pass through untouched.
-     *
-     * <p>The generated static map field lives in the {@code *Fetchers} class for this type.
-     */
-    MethodRef.NonCondition enrichArgExtractions(MethodRef.NonCondition method, GraphQLFieldDefinition fieldDef) {
-        var argTypes = fieldDef.getArguments().stream()
-            .collect(Collectors.toMap(
-                GraphQLArgument::getName,
-                a -> ((GraphQLNamedType) GraphQLTypeUtil.unwrapAll(a.getType())).getName()));
-        var newParams = method.params().stream().map(p -> {
-            if (!(p.source() instanceof ParamSource.Arg arg)) return p;
-            if (!(arg.extraction() instanceof CallSiteExtraction.Direct)) return p;
-            if (!String.class.getName().equals(p.typeName())) return p;
-            String graphqlTypeName = argTypes.get(arg.graphqlArgName());
-            if (graphqlTypeName == null) return p;
-            var textMapping = buildTextEnumMapping(graphqlTypeName);
-            if (textMapping == null) return p;
-            String mapFieldName = fieldDef.getName().toUpperCase() + "_"
-                + arg.graphqlArgName().toUpperCase() + "_MAP";
-            var typed = (MethodRef.Param.Typed) p;
-            return (MethodRef.Param) new MethodRef.Param.Typed(typed.name(), typed.typeName(), typed.javaType(),
-                new ParamSource.Arg(new CallSiteExtraction.TextMapLookup(mapFieldName, textMapping),
-                    arg.path()));
-        }).toList();
-        return switch (method) {
-            case MethodRef.Service s -> new MethodRef.Service(s.className(), s.methodName(),
-                s.returnType(), newParams, s.declaredExceptions(), s.callShape());
-            case MethodRef.StaticOnly so -> new MethodRef.StaticOnly(so.className(), so.methodName(),
-                so.returnType(), newParams, so.declaredExceptions());
-        };
     }
 
     /**
@@ -283,7 +224,7 @@ final class EnumMappingResolver {
         key = "mutation-input.lookup-binding-honors-carrier-extraction",
         description = "Each MapBinding's extraction comes from the carrier's cf.extraction() "
             + "when non-Direct (NodeIdDecodeKeys for an arity-1 NodeId-decoded ColumnField) and "
-            + "falls through to deriveExtraction(typeName, column, enumClass, mapField) only when "
+            + "falls through to deriveExtraction(typeName, column, enumClass) only when "
             + "the carrier is Direct. Pre-R130 the call always re-derived from raw column "
             + "metadata, discarding the resolver-supplied NodeIdDecodeKeys; the R131 follow-up "
             + "SDL-boundary @nodeId guard papered over this bug at the cost of rejecting the "
@@ -332,9 +273,7 @@ final class EnumMappingResolver {
                     }
                     CallSiteExtraction extraction;
                     if (cf.extraction() instanceof CallSiteExtraction.Direct) {
-                        String mapFieldName = fieldDef.getName().toUpperCase() + "_"
-                            + argName.toUpperCase() + "_" + sdlField.getName().toUpperCase() + "_MAP";
-                        extraction = deriveExtraction(cf.typeName(), cf.column(), enumClassName, mapFieldName);
+                        extraction = deriveExtraction(cf.typeName(), cf.column(), enumClassName);
                     } else {
                         extraction = cf.extraction();
                     }

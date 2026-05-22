@@ -73,6 +73,28 @@ class EnumTypeGeneratorTest {
     }
 
     @Test
+    void typeMethod_routesFieldNameDirectiveIntoRuntimeValue() {
+        // R229: @field(name:) on an enum value is the runtime / DB / upstream string, not an
+        // alternate SDL name. The SDL identifier still drives .name(...) (it has to — the
+        // directive string may not satisfy the GraphQL Name lex rule); the directive string
+        // drives .value(...), the only argument graphql-java's Coercing layer compares
+        // serialization-time runtime objects against.
+        var body = findByName(generateFor("""
+            type Query { x: String }
+            enum PersonIdentifikasjon {
+                FODSELSNUMMER @field(name: "FØDSELSNUMMER")
+                ANNET
+            }
+            """), "PersonIdentifikasjonType")
+            .methodSpecs().get(0).code().toString();
+        assertThat(body).contains(".name(\"FODSELSNUMMER\")");
+        assertThat(body).contains(".value(\"FØDSELSNUMMER\")");
+        // Values without @field(name:) fall back: name == value.
+        assertThat(body).contains(".name(\"ANNET\")");
+        assertThat(body).contains(".value(\"ANNET\")");
+    }
+
+    @Test
     void generate_skipsIntrospectionAndFederationInjectedEnums() {
         generateFor(ENUM_SCHEMA).forEach(spec ->
             assertThat(spec.name()).doesNotStartWith("__").doesNotStartWith("_"));

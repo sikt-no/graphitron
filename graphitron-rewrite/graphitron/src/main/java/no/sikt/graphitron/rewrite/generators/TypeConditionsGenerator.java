@@ -32,10 +32,6 @@ import java.util.Optional;
  *
  * <p>Each condition method is a pure function: it takes the jOOQ table alias and typed argument
  * values, and returns a {@code Condition}. No dependency on graphql-java runtime types.
- *
- * <p>Static {@code Map<String,String>} lookup fields for text-enum arguments are generated on the
- * same class, driven by {@link CallSiteExtraction.TextMapLookup} entries in each
- * {@link BodyParam}.
  */
 public class TypeConditionsGenerator {
 
@@ -81,11 +77,6 @@ public class TypeConditionsGenerator {
 
         for (var gcf : filters) {
             builder.addMethod(buildConditionMethod(gcf, outputPackage));
-            for (var bp : gcf.bodyParams()) {
-                if (bp.extraction() instanceof CallSiteExtraction.TextMapLookup tl) {
-                    builder.addField(buildTextEnumMapField(tl));
-                }
-            }
         }
 
         return builder.build();
@@ -192,19 +183,4 @@ public class TypeConditionsGenerator {
         return cells.build();
     }
 
-    static FieldSpec buildTextEnumMapField(CallSiteExtraction.TextMapLookup tl) {
-        var MAP = ClassName.get(java.util.Map.class);
-        var mapType = ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(String.class));
-        var mapEntries = CodeBlock.builder();
-        boolean first = true;
-        for (var entry : tl.valueMapping().entrySet()) {
-            if (!first) mapEntries.add(", ");
-            mapEntries.add("$S, $S", entry.getKey(), entry.getValue());
-            first = false;
-        }
-        return FieldSpec.builder(mapType, tl.mapFieldName())
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-            .initializer("$T.of($L)", MAP, mapEntries.build())
-            .build();
-    }
 }

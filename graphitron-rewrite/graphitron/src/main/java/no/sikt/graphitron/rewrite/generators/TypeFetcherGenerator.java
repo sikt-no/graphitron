@@ -530,23 +530,6 @@ public class TypeFetcherGenerator {
             builder.addMethod(buildGraphitronContextHelper(outputPackage));
         }
 
-        // Emit static map fields for any TextMapLookup extractions on method-backed fields.
-        // The *Fetchers class is the home for these maps because service/table-method code
-        // must not reference user class names or GraphQL enum names directly.
-        fields.stream()
-            .filter(f -> f instanceof MethodBackedField)
-            .map(f -> (MethodBackedField) f)
-            .flatMap(f -> f.method().callParams().stream())
-            .filter(p -> p.extraction() instanceof CallSiteExtraction.TextMapLookup)
-            .map(p -> (CallSiteExtraction.TextMapLookup) p.extraction())
-            .collect(java.util.stream.Collectors.toMap(
-                CallSiteExtraction.TextMapLookup::mapFieldName,
-                tl -> tl,
-                (a, b) -> a,
-                java.util.LinkedHashMap::new))
-            .values()
-            .forEach(tl -> builder.addField(TypeConditionsGenerator.buildTextEnumMapField(tl)));
-
         // Emit per-bean instantiation helpers (createBean / createBeans) for any InputBean
         // extraction on method-backed fields. Dedup by bean class — nested beans are collected
         // transitively so a single bean class always emits exactly one pair of helpers per
