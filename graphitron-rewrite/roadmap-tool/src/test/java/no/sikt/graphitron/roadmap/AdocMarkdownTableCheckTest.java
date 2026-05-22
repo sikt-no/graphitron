@@ -78,6 +78,70 @@ class AdocMarkdownTableCheckTest {
     }
 
     @Test
+    void literalBlock_withPipesAndDashes_isNotFlagged(@TempDir Path dir) throws IOException {
+        // A `....` literal block reproduces output verbatim and may contain whatever
+        // characters the author pasted in; markdown-table separators among them must
+        // not trip the check.
+        Path file = dir.resolve("page.adoc");
+        Files.writeString(file, """
+            = A page
+
+            Sample output:
+
+            ....
+            | A | B |
+            |---|---|
+            | 1 | 2 |
+            ....
+
+            Back to prose.
+            """);
+
+        assertThat(AdocMarkdownTableCheck.scanFile(file)).isEmpty();
+    }
+
+    @Test
+    void commentBlock_withPipesAndDashes_isNotFlagged(@TempDir Path dir) throws IOException {
+        // A `////` comment block is stripped from rendered output entirely; whatever
+        // shape it carries cannot leak into the page and must not be flagged.
+        Path file = dir.resolve("page.adoc");
+        Files.writeString(file, """
+            = A page
+
+            ////
+            | A | B |
+            |---|---|
+            | 1 | 2 |
+            ////
+
+            Prose continues.
+            """);
+
+        assertThat(AdocMarkdownTableCheck.scanFile(file)).isEmpty();
+    }
+
+    @Test
+    void passthroughBlock_withPipesAndDashes_isNotFlagged(@TempDir Path dir) throws IOException {
+        // A `++++` passthrough block emits its content verbatim into the output
+        // (typically raw HTML); a markdown-table-shaped fragment in there is the
+        // author's intent, not a bug.
+        Path file = dir.resolve("page.adoc");
+        Files.writeString(file, """
+            = A page
+
+            ++++
+            | A | B |
+            |---|---|
+            | 1 | 2 |
+            ++++
+
+            Prose continues.
+            """);
+
+        assertThat(AdocMarkdownTableCheck.scanFile(file)).isEmpty();
+    }
+
+    @Test
     void alignedSeparator_withColons_isFlagged(@TempDir Path dir) throws IOException {
         // GFM alignment markers; the dash count is whatever the author typed.
         Path file = dir.resolve("page.adoc");
