@@ -84,6 +84,11 @@ public final class Main {
             if (rc != 0) System.exit(rc);
             return;
         }
+        if ("check-adoc-tables".equals(mode)) {
+            int rc = AdocMarkdownTableCheck.run(sliceArgs(args, 1));
+            if (rc != 0) System.exit(rc);
+            return;
+        }
         if (args.length < 2) {
             usage();
         }
@@ -117,6 +122,7 @@ public final class Main {
             + " <rewrite-directives.graphqls> <fixture-dir>[:<fixture-dir>...]");
         System.err.println("  leaf-coverage <root-dir> [--verify] [--mode=migration]"
             + " [--output=<path>]");
+        System.err.println("  check-adoc-tables <root-dir>...");
         System.exit(64);
     }
 

@@ -262,14 +262,17 @@ All three fall within the 6-row table.
 "Any enclosing override" = parent-field-level OR arg-level OR any
 intermediate nesting-field's `override: true`.
 
-| Any enclosing override | Input field `@condition` | Implicit condition | Explicit method |
-|---|---|---|---|
-| No  | Absent                  | Emitted     | n/a     |
-| No  | Present (no override)   | Emitted     | Emitted |
-| No  | Present (override:true) | Suppressed  | Emitted |
-| Yes | Absent                  | Suppressed  | n/a     |
-| Yes | Present (no override)   | Suppressed  | Emitted |
-| Yes | Present (override:true) | Suppressed  | Emitted |
+[cols="1,1,1,1", options="header"]
+|===
+| Any enclosing override | Input field `@condition` | Implicit condition | Explicit method
+
+| No  | Absent                  | Emitted     | n/a
+| No  | Present (no override)   | Emitted     | Emitted
+| No  | Present (override:true) | Suppressed  | Emitted
+| Yes | Absent                  | Suppressed  | n/a
+| Yes | Present (no override)   | Suppressed  | Emitted
+| Yes | Present (override:true) | Suppressed  | Emitted
+|===
 
 Enforced by the symmetric-implicit-predicate-emission pipeline test added in
 R205 (`plainInput_resolvedColumnWithoutCondition_emitsImplicitBodyParam`),
