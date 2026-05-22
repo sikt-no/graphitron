@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R222` | Input model: dimensional pivot under visitor-driven classification | Spec | 2026-05-21 | [plan](input-model-dimensional-pivot.md) |
+| `R222` | Input model: dimensional pivot under visitor-driven classification | Spec | 2026-05-22 <sub>created 2026-05-21</sub> | [plan](input-model-dimensional-pivot.md) |
 | `R228` | Build-time rejection for inline TableField / LookupTableField with condition-join step | Ready | 2026-05-22 | [plan](inline-tablefield-condition-join-validator-arm.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
