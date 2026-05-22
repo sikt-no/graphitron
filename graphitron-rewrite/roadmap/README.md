@@ -31,7 +31,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
-| `R229` | EnumTypeGenerator: honor @field(name:) as runtime value | In Review | 2026-05-22 | [plan](enum-type-honor-field-name-on-value.md) |
 
 ---
 
@@ -249,7 +248,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R180` [**Centralize ResultType column-read emission for @record parents**](record-parent-column-read-helper.md)
 - `R220` [**Consolidate looksLikeSourcesShape, couldBeSourcesShape, and classifySourcesType into one predicate**](consolidate-sources-shape-predicates.md)
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
-- `R229` [**EnumTypeGenerator: honor @field(name:) as runtime value**](enum-type-honor-field-name-on-value.md)
 - `R209` [**FieldRegistry classify-input trace loses typed Rejection payload**](field-registry-typed-rejection-trace.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R214` [**Infer argMapping when the @condition / @service Java signature is unambiguous**](infer-argmapping-for-unambiguous-signatures.md)
