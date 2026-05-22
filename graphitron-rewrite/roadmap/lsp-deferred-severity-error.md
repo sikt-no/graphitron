@@ -1,7 +1,7 @@
 ---
 id: R225
 title: LSP severity for Rejection.Deferred should be Error, not Warning
-status: Spec
+status: Ready
 bucket: lsp
 depends-on: []
 created: 2026-05-22

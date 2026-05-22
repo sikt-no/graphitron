@@ -29,10 +29,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
-| `R225` | LSP severity for Rejection.Deferred should be Error, not Warning | Spec | 2026-05-22 | [plan](lsp-deferred-severity-error.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
 | `R223` | roadmap-tool: flag markdown-formatted tables in authored .adoc files | Spec | 2026-05-22 | [plan](flag-markdown-tables-in-adoc.md) |
+| `R225` | LSP severity for Rejection.Deferred should be Error, not Warning | Ready | 2026-05-22 | [plan](lsp-deferred-severity-error.md) |
 
 ---
 
