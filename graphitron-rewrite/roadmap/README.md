@@ -29,6 +29,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
+| `R225` | LSP severity for Rejection.Deferred should be Error, not Warning | Spec | 2026-05-22 | [plan](lsp-deferred-severity-error.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
 | `R223` | roadmap-tool: flag markdown-formatted tables in authored .adoc files | Spec | 2026-05-22 | [plan](flag-markdown-tables-in-adoc.md) |
@@ -247,6 +248,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R209` [**FieldRegistry classify-input trace loses typed Rejection payload**](field-registry-typed-rejection-trace.md)
 - `R109` [**How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset**](list-valued-external-field-multiset.md)
 - `R214` [**Infer argMapping when the @condition / @service Java signature is unambiguous**](infer-argmapping-for-unambiguous-signatures.md)
+- `R225` [**LSP severity for Rejection.Deferred should be Error, not Warning**](lsp-deferred-severity-error.md)
 - `R52` [**Lift lookup-vs-query operation taxonomy into the model**](lift-operation-taxonomy.md)
 - `R213` [**Plain-input field rejections attributed to consumer field, losing input-field source location**](input-field-rejection-attribution.md)
 - `R188` [**Replace @value with PK-default partition + @condition on mutations**](simplify-update-mutations-drop-value.md)

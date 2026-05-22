@@ -25,8 +25,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link Diagnostics#validatorDiagnostics ...validatorDiagnostics} adds.
  *
  * <p>Severity mapping has one test per {@link Rejection} sealed permit
- * ({@link Rejection.AuthorError}, {@link Rejection.InvalidSchema}, {@link Rejection.Deferred});
- * the {@code RejectionSeverityCoverageTest} sibling pins exhaustiveness via reflection.
+ * ({@link Rejection.AuthorError}, {@link Rejection.InvalidSchema}, {@link Rejection.Deferred}, all
+ * three mapping to {@code Error} as of R225); the {@code RejectionSeverityCoverageTest} sibling
+ * pins exhaustiveness via reflection.
  */
 class ValidatorDiagnosticsTest {
 
@@ -75,7 +76,7 @@ class ValidatorDiagnosticsTest {
     }
 
     @Test
-    void deferredMapsToWarningSeverity() {
+    void deferredMapsToErrorSeverity() {
         var path = "/tmp/schema.graphqls";
         var uri = ValidationReport.canonicalUri(path);
         var error = new ValidationError(
@@ -87,7 +88,7 @@ class ValidatorDiagnosticsTest {
         var diags = Diagnostics.compute(uri, file(), CompletionData.empty(), CURRENT_SNAPSHOT, report);
 
         assertThat(diags).singleElement().satisfies(d -> {
-            assertThat(d.getSeverity()).isEqualTo(DiagnosticSeverity.Warning);
+            assertThat(d.getSeverity()).isEqualTo(DiagnosticSeverity.Error);
             assertThat(d.getSource()).isEqualTo("graphitron-validator");
         });
     }

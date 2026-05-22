@@ -219,10 +219,17 @@ public final class Diagnostics {
     }
 
     private static DiagnosticSeverity severityOf(Rejection rejection) {
+        // Every Rejection variant fails the build via ValidationFailedException
+        // (GraphQLRewriteGenerator throws on any non-empty error list, regardless
+        // of arm); the editor must surface the same finality so the developer
+        // sees one consistent signal across the LSP and `mvn graphitron:dev`.
+        // R147 originally softened Deferred to Warning on "not author-actionable"
+        // grounds; R225 reverts that — the actionable hint is the roadmap slug
+        // carried by the rejection, not the severity.
         return switch (rejection) {
             case Rejection.AuthorError ignored -> DiagnosticSeverity.Error;
             case Rejection.InvalidSchema ignored -> DiagnosticSeverity.Error;
-            case Rejection.Deferred ignored -> DiagnosticSeverity.Warning;
+            case Rejection.Deferred ignored -> DiagnosticSeverity.Error;
         };
     }
 
