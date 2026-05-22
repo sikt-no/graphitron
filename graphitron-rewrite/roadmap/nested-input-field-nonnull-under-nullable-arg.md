@@ -1,7 +1,7 @@
 ---
 id: R230
 title: Downgrade BodyParam.nonNull for nested input fields under a nullable enclosing arg
-status: In Progress
+status: In Review
 bucket: bug
 depends-on: []
 created: 2026-05-22
