@@ -24,7 +24,7 @@ public final class Graphitron {
 }
 ----
 
-`buildSchema` returns a fully wired `GraphQLSchema`: every type, field, fetcher, and directive Graphitron understands is attached before the schema is built. The `customizer` lambda receives the underlying `GraphQLSchema.Builder` so consumer code can layer in scalars, additional types, or custom directives before the build.
+`buildSchema` returns a fully wired `GraphQLSchema`: every type, field, fetcher, and directive Graphitron understands is attached before the schema is built. Custom scalars are wired automatically from the `@scalarType(scalar:)` directive on each `scalar` declaration (see xref:directives/scalarType.adoc[`@scalarType` directive]); the `customizer` lambda receives the underlying `GraphQLSchema.Builder` so consumer code can layer in additional non-scalar types, hand-rolled type resolvers, or custom directives before the build.
 
 === Customizer contract
 
@@ -45,7 +45,7 @@ When at least one of your `.graphqls` files carries an Apollo Federation `@link`
 [source,java]
 ----
 GraphQLSchema schema = Graphitron.buildSchema(
-    b   -> b.additionalType(ExtendedScalars.UUID),
+    b   -> {},
     fed -> fed.fetchEntities(myCustomFetcher));
 ----
 
@@ -158,7 +158,7 @@ A single canonical wire format across every generated dispatcher is what makes n
 
 * xref:directives/index.adoc[Directive reference] is the SDL-driven half of what generated code looks like; this page is the SDL-independent half.
 * xref:../how-to/test-your-schema.adoc[How-to: Test your schema] covers wiring `Graphitron.buildSchema(...)` and a request-scoped `GraphitronContext` into an execution-tier test.
-* xref:../how-to/custom-scalars.adoc[How-to: Custom scalars] is the canonical use of the `buildSchema` customizer's `additionalType(...)` shape.
+* xref:../how-to/custom-scalars.adoc[How-to: Custom scalars] covers declaring a `scalar` with `@scalarType(scalar:)` and authoring the `GraphQLScalarType` constant the directive points at.
 * xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers per-request `DSLContext` routing (recipe is being rewritten under R45; the link resolves but the body shows a deferral banner).
 * xref:../how-to/global-id.adoc[How-to: Global object IDs] covers `NodeIdEncoder` end-to-end, including the per-Node helpers, `keyColumns` migrations, and `Query.node` / `Query.nodes` dispatch.
 
