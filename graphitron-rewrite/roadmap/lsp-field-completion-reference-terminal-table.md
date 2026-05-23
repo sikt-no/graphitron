@@ -6,7 +6,7 @@ bucket: bug
 theme: lsp
 depends-on: []
 created: 2026-05-22
-last-updated: 2026-05-22
+last-updated: 2026-05-23
 ---
 
 # Lift LSP @field(name:) column arms onto a sealed FieldClassification dispatch
@@ -46,12 +46,12 @@ A secondary trace detail at line 63 of `FieldCompletions`: today it calls `TypeC
 
 ### The shape decision: sealed dispatch projection vs. duplicated sentinel
 
-R224's `default -> /* fall through */` shape works but defeats sealed-exhaustiveness on the 28-permit `FieldClassification` at every consumer site. With one consumer (R224) the fragility cost was modest; with three consumers it compounds. When a future R-item adds a column-bearing permit (a new `@reference`-shaped composite arm, say), none of the three LSP switches will fail to compile — the new permit silently routes through `default` and the @field(name:) arm at that coordinate goes back to lying about the table, which is the exact bug class R224 was filed to fix.
+R224's `default -> /* fall through */` shape works but defeats sealed-exhaustiveness on the 30-permit `FieldClassification` at every consumer site. With one consumer (R224) the fragility cost was modest; with three consumers it compounds. When a future R-item adds a column-bearing permit (a new `@reference`-shaped composite arm, say), none of the three LSP switches will fail to compile — the new permit silently routes through `default` and the @field(name:) arm at that coordinate goes back to lying about the table, which is the exact bug class R224 was filed to fix.
 
 Three shapes considered:
 
 1. **Mirror R224's `default ->` shape at the two new sites** (the narrow path). Replicates the fragility three times. No code churn at R224's site.
-2. **Make every consumer's switch exhaustive over all 28 permits** (the brute-force fix). Compiler-checked but the three near-identical 28-arm switches drift independently; a new permit forces three coordinated edits in any item that adds it.
+2. **Make every consumer's switch exhaustive over all 30 permits** (the brute-force fix). Compiler-checked but the three near-identical 30-arm switches drift independently; a new permit forces three coordinated edits in any item that adds it.
 3. **Lift the dispatch onto a sealed projection on `FieldClassification`** (the structural fix). One exhaustive switch at the producer side; three trivial 3-arm switches at the consumer sites. New permits force exactly one edit, in the projection, and the LSP arms inherit the decision.
 
 This spec recommends shape 3 and refactors `Diagnostics.validateFieldMember` (R224's site) onto the lifted projection in the same commit so the three LSP arms stay symmetric. Shape 1 stays available as a Spec → Ready reviewer redirect.
@@ -98,7 +98,9 @@ default LspColumnDispatch lspColumnDispatch() {
              QueryTableInterface ignored,
              QueryPolymorphic ignored,
              QueryService ignored,
-             DmlMutation ignored             -> new LspColumnDispatch.FallThrough();
+             DmlMutation ignored,
+             MutationService ignored,
+             DmlRecord ignored               -> new LspColumnDispatch.FallThrough();
     };
 }
 ```
@@ -127,7 +129,7 @@ Naming: `lspColumnDispatch()` is preferred over `columnBoundTableName()` because
 
 **File:** `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/catalog/FieldClassification.java`
 
-Add the `LspColumnDispatch` sealed nested type and the `lspColumnDispatch()` default method as in the Design section. The switch lists all 28 permits explicitly; no `default` arm. The `@LoadBearingClassifierCheck(key = "field-classification-payload-faithful", ...)` at `CatalogBuilder.java:114`-`124` is updated to reference the new method as the canonical consumer route (the description already names `FieldCompletions / Diagnostics / Hovers` as the LSP-arm audience; no rename needed).
+Add the `LspColumnDispatch` sealed nested type and the `lspColumnDispatch()` default method as in the Design section. The switch lists all 30 permits explicitly; no `default` arm. The `@LoadBearingClassifierCheck(key = "field-classification-payload-faithful", ...)` at `CatalogBuilder.java:114`-`124` is updated to reference the new method as the canonical consumer route (the description already names `FieldCompletions / Diagnostics / Hovers` as the LSP-arm audience; no rename needed).
 
 ### 2. Refactor `Diagnostics.validateFieldMember` onto `lspColumnDispatch()`
 
@@ -220,7 +222,7 @@ if (fieldName != null) {
 
 ### 5. Annotation hygiene
 
-`field-classification-payload-faithful` now has four consumer sites: `Diagnostics.validateFieldMember`, `FieldCompletions.completionsFor`, `Hovers.columnHover`, `InlayHints.compute`, `DeclarationHovers.compute`. `LoadBearingGuaranteeAuditTest` auto-discovers via the key; no manual registration needed beyond the per-site `@DependsOnClassifierCheck`.
+`field-classification-payload-faithful` now has five consumer sites: the three pre-existing (`Diagnostics.validateFieldMember`, `InlayHints.compute`, `DeclarationHovers.compute`) plus the two this commit adds (`FieldCompletions.completionsFor`, `Hovers.columnHover`). `LoadBearingGuaranteeAuditTest` auto-discovers via the key; no manual registration needed beyond the per-site `@DependsOnClassifierCheck`.
 
 ## Tests
 

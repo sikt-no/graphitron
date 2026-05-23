@@ -29,7 +29,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
-| `R233` | Lift LSP @field(name:) column arms onto a sealed FieldClassification dispatch (closes the completion-arm @reference path bug) | Spec | 2026-05-22 | [plan](lsp-field-completion-reference-terminal-table.md) |
+| `R233` | Lift LSP @field(name:) column arms onto a sealed FieldClassification dispatch (closes the completion-arm @reference path bug) | Spec | 2026-05-23 <sub>created 2026-05-22</sub> | [plan](lsp-field-completion-reference-terminal-table.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
 
