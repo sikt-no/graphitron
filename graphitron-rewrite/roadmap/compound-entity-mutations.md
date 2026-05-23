@@ -100,21 +100,34 @@ collapse as follows:
 
 The questions that remain Spec-stage work for R122:
 
+- **New `InputField` arm: `TableTargetField`** (working name, mirroring
+  `ChildField.TableTargetField` on the output side at `ChildField.java:317`).
+  `NestingField` is *not* the right arm — that's reserved for the
+  SDL-grouping case where the nested fields stay on the parent's table
+  (per `InputField.java:186-195`). The moment the nested input crosses a
+  table boundary, the model shape changes. R122's `TableTargetField`
+  carries the nested `InputUsage` (with the child's own table and
+  `JooqTableRecord` backing) plus the FK descriptor (the constraint name
+  and the FK column on the child side that holds the parent's PK).
 - **Visitor arm.** R222 names the seam (see its Phase 3 description and
-  §"Recursion through nested inputs") but does not implement it; the
-  visitor needs an arm that reads the nested-input slot's
-  `@reference(path:)`, derives the terminal table, and constructs the
+  §"Recursion through nested inputs") but does not implement it. The
+  visitor's nested-input recursion needs an arm that recognises an
+  `@reference(path:)` directive on a nested-input slot whose terminal
+  element resolves to a table different from the parent's, constructs the
   child `InputUsage` with that table plus the corresponding
-  `JooqTableRecord` backing class.
-- **`InputField.NestingField` FK slot.** Today `NestingField` carries
-  `(name, location, nonNull, list, nestedUsage, condition)`. R122 adds an
-  optional slot (likely `Reference` or `ParentLink`) carrying the
-  resolved FK column the parent's PK lands in. R222 deliberately did not
-  add this slot because R222 had no consumer for it.
+  `JooqTableRecord` backing class, and wraps it in `TableTargetField`
+  rather than `NestingField` or `UnboundField`. The pre-existing
+  `@reference(path:)` resolver on the `@nodeId` path is the model for
+  how the directive is parsed and the FK constraint is verified against
+  the jOOQ catalog.
 - **Mutation emitter orchestration.** Parent INSERT first, capture the
   parent's PK, then child INSERTs with the captured PK threaded into each
-  child row's FK column. New emitter arm on `MutationInputResolver` (or a
-  sibling).
+  child row's FK column. New emitter dispatch on `TableTargetField`: walk
+  the nested `InputUsage.classifiedFields` for the child's own columns,
+  plant the captured PK into the FK column from the `TableTargetField`'s
+  FK descriptor. Recurses naturally if a child itself carries a
+  `TableTargetField` (grandchild support falls out, though the MVP is
+  one level).
 - **Transactional shape.** Single jOOQ transaction wrapping all the
   inserts is the obvious default; is there ever a reason to split?
 - **Error semantics.** If a child INSERT fails after the parent INSERT
