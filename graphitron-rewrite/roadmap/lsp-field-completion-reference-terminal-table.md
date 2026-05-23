@@ -38,7 +38,7 @@ The three buggy arms all read `built.typesByName().get(typeName)` and dispatch o
 
 R224 has the precedent in `Diagnostics.validateFieldMember` (`graphitron-lsp/.../diagnostics/Diagnostics.java:520`-`605`). Its dispatch uses a `switch (classification.get())` block with explicit arms for `Column` / `ColumnReference` / `CompositeColumn` / `CompositeColumnReference` (route to `validateColumnOnTable(catalog, c.tableName(), ...)`), explicit arms for `InputUnbound` / `Unclassified` (return silently), and a `default -> /* fall through */` sentinel for every other permit, routing back to the enclosing-type-backing switch.
 
-The classifier projection R224 introduced is `LspSchemaSnapshot.Built.fieldClassification(typeName, fieldName)`; for `@reference` path fields it carries the terminal table on `ColumnReference.tableName()` / `CompositeColumnReference.tableName()` (`CatalogBuilder.projectFieldClassification` at `:228`-`230`, `:407`-`411`, via `terminalTableName(joinPath)`). The load-bearing key `field-classification-payload-faithful` already enumerates the three LSP arms in its producer-side description (`CatalogBuilder.java:110`: "*FieldCompletions / Diagnostics / Hovers*"); R224 wired one of the three, R233 wires the other two.
+The classifier projection R224 introduced is `LspSchemaSnapshot.Built.fieldClassification(typeName, fieldName)`; for `@reference` path fields it carries the terminal table on `ColumnReference.tableName()` / `CompositeColumnReference.tableName()` (`CatalogBuilder.projectFieldClassification` at `:228`-`230`, `:407`-`411`, via `terminalTableName(joinPath)`). The load-bearing key `field-classification-payload-faithful` (`CatalogBuilder.java:114`-`124`) already binds three consumer sites today — `InlayHints.compute`, `Diagnostics.validateFieldMember` (R224), `DeclarationHovers.compute` — and R233 attaches the same key to the two remaining LSP arms.
 
 A secondary trace detail at line 63 of `FieldCompletions`: today it calls `TypeContext.enclosingFieldDefinition`, which only walks output-side `field_definition` AST nodes. R224 added `enclosingFieldOrInputValueDefinition` (`TypeContext.java:53`) covering input-side `input_value_definition` too; both new consumer sites need the broader helper.
 
@@ -129,7 +129,7 @@ Naming: `lspColumnDispatch()` is preferred over `columnBoundTableName()` because
 
 **File:** `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/catalog/FieldClassification.java`
 
-Add the `LspColumnDispatch` sealed nested type and the `lspColumnDispatch()` default method as in the Design section. The switch lists all 30 permits explicitly; no `default` arm. The `@LoadBearingClassifierCheck(key = "field-classification-payload-faithful", ...)` at `CatalogBuilder.java:114`-`124` is updated to reference the new method as the canonical consumer route (the description already names `FieldCompletions / Diagnostics / Hovers` as the LSP-arm audience; no rename needed).
+Add the `LspColumnDispatch` sealed nested type and the `lspColumnDispatch()` default method as in the Design section. The switch lists all 30 permits explicitly; no `default` arm. The `@LoadBearingClassifierCheck(key = "field-classification-payload-faithful", ...)` at `CatalogBuilder.java:114`-`124` keeps its key; its description gets extended to enumerate the five consumer audiences explicitly (current prose names two via abstract phrases — "inlay-hint classification arm and classification-hover arm" — and predates R224's third consumer; R233 makes the audience count five and the description should reflect that). `LoadBearingGuaranteeAuditTest` matches on key, not description, so no audit change.
 
 ### 2. Refactor `Diagnostics.validateFieldMember` onto `lspColumnDispatch()`
 
@@ -228,7 +228,7 @@ if (fieldName != null) {
 
 ### Test-tier note
 
-LSP arms are unit-tier by substrate. The synthetic `LspSchemaSnapshot.Built.Current` fixture is the primary behavioural assertion shape for `@field(name:)` LSP arms; there's no SDL → TypeSpec pipeline to assert against (the SDL → projection step is covered by `LspSchemaSnapshotProjectionTest`, separately from the consumer-side LSP arms). This mirrors R224's tier choice.
+LSP arms are unit-tier by substrate. The synthetic `LspSchemaSnapshot.Built.Current` fixture is the primary behavioural assertion shape for `@field(name:)` LSP arms; there's no SDL → TypeSpec pipeline to assert against (the SDL → `FieldClassification` projection step is covered by `FieldClassificationProjectionTest`, separately from the consumer-side LSP arms). This mirrors R224's tier choice.
 
 ### New regression coverage
 
