@@ -2282,9 +2282,7 @@ class GraphitronSchemaBuilderTest {
      * lifter parameter assignability (Inv #2), lifter return type (Inv #3), arity / column-class
      * match against the derived parent-side tuple (Inv #4), {@code @reference} composition
      * vs. leaf-PK derivation (Inv #5), {@code @asConnection} reject (Inv #9). Single-cardinality
-     * (Inv #10) is gated by the validator (existing
-     * {@code SplitRowsMethodEmitter.unsupportedReason} arm) and tested separately under the
-     * validation tier.
+     * (Inv #10) is gated by the validator and tested separately under the validation tier.
      *
      * <p>Lifter fixture methods live in {@link TestLifterStub}.
      */

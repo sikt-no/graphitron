@@ -53,7 +53,7 @@ Verification: a two-parent NestingField fixture where both parents' inline `Tabl
 - **Deeper inline recursion.** Already works via the existing `NestingField` recursion branch in `compareNestedFieldsShape`.
 - **`ConstructorField` / column-shaped NodeId carriers / reference-scalar leaves.** No known real-world demand; stay rejected. (R50 retired the dedicated `NodeIdField` / `NodeIdReferenceField` variants; the surviving carriers route through the column arm by default and only the composite / reference forms reach this catch-all.)
 - **Shape-compat of `filters` / `orderBy` / `pagination`.** Deliberately left per-parent (see "Desired end state" rationale). If a future schema author wants to enforce them matching, that's a separate opt-in directive.
-- **Inline-subquery alias rename.** Orthogonal to this plan. The `table` → `<entity>Table` rename shipped under "Generated-fetcher quality pass" (Done in roadmap) and the `ArgCallEmitter.buildCallArgs` hardcoded `"table"` fix tracked in [plan-classification-vocabulary-followups.md](plan-classification-vocabulary-followups.md) §7 both touch inline-subquery alias identity but neither interacts with the multi-parent shape check landing here.
+- **Inline-subquery alias rename.** Orthogonal to this plan. The `table` → `<entity>Table` rename shipped under "Generated-fetcher quality pass" (Done in roadmap) and the `ArgCallEmitter.buildCallArgs` hardcoded `"table"` fix (a separate alias-identity follow-up, not yet filed as its own roadmap item) both touch inline-subquery alias identity but neither interacts with the multi-parent shape check landing here.
 
 ## Implementation approach
 
@@ -131,7 +131,7 @@ Body: `SplitTableField`, `LookupTableField`, `SplitLookupTableField`, `RecordTab
 
 ## References
 
-Identifier-level references (line numbers drift; sibling plan [plan-classification-vocabulary-followups.md](plan-classification-vocabulary-followups.md) established this convention):
+Identifier-level references (line numbers drift; refer to the named symbol and let the IDE resolve it, even when surrounding line numbers shift):
 
 - Error site and existing multi-parent shape check: the catch-all arm in `GraphitronSchemaValidator.compareNestedFieldsShape`. Landed with `0b2e4e9` + `49d7879` (Nesting-field emission).
 - Parent-agnostic `TableField` wiring: the `ChildField.TableField` arm of `TypeFetcherGenerator.buildWiringEntry`.

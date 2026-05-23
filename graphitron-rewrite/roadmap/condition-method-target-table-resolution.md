@@ -1,7 +1,7 @@
 ---
 id: R232
 title: Resolve @condition-method target table on inner-SELECT FROM
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 10
 theme: structural-refactor
