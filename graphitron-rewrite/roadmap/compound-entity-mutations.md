@@ -6,6 +6,7 @@ bucket: architecture
 priority: 8
 theme: mutations-errors
 depends-on: []
+last-updated: 2026-05-23
 ---
 
 # Compound mutations: parent entity row + child normalised rows in one INSERT
@@ -60,24 +61,60 @@ fields (errors, affected-row counts, warnings). The `SlotCarrier` capability
 on mutation-field carriers extends to `MutationCompoundInsertField` (the
 new sealed permit on `DmlTableField`) without modification.
 
-## Open design questions (for the Spec phase)
+## Design space narrows under R222
 
-- **Parent identification.** How does the SDL distinguish parent from
-  children? Options: a `@parent` directive on the parent field; the parent
-  is the field whose `@table` matches the mutation input's `@table`; the
-  parent is named by convention (e.g. the field whose name is the
-  `@mutation` field's "noun").
-- **Child FK declaration.** Each child needs a parent-PK-to-child-FK
-  binding. Is this read from the jOOQ catalog (the FK constraint between
-  child and parent tables) or declared explicitly in the SDL?
-- **Child input shape.** How is the child input data carried in the SDL
-  input? As a list field on the input type, with each list element being a
-  child-row input? Or as a single nested input that produces N children
-  via batch?
-- **Cardinality across children.** Is the parent always single? Are
-  children always lists, or are single children admitted? Does the
-  classifier support "list parent + per-parent list of children" (bulk
-  compound INSERT)?
+R222 (`input-model-dimensional-pivot`) introduces a recursive `InputUsage`
+model where a nested-input slot can carry an `InputUsage` with its own
+table distinct from the parent's. Combined with `@reference(path:)` on
+nested-input slots (the directive already exists on
+`INPUT_FIELD_DEFINITION` for `@nodeId` leaves; R122 extends its reach),
+the SDL declaration for a compound mutation flattens deterministically:
+
+```graphql
+input CreateOrderInput @table(name: "order") {
+    customer: ID! @nodeId(typename: "Customer") @reference(path: [{key: "fk_order_customer"}])
+    total: Float
+    items: [CreateOrderItemInput!] @reference(path: [{key: "fk_order_item_order"}])
+}
+
+input CreateOrderItemInput @table(name: "order_item") {
+    product: ID! @nodeId(typename: "Product") @reference(path: [{key: "fk_order_item_product"}])
+    quantity: Int
+    unitPrice: Float
+}
+```
+
+Under that shape, the open questions earlier drafts of this item carried
+collapse as follows:
+
+- **Parent identification:** the root `InputUsage` is the parent, by
+  construction. No `@parent` directive needed.
+- **Child FK declaration:** declared on the nested-input slot via
+  `@reference(path:)`. The classifier verifies the FK against the jOOQ
+  catalog (which it already does for `@nodeId @reference`); typo'd
+  `key:` produces a Levenshtein-hinted error.
+- **Child input shape:** a list-typed nested-input field whose nested
+  `InputUsage.table` is the `@reference(path:)` terminal table.
+- **Cardinality:** the SDL list type on the nested-input slot
+  (`[CreateOrderItemInput!]`) declares it.
+
+The questions that remain Spec-stage work for R122:
+
+- **Visitor arm.** R222 names the seam (see its Phase 3 description and
+  §"Recursion through nested inputs") but does not implement it; the
+  visitor needs an arm that reads the nested-input slot's
+  `@reference(path:)`, derives the terminal table, and constructs the
+  child `InputUsage` with that table plus the corresponding
+  `JooqTableRecord` backing class.
+- **`InputField.NestingField` FK slot.** Today `NestingField` carries
+  `(name, location, nonNull, list, nestedUsage, condition)`. R122 adds an
+  optional slot (likely `Reference` or `ParentLink`) carrying the
+  resolved FK column the parent's PK lands in. R222 deliberately did not
+  add this slot because R222 had no consumer for it.
+- **Mutation emitter orchestration.** Parent INSERT first, capture the
+  parent's PK, then child INSERTs with the captured PK threaded into each
+  child row's FK column. New emitter arm on `MutationInputResolver` (or a
+  sibling).
 - **Transactional shape.** Single jOOQ transaction wrapping all the
   inserts is the obvious default; is there ever a reason to split?
 - **Error semantics.** If a child INSERT fails after the parent INSERT
