@@ -47,13 +47,8 @@ class RecordLookupTableFieldValidationTest {
     private static final LoaderRegistration LR_LIST = TestFixtures.loaderRegistration(RT_LIST, false, false);
     private static final LoaderRegistration LR_CONN = TestFixtures.loaderRegistration(RT_CONN, false, false);
 
-    // Validator messages for RecordLookupTableField. CONDITION_JOIN_STUB comes from the
-    // SplitRowsMethodEmitter.unsupportedReason delegation; the single-cardinality gate
-    // (Invariant #10) was lifted in R61 alongside emitsSingleRecordPerKey extending to
-    // single-cardinality fields.
-    private static final String CONDITION_JOIN_STUB =
-        "Field 'Language.films': RecordLookupTableField 'Language.films' with a condition-join step "
-        + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
+    // R232: RecordLookupTableField + condition-join first hop classifies straight to
+    // AuthorError upstream; the validator does not surface a deferred-rejection for it.
 
     private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
         TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(),
@@ -82,7 +77,7 @@ class RecordLookupTableFieldValidationTest {
                 CONDITION_PATH,
                 List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
-            List.of(CONDITION_JOIN_STUB)),
+            List.of()),
 
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
             new RecordLookupTableField("Language", "films", null, RT_LIST,

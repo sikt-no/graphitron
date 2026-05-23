@@ -8,6 +8,7 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
+import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -33,8 +34,9 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
  * nor {@link no.sikt.graphitron.rewrite.model.FieldWrapper.Single} (Single-cardinality
  * {@code @lookupKey} is rejected as a schema bug).
  *
- * <p>{@link JoinStep.ConditionJoin} anywhere in the path triggers a runtime-throwing stub arm —
- * same limitation as the correlated-subquery path.
+ * <p>Handles both {@link JoinStep.FkJoin} and {@link JoinStep.ConditionJoin} hops uniformly:
+ * targets read through {@link JoinStep.HasTargetTable}; the JOIN chain dispatches on step type;
+ * step-0 parent correlation is read through {@link ChildField.LookupTableField#parentCorrelation()}.
  *
  * <p>Threads the nested-alias parameter through every emitted Table-bound helper call — see
  * "Helper-locality" in {@code docs/rewrite-design-principles.md}.
@@ -60,18 +62,17 @@ public final class InlineLookupTableFieldEmitter {
      *                     recursion, where each nesting level declares its own
      *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "condition-join.target-table-resolved-at-parse",
+        reliesOn = "Reads each hop's targetTable() through HasTargetTable without null-check; "
+            + "depends on BuildContext.resolveConditionJoinTarget pre-resolving ConditionJoin "
+            + "targets and the ConditionJoin compact constructor's null-check as the structural "
+            + "safety net.")
     public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias, String sfName, String outputPackage) {
-        var stubReason = SplitRowsMethodEmitter.unsupportedReason(lf);
-        if (stubReason.isPresent()) {
-            return CodeBlock.builder()
-                .addStatement("throw new $T($S)",
-                    UnsupportedOperationException.class, stubReason.get().message())
-                .build();
-        }
-        return buildFkOnlyArm(lf, parentAlias, sfName, outputPackage);
+        return buildArm(lf, parentAlias, sfName, outputPackage);
     }
 
-    private static CodeBlock buildFkOnlyArm(ChildField.LookupTableField lf, String parentAlias, String sfName, String outputPackage) {
+    private static CodeBlock buildArm(ChildField.LookupTableField lf, String parentAlias, String sfName, String outputPackage) {
         List<JoinStep> path = lf.joinPath();
         TableRef terminalTable = lf.returnType().table();
         ClassName typeClass = ClassName.get(outputPackage + ".types", lf.returnType().returnTypeName());
@@ -97,10 +98,10 @@ public final class InlineLookupTableFieldEmitter {
             // with the parent alias's runtime name so recursive / self-referential subselects
             // never shadow each other's aliases.
             for (int i = 0; i < path.size(); i++) {
-                JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
-                ClassName jooqTableClass = fk.targetTable().tableClass();
+                JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
+                ClassName jooqTableClass = ht.targetTable().tableClass();
                 code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                    jooqTableClass, aliases.get(i), fk.targetTable().constantsClass(), fk.targetTable().javaFieldName(),
+                    jooqTableClass, aliases.get(i), ht.targetTable().constantsClass(), ht.targetTable().javaFieldName(),
                     parentAlias, "_" + aliases.get(i));
             }
         }
@@ -182,14 +183,22 @@ public final class InlineLookupTableFieldEmitter {
         sel.add("\n        .from($L)", terminalAlias);
 
         // JOIN chain: terminal back towards step 0 (same as G5). No-op when path is empty.
+        // Dispatches on step type so condition joins land their condition methods on the ON clause.
         for (int i = path.size() - 1; i >= 1; i--) {
-            JoinStep.FkJoin bridging = (JoinStep.FkJoin) path.get(i);
+            JoinStep bridging = path.get(i);
             String prevAlias = aliases.get(i - 1);
-            sel.add("\n        .join($L).onKey($T.$L)",
-                prevAlias, bridging.fk().keysClass(), bridging.fk().constantName());
+            switch (bridging) {
+                case JoinStep.FkJoin fk -> sel.add("\n        .join($L).onKey($T.$L)",
+                    prevAlias, fk.fk().keysClass(), fk.fk().constantName());
+                case JoinStep.ConditionJoin cj -> sel.add("\n        .join($L).on($L)",
+                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), aliases.get(i), prevAlias));
+                case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
+                    "LiftedHop should not appear in an @reference-composed path; this path is "
+                    + "reserved for the single-hop @sourceRow shape consumed by SplitRowsMethodEmitter");
+            }
         }
 
-        // JOIN the VALUES derived table on the lookup keyset (explicit ON — see buildFkOnlyArm).
+        // JOIN the VALUES derived table on the lookup keyset (explicit ON — see buildArm).
         sel.add("\n        .join(input).on($L)", onCondition);
 
         // WHERE: step 0's correlation against parent (skipped when path is empty), then whereFilter
@@ -199,11 +208,13 @@ public final class InlineLookupTableFieldEmitter {
         if (path.isEmpty()) {
             where.add("$T.noCondition()", ClassName.get("org.jooq.impl", "DSL"));
         } else {
-            JoinStep.FkJoin first = (JoinStep.FkJoin) path.get(0);
             String firstAlias = aliases.get(0);
-            // Slot orientation at synthesis time bakes the FK-direction decision into each slot
-            // pair, so the emitter is direction-blind regardless of cardinality.
-            where.add("$L", JoinPathEmitter.emitCorrelationWhere(first, firstAlias, parentAlias));
+            switch (lf.parentCorrelation()) {
+                case ParentCorrelation.OnFkSlots fk ->
+                    where.add("$L", JoinPathEmitter.emitCorrelationWhere((JoinStep.FkJoin) fk.firstHop(), firstAlias, parentAlias));
+                case ParentCorrelation.OnConditionJoin cj ->
+                    where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.firstHop().condition(), parentAlias, firstAlias));
+            }
         }
         for (JoinStep step : path) {
             if (step instanceof JoinStep.FkJoin fk && fk.whereFilter() != null) {
