@@ -13,6 +13,7 @@ import no.sikt.graphitron.lsp.state.DirectiveResolution;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.DirectiveShape;
+import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import org.eclipse.lsp4j.Hover;
@@ -259,6 +260,16 @@ public final class Hovers {
             + "Java record parent; trusts the classifier's RecordBacking projection without "
             + "re-reading the backing class."
     )
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "field-classification-payload-faithful",
+        reliesOn = "Routes @field(name:) column hover through "
+            + "FieldClassification.lspColumnDispatch(): Resolve(tableName) renders the column "
+            + "metadata against the projected terminal table (the @reference terminal for "
+            + "Column / ColumnReference / CompositeColumn / CompositeColumnReference); Silent "
+            + "returns empty (InputUnbound, Unclassified, where the wrong-table hover would be "
+            + "misleading); FallThrough routes back to the backing-driven dispatch for "
+            + "non-column-bearing permits."
+    )
     private static Optional<Hover> columnHover(
         Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
         LspSchemaSnapshot snapshot, Node valueNode
@@ -269,6 +280,30 @@ public final class Hovers {
         if (typeDecl.isEmpty()) return Optional.empty();
         var typeName = TypeContext.declaredNameOf(typeDecl.get(), file.source());
         if (typeName.isEmpty()) return Optional.empty();
+        var fieldName = TypeContext.enclosingFieldOrInputValueDefinition(directive.outer())
+            .flatMap(fd -> TypeContext.fieldNameOf(fd, file.source()))
+            .orElse(null);
+        // R233: prefer the field classification's projected terminal table over the enclosing
+        // type's backing for @reference path fields and the other column-bearing permits.
+        // lspColumnDispatch() collapses the 30 permits onto three arms; the double-Optional
+        // here carries "we have a decision, the decision is empty hover" vs. "no decision,
+        // fall through to backing dispatch", matching the FieldCompletions shape.
+        if (fieldName != null) {
+            var classification = built.fieldClassification(typeName.get(), fieldName);
+            if (classification.isPresent()) {
+                var hover = switch (classification.get().lspColumnDispatch()) {
+                    case FieldClassification.LspColumnDispatch.Resolve(var tableName)
+                        -> Optional.of(tableColumnHover(catalog, tableName, memberName, file, valueNode));
+                    case FieldClassification.LspColumnDispatch.Silent ignored
+                        -> Optional.<Optional<Hover>>of(Optional.empty());
+                    case FieldClassification.LspColumnDispatch.FallThrough ignored
+                        -> Optional.<Optional<Hover>>empty();
+                };
+                if (hover.isPresent()) {
+                    return hover.get();
+                }
+            }
+        }
         var backing = built.typesByName().get(typeName.get());
         if (backing == null) return Optional.empty();
         return switch (backing) {

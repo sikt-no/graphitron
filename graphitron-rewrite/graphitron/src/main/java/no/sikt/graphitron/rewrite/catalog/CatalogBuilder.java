@@ -115,12 +115,17 @@ public final class CatalogBuilder {
         key = "field-classification-payload-faithful",
         description = "Every GraphitronField permit projects to a FieldClassification record whose "
             + "payload components are sourced directly from the model leaf without re-resolving "
-            + "names, columns, or join paths. The LSP's inlay-hint classification arm and "
-            + "classification-hover arm consume the projection through "
-            + "Built#fieldClassificationsByCoord without dispatching back on the generator-side "
-            + "permit; the projector's exhaustive switch is the load-bearing contract that a new "
-            + "permit cannot land without an LSP-side mapping in the same commit. The inferred-"
-            + "directive arm reads the resolved column / FK chain off the same projection."
+            + "names, columns, or join paths. Five LSP-side consumers read this projection: "
+            + "InlayHints.compute and DeclarationHovers.compute render the variant identity at "
+            + "SDL field declarations; Diagnostics.validateFieldMember, FieldCompletions.completionsFor, "
+            + "and Hovers.columnHover dispatch @field(name:) column lookups through "
+            + "FieldClassification#lspColumnDispatch() so the @reference terminal table on "
+            + "{Column,CompositeColumn}Reference.tableName(), not the enclosing type's @table, "
+            + "owns the column resolution. The projector's exhaustive switch is the load-bearing "
+            + "contract that a new permit cannot land without an LSP-side mapping in the same "
+            + "commit; the lspColumnDispatch() switch is the same shape on the consumer side. "
+            + "The inferred-directive arm reads the resolved column / FK chain off the same "
+            + "projection."
     )
     @LoadBearingClassifierCheck(
         key = "type-classification-payload-faithful",

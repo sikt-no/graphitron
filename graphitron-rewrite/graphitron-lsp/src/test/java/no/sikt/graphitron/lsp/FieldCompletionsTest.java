@@ -306,6 +306,114 @@ class FieldCompletionsTest {
         assertThat(items).isEmpty();
     }
 
+    // ===== R233 — @field(name:) on @reference path field completes terminal-table columns =====
+
+    @Test
+    void inputTableWithReferencePathCompletesTerminalTableColumns() {
+        // The enclosing @table is "FILM"; the @reference path navigates to "LANGUAGE". Pre-R233
+        // the completion dropdown listed FILM's columns (FILM_ID / TITLE) which are not
+        // reachable through this field; R233 routes through FieldClassification.lspColumnDispatch()
+        // and emits LANGUAGE's columns instead.
+        String source = """
+            input FilmInput @table(name: "FILM") {
+                languageName: String @field(name: "") @reference(path: [{table: "LANGUAGE"}])
+            }
+            """;
+        int line = 1;
+        int col = source.split("\n")[line].indexOf("@field(name: \"") + "@field(name: \"".length();
+        Point cursor = new Point(line, col);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            Map.of("FilmInput", new TypeBackingShape.TableBacking("FILM")),
+            Map.of(),
+            Map.of("FilmInput.languageName",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
+                    "LANGUAGE", "NAME", List.of())),
+            Map.of()
+        );
+        var items = run(filmAndLanguageCatalog(), snapshot, source, cursor);
+
+        assertThat(items).extracting(c -> c.getLabel())
+            .containsExactly("LANGUAGE_ID", "NAME")
+            .doesNotContain("FILM_ID", "TITLE");
+    }
+
+    @Test
+    void outputTableWithReferencePathCompletesTerminalTableColumns() {
+        // Output-side mirror — covers the ChildField.ColumnReferenceField projection.
+        String source = """
+            type Film @table(name: "FILM") {
+                languageName: String @field(name: "") @reference(path: [{table: "LANGUAGE"}])
+            }
+            """;
+        int line = 1;
+        int col = source.split("\n")[line].indexOf("@field(name: \"") + "@field(name: \"".length();
+        Point cursor = new Point(line, col);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            Map.of("Film", new TypeBackingShape.TableBacking("FILM")),
+            Map.of(),
+            Map.of("Film.languageName",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
+                    "LANGUAGE", "NAME", List.of())),
+            Map.of()
+        );
+        var items = run(filmAndLanguageCatalog(), snapshot, source, cursor);
+
+        assertThat(items).extracting(c -> c.getLabel())
+            .containsExactly("LANGUAGE_ID", "NAME")
+            .doesNotContain("FILM_ID", "TITLE");
+    }
+
+    @Test
+    void unresolvedReferencePathCompletionSilentOnLspSide() {
+        // Classifier could not assign a variant (Unclassified); suggestions from the enclosing-
+        // type backing would lead the user toward FILM columns rather than helping resolve the
+        // @reference target. The LSP must emit an empty list rather than leak the wrong table.
+        String source = """
+            input FilmInput @table(name: "FILM") {
+                languageName: String @field(name: "") @reference(path: [{table: "LANGUAGE"}])
+            }
+            """;
+        int line = 1;
+        int col = source.split("\n")[line].indexOf("@field(name: \"") + "@field(name: \"".length();
+        Point cursor = new Point(line, col);
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            Map.of("FilmInput", new TypeBackingShape.TableBacking("FILM")),
+            Map.of(),
+            Map.of("FilmInput.languageName",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unclassified("synthetic test reason")),
+            Map.of()
+        );
+        var items = run(filmAndLanguageCatalog(), snapshot, source, cursor);
+
+        assertThat(items).isEmpty();
+    }
+
+    private static CompletionData filmAndLanguageCatalog() {
+        var film = new CompletionData.Table(
+            "FILM", "Movies", CompletionData.SourceLocation.UNKNOWN,
+            List.of(
+                CompletionData.Column.of("FILM_ID", "Integer", false, ""),
+                CompletionData.Column.of("TITLE", "String", false, "")
+            ),
+            List.of()
+        );
+        var language = new CompletionData.Table(
+            "LANGUAGE", "Languages", CompletionData.SourceLocation.UNKNOWN,
+            List.of(
+                CompletionData.Column.of("LANGUAGE_ID", "Integer", false, ""),
+                CompletionData.Column.of("NAME", "String", false, "")
+            ),
+            List.of()
+        );
+        return new CompletionData(List.of(film, language), List.of(), List.of());
+    }
+
     private static LspSchemaSnapshot tableSnapshot(String typeName, String tableName) {
         return new LspSchemaSnapshot.Built.Current(
             List.of(),

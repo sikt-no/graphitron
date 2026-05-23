@@ -510,12 +510,14 @@ public final class Diagnostics {
     )
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "field-classification-payload-faithful",
-        reliesOn = "For @reference path fields, consults FieldClassification.{ColumnReference,"
-            + "CompositeColumnReference}.tableName() — projected through "
-            + "CatalogBuilder.terminalTableName — as the authoritative target table for "
-            + "@field(name:) column validation, rather than re-walking the path or falling back "
-            + "to the enclosing type's @table. Mirrors the runtime's "
-            + "ServiceCatalog.resolveColumnForReference terminal-table walk."
+        reliesOn = "Routes @field(name:) column validation through "
+            + "FieldClassification.lspColumnDispatch(): the four column-bearing arms "
+            + "(Column / ColumnReference / CompositeColumn / CompositeColumnReference) "
+            + "produce Resolve(tableName) carrying the projected terminal table; "
+            + "InputUnbound and Unclassified produce Silent (no diagnostic, since a "
+            + "duplicate with the wrong table would be noise); every other permit produces "
+            + "FallThrough, routing back to the backing-driven dispatch. Mirrors the "
+            + "runtime's ServiceCatalog.resolveColumnForReference terminal-table walk."
     )
     private static void validateFieldMember(
         Directives.Directive directive, Node valueNode,
@@ -549,42 +551,24 @@ public final class Diagnostics {
             }
             return;
         }
-        // R224: prefer the field classification's tableName() over the enclosing type's @table.
-        // For @reference path fields, the classifier projects the terminal table onto
-        // FieldClassification.{Column,CompositeColumn}Reference; the enclosing type's @table
-        // is the path origin, not the column's owner. Re-using the projection keeps the LSP's
-        // dispatch aligned with the runtime's terminal-table walk
-        // (ServiceCatalog.resolveColumnForReference). Snapshot-uncertainty (empty optional)
-        // falls through to the existing backing-driven dispatch.
+        // R224 / R233: prefer the field classification's projected terminal table over the
+        // enclosing type's @table. FieldClassification.lspColumnDispatch() collapses the 30
+        // sealed permits onto three audience-specific arms: Resolve(tableName) carries the
+        // projected terminal table for the four column-bearing permits; Silent suppresses the
+        // diagnostic for InputUnbound / Unclassified (the validator already emits a precise
+        // message via ValidationReport, and a duplicate LSP diagnostic with the wrong table
+        // would be noise); FallThrough routes back to the existing backing-driven dispatch.
+        // Snapshot-uncertainty (empty optional) also falls through.
         if (fieldName != null) {
             var classification = built.fieldClassification(typeName.get(), fieldName);
             if (classification.isPresent()) {
-                switch (classification.get()) {
-                    case FieldClassification.Column c -> {
-                        validateColumnOnTable(catalog, c.tableName(), memberName, valueNode, file, out);
+                switch (classification.get().lspColumnDispatch()) {
+                    case FieldClassification.LspColumnDispatch.Resolve(var tableName) -> {
+                        validateColumnOnTable(catalog, tableName, memberName, valueNode, file, out);
                         return;
                     }
-                    case FieldClassification.ColumnReference c -> {
-                        validateColumnOnTable(catalog, c.tableName(), memberName, valueNode, file, out);
-                        return;
-                    }
-                    case FieldClassification.CompositeColumn c -> {
-                        validateColumnOnTable(catalog, c.tableName(), memberName, valueNode, file, out);
-                        return;
-                    }
-                    case FieldClassification.CompositeColumnReference c -> {
-                        validateColumnOnTable(catalog, c.tableName(), memberName, valueNode, file, out);
-                        return;
-                    }
-                    case FieldClassification.InputUnbound ignored -> {
-                        // The validator already emits a precise message via ValidationReport
-                        // ("plain input type 'T': input field 'X': no column 'Y' reachable via
-                        // @reference path"); a duplicate LSP diagnostic with the wrong table
-                        // would be noise.
-                        return;
-                    }
-                    case FieldClassification.Unclassified ignored -> { return; }
-                    default -> { /* fall through to backing-driven dispatch */ }
+                    case FieldClassification.LspColumnDispatch.Silent ignored -> { return; }
+                    case FieldClassification.LspColumnDispatch.FallThrough ignored -> { /* fall through */ }
                 }
             }
         }

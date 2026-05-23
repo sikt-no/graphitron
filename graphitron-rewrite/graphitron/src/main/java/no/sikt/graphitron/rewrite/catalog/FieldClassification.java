@@ -78,6 +78,83 @@ public sealed interface FieldClassification
      */
     record FkStep(String targetTableName, String fkName) {}
 
+    /**
+     * LSP-arm dispatch projection: collapses the 30 {@link FieldClassification} permits
+     * onto three audience-specific arms the {@code @field(name:)}-shaped
+     * {@code CatalogColumnBinding} consumers all read off ({@code FieldCompletions},
+     * {@code Diagnostics.validateFieldMember}, {@code Hovers.columnHover}). Routed through
+     * {@link #lspColumnDispatch()}.
+     *
+     * <p>{@link Resolve} carries the table whose columns to use for completion / hover /
+     * validation (the {@code @reference} terminal table for the four column-bearing
+     * permits). {@link Silent} signals "the LSP should not surface a candidate or
+     * diagnostic" (a duplicate diagnostic with the wrong table would be noise for
+     * {@code InputUnbound}; an unclassified field has nothing useful to render). {@link
+     * FallThrough} means the LSP arm falls back to its existing backing-driven dispatch
+     * ({@code typesByName().get(...)}), which is how non-column-bearing permits like
+     * {@code Nesting}, {@code ServiceBacked}, {@code DmlMutation}, etc. resolve today.
+     *
+     * <p>The name commits to the LSP audience because the silence semantics
+     * ({@code InputUnbound} = "no diagnostic", not "no value") are LSP-shaped. A
+     * non-LSP consumer (any future runtime arm) should add its own audience-specific
+     * dispatch projection rather than route through this one.
+     */
+    sealed interface LspColumnDispatch
+        permits LspColumnDispatch.Resolve, LspColumnDispatch.Silent, LspColumnDispatch.FallThrough {
+
+        /** Resolve {@code @field(name:)} candidates / hover / validation against {@code tableName}. */
+        record Resolve(String tableName) implements LspColumnDispatch {}
+
+        /** No LSP signal for this classification (e.g. {@code InputUnbound}, {@code Unclassified}). */
+        record Silent() implements LspColumnDispatch {}
+
+        /** Fall through to the consumer's existing backing-driven dispatch. */
+        record FallThrough() implements LspColumnDispatch {}
+    }
+
+    /**
+     * Projects this classification onto an {@link LspColumnDispatch} arm for the LSP's
+     * {@code @field(name:)}-shaped {@code CatalogColumnBinding} consumers. The switch
+     * is exhaustive over the sealed permit list and carries no {@code default} arm; a
+     * new permit added to {@link FieldClassification} fails this method to compile and
+     * forces the implementer to place the new variant in one of the three arms
+     * deliberately, in one place, ahead of any consumer-side switch.
+     */
+    default LspColumnDispatch lspColumnDispatch() {
+        return switch (this) {
+            case Column c                       -> new LspColumnDispatch.Resolve(c.tableName());
+            case ColumnReference c              -> new LspColumnDispatch.Resolve(c.tableName());
+            case CompositeColumn c              -> new LspColumnDispatch.Resolve(c.tableName());
+            case CompositeColumnReference c     -> new LspColumnDispatch.Resolve(c.tableName());
+            case InputUnbound _                 -> new LspColumnDispatch.Silent();
+            case Unclassified _                 -> new LspColumnDispatch.Silent();
+            case ParticipantCrossTable _,
+                 TableTarget _,
+                 RecordTableTarget _,
+                 TableMethod _,
+                 TableInterface _,
+                 Polymorphic _,
+                 Nesting _,
+                 Constructor _,
+                 ServiceBacked _,
+                 RecordOrProperty _,
+                 Computed _,
+                 Errors _,
+                 SingleRecordTable _,
+                 SingleRecordIdFromReturning _,
+                 SingleRecordTableFromReturning _,
+                 QueryTable _,
+                 QueryTableMethod _,
+                 QueryNode _,
+                 QueryTableInterface _,
+                 QueryPolymorphic _,
+                 QueryService _,
+                 DmlMutation _,
+                 MutationService _,
+                 DmlRecord _                    -> new LspColumnDispatch.FallThrough();
+        };
+    }
+
     // ===== Column-bearing fields =====
 
     /**

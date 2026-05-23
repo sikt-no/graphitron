@@ -6,6 +6,7 @@ import no.sikt.graphitron.lsp.parsing.Directives;
 import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
+import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
 import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
@@ -60,7 +61,7 @@ public final class FieldCompletions {
         if (typeName.isEmpty()) {
             return List.of();
         }
-        var fieldName = TypeContext.enclosingFieldDefinition(directive.outer())
+        var fieldName = TypeContext.enclosingFieldOrInputValueDefinition(directive.outer())
             .flatMap(fd -> TypeContext.fieldNameOf(fd, source))
             .orElse(null);
         return completionsFor(data, snapshot, context, typeName.get(), fieldName);
@@ -71,6 +72,16 @@ public final class FieldCompletions {
         reliesOn = "RecordBacking.components is the record's @RecordAttribute component list; "
             + "FieldCompletions emits them verbatim as @field(name:) candidates without "
             + "re-checking that the backing class is in fact a record."
+    )
+    @DependsOnClassifierCheck(
+        key = "field-classification-payload-faithful",
+        reliesOn = "Routes @field(name:) completion through "
+            + "FieldClassification.lspColumnDispatch(): Resolve(tableName) emits the "
+            + "projected terminal table's columns (the @reference terminal table for "
+            + "Column / ColumnReference / CompositeColumn / CompositeColumnReference); "
+            + "Silent emits an empty list (InputUnbound, Unclassified, where suggestions "
+            + "from the enclosing-type backing would leak the wrong table); FallThrough "
+            + "routes back to the backing-driven dispatch for non-column-bearing permits."
     )
     private static List<CompletionItem> completionsFor(
         CompletionData data, LspSchemaSnapshot snapshot, CompletionContext context,
@@ -89,6 +100,29 @@ public final class FieldCompletions {
             && no.sikt.graphitron.rewrite.FieldSourceSigil.sourceSigilDefinedAt(
                 built.siteContext(typeName, fieldName));
         var sigilItems = isPayloadDataField ? List.of(sourceSigilItem(context)) : List.<CompletionItem>of();
+        // R233: prefer the field classification's projected terminal table over the enclosing
+        // type's backing for @reference path fields and the other column-bearing permits.
+        // lspColumnDispatch() collapses the 30 permits onto three arms: Resolve returns the
+        // terminal-table columns; Silent returns an empty list (suggestions from the enclosing
+        // backing would leak the wrong table); FallThrough returns Optional.empty() so the
+        // backing-driven dispatch below fires. Snapshot-uncertainty (empty optional) also
+        // falls through.
+        if (fieldName != null) {
+            var classification = built.fieldClassification(typeName, fieldName);
+            if (classification.isPresent()) {
+                var dispatched = switch (classification.get().lspColumnDispatch()) {
+                    case FieldClassification.LspColumnDispatch.Resolve(var tableName)
+                        -> java.util.Optional.of(tableColumnItems(data, tableName, context));
+                    case FieldClassification.LspColumnDispatch.Silent ignored
+                        -> java.util.Optional.<List<CompletionItem>>of(List.of());
+                    case FieldClassification.LspColumnDispatch.FallThrough ignored
+                        -> java.util.Optional.<List<CompletionItem>>empty();
+                };
+                if (dispatched.isPresent()) {
+                    return mergeWithSigil(sigilItems, dispatched.get());
+                }
+            }
+        }
         var backing = built.typesByName().get(typeName);
         if (backing == null) return sigilItems;
         var rest = switch (backing) {
@@ -99,6 +133,12 @@ public final class FieldCompletions {
             case TypeBackingShape.TableBacking t -> tableColumnItems(data, t.tableName(), context);
             case TypeBackingShape.NoBacking ignored -> List.<CompletionItem>of();
         };
+        return mergeWithSigil(sigilItems, rest);
+    }
+
+    private static List<CompletionItem> mergeWithSigil(
+        List<CompletionItem> sigilItems, List<CompletionItem> rest
+    ) {
         if (sigilItems.isEmpty()) return rest;
         var combined = new java.util.ArrayList<CompletionItem>(sigilItems.size() + rest.size());
         combined.addAll(sigilItems);
