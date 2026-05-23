@@ -34,12 +34,9 @@ class LookupTableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);
     }
 
-    // Build-time render of SplitRowsMethodEmitter.unsupportedReason for the inline
-    // LookupTableField variant: displayLabel "Inline LookupTableField" + qualifiedName +
-    // shared condition-join prose, wrapped by the validator's "Field 'X.Y': " prefix.
-    private static final String CONDITION_JOIN_STUB =
-        "Field 'Language.films': Inline LookupTableField 'Language.films' with a condition-join step "
-        + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
+    // R232: the inline LookupTableField + condition-join shape now classifies and emits a real
+    // correlated subquery via InlineLookupTableFieldEmitter; the validator no longer
+    // surfaces a deferred-rejection for it.
 
     private static final List<JoinStep> CONDITION_PATH = List.of(new JoinStep.ConditionJoin(
         TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition",
@@ -63,12 +60,12 @@ class LookupTableFieldValidationTest {
                 /* parentCorrelation */ null),
             List.of()),
 
-        LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
+        LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — classifies and emits a correlated subquery (R232)",
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),
                 CONDITION_PATH,
                 List.of(), PK_ORDER, null, EMPTY_LOOKUP,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
-            List.of(CONDITION_JOIN_STUB)),
+            List.of()),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field (validator mirror of classifier rejection)",
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, 100)), List.of(), List.of(), new OrderBySpec.None(), null,

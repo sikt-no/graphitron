@@ -39,12 +39,9 @@ class SplitTableFieldValidationTest {
     private static final LoaderRegistration LR_SINGLE = TestFixtures.loaderRegistration(RT_SINGLE, false, false);
     private static final LoaderRegistration LR_CONN = TestFixtures.loaderRegistration(RT_CONN, false, false);
 
-    // Emitter-level validator messages. Kept inline (rather than read from
-    // SplitRowsMethodEmitter.unsupportedReason) so a change to the production string breaks
-    // this test loudly — update both sides in the same commit.
-    private static final String CONDITION_JOIN_STUB =
-        "Field 'Film.actors': @splitQuery 'Film.actors' with a condition-join step cannot be "
-        + "emitted until classification-vocabulary item 5 resolves condition-method target tables";
+    // R232: the @splitQuery + condition-join shape now classifies and emits a real
+    // correlated SELECT via SplitRowsMethodEmitter; the validator no longer surfaces a
+    // deferred-rejection for it.
 
     private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
         TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(),
@@ -67,12 +64,12 @@ class SplitTableFieldValidationTest {
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
-        WITH_CONDITION_ONLY("single cardinality with condition-only join step — runtime stub, build error",
+        WITH_CONDITION_ONLY("single cardinality with condition-only join step — classifies and emits (R232)",
             new SplitTableField("Film", "actors", null, RT_SINGLE,
                 CONDITION_PATH,
                 List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
-            List.of(CONDITION_JOIN_STUB)),
+            List.of()),
 
         // plan-split-query-connection.md §1: Split + Connection with no ORDER BY is a build error.
         // ROW_NUMBER() needs a total order to slice partitions deterministically; without one,

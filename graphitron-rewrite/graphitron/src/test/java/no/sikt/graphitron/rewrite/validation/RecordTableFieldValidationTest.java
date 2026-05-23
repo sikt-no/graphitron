@@ -40,16 +40,10 @@ class RecordTableFieldValidationTest {
     private static final LoaderRegistration LR_SINGLE = TestFixtures.loaderRegistration(RT_SINGLE, false, false);
     private static final LoaderRegistration LR_LIST = TestFixtures.loaderRegistration(RT_LIST, false, false);
 
-    // Validator messages for RecordTableField. Kept inline — a change to the production string
-    // breaks this test loudly and must be updated in the same commit.
-    //
-    // CONDITION_JOIN_STUB comes from the existing SplitRowsMethodEmitter.unsupportedReason
-    // runtime-stub delegation. The single-cardinality gate (Invariant #10) was lifted in R61
-    // alongside emitsSingleRecordPerKey extending to single-cardinality fields; cases below
-    // exercise the new acceptance path on both cardinalities.
-    private static final String CONDITION_JOIN_STUB =
-        "Field 'FilmDetails.film': RecordTableField 'FilmDetails.film' with a condition-join step "
-        + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
+    // R232: RecordTableField + condition-join first hop classifies straight to AuthorError
+    // upstream (the @record parent has no @table binding to anchor the condition method's
+    // source argument). The cases below construct the model directly, bypassing the parser
+    // gate, to confirm the validator does not double-fire on the constructed shape.
 
     private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
         TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(),
@@ -78,14 +72,14 @@ class RecordTableFieldValidationTest {
                 CONDITION_PATH,
                 List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
-            List.of(CONDITION_JOIN_STUB)),
+            List.of()),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
             new RecordTableField("FilmDetails", "film", null, RT_LIST,
                 CONDITION_PATH,
                 List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
-            List.of(CONDITION_JOIN_STUB)),
+            List.of()),
 
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
             new RecordTableField("FilmDetails", "films", null, RT_LIST,

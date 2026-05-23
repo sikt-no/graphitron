@@ -339,14 +339,10 @@ public sealed interface ChildField extends OutputField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         ParentCorrelation parentCorrelation
-    ) implements TableTargetField, ConditionJoinReportable {
+    ) implements TableTargetField {
         public TableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "TableField");
         }
-        @Override public Rejection.EmitBlockReason emitBlockReason() {
-            return Rejection.EmitBlockReason.TABLE_FIELD_CONDITION_JOIN_STEP;
-        }
-        @Override public String displayLabel() { return "Inline TableField"; }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }
@@ -364,7 +360,7 @@ public sealed interface ChildField extends OutputField
         SourceKey sourceKey,
         LoaderRegistration loaderRegistration,
         ParentCorrelation parentCorrelation
-    ) implements TableTargetField, BatchKeyField, ConditionJoinReportable {
+    ) implements TableTargetField, BatchKeyField {
         public SplitTableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "SplitTableField");
         }
@@ -372,10 +368,6 @@ public sealed interface ChildField extends OutputField
         public boolean emitsSingleRecordPerKey() {
             return !returnType().wrapper().isList();
         }
-        @Override public Rejection.EmitBlockReason emitBlockReason() {
-            return Rejection.EmitBlockReason.SPLIT_TABLE_FIELD_CONDITION_JOIN_STEP;
-        }
-        @Override public String displayLabel() { return "@splitQuery"; }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }
@@ -392,14 +384,10 @@ public sealed interface ChildField extends OutputField
         PaginationSpec pagination,
         LookupMapping lookupMapping,
         ParentCorrelation parentCorrelation
-    ) implements TableTargetField, LookupField, ConditionJoinReportable {
+    ) implements TableTargetField, LookupField {
         public LookupTableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "LookupTableField");
         }
-        @Override public Rejection.EmitBlockReason emitBlockReason() {
-            return Rejection.EmitBlockReason.LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;
-        }
-        @Override public String displayLabel() { return "Inline LookupTableField"; }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }
@@ -418,14 +406,10 @@ public sealed interface ChildField extends OutputField
         LoaderRegistration loaderRegistration,
         LookupMapping lookupMapping,
         ParentCorrelation parentCorrelation
-    ) implements TableTargetField, BatchKeyField, LookupField, ConditionJoinReportable {
+    ) implements TableTargetField, BatchKeyField, LookupField {
         public SplitLookupTableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "SplitLookupTableField");
         }
-        @Override public Rejection.EmitBlockReason emitBlockReason() {
-            return Rejection.EmitBlockReason.SPLIT_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;
-        }
-        @Override public String displayLabel() { return "@splitQuery @lookupKey"; }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }
@@ -763,7 +747,7 @@ public sealed interface ChildField extends OutputField
         SourceKey sourceKey,
         LoaderRegistration loaderRegistration,
         ParentCorrelation parentCorrelation
-    ) implements TableTargetField, BatchKeyField, ConditionJoinReportable {
+    ) implements TableTargetField, BatchKeyField {
         public RecordTableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "RecordTableField");
         }
@@ -779,10 +763,6 @@ public sealed interface ChildField extends OutputField
             return !returnType().wrapper().isList()
                 || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
         }
-        @Override public Rejection.EmitBlockReason emitBlockReason() {
-            return Rejection.EmitBlockReason.RECORD_TABLE_FIELD_CONDITION_JOIN_STEP;
-        }
-        @Override public String displayLabel() { return "RecordTableField"; }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }
@@ -801,7 +781,7 @@ public sealed interface ChildField extends OutputField
         LoaderRegistration loaderRegistration,
         LookupMapping lookupMapping,
         ParentCorrelation parentCorrelation
-    ) implements TableTargetField, BatchKeyField, LookupField, ConditionJoinReportable {
+    ) implements TableTargetField, BatchKeyField, LookupField {
         public RecordLookupTableField {
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "RecordLookupTableField");
         }
@@ -813,10 +793,6 @@ public sealed interface ChildField extends OutputField
             return !returnType().wrapper().isList()
                 || loaderRegistration().dispatch() == LoaderRegistration.Dispatch.LOAD_MANY;
         }
-        @Override public Rejection.EmitBlockReason emitBlockReason() {
-            return Rejection.EmitBlockReason.RECORD_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;
-        }
-        @Override public String displayLabel() { return "RecordLookupTableField"; }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(returnType.table());
         }

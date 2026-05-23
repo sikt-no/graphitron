@@ -140,43 +140,9 @@ When `[author-error]` carries an `UnknownName` variant (a closed-set name lookup
 
 *Next step.* Use one of the supported values (`INSERT`, `UPDATE`, `DELETE`, `UPSERT`). xref:directives/mutation.adoc[`@mutation` directive reference] covers the supported kinds.
 
-== Deferred emit-block reasons
-
-When a `[deferred]` error carries an `EmitBlock` `StubKey` (the emitter recognises the shape but no `Variant` class is yet stubbed for it), the variant carries one of these closed-set reasons. Each names a specific shape inside the split-rows / record emitter that doesn't yet have an emit path. The reason value is a typed enum so plan-tracking tooling can pivot the codebase against the surface.
-
-[#emit-block-split-table-field-condition-join-step]
-=== split-table-field-condition-join-step
-
-A `@splitQuery`-batched fetch reaches a `TableField` carrying a `@condition` that requires a join step the split-batch emitter does not yet emit. Tracked alongside the broader `@condition`-cascade work in the rewrite roadmap.
-
-[#emit-block-split-lookup-table-field-condition-join-step]
-=== split-lookup-table-field-condition-join-step
-
-A `@splitQuery`-batched lookup reaches a `TableField` lookup with a `@condition` requiring a join step the split-lookup emitter does not yet emit. Same family as above; the lookup-shape sub-arm.
-
-[#emit-block-record-table-field-condition-join-step]
-=== record-table-field-condition-join-step
-
-A `@record`-parent fetch reaches a `TableField` carrying a `@condition` whose join step the record-parent emitter does not yet emit. Same family, record-parent shape.
-
-[#emit-block-record-lookup-table-field-condition-join-step]
-=== record-lookup-table-field-condition-join-step
-
-A `@record`-parent lookup reaches a `TableField` lookup whose `@condition` requires a join step the record-parent lookup emitter does not yet emit. The remaining quadrant of the shape: `record` parent + `lookup` site.
-
-[#emit-block-table-field-condition-join-step]
-=== table-field-condition-join-step
-
-An inline `TableField` (no `@splitQuery`, no `@record` parent) reaches a `@reference` path with a `@condition` step the inline emitter does not yet emit; surfaced as a build-time error mirroring the runtime stub at `InlineTableFieldEmitter`. Same family as the split / record arms.
-
-[#emit-block-lookup-table-field-condition-join-step]
-=== lookup-table-field-condition-join-step
-
-An inline `LookupTableField` (list `@lookupKey` site) reaches a `@reference` path with a `@condition` step the inline lookup emitter does not yet emit; surfaced as a build-time error mirroring the runtime stub at `InlineLookupTableFieldEmitter`. The lookup-shape sub-arm.
-
 == Drift protection
 
-`DiagnosticsDocCoverageTest` asserts every value of `RejectionKind`, `Rejection.AttemptKind`, and `Rejection.EmitBlockReason` has an anchored `=== <kebab-case-name>` heading on this page, and every such heading corresponds to an enum value. A new diagnostic added to one of these enums cannot land green without a doc paragraph; an obsolete code's removal forces the heading's removal.
+`DiagnosticsDocCoverageTest` asserts every value of `RejectionKind` and `Rejection.AttemptKind` has an anchored `=== <kebab-case-name>` heading on this page, and every such heading corresponds to an enum value. A new diagnostic added to one of these enums cannot land green without a doc paragraph; an obsolete code's removal forces the heading's removal.
 
 Structural variants (`AuthorError.Structural`, `InvalidSchema.Structural`, `InvalidSchema.DirectiveConflict`) carry ad-hoc messages produced at the classifier site and are not enumerable; the kind-level entries above describe how to read those.
 

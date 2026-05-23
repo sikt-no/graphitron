@@ -376,7 +376,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * treat a null {@code fieldClass} the same way they treat a {@code VariantClass} entry for
      * log output.
      */
-    sealed interface StubKey permits StubKey.VariantClass, StubKey.EmitBlock {
+    sealed interface StubKey permits StubKey.VariantClass {
         /**
          * Variant-class key. {@code fieldClass} may be {@code null} for inline-defer sites whose
          * rejection names a feature shape ("@service returning a polymorphic type") rather than a
@@ -384,23 +384,6 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * non-null first.
          */
         record VariantClass(Class<? extends GraphitronField> fieldClass) implements StubKey {}
-        record EmitBlock(EmitBlockReason reason) implements StubKey {}
-    }
-
-    /**
-     * Closed set of intra-emitter "this shape can't emit yet" reasons. One value
-     * per {@code SplitRowsMethodEmitter.unsupportedReason} arm today; a new value
-     * lands when a new emit-block predicate is introduced. Each {@code unsupportedReason}
-     * arm builds a {@link Deferred} keyed by an {@link EmitBlock} of the matching value,
-     * and the validator projects it through the shared {@code Deferred.message()} renderer.
-     */
-    enum EmitBlockReason {
-        SPLIT_TABLE_FIELD_CONDITION_JOIN_STEP,
-        SPLIT_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP,
-        RECORD_TABLE_FIELD_CONDITION_JOIN_STEP,
-        RECORD_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP,
-        TABLE_FIELD_CONDITION_JOIN_STEP,
-        LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP
     }
 
     // ===== Factories =====

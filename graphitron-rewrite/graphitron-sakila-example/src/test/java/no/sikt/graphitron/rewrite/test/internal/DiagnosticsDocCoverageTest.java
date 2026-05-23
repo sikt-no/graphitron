@@ -60,7 +60,7 @@ class DiagnosticsDocCoverageTest {
 
         assertThat(codes)
             .as("at least one diagnostic enum value must be present across "
-                + "RejectionKind, Rejection.AttemptKind, Rejection.EmitBlockReason")
+                + "RejectionKind, Rejection.AttemptKind")
             .isNotEmpty();
         assertThat(missingHeadings)
             .as("diagnostic enum values without a matching heading in "
@@ -68,7 +68,7 @@ class DiagnosticsDocCoverageTest {
             .isEmpty();
         assertThat(staleHeadings)
             .as("headings in diagnostics-glossary.adoc with no matching enum value "
-                + "in RejectionKind / Rejection.AttemptKind / Rejection.EmitBlockReason; "
+                + "in RejectionKind / Rejection.AttemptKind; "
                 + "remove the stale paragraph(s)")
             .isEmpty();
     }
@@ -77,7 +77,6 @@ class DiagnosticsDocCoverageTest {
         Set<String> codes = new TreeSet<>();
         codes.addAll(kebabValues(RejectionKind.values()));
         codes.addAll(kebabValues(Rejection.AttemptKind.values()));
-        codes.addAll(kebabValues(Rejection.EmitBlockReason.values()));
         return codes;
     }
 

@@ -31,14 +31,6 @@ class TableFieldValidationTest {
         return new ReturnTypeRef.TableBoundReturnType("Actor", TestFixtures.tableRef("actor", "ACTOR", "Actor", List.of()), wrapper);
     }
 
-    // Build-time render of SplitRowsMethodEmitter.unsupportedReason for the inline TableField
-    // variant: displayLabel "Inline TableField" + qualifiedName + shared condition-join prose,
-    // wrapped by the validator's "Field 'X.Y': " prefix. The build-time message matches the
-    // runtime stub message byte-for-byte (joined predicate at JoinPathEmitter.hasConditionJoin).
-    private static final String CONDITION_JOIN_STUB =
-        "Field 'Film.actors': Inline TableField 'Film.actors' with a condition-join step "
-        + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
-
     private static final List<JoinStep> CONDITION_PATH = List.of(new JoinStep.ConditionJoin(
         TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition",
             ClassName.get("org.jooq", "Condition"), List.of()),
@@ -63,21 +55,21 @@ class TableFieldValidationTest {
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
-        SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — condition-join stub surfaces as build error",
+        SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — classifies and emits a correlated subquery (R232)",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
                 CONDITION_PATH,
                 List.of(), new OrderBySpec.None(), null,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
-            List.of(CONDITION_JOIN_STUB)),
+            List.of()),
 
-        LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
+        LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — classifies and emits a correlated subquery (R232)",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.List(true, true)),
                 CONDITION_PATH,
                 List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
                 null,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
-            List.of(CONDITION_JOIN_STUB)),
+            List.of()),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),

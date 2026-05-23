@@ -62,16 +62,6 @@ public final class JoinPathEmitter {
     }
 
     /**
-     * Returns {@code true} when the path contains any {@link JoinStep.ConditionJoin}. G5 cannot
-     * yet emit a correlated subquery for such paths (the target table is not pre-resolved — see
-     * classification-vocabulary item 5). The emitter branches on this to emit a runtime-throwing
-     * stub instead.
-     */
-    public static boolean hasConditionJoin(List<JoinStep> path) {
-        return path.stream().anyMatch(s -> s instanceof JoinStep.ConditionJoin);
-    }
-
-    /**
      * Emits the correlation WHERE predicate relating the first-hop's target alias to the parent
      * alias: {@code first.alias().<slot.targetSide()> = parent.<slot.sourceSide()>} for each
      * slot, ANDed together. Direction-blind because each slot is oriented at synthesis time:

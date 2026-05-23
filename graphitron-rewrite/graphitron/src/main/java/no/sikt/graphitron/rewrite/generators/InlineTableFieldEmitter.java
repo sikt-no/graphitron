@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
+import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -26,9 +27,13 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
  *
  * <p>Relies on the C1 invariant {@code TableField.returnType().wrapper() != Connection}.
  *
- * <p>{@link JoinStep.ConditionJoin} anywhere in the path triggers a runtime-throwing stub arm —
- * target-table resolution for condition joins is owned by classification-vocabulary item 5.
- * Compilation and schema-classifier coverage land in G5; runtime execution lands with item 5.
+ * <p>Handles both {@link JoinStep.FkJoin} and {@link JoinStep.ConditionJoin} hops uniformly:
+ * targets are pre-resolved on {@link JoinStep.HasTargetTable} so alias declarations read
+ * through one capability, and the JOIN chain dispatches on step type to emit either
+ * {@code .join(alias).onKey(FK)} or {@code .join(alias).on(condition(prevAlias, alias))}.
+ * Step-0 parent correlation reads {@link ChildField.TableField#parentCorrelation()} via a
+ * sealed switch; FkJoin first-hops produce a WHERE-clause correlation, ConditionJoin
+ * first-hops fold their correlation into the JOIN's ON clause.
  */
 public final class InlineTableFieldEmitter {
 
@@ -49,18 +54,17 @@ public final class InlineTableFieldEmitter {
      *                     recursion, where each nesting level declares its own
      *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
      */
+    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
+        key = "condition-join.target-table-resolved-at-parse",
+        reliesOn = "Reads each hop's targetTable() through HasTargetTable without null-check; "
+            + "depends on BuildContext.resolveConditionJoinTarget pre-resolving ConditionJoin "
+            + "targets and the ConditionJoin compact constructor's null-check as the structural "
+            + "safety net.")
     public static CodeBlock buildSwitchArmBody(ChildField.TableField tf, String parentAlias, String sfName, String outputPackage) {
-        var stubReason = SplitRowsMethodEmitter.unsupportedReason(tf);
-        if (stubReason.isPresent()) {
-            return CodeBlock.builder()
-                .addStatement("throw new $T($S)",
-                    UnsupportedOperationException.class, stubReason.get().message())
-                .build();
-        }
-        return buildFkOnlyArm(tf, parentAlias, sfName, outputPackage);
+        return buildArm(tf, parentAlias, sfName, outputPackage);
     }
 
-    private static CodeBlock buildFkOnlyArm(ChildField.TableField tf, String parentAlias, String sfName, String outputPackage) {
+    private static CodeBlock buildArm(ChildField.TableField tf, String parentAlias, String sfName, String outputPackage) {
         List<JoinStep> path = tf.joinPath();
         TableRef terminalTable = tf.returnType().table();
         List<String> aliases = JoinPathEmitter.generateAliases(path, terminalTable);
@@ -73,12 +77,13 @@ public final class InlineTableFieldEmitter {
         // alias's runtime name (via the jOOQ parent table's {@code getName()}) so recursive /
         // self-referential subselects never shadow each other's aliases. For the base (outermost)
         // call, parent.getName() is the raw table name; each nested call accumulates the prefix,
-        // giving globally unique aliases at every depth.
+        // giving globally unique aliases at every depth. Both FkJoin and ConditionJoin (and the
+        // unreachable-here LiftedHop) expose targetTable() through HasTargetTable.
         for (int i = 0; i < path.size(); i++) {
-            JoinStep.FkJoin fk = (JoinStep.FkJoin) path.get(i);
-            ClassName jooqTableClass = fk.targetTable().tableClass();
+            JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
+            ClassName jooqTableClass = ht.targetTable().tableClass();
             code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
-                jooqTableClass, aliases.get(i), fk.targetTable().constantsClass(), fk.targetTable().javaFieldName(),
+                jooqTableClass, aliases.get(i), ht.targetTable().constantsClass(), ht.targetTable().javaFieldName(),
                 parentAlias, "_" + aliases.get(i));
         }
 
@@ -112,20 +117,35 @@ public final class InlineTableFieldEmitter {
         // FROM: terminal hop's aliased table.
         sel.add("\n        .from($L)", terminalAlias);
 
-        // JOIN chain: walking from terminal back towards step 0. Each bridging step's FK connects
-        // the next hop's alias in.
+        // JOIN chain: walking from terminal back towards step 0. Bridging steps dispatch on the
+        // hop's identity — FK hops use .onKey(FK), condition hops use .on(method(prevAlias, alias)).
+        // The alias being joined IN is the previous-step's alias (the one closer to step 0).
         for (int i = path.size() - 1; i >= 1; i--) {
-            JoinStep.FkJoin bridging = (JoinStep.FkJoin) path.get(i);
+            JoinStep bridging = path.get(i);
             String prevAlias = aliases.get(i - 1);
-            sel.add("\n        .join($L).onKey($T.$L)",
-                prevAlias, bridging.fk().keysClass(), bridging.fk().constantName());
+            switch (bridging) {
+                case JoinStep.FkJoin fk -> sel.add("\n        .join($L).onKey($T.$L)",
+                    prevAlias, fk.fk().keysClass(), fk.fk().constantName());
+                case JoinStep.ConditionJoin cj -> sel.add("\n        .join($L).on($L)",
+                    prevAlias, JoinPathEmitter.emitTwoArgMethodCall(cj.condition(), aliases.get(i), prevAlias));
+                case JoinStep.LiftedHop ignored -> throw new IllegalStateException(
+                    "LiftedHop should not appear in an @reference-composed path; this path is "
+                    + "reserved for the single-hop @sourceRow shape consumed by SplitRowsMethodEmitter");
+            }
         }
 
-        // WHERE: step 0's correlation against parent, then whereFilter methods, then user filters.
-        JoinStep.FkJoin first = (JoinStep.FkJoin) path.get(0);
+        // WHERE: step 0's correlation against parent (sealed switch on parentCorrelation),
+        // then whereFilter methods, then user filters. OnFkSlots: emit the slot-based
+        // predicate. OnConditionJoin: the condition method is the correlation predicate
+        // (SQL-equivalent to an ON clause for the bridging step that joined firstAlias in).
         String firstAlias = aliases.get(0);
-        CodeBlock correlation = JoinPathEmitter.emitCorrelationWhere(first, firstAlias, parentAlias);
-        var where = CodeBlock.builder().add("$L", correlation);
+        var where = CodeBlock.builder();
+        switch (tf.parentCorrelation()) {
+            case ParentCorrelation.OnFkSlots fk ->
+                where.add("$L", JoinPathEmitter.emitCorrelationWhere((JoinStep.FkJoin) fk.firstHop(), firstAlias, parentAlias));
+            case ParentCorrelation.OnConditionJoin cj ->
+                where.add("$L", JoinPathEmitter.emitTwoArgMethodCall(cj.firstHop().condition(), parentAlias, firstAlias));
+        }
         for (JoinStep step : path) {
             if (step instanceof JoinStep.FkJoin fk && fk.whereFilter() != null) {
                 String srcAlias = resolveSourceAlias(path, aliases, fk, parentAlias);

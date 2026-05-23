@@ -209,26 +209,12 @@ public class GraphitronSchemaValidator {
      * {@code NOT_DISPATCHED_LEAVES} return {@code null} from this lookup and are correctly
      * ignored — an invariant enforced by
      * {@code GeneratorCoverageTest.everyGraphitronFieldLeafHasAKnownDispatchStatus}.
-     *
-     * <p>Both the stubbed-variant map lookup and the intra-variant
-     * {@code SplitRowsMethodEmitter.unsupportedReason} predicates produce a
-     * {@link no.sikt.graphitron.rewrite.model.Rejection.Deferred}; both project to a
-     * {@link ValidationError} via the shared {@link #emitDeferredError} path so the validator's
-     * deferred-gate output is uniform regardless of which channel the deferred arose from.
      */
     private void validateVariantIsImplemented(GraphitronField field, List<ValidationError> errors) {
         var stubbed = TypeFetcherGenerator.STUBBED_VARIANTS.get(field.getClass());
         if (stubbed != null) {
             emitDeferredError(field, stubbed, errors);
-            return;
         }
-        // Intra-variant stubs: the six ChildField variants that share the condition-join
-        // predicate ({@link ConditionJoinReportable}) all dispatch through the emitter's
-        // single capability-keyed unsupportedReason; STUBBED_VARIANTS is class-keyed so
-        // cannot distinguish "fully stubbed" from "intra-variant emit-block", and the
-        // capability dispatch keeps validator and emitter in lock-step.
-        no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter.unsupportedReason(field)
-            .ifPresent(d -> emitDeferredError(field, d, errors));
     }
 
     private static void emitDeferredError(GraphitronField field,
@@ -543,13 +529,6 @@ public class GraphitronSchemaValidator {
             + "InlineColumnReferenceFieldEmitter and TypeClassGenerator assume Direct compaction "
             + "post-validate without a runtime branch on compaction(), and lets FetcherEmitter "
             + "carry only the Direct-compaction wiring arm for this variant.")
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "column-reference-field-no-condition-join-step",
-        description = "Rejects ChildField.ColumnReferenceField whose joinPath contains a "
-            + "JoinStep.ConditionJoin as Rejection.Deferred keyed to "
-            + "column-reference-on-scalar-field-condition-join. Lets "
-            + "InlineColumnReferenceFieldEmitter cast each step in joinPath to JoinStep.FkJoin "
-            + "without a defensive arm.")
     private void validateColumnReferenceField(no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField field, List<ValidationError> errors) {
         if (field.joinPath().isEmpty()) {
             errors.add(new ValidationError(
@@ -571,15 +550,6 @@ public class GraphitronSchemaValidator {
                     no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField.class),
                 errors);
             return;
-        }
-        if (no.sikt.graphitron.rewrite.generators.JoinPathEmitter.hasConditionJoin(field.joinPath())) {
-            emitDeferredError(field,
-                (Rejection.Deferred) Rejection.deferred(
-                    "ColumnReferenceField with @condition-method step in path not yet implemented"
-                    + " — pending classification-vocabulary item 5",
-                    "column-reference-on-scalar-field-condition-join",
-                    no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField.class),
-                errors);
         }
     }
     private void validateCompositeColumnField(no.sikt.graphitron.rewrite.model.ChildField.CompositeColumnField field, List<ValidationError> errors) {
@@ -614,18 +584,15 @@ public class GraphitronSchemaValidator {
 
     private void validateReferenceLeadsToType(String fieldName, SourceLocation location, List<JoinStep> path, String typeName, no.sikt.graphitron.rewrite.model.TableRef targetTable, List<ValidationError> errors) {
         if (path.isEmpty()) return; // classifier guarantees non-empty for this variant; skip in isolated validator unit tests
-        var lastStep = path.getLast();
-        // FkJoin and LiftedHop both implement WithTarget — the targetTable accessor means the
-        // same thing on each, so the comparison is uniform. ConditionJoin has no pre-resolved
-        // target table and is skipped per the existing convention.
-        if (lastStep instanceof JoinStep.WithTarget wt) {
-            if (!wt.targetTable().tableName().equalsIgnoreCase(targetTable.tableName())) {
-                errors.add(new ValidationError(
-                    fieldName,
-            Rejection.structural("Field '" + fieldName + "': @reference path does not lead to the table of type '" + typeName + "'"),
-                    location
-                ));
-            }
+        // Every JoinStep permit implements HasTargetTable post-R232 (FkJoin and LiftedHop via
+        // WithTarget; ConditionJoin directly). The comparison is uniform across permits.
+        var lastStep = (JoinStep.HasTargetTable) path.getLast();
+        if (!lastStep.targetTable().tableName().equalsIgnoreCase(targetTable.tableName())) {
+            errors.add(new ValidationError(
+                fieldName,
+                Rejection.structural("Field '" + fieldName + "': @reference path does not lead to the table of type '" + typeName + "'"),
+                location
+            ));
         }
     }
     private void validateTableField(no.sikt.graphitron.rewrite.model.ChildField.TableField field, Map<String, GraphitronType> types, List<ValidationError> errors) {

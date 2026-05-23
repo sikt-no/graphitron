@@ -21,11 +21,10 @@ import no.sikt.graphitron.rewrite.model.ColumnRef;
 @UnitTier
 class ColumnReferenceFieldValidationTest {
 
-    private static final String DEFERRED_CONDITION_JOIN =
-        "Field 'Film.languageName': "
-        + "ColumnReferenceField with @condition-method step in path not yet implemented"
-        + " — pending classification-vocabulary item 5"
-        + " — see graphitron-rewrite/roadmap/column-reference-on-scalar-field-condition-join.md";
+    // R232: ColumnReferenceField + condition-join now classifies and emits a real scalar
+    // subquery via InlineColumnReferenceFieldEmitter; the validator no longer surfaces a
+    // deferred-rejection. The R129 slug (column-reference-on-scalar-field-condition-join)
+    // closes alongside R232.
 
     private static final String DEFERRED_NODEID_ENCODE =
         "Field 'Film.languageName': "
@@ -57,12 +56,12 @@ class ColumnReferenceFieldValidationTest {
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
-        CONDITION_METHOD("path resolved via condition method instead of a FK — deferred to condition-join slug",
+        CONDITION_METHOD("path resolved via condition method instead of a FK — classifies and emits a scalar subquery (R232)",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
                 CONDITION_PATH,
                 new CallSiteCompaction.Direct(),
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
-            List.of(DEFERRED_CONDITION_JOIN)),
+            List.of()),
 
         RESOLVED_NODEID_ENCODE("NodeIdEncodeKeys compaction on a FK-only path — deferred to JOIN-with-projection slug",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
