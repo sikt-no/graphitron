@@ -10,7 +10,7 @@ depends-on: []
 
 # LSP diagnostic for redundant @splitQuery on @record-parent fields
 
-R3 (`classification-vocabulary-followups`) lands the build-tier warning when `@splitQuery` is applied to a field whose enclosing type carries `@record`. The build-tier warning is only visible when the user runs `mvn install` (or hits a build via the IDE's Maven integration); SDL editing is a much faster feedback loop, and the LSP can surface the same advisory inline at edit time.
+The build-tier warning when `@splitQuery` is applied to a field whose enclosing type carries `@record` (shipped per changelog entry 162) is only visible when the user runs `mvn install` (or hits a build via the IDE's Maven integration); SDL editing is a much faster feedback loop, and the LSP can surface the same advisory inline at edit time.
 
 The LSP already has a strict precedent for this pattern: `Diagnostics.java:252-256` re-derives the build-time `-parameters`-missing warning (`ServiceCatalog.emitParametersWarning`) as a `DiagnosticSeverity.Warning`, with a javadoc comment at line 245-247 explicitly naming the build-tier sibling so the drift seam is visible. This item follows the same pattern for R3's warning.
 
