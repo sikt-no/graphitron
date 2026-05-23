@@ -64,13 +64,15 @@ class ListRequiresOrderingValidationTest {
         CHILD_LIST_NO_ORDER("Child-position list TableField on no-PK table — error",
             new TableField("Parent", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
-                List.of(), List.of(), new OrderBySpec.None(), null),
+                List.of(), List.of(), new OrderBySpec.None(), null,
+                /* parentCorrelation */ null),
             List.of("Field 'Parent.films': " + LIST_ORDERING_ERROR)),
 
         CHILD_LIST_WITH_DEFAULT_ORDER("Child-position list TableField with Fixed ordering — admit",
             new TableField("Parent", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
-                List.of(), List.of(), PK_ORDER, null),
+                List.of(), List.of(), PK_ORDER, null,
+                /* parentCorrelation */ null),
             List.of());
 
         private final String description;

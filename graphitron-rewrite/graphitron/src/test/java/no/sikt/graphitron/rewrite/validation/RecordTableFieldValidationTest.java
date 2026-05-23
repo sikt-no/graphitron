@@ -51,34 +51,47 @@ class RecordTableFieldValidationTest {
         "Field 'FilmDetails.film': RecordTableField 'FilmDetails.film' with a condition-join step "
         + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
 
+    private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
+        TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(),
+        TestFixtures.joinTarget("film"), List.of(), null, ""));
+    private static final List<JoinStep> CONDITION_PATH = List.of(new JoinStep.ConditionJoin(
+        TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition",
+            ClassName.get("org.jooq", "Condition"), List.of()),
+        TestFixtures.filmTable(), ""));
+
     enum Case implements ValidatorCase {
 
         SINGLE_NO_PATH("single cardinality, empty joinPath — emittable post-R61 (single-record-per-key arm)",
-            new RecordTableField("FilmDetails", "film", null, RT_SINGLE, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE),
+            new RecordTableField("FilmDetails", "film", null, RT_SINGLE, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE,
+                /* parentCorrelation */ null),
             List.of()),
 
         SINGLE_WITH_FK_PATH("single cardinality with FK path — emittable post-R61",
             new RecordTableField("FilmDetails", "film", null, RT_SINGLE,
-                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
-                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE),
+                FK_PATH,
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE,
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
         SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — condition-join stub surfaces as build error",
             new RecordTableField("FilmDetails", "film", null, RT_SINGLE,
-                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), TestFixtures.filmTable(), "")),
-                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE),
+                CONDITION_PATH,
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE,
+                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of(CONDITION_JOIN_STUB)),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
             new RecordTableField("FilmDetails", "film", null, RT_LIST,
-                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), TestFixtures.filmTable(), "")),
-                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST),
+                CONDITION_PATH,
+                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST,
+                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of(CONDITION_JOIN_STUB)),
 
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
             new RecordTableField("FilmDetails", "films", null, RT_LIST,
-                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
-                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST),
+                FK_PATH,
+                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST,
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of());
 
         private final String description;

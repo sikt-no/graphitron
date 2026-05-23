@@ -714,6 +714,20 @@ class FieldBuilder {
             boolean hasLookupKey  = hasLookupKeyAnywhere(fieldDef);
             boolean isList = returnType.wrapper().isList();
             var parentSplitSource = deriveSplitQuerySource(parentTableType.table(), referencePath.elements(), returnType);
+            // Synthesise the step-0 parent correlation once per carrier — both inline and
+            // split-rows arms below read this through their @reference-carrying record header.
+            // parentPkCols is sourced from the split-rows sourceKey when present (the VALUES-
+            // derived parentInput joins on those columns) and is empty for inline emission
+            // (no parentInput materialised).
+            List<ColumnRef> tbtParentPkCols = hasSplitQuery
+                ? parentSplitSource.sourceKey().columns()
+                : List.of();
+            var tbtPcResolution = ctx.buildParentCorrelation(
+                referencePath.elements(), parentTableType.table(), tbtParentPkCols);
+            if (tbtPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
+            }
+            var tbtParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) tbtPcResolution).correlation();
             if (hasSplitQuery && hasLookupKey) {
                 var lookupResolved = lookupKeyResolver.resolveAtChild(returnType, true);
                 if (lookupResolved instanceof LookupKeyDirectiveResolver.Resolved.Rejected r) {
@@ -723,7 +737,8 @@ class FieldBuilder {
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
                     parentSplitSource.sourceKey(),
                     parentSplitSource.loaderRegistration(),
-                    tfc.lookupMapping());
+                    tfc.lookupMapping(),
+                    tbtParentCorrelation);
             }
             if (!hasSplitQuery && hasLookupKey) {
                 var lookupResolved = lookupKeyResolver.resolveAtChild(returnType, false);
@@ -732,7 +747,8 @@ class FieldBuilder {
                 }
                 return new no.sikt.graphitron.rewrite.model.ChildField.LookupTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                    tfc.lookupMapping());
+                    tfc.lookupMapping(),
+                    tbtParentCorrelation);
             }
             if (hasSplitQuery) {
                 if (returnType.wrapper() instanceof FieldWrapper.Single
@@ -746,7 +762,8 @@ class FieldBuilder {
                 return new no.sikt.graphitron.rewrite.model.ChildField.SplitTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
                     parentSplitSource.sourceKey(),
-                    parentSplitSource.loaderRegistration());
+                    parentSplitSource.loaderRegistration(),
+                    tbtParentCorrelation);
             }
             if (returnType.wrapper() instanceof FieldWrapper.Connection) {
                 return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.directiveConflict(
@@ -754,7 +771,8 @@ class FieldBuilder {
                     "@asConnection on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics"));
             }
             return new TableField(parentTypeName, name, location,
-                returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination());
+                returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
+                tbtParentCorrelation);
         }
 
         if (elementType instanceof TableInterfaceType tableInterfaceType) {
@@ -3747,12 +3765,23 @@ class FieldBuilder {
             // LifterPathKeyed (@reference present). The resolver already constructs the right
             // shape and surfaces it as ok.joinPath().
             List<JoinStep> joinPath = ok.joinPath();
+            // @record-parent carriers: the surface SDL parent type has no @table binding, so a
+            // condition-join first hop has no parent table to anchor against and routes to
+            // AuthorError. The FkJoin / LiftedHop arms (the normal cases) produce
+            // ParentCorrelation.OnFkSlots and don't consult parentTable.
+            var srPcResolution = ctx.buildParentCorrelation(joinPath, /* parentTable= */ null, ok.sourceKey().columns());
+            if (srPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
+            }
+            var srParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) srPcResolution).correlation();
             if (hasLookupKeyAnywhere(fieldDef)) {
                 return new RecordLookupTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
-                    tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.sourceKey(), ok.loaderRegistration(), tfc.lookupMapping());
+                    tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.sourceKey(), ok.loaderRegistration(), tfc.lookupMapping(),
+                    srParentCorrelation);
             }
             return new RecordTableField(parentTypeName, name, location, ok.tbReturnType(), joinPath,
-                tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.sourceKey(), ok.loaderRegistration());
+                tfc.filters(), tfc.orderBy(), tfc.pagination(), ok.sourceKey(), ok.loaderRegistration(),
+                srParentCorrelation);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
@@ -3856,12 +3885,22 @@ class FieldBuilder {
                 }
                 var resolved = (RecordParentSourceResolution.Resolved) resolution;
                 var resolvedJoinPath = resolved.joinPath();
+                // @record-parent carriers: see the @sourceRow branch above for the parentTable
+                // null rationale. The condition-join first hop is the only arm that consults
+                // parentTable, and it routes to AuthorError without one.
+                var resolvedPcResolution = ctx.buildParentCorrelation(resolvedJoinPath, /* parentTable= */ null, resolved.sourceKey().columns());
+                if (resolvedPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
+                    yield new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
+                }
+                var resolvedParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) resolvedPcResolution).correlation();
                 if (isLookup) {
                     yield new RecordLookupTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                        resolved.sourceKey(), resolved.loaderRegistration(), tfc.lookupMapping());
+                        resolved.sourceKey(), resolved.loaderRegistration(), tfc.lookupMapping(),
+                        resolvedParentCorrelation);
                 }
                 yield new RecordTableField(parentTypeName, name, location, tb, resolvedJoinPath, tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                    resolved.sourceKey(), resolved.loaderRegistration());
+                    resolved.sourceKey(), resolved.loaderRegistration(),
+                    resolvedParentCorrelation);
             }
             case ReturnTypeRef.ResultReturnType r -> recordFieldOrUnclassified(
                 fieldDef, parentTypeName, name, location, r, columnName, parentResultType, parentBackingClass);
@@ -4903,8 +4942,14 @@ class FieldBuilder {
                     "column '" + columnName + "' could not be resolved in the jOOQ table",
                     columnName, candidates));
             }
+            var crfPcResolution = ctx.buildParentCorrelation(refPath.elements(), tableType.table(), List.of());
+            if (crfPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
+            }
+            var crfParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) crfPcResolution).correlation();
             return new ColumnReferenceField(parentTypeName, name, location, columnName, column.get(), refPath.elements(),
-                new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
+                new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
+                crfParentCorrelation);
         }
 
         Optional<ColumnRef> column = svc.resolveColumn(columnName, tableType);
@@ -4993,7 +5038,14 @@ class FieldBuilder {
         // implements the JOIN-with-projection form.
         if (keys.size() == 1) {
             ColumnRef k = keys.get(0);
-            return new ColumnReferenceField(parentTypeName, name, location, k.javaName(), k, joinPath, compaction);
+            // parentTable is the @nodeId carrier's parent NodeType.table() — always non-null at
+            // this site, so the buildParentCorrelation AuthorError arm (gated on parentTable
+            // == null when the first hop is a ConditionJoin) is unreachable here. The cast is
+            // a structural safety net rather than runtime branching.
+            var nodeRefPcResolution = ctx.buildParentCorrelation(joinPath, parentTable, List.of());
+            var nodeRefParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) nodeRefPcResolution).correlation();
+            return new ColumnReferenceField(parentTypeName, name, location, k.javaName(), k, joinPath, compaction,
+                nodeRefParentCorrelation);
         }
         return new ChildField.CompositeColumnReferenceField(parentTypeName, name, location, keys, joinPath, compaction);
     }

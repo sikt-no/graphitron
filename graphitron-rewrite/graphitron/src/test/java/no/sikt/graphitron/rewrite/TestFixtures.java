@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.rewrite.model.TableRef;
@@ -498,5 +499,28 @@ public final class TestFixtures {
             .map(JoinSlot.LifterSlot::new)
             .toList();
         return new JoinStep.LiftedHop(targetTable, slots, alias);
+    }
+
+    /**
+     * Synthesises a {@link ParentCorrelation} mirroring
+     * {@code BuildContext.buildParentCorrelation}: {@link ParentCorrelation.OnFkSlots} when the
+     * first hop is FkJoin/LiftedHop, {@link ParentCorrelation.OnConditionJoin} when it is a
+     * condition method, and {@code null} when the joinPath is empty (standalone-lookup shape).
+     * Test fixtures use this to satisfy the ChildField compact-constructor invariant without
+     * threading the resolver state through every test case.
+     */
+    public static ParentCorrelation pcFor(List<JoinStep> joinPath, TableRef parentTable) {
+        if (joinPath.isEmpty()) {
+            return null;
+        }
+        JoinStep first = joinPath.get(0);
+        if (first instanceof JoinStep.WithTarget wt) {
+            return new ParentCorrelation.OnFkSlots(wt);
+        }
+        if (first instanceof JoinStep.ConditionJoin cj) {
+            return new ParentCorrelation.OnConditionJoin(cj, parentTable, List.of());
+        }
+        throw new IllegalStateException(
+            "JoinStep permit list exhausted at TestFixtures.pcFor: " + first.getClass().getName());
     }
 }

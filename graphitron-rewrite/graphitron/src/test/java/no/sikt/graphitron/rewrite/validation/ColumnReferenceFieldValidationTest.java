@@ -33,37 +33,50 @@ class ColumnReferenceFieldValidationTest {
         + " — requires JOIN-with-projection emission"
         + " — see graphitron-rewrite/roadmap/nodeidreferencefield-join-projection-form.md";
 
+    private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
+        TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),
+        TestFixtures.joinTarget("language"), List.of(), null, ""));
+    private static final List<JoinStep> CONDITION_PATH = List.of(new JoinStep.ConditionJoin(
+        TestFixtures.staticServiceMethodRef("com.example.Conditions", "languageCondition",
+            ClassName.get("org.jooq", "Condition"), List.of()),
+        TestFixtures.languageTable(), ""));
+
     enum Case implements ValidatorCase {
 
         RESOLVED_IMPLICIT("no @field — column name defaults to the GraphQL field name; Direct + FK-only path",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(), TestFixtures.joinTarget("language"), List.of(), null, "")),
-                new CallSiteCompaction.Direct()),
+                FK_PATH,
+                new CallSiteCompaction.Direct(),
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
         RESOLVED_EXPLICIT("@field(name:) overrides the column name; Direct + FK-only path",
             new ColumnReferenceField("Film", "languageName", null, "language_name", new ColumnRef("NAME", "", ""),
-                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(), TestFixtures.joinTarget("language"), List.of(), null, "")),
-                new CallSiteCompaction.Direct()),
+                FK_PATH,
+                new CallSiteCompaction.Direct(),
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
         CONDITION_METHOD("path resolved via condition method instead of a FK — deferred to condition-join slug",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "languageCondition", ClassName.get("org.jooq", "Condition"), List.of()), TestFixtures.languageTable(), "")),
-                new CallSiteCompaction.Direct()),
+                CONDITION_PATH,
+                new CallSiteCompaction.Direct(),
+                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of(DEFERRED_CONDITION_JOIN)),
 
         RESOLVED_NODEID_ENCODE("NodeIdEncodeKeys compaction on a FK-only path — deferred to JOIN-with-projection slug",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(), TestFixtures.joinTarget("language"), List.of(), null, "")),
+                FK_PATH,
                 new CallSiteCompaction.NodeIdEncodeKeys(
                     new HelperRef.Encode(ClassName.bestGuess("com.example.NodeIds"), "encodeLanguage",
-                        List.of(new ColumnRef("ID", "java.lang.Integer", ""))))),
+                        List.of(new ColumnRef("ID", "java.lang.Integer", "")))),
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of(DEFERRED_NODEID_ENCODE)),
 
         MISSING_PATH("no @reference directive — path is empty",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""), List.of(),
-                new CallSiteCompaction.Direct()),
+                new CallSiteCompaction.Direct(),
+                /* parentCorrelation */ null),
             List.of("Field 'Film.languageName': @reference path is required"));
 
         private final String description;

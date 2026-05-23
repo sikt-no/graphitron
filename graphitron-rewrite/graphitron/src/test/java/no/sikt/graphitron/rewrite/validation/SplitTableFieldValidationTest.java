@@ -46,6 +46,14 @@ class SplitTableFieldValidationTest {
         "Field 'Film.actors': @splitQuery 'Film.actors' with a condition-join step cannot be "
         + "emitted until classification-vocabulary item 5 resolves condition-method target tables";
 
+    private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
+        TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(),
+        TestFixtures.joinTarget("film_actor"), List.of(), null, ""));
+    private static final List<JoinStep> CONDITION_PATH = List.of(new JoinStep.ConditionJoin(
+        TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition",
+            ClassName.get("org.jooq", "Condition"), List.of()),
+        TestFixtures.actorTable(), ""));
+
     enum Case implements ValidatorCase {
 
         // Single-cardinality @splitQuery with a single FK hop — emittable. Positive case:
@@ -54,14 +62,16 @@ class SplitTableFieldValidationTest {
         // GraphitronSchemaBuilderTest, not here.
         SINGLE_CARDINALITY_EMITTABLE("single cardinality with one-hop FK path — emittable, no errors",
             new SplitTableField("Film", "actors", null, RT_SINGLE,
-                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
-                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE),
+                FK_PATH,
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE,
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
         WITH_CONDITION_ONLY("single cardinality with condition-only join step — runtime stub, build error",
             new SplitTableField("Film", "actors", null, RT_SINGLE,
-                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition", ClassName.get("org.jooq", "Condition"), List.of()), TestFixtures.actorTable(), "")),
-                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE),
+                CONDITION_PATH,
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE,
+                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of(CONDITION_JOIN_STUB)),
 
         // plan-split-query-connection.md §1: Split + Connection with no ORDER BY is a build error.
@@ -69,15 +79,17 @@ class SplitTableFieldValidationTest {
         // cursor encoding hashes an empty tuple and pages silently non-deterministically.
         CONNECTION_EMPTY_ORDERBY_NONE("Connection + OrderBySpec.None — build error, non-empty ORDER BY required",
             new SplitTableField("Film", "actors", null, RT_CONN,
-                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
-                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_CONN, LR_CONN),
+                FK_PATH,
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_CONN, LR_CONN,
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of("Field 'Film.actors': @splitQuery connections require a non-empty ORDER BY "
                 + "(add @defaultOrder, @orderBy, or a primary key on the target table)")),
 
         CONNECTION_EMPTY_ORDERBY_FIXED("Connection + empty OrderBySpec.Fixed — same rejection",
             new SplitTableField("Film", "actors", null, RT_CONN,
-                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
-                List.of(), new OrderBySpec.Fixed(List.of(), "asc"), null, SOURCE_KEY_CONN, LR_CONN),
+                FK_PATH,
+                List.of(), new OrderBySpec.Fixed(List.of(), "asc"), null, SOURCE_KEY_CONN, LR_CONN,
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of("Field 'Film.actors': @splitQuery connections require a non-empty ORDER BY "
                 + "(add @defaultOrder, @orderBy, or a primary key on the target table)"));
 

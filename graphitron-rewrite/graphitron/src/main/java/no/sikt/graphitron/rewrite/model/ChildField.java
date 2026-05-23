@@ -196,8 +196,12 @@ public sealed interface ChildField extends OutputField
         String columnName,
         ColumnRef column,
         List<JoinStep> joinPath,
-        CallSiteCompaction compaction
+        CallSiteCompaction compaction,
+        ParentCorrelation parentCorrelation
     ) implements ChildField {
+        public ColumnReferenceField {
+            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "ColumnReferenceField");
+        }
         @Override public DomainReturnType domainReturnType() {
             if (compaction instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                 return new DomainReturnType.Plain(STRING_CLASS);
@@ -333,8 +337,12 @@ public sealed interface ChildField extends OutputField
         List<JoinStep> joinPath,
         List<WhereFilter> filters,
         OrderBySpec orderBy,
-        PaginationSpec pagination
+        PaginationSpec pagination,
+        ParentCorrelation parentCorrelation
     ) implements TableTargetField, ConditionJoinReportable {
+        public TableField {
+            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "TableField");
+        }
         @Override public Rejection.EmitBlockReason emitBlockReason() {
             return Rejection.EmitBlockReason.TABLE_FIELD_CONDITION_JOIN_STEP;
         }
@@ -354,8 +362,12 @@ public sealed interface ChildField extends OutputField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         SourceKey sourceKey,
-        LoaderRegistration loaderRegistration
+        LoaderRegistration loaderRegistration,
+        ParentCorrelation parentCorrelation
     ) implements TableTargetField, BatchKeyField, ConditionJoinReportable {
+        public SplitTableField {
+            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "SplitTableField");
+        }
         @Override
         public boolean emitsSingleRecordPerKey() {
             return !returnType().wrapper().isList();
@@ -378,8 +390,12 @@ public sealed interface ChildField extends OutputField
         List<WhereFilter> filters,
         OrderBySpec orderBy,
         PaginationSpec pagination,
-        LookupMapping lookupMapping
+        LookupMapping lookupMapping,
+        ParentCorrelation parentCorrelation
     ) implements TableTargetField, LookupField, ConditionJoinReportable {
+        public LookupTableField {
+            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "LookupTableField");
+        }
         @Override public Rejection.EmitBlockReason emitBlockReason() {
             return Rejection.EmitBlockReason.LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;
         }
@@ -400,8 +416,12 @@ public sealed interface ChildField extends OutputField
         PaginationSpec pagination,
         SourceKey sourceKey,
         LoaderRegistration loaderRegistration,
-        LookupMapping lookupMapping
+        LookupMapping lookupMapping,
+        ParentCorrelation parentCorrelation
     ) implements TableTargetField, BatchKeyField, LookupField, ConditionJoinReportable {
+        public SplitLookupTableField {
+            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "SplitLookupTableField");
+        }
         @Override public Rejection.EmitBlockReason emitBlockReason() {
             return Rejection.EmitBlockReason.SPLIT_LOOKUP_TABLE_FIELD_CONDITION_JOIN_STEP;
         }
@@ -741,8 +761,12 @@ public sealed interface ChildField extends OutputField
         OrderBySpec orderBy,
         PaginationSpec pagination,
         SourceKey sourceKey,
-        LoaderRegistration loaderRegistration
+        LoaderRegistration loaderRegistration,
+        ParentCorrelation parentCorrelation
     ) implements TableTargetField, BatchKeyField, ConditionJoinReportable {
+        public RecordTableField {
+            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "RecordTableField");
+        }
         @Override
         public boolean emitsSingleRecordPerKey() {
             // Two structurally distinct triggers fold onto the same router decision in
@@ -775,8 +799,12 @@ public sealed interface ChildField extends OutputField
         PaginationSpec pagination,
         SourceKey sourceKey,
         LoaderRegistration loaderRegistration,
-        LookupMapping lookupMapping
+        LookupMapping lookupMapping,
+        ParentCorrelation parentCorrelation
     ) implements TableTargetField, BatchKeyField, LookupField, ConditionJoinReportable {
+        public RecordLookupTableField {
+            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "RecordLookupTableField");
+        }
         @Override
         public boolean emitsSingleRecordPerKey() {
             // Mirrors RecordTableField: single-cardinality fields fold onto the same

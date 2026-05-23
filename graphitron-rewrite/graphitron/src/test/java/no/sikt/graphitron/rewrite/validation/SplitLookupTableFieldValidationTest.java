@@ -43,7 +43,8 @@ class SplitLookupTableFieldValidationTest {
     enum Case implements ValidatorCase {
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field",
-            new SplitLookupTableField("Language", "films", null, RT_CONN, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_CONN, LR_CONN, EMPTY_LOOKUP),
+            new SplitLookupTableField("Language", "films", null, RT_CONN, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_CONN, LR_CONN, EMPTY_LOOKUP,
+                /* parentCorrelation */ null),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 
         private final String description;
