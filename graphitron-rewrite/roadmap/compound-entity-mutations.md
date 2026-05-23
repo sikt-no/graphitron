@@ -65,10 +65,14 @@ new sealed permit on `DmlTableField`) without modification.
 
 R222 (`input-model-dimensional-pivot`) introduces a recursive `InputUsage`
 model where a nested-input slot can carry an `InputUsage` with its own
-table distinct from the parent's. Combined with `@reference(path:)` on
-nested-input slots (the directive already exists on
-`INPUT_FIELD_DEFINITION` for `@nodeId` leaves; R122 extends its reach),
-the SDL declaration for a compound mutation flattens deterministically:
+table distinct from the parent's. `InputUsage` is the SQL-side carrier
+(`(Input, TableRef, List<InputField>)`); the recursive `InputField` arms
+are `NestingField` (same-table SDL grouping) and the new
+`TableTargetField` this item adds (cross-table FK-linked nesting).
+Combined with `@reference(path:)` on nested-input slots (the directive
+already exists on `INPUT_FIELD_DEFINITION` for `@nodeId` leaves; R122
+extends its reach), the SDL declaration for a compound mutation
+flattens deterministically:
 
 ```graphql
 input CreateOrderInput @table(name: "order") {
@@ -106,16 +110,20 @@ The questions that remain Spec-stage work for R122:
   SDL-grouping case where the nested fields stay on the parent's table
   (per `InputField.java:186-195`). The moment the nested input crosses a
   table boundary, the model shape changes. R122's `TableTargetField`
-  carries the nested `InputUsage` (with the child's own table and
-  `JooqTableRecord` backing) plus the FK descriptor (the constraint name
-  and the FK column on the child side that holds the parent's PK).
+  carries the nested `InputUsage` (with the child's own `TableRef`) plus
+  the FK descriptor (the constraint name and the FK column on the child
+  side that holds the parent's PK). The mutation emitter may use a jOOQ
+  `TableRecord` internally when constructing the child INSERT — that is
+  an emitter implementation detail, not a model slot. `BackingClass`
+  itself is not on `TableTargetField`: it's the user's declared
+  materialization target for a domain-form service-method param, which
+  R164 attaches per-param on the domain-form arm.
 - **Visitor arm.** R222 names the seam (see its Phase 3 description and
   §"Recursion through nested inputs") but does not implement it. The
   visitor's nested-input recursion needs an arm that recognises an
   `@reference(path:)` directive on a nested-input slot whose terminal
   element resolves to a table different from the parent's, constructs the
-  child `InputUsage` with that table plus the corresponding
-  `JooqTableRecord` backing class, and wraps it in `TableTargetField`
+  child `InputUsage` with that table, and wraps it in `TableTargetField`
   rather than `NestingField` or `UnboundField`. The pre-existing
   `@reference(path:)` resolver on the `@nodeId` path is the model for
   how the directive is parsed and the FK constraint is verified against
