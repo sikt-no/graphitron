@@ -863,11 +863,12 @@ public final class Main {
         ChangelogContext ctx
     ) {
         int colCount = Math.max(1, header.size());
-        // No %autowidth: that sizes the table to its content and overflows narrow
-        // viewports (mobile). The default fills 100% of the container width per
-        // the site CSS, which lets long cells reflow inside the page rather than
-        // pushing the page wider than the viewport.
-        out.append("[options=\"header\"]\n");
+        // Explicit cols="N*": without it, AsciiDoctor infers the column count
+        // from the first line of the block. Since we emit one cell per line, it
+        // would see one cell and render a single-column table with every cell
+        // stacked vertically. N equal-width columns is the safe default; no
+        // %autowidth so the table fills the container and reflows on mobile.
+        out.append("[cols=\"").append(colCount).append("*\", options=\"header\"]\n");
         out.append("|===\n");
         for (String cell : header) {
             out.append("| ").append(transformAdocTableCell(cell, ctx)).append('\n');
