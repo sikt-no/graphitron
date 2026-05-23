@@ -1,7 +1,7 @@
 ---
 id: R233
 title: Lift LSP @field(name:) column arms onto a sealed FieldClassification dispatch (closes the completion-arm @reference path bug)
-status: Ready
+status: In Progress
 bucket: bug
 theme: lsp
 depends-on: []
@@ -281,7 +281,7 @@ The analogous `HoversTest` cases (record-backed / pojo-backed hovers, if present
 ## Scope notes
 
 * The fix is LSP-only on the load-bearing surfaces. No runtime / classifier behaviour changes. The classifier projection was already correct; this lift just routes three consumer arms through it cleanly.
-* **Runtime sibling: `BuildContext.classifyInputFieldInternal` candidate hint at `BuildContext.java:1673`.** The nested-input "Did you mean" hint builds its candidate list from `catalog.columnSqlNamesOf(resolvedTable.tableName())` where `resolvedTable` is the path-*origin* enclosing input's `@table`, not the path's terminal table. For an unreachable column under a `@reference`, the suggestions are drawn from the wrong table and lead the user away from the fix. This is a different surface (compile-time validator error message vs. LSP arm) and a different consumer audience (the user sees it once at build time, not interactively per keystroke), so it does not fold into this LSP-scoped item. Filed as a sibling Backlog stub in the same session — `validator-reference-candidate-hint-terminal-table.md` (or equivalent). The implementer adds the cross-link before opening this item's PR.
+* **Runtime sibling: `BuildContext.classifyInputFieldInternal` candidate hint at `BuildContext.java:1673`.** The nested-input "Did you mean" hint builds its candidate list from `catalog.columnSqlNamesOf(resolvedTable.tableName())` where `resolvedTable` is the path-*origin* enclosing input's `@table`, not the path's terminal table. For an unreachable column under a `@reference`, the suggestions are drawn from the wrong table and lead the user away from the fix. This is a different surface (compile-time validator error message vs. LSP arm) and a different consumer audience (the user sees it once at build time, not interactively per keystroke), so it does not fold into this LSP-scoped item. Filed as sibling Backlog item R236 (`validator-reference-candidate-hint-terminal-table.md`).
 * R152 (`lsp-nodetype-hover-column-scoping.md`) is a different LSP coordinate (`@nodeId(typeName:)` hover) in the same family of "scope a column lookup to the right table" fixes; out of scope here.
 
 ## References

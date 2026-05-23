@@ -31,7 +31,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
-| `R233` | Lift LSP @field(name:) column arms onto a sealed FieldClassification dispatch (closes the completion-arm @reference path bug) | Ready | 2026-05-23 <sub>created 2026-05-22</sub> | [plan](lsp-field-completion-reference-terminal-table.md) |
+| `R233` | Lift LSP @field(name:) column arms onto a sealed FieldClassification dispatch (closes the completion-arm @reference path bug) | In Progress | 2026-05-23 <sub>created 2026-05-22</sub> | [plan](lsp-field-completion-reference-terminal-table.md) |
 
 ---
 
@@ -105,6 +105,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 ### Other
 
 - `R148` [**Advance SourceLocation past description so diagnostics point at the field, not the doc block**](source-location-skips-description.md): graphql-java's `FieldDefinition.getSourceLocation()` (and the same call on type, input-field, and enum-value definitions) returns the start of the *description block* when one is present, not the line of the field name. Build-time validator logs and the R147 LSP diagnostic surface both inherit this: an error on a documented field highlights the opening `"""` of the doc block rather than the field, which is misleading in the console and visually wrong in the editor squiggle. <sub>updated 2026-05-12</sub>
+- `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md): `BuildContext.classifyInputFieldInternal` (`BuildContext.java:1665`-`1677`) emits a "Did you mean…" hint when a nested-input column name is unresolvable. The candidate list is built from `catalog.columnSqlNamesOf(resolvedTable.tableName())` where `resolvedTable` is the path-*origin* enclosing input's `@table`, not the path's terminal table. <sub>updated 2026-05-23</sub>
 - `R226` [**Classification dimensional pivot: diagnostics off the model**](classification-dimensional-pivot.md): `GraphitronType` permits `UnclassifiedType` alongside the legitimate types (`TableType`, `RootType`, `InputType`, `TableInputType`, ...); `GraphitronField` permits `UnclassifiedField` alongside its legitimate field variants; `GraphitronSchema` carries `warnings: List<BuildWarning>` as a side slot. All three are validator-output data riding the model. Two dimensions collapsed onto one identity slot: type-kind on one axis, classification-outcome (classified / rejected / "we ignored your decoration") on another. The validator pays for it by doing a translation half ("walk `Unclassified*` carriers; project the typed `Rejection` payloads to `ValidationError`s") on top of its actual job of checking cross-type invariants. R222 is the same shape one organ over (consumer-independent vs consumer-dependent collapsed onto `InputType` / `TableInputType` permits). <sub>updated 2026-05-22</sub>
 - `R149` [**End-to-end LSP publish-diagnostics test and buildOutput report-population test for R147**](r147-followup-end-to-end-publish-diagnostics-tests.md): R147's spec called for two tests that the implementation deferred: <sub>updated 2026-05-12</sub>
 - `R164` [**Field model: three-dimension pivot**](field-model-two-axis-pivot.md): The code graphitron emits today is close to what we want. The runtime DataFetchers, the jOOQ QueryBuilders, and the validation / error wiring all work and are recognisable; the trouble is the *model* describing them. This pivot reorganises the model into the three dimensions the emit already lives along: the DataFetcherBuilder dimension (runtime fetcher), the QueryBuilder dimension (jOOQ SQL), and the ValidationBuilder dimension (validation steps and error routing). Nothing about what gets emitted changes; the sealed hierarchy gets honest about what it's already saying. <sub>updated 2026-05-15, created 2026-05-14</sub>
@@ -190,6 +191,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R222` [**Input model: dimensional pivot under visitor-driven classification**](input-model-dimensional-pivot.md) — Spec, structural
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
+- `R236` [**BuildContext nested-input candidate-hint draws from path-origin table instead of @reference terminal table**](validator-reference-candidate-hint-terminal-table.md) — Backlog, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
 - `R133` [**Flip leaf-coverage profile activation to opt-in**](leaf-coverage-profile-opt-in.md) — Backlog, cleanup
 - `R166` [**GraphQLSchemaVisitor as the driver for code generation**](graphqlschemavisitor-driven-emission.md) — Backlog, architecture, blocked by [field-model-two-axis-pivot](field-model-two-axis-pivot.md)
@@ -239,7 +241,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R90` [**LSP Javadoc surfacing + per-line definitions + @externalField + argMapping**](lsp-javaparser-javadoc-and-definitions.md) — Backlog, Backlog
 - `R212` [**IntelliJ plugin wrapping graphitron:dev LSP**](intellij-lsp-plugin.md) — Spec, feature
 - `R99` [**LSP classpath scan misses sibling modules when dev goal runs from a sub-module**](lsp-submodule-sibling-classpath.md) — Backlog, feature
-- `R233` [**Lift LSP @field(name:) column arms onto a sealed FieldClassification dispatch (closes the completion-arm @reference path bug)**](lsp-field-completion-reference-terminal-table.md) — Ready, bug
+- `R233` [**Lift LSP @field(name:) column arms onto a sealed FieldClassification dispatch (closes the completion-arm @reference path bug)**](lsp-field-completion-reference-terminal-table.md) — In Progress, bug
 - `R152` [**Scope @nodeId(typeName:) hover column lookup to the @node type's @table**](lsp-nodetype-hover-column-scoping.md) — Backlog, bug
 
 ### (untagged)
