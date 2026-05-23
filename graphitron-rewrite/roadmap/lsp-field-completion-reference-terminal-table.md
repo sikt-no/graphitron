@@ -1,7 +1,7 @@
 ---
 id: R233
 title: Lift LSP @field(name:) column arms onto a sealed FieldClassification dispatch (closes the completion-arm @reference path bug)
-status: In Progress
+status: In Review
 bucket: bug
 theme: lsp
 depends-on: []
