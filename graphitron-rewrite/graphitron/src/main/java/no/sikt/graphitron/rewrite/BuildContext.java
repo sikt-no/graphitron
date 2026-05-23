@@ -1053,13 +1053,20 @@ class BuildContext {
         String currentSource = startSqlTableName;
         int stepIndex = 0;
 
+        int totalElements = (int) elements.stream().filter(v -> v instanceof Map<?, ?>).count();
         for (var v : elements) {
             if (v instanceof Map<?, ?>) {
-                parsePathElement(asMap(v), currentSource, fieldName, stepIndex, resolvedElements, errors, isList);
+                boolean isTerminal = (stepIndex == totalElements - 1);
+                parsePathElement(asMap(v), currentSource, fieldName, stepIndex,
+                    resolvedElements, errors, isList, isTerminal, targetSqlTableName);
                 stepIndex++;
                 if (!resolvedElements.isEmpty()) {
                     var last = resolvedElements.getLast();
-                    currentSource = last instanceof FkJoin fk ? fk.targetTable().tableName() : null;
+                    // After R232 ConditionJoin carries a resolved targetTable, so advance
+                    // currentSource uniformly through HasTargetTable. LiftedHop is never
+                    // produced by @reference path parsing (single-hop terminal only).
+                    currentSource = last instanceof JoinStep.HasTargetTable ht
+                        ? ht.targetTable().tableName() : null;
                 }
             }
         }
@@ -1265,7 +1272,8 @@ class BuildContext {
      * {@code fieldName + "_" + stepIndex}.
      */
     private void parsePathElement(Map<String, Object> element, String currentSourceSqlName,
-            String fieldName, int stepIndex, List<JoinStep> out, List<String> errors, boolean isList) {
+            String fieldName, int stepIndex, List<JoinStep> out, List<String> errors, boolean isList,
+            boolean isTerminal, String terminalTargetSqlName) {
         Object keyRaw = element.get(ARG_KEY);
         Object tableRaw = element.get(ARG_TABLE_REF);
         Object conditionRaw = element.get(ARG_CONDITION);
@@ -1351,14 +1359,110 @@ class BuildContext {
             var res = resolveConditionRef(condMap);
             if (res.error() != null) {
                 errors.add(res.error());
-            } else if (res.ref() != null) {
-                out.add(new ConditionJoin(res.ref(), alias));
-            } else {
+                return;
+            }
+            if (res.ref() == null) {
                 errors.add("condition method '" + extractConditionQualifiedName(condMap) + "' could not be resolved");
+                return;
+            }
+            var targetResolution = resolveConditionJoinTarget(res.ref(), isTerminal, terminalTargetSqlName);
+            switch (targetResolution) {
+                case ConditionJoinTargetResolution.Resolved r -> out.add(new ConditionJoin(res.ref(), r.target(), alias));
+                case ConditionJoinTargetResolution.AuthorError e -> errors.add(e.message());
             }
             return;
         }
         errors.add("path element has neither 'key', 'table', nor 'condition'");
+    }
+
+    /**
+     * Result of {@link #resolveConditionJoinTarget}: either a fully-resolved {@link TableRef} or
+     * an actionable {@code AUTHOR_ERROR} message. {@link Resolved} feeds the
+     * {@link ConditionJoin#ConditionJoin(MethodRef, TableRef, String) ConditionJoin compact
+     * constructor}'s non-null contract directly; {@link AuthorError} routes through the
+     * {@code errors} accumulator in {@link #parsePathElement} and surfaces as a
+     * {@link Rejection.AuthorError.Structural} upstream.
+     */
+    private sealed interface ConditionJoinTargetResolution {
+        record Resolved(TableRef target) implements ConditionJoinTargetResolution {}
+        record AuthorError(String message) implements ConditionJoinTargetResolution {}
+    }
+
+    /**
+     * Resolves the target table for a {@code {condition:}}-only path element. The terminal-hop
+     * arm reads the carrier field's return-type {@code @table} binding (passed in via
+     * {@code terminalTargetSqlName}); the intermediate-hop arm reflects on the condition method's
+     * second parameter type via {@link JooqCatalog#findTableByClass}. Both unresolvable cases
+     * surface as {@link ConditionJoinTargetResolution.AuthorError}; the {@link ConditionJoin}
+     * compact constructor (in {@link JoinStep}) is the structural safety net for
+     * pre-resolution.
+     *
+     * <p>Wildcard parameter types ({@code Table<?>}) are supported on the terminal-hop arm
+     * (resolution does not consult the method signature there); the intermediate-hop arm
+     * requires a concrete generated jOOQ table class.
+     */
+    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
+        key = "condition-join.target-table-resolved-at-parse",
+        description = "BuildContext.resolveConditionJoinTarget resolves ConditionJoin.targetTable "
+            + "at parse time from the carrier field's return-type @table binding (terminal hop) "
+            + "or by reflecting on the condition method's second parameter (intermediate hop). "
+            + "Both unresolvable cases route through Rejection.AuthorError upstream; the "
+            + "ConditionJoin compact constructor is the structural safety net. Emitters consume "
+            + "cj.targetTable() without null-checks.")
+    private ConditionJoinTargetResolution resolveConditionJoinTarget(
+            MethodRef methodRef, boolean isTerminal, String terminalTargetSqlName) {
+        if (isTerminal) {
+            if (terminalTargetSqlName != null) {
+                var entry = catalog.findTable(terminalTargetSqlName).asEntry();
+                if (entry.isPresent()) {
+                    return new ConditionJoinTargetResolution.Resolved(
+                        entry.get().toTableRef(terminalTargetSqlName));
+                }
+            }
+            return new ConditionJoinTargetResolution.AuthorError(
+                "condition-only `@reference` path: cannot resolve target table because the "
+                + "carrier field's return type has no `@table` binding. Add `@table(name: …)` "
+                + "to the return type, or rewrite the path to include `{table:}` or `{key:}`.");
+        }
+        var params = methodRef.params();
+        if (params.size() < 2) {
+            return new ConditionJoinTargetResolution.AuthorError(
+                "intermediate-hop `@condition` method '" + methodRef.className() + "."
+                + methodRef.methodName() + "' has fewer than two parameters; the parser cannot "
+                + "infer a target table for this hop. Change the method signature to "
+                + "(srcTable, tgtTable) with concrete jOOQ table types, or rewrite the path to "
+                + "use `{table:}` or `{key:}` for this hop.");
+        }
+        var p1 = params.get(1);
+        String typeName = p1.typeName();
+        // Wildcard `Table<?>` (the literal type-name jOOQ reflection yields) can't resolve a
+        // specific target table; reject with the wildcard-specific message.
+        if (typeName.contains("<?>") || typeName.equals("org.jooq.Table")) {
+            return new ConditionJoinTargetResolution.AuthorError(
+                "intermediate-hop `@condition` method '" + methodRef.className() + "."
+                + methodRef.methodName() + "' has wildcard target parameter `Table<?>`; the "
+                + "parser cannot infer the target table for this hop. Change the second "
+                + "parameter to the concrete jOOQ table type, or rewrite the path to use "
+                + "`{table:}` or `{key:}` for this hop.");
+        }
+        String rawTypeName = typeName.contains("<") ? typeName.substring(0, typeName.indexOf('<')) : typeName;
+        try {
+            Class<?> cls = Class.forName(rawTypeName, false, codegenLoader());
+            var entry = catalog.findTableByClass(cls);
+            if (entry.isPresent()) {
+                return new ConditionJoinTargetResolution.Resolved(
+                    entry.get().toTableRef(entry.get().table().getName()));
+            }
+        } catch (ClassNotFoundException ignored) {
+            // Falls through to the AuthorError below — the class isn't on the codegen
+            // classloader, so the parameter type cannot map to a catalog entry.
+        }
+        return new ConditionJoinTargetResolution.AuthorError(
+            "intermediate-hop `@condition` method '" + methodRef.className() + "."
+            + methodRef.methodName() + "' second parameter type '" + typeName + "' does not "
+            + "resolve to a generated jOOQ table class. Change the second parameter to a "
+            + "concrete jOOQ table type, or rewrite the path to use `{table:}` or `{key:}` "
+            + "for this hop.");
     }
 
     /**

@@ -43,6 +43,7 @@ class ComputedFieldValidationTest {
                 List.of(new JoinStep.ConditionJoin(
                     TestFixtures.staticServiceMethodRef("com.example.Conditions", "liftCondition",
                         ClassName.get("org.jooq", "Condition"), List.of()),
+                    TestFixtures.filmTable(),
                     "")),
                 DUMMY_METHOD),
             List.of("Field 'Film.fullTitle': @externalField with a @reference path "

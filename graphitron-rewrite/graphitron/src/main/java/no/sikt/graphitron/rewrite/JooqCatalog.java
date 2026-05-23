@@ -141,6 +141,27 @@ public class JooqCatalog {
                 .findFirst());
     }
 
+    /**
+     * Class-keyed lookup: returns the entry whose generated jOOQ table class matches the given
+     * class. Used by the {@code @reference(path: [{condition:}])} resolver when reflecting on a
+     * condition method's second parameter to find the target table — the parameter type, when
+     * concrete, is a generated jOOQ table class that maps to exactly one catalog entry across
+     * the whole schema set (each table's generated class is uniquely owned by its schema, so
+     * class identity is schema-unique by construction).
+     *
+     * <p>Returns empty when the catalog is unavailable or no entry's table class equals the
+     * given class. Wildcard types ({@code Table<?>}) and non-table classes are caller
+     * responsibility; this accessor compares by exact class identity ({@code ==}), not
+     * assignability.
+     */
+    public Optional<TableEntry> findTableByClass(Class<?> jooqTableClass) {
+        if (catalog == null || jooqTableClass == null) return Optional.empty();
+        return catalog.schemaStream()
+            .flatMap(this::entriesIn)
+            .filter(e -> e.table().getClass() == jooqTableClass)
+            .findFirst();
+    }
+
     private List<TableEntry> findUnqualifiedTable(String unqualifiedSqlName) {
         if (catalog == null) return List.of();
         return catalog.schemaStream()

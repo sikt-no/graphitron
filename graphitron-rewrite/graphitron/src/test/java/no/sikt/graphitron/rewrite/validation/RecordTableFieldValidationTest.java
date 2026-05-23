@@ -65,13 +65,13 @@ class RecordTableFieldValidationTest {
 
         SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — condition-join stub surfaces as build error",
             new RecordTableField("FilmDetails", "film", null, RT_SINGLE,
-                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
+                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), TestFixtures.filmTable(), "")),
                 List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE),
             List.of(CONDITION_JOIN_STUB)),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
             new RecordTableField("FilmDetails", "film", null, RT_LIST,
-                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
+                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), TestFixtures.filmTable(), "")),
                 List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST),
             List.of(CONDITION_JOIN_STUB)),
 
