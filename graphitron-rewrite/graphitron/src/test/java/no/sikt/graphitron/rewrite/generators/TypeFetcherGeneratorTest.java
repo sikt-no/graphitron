@@ -256,13 +256,16 @@ class TypeFetcherGeneratorTest {
     private static GraphitronField splitQueryField(String parentType, String name) {
         var rt = tableBoundFilm(nonNullList());
         var keyCols = List.of(languageIdCol());
+        var path = List.<no.sikt.graphitron.rewrite.model.JoinStep>of(TestFixtures.fkJoin(
+            TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE, List.of(),
+            FILM_TABLE, List.of(), null, name + "_0"));
         return new ChildField.SplitTableField(parentType, name, null,
             rt,
-            List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), LANGUAGE_TABLE, List.of(),
-                FILM_TABLE, List.of(), null, name + "_0")),
+            path,
             List.of(), new OrderBySpec.None(), null,
             TestFixtures.splitSourceKey(rt.table(), keyCols, rt.wrapper().isList()),
-            TestFixtures.loaderRegistration(rt, false, false));
+            TestFixtures.loaderRegistration(rt, false, false),
+            TestFixtures.pcFor(path, LANGUAGE_TABLE));
     }
 
     private static TypeSpec specWithSplitQuery(String parentType, String fieldName) {

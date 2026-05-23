@@ -1389,6 +1389,69 @@ class BuildContext {
     }
 
     /**
+     * Result of {@link #buildParentCorrelation}: either a fully-synthesised
+     * {@link no.sikt.graphitron.rewrite.model.ParentCorrelation} or an actionable
+     * {@code AUTHOR_ERROR} message. {@link Resolved} feeds the carrier field's record header
+     * directly; {@link AuthorError} routes through the {@link FieldBuilder} call site and
+     * surfaces as an {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}
+     * with a {@link Rejection.AuthorError.Structural} rejection.
+     */
+    sealed interface ParentCorrelationResolution {
+        record Resolved(no.sikt.graphitron.rewrite.model.ParentCorrelation correlation)
+                implements ParentCorrelationResolution {}
+        record AuthorError(String message) implements ParentCorrelationResolution {}
+    }
+
+    /**
+     * Synthesises a {@link no.sikt.graphitron.rewrite.model.ParentCorrelation} for a carrier
+     * field given its already-built joinPath. {@code OnFkSlots} when the first hop carries
+     * pairable slots (FkJoin or LiftedHop); {@code OnConditionJoin} when the first hop is a
+     * condition method. The two-axis decoupling is intentional: any intermediate hop may be
+     * a condition join regardless of which arm fires here.
+     *
+     * <p>Returns an empty {@link ParentCorrelationResolution.Resolved} (wrapping {@code null})
+     * for an empty joinPath — the standalone-lookup shape, where the carrier needs no parent
+     * correlation. The carrier-side invariant pinned by
+     * {@link no.sikt.graphitron.rewrite.model.ParentCorrelation#checkCarrierInvariant} reads
+     * this case as "empty joinPath → null correlation".
+     *
+     * <p>The condition-join arm requires a non-null {@code parentTable}; pass it when the
+     * carrier sits on a table-backed parent. For {@code @record}-backed parents the
+     * classifier should never produce a condition-join first hop (no parent table to anchor
+     * the ON clause to); pass {@code null} and the helper routes the case to
+     * {@link ParentCorrelationResolution.AuthorError}.
+     *
+     * <p>{@code parentPkCols} is populated for split-rows carriers (where {@code parentInput}
+     * is materialised) and empty for inline carriers.
+     */
+    ParentCorrelationResolution buildParentCorrelation(
+            List<JoinStep> joinPath, TableRef parentTable, List<ColumnRef> parentPkCols) {
+        if (joinPath.isEmpty()) {
+            return new ParentCorrelationResolution.Resolved(null);
+        }
+        JoinStep first = joinPath.get(0);
+        if (first instanceof JoinStep.WithTarget wt) {
+            return new ParentCorrelationResolution.Resolved(
+                new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(wt));
+        }
+        if (first instanceof JoinStep.ConditionJoin cj) {
+            if (parentTable == null) {
+                return new ParentCorrelationResolution.AuthorError(
+                    "condition-only first hop on `@reference` path with no parent `@table` "
+                    + "binding: the parser cannot anchor the condition method's first argument. "
+                    + "Add `@table(name: …)` to the carrier field's parent type, or rewrite the "
+                    + "path to use `{table:}` or `{key:}` for the first hop.");
+            }
+            return new ParentCorrelationResolution.Resolved(
+                new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnConditionJoin(
+                    cj, parentTable, parentPkCols));
+        }
+        throw new IllegalStateException(
+            "JoinStep permit list exhausted unexpectedly at buildParentCorrelation: "
+            + first.getClass().getName());
+    }
+
+    /**
      * Resolves the target table for a {@code {condition:}}-only path element. The terminal-hop
      * arm reads the carrier field's return-type {@code @table} binding (passed in via
      * {@code terminalTargetSqlName}); the intermediate-hop arm reflects on the condition method's

@@ -41,6 +41,11 @@ class LookupTableFieldValidationTest {
         "Field 'Language.films': Inline LookupTableField 'Language.films' with a condition-join step "
         + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
 
+    private static final List<JoinStep> CONDITION_PATH = List.of(new JoinStep.ConditionJoin(
+        TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition",
+            ClassName.get("org.jooq", "Condition"), List.of()),
+        TestFixtures.filmTable(), ""));
+
     enum Case implements ValidatorCase {
 
         // Single-cardinality @lookupKey is now rejected at classifier time (argres Phase 2a C1);
@@ -48,23 +53,27 @@ class LookupTableFieldValidationTest {
         // record itself is constructible, and the validator has no extra errors to add.
         SINGLE_NOW_PROJECTED("single return — no validator errors; classifier rejection prevents reaching this state",
             new LookupTableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null,
-                EMPTY_LOOKUP),
+                EMPTY_LOOKUP,
+                /* parentCorrelation */ null),
             List.of()),
 
         LIST_PROJECTED("list return — inline-projected, no validator errors",
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), PK_ORDER, null,
-                EMPTY_LOOKUP),
+                EMPTY_LOOKUP,
+                /* parentCorrelation */ null),
             List.of()),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),
-                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), TestFixtures.filmTable(), "")),
-                List.of(), PK_ORDER, null, EMPTY_LOOKUP),
+                CONDITION_PATH,
+                List.of(), PK_ORDER, null, EMPTY_LOOKUP,
+                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of(CONDITION_JOIN_STUB)),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field (validator mirror of classifier rejection)",
             new LookupTableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, 100)), List.of(), List.of(), new OrderBySpec.None(), null,
-                EMPTY_LOOKUP),
+                EMPTY_LOOKUP,
+                /* parentCorrelation */ null),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 
         private final String description;

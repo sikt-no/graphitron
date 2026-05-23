@@ -38,7 +38,8 @@ class ArgumentValidationTest {
             new FieldWrapper.Single(true));
 
     private static TableField tableField(List<WhereFilter> filters) {
-        return new TableField("Film", "actors", null, FILM_RETURN, List.of(), filters, new OrderBySpec.None(), null);
+        return new TableField("Film", "actors", null, FILM_RETURN, List.of(), filters, new OrderBySpec.None(), null,
+            /* parentCorrelation */ null);
     }
 
     enum Case implements ValidatorCase {

@@ -222,16 +222,20 @@ class NestingFieldValidationTest {
 
     @Test
     void multiParentCompat_nonColumnLeaf_rejectedAcrossParents() {
+        var fkFirst = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),
+            TestFixtures.joinTarget("language"), List.of(), null, ""));
         var columnRefFirst = new ColumnReferenceField("FilmDetails", "langName", null, "langName",
             new ColumnRef("NAME", "", ""),
-            List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_language_id_fkey"), null, List.of(),
-                TestFixtures.joinTarget("language"), List.of(), null, "")),
-            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
+            fkFirst,
+            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
+            TestFixtures.pcFor(fkFirst, TestFixtures.tableRef("film_details", "FILM_DETAILS", "FilmDetails", List.of())));
+        var fkSecond = List.<JoinStep>of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("advertisement_language_id_fkey"), null, List.of(),
+            TestFixtures.joinTarget("language"), List.of(), null, ""));
         var columnRefSecond = new ColumnReferenceField("FilmDetails", "langName", null, "langName",
             new ColumnRef("NAME", "", ""),
-            List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("advertisement_language_id_fkey"), null, List.of(),
-                TestFixtures.joinTarget("language"), List.of(), null, "")),
-            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
+            fkSecond,
+            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
+            TestFixtures.pcFor(fkSecond, TestFixtures.tableRef("film_details", "FILM_DETAILS", "FilmDetails", List.of())));
         var schema = twoParentSchema(List.of(columnRefFirst), List.of(columnRefSecond));
         // Shape check reports "not yet supported" for the shared non-column leaf. The per-field
         // stubbed-variant walk fires twice — once per parent — surfacing the ColumnReferenceField

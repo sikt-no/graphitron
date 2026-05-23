@@ -39,42 +39,58 @@ class TableFieldValidationTest {
         "Field 'Film.actors': Inline TableField 'Film.actors' with a condition-join step "
         + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
 
+    private static final List<JoinStep> CONDITION_PATH = List.of(new JoinStep.ConditionJoin(
+        TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition",
+            ClassName.get("org.jooq", "Condition"), List.of()),
+        TestFixtures.actorTable(),
+        ""));
+
+    private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
+        TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(),
+        TestFixtures.joinTarget("film_actor"), List.of(), null, ""));
+
     enum Case implements ValidatorCase {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
-            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null),
+            new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null,
+                /* parentCorrelation */ null),
             List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
-                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("film_actor_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film_actor"), List.of(), null, "")),
-                List.of(), new OrderBySpec.None(), null),
+                FK_PATH,
+                List.of(), new OrderBySpec.None(), null,
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
         SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — condition-join stub surfaces as build error",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
-                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition", ClassName.get("org.jooq", "Condition"), List.of()), TestFixtures.actorTable(), "")),
-                List.of(), new OrderBySpec.None(), null),
+                CONDITION_PATH,
+                List.of(), new OrderBySpec.None(), null,
+                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of(CONDITION_JOIN_STUB)),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.List(true, true)),
-                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition", ClassName.get("org.jooq", "Condition"), List.of()), TestFixtures.actorTable(), "")),
+                CONDITION_PATH,
                 List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
-                null),
+                null,
+                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of(CONDITION_JOIN_STUB)),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),
                 List.of(new ConditionFilter("com.example.Conditions", "actorCondition", List.of())),
-                new OrderBySpec.None(), null),
+                new OrderBySpec.None(), null,
+                /* parentCorrelation */ null),
             List.of()),
 
         FIELD_CONDITION_RESOLVED_OVERRIDE("resolved @condition with override:true — override applied at build time",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),
                 List.of(new ConditionFilter("com.example.Conditions", "actorCondition", List.of())),
-                new OrderBySpec.None(), null),
+                new OrderBySpec.None(), null,
+                /* parentCorrelation */ null),
             List.of()),
 
         DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields",
@@ -82,7 +98,8 @@ class TableFieldValidationTest {
                 actorReturn(new FieldWrapper.List(true, true)),
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
-                null),
+                null,
+                /* parentCorrelation */ null),
             List.of()),
 
         DEFAULT_ORDER_INDEX("@defaultOrder with named index",
@@ -90,7 +107,8 @@ class TableFieldValidationTest {
                 actorReturn(new FieldWrapper.List(true, true)),
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("last_name", "LAST_NAME", "java.lang.String"), null)), "ASC"),
-                null),
+                null,
+                /* parentCorrelation */ null),
             List.of()),
 
         DEFAULT_ORDER_PRIMARY_KEY("@defaultOrder with primaryKey mode",
@@ -98,7 +116,8 @@ class TableFieldValidationTest {
                 actorReturn(new FieldWrapper.List(true, true)),
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null)), "ASC"),
-                null),
+                null,
+                /* parentCorrelation */ null),
             List.of()),
 
         PAGINATED_WITH_ORDERING("connection with pagination and ordering",
@@ -110,7 +129,8 @@ class TableFieldValidationTest {
                     new PaginationSpec.PaginationArg("Int", false),
                     null,
                     new PaginationSpec.PaginationArg("String", false),
-                    null)),
+                    null),
+                /* parentCorrelation */ null),
             List.of()),
 
         PAGINATED_WITHOUT_ORDERING("connection with pagination but no ordering — error",
@@ -122,7 +142,8 @@ class TableFieldValidationTest {
                     new PaginationSpec.PaginationArg("Int", false),
                     null,
                     new PaginationSpec.PaginationArg("String", false),
-                    null)),
+                    null),
+                /* parentCorrelation */ null),
             List.of("Field 'Film.actors': paginated fields must have ordering (add @defaultOrder or @orderBy)"));
 
         private final String description;

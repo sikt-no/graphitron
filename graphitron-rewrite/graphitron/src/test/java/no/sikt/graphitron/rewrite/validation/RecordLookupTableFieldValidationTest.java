@@ -55,32 +55,45 @@ class RecordLookupTableFieldValidationTest {
         "Field 'Language.films': RecordLookupTableField 'Language.films' with a condition-join step "
         + "cannot be emitted until classification-vocabulary item 5 resolves condition-method target tables";
 
+    private static final List<JoinStep> FK_PATH = List.of(TestFixtures.fkJoin(
+        TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(),
+        TestFixtures.joinTarget("film"), List.of(), null, ""));
+    private static final List<JoinStep> CONDITION_PATH = List.of(new JoinStep.ConditionJoin(
+        TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition",
+            ClassName.get("org.jooq", "Condition"), List.of()),
+        TestFixtures.filmTable(), ""));
+
     enum Case implements ValidatorCase {
 
         SINGLE_NO_PATH("single cardinality, empty joinPath — emittable post-R61",
-            new RecordLookupTableField("Language", "film", null, RT_SINGLE, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE, EMPTY_LOOKUP),
+            new RecordLookupTableField("Language", "film", null, RT_SINGLE, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE, EMPTY_LOOKUP,
+                /* parentCorrelation */ null),
             List.of()),
 
         SINGLE_WITH_FK_PATH("single cardinality with FK path — emittable post-R61",
             new RecordLookupTableField("Language", "film", null, RT_SINGLE,
-                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
-                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE, EMPTY_LOOKUP),
+                FK_PATH,
+                List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE, EMPTY_LOOKUP,
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
             new RecordLookupTableField("Language", "films", null, RT_LIST,
-                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "filmCondition", ClassName.get("org.jooq", "Condition"), List.of()), TestFixtures.filmTable(), "")),
-                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP),
+                CONDITION_PATH,
+                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP,
+                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of(CONDITION_JOIN_STUB)),
 
         LIST_WITH_FK_PATH("list cardinality with FK path — emittable, no validation error",
             new RecordLookupTableField("Language", "films", null, RT_LIST,
-                List.of(TestFixtures.fkJoin(TestFixtures.foreignKeyRef("language_film_id_fkey"), null, List.of(), TestFixtures.joinTarget("film"), List.of(), null, "")),
-                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP),
+                FK_PATH,
+                List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP,
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
         CONNECTION_BLOCKED("connection return — lookup-field rejection",
-            new RecordLookupTableField("Language", "films", null, RT_CONN, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_CONN, LR_CONN, EMPTY_LOOKUP),
+            new RecordLookupTableField("Language", "films", null, RT_CONN, List.of(), List.of(), new OrderBySpec.None(), null, SOURCE_KEY_CONN, LR_CONN, EMPTY_LOOKUP,
+                /* parentCorrelation */ null),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 
         private final String description;
