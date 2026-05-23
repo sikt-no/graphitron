@@ -3730,10 +3730,21 @@ class FieldBuilder {
             var capturedJoinPath = joinPath;
             var capturedSourceKey = sourceKey;
             var capturedLoaderRegistration = loaderRegistration;
+            // @record-parent carrier: the surface SDL parent has no @table binding, so a
+            // condition-join first hop has no parent table to anchor the condition method's source
+            // argument. parentTable=null routes the OnConditionJoin arm to AuthorError, mirroring
+            // RecordTableField / RecordLookupTableField. FkJoin / LiftedHop first hops produce
+            // ParentCorrelation.OnFkSlots and don't consult parentTable.
+            var rtmPcResolution = ctx.buildParentCorrelation(joinPath, /* parentTable= */ null, capturedSourceKey.columns());
+            if (rtmPcResolution instanceof BuildContext.ParentCorrelationResolution.AuthorError e) {
+                return new UnclassifiedField(parentTypeName, name, location, fieldDef, Rejection.structural(e.message()));
+            }
+            var rtmParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) rtmPcResolution).correlation();
             return buildMethodBackedWithChannel(tbReturn, tmTb.method(),
                 parentTypeName, name, location, fieldDef,
                 ch -> new ChildField.RecordTableMethodField(parentTypeName, name, location, tbReturn,
-                    capturedJoinPath, tmTb.method(), capturedSourceKey, capturedLoaderRegistration, ch));
+                    capturedJoinPath, tmTb.method(), capturedSourceKey, capturedLoaderRegistration, ch,
+                    rtmParentCorrelation));
         }
 
         // @sourceRow is owned by its dedicated resolver from this point onward: the resolver

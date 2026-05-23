@@ -384,8 +384,12 @@ public final class SplitRowsMethodEmitter {
      * {@code @tableMethod} (returning a generated jOOQ table) rather than referencing
      * {@code Tables.<X>} directly. Single-hop {@link JoinStep.FkJoin} only, mirroring the
      * table-parent {@link ChildField.TableMethodField} emit's shipped shape (R43 commit 3);
-     * multi-hop FK paths, {@link JoinStep.ConditionJoin}, and empty joinPaths surface a runtime
-     * {@link UnsupportedOperationException}.
+     * multi-hop FK paths and empty joinPaths surface a runtime
+     * {@link UnsupportedOperationException}. {@link JoinStep.ConditionJoin} first-hops are
+     * caught at parse time by {@link no.sikt.graphitron.rewrite.FieldBuilder}'s
+     * {@code buildParentCorrelation} call (the {@code @record}-parent has no {@code @table} to
+     * anchor the condition method's source argument, so the path AUTHOR_ERRORs upstream and
+     * never reaches this emitter).
      */
     @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
         key = "tablemethod-resolver-return-is-table-bound",
@@ -406,12 +410,14 @@ public final class SplitRowsMethodEmitter {
         TypeName outerReturn = singleRecordPerKey ? listOfRecord : listOfListOfRecord;
 
         List<JoinStep> path = rtmf.joinPath();
-        boolean unsupportedPath = path.isEmpty() || path.size() > 1
-            || !(path.get(0) instanceof JoinStep.FkJoin);
+        // ConditionJoin first-hop on @record-parent is caught upstream by FieldBuilder's
+        // parentCorrelation synthesis (no parent @table to anchor); the predicate below only
+        // covers the pre-existing R43 limits on RecordTableMethodField (empty + multi-hop).
+        boolean unsupportedPath = path.isEmpty() || path.size() > 1;
         if (unsupportedPath) {
             String shapeLabel = path.isEmpty()
                 ? "empty joinPath"
-                : path.size() > 1 ? "multi-hop join path" : "ConditionJoin path";
+                : "multi-hop join path";
             var stub = CodeBlock.builder()
                 .addStatement("throw new $T($S)",
                     UnsupportedOperationException.class,

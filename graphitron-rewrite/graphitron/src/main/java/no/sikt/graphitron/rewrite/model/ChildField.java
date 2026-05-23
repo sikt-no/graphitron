@@ -478,8 +478,12 @@ public sealed interface ChildField extends OutputField
         MethodRef method,
         SourceKey sourceKey,
         LoaderRegistration loaderRegistration,
-        Optional<ErrorChannel> errorChannel
+        Optional<ErrorChannel> errorChannel,
+        ParentCorrelation parentCorrelation
     ) implements ChildField, MethodBackedField, BatchKeyField, WithErrorChannel {
+        public RecordTableMethodField {
+            ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "RecordTableMethodField");
+        }
         @Override
         public boolean emitsSingleRecordPerKey() {
             return !returnType().wrapper().isList()

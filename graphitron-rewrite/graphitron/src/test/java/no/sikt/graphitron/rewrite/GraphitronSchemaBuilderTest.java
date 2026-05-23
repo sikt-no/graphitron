@@ -333,6 +333,25 @@ class GraphitronSchemaBuilderTest {
                 assertThat(((UnclassifiedField) f).reason())
                     .contains("path-step @condition")
                     .contains("no GraphQL arguments are in scope");
+            }),
+
+        // R232: condition-only @reference on a scalar return type (no @table to anchor the
+        // terminal hop) AUTHOR_ERRORs at parse time. BuildContext.resolveConditionJoinTarget
+        // returns AuthorError for the terminal hop because terminalTargetSqlName is null.
+        CONDITION_ONLY_NO_RETURN_TYPE_TABLE_REJECTED(
+            "@reference with {condition:}-only path on a scalar return type → UnclassifiedField with no-binding message",
+            """
+            type Film @table(name: "film") {
+              actorName: String @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}])
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "actorName");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("cannot resolve target table")
+                    .contains("no `@table` binding");
             });
 
         final String sdl;
@@ -1136,6 +1155,58 @@ class GraphitronSchemaBuilderTest {
                 assertThat(((JoinStep.FkJoin) first).whereFilter())
                     .as("{key:, condition:} folds the condition into FkJoin.whereFilter, not a ConditionJoin")
                     .isNotNull();
+            }),
+
+        // R232: intermediate-hop condition step with concrete jOOQ table parameters —
+        // BuildContext.resolveConditionJoinTarget reflects on the method's second parameter
+        // (no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor) and resolves the target
+        // table via JooqCatalog.findTableByClass.
+        CONDITION_INTERMEDIATE_REFLECTS_METHOD_PARAM(
+            "intermediate-hop condition with concrete jOOQ table params → targetTable resolved by reflection",
+            """
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @reference(path: [
+                    {condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "intermediate"}},
+                    {table: "actor"}
+                ]) @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var field = (TableField) schema.field("Film", "actors");
+                assertThat(field.joinPath()).hasSize(2);
+                var first = field.joinPath().get(0);
+                assertThat(first)
+                    .as("intermediate-hop condition resolves to ConditionJoin")
+                    .isInstanceOf(JoinStep.ConditionJoin.class);
+                var cj = (JoinStep.ConditionJoin) first;
+                assertThat(cj.targetTable().tableName())
+                    .as("intermediate ConditionJoin.targetTable resolved from the condition method's second parameter type")
+                    .isEqualToIgnoringCase("film_actor");
+            }),
+
+        // R232: intermediate-hop condition step with Table<?> wildcard parameter — the parser
+        // cannot infer the target from a wildcard, so it AUTHOR_ERRORs at parse time with the
+        // wildcard-specific message.
+        CONDITION_INTERMEDIATE_TABLE_WILDCARD_REJECTED(
+            "intermediate-hop condition with Table<?> wildcard target param → UnclassifiedField with wildcard message",
+            """
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @reference(path: [
+                    {condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}},
+                    {table: "actor"}
+                ]) @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = schema.field("Film", "actors");
+                assertThat(f).isInstanceOf(UnclassifiedField.class);
+                assertThat(((UnclassifiedField) f).reason())
+                    .contains("wildcard target parameter")
+                    .contains("Table<?>");
             });
 
         final String sdl;

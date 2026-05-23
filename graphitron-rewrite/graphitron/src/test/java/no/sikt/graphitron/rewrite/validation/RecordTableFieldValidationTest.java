@@ -67,14 +67,14 @@ class RecordTableFieldValidationTest {
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
-        SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — condition-join stub surfaces as build error",
+        SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — classifies, no validation error (R232)",
             new RecordTableField("FilmDetails", "film", null, RT_SINGLE,
                 CONDITION_PATH,
                 List.of(), new OrderBySpec.None(), null, SOURCE_KEY_SINGLE, LR_SINGLE,
                 TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable())),
             List.of()),
 
-        LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
+        LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — classifies, no validation error (R232)",
             new RecordTableField("FilmDetails", "film", null, RT_LIST,
                 CONDITION_PATH,
                 List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST,
