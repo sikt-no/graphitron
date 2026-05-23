@@ -102,24 +102,21 @@ public final class FieldCompletions {
         var sigilItems = isPayloadDataField ? List.of(sourceSigilItem(context)) : List.<CompletionItem>of();
         // R233: prefer the field classification's projected terminal table over the enclosing
         // type's backing for @reference path fields and the other column-bearing permits.
-        // lspColumnDispatch() collapses the 30 permits onto three arms: Resolve returns the
-        // terminal-table columns; Silent returns an empty list (suggestions from the enclosing
-        // backing would leak the wrong table); FallThrough returns Optional.empty() so the
-        // backing-driven dispatch below fires. Snapshot-uncertainty (empty optional) also
-        // falls through.
+        // lspColumnDispatch() collapses the 30 permits onto three arms; Resolve and Silent
+        // each return directly through mergeWithSigil, FallThrough drops through to the
+        // existing backing-driven dispatch below. Snapshot-uncertainty (empty optional)
+        // also falls through.
         if (fieldName != null) {
             var classification = built.fieldClassification(typeName, fieldName);
             if (classification.isPresent()) {
-                var dispatched = switch (classification.get().lspColumnDispatch()) {
-                    case FieldClassification.LspColumnDispatch.Resolve(var tableName)
-                        -> java.util.Optional.of(tableColumnItems(data, tableName, context));
-                    case FieldClassification.LspColumnDispatch.Silent ignored
-                        -> java.util.Optional.<List<CompletionItem>>of(List.of());
-                    case FieldClassification.LspColumnDispatch.FallThrough ignored
-                        -> java.util.Optional.<List<CompletionItem>>empty();
-                };
-                if (dispatched.isPresent()) {
-                    return mergeWithSigil(sigilItems, dispatched.get());
+                switch (classification.get().lspColumnDispatch()) {
+                    case FieldClassification.LspColumnDispatch.Resolve(var tableName) -> {
+                        return mergeWithSigil(sigilItems, tableColumnItems(data, tableName, context));
+                    }
+                    case FieldClassification.LspColumnDispatch.Silent ignored -> {
+                        return mergeWithSigil(sigilItems, List.of());
+                    }
+                    case FieldClassification.LspColumnDispatch.FallThrough ignored -> { /* fall through */ }
                 }
             }
         }
