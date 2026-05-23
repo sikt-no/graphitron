@@ -1336,6 +1336,58 @@ class GraphQLQueryTest {
         assertThat(byId.get(5).get("addressId")).isEqualTo(2);  // shared with c2
     }
 
+    // ===== R232 condition-join execution-tier coverage =====
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void inlineTableField_conditionJoin_returnsAddressPerCustomer() {
+        // R232: Customer.addressByCondition (inline TableField + ConditionJoin first hop).
+        // The condition method `customerToAddress` expresses customer.address_id =
+        // address.address_id as a two-arg jOOQ predicate; the emitter routes step-0 correlation
+        // through the condition method (DSL.multiset(...) wrapping a correlated SELECT whose
+        // WHERE-side predicate IS the condition method's return value). Results must match the
+        // FK-equivalent Customer.address navigation exactly.
+        Map<String, Object> data = execute(
+            "{ customers { customerId addressByCondition { addressId } address { addressId } } }");
+        List<Map<String, Object>> customers = (List<Map<String, Object>>) data.get("customers");
+        assertThat(customers).hasSize(5);
+        for (Map<String, Object> c : customers) {
+            var byCondition = (Map<String, Object>) c.get("addressByCondition");
+            var byFk = (Map<String, Object>) c.get("address");
+            assertThat(byCondition)
+                .as("Customer %s: addressByCondition (ConditionJoin) returns same row as address (FK)", c.get("customerId"))
+                .isEqualTo(byFk);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void splitTableField_conditionJoin_returnsActorsPerFilm() {
+        // R232: Film.actorsByCondition (SplitTableField + ConditionJoin first hop).
+        // The condition method `filmActorsViaCondition` expresses the film_actor junction
+        // as an EXISTS predicate; the split-rows emitter routes step-0 correlation through
+        // the condition method (FROM actor JOIN film ON cond(film, actor) JOIN parentInput
+        // ON film.film_id = parentInput.film_id). Total round-trips: 1 (films root) + 1
+        // (batched actorsByCondition rows method) = 2.
+        // Seeded film→actors mapping (init.sql):
+        //   film 1 → {1,2}  film 2 → {1,3}  film 3 → {1}  film 4 → {2}  film 5 → {3}
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "{ films { filmId actorsByCondition { actorId } } }");
+        assertThat(QUERY_COUNT.get())
+            .as("1 root films query + 1 batched DataLoader call for actorsByCondition")
+            .isEqualTo(2);
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("films");
+        var byId = films.stream().collect(java.util.stream.Collectors.toMap(
+            f -> (Integer) f.get("filmId"),
+            f -> (List<Map<String, Object>>) f.get("actorsByCondition")));
+        assertThat(byId.get(1)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 2);
+        assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 3);
+        assertThat(byId.get(3)).extracting(a -> a.get("actorId")).containsExactly(1);
+        assertThat(byId.get(4)).extracting(a -> a.get("actorId")).containsExactly(2);
+        assertThat(byId.get(5)).extracting(a -> a.get("actorId")).containsExactly(3);
+    }
+
     @SuppressWarnings("unchecked")
     @Test
     void splitTableField_singleCardinality_dedupesSharedFk_oneBatchRoundTrip() {

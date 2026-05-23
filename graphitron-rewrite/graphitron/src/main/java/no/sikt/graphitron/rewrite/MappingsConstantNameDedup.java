@@ -209,7 +209,7 @@ public final class MappingsConstantNameDedup {
                 present);
             case ChildField.RecordTableMethodField f -> new ChildField.RecordTableMethodField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
-                f.sourceKey(), f.loaderRegistration(), present);
+                f.sourceKey(), f.loaderRegistration(), present, f.parentCorrelation());
             case MutationField.MutationDmlRecordField f -> new MutationField.MutationDmlRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.tableInputArg(),
                 f.kind(), present);

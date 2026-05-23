@@ -72,7 +72,7 @@ class RecordLookupTableFieldValidationTest {
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of()),
 
-        LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — condition-join stub surfaces as build error",
+        LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — classifies, no validation error (R232)",
             new RecordLookupTableField("Language", "films", null, RT_LIST,
                 CONDITION_PATH,
                 List.of(), PK_ORDER, null, SOURCE_KEY_LIST, LR_LIST, EMPTY_LOOKUP,

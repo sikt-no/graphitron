@@ -144,4 +144,18 @@ class TestConditionStub {
     public static Condition argConditionTwoStrings(org.jooq.Table<?> table, String first, String second) {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * R232 fixture: intermediate-hop {@code @condition} method with concrete jOOQ table
+     * parameters. {@link no.sikt.graphitron.rewrite.BuildContext#resolveConditionJoinTarget}
+     * resolves the target table by reflecting on the second parameter type and looking it up
+     * via {@link no.sikt.graphitron.rewrite.JooqCatalog#findTableByClass}. Source is
+     * {@code film}; target is {@code film_actor}, so a subsequent {@code {table: "actor"}}
+     * step derives the FilmActor → Actor FK.
+     */
+    public static Condition intermediate(
+            no.sikt.graphitron.rewrite.test.jooq.tables.Film src,
+            no.sikt.graphitron.rewrite.test.jooq.tables.FilmActor tgt) {
+        throw new UnsupportedOperationException();
+    }
 }

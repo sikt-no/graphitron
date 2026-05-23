@@ -486,6 +486,17 @@ type Customer implements Node @table(name: "customer") @node {
     # The FK column is NOT NULL on this table, so the §4 null-FK short-circuit never fires
     # here — covered by Store.manager below.
     addressSplit:  Address @splitQuery @reference(path: [{key: "customer_address_id_fkey"}])
+    # R232 execution-tier fixture: inline TableField + ConditionJoin first hop. The condition
+    # method `customerToAddress` expresses the natural customer.address_id = address.address_id
+    # FK as a two-arg Java predicate; the emitter routes step-0 correlation through the
+    # condition method instead of FK slots. End-to-end coverage of the inline emission path
+    # (DSL.multiset(...) wrapping a correlated SELECT whose WHERE is the condition).
+    addressByCondition: Address @reference(path: [{
+        condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+            method: "customerToAddress"
+        }
+    }])
 }
 
 type Address implements Node @table(name: "address") @node {
@@ -756,6 +767,18 @@ type Film implements Node & Searchable @table(name: "film") @node {
         {key: "film_actor_film_id_fkey"},
         {key: "film_actor_actor_id_fkey"}
     ])
+    # R232 execution-tier fixture: SplitTableField + ConditionJoin first hop. The condition
+    # method `filmActorsViaCondition` expresses the film_actor junction as an EXISTS predicate
+    # bridging film and actor. The split-rows emitter routes step-0 correlation through the
+    # condition method (FROM actor JOIN film ON cond(film, actor) JOIN parentInput ON
+    # film.film_id = parentInput.film_id). Equivalent rows to Film.actorsBySplitLookup minus
+    # the lookup-key narrowing.
+    actorsByCondition: [Actor!]! @splitQuery @reference(path: [{
+        condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+            method: "filmActorsViaCondition"
+        }
+    }]) @defaultOrder(primaryKey: true)
     # plan-split-query-connection.md §1: @splitQuery + @asConnection. Per-parent Relay pagination
     # via a ROW_NUMBER() OVER (PARTITION BY parentInput.idx) envelope. Each Film gets its own
     # paginated actor slice via the same junction-path, wrapped in a ConnectionResult per key.
