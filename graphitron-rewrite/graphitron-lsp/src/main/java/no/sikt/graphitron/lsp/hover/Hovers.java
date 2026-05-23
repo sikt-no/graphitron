@@ -285,22 +285,19 @@ public final class Hovers {
             .orElse(null);
         // R233: prefer the field classification's projected terminal table over the enclosing
         // type's backing for @reference path fields and the other column-bearing permits.
-        // lspColumnDispatch() collapses the 30 permits onto three arms; the double-Optional
-        // here carries "we have a decision, the decision is empty hover" vs. "no decision,
-        // fall through to backing dispatch", matching the FieldCompletions shape.
+        // lspColumnDispatch() collapses the 30 permits onto three arms; Resolve and Silent
+        // each return directly from this method, FallThrough drops through to the existing
+        // backing-driven dispatch below. Snapshot-uncertainty (empty optional) also falls
+        // through.
         if (fieldName != null) {
             var classification = built.fieldClassification(typeName.get(), fieldName);
             if (classification.isPresent()) {
-                var hover = switch (classification.get().lspColumnDispatch()) {
-                    case FieldClassification.LspColumnDispatch.Resolve(var tableName)
-                        -> Optional.of(tableColumnHover(catalog, tableName, memberName, file, valueNode));
-                    case FieldClassification.LspColumnDispatch.Silent ignored
-                        -> Optional.<Optional<Hover>>of(Optional.empty());
-                    case FieldClassification.LspColumnDispatch.FallThrough ignored
-                        -> Optional.<Optional<Hover>>empty();
-                };
-                if (hover.isPresent()) {
-                    return hover.get();
+                switch (classification.get().lspColumnDispatch()) {
+                    case FieldClassification.LspColumnDispatch.Resolve(var tableName) -> {
+                        return tableColumnHover(catalog, tableName, memberName, file, valueNode);
+                    }
+                    case FieldClassification.LspColumnDispatch.Silent ignored -> { return Optional.empty(); }
+                    case FieldClassification.LspColumnDispatch.FallThrough ignored -> { /* fall through */ }
                 }
             }
         }

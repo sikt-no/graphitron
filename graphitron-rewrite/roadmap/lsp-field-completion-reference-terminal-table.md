@@ -170,25 +170,23 @@ b. Inside `completionsFor`, between the `$source`-sigil block (lines 88-91) and 
 if (fieldName != null) {
     var classification = built.fieldClassification(typeName, fieldName);
     if (classification.isPresent()) {
-        var dispatched = switch (classification.get().lspColumnDispatch()) {
-            case FieldClassification.LspColumnDispatch.Resolve(var tableName)
-                -> Optional.of(tableColumnItems(data, tableName, context));
-            case FieldClassification.LspColumnDispatch.Silent ignored
-                -> Optional.<List<CompletionItem>>of(List.of());
-            case FieldClassification.LspColumnDispatch.FallThrough ignored
-                -> Optional.<List<CompletionItem>>empty();
-        };
-        if (dispatched.isPresent()) {
-            return mergeWithSigil(sigilItems, dispatched.get());
+        switch (classification.get().lspColumnDispatch()) {
+            case FieldClassification.LspColumnDispatch.Resolve(var tableName) -> {
+                return mergeWithSigil(sigilItems, tableColumnItems(data, tableName, context));
+            }
+            case FieldClassification.LspColumnDispatch.Silent ignored -> {
+                return mergeWithSigil(sigilItems, List.of());
+            }
+            case FieldClassification.LspColumnDispatch.FallThrough ignored -> { /* fall through */ }
         }
     }
 }
 // existing backing-driven switch unchanged
 ```
 
-`Optional.empty()` on the `FallThrough` arm carries the "fall through to backing-driven dispatch" signal; the post-switch `dispatched.isPresent()` guard is the same exhaustive-then-fall-through shape R232's spec calls `WithTarget` / `ConditionJoin` dispatch (sealed switch returns a result; consumer reads it; exhaustive at every level). No null sentinel.
+The `Resolve` and `Silent` arms return directly from `completionsFor`; `FallThrough` drops through to the existing backing-driven dispatch below. Snapshot-uncertainty (empty optional from `built.fieldClassification`) also falls through. The switch is exhaustive over the sealed `LspColumnDispatch` permits; no `default`, no null sentinel.
 
-Extract a small `mergeWithSigil(List<CompletionItem> sigilItems, List<CompletionItem> rest)` helper so the merge code at the tail of the existing function and the new arm share one definition.
+Extract a small `mergeWithSigil(List<CompletionItem> sigilItems, List<CompletionItem> rest)` helper so the merge code at the tail of the existing function and the two new arms share one definition.
 
 c. Attach `@DependsOnClassifierCheck(key = "field-classification-payload-faithful", reliesOn = "...")` on `completionsFor` referencing the lifted projection. The `reliesOn` body names `FieldClassification.lspColumnDispatch` as the route, mirroring step 2.
 
@@ -202,23 +200,19 @@ Symmetric edit at `:262`-`284`. The `fieldName` lookup uses `TypeContext.enclosi
 if (fieldName != null) {
     var classification = built.fieldClassification(typeName.get(), fieldName);
     if (classification.isPresent()) {
-        var hover = switch (classification.get().lspColumnDispatch()) {
-            case FieldClassification.LspColumnDispatch.Resolve(var tableName)
-                -> Optional.of(tableColumnHover(catalog, tableName, memberName, file, valueNode));
-            case FieldClassification.LspColumnDispatch.Silent ignored
-                -> Optional.<Optional<Hover>>of(Optional.empty());
-            case FieldClassification.LspColumnDispatch.FallThrough ignored
-                -> Optional.<Optional<Hover>>empty();
-        };
-        if (hover.isPresent()) {
-            return hover.get();
+        switch (classification.get().lspColumnDispatch()) {
+            case FieldClassification.LspColumnDispatch.Resolve(var tableName) -> {
+                return tableColumnHover(catalog, tableName, memberName, file, valueNode);
+            }
+            case FieldClassification.LspColumnDispatch.Silent ignored -> { return Optional.empty(); }
+            case FieldClassification.LspColumnDispatch.FallThrough ignored -> { /* fall through */ }
         }
     }
 }
 // existing backing-driven switch unchanged
 ```
 
-(The double-`Optional` carries "we have a decision, the decision is empty hover" vs. "no decision, fall through to backing dispatch"; same shape as step 3.) Attach the same `@DependsOnClassifierCheck` annotation.
+The `Resolve` and `Silent` arms each return directly from `columnHover`; `FallThrough` drops through to the existing backing-driven dispatch below; same shape as step 3. Attach the same `@DependsOnClassifierCheck` annotation.
 
 ### 5. Annotation hygiene
 
@@ -300,5 +294,5 @@ The analogous `HoversTest` cases (record-backed / pojo-backed hovers, if present
 ## Forks to surface for the Spec → Ready reviewer
 
 1. **Adopt the sealed `LspColumnDispatch` lift, or stay narrow on R224's `default ->` precedent?** This spec recommends the lift (rationale: three consumer arms, compounding fragility, the projection's exhaustive switch is the load-bearing producer the consumers all read off). Narrow alternative: replicate R224's per-site `default ->` shape at the two new sites, leave R224's site untouched, accept the compounded fragility, file a follow-up to lift later. Spec → Ready reviewer redirect: the narrow option is mechanically smaller and ships strictly less code.
-2. **Fold `Hovers.columnHover` into this commit, or split into a sibling item?** This spec folds it in (one annotation site, one projection, three regressions; cost of a third tiny item is real). Split alternative: R234 in same session, identical shape, ships after R233. Spec → Ready reviewer redirect: split is cleaner-attributed in commit history; fold is fewer round-trips.
+2. **Fold `Hovers.columnHover` into this commit, or split into a sibling item?** This spec folds it in (one annotation site, one projection, three regressions; cost of a third tiny item is real). Split alternative: a sibling R-item in the same session, identical shape, ships after R233. Spec → Ready reviewer redirect: split is cleaner-attributed in commit history; fold is fewer round-trips.
 3. **Refactor R224's `validateFieldMember` onto the lifted projection in the same commit, or leave it on the per-arm `switch` shape it shipped with?** This spec refactors (rationale: keep the three LSP arms symmetric; the lift is pointless if R224's site stays asymmetric and a new permit forces edits in two flavors of switch). No-refactor alternative: lift the projection, route the two new sites through it, leave R224's site as-is; cost is one site permanently inconsistent with two others. Spec → Ready reviewer redirect: probably not worth taking; the asymmetry is the principal cost.

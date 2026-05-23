@@ -94,10 +94,12 @@ public sealed interface FieldClassification
      * ({@code typesByName().get(...)}), which is how non-column-bearing permits like
      * {@code Nesting}, {@code ServiceBacked}, {@code DmlMutation}, etc. resolve today.
      *
-     * <p>The name commits to the LSP audience because the silence semantics
-     * ({@code InputUnbound} = "no diagnostic", not "no value") are LSP-shaped. A
-     * non-LSP consumer (any future runtime arm) should add its own audience-specific
-     * dispatch projection rather than route through this one.
+     * <p>The name commits to the LSP audience because the {@link Silent} semantics
+     * ({@code InputUnbound} = "no diagnostic", not "no value") are LSP-shaped. The
+     * {@link Resolve} / {@link FallThrough} axis itself is just "column-bearing or
+     * not" and would be reusable, but a future non-LSP consumer should add its own
+     * audience-specific projection on top rather than route through this one and
+     * inherit the LSP-shaped silence policy.
      */
     sealed interface LspColumnDispatch
         permits LspColumnDispatch.Resolve, LspColumnDispatch.Silent, LspColumnDispatch.FallThrough {
