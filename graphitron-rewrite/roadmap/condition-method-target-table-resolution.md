@@ -1,7 +1,7 @@
 ---
 id: R232
 title: Resolve @condition-method target table on inner-SELECT FROM
-status: Spec
+status: Ready
 bucket: architecture
 priority: 10
 theme: structural-refactor
