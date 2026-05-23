@@ -7,7 +7,7 @@ priority: 10
 theme: structural-refactor
 depends-on: []
 created: 2026-05-22
-last-updated: 2026-05-22
+last-updated: 2026-05-23
 ---
 
 # Resolve @condition-method target table on inner-SELECT FROM
@@ -18,7 +18,7 @@ last-updated: 2026-05-22
 
 Seven `ChildField` variants emit a build-time deferred rejection when their `@reference` path contains any `ConditionJoin`:
 
-* Inline `ChildField.TableField` / `ChildField.LookupTableField` — validator-rejected since R228 (`GraphitronSchemaValidator.validateInlineTableField` / `validateInlineLookupTableField`; the inline emitters at `InlineTableFieldEmitter.java:53-60` and `InlineLookupTableFieldEmitter.java` consult `SplitRowsMethodEmitter.unsupportedReason`).
+* Inline `ChildField.TableField` / `ChildField.LookupTableField` — validator-rejected since R228 (`GraphitronSchemaValidator.validateTableField` / `validateLookupTableField`; the inline emitters at `InlineTableFieldEmitter.java:53-60` and `InlineLookupTableFieldEmitter.java` consult `SplitRowsMethodEmitter.unsupportedReason`).
 * `ChildField.SplitTableField` / `SplitLookupTableField` / `RecordTableField` / `RecordLookupTableField` — all four route through `SplitRowsMethodEmitter.unsupportedReason` (`SplitRowsMethodEmitter.java:324-335`).
 * `ChildField.ColumnReferenceField` — `GraphitronSchemaValidator.java:575-583` surfaces a separate `Rejection.Deferred` keyed to slug `column-reference-on-scalar-field-condition-join` ([R129](column-reference-on-scalar-field-condition-join.md)).
 
@@ -89,13 +89,6 @@ interface WithTarget extends HasTargetTable {
 `ConditionJoin`'s record shape:
 
 ```java
-@LoadBearingClassifierCheck(
-    key = "condition-join.target-table-resolved-at-parse",
-    description = "BuildContext.parsePathElement resolves ConditionJoin.targetTable at parse time "
-        + "from the carrier field's return-type @table binding (terminal hop) or by reflecting on "
-        + "the condition method's second parameter (intermediate hop). Both unresolvable cases "
-        + "route through Rejection.AuthorError upstream; the compact constructor below is the "
-        + "structural safety net. Emitters consume cj.targetTable() without null-checks.")
 record ConditionJoin(MethodRef condition, TableRef targetTable, String alias)
         implements JoinStep, HasTargetTable {
     public ConditionJoin {
@@ -109,7 +102,7 @@ record ConditionJoin(MethodRef condition, TableRef targetTable, String alias)
 }
 ```
 
-Consumers that read `targetTable()` from any hop type then carry the matching `@DependsOnClassifierCheck(key = "condition-join.target-table-resolved-at-parse", reliesOn = "…")` so the audit harness's producer/consumer net stays balanced (see step 7's `LoadBearingGuaranteeAuditTest` rule).
+The producer-side `@LoadBearingClassifierCheck(key = "condition-join.target-table-resolved-at-parse", …)` lives on the `BuildContext.resolveConditionJoinTarget` helper introduced in step 3 (single producer per key; the compact constructor above is the structural safety net the helper's description names). Consumers that read `targetTable()` from any hop type carry the matching `@DependsOnClassifierCheck(key = "condition-join.target-table-resolved-at-parse", reliesOn = "…")` so the audit harness's producer/consumer net stays balanced (see step 7's `LoadBearingGuaranteeAuditTest` rule).
 
 ### 2. Model — `ParentCorrelation` sub-taxonomy
 
@@ -166,7 +159,7 @@ In `parsePathElement` (the `condition:`-only arm currently at `BuildContext.java
 1. **Terminal-hop case (last element of `path`).** Look up the carrier field's return-type `@table` binding (already in `BuildContext` scope via the `currentSourceSqlName` context and the field's typed return). Build the `TableRef` from the catalog. Surface `AUTHOR_ERROR` when the return type has no `@table` binding, with the message in the Design section.
 2. **Intermediate-hop case.** Reflect on the condition method's second parameter. If it is a concrete generated jOOQ table class (`Class<?>` that `JooqCatalog.findTableByClass(c)` resolves), build a `TableRef` from the catalog entry. If it is `Table<?>` (wildcard), surface `AUTHOR_ERROR` per the Design section.
 
-Construct `new ConditionJoin(methodRef, targetTable, alias)` with the resolved target. The arms for `{key:}`, `{table:}`, `{key:, condition:}`, `{table:, condition:}`, `{table:, key:}`, `{table:, key:, condition:}` are not touched; their semantics stay verbatim. Factor out a small `resolveConditionJoinTarget(carrierField, methodRef, isTerminal)` helper so the two arms in the chain stay close to each other and the error messages live in one place. Wear `@LoadBearingClassifierCheck(key = "condition-join.target-table-resolved-at-parse", …)` on the helper.
+Construct `new ConditionJoin(methodRef, targetTable, alias)` with the resolved target. The arms for `{key:}`, `{table:}`, `{key:, condition:}`, `{table:, condition:}`, `{table:, key:}`, `{table:, key:, condition:}` are not touched; their semantics stay verbatim. Factor out a small `resolveConditionJoinTarget(carrierField, methodRef, isTerminal)` helper so the two arms in the chain stay close to each other and the error messages live in one place. Wear `@LoadBearingClassifierCheck(key = "condition-join.target-table-resolved-at-parse", description = "BuildContext.parsePathElement resolves ConditionJoin.targetTable at parse time from the carrier field's return-type @table binding (terminal hop) or by reflecting on the condition method's second parameter (intermediate hop). Both unresolvable cases route through Rejection.AuthorError upstream; the ConditionJoin compact constructor (step 1) is the structural safety net. Emitters consume cj.targetTable() without null-checks.")` on the helper. This is the sole producer for the key (the compact constructor above is not annotated, to avoid the duplicate-producer audit fail in `LoadBearingGuaranteeAuditTest`).
 
 After the path's `JoinStep` list is built, synthesise `ParentCorrelation` for each carrier field whose variant carries it. Two arms:
 
@@ -264,7 +257,7 @@ Implementation details in `SplitRowsMethodEmitter.emitParentInputAndFkChain`:
 
 * `validateColumnReferenceField` (`GraphitronSchemaValidator.java:575-583`) — drop the `hasConditionJoin` branch. The `@LoadBearingClassifierCheck(key = "column-reference-field-no-condition-join-step", …)` annotation at lines 546-552 deletes with the branch (no remaining producer).
 * `validateSplitTableField` / `validateSplitLookupTableField` / `validateRecordTableField` / `validateRecordLookupTableField` — drop the `unsupportedReason` deferred-rejection consult on each.
-* `validateInlineTableField` / `validateInlineLookupTableField` (the two arms added in R228) — drop their deferred-rejection branches symmetrically.
+* `validateTableField` / `validateLookupTableField` (the two arms added in R228) — drop their deferred-rejection branches symmetrically.
 
 `validateReferenceLeadsToType` (`:615-630`) currently special-cases `ConditionJoin` because it had no pre-resolved target. After step 1, `ConditionJoin implements HasTargetTable`; the special-case folds and the check reads `((HasTargetTable) lastStep).targetTable()` uniformly. For terminal-hop ConditionJoin the check is tautological (parser fills target from the same return-type binding the validator compares against) but the unified shape removes the dead code.
 
