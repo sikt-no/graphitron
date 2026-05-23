@@ -38,7 +38,7 @@ class TableMethodFieldValidationTest {
 
         WITH_CONDITION_ONLY("condition method terminal — emitter throws at runtime, validator passes (multi-hop / condition emit are follow-ups)",
             new TableMethodField("Film", "filteredActors", null, TestFixtures.tableBoundFilm(new FieldWrapper.Single(true)), List.of(
-                new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
+                new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "actorCondition", ClassName.get("org.jooq", "Condition"), List.of()), TestFixtures.actorTable(), "")),
                 TestFixtures.staticServiceMethodRef("com.example.TableMethods", "filteredActors", ClassName.get("org.jooq", "Table"), List.of()),
                 Optional.empty()),
             List.of());

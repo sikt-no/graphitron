@@ -54,15 +54,11 @@ public final class JoinPathEmitter {
     }
 
     private static String targetJavaClassName(JoinStep step, int index, int size, TableRef terminalTable) {
-        return switch (step) {
-            case JoinStep.FkJoin fk -> fk.targetTable().tableClass().simpleName();
-            case JoinStep.LiftedHop lh -> lh.targetTable().tableClass().simpleName();
-            case JoinStep.ConditionJoin cj ->
-                // ConditionJoin does not carry a resolved TableRef (see classification-vocab item 5).
-                // When this is the terminal step and the caller knows the terminal table, use it;
-                // otherwise we cannot emit a usable alias and the caller must branch.
-                (index == size - 1 && terminalTable != null) ? terminalTable.tableClass().simpleName() : "";
-        };
+        // Every JoinStep permit implements HasTargetTable (FkJoin and LiftedHop via WithTarget;
+        // ConditionJoin directly), so the read is uniform without a sealed switch. The
+        // terminalTable parameter is retained for the rare unit-test setup that constructs a
+        // JoinStep without a resolved target; the parameter retires when those test setups update.
+        return ((JoinStep.HasTargetTable) step).targetTable().tableClass().simpleName();
     }
 
     /**

@@ -67,9 +67,25 @@ import java.util.List;
 public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin, JoinStep.LiftedHop {
 
     /**
-     * Capability mixed in by hops that pre-resolve a target table the prelude joins to. Lets
-     * emitters read {@link #targetTable()}, {@link #slots()}, and {@link #alias()}
-     * polymorphically — exactly where the accessors mean the same thing on every implementor.
+     * Capability mixed in by every hop that pre-resolves a target table the prelude joins to.
+     * Lets emitters read {@link #targetTable()} and {@link #alias()} uniformly without a sealed
+     * switch — every {@link JoinStep} permit implements this interface (FkJoin and LiftedHop via
+     * {@link WithTarget}; ConditionJoin directly).
+     *
+     * <p>Capability interfaces and sealed switches serve different roles: this interface is the
+     * "uniformly true" axis (every hop has a target table); {@link WithTarget} below adds the
+     * FK-correlation slot iteration that only FK-style hops (FkJoin, LiftedHop) carry.
+     */
+    interface HasTargetTable {
+        TableRef targetTable();
+        String alias();
+    }
+
+    /**
+     * Capability mixed in by hops that pre-resolve a target table <em>and</em> a slot list pairing
+     * source / target columns for FK-correlation predicates. Lets emitters read
+     * {@link #targetTable()}, {@link #slots()}, and {@link #alias()} polymorphically — exactly
+     * where the accessors mean the same thing on every implementor.
      *
      * <p>{@link #slots()} returns {@link Iterable} rather than {@link List} on purpose: positional
      * methods ({@code .get(i)}, {@code .getFirst()}, {@code .subList(...)}) become compile errors
@@ -77,10 +93,11 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * {@link #slotCount()}. The variant identity (FK pairing vs lifter identity) lives on the
      * concrete {@link JoinSlot} permit returned by iteration; emitters iterate uniformly through
      * {@link JoinSlot#sourceSide()} and {@link JoinSlot#targetSide()} regardless of permit.
+     *
+     * <p>{@link JoinStep.ConditionJoin} implements {@link HasTargetTable} directly (no slot list)
+     * — its source/target correlation is the condition method call, not paired columns.
      */
-    interface WithTarget {
-        TableRef targetTable();
-        String alias();
+    interface WithTarget extends HasTargetTable {
         Iterable<? extends JoinSlot> slots();
         int slotCount();
 
@@ -197,14 +214,35 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
      * {@code @externalField} result back to the parent table when no FK exists.
      *
      * <p>{@code alias} is the unique table alias for this step, computed at build time as
-     * {@code fieldName + "_" + stepIndex}. The target table is not pre-resolved here — condition
-     * method resolution (P3) will provide it once reflection over the method signature is
-     * implemented.
+     * {@code fieldName + "_" + stepIndex}.
+     *
+     * <p>{@code targetTable} is pre-resolved at parse time by {@code BuildContext
+     * .resolveConditionJoinTarget}: for a terminal hop, from the carrier field's return-type
+     * {@code @table} binding; for an intermediate hop, by reflecting on the condition method's
+     * second parameter. Both unresolvable cases route through {@code Rejection.AuthorError}
+     * upstream; the compact constructor below is the structural safety net so consumers can
+     * read {@link #targetTable()} without a null check.
      *
      * <p>Contrast with {@link FkJoin#whereFilter}: that field is a WHERE clause on the enclosing
      * SELECT; this condition is the JOIN's ON clause.
      */
-    record ConditionJoin(MethodRef condition, String alias) implements JoinStep {}
+    record ConditionJoin(MethodRef condition, TableRef targetTable, String alias)
+            implements JoinStep, HasTargetTable {
+
+        public ConditionJoin {
+            if (condition == null) {
+                throw new NullPointerException("ConditionJoin.condition must not be null");
+            }
+            if (targetTable == null) {
+                throw new NullPointerException(
+                    "ConditionJoin.targetTable must not be null; BuildContext.parsePathElement "
+                    + "resolves it from the carrier field's return-type @table binding (terminal "
+                    + "hop) or by reflecting on the condition method's second parameter "
+                    + "(intermediate hop). Both unresolvable cases route through "
+                    + "Rejection.AuthorError upstream.");
+            }
+        }
+    }
 
     /**
      * One hop pre-keyed by a {@code @sourceRows} lifter or a {@code @record}-parent accessor —

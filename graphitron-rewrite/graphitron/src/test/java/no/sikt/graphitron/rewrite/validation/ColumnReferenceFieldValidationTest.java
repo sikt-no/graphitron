@@ -49,7 +49,7 @@ class ColumnReferenceFieldValidationTest {
 
         CONDITION_METHOD("path resolved via condition method instead of a FK — deferred to condition-join slug",
             new ColumnReferenceField("Film", "languageName", null, "languageName", new ColumnRef("NAME", "", ""),
-                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "languageCondition", ClassName.get("org.jooq", "Condition"), List.of()), "")),
+                List.of(new JoinStep.ConditionJoin(TestFixtures.staticServiceMethodRef("com.example.Conditions", "languageCondition", ClassName.get("org.jooq", "Condition"), List.of()), TestFixtures.languageTable(), "")),
                 new CallSiteCompaction.Direct()),
             List.of(DEFERRED_CONDITION_JOIN)),
 
