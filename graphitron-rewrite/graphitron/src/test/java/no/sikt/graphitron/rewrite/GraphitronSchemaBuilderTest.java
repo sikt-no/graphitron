@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.ProjectionFor;
 import no.sikt.graphitron.rewrite.catalog.TypeClassification;
+import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.ColumnField;
@@ -1067,6 +1068,74 @@ class GraphitronSchemaBuilderTest {
                 assertThat(schema.field("Query", "films")).isInstanceOf(QueryField.QueryTableField.class);
                 var f = (QueryField.QueryTableField) schema.field("Query", "films");
                 assertThat(f.orderBy()).isInstanceOf(OrderBySpec.None.class);
+            }),
+
+        // R232: condition-only @reference path resolves its target table from the carrier
+        // field's return-type @table binding (terminal-hop arm of
+        // BuildContext.resolveConditionJoinTarget).
+        CONDITION_ONLY_TERMINAL_RESOLVES_TARGET_FROM_RETURN_TYPE(
+            "condition-only path on a TableField — ConditionJoin.targetTable resolved from "
+            + "the return-type @table binding (terminal hop)",
+            """
+            type Actor @table(name: "actor") { firstName: String }
+            type City @table(name: "city") {
+                actor: Actor @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}])
+            }
+            type Query { city: City }
+            """,
+            schema -> {
+                var field = (TableField) schema.field("City", "actor");
+                assertThat(field.joinPath()).hasSize(1);
+                assertThat(field.joinPath().get(0)).isInstanceOf(JoinStep.ConditionJoin.class);
+                var cj = (JoinStep.ConditionJoin) field.joinPath().get(0);
+                assertThat(cj.targetTable().tableName()).isEqualToIgnoringCase("actor");
+                assertThat(field.parentCorrelation())
+                    .isInstanceOf(ParentCorrelation.OnConditionJoin.class);
+            }),
+
+        // R232: a condition-only path with @table on both sides preserves the legacy
+        // {table:, condition:} combination semantics — the FkJoin is derived from endpoints
+        // and {condition:} folds into whereFilter, no ConditionJoin produced.
+        TABLE_WITH_CONDITION_PRESERVES_WHERE_FILTER(
+            "{table:, condition:} combination preserves whereFilter semantics — regression guard",
+            """
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @reference(path: [{table: "film_actor", condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}, {table: "actor"}])
+                    @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var field = (TableField) schema.field("Film", "actors");
+                assertThat(field.joinPath()).hasSize(2);
+                var first = field.joinPath().get(0);
+                assertThat(first).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(((JoinStep.FkJoin) first).whereFilter())
+                    .as("{table:, condition:} folds the condition into FkJoin.whereFilter, not a ConditionJoin")
+                    .isNotNull();
+            }),
+
+        // R232: a condition-only path with @key on both sides preserves the legacy
+        // {key:, condition:} combination semantics — same as above for key-form.
+        KEY_WITH_CONDITION_PRESERVES_WHERE_FILTER(
+            "{key:, condition:} combination preserves whereFilter semantics — regression guard",
+            """
+            type Actor @table(name: "actor") { firstName: String }
+            type Film @table(name: "film") {
+                actors: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey", condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}, {key: "film_actor_actor_id_fkey"}])
+                    @defaultOrder(primaryKey: true)
+            }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var field = (TableField) schema.field("Film", "actors");
+                assertThat(field.joinPath()).hasSize(2);
+                var first = field.joinPath().get(0);
+                assertThat(first).isInstanceOf(JoinStep.FkJoin.class);
+                assertThat(((JoinStep.FkJoin) first).whereFilter())
+                    .as("{key:, condition:} folds the condition into FkJoin.whereFilter, not a ConditionJoin")
+                    .isNotNull();
             });
 
         final String sdl;
@@ -1219,7 +1288,7 @@ class GraphitronSchemaBuilderTest {
             }),
 
         WITH_CONDITION_PATH(
-            "@tableMethod + @reference(path:[{condition:...}]) resolves to a ConditionJoin",
+            "@tableMethod + @reference(path:[{condition:...}]) resolves to a ConditionJoin with non-null targetTable (R232)",
             """
             type Actor @table(name: "actor") { firstName: String }
             type Film @table(name: "film") {
@@ -1233,6 +1302,11 @@ class GraphitronSchemaBuilderTest {
                 var field = (TableMethodField) schema.field("Film", "actor");
                 assertThat(field.joinPath()).hasSize(1);
                 assertThat(field.joinPath().get(0)).isInstanceOf(JoinStep.ConditionJoin.class);
+                // R232: ConditionJoin.targetTable() resolves at parse time from the field's
+                // return-type @table binding (terminal-hop arm of resolveConditionJoinTarget).
+                var cj = (JoinStep.ConditionJoin) field.joinPath().get(0);
+                assertThat(cj.targetTable()).isNotNull();
+                assertThat(cj.targetTable().tableName()).isEqualToIgnoringCase("actor");
             });
 
         final String sdl;
