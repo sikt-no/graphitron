@@ -796,11 +796,13 @@ public final class Main {
                 out.append("'''\n");
                 continue;
             }
-            // Markdown ordered-list markers ("1. ", "2. ") -> AsciiDoc ". ":
+            // Markdown ordered-list markers ("1. ", "2. ", "a. ", "b. ") -> AsciiDoc ". ":
             // AsciiDoc's ordered-list parser is strict about sequential indices
-            // when explicit numbers are used; using "." defers numbering to the
-            // renderer and avoids "list item index: expected N, got M" warnings.
-            line = line.replaceAll("^(\\s*)\\d+\\.\\s", "$1. ");
+            // when explicit numbers or letters are used; using "." defers numbering
+            // to the renderer and avoids "list item index: expected N, got M" /
+            // "expected a, got c" warnings when intervening code blocks or
+            // paragraphs break the run.
+            line = line.replaceAll("^(\\s*)(?:\\d+|[a-zA-Z])\\.\\s", "$1. ");
             line = line.replaceAll("\\*\\*([^*]+)\\*\\*", "*$1*");
             line = transformAdocLinks(line, ctx);
             // Em-dash sweep: codebase rule.
