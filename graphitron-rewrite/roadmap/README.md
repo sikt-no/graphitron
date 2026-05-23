@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R222` | Input model: dimensional pivot under visitor-driven classification | Ready | 2026-05-22 <sub>created 2026-05-21</sub> | [plan](input-model-dimensional-pivot.md) |
+| `R222` | Input model: dimensional pivot under visitor-driven classification | Spec | 2026-05-23 <sub>created 2026-05-21</sub> | [plan](input-model-dimensional-pivot.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R186` | Nested input types in @mutation fields | Spec | 2026-05-20 | [plan](nested-input-types-in-mutation-fields.md) |
@@ -189,7 +189,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R226` [**Classification dimensional pivot: diagnostics off the model**](classification-dimensional-pivot.md) — Backlog, structural
 - `R164` [**Field model: three-dimension pivot**](field-model-two-axis-pivot.md) — Backlog, structural
-- `R222` [**Input model: dimensional pivot under visitor-driven classification**](input-model-dimensional-pivot.md) — Ready, structural
+- `R222` [**Input model: dimensional pivot under visitor-driven classification**](input-model-dimensional-pivot.md) — Spec, structural
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
