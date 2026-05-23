@@ -1,7 +1,7 @@
 ---
 id: R232
 title: Resolve @condition-method target table on inner-SELECT FROM
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 10
 theme: structural-refactor
@@ -18,8 +18,8 @@ last-updated: 2026-05-23
 
 Seven `ChildField` variants emit a build-time deferred rejection when their `@reference` path contains any `ConditionJoin`:
 
-* Inline `ChildField.TableField` / `ChildField.LookupTableField` — validator-rejected since R228 (`GraphitronSchemaValidator.validateTableField` / `validateLookupTableField`; the inline emitters at `InlineTableFieldEmitter.java:53-60` and `InlineLookupTableFieldEmitter.java` consult `SplitRowsMethodEmitter.unsupportedReason`).
-* `ChildField.SplitTableField` / `SplitLookupTableField` / `RecordTableField` / `RecordLookupTableField` — all four route through `SplitRowsMethodEmitter.unsupportedReason` (`SplitRowsMethodEmitter.java:324-335`).
+* Inline `ChildField.TableField` / `ChildField.LookupTableField` — validator-rejected since R228 via the centralised `GraphitronSchemaValidator.validateVariantIsImplemented` (`:230`) that consults `SplitRowsMethodEmitter.unsupportedReason` for every `GraphitronField` variant; the inline emitters at `InlineTableFieldEmitter.java:53-60` and `InlineLookupTableFieldEmitter.java:64-70` carry the corresponding runtime stub branches that consult the same predicate.
+* `ChildField.SplitTableField` / `SplitLookupTableField` / `RecordTableField` / `RecordLookupTableField` — all four route through the same `validateVariantIsImplemented` consult (build-time rejection) and through `SplitRowsMethodEmitter.unsupportedReason` (`:324-335`) at each variant's emitter entry point (`buildForSplitTable`, `buildForSplitLookupTable`, `buildForRecordTable`, `buildForRecordLookupTable`).
 * `ChildField.ColumnReferenceField` — `GraphitronSchemaValidator.java:575-583` surfaces a separate `Rejection.Deferred` keyed to slug `column-reference-on-scalar-field-condition-join` ([R129](column-reference-on-scalar-field-condition-join.md)).
 
 A real-world example in `tilgangsstyring-app`'s experimental schema, `ApiTilgangForMaskinbrukerV2.roller`, hits the `SplitTableField` arm.
@@ -256,8 +256,7 @@ Implementation details in `SplitRowsMethodEmitter.emitParentInputAndFkChain`:
 **File:** `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/GraphitronSchemaValidator.java`
 
 * `validateColumnReferenceField` (`GraphitronSchemaValidator.java:575-583`) — drop the `hasConditionJoin` branch. The `@LoadBearingClassifierCheck(key = "column-reference-field-no-condition-join-step", …)` annotation at lines 546-552 deletes with the branch (no remaining producer).
-* `validateSplitTableField` / `validateSplitLookupTableField` / `validateRecordTableField` / `validateRecordLookupTableField` — drop the `unsupportedReason` deferred-rejection consult on each.
-* `validateTableField` / `validateLookupTableField` (the two arms added in R228) — drop their deferred-rejection branches symmetrically.
+* `validateVariantIsImplemented` (`GraphitronSchemaValidator.java:219-232`) — drop the `SplitRowsMethodEmitter.unsupportedReason` consult on line 230. This is the single centralised dispatcher that surfaces the deferred rejection for all six condition-join-affected variants (`TableField`, `LookupTableField`, `SplitTableField`, `SplitLookupTableField`, `RecordTableField`, `RecordLookupTableField`); the per-variant validators (`validateTableField`, `validateLookupTableField`, etc.) carry no condition-join branch of their own. The deletion lands together with step 6's removal of `SplitRowsMethodEmitter.unsupportedReason` itself; the consult site at `:230` is what forces the compile fail that drags step 6 here. The accompanying javadoc on `validateVariantIsImplemented` (`:200-218`) gets rewritten to drop the "intra-variant emit-block" / `ConditionJoinReportable` paragraph since both delete in this pass.
 
 `validateReferenceLeadsToType` (`:615-630`) currently special-cases `ConditionJoin` because it had no pre-resolved target. After step 1, `ConditionJoin implements HasTargetTable`; the special-case folds and the check reads `((HasTargetTable) lastStep).targetTable()` uniformly. For terminal-hop ConditionJoin the check is tautological (parser fills target from the same return-type binding the validator compares against) but the unified shape removes the dead code.
 
