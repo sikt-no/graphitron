@@ -518,6 +518,111 @@ class HoversTest {
         );
     }
 
+    // ===== R233 — @field(name:) on @reference path field hovers on terminal-table column =====
+
+    @Test
+    void inputTableWithReferencePathHoversOnTerminalTableColumn() {
+        // The enclosing @table is "film"; the @reference path navigates to "language"; the
+        // column "name" exists on "language" but not on "film". Pre-R233 the hover dispatched
+        // on the enclosing-type backing and either rendered the wrong column or silently failed
+        // to find one. R233 routes through FieldClassification.lspColumnDispatch() and hovers
+        // the actual reachable column.
+        var file = file("""
+            input FilmInput @table(name: "film") {
+                languageName: String @field(name: "lang_name") @reference(path: [{table: "language"}])
+            }
+            """);
+        var pos = pointAt(file, 1, "lang_name");
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            java.util.Map.of("FilmInput", new TypeBackingShape.TableBacking("film")),
+            java.util.Map.of(),
+            java.util.Map.of("FilmInput.languageName",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
+                    "language", "lang_name", List.of())),
+            java.util.Map.of()
+        );
+        var hover = Hovers.compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
+        var md = hover.getContents().getRight().getValue();
+
+        assertThat(md).contains("**Column** `lang_name`");
+        assertThat(md).contains("on `language`");
+        assertThat(md).doesNotContain("on `film`");
+    }
+
+    @Test
+    void outputTableWithReferencePathHoversOnTerminalTableColumn() {
+        // Output-side mirror.
+        var file = file("""
+            type Film @table(name: "film") {
+                languageName: String @field(name: "lang_name") @reference(path: [{table: "language"}])
+            }
+            """);
+        var pos = pointAt(file, 1, "lang_name");
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            java.util.Map.of("Film", new TypeBackingShape.TableBacking("film")),
+            java.util.Map.of(),
+            java.util.Map.of("Film.languageName",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.ColumnReference(
+                    "language", "lang_name", List.of())),
+            java.util.Map.of()
+        );
+        var hover = Hovers.compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos).orElseThrow();
+        var md = hover.getContents().getRight().getValue();
+
+        assertThat(md).contains("**Column** `lang_name`");
+        assertThat(md).contains("on `language`");
+    }
+
+    @Test
+    void unresolvedReferencePathHoverSilentOnLspSide() {
+        // Classifier could not assign a variant (Unclassified). The hover must be silent so the
+        // editor falls through to the SDL docstring rather than printing column metadata pulled
+        // from the wrong table.
+        var file = file("""
+            input FilmInput @table(name: "film") {
+                languageName: String @field(name: "lang_name") @reference(path: [{table: "language"}])
+            }
+            """);
+        var pos = pointAt(file, 1, "lang_name");
+
+        var snapshot = new LspSchemaSnapshot.Built.Current(
+            List.of(),
+            java.util.Map.of("FilmInput", new TypeBackingShape.TableBacking("film")),
+            java.util.Map.of(),
+            java.util.Map.of("FilmInput.languageName",
+                new no.sikt.graphitron.rewrite.catalog.FieldClassification.Unclassified("synthetic test reason")),
+            java.util.Map.of()
+        );
+
+        assertThat(Hovers.compute(file, filmAndLanguageCatalogWithLanguageName(), snapshot, pos)).isEmpty();
+    }
+
+    private static CompletionData filmAndLanguageCatalogWithLanguageName() {
+        var film = new CompletionData.Table(
+            "film", "Movies",
+            CompletionData.SourceLocation.UNKNOWN,
+            List.of(
+                CompletionData.Column.of("film_id", "Integer", false, ""),
+                CompletionData.Column.of("title", "String", false, "")
+            ),
+            List.of(CompletionData.Reference.of("language", "FILM__FILM_LANGUAGE_ID_FKEY", false))
+        );
+        var language = new CompletionData.Table(
+            "language", "Languages",
+            CompletionData.SourceLocation.UNKNOWN,
+            List.of(
+                CompletionData.Column.of("language_id", "Integer", false, ""),
+                CompletionData.Column.of("lang_name", "String", false, "")
+            ),
+            List.of()
+        );
+        return new CompletionData(List.of(film, language), List.of(), List.of());
+    }
+
     private static WorkspaceFile file(String source) {
         return new WorkspaceFile(1, source);
     }
