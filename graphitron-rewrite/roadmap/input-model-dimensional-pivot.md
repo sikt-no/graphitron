@@ -14,7 +14,7 @@ last-updated: 2026-05-24
 
 The input-type classification surface has been the most-churned model area in the rewrite over the last quarter: R94, R96, R150, R155, R178, R191, R205, R210, R211, R215 all landed surgical patches on it, and Backlog still carries R171, R97, R213, R209, R200, R195, R98, R220, R193, R172 on the same surface. R164 (`field-model-two-axis-pivot`) names the underlying disease one layer over: a sealed hierarchy that tries to encode a multi-dimensional space as a one-dimensional permit set.
 
-Earlier R222 drafts pivoted to a recursive `InputUsage` carrier, scoped to SQL emission. Review found the carrier was still the wrong granularity: it folded distinct consumer concerns (WHERE construction, DML row-shaping, lookup-key identification, method-param binding, pagination, ordering) into one classification output that consumers then re-discriminated. The dimensional pivot lands further: each consumer concern is its own *carrier*; each carrier is a sealed family whose arms include valid carriers plus an explicit absent arm (`No<Family>`) and explicit invalid arm (`Invalid<Family>`); each is produced by an independent *walker* over the SDL that returns a `WalkerResult` bundling the carrier with its diagnostics; the output field carries the carriers as fixed-meaning slots, always populated, never Optional. No top-level sealed hierarchy. No shared recursive tree. No common classification carrier. No shared mutable diagnostic sink.
+Earlier R222 drafts pivoted to a recursive `InputUsage` carrier, scoped to SQL emission. Review found the carrier was still the wrong granularity: it folded distinct consumer concerns (WHERE construction, DML row-shaping, lookup-key identification, method-param binding, pagination, ordering) into one classification output that consumers then re-discriminated. The dimensional pivot lands further: each consumer concern is its own *carrier*; each carrier is a sealed family with valid arms plus an explicit absent arm (`No<Family>`), and — for the two families where consumers fork on it — an explicit invalid arm (`Invalid<Family>`) that carries its `AuthorError` directly; each is produced by an independent *walker* over the SDL that returns a `WalkerResult` bundling the carrier with its diagnostics; the output field carries the carriers as fixed-meaning slots, always populated, never Optional. No top-level sealed hierarchy. No shared recursive tree. No common classification carrier. No shared mutable diagnostic sink.
 
 ## What is
 
@@ -28,11 +28,11 @@ R171 (Backlog) proposes a sealed `InputLikeType` parent. That fix is structural 
 
 ## What's to be: walkers populate carriers; carriers live on output fields
 
-- **Output fields gain carrier slots.** Each output field carries one slot per carrier family. The slot is non-Optional, always populated with exactly one arm of the family — a valid arm (e.g. `Condition`), the explicit absent arm (`No<Family>`), or the explicit invalid arm (`Invalid<Family>`). Consumers pattern-match the arm at use time; absence and invalidity are first-class domain states, not present/missing flags.
+- **Output fields gain carrier slots.** Each output field carries one slot per carrier family. The slot is non-Optional, always populated with exactly one arm of the family — a valid arm (e.g. `Condition`), the explicit absent arm (`No<Family>`), or — for the two families that carry it — `Invalid<Family>(cause)`. Consumers pattern-match the arm at use time; absence (and, where modelled, invalidity) is a first-class domain state, not a present/missing flag.
 - **Walkers are independent and total.** Each walker takes a `GraphQLFieldDefinition` and returns a `WalkerResult<C>` bundling the produced carrier (one arm of `C`'s sealed family, always populated) with the diagnostic events the walker accumulated. Walkers are pure functions over `graphql.schema.*` primitives; they do not consult a shared graphitron-internal classification model and do not depend on a shared mutable sink.
 - **The output field elects its walkers.** During classification, the field's directive set + return-type shape drive walker dispatch procedurally. No top-level sealed family; impossible combinations are excluded at dispatch. Slots whose walker was not elected default to the family's `No<Family>` arm.
 - **Walkers are independently unit-testable.** Parse a small SDL fragment, get a `GraphQLFieldDefinition`, run the walker, assert on the returned `WalkerResult` (carrier arm and events list). Pure function in, pure record out; no mocks required. Pipeline coverage comes as a by-product when downstream emitters consume the carriers.
-- **Schema warnings and errors ride with the walker result.** The carrier shape is no longer 1-1 with the SDL; each `WalkerResult<C>` carries a `List<ClassifierEvent>` alongside its carrier. The orchestrator drains events from every walker result post-walk to surface warnings (BuildContext) and errors (Rejection). The carrier arm encodes the structural outcome (valid / `No<C>` / `Invalid<C>`); events explain the prose. The two stay in lockstep: every `Invalid<C>` arm is paired with at least one `AuthorError` event from the same walker.
+- **Schema warnings and errors ride with the walker result.** The carrier shape is no longer 1-1 with the SDL; each `WalkerResult<C>` carries a `List<ClassifierEvent>` alongside its carrier. The orchestrator drains events from every walker result post-walk to surface warnings (BuildContext) and errors (Rejection). The carrier arm encodes the structural outcome (valid / `No<C>` / — for the two families that model it — `Invalid<C>`); events explain the prose. Where `Invalid<C>` exists, its `AuthorError` is a component of the arm, so the structural state and the diagnostic stay in lockstep by construction.
 
 ### The carrier vocabulary
 
@@ -45,7 +45,7 @@ R171 (Backlog) proposes a sealed `InputLikeType` parent. That fix is structural 
 | `InsertRows` | row plans to INSERT; compound (R122) carries parent + FK-threaded children | single valid arm (`InsertRows.Of`), tree-shaped, R122 carries internal shape |
 | `UpdateRows` | column-value bindings to write | single valid arm (`UpdateRows.Of`), flat |
 
-Each carrier family is a sealed interface. The valid arms above are the family's "produced something useful" cases. Two additional arms are universal across families: `No<Family>` records that the walker ran and found nothing meaningful (no condition args, no ordering directives, etc.) — "happy zero"; `Invalid<Family>` records that the walker ran, found structurally broken input, and registered diagnostics in its result — "broken zero". Downstream consumers pattern-match exhaustively over the family; `No<Family>` and `Invalid<Family>` are domain states that demand explicit handling, not nullability concerns.
+Each carrier family is a sealed interface. The valid arms above are the family's "produced something useful" cases. Every family carries an explicit `No<Family>` arm — "happy zero" — recording that the walker ran and found nothing meaningful (no condition args, no ordering directives, etc.); `No<Family>` is a domain state, not a nullability concern, and consumers pattern-match it exhaustively. Two families also carry an explicit `Invalid<Family>(AuthorError cause)` arm — `MethodArguments` and `PredicateCarrier` — because their downstream consumers actually fork on the structural-failure case (`@service` dispatch wiring; cardinality-safety partition). For the other four families the AuthorError is enough: the diagnostic stream halts the build before any consumer would have read the carrier, so adding an `Invalid<Family>` arm there would carry no information consumers consult. A sibling item can promote any family to three-arm later by adding the `Invalid<Family>` record; the change is additive.
 
 **PredicateCarrier's two valid arms** share predicate shape but differ in semantic role. `Condition` is the default for SQL-emitting *read* fields; `LookupRows` is the default for *mutation* fields. The walker's bailout-restart pattern handles role-discovery lazily: start with the default arm's accumulator; if a sentinel directive shows up anywhere in the walk, discard and restart with the other arm. Sentinels:
 
@@ -70,9 +70,10 @@ interface Walker<C> {
      * Reduce the field's args + nested input contents into a single carrier.
      * Walker is total: the returned carrier is always one arm of C's sealed
      * family — a valid arm if the walk yielded one, No<C> if the walk found
-     * nothing meaningful, or Invalid<C> if the walk found structurally broken
-     * input. Diagnostics accompany the carrier in the result; the walker has
-     * no shared mutable state and no injected sink.
+     * nothing meaningful, or (for the families that model it) Invalid<C> if
+     * the walk found structurally broken input. Diagnostics accompany the
+     * carrier in the result; the walker has no shared mutable state and no
+     * injected sink.
      */
     WalkerResult<C> walk(GraphQLFieldDefinition field);
 }
@@ -100,7 +101,7 @@ class PredicateWalker implements Walker<PredicateCarrier> {
 }
 ```
 
-Each accumulator's `build()` returns the full carrier family — a valid arm if predicates accrued, `NoPredicates` if nothing did, `InvalidPredicates` if the accumulator's diagnostics include an `AuthorError`. The bailout signal is the sentinel directive; the walker's outer loop doesn't pre-scan. Role discovery is structural — sentinel triggers restart, no separate role-decision pass.
+Each accumulator's `build()` returns the full carrier family — a valid arm if predicates accrued, `NoPredicates` if nothing did, or `InvalidPredicates(cause)` if the accumulator hit a structural error (the same `AuthorError` is also added to events). The bailout signal is the sentinel directive; the walker's outer loop doesn't pre-scan. Role discovery is structural — sentinel triggers restart, no separate role-decision pass.
 
 **Unit-testability is load-bearing.** Each walker is a pure function: graphql-java primitives in, `WalkerResult` out. No mocks, no shared sink, no graphitron classification context required. Tests assert against the returned record:
 
@@ -142,6 +143,8 @@ The output field decides which walkers to run from its own properties:
 
 Dispatch is a procedural decision: read the field's directive set + return-type shape, decide which walkers to invoke, pass them the field, collect carriers into the output field's slots. `@service` and `@externalField` are *total*: they short-circuit to MethodArguments only, regardless of position. Constraints between walkers (e.g. "@service excludes everything else") live in the dispatch logic, not in a sealed type.
 
+**Three options were considered for the dispatch rule itself.** *(a) A sealed type at the field level* — each combination of electable walkers as a permit. Rejected: this re-introduces the cross-product encoding the pivot exists to dissolve; adding a walker multiplies the permits. *(b) Capability-marker-driven dispatch* — read the field's existing capability markers (`SqlGeneratingField`, `MethodBackedField`) and map each capability to a `Set<Walker<?>>`. Rejected: walker election isn't a pure capability mapping. It involves negation (`@service` *excludes* every other walker, totalising), conditional fanout (`@tableMethod` elects MethodArguments AND Pagination AND Ordering), and ordering semantics (PredicateCarrier sentinel directives trigger arm flips that no capability marker carries). A capability-to-walker-set map flattens these decisions; the procedural function keeps them readable in one place. *(c) Procedural dispatch* (chosen) — a single function reads the directive set and return-type shape and decides which walkers to invoke. The constraint rules live in code that reads top-to-bottom, are individually testable, and don't pretend to be type-enforced when they're not.
+
 Adding a new carrier (Aggregation, GroupBy, future axes) is additive: new walker, new slot on Output, new dispatch rule. No enclosing taxonomy churns.
 
 ### Schema warnings and errors: bundled with the walker result
@@ -151,9 +154,9 @@ The walker model breaks SDL-shape 1-1 correspondence in several places:
 - A walker drops a directive that is no longer load-bearing (`@table` on input, `@record(class:)` on input, `@value`).
 - A walker bails and restarts; the bailout is worth surfacing when its trigger is subtle (e.g. `@lookupKey` deep in a nested input).
 - Multiple walkers may surface findings at the same SDL location.
-- A walker produces a `No<C>` arm with a non-empty diagnostic trail (e.g. `@service` field with non-method-shaped args) or an `Invalid<C>` arm (structurally broken input, accompanied by an `AuthorError`).
+- A walker produces a `No<C>` arm with a non-empty diagnostic trail (e.g. `@service` field with non-method-shaped args) or — for `MethodArguments` / `PredicateCarrier` — an `Invalid<C>(cause)` arm whose payload IS the `AuthorError`.
 
-Today's classifier-output channel mixes structured signal (`Unclassified*` carriers) with the actual classification. R222 separates the two: the carrier arm encodes the structural outcome (valid / `No<C>` / `Invalid<C>`); the `WalkerResult.events()` list carries the diagnostic prose. The two ride together in the wrapper, not as parallel channels.
+Today's classifier-output channel mixes structured signal (`Unclassified*` carriers) with the actual classification. R222 separates the two: the carrier arm encodes the structural outcome (valid / `No<C>` / — for the two families that model it — `Invalid<C>`); the `WalkerResult.events()` list carries the diagnostic prose. The two ride together in the wrapper, not as parallel channels.
 
 ```java
 record WalkerResult<C>(C carrier, List<ClassifierEvent> events) {}
@@ -174,10 +177,10 @@ Aggregation:
 - Classification iterates output fields, dispatches walkers, installs each `result.carrier()` into the corresponding slot, and concatenates `result.events()` into a flat per-build diagnostic stream.
 - `DirectiveDeprecated` / `DirectiveDropped` → BuildContext warnings (`TypeBuilder.emitDirectiveIgnoredWarnings`'s existing channel).
 - `PredicateRoleSwitched` → BuildContext info-level message; surfaced behind a verbosity flag.
-- `AuthorError` → terminates the build with the standard `Rejection.AuthorError` shape. An `Invalid<C>` carrier arm always accompanies any `AuthorError` from the same walker; the arm pins the structural state in the model while the event explains the cause.
+- `AuthorError` → terminates the build with the standard `Rejection.AuthorError` shape. For `MethodArguments` and `PredicateCarrier`, the same `AuthorError` is also the payload of the slot's `Invalid<C>(cause)` arm; the structural state is part of the model, the event explains the cause, and the duplication is by construction (the walker constructs the carrier with `new InvalidPredicates(cause)` and adds `cause` to its events list in one step).
 - `CarrierProducedNothing` → typically silent; surfaced on demand for debugging. Accompanies a `No<C>` arm where the walker has something useful to say about why nothing was produced (e.g. dispatch elected the walker but the field had no relevant args).
 
-The model is intentionally redundant on failure: the carrier arm is the *structurally consumable* signal (downstream pattern-match) and the events are the *human-consumable* signal (rejection messages, warnings). Consumers never silently coalesce `No<C>` with `Invalid<C>` because the arms differ in identity. Producers never silently emit `Invalid<C>` without an accompanying error event because the orchestrator validates the pairing post-walk.
+The two-channel framing applies where the carrier models invalidity (`MethodArguments`, `PredicateCarrier`): the carrier arm is the *structurally consumable* signal (downstream pattern-match) and the event is the *human-consumable* signal (rejection messages). For the other four families, invalidity rides in events only; the orchestrator halts the build before the carrier slot is read. Consumers can never silently coalesce `No<C>` with `Invalid<C>` because the arms differ in identity, and producers can never emit `Invalid<C>` without its `AuthorError` because the cause is a required component of the record.
 
 R226 (classification dimensional pivot: diagnostics off the model) is forward-compatible: its eventual `Diagnostic` family substitutes for `ClassifierEvent` when it lands; the `WalkerResult` wrapper's events-list shape is unchanged.
 
@@ -234,7 +237,7 @@ Each slot is a sealed family; the field holds exactly one arm. Slots are always 
 - Walker was not elected for this field → slot defaults to the family's `No<Family>` arm.
 - Walker was elected and produced a valid result → slot holds the relevant valid arm (e.g. `Condition`, `MethodArguments.Of`).
 - Walker was elected and found nothing meaningful → slot holds `No<Family>` (and the diagnostic stream may carry a `CarrierProducedNothing` event).
-- Walker was elected and found structurally broken input → slot holds `Invalid<Family>` (and the diagnostic stream carries the paired `AuthorError`).
+- Walker was elected on `MethodArguments` or `PredicateCarrier` and found structurally broken input → slot holds `Invalid<Family>(cause)`. The same `AuthorError` is the arm's payload and rides in the diagnostic stream. For the other four families, structurally broken input registers the AuthorError in the diagnostic stream and the orchestrator halts the build; the slot stays in `No<Family>` until that point.
 
 Pattern matches at use sites are exhaustive against the full family — there is no "did the walker run" question to ask. The compiler's exhaustiveness check is the safety net for every consumer migration.
 
@@ -245,13 +248,13 @@ sealed interface PredicateCarrier {
     record Condition(List<Predicate> predicates) implements PredicateCarrier {}
     record LookupRows(List<KeyPredicate> keys) implements PredicateCarrier {}
     record NoPredicates() implements PredicateCarrier {}
-    record InvalidPredicates() implements PredicateCarrier {}
+    record InvalidPredicates(AuthorError cause) implements PredicateCarrier {}
 }
 
 sealed interface MethodArguments {
     record Of(List<MethodArgumentBinding> paramBindings) implements MethodArguments {}
     record NoMethodArguments() implements MethodArguments {}
-    record InvalidMethodArguments() implements MethodArguments {}
+    record InvalidMethodArguments(AuthorError cause) implements MethodArguments {}
 }
 // MethodArgumentBinding is R164's sealed family with arms for scalar passthrough,
 // NodeID-decoded, BackingClass-populated, etc.
@@ -259,29 +262,25 @@ sealed interface MethodArguments {
 sealed interface Pagination {
     record Of(...) implements Pagination {}
     record NoPagination() implements Pagination {}
-    record InvalidPagination() implements Pagination {}
 }
 
 sealed interface Ordering {
     record Of(...) implements Ordering {}
     record NoOrdering() implements Ordering {}
-    record InvalidOrdering() implements Ordering {}
 }
 
 sealed interface InsertRows {              // R122 carries the valid-arm tree shape
     record Of(...) implements InsertRows {}
     record NoInsertRows() implements InsertRows {}
-    record InvalidInsertRows() implements InsertRows {}
 }
 
 sealed interface UpdateRows {
     record Of(List<ColumnValueBinding> columns) implements UpdateRows {}
     record NoUpdateRows() implements UpdateRows {}
-    record InvalidUpdateRows() implements UpdateRows {}
 }
 ```
 
-The split between `NoMethodArguments` (this field doesn't dispatch via method arguments at all — `@service` walker wasn't elected, or the field has no args to bind) and `MethodArguments.Of(...)` (the walker bound actual arguments) and `InvalidMethodArguments` (bindings failed with a paired `AuthorError`) carries domain meaning that `Optional<MethodArguments>` would conflate. The same three-way split pays off across every carrier: "walker had nothing to do" / "walker built a value" / "walker tried and failed".
+Two families carry an explicit `Invalid<Family>` arm; the other four do not. The asymmetry is intentional: `Invalid<Family>` earns its keep only where downstream consumers fork on it. `MethodArguments` forks because `@service` dispatch wiring depends on whether the bindings are well-formed (a stub resolver, a full call, or a build-halting error read different code paths). `PredicateCarrier` forks because the partition arm choice (`Condition` vs `LookupRows`) plus the structural-validity question together drive cardinality-safety checks at the mutation site. For `Pagination` / `Ordering` / `InsertRows` / `UpdateRows`, no consumer plausibly forks on "the carrier was attempted but malformed" vs "the carrier wasn't attempted at all" — the AuthorError surfaces through the diagnostic stream, the orchestrator halts the build before emit runs, and the carrier slot remains in its `No<Family>` arm until that point. Adding `Invalid<Family>` later is a sealed-family extension if a consumer ever asks. The split between `NoMethodArguments` (no method dispatch on this field at all), `MethodArguments.Of(...)` (bindings produced), and `InvalidMethodArguments(cause)` (binding attempted, failed) is what `Optional<MethodArguments>` would conflate; same shape applies to `PredicateCarrier`.
 
 `BackingClass` stays in vocabulary as a three-arm sealed family (`Pojo`, `JavaRecord`, `JooqTableRecord`) attached per `MethodArgumentBinding` variant by R164. R222 ships the `BackingClass` family declaration as vocabulary; R164 wires it onto MethodArguments' internal binding arms. `LoadBearingGuaranteeAuditTest` recognises the no-producer state as "awaiting R164" via a `@LoadBearingPlaceholder("R164 method-argument-binding arms")` annotation.
 
@@ -306,7 +305,7 @@ The pivot drops two directives as binding sources on `INPUT_OBJECT`. Each is rea
 | `@nodeId(typename: ...)` on input field | read by `NodeIdLeafResolver` on the SQL-side path | universal: `ConditionWalker` / `LookupRowsWalker` read it for FK-target resolution; R164's `MethodArgumentBinding` decoded-NodeID arm reads it for domain-method calls |
 | `@reference(path:)` on input field | read by `NodeIdLeafResolver` for `@nodeId` leaves | unchanged on the `@nodeId` path; **R122 extends the directive's reach to nested-input slots** (the path's terminal element drives the FK threading in `InsertRowsWalker`). R222 preserves the directive's existing applicability and does not touch the `@nodeId`-path resolver |
 | `@inputBean` / `@enumMap` / `@field(name:)` on input *fields* | read by `InputBeanResolver`, `EnumMappingResolver` | unchanged: those resolvers continue to consult the assembled-schema; R200 / R195 / R98 stay scoped where they are |
-| `@value` on input field | read by R144's classifier-side partition | **removed**; partition derived from the target table's PK column set inside `UpdateRowsWalker` |
+| `@value` on input field | R144's classifier-side partition reads it as a manual marker for SET-clause columns | **removed as redundant scaffolding**; the partition is fully derivable from catalog PK membership inside `UpdateRowsWalker`. `@value` carries no information today that the walker cannot compute from the catalog, so removing it is mechanical and changes no behaviour |
 
 ### What collapses
 
@@ -323,7 +322,7 @@ The pivot drops two directives as binding sources on `INPUT_OBJECT`. Each is rea
 | `TypeBuilder.findReturnTablesForInput` back-scan | retires; the field's `@table` return is available at walker-invocation time per-field |
 | `InputField.NestingField`, `InputField.UnboundField`, `InputField` family | refactored. The classification-output `InputField` hierarchy retires from `Input`; each walker carries its own typed accumulator. Where the same fact is needed by multiple walkers (e.g. `@nodeId @reference` decoded once), it is computed inside each walker — graphql-java is the shared substrate, not a graphitron-internal classification model. Walker-internal "column-bound" vs "unresolved" carriers stay typed and sealed inside each walker as needed |
 
-The cross-cutting `GraphitronSchemaValidator.validateTableInputType` arm becomes "validate each carrier the field produced"; per-permit-identity dispatch retires entirely. The `Invalid<Family>` arms surface diagnostics already accumulated by the walker, so the validator's job narrows to cross-carrier consistency checks (e.g. `@service` field with non-empty `predicate` slot is a producer bug, not an author error) rather than per-carrier structural validation.
+The cross-cutting `GraphitronSchemaValidator.validateTableInputType` arm becomes "validate each carrier the field produced"; per-permit-identity dispatch retires entirely. Each walker already surfaces its own structural errors through `WalkerResult.events()` (and, for `MethodArguments` and `PredicateCarrier`, through the `Invalid<Family>` arm), so the validator's job narrows to cross-carrier consistency checks (e.g. `@service` field with a non-`NoPredicates` predicate slot is a producer bug, not an author error) rather than per-carrier structural validation.
 
 ## Two example walkers shipped in R222
 
@@ -350,9 +349,9 @@ public WalkerResult<PredicateCarrier> walk(GraphQLFieldDefinition field) {
 }
 ```
 
-Each accumulator's `build()` returns a `PredicateCarrier` arm directly: a valid arm if predicates accrued, `NoPredicates` if nothing did, `InvalidPredicates` if the accumulator's events include an `AuthorError`.
+Each accumulator's `build()` returns a `PredicateCarrier` arm directly: a valid arm if predicates accrued, `NoPredicates` if nothing did, or `InvalidPredicates(cause)` if the accumulator hit a structural error.
 
-Unit-test surface: `@condition` on input type / input field / arg, plain input fields, nested-input recursion, `@lookupKey` bailout (at each nesting depth), unresolved column → `NoPredicates` + `CarrierProducedNothing` event, `@condition + @lookupKey` on the same field → `InvalidPredicates` + `AuthorError`. Each case is an SDL fragment + walker invocation + `WalkerResult` assertion.
+Unit-test surface: `@condition` on input type / input field / arg, plain input fields, nested-input recursion, `@lookupKey` bailout (at each nesting depth), unresolved column → `NoPredicates` + `CarrierProducedNothing` event, `@condition + @lookupKey` on the same field → `InvalidPredicates(cause)` with the same `cause` also in the events list. Each case is an SDL fragment + walker invocation + `WalkerResult` assertion.
 
 ### `MethodArgumentsWalker`
 
@@ -364,23 +363,27 @@ The walker is *total* for its electing directives: when invoked, it consumes all
 public WalkerResult<MethodArguments> walk(GraphQLFieldDefinition field) {
     var events = new ArrayList<ClassifierEvent>();
     var bindings = new ArrayList<MethodArgumentBinding>();
-    var hadFailure = false;
+    AuthorError failure = null;
     for (var arg : field.getArguments()) {
-        var bound = bindArg(arg, events);     // R164 specialises the binding kind
-        if (bound.isPresent()) bindings.add(bound.get());
-        else hadFailure = true;
+        var bound = bindArg(arg);     // R164 specialises the binding kind
+        if (bound.isOk()) {
+            bindings.add(bound.value());
+        } else if (failure == null) {
+            failure = bound.error();
+            events.add(failure);
+        }
     }
     MethodArguments carrier =
-        hadFailure                       ? new MethodArguments.InvalidMethodArguments() :
+        failure != null                  ? new MethodArguments.InvalidMethodArguments(failure) :
         field.getArguments().isEmpty()   ? new MethodArguments.NoMethodArguments() :
                                            new MethodArguments.Of(bindings);
     return new WalkerResult<>(carrier, events);
 }
 ```
 
-`NoMethodArguments` is the "field has no args" case; `Of(emptyList)` would only arise in a hypothetical "all args were filtered out" path that R222 does not exercise. `bindArg` failures escalate the carrier to `InvalidMethodArguments`; an accompanying `AuthorError` rides in `events`. Invariant #3 pins the pairing.
+`NoMethodArguments` is the "field has no args" case; `Of(emptyList)` would only arise in a hypothetical "all args were filtered out" path that R222 does not exercise. `bindArg` failures escalate the carrier to `InvalidMethodArguments(cause)`; the same `cause` rides in `events`. The structural pairing is by construction — the walker can't return `Invalid` without producing its `AuthorError` first, because the `AuthorError` is the only way to build the `Invalid` arm.
 
-Unit-test surface: scalar arg, nested-input arg, mixed scalar+nested args, `@nodeId`-decorated arg, conflicting directives (e.g. `@condition` on an arg of a `@service` field) → `InvalidMethodArguments` + `AuthorError`, no args → `NoMethodArguments`. The R164 contract is exercised by extension tests R164 will add; R222's tests pin the walker's structural correctness against today's `MethodArgumentBinding.Pending` arm.
+Unit-test surface: scalar arg, nested-input arg, mixed scalar+nested args, `@nodeId`-decorated arg, conflicting directives (e.g. `@condition` on an arg of a `@service` field) → `InvalidMethodArguments(cause)` with the same `cause` in `events`, no args → `NoMethodArguments`. The R164 contract is exercised by extension tests R164 will add; R222's tests pin the walker's structural correctness against today's `MethodArgumentBinding.Pending` arm.
 
 ## Walkers not shipped in R222 (sibling items)
 
@@ -401,7 +404,7 @@ R222 reserves the carrier slot on Output for each but does not populate. Migrati
 | R171 (sealed `InputLikeType` parent) | Dissolves: `Input` is the sole input-like type; capabilities are direct slots; the parent-root fix becomes moot |
 | R97 (deprecate `@table` on input types) | Phase 2 / 3 fall out structurally; Phase 6's directive narrowing + fixture sweep closes the item. `argMapping` grouping (R97 Phase 1) remains separable |
 | R213 (rejections at consumer field) | Walker-time `SourceLocation` is `InputFieldDecl.location()` / arg's source location |
-| R209 (FieldRegistry classify-input trace) | Typed rejection at walker time; `Rejection.AuthorError.UnknownName` rides on the walker's `WalkerResult.events()` and escalates the carrier to `Invalid<Family>` |
+| R209 (FieldRegistry classify-input trace) | Typed rejection at walker time; `Rejection.AuthorError.UnknownName` rides on the walker's `WalkerResult.events()` (and, where the walker is a `PredicateCarrier` or `MethodArguments` producer, becomes the `cause` payload of the `Invalid<Family>` arm) |
 | R166 Phase 2 (`InputTypeGenerator` under visitor) | Subset: the input-side slice. The walker invocation is the visitor pass |
 | R221 (validator walks `PlainInputArg.fields()` for `UnboundField` rejection) | Dissolves: the validator walks each output field's carriers uniformly; no per-permit dispatch survives |
 | R144 (lookup-key / set-field partition stored on `TableInputArg`; `@value` directive marker) | Two reversals. (1) The partition lives in `PredicateCarrier`'s `Condition`/`LookupRows` arm choice (UPDATE/DELETE default to `LookupRows`; `@multirows` flips to `Condition`). (2) `@value` is dropped; `UpdateRowsWalker` derives the SET columns by subtracting the PK column set from the column-bound carriers. R144's cardinality-safety surface (PK-coverage check, `multiRow` opt-in) survives unchanged in shape |
@@ -422,28 +425,29 @@ R144 committed the WHERE-vs-SET partition at classify time on the legacy carrier
 
 First, the partition is a property of the *consumer*, not of the input. UPDATE's "WHERE" is `LookupRows`; UPDATE's "SET" is `UpdateRows`. Each is its own walker, producing its own carrier. The consumer reads the slot it needs; nothing classifies "WHERE-vs-SET" on the input side.
 
-Second, the `@value` marker becomes redundant. `UpdateRowsWalker` walks the field's args; for each column-bound input field, the walker checks whether the column is in the target table's PK column set (sourced from `JooqCatalog`). Non-PK columns go into `UpdateRows`; PK columns are claimed by `LookupRowsWalker` for the same field. The two walkers split the SDL columns by PK-membership, derived from the catalog. No per-input-field marker needed.
+Second, the `@value` marker is redundant scaffolding rather than load-bearing semantics. R144 introduced it as a manual hint for SET-clause columns because the legacy carrier had no catalog access at classify time. `UpdateRowsWalker` walks the field's args; for each column-bound input field, the walker checks whether the column is in the target table's PK column set (sourced from `JooqCatalog`). Non-PK columns go into `UpdateRows`; PK columns are claimed by `LookupRowsWalker` for the same field. The two walkers split the SDL columns by PK-membership, derived from the catalog. No per-input-field marker needed, and no behaviour change for any fixture: the catalog-derived partition produces identical results to the `@value`-marked partition for every reachable case.
 
 R144's cardinality-safety surface (`multiRow: true` opt-in, the PK-coverage check on UPDATE / DELETE) survives unchanged in shape: the trigger is the catalog's PK column set examined by `UpdateRowsWalker` / `LookupRowsWalker`, not the `@value` complement.
 
-Sakila has two `@value` annotations (`FilmUpdateInput.title`, `FilmUpdateInput.description`); both are non-PK columns, so the partition outcome is identical. The Phase 6 fixture sweep drops them.
+Sakila has two `@value` annotations (`FilmUpdateInput.title`, `FilmUpdateInput.description`); both are non-PK columns, so the partition outcome is identical. Tests under `graphitron/src/test` carry many more `@value` decorations exercising R144's classifier rejections (DELETE + `@value`, `@value + @condition` mutual exclusivity); under the walker model those rejections move into walker-level structural checks against the catalog, and the test fixtures' `@value` decorations become orphaned scaffolding. The Phase 6 sweep drops them in one step. Since `@value` carries no information the walker can't derive, the removal is not a deprecation that needs a warning window — it is a no-op cleanup of unused scaffolding.
 
 ## Cross-axis invariants
 
-The dimensional split admits states the old model could not. Four load-bearing invariants pin those states explicitly, each carried as a `@LoadBearingClassifierCheck` key. Producer is the named walker; consumers are the per-carrier-slot readers on Output.
+The dimensional split admits states the old model could not. Two load-bearing invariants pin the states the type system doesn't already enforce. Each is carried as a `@LoadBearingClassifierCheck` key.
 
-1. **`walker.produces-only-its-own-family`**: each `Walker<C>` produces a carrier that is one arm of `C`'s sealed family — never another walker's carrier. Pinned per walker; load-bearing because dispatch logic relies on it (no walker silently populates a slot it does not own).
+1. **`output-field.carrier-slot-always-populated-with-arm`**: every carrier slot on every `OutputField` is non-null and holds exactly one arm of its sealed family. When a walker is not elected for a field, the slot is initialized to the family's `No<Family>` arm; when a walker is elected, the slot is set to `result.carrier()`. Pinned at the orchestrator; the audit walker catches null or uninitialized slots.
 
-2. **`output-field.carrier-slot-always-populated-with-arm`**: every carrier slot on every `OutputField` is non-null and holds exactly one arm of its sealed family. When a walker is not elected for a field, the slot is initialized to the family's `No<Family>` arm; when a walker is elected, the slot is set to `result.carrier()`. Pinned at the orchestrator; the audit walker catches null or uninitialized slots and any slot whose arm comes from outside its declared family.
+2. **`per-type-emit-ignores-walker-output`**: `InputRecordGenerator` and `InputTypeGenerator` read only `Input` (never any walker's carrier); per-output-field consumers read only the relevant carrier slot (never bypass to walk the input themselves). Pinned with `@DependsOnClassifierCheck` on both per-type generator entry points.
 
-3. **`walker-result.invalid-arm-paired-with-author-error`**: every `Invalid<Family>` carrier produced by a walker is accompanied by at least one `AuthorError` event in the same `WalkerResult.events()`, sharing the failure's `SourceLocation`. The orchestrator validates the pairing post-walk; an `Invalid<Family>` carrier without an accompanying error is a producer bug. Pinned per walker; the audit walker catches both directions (Invalid without AuthorError, and — looser — AuthorError without the carrier escalating to Invalid).
+**Carried by the type system, not the audit:**
 
-4. **`per-type-emit-ignores-walker-output`**: `InputRecordGenerator` and `InputTypeGenerator` read only `Input` (never any walker's carrier); per-output-field consumers read only the relevant carrier slot (never bypass to walk the input themselves). Pinned with `@DependsOnClassifierCheck` on both per-type generator entry points.
+- A walker `Walker<C>` returns `WalkerResult<C>`. The compiler enforces that the carrier is one arm of `C`'s family — no separate `walker.produces-only-its-own-family` audit is needed. (The R222 draft listed this as a load-bearing key; it's a tautology under generics and adds no audit value beyond the type signature.)
+- The `Invalid<Family>(AuthorError cause)` arms make the carrier-vs-event pairing structural: there is no way to construct an `Invalid` arm without producing the `AuthorError`, and the walker emits the same `AuthorError` into `events`. A separate "Invalid-paired-with-AuthorError" audit would be doing the work the record constructor already does.
 
 **Retirements:**
 
 - The legacy `input.record-shape-derived-from-backing` key retires entirely with `Input`'s backing-class-slot removal. `ValidationShape` is purely SDL-derived now.
-- The earlier draft's `input-usage.*` keys retire with `InputUsage`'s removal. The walker model produces no shared recursive carrier; per-walker invariants replace the recursive-tree invariant.
+- The earlier draft's `input-usage.*` keys retire with `InputUsage`'s removal. The walker model produces no shared recursive carrier; the orchestrator-level slot-population invariant plus the per-walker type-system guarantees (Walker<C> signature, Invalid arm constructors) replace the recursive-tree invariant.
 - The earlier draft's `r222-stand-in-form-from-directive-set` key retires with the field-level form discriminator. Walker dispatch reads the directive set directly; no stand-in is in play.
 - The previous-draft `output-field.carrier-slot-presence-iff-walker-elected` key retires with the Optional slots. The carrier arm itself now answers "did the walker run and what did it find"; presence-vs-absence has been domain-modelled into the sealed family.
 
@@ -454,7 +458,7 @@ Six phases, each independently shippable and individually reversible. The change
 ### Phase 1: introduce `Input`, `InputFieldDecl`, the carrier vocabulary, the walker abstraction, `WalkerResult`
 
 - Add `sealed interface Input`, `InputFieldDecl` to `model/`.
-- Add the carrier vocabulary: each carrier is a sealed family with valid arms plus universal `No<Family>` and `Invalid<Family>` arms. `PredicateCarrier` has valid arms `Condition` and `LookupRows`; `MethodArguments`, `Pagination`, `Ordering`, `InsertRows`, `UpdateRows` each have a single valid arm (`Of`) plus the two flag arms. R164's `MethodArgumentBinding` family and R122's `InsertRows.Of` tree land in their respective items; R222 ships `MethodArguments.Of(List<MethodArgumentBinding.Pending>)` as the placeholder valid arm.
+- Add the carrier vocabulary: each carrier is a sealed family with valid arms plus an explicit `No<Family>` arm. `PredicateCarrier` and `MethodArguments` additionally carry an `Invalid<Family>(AuthorError cause)` arm (their downstream consumers fork on structural-failure). `PredicateCarrier` has valid arms `Condition` and `LookupRows`; `MethodArguments`, `Pagination`, `Ordering`, `InsertRows`, `UpdateRows` each have a single valid arm (`Of`). R164's `MethodArgumentBinding` family and R122's `InsertRows.Of` tree land in their respective items; R222 ships `MethodArguments.Of(List<MethodArgumentBinding.Pending>)` as the placeholder valid arm.
 - Add `interface Walker<C>` and `record WalkerResult<C>(C carrier, List<ClassifierEvent> events)`. Define the `ClassifierEvent` sealed family.
 - Add `BackingClass` family (`Pojo`, `JavaRecord`, `JooqTableRecord`) with `@LoadBearingPlaceholder("R164 method-argument-binding arms")` so the audit doesn't flag the dead carrier.
 - **Rename R94's `InputRecordShape` → `ValidationShape`** and the slot `recordShape` → `validationShape` on every input variant. The capability marker renames from `HasInputRecordShape` → `HasValidationShape` in lockstep (it retires entirely in Phase 5).
@@ -470,7 +474,7 @@ Acceptance: model additions compile; every existing input today produces an equi
 - Implement `MethodArgumentsWalker`: walks args, produces `MethodArguments.Of(List<MethodArgumentBinding.Pending>)`. The per-param specialization (decoded NodeID, BackingClass-populated, scalar passthrough) is R164's; R222's body produces uniform `Pending` bindings.
 - Unit-test surface (the load-bearing demonstration of the pivot): each walker has a test class with one test per SDL shape variation. Tests are pure-graphql-java: parse a fragment, run the walker, assert on the returned `WalkerResult` (carrier arm + events list). No graphitron classification context is constructed.
 - Add walker-dispatch logic to the existing classification pass: SQL-form read fields elect `ConditionWalker`; `@service` / `@externalField` fields elect `MethodArgumentsWalker` exclusively. Other walkers are not yet elected (slots stay on their `No<Family>` default arm).
-- Three of the four load-bearing keys land here: `walker.produces-only-its-own-family` on each walker; `output-field.carrier-slot-always-populated-with-arm` and `walker-result.invalid-arm-paired-with-author-error` on the dispatch / orchestration site. The fourth (`per-type-emit-ignores-walker-output`) lands in Phase 3 once the per-type generators migrate.
+- One of the two load-bearing keys lands here: `output-field.carrier-slot-always-populated-with-arm` on the dispatch / orchestration site. The second (`per-type-emit-ignores-walker-output`) lands in Phase 3 once the per-type generators migrate. The previous draft's `walker.produces-only-its-own-family` and `walker-result.invalid-arm-paired-with-author-error` keys do not land — both are now structural (carried by `Walker<C>`'s signature and by `Invalid<Family>(AuthorError cause)`'s constructor, respectively).
 - **Anchor one consumer in the same phase** so the producer-consumer chain is live before the phase boundary. Chosen anchor: `EnumMappingResolver.buildLookupBindings` migrating to read `OutputField.methodArguments()` for `@service` fields and `OutputField.predicate()` for SQL-form fields. Two legacy callers (`MutationInputResolver.java:433`, `FieldBuilder.java:974`) keep their existing call sites on the legacy walk; the anchor consumer reads the new slots through a sibling overload. Both overloads delegate into a shared private body so the binding logic lives in one place.
 - `@table` and `@record(class:)` on input emit `DirectiveDeprecated` events at this phase; they're already ignored for binding (no walker reads them).
 
@@ -513,8 +517,8 @@ Three per-input directives whose semantics belong elsewhere come out in one swee
 - Closes R97.
 - Migrate every `@record(class:)`-decorated SDL input type across Sakila, fixtures, and LSP fixtures to drop the directive.
 - Narrow the SDL `@record` directive's scope to exclude `INPUT_OBJECT`.
-- Migrate every `@value`-decorated SDL input field across Sakila and any fixture schemas to drop the directive.
-- Delete the `@value` directive declaration; delete `BuildContext.DIR_VALUE` / `ARG_VALUE` and the registration in `GraphitronSchemaBuilder`. Delete `docs/manual/reference/directives/value.adoc`.
+- Strip every `@value`-decorated SDL input field across Sakila, `graphitron/src/test` fixtures, and any other schema. The directive is redundant scaffolding under the walker model (the partition is catalog-derived); no behaviour change.
+- Delete the `@value` directive declaration; delete `BuildContext.DIR_VALUE` / `ARG_VALUE` and the registration in `GraphitronSchemaBuilder`. Delete `docs/manual/reference/directives/value.adoc`. No staged deprecation window is required: `@value` carries no information the walker can't derive from the catalog, so external consumers (if any) lose nothing by the removal.
 
 Can land independently after Phase 4; not a blocker for the structural pivot.
 
@@ -531,10 +535,10 @@ Likely scope: 2-3 weeks of focused work. The walker abstraction and the `WalkerR
 
 - **`Input`** — the SDL declaration: name, location, assembled-schema form, ValidationShape, `List<InputFieldDecl>`. Carries no backing class, no table, no classified state. Read by per-type emitters (Jakarta validation) and by walkers as their substrate.
 - **`InputFieldDecl`** — the SDL field declaration on `Input`, pre-binding. Wraps `GraphQLInputObjectField` for applied-directive access.
-- **`Walker<C>`** — a pure total function over the SDL returning `WalkerResult<C>`: a carrier of type C (always one arm of its sealed family, including `No<C>` and `Invalid<C>`) bundled with the diagnostic events the walker accumulated. Built on graphql-java primitives. Independently unit-testable. Stateless across invocations; no shared mutable sink.
-- **`WalkerResult<C>`** — `record WalkerResult<C>(C carrier, List<ClassifierEvent> events)`. The carrier arm is always populated; the events list explains the walk and may be empty. The two stay in lockstep: `Invalid<C>` arms are paired with at least one `AuthorError` event from the same walker.
-- **Carriers** — `Pagination`, `Ordering`, `PredicateCarrier`, `MethodArguments`, `InsertRows`, `UpdateRows`. Each is a sealed family with valid arms plus an explicit absent arm (`No<Family>`) and explicit invalid arm (`Invalid<Family>`). Each is produced by exactly one walker; each lives on the output field as a non-Optional slot whose value is always one arm of the family.
-- **`No<Family>` / `Invalid<Family>`** — universal flag arms. `No<Family>` is "happy zero" (walker ran, nothing meaningful to produce, no error). `Invalid<Family>` is "broken zero" (walker ran, structurally broken input, paired with an `AuthorError`). Pattern matches at use sites are exhaustive against the full family; consumers cannot silently coalesce the two.
+- **`Walker<C>`** — a pure total function over the SDL returning `WalkerResult<C>`: a carrier of type C (always one arm of its sealed family, including the `No<C>` arm and — for `MethodArguments` and `PredicateCarrier` — the `Invalid<C>(AuthorError)` arm) bundled with the diagnostic events the walker accumulated. Built on graphql-java primitives. Independently unit-testable. Stateless across invocations; no shared mutable sink.
+- **`WalkerResult<C>`** — `record WalkerResult<C>(C carrier, List<ClassifierEvent> events)`. The carrier arm is always populated; the events list explains the walk and may be empty.
+- **Carriers** — `Pagination`, `Ordering`, `PredicateCarrier`, `MethodArguments`, `InsertRows`, `UpdateRows`. Each is a sealed family with valid arms plus an explicit absent arm (`No<Family>`). `MethodArguments` and `PredicateCarrier` additionally carry an `Invalid<Family>(AuthorError cause)` arm because their downstream consumers fork on structural-failure; the other four families surface failure through events alone. Each carrier is produced by exactly one walker; each lives on the output field as a non-Optional slot whose value is always one arm of the family.
+- **`No<Family>` / `Invalid<Family>`** — `No<Family>` is "happy zero" (walker ran, nothing meaningful to produce, no error) and exists on every family. `Invalid<Family>(AuthorError cause)` is "broken zero" — walker ran, structurally broken input, the cause is the arm's own payload. Lives only on the two families whose consumers actually pattern-match it.
 - **`BackingClass`** — three-arm sealed family (`Pojo`, `JavaRecord`, `JooqTableRecord`) attached per `MethodArgumentBinding` variant by R164. R222 ships the family as vocabulary; not a slot on any R222-introduced model record.
 - **`ClassifierEvent`** — sealed family of structured diagnostic event types carried inside `WalkerResult`. R226-compatible substitute for the legacy `Unclassified*` carriers.
 - **No "table-bound input"** — the predicate retires. Inputs are SDL declarations; tables enter the picture at walker time via the consumer's `@table` return.
@@ -543,14 +547,14 @@ Likely scope: 2-3 weeks of focused work. The walker abstraction and the `WalkerR
 
 The pivot's load-bearing test claim is *unit-tier coverage of the walker abstraction*. Pipeline coverage falls out as a by-product when walker output is consumed by downstream emitters; pipeline tests are not the primary contract.
 
-- **Unit-tier (new, primary):** `ConditionWalker` tests. One test per SDL shape variation: `@condition` on input type, `@condition` on input field, `@condition` on arg, nested-input `@condition`, plain unresolved column → `NoPredicates` carrier + `CarrierProducedNothing` event, `@lookupKey` bailout (each nesting depth) → `LookupRows` carrier + `PredicateRoleSwitched` event, `@condition + @lookupKey` on the same field → `InvalidPredicates` carrier + `AuthorError` event.
-- **Unit-tier (new, primary):** `MethodArgumentsWalker` tests. One test per SDL shape: scalar arg → `MethodArguments.Of`, nested-input arg, mixed args, `@nodeId`-decorated arg, no args → `NoMethodArguments`, `@condition` on a `@service` field's arg → `InvalidMethodArguments` + `AuthorError`. Pair-up assertion (`Invalid` ↔ `AuthorError`) is itself a test, pinning invariant #3.
+- **Unit-tier (new, primary):** `ConditionWalker` tests. One test per SDL shape variation: `@condition` on input type, `@condition` on input field, `@condition` on arg, nested-input `@condition`, plain unresolved column → `NoPredicates` carrier + `CarrierProducedNothing` event, `@lookupKey` bailout (each nesting depth) → `LookupRows` carrier + `PredicateRoleSwitched` event, `@condition + @lookupKey` on the same field → `InvalidPredicates(cause)` carrier with the same `cause` in `events`.
+- **Unit-tier (new, primary):** `MethodArgumentsWalker` tests. One test per SDL shape: scalar arg → `MethodArguments.Of`, nested-input arg, mixed args, `@nodeId`-decorated arg, no args → `NoMethodArguments`, `@condition` on a `@service` field's arg → `InvalidMethodArguments(cause)` with the same `cause` in `events`.
 - **Unit-tier (new):** dispatch logic tests. Field with `@service` → only `MethodArgumentsWalker` elected. Plain query field → `ConditionWalker` elected (plus future walkers as they ship). Mutation field → `PredicateWalker` defaults to `LookupRows`. `@lookupKey` on a read field → walker dispatches with `defaultIsLookupRows=false` and bails on first encounter (testable via the walker, but the dispatch logic itself doesn't pre-scan).
 - **Pipeline-tier (regression):** every existing `graphitron-fixtures-codegen` fixture and Sakila fixture compiles unchanged through the pivot. Output diffs against trunk must be empty (modulo new `DirectiveDeprecated` warnings for `@table`-decorated and `@record(class:)`-decorated SDL inputs).
 - **Pipeline-tier (new):** `@table` on input emits `DirectiveDeprecated`. Fixture with `input X @table(name: "x") { ... }` used by a `@table`-returning consumer surfaces a `BuildWarning` at the directive's `SourceLocation`; carrier output is identical to the directive-absent case.
 - **Pipeline-tier (new):** `@record(class:)` on input emits `DirectiveDeprecated`.
 - **Pipeline-tier (new):** cross-consumer divergence. One input used by two consumers with different return tables produces distinct walker carriers per-output-field, each with its own table fact. Today's `InputType` collapse becomes per-output-field success.
-- **Pipeline-tier (new):** `@condition` on a `@service` field's arg surfaces `Rejection.AuthorError` via the orchestrator's drained `WalkerResult.events()`, with the field's `methodArguments` slot holding `InvalidMethodArguments`. Pins the principle that `@condition` is interior to SQL emission, not a separate consumer.
+- **Pipeline-tier (new):** `@condition` on a `@service` field's arg surfaces `Rejection.AuthorError` via the orchestrator's drained `WalkerResult.events()`, with the field's `methodArguments` slot holding `InvalidMethodArguments(cause)` carrying the same `AuthorError`. Pins the principle that `@condition` is interior to SQL emission, not a separate consumer.
 - **Pipeline-tier (new):** `@service` fields produce no `PredicateCarrier`. A fixture with a `@service`-decorated output field whose arg is an SDL input type produces an `OutputField` with `methodArguments == MethodArguments.Of(...)` and `predicate == NoPredicates`. Pins the totalising-directive principle and the walker-dispatch invariant.
 - **Pipeline-tier (new):** typed rejection on column-miss carries `Rejection.AuthorError.UnknownName` with the input field's source location (R209 lands here).
 - **Compilation-tier:** every `graphitron-sakila-example` compile target stays green.
@@ -561,7 +565,7 @@ The pivot's load-bearing test claim is *unit-tier coverage of the walker abstrac
 - **Walker-per-output-field multiplies work for inputs reused across many consumers.** Each output field that elects a walker pays per-field walker invocation cost; an input reused across ten fields runs each elected walker ten times. Mitigation 1: the walker walk is `List<InputFieldDecl>` against graphql-java's reflective accessors; typically low tens of fields, microseconds per invocation. Profile before optimising. Mitigation 2: if profiling shows a hotspot, walkers can deduplicate per `(Input, Consumer)` pair via a side cache. The cache lives outside the model; structural equality is the contract.
 - **Phases 1-3 keep both models alive simultaneously.** Adapter overhead during the additive migration window. Mitigation: Phase 4 deletes legacy with the same urgency as the rest of the pivot.
 - **R164 dependency for `MethodArgumentsWalker`'s binding variants.** R222 ships `MethodArgumentBinding.Pending` as a placeholder; downstream emitters that need the specialised variant must wait for R164. Mitigation: `Pending` is a single-arm carrier that delegates to today's reflection-based mapping at consumer time; the swap to R164's variants is a sealed-family extension, not a record-shape change.
-- **`ClassifierEvent` aggregation is a new diagnostic path.** Drift between walker-emitted events and BuildContext warning surfacing is possible. Mitigation: aggregation is one site (the orchestrator drains every `WalkerResult.events()` post-walk); the `walker-result.invalid-arm-paired-with-author-error` invariant pins the carrier-vs-event consistency contract.
+- **`ClassifierEvent` aggregation is a new diagnostic path.** Drift between walker-emitted events and BuildContext warning surfacing is possible. Mitigation: aggregation is one site (the orchestrator drains every `WalkerResult.events()` post-walk); on the two families that carry `Invalid<C>(cause)`, the carrier-vs-event consistency is structural (the `AuthorError` is a component of the `Invalid` record and is added to events in the same construction step).
 - **Walker dispatch is procedural, not type-enforced.** Adding a new walker requires touching the dispatch logic in addition to the carrier slot. Mitigation: dispatch is a single function; the dispatch tests pin the rules. The trade-off is intentional — making dispatch a sealed family would re-introduce the cross-product encoding the pivot exists to dissolve.
 
 ## Out of scope
@@ -582,6 +586,6 @@ R164 frames the disease: a sealed hierarchy that tries to represent multiple ind
 
 The cure earlier drafts proposed: separate the dimensions onto orthogonal slots on a recursive carrier (`InputUsage`). Review found the carrier still folded distinct consumer concerns into one classified output.
 
-The cure this draft commits to: separate the *consumer concerns* into independent *carriers*; produce each by an independent *total walker* over the SDL; let the output field carry the carriers as fixed-meaning non-Optional slots whose arms — including the explicit `No<Family>` and `Invalid<Family>` arms — are part of each family's domain model. No top-level sealed hierarchy; impossible combinations are excluded by dispatch-time election rather than by type. Walkers are pure functions over graphql-java primitives returning `WalkerResult` records; the carrier arm pins the structural outcome (valid, absent, invalid) while events bundled in the same result explain the prose. Each axis is independently unit-testable.
+The cure this draft commits to: separate the *consumer concerns* into independent *carriers*; produce each by an independent *total walker* over the SDL; let the output field carry the carriers as fixed-meaning non-Optional slots whose arms — including the explicit `No<Family>` arm on every family, and the `Invalid<Family>(AuthorError)` arm on the two families whose consumers fork on it — are part of each family's domain model. No top-level sealed hierarchy; impossible combinations are excluded by dispatch-time election rather than by type. Walkers are pure functions over graphql-java primitives returning `WalkerResult` records; the carrier arm pins the structural outcome (valid, absent, sometimes invalid) while events bundled in the same result explain the prose. Each axis is independently unit-testable.
 
-The principle is not "minimise the model"; it is "make the model honest about what each consumer needs, including failure." The cross-product encoding hides axes; the per-carrier encoding surfaces them. Optional encodings hide failure as nullability; the `No<Family>` / `Invalid<Family>` encoding surfaces it as structure. The walker abstraction makes each axis individually testable, individually evolvable, individually replaceable. Hidden axes drift; surfaced axes get the compiler's help — and the unit test's.
+The principle is not "minimise the model"; it is "make the model honest about what each consumer needs, including failure — where the consumer actually consults it." The cross-product encoding hides axes; the per-carrier encoding surfaces them. Optional encodings hide absence as nullability; the `No<Family>` encoding surfaces it as structure. Structural-invalidity gets the same treatment, but only on the families whose downstream consumers fork on it — speculative `Invalid` arms on families that don't pay for the discrimination would be the same kind of decorative encoding the pivot exists to dissolve. The walker abstraction makes each axis individually testable, individually evolvable, individually replaceable. Hidden axes drift; surfaced axes get the compiler's help — and the unit test's.
