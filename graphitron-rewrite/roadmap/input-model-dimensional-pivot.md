@@ -38,7 +38,7 @@ R171 (Backlog) proposes a sealed `InputLikeType` parent. That fix is structural 
 
 | Carrier family | Purpose | Valid-arm shape |
 |---|---|---|
-| `Pagination` | first/after/last/before (keyset) or offset/limit; consumer emits ORDER BY + LIMIT + keyset predicate | single valid arm (`Pagination.Of`), flat |
+| `Pagination` | first/after/last/before (keyset); consumer emits ORDER BY + LIMIT + keyset predicate | single valid arm (`Pagination.Of`), flat |
 | `Ordering` | `@orderBy`-family directives; consumer emits ORDER BY | single valid arm (`Ordering.Of`), flat |
 | `PredicateCarrier` | predicates that filter (`Condition`) or identify rows to act on (`LookupRows`) | two valid arms (`Condition`, `LookupRows`), both flat |
 | `MethodArguments` | param bindings for a Java method call (`@service`, `@externalField`, `@tableMethod`'s table-returning call) | single valid arm (`MethodArguments.Of`) holding a list of per-param `MethodArgumentBinding`; R164 carries the binding-variant family |
