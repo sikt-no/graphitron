@@ -1,7 +1,7 @@
 ---
 id: R222
 title: "Input model: walker-driven carriers on output fields"
-status: Spec
+status: Ready
 bucket: structural
 priority: 3
 theme: structural-refactor
