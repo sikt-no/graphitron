@@ -81,8 +81,9 @@ Architectural improvement opportunities, especially:
 - **Validator gaps.** A new classifier branch or invariant without a matching
   validate-time rejection — every classifier decision that implies a generator
   branch must fail at validate time if unimplemented.
-- **Load-bearing classifier checks.** A classifier guarantee an emitter relies on
-  that lacks `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` annotations.
+- **Missing type-system lift.** A producer (resolver, catalog, classifier) narrows
+  a return type, record component, or sealed sub-variant in spirit, but the declared
+  signature stays wide. The contract belongs in the signature.
 - **Test-tier mismatch.** Code-string assertions on generated method bodies
   (banned at every tier); per-variant unit tests for behaviour that pipeline /
   compile / execute tiers should cover; a new feature without a pipeline test.

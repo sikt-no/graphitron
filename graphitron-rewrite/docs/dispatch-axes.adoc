@@ -82,7 +82,7 @@ The two axes are independent. The `AccessorKeyedMany` projection lands at `POSIT
 
 == Cross-axis invariants
 
-Three pairings are structurally illegal; `SourceKey`'s compact constructor rejects them. Each is documented as a `@LoadBearingClassifierCheck` and paired with a `@DependsOnClassifierCheck` on the emit site that depends on it.
+Three pairings are structurally illegal; `SourceKey`'s compact constructor rejects them. The pipeline-tier tests pin SDL → emitted-shape end-to-end, and the cross-module compile against `graphitron-sakila-example` is the structural backstop.
 
 [cols="1,3"]
 |===
@@ -95,7 +95,7 @@ Three pairings are structurally illegal; `SourceKey`'s compact constructor rejec
 | `ServiceTableRecord` target-aligned ⇒ empty `path` | When the service returns a typed `TableRecord` whose class matches the field's target table, walking past target via a `path` chain is structurally redundant ; the service already produced a target-aligned record. The `Wrap.TableRecord` arm in `GeneratorUtils.buildKeyExtraction` emits `parent.into(Tables.X)` directly without walking; the invariant guarantees a misaligned record never reaches this site.
 |===
 
-Each invariant is one paragraph at a single place (the compact constructor) but governs the emit shape at multiple consumers downstream. Relaxing one without auditing the consumer side surfaces as an orphaned `@DependsOnClassifierCheck` in `LoadBearingGuaranteeAuditTest`, not as a runtime surprise.
+Each invariant is one paragraph at a single place (the compact constructor) but governs the emit shape at multiple consumers downstream. Relaxing one without auditing the consumer side surfaces as a pipeline-test failure or a compile error in the generated `graphitron-sakila-example` source, not as a runtime surprise.
 
 == Consumer-side dispatch
 

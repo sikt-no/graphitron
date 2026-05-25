@@ -11,7 +11,7 @@ You are not a reviewer. The Spec → Ready and In Review → Done gates are hand
 
 ## CRITICAL: scope of your output
 
-- DO surface architectural opportunities the author may have missed: places the design pushes against a principle, places the type system could carry more certainty, places a classifier guarantee should be load-bearing, places the validator should mirror the classifier.
+- DO surface architectural opportunities the author may have missed: places the design pushes against a principle, places the type system could carry more certainty, places a producer narrows a shape that downstream consumers consume without the narrowed type, places the validator should mirror the classifier.
 - DO sketch the stronger shape in one or two sentences when the alternative is concrete.
 - DO cite the principle by heading from the docs you read (e.g. "Generation-thinking", "Sealed hierarchies over enums", "Classification belongs at the parse boundary").
 - DO be willing to say "the design is clean against the principles"; do not invent findings to fill space.
@@ -25,7 +25,7 @@ You are not a reviewer. The Spec → Ready and In Review → Done gates are hand
 These are the principle sources. Read them before evaluating the design; the order matters because the strategic frame reframes the technical one:
 
 1. `docs/graphitron-principles.adoc` ; strategic principles (DB-as-ally, stability through simplicity, separate business logic from API code)
-2. `graphitron-rewrite/docs/rewrite-design-principles.adoc` ; technical principles (generation-thinking, sealed hierarchies, classification boundaries, load-bearing classifier checks, validator-mirrors-classifier, test tiers)
+2. `graphitron-rewrite/docs/rewrite-design-principles.adoc` ; technical principles (generation-thinking, sealed hierarchies, classification boundaries, classifier guarantees shape emitter assumptions, validator-mirrors-classifier, test tiers)
 3. `graphitron-rewrite/docs/README.adoc` ; pipeline orientation
 4. Any doc the design touches directly (`code-generation-triggers.adoc`, `argument-resolution.adoc`, `runtime-extension-points.adoc`, `testing.adoc`, `workflow.adoc`) ; only the ones relevant to the design under review
 
@@ -42,7 +42,7 @@ Use the same taxonomy as `.claude/skills/reviewer-prompt/SKILL.md`'s "What to lo
 - **Component types too broad.** A field component declared at the sealed root when the classifier guarantees a narrower variant. The type system should carry the certainty.
 - **Sub-taxonomy candidates.** Resolution outcomes stored as raw strings, nullable bag records, or tri-state returns that should be a sealed `Resolved`.
 - **Validator gaps.** New classifier branches or invariants without a matching validate-time rejection. Every classifier decision that implies a generator branch must fail at validate time if unimplemented.
-- **Load-bearing classifier checks.** A classifier guarantee an emitter relies on, without the `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` annotation pair.
+- **Missing type-system lift.** A producer (resolver, catalog, classifier) narrows a return type, record component, or sealed sub-variant in spirit, but the declared signature stays wide. The contract belongs in the signature.
 - **Wire-format leaks.** Opaque wire shapes (NodeId, cursors, federation reps) reaching past the DataFetcher boundary into the model.
 - **Test-tier mismatch.** A behaviour change without a pipeline-tier test, or per-variant unit tests for behaviour that pipeline / compile / execute tiers should cover. Code-string assertions on generated method bodies are banned at every tier.
 - **Stale references.** Does the design name tests, classes, or methods that don't exist? If the same plan creates them, prefer "C3 adds `X`" phrasing over "as asserted by `X`".
