@@ -38,7 +38,7 @@ The conclusion is that the annotation pair is a documentation convention dressed
 
 ## Phased plan
 
-The item ships in five phases. Phase 1 (principles revision) is the smallest reversible step that stops the bleeding without touching any of the 75 existing annotation sites; subsequent phases retire those sites in separate visibility windows. The plan stages this way because the architect agent and reviewer/SRP rubrics actively push the pattern today; the principles edit removes that pressure on day one, so the 60-key classification doesn't grow under us while it runs.
+The item ships in up to five phases. Phase 1 (principles revision) is the smallest reversible step that stops the bleeding without touching any of the 75 existing annotation sites; Phases 4–5 retire those sites in separate visibility windows on the Delete/Shrink/Demote branches, or do not run at all if Phase 3 selects Hold. The plan stages this way because the architect agent and reviewer/SRP rubrics actively push the pattern today; the principles edit removes that pressure on day one, so the 60-key classification doesn't grow under us while it runs.
 
 ### Phase 1: Principles revision
 
@@ -99,23 +99,28 @@ Phase 2 done means:
 - Classification table committed in this Spec. Counts known: `|a|`, `|b-cheap|`, `|b-relational|`, `|c|`, and within `|c|` the count of keys with a non-empty silent-regression column (the "signal-bearing cross-module" subset).
 - One Backlog item filed per (b-cheap) / (b-relational) key (titles seeded by the current annotation's `description`).
 
-### Phase 3: Pick Delete vs Shrink
+### Phase 3: Pick Delete / Shrink / Hold / Demote
 
 Decision rule, applied to the Phase 2 counts:
 
-The discriminating axis is *not* the cardinality of (c). Cardinality treats every cross-module pair as equally signal-bearing, but the cross-module documentation link only earns its cost when the consumer would silently regress if the producer relaxed — i.e. when the LSP / sakila-service test suite doesn't exhaustively re-pin the contract the annotation describes. The Phase 2 silent-regression column produces that count directly. Call it `|c-signal|` (subset of `|c|` where the silent-regression cell is non-empty).
+The discriminating axis between Delete and Shrink is *not* the cardinality of (c). Cardinality treats every cross-module pair as equally signal-bearing, but the cross-module documentation link only earns its cost when the consumer would silently regress if the producer relaxed — i.e. when the LSP / sakila-service test suite doesn't exhaustively re-pin the contract the annotation describes. The Phase 2 silent-regression column produces that count directly. Call it `|c-signal|` (subset of `|c|` where the silent-regression cell is non-empty).
+
+Beyond Delete and Shrink, two abort-path branches exist for cases where Phase 4 doesn't earn its keep against Phase 2's actual data: Hold (Phase 1 terminal, audit infrastructure preserved) and Demote (annotations-only without audit). These are not last-resort placeholders; they are first-class outcomes the spec is structured to accommodate. The Phase 2 classification table determines which of the four branches commits.
 
 - **Delete.** Pick when `|c-signal|` is small (rough guide: ≤ 3) AND no surviving signal-bearing pair describes a contract that would mis-emit or mis-validate downstream code without the consumer-module tests catching it. Remove the annotation classes, the `*Checks` containers, `LoadBearingGuaranteeAuditTest`, and the `auditfixture` package. For each retained `|c-signal|` pair, replace the annotation's signal with a *test-side* mechanism (a producer-module test that exercises the consumer's read pattern, or a sibling-module test that loads the producer output). The principles doc already names the cross-module gap (per Phase 1) as a known cost; this carve-out names what fills it where the gap matters.
 - **Shrink.** Pick when `|c-signal|` is materially larger (rough guide: ≥ ~8) and per-pair audit shows the test-side mechanism above is consistently more expensive than the documentation link. Rename the annotations to a cross-module-signal-only form (proposed: `@CrossModuleClassifierGuarantee` / `@DependsOnCrossModuleClassifierGuarantee`). Restrict `LoadBearingGuaranteeAuditTest` to scan only the `|c-signal|` set. All in-module pairs and all `|c|` keys with an empty silent-regression cell still retire.
-- **Demote.** Pick only if Phase 2 reveals that nearly every key is (c) AND the lifts in (b-cheap) / (b-relational) prove infeasible. Listed for completeness; unlikely.
+- **Hold (Phase 1 terminal).** Pick when Phase 2's data shows no direction in Delete or Shrink earns its keep against the sunk cost of churning 75 existing sites. Triggering shapes: (b-relational) dominates (b-cheap), AND (b-cheap) is small (rough guide: ≤ 5 keys), AND `|c-signal|` is mid-range (4–7) where neither Delete's test-side replacements nor Shrink's renamed-annotation surface is clearly cheaper than just leaving the existing convention in place. R237 closes at Phase 1's state: the principles revision shipped, the rubrics updated, R125 resolved, and the architect agent / SRP no longer push the pattern. Existing annotation sites and the audit infrastructure stay as-is — archaeological cost accepted in exchange for not touching 75 sites. The Gap-window contract from Phase 1 extends indefinitely: no new producer keys, but existing pairs continue to enforce the rename/delete drift mode the audit was always good at. Commit Hold as a Spec → Spec revision naming the branch and the Phase 2 data that drove the call; Phase 4 and Phase 5 do not run.
+- **Demote.** Pick only if Phase 2 reveals that nearly every key is (c) AND the lifts in (b-cheap) / (b-relational) prove infeasible AND the cross-module signal is genuinely load-bearing but doesn't earn audit-infrastructure cost. Rename the audit to documentation-only annotation pair (no `LoadBearingGuaranteeAuditTest`) so the producer/consumer linkage stays IDE-navigable without the build-time scan. Distinct from Hold in that Hold keeps the audit; Demote keeps the annotations but drops the audit. Outcome contingent on Phase 2 data; do not pre-judge which of Hold or Demote is more likely.
 
-The thresholds are guides, not bright lines. Phase 3 may land in the gap and commit a judgement call with rationale; the gap is narrow because the signal axis already does the discrimination the cardinality axis was approximating.
+The thresholds are guides, not bright lines. Phase 3 may land in the gap between Delete and Shrink and commit a judgement call with rationale; the gap is narrow because the signal axis already does the discrimination the cardinality axis was approximating. The gap between Shrink/Delete and Hold/Demote is wider: it asks whether *any* Phase 4 action earns its keep, and lands on Hold or Demote when the answer is no.
 
-Commit the chosen direction as a Spec → Spec revision with the rationale and the decision-rule application against the actual counts.
+Commit the chosen direction as a Spec → Spec revision with the rationale and the decision-rule application against the actual counts. Under Hold, this commit closes R237 (Phase 4 and Phase 5 do not run). Under Delete, Shrink, or Demote, the commit gates Phase 4 below.
 
 ### Phase 4: Implementation
 
-Sequence:
+Runs only if Phase 3 selected Delete, Shrink, or Demote. Under Hold, Phase 4 is a no-op and R237 closes at the Phase 3 commit.
+
+Sequence (Delete and Shrink branches):
 
 1. **(a) keys.** For each, delete the `@LoadBearingClassifierCheck` and every paired `@DependsOnClassifierCheck` site. No other change.
 2. **(b-cheap) and (b-relational) keys.** Delete the annotations on the same terms as (a). The type-system lift ships under its own follow-up Backlog item, not here. The pre-lift signature is fine; once the lift lands, the contract is mechanically enforced.
@@ -126,34 +131,45 @@ Sequence:
    - Under **Delete**: remove `LoadBearingClassifierCheck.java`, `LoadBearingClassifierChecks.java`, `DependsOnClassifierCheck.java`, `DependsOnClassifierChecks.java`, `LoadBearingGuaranteeAuditTest.java`, and the `auditfixture/` package.
    - Under **Shrink**: keep the renamed annotation classes; trim `LoadBearingGuaranteeAuditTest` to the `|c-signal|` scope; remove `auditfixture` if no longer needed.
 
-Replacement convention for producer-consumer linkage records:
+Sequence (Demote branch):
+
+If Phase 3 selected Demote, the annotation sites stay. The audit infrastructure goes (`LoadBearingGuaranteeAuditTest.java`, `auditfixture/`). The annotation classes survive but lose the "load-bearing" framing — rename to `@ClassifierGuarantee` / `@DependsOnClassifierGuarantee` to make the no-audit role explicit, and update each `description` / `reliesOn` field to drop "load-bearing" language. New sites can still adopt the pair as documentation pointers; the audit no longer enforces pairing.
+
+### Replacement convention for producer-consumer linkage records
+
+Applies under Delete and (for any retired sites) Demote.
 
 Once the annotation pair retires, contributors who *do* want to record a producer-consumer dependency (because the link is non-obvious and the type-system narrowing isn't viable for that key) should use javadoc `{@link}` from the consumer to the producer, plus an optional reciprocal `{@link}` on the producer side. No new annotation, no new audit, no new convention to learn. `{@link}` is IDE-refactor-tracked (renaming the producer auto-updates the consumer's reference, unlike the annotation pair's opaque `key` string), carries no prose burden beyond the link itself (sidestepping the false-invariant risk the broadened "Documentation names only live tests/code" principle covers), and reuses the doc-tool the codebase already has. The recommendation does not extend to "every retired site gains a `{@link}`": most retired sites lose the annotation and gain nothing, because the linkage was documentation-of-coincidence rather than load-bearing visibility. `{@link}` is for the residual cases where a future reader, opening the consumer site cold, genuinely needs the pointer to make sense of the code.
 
 Phase 4 done means:
-- All annotation sites in (a), (b-cheap), (b-relational), and (c \ c-signal) are gone.
-- All `|c-signal|` sites match the chosen direction, with test-side replacements in place under Delete.
-- Annotation classes either removed (Delete) or renamed and scope-restricted (Shrink).
-- Build green: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` on Java 25.
+- **Delete / Shrink:** all annotation sites in (a), (b-cheap), (b-relational), and (c \ c-signal) are gone. All `|c-signal|` sites match the chosen direction, with test-side replacements in place under Delete. Annotation classes either removed (Delete) or renamed and scope-restricted (Shrink).
+- **Demote:** annotation classes renamed (`@ClassifierGuarantee` / `@DependsOnClassifierGuarantee`), `description` / `reliesOn` fields updated to drop "load-bearing" framing, audit infrastructure removed. All existing site sources still compile.
+- Build green in all branches: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` on Java 25.
 - Pipeline-tier tests still pin SDL → TypeSpec shape end-to-end (no regression).
 - `graphitron-sakila-example` compile still passes (the downstream backstop is still doing its job).
 
 ### Phase 5: Knock-on edits
 
-Lands together with Phase 4 or as a tail commit:
+Runs under Delete, Shrink, and Demote (lands together with Phase 4 or as a tail commit). Under Hold, Phase 5 is a no-op — the existing roadmap-item references and test javadocs are consistent with the preserved annotation sites and don't need rephrasing.
 
-- 14 roadmap items naming the pair (R125 already resolved in Phase 1): rephrase each reference to the new vocabulary (type-system contract, pipeline-test pinning, or cross-module convention as appropriate). Do not delete the items; preserve the underlying intent. The list:
+- 14 roadmap items naming the pair (R125 already resolved in Phase 1): rephrase each reference to the new vocabulary (type-system contract, pipeline-test pinning, or cross-module convention as appropriate). Under Demote, also update references that say "load-bearing" to match the renamed annotation classes. Do not delete the items; preserve the underlying intent. The list:
   - `binding-provenance-on-paramsource-arg.md`, `simplify-update-mutations-drop-value.md`, `record-parent-column-read-helper.md`, `multi-source-input-validation.md`, `catalog-check-constraint-validation.md`, `consolidate-sources-shape-predicates.md`, `inputs-package-internal-use-audit.md`, `input-model-dimensional-pivot.md`, `consumer-derived-input-tables.md`, `design-doc-implementation-conformance-audit.md`, `list-valued-external-field-multiset.md`, `tenant-routing-and-execution-input.md`, `parent-context-aware-schema-coordinates.md`, `intellij-lsp-plugin.md`.
 - Test javadocs in `PkResolutionEmitterReachabilityTest`, `DmlBulkMutationsExecutionTest`, `ServiceFieldValidationTest`, `TableMethodFieldValidationTest`, `LoadBearingGuaranteeAuditTest` (if it survives): rephrase to name the type-system contract or the cross-module mechanism instead of the annotation pair.
 - `graphitron-rewrite/roadmap/changelog.md`: append a one-line entry naming R237 and the landing commit SHA.
 
 ## Done means
 
+Outcomes that hold in every Phase 3 branch (these are what Phase 1 delivers):
 - The principles doc no longer endorses the annotation pair as the enforcement layer; the principle anchors on type signatures, pipeline tests, and the sakila-compile backstop.
 - The `principles-architect` agent and the reviewer/SRP skill rubrics no longer push the pattern.
-- All in-module annotation sites are gone (Delete) or restricted to cross-module pairs (Shrink).
-- The 60 string keys are gone (Delete) or reduced to the cross-module residual (Shrink).
 - The genuine load-bearing safety nets (type signatures, pipeline tests, sakila-compile) remain unchanged and continue to catch the contract failures the retired annotations claimed to catch.
+- R125 resolved; the roadmap no longer carries an item that contradicts the new principle.
+
+Outcomes specific to the Phase 3 branch:
+- **Delete:** all in-module annotation sites gone; the 60 string keys gone; audit infrastructure removed; `|c-signal|` pairs replaced by test-side mechanisms.
+- **Shrink:** in-module annotation sites gone; the 60 string keys reduced to the `|c-signal|` residual; audit infrastructure restricted to that residual; annotation classes renamed to the cross-module-signal form.
+- **Demote:** annotation sites preserved with renamed classes (`@ClassifierGuarantee` / `@DependsOnClassifierGuarantee`); audit infrastructure removed; annotations function as IDE-navigable documentation pointers without build-time enforcement.
+- **Hold:** annotation sites and audit infrastructure preserved as archaeology. R237's gain is the Phase 1 outcomes above; the existing site cost is accepted in exchange for not churning 75 sites.
 
 ## Out of scope
 
