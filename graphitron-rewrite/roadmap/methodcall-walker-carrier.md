@@ -1,7 +1,7 @@
 ---
 id: R238
-title: "MethodCall walker carrier (R222 foundation slice)"
-status: Backlog
+title: MethodCall walker carrier (R222 foundation slice)
+status: Spec
 bucket: structural
 priority: 3
 theme: structural-refactor
