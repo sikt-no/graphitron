@@ -15,8 +15,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
+| `R222` | Dimensional model pivot: slots over cross-product permits | Spec | 2026-05-25 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R238` | MethodCall walker carrier (R222 foundation slice) | Spec | 2026-05-25 | [plan](methodcall-walker-carrier.md) |
-| `R222` | Dimensional model pivot: slots over cross-product permits | Ready | 2026-05-25 <sub>created 2026-05-21</sub> | [plan](dimensional-model-pivot.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R186` | Nested input types in @mutation fields | Spec | 2026-05-20 | [plan](nested-input-types-in-mutation-fields.md) |
@@ -185,7 +185,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### structural-refactor
 
-- `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Ready, structural
+- `R222` [**Dimensional model pivot: slots over cross-product permits**](dimensional-model-pivot.md) — Spec, structural
 - `R238` [**MethodCall walker carrier (R222 foundation slice)**](methodcall-walker-carrier.md) — Spec, structural
 - `R171` [**Fold InputType and TableInputType under sealed parent InputLikeType**](input-like-type-sealed-parent.md) — Backlog, architecture
 - `R103` [**Lift jOOQ column defaults onto input fields connected to that column**](lift-jooq-column-defaults-onto-inputs.md) — Backlog, architecture
