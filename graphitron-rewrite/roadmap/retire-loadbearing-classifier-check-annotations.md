@@ -137,6 +137,101 @@ Runs under Delete, Shrink, and Demote (lands together with Phase 4 or as a tail 
 - Test javadocs in `PkResolutionEmitterReachabilityTest`, `DmlBulkMutationsExecutionTest`, `ServiceFieldValidationTest`, `TableMethodFieldValidationTest`, `LoadBearingGuaranteeAuditTest` (if it survives): rephrase to name the type-system contract or the cross-module mechanism instead of the annotation pair.
 - `graphitron-rewrite/roadmap/changelog.md`: append a one-line entry naming R237 and the landing commit SHA.
 
+## Classification table
+
+Walked all 59 unique keys across `graphitron-rewrite/graphitron/` and `graphitron-rewrite/graphitron-lsp/` via FQN-aware grep with annotation-context lookback. Counts feeding Phase 3's decision:
+
+- **|a|** = 50 (46 in-module already type-coupled + 4 orphan producers with no consumer; annotation is duplication of the type or hygiene-only)
+- **|b-cheap|** = 1
+- **|b-relational|** = 1
+- **|c|** = 7 (graphitron producer, graphitron-lsp consumer; compile-link does not reach)
+- **|c-signal|** = 0 (every (c) regression is caught by an existing LSP-tier test)
+
+Total: 59 keys. Methodology per § "Phase 2: Classification sweep" above.
+
+### Cross-module keys (|c| = 7)
+
+For each, the producer lives in `graphitron-rewrite/graphitron/`; the consumer lives in `graphitron-rewrite/graphitron-lsp/`. The compile-link does NOT reach across modules — a producer-side relaxation that keeps the same TYPE but changes the VALUE (e.g. drops a payload component, widens a Map's keyset, allows a non-canonical URI) goes silently unless an LSP-tier test catches it.
+
+| key | producer | LSP consumer slot | LSP test backstop | signal-bearing |
+|-----|----------|-------------------|-------------------|----------------|
+| `field-classification-payload-faithful` | `catalog/CatalogBuilder.java:114` | `FieldClassification` (5 LSP sites read tableName/columnName/joinPath off projection) | `FieldCompletionsTest.columnNameCompletionReturnsTableColumns`, `HoversTest.fieldHoverShowsColumnMetadata`, `DiagnosticsTest.unknownColumnNameProducesError` | no |
+| `java-record-type-backs-record-class` | `catalog/CatalogBuilder.java:106` | `RecordBacking.components` (consumed verbatim by FieldCompletions, Hovers, Diagnostics) | `HoversTest.fieldHoverShowsRecordComponentMetadata`, `FieldCompletionsTest`, `DiagnosticsTest` | no |
+| `snapshot-built-implies-clean-parse` | `catalog/CatalogBuilder.java:80` | `LspSchemaSnapshot.Built` (silences unknown-directive warns under Previous/Unavailable) | `DiagnosticsTest`, `BuildTriggerPublishesDiagnosticsTest` | no |
+| `snapshot-directive-roundtrip-faithful` | `catalog/CatalogBuilder.java:86` | `DirectiveShape.args/description` (consumed verbatim by hover, arg-validation, unknown-directive arm) | `NestedArgsTest`, `ArgNameCompletionsTest`, `HoversTest` | no |
+| `source-location.absolute-path-source-name` | `schema/RewriteSchemaLoader.java:64` | `SourceLocation.sourceName` (LSP transforms to canonical URI for diagnostic routing) | `ValidatorDiagnosticsTest` | no |
+| `type-classification-payload-faithful` | `catalog/CatalogBuilder.java:130` | `TypeClassification` (5 LSP sites read tableName/participants/fqClassName) | `ReferenceCompletionsTest.keyCompletionReturnsForeignKeysOfEnclosingTable`, `DefinitionsTest.tableDefinitionMapsToTableSourceUri`, `DeclarationHoversTest.cursorOnTypeNameProducesTypeClassificationHover` | no |
+| `validation-report.canonical-uri` | `ValidationReport.java:69` | `ValidationReport.sourceUris` Map (URI canonicalization shared between producer and consumer) | `ValidatorDiagnosticsTest.authorErrorMapsToErrorSeverityWithValidatorSource` | no |
+
+All 7 (c) pairs are non-signal-bearing: the LSP-tier tests assert end-to-end behaviour (completion text, hover content, diagnostic URI matching) that depends on the producer's output shape, so a producer relaxation that breaks the LSP consumer fails those tests at LSP-tier. Under R237's broadened "Documentation names only live tests/code" principle, the LSP test suite is the mechanical pin; the annotation is duplication.
+
+### In-module keys (|a| = 50, |b-cheap| = 1, |b-relational| = 1)
+
+File paths stripped of the common prefix `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/`. Producer is `@LoadBearingClassifierCheck` site; consumer is the representative `@DependsOnClassifierCheck` site (full list in the inventory).
+
+| # | key | producer | consumer | bucket | rationale / lift |
+|---|-----|----------|----------|--------|------------------|
+| 1 | `accessor-rowkey-cardinality-matches-field` | `FieldBuilder.java:4309` | `generators/TypeFetcherGenerator.java:4548` | (a) | `SourceKey.Cardinality` sealed enum (ONE/MANY); consumer pattern-matches on enum value. |
+| 2 | `accessor-rowkey-shape-resolved` | `FieldBuilder.java:4296` | `generators/GeneratorUtils.java:270` | (a) | `AccessorRef` record carries resolved method handle + element class from reflection; consumer reads fields directly. |
+| 3 | `accessor-rowkey-shape-resolved-against-hub` | `FieldBuilder.java:4659` | (none) | (a) | Orphan producer; hygiene-only check. Drops without replacement under Delete. |
+| 4 | `body-param.nonnull-is-effective-runtime` | `FieldBuilder.java:1562` | `generators/TypeConditionsGenerator.java:85` | (a) | `BodyParam.nonNull` boolean carries effective nullability; pipeline-tier coverage on nested-input pins behaviour end-to-end. |
+| 5 | `class-accessor-resolver-shape-guarantee` | `ClassAccessorResolver.java:84` | `generators/FetcherEmitter.java:783` | (a) | `AccessorResolution.Resolved` sealed; rejections routed away upstream; consumer sees Resolved type-exclusively. |
+| 6 | `column-field-requires-table-backed-parent` | `FieldBuilder.java:4797` | `generators/TypeFetcherGenerator.java:319` | **(b-cheap)** | `parentTable` is currently a parameter into `TypeFetcherGenerator.generateTypeSpec`, not a `ColumnField` record component. *Lift*: add non-null `parentTable` component to `ColumnField` at construction, populated by classifier. Eliminates the parameter threading and the `IllegalStateException` reachability arm in the switch. |
+| 7 | `column-reference-field-no-nodeid-encode-keys` | `GraphitronSchemaValidator.java:525` | `generators/InlineColumnReferenceFieldEmitter.java:47` | (a) | Validator rejects upstream; compaction is `Direct`-only on `ColumnReferenceField` before reaching emitters. |
+| 8 | `condition-join.target-table-resolved-at-parse` | `BuildContext.java:1467` | `generators/InlineTableFieldEmitter.java:57` | (a) | `ConditionJoin` record's compact constructor enforces non-null `targetTable`; emitters read `cj.targetTable()` without null check. |
+| 9 | `context-argument.type-agreement` | `ContextArgumentClassifier.java:50` | `generators/ArgCallEmitter.java:186`, `generators/schema/GraphitronFacadeGenerator.java:43` | (a) | `ResolvedContextArg.javaType` holds single `TypeName` per name; both emitters read the field directly. |
+| 10 | `dml-mutation-shape-guarantees` | `FieldBuilder.java:2750` | `generators/TypeFetcherGenerator.java:1684` | (a) | `DmlReturnExpression` sealed with four arms (EncodedSingle/List, ProjectedSingle/List); consumer pattern-matches. |
+| 11 | `error-channel.local-context-transport` | `FieldBuilder.java:2881` | `generators/FetcherEmitter.java:53` (5 sites) | (a) | `ErrorChannel` sealed (Local/Global/NoChannel); consumers dispatch on variant. All consumers in-module. |
+| 12 | `error-channel.mappings-constant` | `FieldBuilder.java:2125` | `generators/schema/ErrorMappingsClassGenerator.java:48` | (a) | `ErrorChannel.mappingsConstantName` non-null string field; consumer reads it directly. |
+| 13 | `error-type.path-message-fields` | `TypeBuilder.java:948` | (none) | (a) | Orphan producer; hygiene-only check on `@error` type shape. |
+| 14 | `fetcher-registrations.no-empty-bodies` | `generators/schema/FetcherRegistrationsEmitter.java:62` | `generators/schema/GraphitronSchemaClassGenerator.java:76` | (a) | Map.values() gated at `ifPresent` sites in emitter; type encoding precludes empty entries. |
+| 15 | `fk-join.slots-oriented-source-and-target` | `model/JoinStep.java:110` | `FieldBuilder.java:4111` (9 sites) | (a) | `JoinStep.FkJoin` sealed variant; consumers pattern-match on `FkJoin` vs `LiftedHop` exhaustively. |
+| 16 | `input-field.unbound-implies-no-column` | `BuildContext.java:1724` | `FieldBuilder.java:1578` | (a) | `InputField.UnboundField` sealed variant; consumer pattern-matches without column lookup. |
+| 17 | `input-field.unbound-with-override-condition-admits-on-mutation-update-delete` | `MutationInputResolver.java:313` | (none) | (a) | Orphan producer; documents admission rule but no downstream code branches on it. |
+| 18 | `input-record.shape-from-input-type` | `TypeBuilder.java:1146` | `generators/schema/InputRecordGenerator.java:55` | (a) | `InputRecordShape.components` non-empty (compact-constructor enforced); consumers read without null guard. |
+| 19 | `lookup-field-non-empty-args` | `FieldBuilder.java:1245` | `generators/LookupValuesJoinEmitter.java:193` | (a) | Sealed variant constructed only when args non-empty; emitter's `requireSlots()` consumes non-empty result. |
+| 20 | `lookup-key-input-field-non-list` | `EnumMappingResolver.java:217` | `generators/LookupValuesJoinEmitter.java:114` | (a) | Resolver rejects list-typed carriers before constructing the binding; sealed type permits only scalar. |
+| 21 | `lookup-mapping-bindings-table-coherent` | `EnumMappingResolver.java:211` | `generators/LookupValuesJoinEmitter.java:109` | (a) | Bindings resolved against single `inputTable`; binding records carry resolved `targetColumn`. |
+| 22 | `multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-record-parent` | `FieldBuilder.java:4495` | `generators/MultiTablePolymorphicEmitter.java:772` | (a) | `ChildField.InterfaceField`/`UnionField` sealed variants carry resolved `parentSourceKey` + `parentResultType`. |
+| 23 | `multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-table-backed` | `FieldBuilder.java:679` | `generators/MultiTablePolymorphicEmitter.java:765` | (a) | Same sealed-variant pattern; consumer dispatches on variant. |
+| 24 | `mutation-delete-carrier.pk-resolution-projection-clean` | `BuildContext.java:507` | `generators/FetcherEmitter.java:715` | (a) | `BuildContext.classifyDeleteTableProjection` rejects non-PK/ServiceField arms; emitter pattern-matches on sealed `PkResolution`. |
+| 25 | `mutation-dml-record-field.data-table-equals-input-table` | `FieldBuilder.java:2787` | `generators/FetcherEmitter.java:246` | (a) | Rejection at classification ensures DML carrier binds to input table; emitter reads single `TableRef`. |
+| 26 | `mutation-input.lookup-binding-decoded-record-arity-matches-carrier-columns` | `EnumMappingResolver.java:234` | `generators/TypeFetcherGenerator.java:1823` | (a) | `MapBinding` carries arity directly (validated at classification); emitter reads without re-check. |
+| 27 | `mutation-input.lookup-binding-honors-carrier-extraction` | `EnumMappingResolver.java:223` | `generators/TypeFetcherGenerator.java:2635` | (a) | `MapBinding` sealed variant (Direct/NodeIdDecodeKeys) carries `extraction`; emitter dispatches on variant. |
+| 28 | `mutation-input.update-set-fields-equal-value-marked` | `MutationInputResolver.java:333` | `generators/TypeFetcherGenerator.java:2245` | (a) | `MutationInputTable.setFields` sealed-variant slot (exact partition per DML kind); emitter reads list. |
+| 29 | `mutation-input.where-columns-cover-pk` | `MutationInputResolver.java:323` | `generators/TypeFetcherGenerator.java:2659` | (a) | Resolver validates PK coverage; sealed-variant constraint enforces ≤1 row per input row. |
+| 30 | `nodeid-fk.direct-fk-keys-match` | `NodeIdLeafResolver.java:231` | `FieldBuilder.java:1340` | (a) | `NodeIdLeafResolver.Resolved.FkTarget` sealed (DirectFk/TranslatedFk); `liftedSourceColumns` pre-permuted into `NodeType.keyColumns` order. |
+| 31 | `nodeid-fk.identity-carrying-lift` | `NodeIdLeafResolver.java:245` | `BuildContext.java:1746` | (a) | Resolver validates lift predicate; sealed variant statically encodes valid lift. |
+| 32 | `output-fields.uniform-domain-return-type` | `GraphitronSchemaBuilder.java:311` | `generators/FetcherEmitter.java:269` | (a) | Schema builder rejects domain-type disagreement before construction; emitters read single `DomainReturnType` per `(SDL parent, field)`. |
+| 33 | `payload-construction.setter-name-matches-sdl-field` | `FieldBuilder.java:499` (stacked) | `generators/TypeFetcherGenerator.java:1617` | (a) | `SetterBinding` sealed variant carries setter `Method` handle (name validated at construction); emitters call `setter.getName()` directly. |
+| 34 | `payload-construction.shape-resolved` | `FieldBuilder.java:493` | `generators/TypeFetcherGenerator.java:1603` | (a) | `ErrorChannel.PayloadConstructionShape` sealed (AllFieldsCtor/MutableBean); emitter pattern-matches. |
+| 35 | `record-binding.producer-agreement` | `RecordBindingResolver.java:70` | `FieldBuilder.java:3968` | (a) | Resolver returns single `Class<?>`; consumers read class directly. |
+| 36 | `scalar-resolver.coercing-non-erased` | `ScalarTypeResolver.java:61` | `ServiceCatalog.java:1243` (5 sites) | (a) | `ScalarResolution.Resolved.javaType` never `Object` (erased coercings route to Rejected); sealed type precludes Object. |
+| 37 | `scalar-resolver.javatype-is-typename` | `ScalarTypeResolver.java:68` | `ServiceCatalog.java:1237` (5 sites) | (a) | `ScalarResolution.Resolved.javaType` is typed `TypeName` (JavaPoet); duplicated by the signature. |
+| 38 | `service-catalog-instance-service-holder-shape` | `ServiceCatalog.java:170` | `generators/TypeFetcherGenerator.java:1399` | (a) | `Service.callShape` sealed (InstanceWithDslHolder/Static); structurally encodes holder shape. |
+| 39 | `service-catalog-strict-service-return` | `ServiceCatalog.java:159` | `generators/TypeFetcherGenerator.java:1246` | (a) | `MethodRef.Service` carries captured parameterised return type; emitters declare typed fetcher return. |
+| 40 | `service-catalog-strict-tablemethod-return` | `ServiceCatalog.java:498` | `generators/TypeFetcherGenerator.java:1035`, `1114` | **(b-relational)** | Strict return-type check guarantees field's table token equals method's return token at runtime; neither record carries the relationship type-structurally. *Lift*: parameterise `MethodRef.StaticOnly` and `ReturnTypeRef.TableBoundReturnType` on a shared `<T extends Table<?>>` type token; thread it through every site that constructs or reads either. Higher blast radius than (b-cheap); jOOQ helper boundaries (per § "Selection-aware queries") cap how far the bound carries. |
+| 41 | `service-catalog-tablemethod-must-be-static` | `ServiceCatalog.java:504` | `generators/TypeFetcherGenerator.java:1040` | (a) | `MethodRef.StaticOnly` sealed variant; emitter reads without forking. |
+| 42 | `service-directive-resolver-strict-child-service-return` | `ServiceDirectiveResolver.java:359` | `generators/TypeFetcherGenerator.java:4335` | (a) | `MethodRef.Param.Sourced` carries validated return type; emitters use it directly. |
+| 43 | `service-method.declared-exceptions-covered` | `FieldBuilder.java:2653` | (none) | (a) | Orphan producer; checks declared-exception coverage but no consumer branches on it. |
+| 44 | `service-resolver-root-list-record-return-pair` | `ServiceDirectiveResolver.java:274` | `generators/TypeFetcherGenerator.java:1254` | (a) | Sealed return type permits only `Result<XRecord>` or `List<XRecord>` shapes. |
+| 45 | `source-key.accessor-call-wraps-record` | `model/SourceKey.java:84` | `generators/SplitRowsMethodEmitter.java:157` | (a) | `SourceKey.Reader.AccessorCall` ⇒ `Wrap.Record` invariant pinned by compact constructor. |
+| 46 | `source-key.result-row-walk-target-aligned-empty-path` | `model/SourceKey.java:96` | `generators/FetcherEmitter.java:256` | (a) | Compact-constructor invariant on `Reader.ResultRowWalk` wrap + empty path. |
+| 47 | `source-key.service-table-record-target-aligned-empty-path` | `model/SourceKey.java:90` | `generators/GeneratorUtils.java:418` | (a) | Compact-constructor invariant on `Reader.ServiceTableRecord` recordType + empty path. |
+| 48 | `source-key.source-rows-call-wraps-row` | `model/SourceKey.java:78` | `generators/GeneratorUtils.java:252` | (a) | Compact-constructor invariant on `Reader.SourceRowsCall` ⇒ `Wrap.Row`. |
+| 49 | `sourcerow-classifies-as-record-table-field` | `SourceRowDirectiveResolver.java:115` | `generators/SplitRowsMethodEmitter.java:148` | (a) | Resolver routes `@sourceRow` to `RecordTableField`/`RecordLookupTableField` sealed variants only. |
+| 50 | `sourcerow-leafkey-sourcerows-singlehop` | `SourceRowDirectiveResolver.java:121` | `generators/GeneratorUtils.java:239` | (a) | `SourceKey` carries single-element `path [JoinStep.LiftedHop]` on leaf-PK arm; sealed path variant. |
+| 51 | `sourcerow-pathkey-sourcerows-fkchain` | `SourceRowDirectiveResolver.java:127` | `generators/GeneratorUtils.java:247` | (a) | `SourceKey` carries multi-step `path [JoinStep.FkJoin...]` on `@reference` arm; sealed path variant. |
+| 52 | `tablemethod-resolver-return-is-table-bound` | `TableMethodDirectiveResolver.java:92` | `model/ChildField.java:434`, `model/QueryField.java:82` | (a) | `ChildField.TableMethodField` / `QueryField.QueryTableMethodTableField` declare `returnType` as `ReturnTypeRef.TableBoundReturnType` (narrow sealed component). |
+
+### Backlog items to file
+
+Two follow-up Backlog items, one per (b-*) key. These ship independently of R237's retirement — the annotation retires under Phase 4 regardless of whether the lift has shipped (the pre-lift signature is fine; once the lift lands, the contract is mechanically enforced):
+
+- **`column-field-requires-table-backed-parent`** (b-cheap): Lift `parentTable` from a `TypeFetcherGenerator.generateTypeSpec` parameter to a non-null `ColumnField` record component, populated at construction in `BuildContext.classifyOutputField`. Eliminates the parameter threading and the `IllegalStateException` reachability arm at `TypeFetcherGenerator.java:319`.
+
+- **`service-catalog-strict-tablemethod-return`** (b-relational): Thread a shared `<T extends Table<?>>` type token through `MethodRef.StaticOnly` and `ReturnTypeRef.TableBoundReturnType` so the field's table token equals the method's return token structurally. Higher blast radius than (b-cheap); jOOQ helper boundaries cap how far the bound carries. The strict-`@service` return-type sibling (`service-catalog-strict-service-return`) is currently (a) and benefits as a side effect.
+
 ## Done means
 
 Outcomes that hold in every Phase 3 branch (these are what Phase 1 delivers):
