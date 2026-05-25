@@ -74,11 +74,6 @@ public final class JoinPathEmitter {
      * time) emits a runtime-throwing {@code DSL.noCondition()} stub so the mismatch surfaces at
      * execution rather than silently producing broken SQL.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "fk-join.slots-oriented-source-and-target",
-        reliesOn = "Iterates JoinStep.FkJoin.slots() and reads slot.targetSide()/slot.sourceSide() "
-            + "to build a direction-blind correlation predicate; depends on synthesis-time slot "
-            + "orientation so the emitter does not re-derive FK direction at the call site.")
     public static CodeBlock emitCorrelationWhere(JoinStep.FkJoin first, String firstAlias,
             String parentAlias) {
         if (first.slotCount() == 0) {

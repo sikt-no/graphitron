@@ -7,7 +7,6 @@ import no.sikt.graphitron.lsp.parsing.LspVocabulary;
 import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.TextEdit;
@@ -33,12 +32,6 @@ public final class ReferenceCompletions {
 
     private ReferenceCompletions() {}
 
-    @DependsOnClassifierCheck(
-        key = "type-classification-payload-faithful",
-        reliesOn = "Resolves the enclosing type's tableName off TypeClassification.Table / Node / "
-            + "TableInterface / TableInput via TypeContext.tableNameOf so an extension whose "
-            + "definition lives in another file still resolves to the authoritative table."
-    )
     public static List<CompletionItem> generate(
         LspVocabulary vocabulary,
         CompletionData data,

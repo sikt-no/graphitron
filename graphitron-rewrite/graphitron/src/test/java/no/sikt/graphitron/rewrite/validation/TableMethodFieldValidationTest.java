@@ -67,9 +67,8 @@ class TableMethodFieldValidationTest {
     }
 
     /**
-     * Drives the {@code service-catalog-tablemethod-must-be-static}
-     * {@code @LoadBearingClassifierCheck} (R87 Phase B) end-to-end: builds a real schema bound
-     * to {@link no.sikt.graphitron.rewrite.TestTableMethodStub}'s instance method
+     * Drives the {@code @tableMethod}-must-be-static rejection end-to-end: builds a real schema
+     * bound to {@link no.sikt.graphitron.rewrite.TestTableMethodStub}'s instance method
      * {@code getFilmInstance}, runs through {@code GraphitronSchemaBuilder} +
      * {@code GraphitronSchemaValidator}, and asserts the validator surfaces the new rejection
      * arm. Mirrors the @service-side instance-holder validator test in

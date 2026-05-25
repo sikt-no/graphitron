@@ -9,7 +9,6 @@ import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.TableRef;
 
 import java.util.Comparator;
@@ -59,13 +58,6 @@ public final class FetcherRegistrationsEmitter {
 
     private FetcherRegistrationsEmitter() {}
 
-    @LoadBearingClassifierCheck(
-        key = "fetcher-registrations.no-empty-bodies",
-        description = "Every entry in the returned map corresponds to a type for which "
-            + "ObjectTypeGenerator will emit a registerFetchers method: typeBody and nestedBody "
-            + "only contribute entries when they have a non-empty wiring body (gated at the "
-            + "Optional<CodeBlock> ifPresent put call sites), and connectionBody / edgeBody "
-            + "always produce a non-empty body.")
     public static Map<String, CodeBlock> emit(GraphitronSchema schema, String outputPackage) {
         String fetchersPackage = outputPackage + ".fetchers";
         String utilPackage     = outputPackage + ".util";

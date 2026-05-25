@@ -18,7 +18,6 @@ import no.sikt.graphitron.rewrite.model.EmitsPerTypeFile;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
-import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
@@ -308,13 +307,6 @@ public class GraphitronSchemaBuilder {
      * before any generated code runs, so the orphan wrap arm on the data field is unreachable
      * and the author's actionable surface is the producers.
      */
-    @LoadBearingClassifierCheck(
-        key = "output-fields.uniform-domain-return-type",
-        description = "All OutputField producers reaching the same SDL return type expose the "
-            + "same DomainReturnType; child datafetchers emit against one source-Java-type per "
-            + "(SDL parent, field coord) pair and do not branch on runtime source type. "
-            + "Disagreement demotes every participant to UnclassifiedField with a "
-            + "MultiProducerDomainTypeDisagreement rejection.")
     private static void validateUniformDomainReturnType(BuildContext ctx) {
         Map<String, List<FieldCoordinates>> bySdlReturnType = new LinkedHashMap<>();
         for (var entry : ctx.fieldRegistry.entries().entrySet()) {

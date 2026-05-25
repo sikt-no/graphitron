@@ -183,14 +183,6 @@ public final class ArgCallEmitter {
         return false;
     }
 
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "context-argument.type-agreement",
-        reliesOn = "Reads the structured TypeName from MethodRef.Param.Typed.javaType and emits "
-            + "its raw form as the Java cast literal at the getContextArgument call site. The "
-            + "cross-site agreement classifier guarantees every Context-sourced param with the "
-            + "same name carries the same TypeName, so the cast cannot drift from the factory's "
-            + "typed put."
-    )
     private static CodeBlock emitForParam(TypeFetcherEmissionContext ctx, MethodRef.Param param, CodeBlock tableExpression,
             CodeBlock sourcesExpression, String conditionsClassName) {
         var source = param.source();

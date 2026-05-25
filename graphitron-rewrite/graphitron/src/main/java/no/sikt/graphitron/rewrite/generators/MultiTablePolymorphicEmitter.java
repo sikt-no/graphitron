@@ -692,11 +692,6 @@ public final class MultiTablePolymorphicEmitter {
      * (rather than {@code Object}) so the typed {@code Field<T>.eq(T)} overload selects
      * cleanly without an unchecked cast.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "fk-join.slots-oriented-source-and-target",
-        reliesOn = "Iterates fkJoin.slots() and reads slot.targetSide() (participant-side)/"
-            + "slot.sourceSide() (parent-side) to build the parentRecord-correlation AND-chain; "
-            + "converges with the batched-path slots() loop on the same shape.")
     private static CodeBlock branchParentFkWhere(ParticipantRef.TableBound participant,
             Map<String, List<JoinStep>> participantJoinPaths) {
         var path = participantJoinPaths.get(participant.typeName());
@@ -762,20 +757,6 @@ public final class MultiTablePolymorphicEmitter {
      * {@code validateChildMultiTableParentPk}); the {@code parentInput} VALUES table widens to
      * {@code Row<N+1>} including {@code idx}, which tops out at Row22.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-table-backed",
-        reliesOn = "Reads field.parentKey() and field.parentResultType() straight off the field "
-            + "record and hands them to GeneratorUtils.buildRecordParentKeyExtraction. The hard "
-            + "fail (no jOOQ-Record fallback at this site) is the form the load-bearing guarantee "
-            + "takes here: navigation and drift annunciation, not guard elision. Empty key "
-            + "columns are unreachable per the non-empty-columns invariant on SourceKey.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-record-parent",
-        reliesOn = "Same field.parentKey() / field.parentResultType() reads applied to fields "
-            + "produced by the @record-parent producer. Per-producer key split (R105) ensures the "
-            + "audit names exactly one producer per key, but the consumer behaviour is identical "
-            + "across both producers — both publish a fully-resolved SourceKey on the "
-            + "field record.")
     private static MethodSpec buildBatchedConnectionFetcher(
             TypeFetcherEmissionContext ctx,
             String fieldName,
@@ -833,16 +814,6 @@ public final class MultiTablePolymorphicEmitter {
      * (one bucket per parent in the batch). Same async-tail shape as the connection arm; only the
      * value type differs ({@code List<Record>} per parent vs. {@code ConnectionResult}).
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-table-backed",
-        reliesOn = "Reads field.parentKey() and field.parentResultType() straight off the field "
-            + "record and hands them to GeneratorUtils.buildRecordParentKeyExtraction. Same "
-            + "load-bearing classifier check as the connection-arm fetcher.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-record-parent",
-        reliesOn = "Same field.parentKey() / field.parentResultType() reads on fields produced by "
-            + "the @record-parent producer. Sibling key to '…-table-backed' under the per-producer "
-            + "split (R105).")
     private static MethodSpec buildBatchedListFetcher(
             TypeFetcherEmissionContext ctx,
             String fieldName,
@@ -1148,12 +1119,6 @@ public final class MultiTablePolymorphicEmitter {
      * order than the parent's {@code @node(keyColumns: [...])} directive: positional misuse is
      * structurally impossible because no two parallel lists are paired.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "fk-join.slots-oriented-source-and-target",
-        reliesOn = "Iterates fkJoin.slots() and reads slot.sourceSide() (parent-side)/"
-            + "slot.targetSide() (participant-side) to build the per-slot AND-chain; depends on "
-            + "synthesis-time slot orientation, retiring the matchingParticipantCol sqlName lookup "
-            + "and the parentHoldsFk derivation off targetTable().")
     private static CodeBlock batchedBranchJoinPredicate(ParticipantRef.TableBound participant,
             Map<String, List<JoinStep>> participantJoinPaths) {
         var path = participantJoinPaths.get(participant.typeName());

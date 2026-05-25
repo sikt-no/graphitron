@@ -25,7 +25,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
-import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
@@ -77,18 +76,6 @@ public final class CatalogBuilder {
      * {@code DirectiveResolution} encodes bundled-shadows-snapshot
      * precedence so redundant entries are observationally invisible.
      */
-    @LoadBearingClassifierCheck(
-        key = "snapshot-built-implies-clean-parse",
-        description = "Only invoked on a clean post-merge registry; parse failures throw upstream "
-            + "in GraphQLRewriteGenerator before reaching this site, so a Built.Current snapshot "
-            + "never reflects a partial parse."
-    )
-    @LoadBearingClassifierCheck(
-        key = "snapshot-directive-roundtrip-faithful",
-        description = "Every DirectiveDefinition in the input registry produces exactly one "
-            + "DirectiveShape with the same name; the LSP's unknown-directive arm and phase-2 "
-            + "arg/hover consumers rely on round-trip faithfulness."
-    )
     public static LspSchemaSnapshot.Built.Current buildSnapshot(TypeDefinitionRegistry registry) {
         return buildSnapshot(registry, null, null);
     }
@@ -103,41 +90,6 @@ public final class CatalogBuilder {
      * <p>When {@code schema} or {@code catalog} is {@code null} the
      * type-backing map is empty (back-compat for the one-arg overload only).
      */
-    @LoadBearingClassifierCheck(
-        key = "java-record-type-backs-record-class",
-        description = "A classifier-produced JavaRecordType / JavaRecordInputType implies the "
-            + "backing class is a Java record on the consumer's classpath. The LSP's "
-            + "@field(name:)-on-record arms (FieldCompletions / Diagnostics / Hovers) consume the "
-            + "Record attribute components without re-checking that the class is in fact a record; "
-            + "silent classifier widening would degrade completions instead of failing loudly."
-    )
-    @LoadBearingClassifierCheck(
-        key = "field-classification-payload-faithful",
-        description = "Every GraphitronField permit projects to a FieldClassification record whose "
-            + "payload components are sourced directly from the model leaf without re-resolving "
-            + "names, columns, or join paths. Five LSP-side consumers read this projection: "
-            + "InlayHints.compute and DeclarationHovers.compute render the variant identity at "
-            + "SDL field declarations; Diagnostics.validateFieldMember, FieldCompletions.completionsFor, "
-            + "and Hovers.columnHover dispatch @field(name:) column lookups through "
-            + "FieldClassification#lspColumnDispatch() so the @reference terminal table on "
-            + "{Column,CompositeColumn}Reference.tableName(), not the enclosing type's @table, "
-            + "owns the column resolution. The projector's exhaustive switch is the load-bearing "
-            + "contract that a new permit cannot land without an LSP-side mapping in the same "
-            + "commit; the lspColumnDispatch() switch is the same shape on the consumer side. "
-            + "The inferred-directive arm reads the resolved column / FK chain off the same "
-            + "projection."
-    )
-    @LoadBearingClassifierCheck(
-        key = "type-classification-payload-faithful",
-        description = "Every GraphitronType permit projects to a TypeClassification record whose "
-            + "payload components are sourced directly from the model leaf without re-resolving "
-            + "names or participant sets. The LSP's inlay-hint classification arm and "
-            + "classification-hover arm consume the projection through "
-            + "Built#typeClassificationsByName without dispatching back on the generator-side "
-            + "permit; the projector's exhaustive switch is the load-bearing contract that a new "
-            + "permit cannot land without an LSP-side mapping in the same commit. The inferred-"
-            + "directive arm reads the resolved table name off the same projection."
-    )
     public static LspSchemaSnapshot.Built.Current buildSnapshot(
         TypeDefinitionRegistry registry, GraphitronSchema schema, CompletionData catalog
     ) {

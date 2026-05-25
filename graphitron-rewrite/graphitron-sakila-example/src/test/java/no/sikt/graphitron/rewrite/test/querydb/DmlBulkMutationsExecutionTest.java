@@ -890,9 +890,11 @@ class DmlBulkMutationsExecutionTest {
     // new film Record per source row, copies film_id from the RETURNING source, and lets the
     // per-field ColumnFetcher on DeletedFilmInfo project film_id back through .filmId.
     //
-    // Both verify the @LoadBearingClassifierCheck producer-consumer pair (key
-    // mutation-delete-carrier.pk-resolution-projection-clean) and the end-to-end DELETE +
-    // RETURNING + per-field projection pipeline against real PostgreSQL.
+    // Both verify the producer-consumer pair (BuildContext.classifyDeleteTableProjection
+    // rejecting non-PK-readable element fields, paired with
+    // FetcherEmitter.buildSingleRecordTableFromReturningFetcherValue's PK-only Record synthesis)
+    // and the end-to-end DELETE + RETURNING + per-field projection pipeline against real
+    // PostgreSQL.
 
     @Test
     void deleteFilmsIdCarrier_returnsEncodedNodeIdsOfDeletedRows() {

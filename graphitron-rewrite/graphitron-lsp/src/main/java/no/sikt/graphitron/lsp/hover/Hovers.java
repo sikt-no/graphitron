@@ -254,22 +254,6 @@ public final class Hovers {
         return catalog.getTable(name).map(t -> hover(file, valueNode, formatTable(t)));
     }
 
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "java-record-type-backs-record-class",
-        reliesOn = "Renders the record component's displayType on hover under a @record-bound "
-            + "Java record parent; trusts the classifier's RecordBacking projection without "
-            + "re-reading the backing class."
-    )
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "field-classification-payload-faithful",
-        reliesOn = "Routes @field(name:) column hover through "
-            + "FieldClassification.lspColumnDispatch(): Resolve(tableName) renders the column "
-            + "metadata against the projected terminal table (the @reference terminal for "
-            + "Column / ColumnReference / CompositeColumn / CompositeColumnReference); Silent "
-            + "returns empty (InputUnbound, Unclassified, where the wrong-table hover would be "
-            + "misleading); FallThrough routes back to the backing-driven dispatch for "
-            + "non-column-bearing permits."
-    )
     private static Optional<Hover> columnHover(
         Directives.Directive directive, WorkspaceFile file, CompletionData catalog,
         LspSchemaSnapshot snapshot, Node valueNode

@@ -89,24 +89,6 @@ public final class Diagnostics {
         return compute(LspVocabulary.load(), uri, file, catalog, snapshot, report);
     }
 
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "snapshot-built-implies-clean-parse",
-        reliesOn = "warns under Built.Current + Unknown only; silences under Unavailable and "
-            + "Built.Previous on the conservative principle 'do not punish the user for what we "
-            + "cannot reliably see'."
-    )
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "validation-report.canonical-uri",
-        reliesOn = "filters validator errors and warnings against the open file via "
-            + "ValidationReport.canonicalUri so producer and consumer share one canonical "
-            + "file:// URI form."
-    )
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "source-location.absolute-path-source-name",
-        reliesOn = "treats SourceLocation.sourceName as a path that resolves to the same "
-            + "canonical URI the LSP client opened; Maven callers populate it as absolute via "
-            + "MultiSourceReader.trackData(true)."
-    )
     public static List<Diagnostic> compute(
         LspVocabulary vocabulary, String uri, WorkspaceFile file, CompletionData catalog,
         LspSchemaSnapshot snapshot, ValidationReport report
@@ -502,23 +484,6 @@ public final class Diagnostics {
      * classifier's projection of the enclosing type is the authoritative
      * answer.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "java-record-type-backs-record-class",
-        reliesOn = "Treats RecordBacking.components as the authoritative member list for "
-            + "@field(name:) validation under a @record-bound Java record parent; emits "
-            + "\"Unknown component\" without re-checking that the backing class is a record."
-    )
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "field-classification-payload-faithful",
-        reliesOn = "Routes @field(name:) column validation through "
-            + "FieldClassification.lspColumnDispatch(): the four column-bearing arms "
-            + "(Column / ColumnReference / CompositeColumn / CompositeColumnReference) "
-            + "produce Resolve(tableName) carrying the projected terminal table; "
-            + "InputUnbound and Unclassified produce Silent (no diagnostic, since a "
-            + "duplicate with the wrong table would be noise); every other permit produces "
-            + "FallThrough, routing back to the backing-driven dispatch. Mirrors the "
-            + "runtime's ServiceCatalog.resolveColumnForReference terminal-table walk."
-    )
     private static void validateFieldMember(
         Directives.Directive directive, Node valueNode,
         WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot, List<Diagnostic> out

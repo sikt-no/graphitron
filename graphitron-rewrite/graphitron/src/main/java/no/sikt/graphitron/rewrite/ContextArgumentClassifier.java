@@ -4,7 +4,6 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ConflictSite;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.InputField;
-import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.MethodBackedField;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -47,14 +46,6 @@ import java.util.TreeMap;
  * the cached {@link Classification} hangs off {@link GraphitronSchema#contextArguments()} and is
  * read by both downstream consumers (validator + facade emitter) without re-classifying.
  */
-@LoadBearingClassifierCheck(
-    key = "context-argument.type-agreement",
-    description = "Cross-site agreement on contextArgument Java types; consumed by the factory "
-        + "emitter and the getContextArgument call-site emitter. A single TypeName per "
-        + "contextArgument name is stored on ResolvedContextArg.javaType and both emitters read "
-        + "that field directly; structural disagreement across sites surfaces as "
-        + "Rejection.AuthorError.TypeConflict."
-)
 public final class ContextArgumentClassifier {
 
     private ContextArgumentClassifier() {}

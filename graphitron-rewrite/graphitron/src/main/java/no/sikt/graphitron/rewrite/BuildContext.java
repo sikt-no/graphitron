@@ -504,14 +504,6 @@ class BuildContext {
      * fields are guaranteed to be classified ahead of the Mutation root's field-classification
      * pass.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "mutation-delete-carrier.pk-resolution-projection-clean",
-        description = "BuildContext.classifyDeleteTableProjection rejects DELETE @table-element "
-            + "projections on any PerFieldOutcome.NonPkNonNullable, ServiceField, or "
-            + "UnsupportedField arm, naming the offending field(s) in the diagnostic, before "
-            + "projecting to List<PkResolution>; consumers of the projection rely on the "
-            + "rejection arms being a hard reject and not a silent drop. Relaxing the gate "
-            + "breaks the emitter's exhaustive sealed switch over PkResolution's two arms.")
     DeleteTableProjection classifyDeleteTableProjection(String carrierTypeName, String elementTypeName, TableRef elementTable) {
         var raw = schema.getType(elementTypeName);
         if (!(raw instanceof GraphQLObjectType elementObj)) {
@@ -1464,14 +1456,6 @@ class BuildContext {
      * (resolution does not consult the method signature there); the intermediate-hop arm
      * requires a concrete generated jOOQ table class.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "condition-join.target-table-resolved-at-parse",
-        description = "BuildContext.resolveConditionJoinTarget resolves ConditionJoin.targetTable "
-            + "at parse time from the carrier field's return-type @table binding (terminal hop) "
-            + "or by reflecting on the condition method's second parameter (intermediate hop). "
-            + "Both unresolvable cases route through Rejection.AuthorError upstream; the "
-            + "ConditionJoin compact constructor is the structural safety net. Emitters consume "
-            + "cj.targetTable() without null-checks.")
     private ConditionJoinTargetResolution resolveConditionJoinTarget(
             MethodRef methodRef, boolean isTerminal, String terminalTargetSqlName) {
         if (isTerminal) {
@@ -1721,36 +1705,6 @@ class BuildContext {
         return resolution;
     }
 
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "input-field.unbound-implies-no-column",
-        description = "Classifier emits InputField.UnboundField if and only if the field cannot "
-            + "bind a SQL column on the resolving table (R215). Consumers (walkInputFieldConditions, "
-            + "MutationInputResolver, LookupMappingResolver, EnumMappingResolver, CatalogBuilder) "
-            + "switch on the variant to decide admit-vs-reject without re-running column lookup; "
-            + "the structural answer is recorded once at classify time. Two reachable sub-shapes: "
-            + "condition.isPresent() && override:true (the explicit method owns the WHERE predicate; "
-            + "subsumes R210's ConditionOnlyField and R215 §5's ColumnField+override:true collapse) "
-            + "and condition.isEmpty() (cascade-admitted-at-consumer or validator-rejected, depending "
-            + "on the enclosing call site).")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "nodeid-fk.direct-fk-keys-match",
-        reliesOn = "The @nodeId FK-target arms in inputFieldFromNodeIdResolved construct"
-            + " InputField.ColumnReferenceField / CompositeColumnReferenceField only on"
-            + " NodeIdLeafResolver.Resolved.FkTarget.DirectFk; the same-table arm constructs"
-            + " InputField.{Column,CompositeColumn}Field instead, with no joinPath. Both arity"
-            + " branches (ID! and [ID!]) share the same switch shape, so the variant choice"
-            + " stays in lockstep with FieldBuilder.classifyArgument. The TranslatedFk arm"
-            + " routes to InputFieldResolution.Unresolved with a deferred-emission hint so"
-            + " emitter consumers (walkInputFieldConditions → implicit body params) never see"
-            + " a JOIN-with-translation shape they cannot bind directly.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "nodeid-fk.identity-carrying-lift",
-        reliesOn = "The @nodeId @reference path on a @table input field (either arity) routes"
-            + " through NodeIdLeafResolver.resolve, which calls validateLift / liftSourceColumns"
-            + " internally and either returns a Resolved.FkTarget.DirectFk carrying the lifted"
-            + " tuple or a Resolved.Rejected with the lift-failure marker. Lift failures surface"
-            + " as InputFieldResolution.Unresolved at the classifier boundary; no direct call to"
-            + " the static helpers happens from this classifier any more.")
     private InputFieldResolution classifyInputFieldInternal(
             GraphQLInputObjectField field, String parentTypeName, TableRef resolvedTable,
             ClassifyContext ctx, List<String> errors) {

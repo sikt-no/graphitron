@@ -36,17 +36,6 @@ public final class DeclarationHovers {
      * the cursor is not on a recognised SDL declaration name token, or the snapshot is
      * unavailable, or the projection carries no entry for the coordinate.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "field-classification-payload-faithful",
-        reliesOn = "Reads tableName / columnName / joinPath / participant names off the projection "
-            + "without dispatching back on the generator-side permit; the rendered hover content "
-            + "is per-record markdown built from those fields."
-    )
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "type-classification-payload-faithful",
-        reliesOn = "Reads tableName / participants / fqClassName off the projection without "
-            + "dispatching back on the generator-side permit."
-    )
     public static Optional<Hover> compute(
         WorkspaceFile file, LspSchemaSnapshot snapshot, Point pos
     ) {

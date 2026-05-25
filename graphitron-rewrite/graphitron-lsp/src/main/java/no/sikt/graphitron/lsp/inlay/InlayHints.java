@@ -45,22 +45,6 @@ public final class InlayHints {
 
     private InlayHints() {}
 
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "field-classification-payload-faithful",
-        reliesOn = "Reads tableName / columnName / joinPath off FieldClassification projection records "
-            + "without dispatching back on the generator-side permit. The classification inlay arm uses "
-            + "the projection identity to pick the label; the inferred-directive arm reads the resolved "
-            + "column / FK chain off the same projection to render hint text."
-    )
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "type-classification-payload-faithful",
-        reliesOn = "Reads tableName off TypeClassification.Table / Node / TableInterface / TableInput "
-            + "projection records without dispatching back on the generator-side permit. The "
-            + "inferred-directive arm renders the resolved @table name from this projection; "
-            + "R217's absent-directive arm dispatches through InferredDirectiveArgs.AbsentArm.TableName "
-            + "which reads the same tableName() off the same projection records when the SDL type "
-            + "carries no @table directive at all."
-    )
     public static List<InlayHint> compute(
         InlayHintConfig config, WorkspaceFile file, LspSchemaSnapshot snapshot, Range visibleRange
     ) {
@@ -162,14 +146,6 @@ public final class InlayHints {
      * type carries no directive of that name and the strategy returns a value for the
      * classification.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "type-classification-payload-faithful",
-        reliesOn = "Dispatches into InferredDirectiveArgs.AbsentArm strategies (TableName today) "
-            + "which read tableName off TypeClassification.Table / Node / TableInterface / TableInput "
-            + "to render @table(name: \"...\") when the SDL type omits the directive entirely. The "
-            + "eligibility set and projection-record dispatch live on the strategy itself, not in this "
-            + "renderer."
-    )
     private static void collectAbsentDirectiveHints(
         List<InlayHint> out, WorkspaceFile file, LspSchemaSnapshot.Built built,
         Node root, Range visibleRange

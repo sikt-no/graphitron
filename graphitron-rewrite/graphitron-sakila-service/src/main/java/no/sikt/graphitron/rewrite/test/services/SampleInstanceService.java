@@ -5,8 +5,7 @@ import org.jooq.DSLContext;
 
 /**
  * R87 Phase D fixture: an instance-method {@code @service} class with a
- * {@code public (DSLContext)} constructor. Drives the
- * {@code service-catalog-instance-service-holder-shape} {@code @LoadBearingClassifierCheck}
+ * {@code public (DSLContext)} constructor. Drives the instance-service-holder-shape contract
  * end-to-end at the compile tier — a regression in {@code TypeFetcherGenerator#serviceCallTarget}
  * that mistakenly emitted the static {@code SampleInstanceService.titleByFilmId(...)} call shape
  * (against this instance method) would surface as a {@code javac} rejection on the generated

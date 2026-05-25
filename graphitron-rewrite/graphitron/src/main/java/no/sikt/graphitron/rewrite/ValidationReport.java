@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -66,11 +65,6 @@ public record ValidationReport(
      * ({@code Diagnostics.validatorDiagnostics} filtering by open-file URI), so producer and
      * consumer cannot drift on URL-encoding or path-form quirks.
      */
-    @LoadBearingClassifierCheck(
-        key = "validation-report.canonical-uri",
-        description = "Defines the canonical file:// URI form for SourceLocation.sourceName. "
-            + "Diagnostics.validatorDiagnostics consumes the same form to filter validator "
-            + "errors and warnings against open-file URIs.")
     public static String canonicalUri(String sourceName) {
         try {
             return Path.of(sourceName).toUri().toString();

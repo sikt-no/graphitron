@@ -106,16 +106,6 @@ final class LookupValuesJoinEmitter {
         }
     }
 
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "lookup-mapping-bindings-table-coherent",
-        reliesOn = "Reads b.targetColumn() across MapInput.bindings without re-checking that all "
-            + "bindings target the same table; depends on the classifier's table-coherence "
-            + "guarantee for the slot's USING/JOIN column list.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "lookup-key-input-field-non-list",
-        reliesOn = "Constructs one Slot per binding with cardinality from the outer "
-            + "LookupArg.list() and ignores per-binding list shape; depends on the inner-list "
-            + "rejection so the binding-level cardinality is uniformly scalar.")
     private static List<Slot> flattenSlots(ColumnMapping cm) {
         var slots = new java.util.ArrayList<Slot>();
         for (var arg : cm.args()) {
@@ -190,11 +180,6 @@ final class LookupValuesJoinEmitter {
      * @param field the lookup field (source of {@link LookupMapping})
      * @param targetTableClass the JavaPoet reference to the concrete jOOQ table class (e.g. {@code Film})
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "lookup-field-non-empty-args",
-        reliesOn = "requireSlots(field) yields a non-empty Slot list, so the typed Row<N+1>[] "
-            + "return type emitted via ValuesJoinRowBuilder.rowArrayType always has arity ≥ 2 "
-            + "(idx + ≥ 1 key cell). An empty slot list would emit Row<1>, structurally invalid jOOQ.")
     static MethodSpec buildInputRowsMethod(LookupField field, ClassName targetTableClass) {
         List<Slot> slots = requireSlots(field);
         Map<String, RootSource> roots = rootSources(slots);

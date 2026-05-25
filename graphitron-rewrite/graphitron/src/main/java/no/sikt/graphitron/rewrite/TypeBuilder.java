@@ -19,14 +19,12 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.JooqCatalog;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
-import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import no.sikt.graphitron.rewrite.model.ErrorHandlerType;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.InputRecordShape;
 import no.sikt.graphitron.rewrite.model.InputRecordShape.InputComponent;
-import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.EdgeType;
@@ -945,13 +943,6 @@ class TypeBuilder {
         return new TableInterfaceType(name, location, discriminatorColumn, tableOpt.get(), List.of());
     }
 
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "error-type.path-message-fields",
-        description = "Every @error type declares path: [String!]! and message: String!; missing "
-            + "or wrong-shape declarations are rejected as UnclassifiedType. Fields beyond those "
-            + "two are permitted and route through graphql-java's PropertyDataFetcher at runtime; "
-            + "the per-(channel, @error type, handler) source-class accessor reflection check on "
-            + "the carrier guarantees each such field can be populated from the matched source.")
     private GraphitronType buildErrorType(GraphQLObjectType objType) {
         String name = objType.getName();
         SourceLocation location = locationOf(objType);
@@ -1143,12 +1134,6 @@ class TypeBuilder {
      * {@link InputRecordShape} (an SDL input type without fields is structurally rejected by
      * graphql-java earlier in the pipeline, so the guard is defence in depth).
      */
-    @LoadBearingClassifierCheck(
-        key = "input-record.shape-from-input-type",
-        description = "Every classified SDL input type produces a non-null InputRecordShape with a non-empty components list. A site that fails to construct the shape returns UnclassifiedType.")
-    @DependsOnClassifierCheck(
-        key = "scalar-resolver.coercing-non-erased",
-        reliesOn = "Pulls the JavaPoet TypeName for each scalar component from ScalarTypeResolver.resolveBuiltIn; non-built-in scalars fall back to consumer-declared resolutions surfaced on GraphitronType.ScalarType.")
     private InputRecordShape buildInputRecordShape(String name, GraphQLInputObjectType inputType) {
         ClassName recordClass = ClassName.get(ctx.ctx.outputPackage() + ".inputs", name);
         var fields = inputType.getFieldDefinitions();

@@ -7,7 +7,6 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -262,8 +261,7 @@ final class ServiceDirectiveResolver {
      * graphql-java treats both identically (Result extends List), and the emitter reads
      * {@link MethodRef#returnType()} to declare whichever shape the developer chose. Single
      * cardinality is validated strictly inside {@link ServiceCatalog#reflectServiceMethod} via
-     * its {@code expectedReturnType} parameter and a separate
-     * {@link LoadBearingClassifierCheck} key.
+     * its {@code expectedReturnType} parameter.
      *
      * <p>Returns {@code null} when the resolved return type isn't List-cardinality TableBound
      * (the looser pair only applies there) or when the method matches one of the two acceptable
@@ -271,14 +269,6 @@ final class ServiceDirectiveResolver {
      * {@code "service method could not be resolved — "} so the wording matches the Single-arm
      * catalog rejection a developer would see for the same field on the Single side).
      */
-    @LoadBearingClassifierCheck(
-        key = "service-resolver-root-list-record-return-pair",
-        description = "Rejects developer @service methods at the root whose resolved return type "
-            + "is TableBoundReturnType + List unless the method's reflected return type equals "
-            + "Result<XRecord> or List<XRecord> exactly. Sibling producer to "
-            + "service-catalog-strict-service-return (which now covers only the Single arm of "
-            + "TableBoundReturnType). Lets the two root table-fetcher emitters declare the typed "
-            + "local by reading MethodRef.returnType() without a defensive cast.")
     private static String validateRootListTableBoundReturnPair(ReturnTypeRef returnType, MethodRef method) {
         if (!(returnType instanceof ReturnTypeRef.TableBoundReturnType tb)) return null;
         if (!returnType.wrapper().isList()) return null;
@@ -356,21 +346,6 @@ final class ServiceDirectiveResolver {
      * which is rejected separately), or when no {@link MethodRef.Param.Sourced} parameter is
      * present (validator surfaces that absence).
      */
-    @LoadBearingClassifierCheck(
-        key = "service-directive-resolver-strict-child-service-return",
-        description = "The strict TypeName.equals arm rejects child @service developer methods "
-            + "whose declared return type doesn't structurally match the rows-method's "
-            + "Map<K, V>/List<List<V>>/List<V> shape derived from (returnType, sourced shape), "
-            + "with V = tb.table().recordClass() for TableBoundReturnType. Two emitter "
-            + "consumers depend on this check: (1) buildServiceRowsMethod's `.returns(...)` "
-            + "lets the body emit `return ServiceClass.method(...)` without a defensive cast "
-            + "or wildcard; (2) buildServiceDataFetcher types DataLoader<K, V> with that same "
-            + "narrow V (so newMappedDataLoader / newDataLoader overload resolution against "
-            + "the rows-method lambda compiles without wildcards). Java generics invariance "
-            + "means the typed loader cannot be populated from a wider rows-method, so the "
-            + "check is load-bearing for compile, not just structural symmetry. Surfaces "
-            + "author errors at classify time rather than as javac errors on the generated "
-            + "source.")
     private static String validateChildServiceReturnType(ReturnTypeRef returnType, MethodRef method) {
         MethodRef.Param.Sourced sourced = method.params().stream()
             .filter(MethodRef.Param.Sourced.class::isInstance)

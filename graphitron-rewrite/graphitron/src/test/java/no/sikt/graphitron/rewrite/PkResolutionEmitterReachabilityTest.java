@@ -34,11 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       {@code UnsupportedField}). The {@code BuildContext.classifyDeleteTableProjection}
  *       projection step must produce a {@code Rejected} resolution before constructing any
  *       {@link PkResolution} when any element-type field classifies into a rejecting arm. The
- *       audit asserts the producer rejects a synthesised {@code ServiceField} classification;
- *       paired with the {@code @LoadBearingClassifierCheck(key =
- *       "mutation-delete-carrier.pk-resolution-projection-clean", ...)} on the producer and the
- *       matching {@code @DependsOnClassifierCheck} on the emitter, this closes the classifier-
- *       emitter contract loop.</li>
+ *       audit asserts the producer rejects a synthesised {@code ServiceField} classification.</li>
  * </ul>
  *
  * <p>Sits in the generator-coverage tier alongside
@@ -87,12 +83,11 @@ class PkResolutionEmitterReachabilityTest {
 
     @Test
     void perFieldOutcomeRejectionArmsAreRejectedByProjectionStep_serviceFieldCase() {
-        // The producer-side rejection rule (pinned by @LoadBearingClassifierCheck key
-        // "mutation-delete-carrier.pk-resolution-projection-clean") must surface ServiceField
-        // arms as a hard rejection before constructing any PkResolution. Verified indirectly:
-        // confirm PerFieldOutcome.ServiceField is a declared sealed leaf (so producers cannot
-        // skip the type-pattern arm by accident) AND that PkResolution does NOT carry a
-        // ServiceField sibling (so the rejection arm cannot leak into the emitter by type).
+        // BuildContext.classifyDeleteTableProjection must surface ServiceField arms as a hard
+        // rejection before constructing any PkResolution. Verified indirectly: confirm
+        // PerFieldOutcome.ServiceField is a declared sealed leaf (so producers cannot skip the
+        // type-pattern arm by accident) AND that PkResolution does NOT carry a ServiceField
+        // sibling (so the rejection arm cannot leak into the emitter by type).
         Set<Class<?>> perFieldArms = Arrays.stream(PerFieldOutcome.class.getPermittedSubclasses())
             .collect(Collectors.toSet());
         assertThat(perFieldArms)
@@ -141,27 +136,4 @@ class PkResolutionEmitterReachabilityTest {
         }
     }
 
-    @Test
-    void classifyDeleteTableProjectionWearsLoadBearingClassifierCheckPin() {
-        // The producer-side @LoadBearingClassifierCheck pin (key
-        // "mutation-delete-carrier.pk-resolution-projection-clean") must be present on
-        // BuildContext.classifyDeleteTableProjection; the FetcherEmitter case for
-        // SingleRecordTableFieldFromReturning carries the matching @DependsOnClassifierCheck.
-        // The LoadBearingGuaranteeAuditTest scans the producer-consumer pair build-time; this
-        // test pins the producer-side method name so a rename surfaces here.
-        var method = Arrays.stream(BuildContext.class.getDeclaredMethods())
-            .filter(m -> m.getName().equals("classifyDeleteTableProjection"))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError(
-                "BuildContext.classifyDeleteTableProjection must exist as the single producer "
-                + "of List<PkResolution>; renaming requires updating the @DependsOnClassifierCheck "
-                + "consumer pin in FetcherEmitter.buildSingleRecordTableFromReturningFetcherValue"));
-        var pin = method.getAnnotation(no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck.class);
-        assertThat(pin)
-            .as("BuildContext.classifyDeleteTableProjection must wear "
-                + "@LoadBearingClassifierCheck for the producer-consumer audit to pick the pair "
-                + "up at build time")
-            .isNotNull();
-        assertThat(pin.key()).isEqualTo("mutation-delete-carrier.pk-resolution-projection-clean");
-    }
 }

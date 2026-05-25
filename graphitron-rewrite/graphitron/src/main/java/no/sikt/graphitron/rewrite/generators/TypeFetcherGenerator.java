@@ -274,8 +274,8 @@ public class TypeFetcherGenerator {
             // (ChildField.TableField and ChildField.LookupTableField are in PROJECTED_LEAVES —
             // inline emission via TypeClassGenerator.$fields)
             // ChildField stubs — remaining direct permits
-            // (ChildField.ColumnReferenceField is in PROJECTED_LEAVES; per-shape deferrals carried
-            // by @LoadBearingClassifierCheck on validateColumnReferenceField.)
+            // (ChildField.ColumnReferenceField is in PROJECTED_LEAVES; per-shape deferrals enforced
+            // by validateColumnReferenceField.)
             Map.entry(ChildField.CompositeColumnReferenceField.class,
                 deferredFor(ChildField.CompositeColumnReferenceField.class,
                     "CompositeColumnReferenceField (rooted-at-parent NodeId reference) not yet implemented"
@@ -316,12 +316,6 @@ public class TypeFetcherGenerator {
      *                    or {@code null} for table-backed and root types
      * @param fields      the classified fields belonging to this type
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "column-field-requires-table-backed-parent",
-        reliesOn = "The case ChildField.ColumnField switch arm throws IllegalStateException on "
-            + "parentTable == null rather than emitting a fallback path. The hard fail is the "
-            + "form the load-bearing guarantee takes here: navigation and drift annunciation, "
-            + "not guard elision.")
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
             GraphitronType.ResultType resultType, List<GraphitronField> fields,
             graphql.schema.GraphQLSchema assembled,
@@ -837,11 +831,6 @@ public class TypeFetcherGenerator {
      * <p>Precondition: the classifier guarantees exactly one {@link JoinStep.FkJoin} step
      * (multi-hop and {@link JoinStep.ConditionJoin} paths are rejected at classification time).
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "fk-join.slots-oriented-source-and-target",
-        reliesOn = "Reads slot.targetSide() (child table) and slot.sourceSide() (parent table) "
-            + "from the single FK slot to build the parentRecord-correlation condition without "
-            + "the legacy parentHoldsFk derivation; depends on synthesis-time slot orientation.")
     private static CodeBlock buildJoinPathCondition(List<JoinStep> joinPath, String childTableName) {
         var fkJoin = (JoinStep.FkJoin) joinPath.get(0);
         var slot = fkJoin.slots().get(0);
@@ -1032,16 +1021,6 @@ public class TypeFetcherGenerator {
      * methods whose return type is wider than the generated jOOQ table class for the
      * field's {@code @table}-bound return type, so no downcast is needed in the emitter.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "service-catalog-strict-tablemethod-return",
-        reliesOn = "Declares <SpecificTable> table = Method.x(...) with no downcast and feeds "
-            + "the local directly into <SpecificTable>Type.$fields(...). A wider return type "
-            + "would require a cast or a wildcard local.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "service-catalog-tablemethod-must-be-static",
-        reliesOn = "Emits 'ClassName.method(table, ...)' static-call shape unconditionally for "
-            + "@tableMethod refs; the catalog rejects instance @tableMethod methods at classify "
-            + "time so the emitter doesn't have to fork on call shape.")
     private static MethodSpec buildQueryTableMethodFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryTableMethodTableField qtmtf,
                                                             String outputPackage) {
         var tableRef = qtmtf.returnType().table();
@@ -1106,19 +1085,6 @@ public class TypeFetcherGenerator {
      * {@link UnsupportedOperationException} so classification stays permissive (the schema is
      * still emittable) but the runtime gap is explicit.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "tablemethod-resolver-return-is-table-bound",
-        reliesOn = "Reads field.returnType().table() to declare the specific generated jOOQ table "
-            + "local without a cast. The resolver's TableBoundReturnType invariant guarantees the "
-            + "narrow return type at this site.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "service-catalog-strict-tablemethod-return",
-        reliesOn = "Declares <SpecificTable> table = Method.x(...) with no downcast. The classifier "
-            + "rejects wider Table<?> returns.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "service-catalog-tablemethod-must-be-static",
-        reliesOn = "Emits 'ClassName.method(...)' static-call shape unconditionally. Instance "
-            + "tableMethod methods are rejected at classification.")
     private static MethodSpec buildChildTableMethodFetcher(TypeFetcherEmissionContext ctx, ChildField.TableMethodField tmf,
                                                             String outputPackage) {
         var tableRef = tmf.returnType().table();
@@ -1204,11 +1170,6 @@ public class TypeFetcherGenerator {
      * <p>Composite FKs (more than one slot) are uncommon for {@code @tableMethod} fields in
      * practice, but the emitter handles them uniformly via {@code DSL.and(...)} composition.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "fk-join.slots-oriented-source-and-target",
-        reliesOn = "Reads slot.targetSide() (developer table's column) and slot.sourceSide() "
-            + "(parent record's column) without re-deriving FK direction; depends on synthesis-time "
-            + "slot orientation.")
     private static CodeBlock buildTableMethodParentCorrelation(JoinStep.FkJoin fkJoin) {
         var slots = fkJoin.slots();
         if (slots.isEmpty()) {
@@ -1243,21 +1204,6 @@ public class TypeFetcherGenerator {
      * declared parameterized return type doesn't match the expected record class for the
      * field's {@code @table}-bound return type.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "service-catalog-strict-service-return",
-        reliesOn = "Declares the typed XRecord (Single arm) on the fetcher and lets graphql-java's "
-            + "column fetchers traverse it directly. A wider service return would force Object on "
-            + "the fetcher and lose static type safety. Note: the shared buildServiceFetcherCommon "
-            + "helper is also reached from buildQueryServiceRecordFetcher, whose PojoResultType / "
-            + "ScalarReturnType paths do not depend on this guarantee, so annotating the helper "
-            + "would overclaim.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "service-resolver-root-list-record-return-pair",
-        reliesOn = "Reads MethodRef.returnType() to declare the typed local on the List arm "
-            + "(either Result<XRecord> or List<XRecord>, whichever the developer wrote) without "
-            + "a defensive cast or a wildcard. The resolver-side check rejects any other shape "
-            + "at classify time, so the emitter can rely on the captured TypeName being one of "
-            + "exactly those two.")
     private static MethodSpec buildQueryServiceTableFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryServiceTableField qstf,
                                                              String outputPackage) {
         var tableRef = qstf.returnType().table();
@@ -1320,18 +1266,6 @@ public class TypeFetcherGenerator {
      * the pre-execution Jakarta validation pre-step and the try/catch wrapper uniformly across
      * query and mutation services; the success arm is universal passthrough.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "service-catalog-strict-service-return",
-        reliesOn = "Inherits the Single-arm policy from buildQueryServiceTableFetcher: typed "
-            + "XRecord local on the fetcher, fed by the catalog's strict TypeName.equals against "
-            + "the expected record class. Mutation services share the same path through "
-            + "ServiceCatalog.reflectServiceMethod.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "service-resolver-root-list-record-return-pair",
-        reliesOn = "Inherits the List-arm policy from buildQueryServiceTableFetcher: reads "
-            + "MethodRef.returnType() to declare the typed local as whichever of "
-            + "Result<XRecord> / List<XRecord> the developer wrote, with the resolver-side "
-            + "pair check rejecting any other shape at classify time.")
     private static MethodSpec buildMutationServiceTableFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationServiceTableField mstf,
                                                                 String outputPackage) {
         var tableRef = mstf.returnType().table();
@@ -1396,13 +1330,6 @@ public class TypeFetcherGenerator {
      * construction is unavoidable on the error path because no value was returned for per-field
      * wiring to project from.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "service-catalog-instance-service-holder-shape",
-        reliesOn = "Emits `new ServiceClass(dsl).method(...)` for the InstanceWithDslHolder "
-            + "CallShape arm without checking the holder shape at emit time. ServiceCatalog "
-            + "rejects instance methods whose enclosing class is abstract / an interface or lacks "
-            + "the required public single-arg DSLContext constructor, so the emitter can lean on "
-            + "the existence of that constructor unconditionally.")
     private static MethodSpec buildServiceFetcherCommon(TypeFetcherEmissionContext ctx, String fieldName, MethodRef method,
                                                         String parentTypeName, TypeName valueType,
                                                         Optional<ErrorChannel> errorChannel,
@@ -1511,13 +1438,6 @@ public class TypeFetcherGenerator {
      * build the model only), the pre-step falls back to validating against the raw value for
      * every arg, mirroring pre-R94 behaviour.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "input-record.shape-from-input-type",
-        reliesOn = "Materialises the graphitron-emitted input class via <InputName>.fromMap(...) "
-            + "without null-guarding the recordShape() return on the HasInputRecordShape "
-            + "carrier; TypeBuilder.buildInputRecordShape's compact-ctor producer-side "
-            + "rejection plus the UnclassifiedType routing guarantees every classified input "
-            + "type carries a populated shape with a non-empty components list.")
     private static CodeBlock validatorPreStep(TypeFetcherEmissionContext ctx, MethodRef method,
                                               String fieldName,
                                               ErrorChannel.PayloadClass channel,
@@ -1600,11 +1520,6 @@ public class TypeFetcherGenerator {
      * {@code <Payload> __earlyPayload = new <Payload>(...)} statement; the setter arm emits a
      * sequence of {@code __earlyPayload.setX(...)} statements after a no-arg construction.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "payload-construction.shape-resolved",
-        reliesOn = "switch over errorsSlot is total because the classifier resolves "
-            + "PayloadConstructionShape to either AllFieldsCtor (CtorParameterIndex) or "
-            + "MutableBean (SetterMethod). No third arm.")
     private static CodeBlock declareEarlyPayloadFromErrors(ErrorChannel.PayloadClass channel, String errorsLocal) {
         return switch (channel.errorsSlot()) {
             case no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex cpi ->
@@ -1614,10 +1529,6 @@ public class TypeFetcherGenerator {
         };
     }
 
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "payload-construction.setter-name-matches-sdl-field",
-        reliesOn = "prints setter names directly into the generated validator pre-step; the "
-            + "classifier guarantees each name resolves to a real method on the payload class.")
     private static CodeBlock declareEarlyPayloadSetters(
             ErrorChannel.PayloadClass channel,
             no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod sm,
@@ -1681,14 +1592,6 @@ public class TypeFetcherGenerator {
      * matches no row. graphql-java surfaces that as a GraphQL null on a nullable field, or a
      * non-null violation on {@code ID!}/{@code Type!}.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "dml-mutation-shape-guarantees",
-        reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
-            + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
-            + "env.getArgument(tia.name()) to Map<?,?> when tia.list() == false, "
-            + "List<Map<?,?>> when tia.list() == true (Invariant #15 then guarantees the return "
-            + "shape is list-cardinality, so the projection terminator binds the matching "
-            + "*List arm); walks tia.fieldBindings() without an extraction-arm dispatch.")
     private static MethodSpec buildMutationDeleteFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationDeleteTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
@@ -1725,16 +1628,6 @@ public class TypeFetcherGenerator {
      * guarantees that every input field is a {@code Direct}-extracted {@code ColumnField},
      * which lets the loop walk {@code tia.fields()} with a single cast.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "dml-mutation-shape-guarantees",
-        reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
-            + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
-            + "env.getArgument(tia.name()) to Map<?,?> when tia.list() == false, "
-            + "List<Map<?,?>> when tia.list() == true; walks tia.fields() as Direct-extracted "
-            + "ColumnField with a single cast (no extraction-arm dispatch). Per-cell "
-            + "missing-vs-null dispatch on map.containsKey(\"col\") emits "
-            + "DSL.defaultValue(dataType) when absent and DSL.val(value, dataType) when present, "
-            + "letting omitted columns take the DB-side default while explicit nulls bind typed null.")
     private static MethodSpec buildMutationInsertFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationInsertTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
@@ -1820,12 +1713,6 @@ public class TypeFetcherGenerator {
      *       {@code __insertKey_<fi>.value1()..value<N>()}.</li>
      * </ul>
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "mutation-input.lookup-binding-decoded-record-arity-matches-carrier-columns",
-        reliesOn = "Iterates CompositeColumnField.columns() positionally and reads "
-            + "decodeLocal.value<i+1>() for each column slot; the load-bearing classifier "
-            + "guarantee that the carrier's columns.size() equals the decoded record's arity "
-            + "lets the emitter wire jOOQ's typed value1()..valueN() accessors per slot.")
     private static CodeBlock buildPerCellValueList(
             List<InputField> fields,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef,
@@ -2054,12 +1941,6 @@ public class TypeFetcherGenerator {
      * for Sets, the gate uses the set and the value-read uses a separate map local
      * {@code valueMapLocal}.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "mutation-input.lookup-binding-decoded-record-arity-matches-carrier-columns",
-        reliesOn = "Iterates setFieldColumns(sf) positionally and reads decodeLocal.value<i+1>() "
-            + "for each slot; the load-bearing classifier guarantee that the composite carriers' "
-            + "column-arity equals the decoded record's arity lets the emitter wire jOOQ's typed "
-            + "value1()..valueN() accessors per slot.")
     private static void emitSetMapPuts(
             CodeBlock.Builder block,
             List<InputField.SetField> setFields,
@@ -2226,27 +2107,6 @@ public class TypeFetcherGenerator {
      * semantics: {@code .fetchOne(...)} returns {@code null} when the WHERE clause matches no
      * row, same as DELETE.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "dml-mutation-shape-guarantees",
-        reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
-            + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
-            + "env.getArgument(tia.name()) to Map<?,?> when tia.list() == false, "
-            + "List<Map<?,?>> when tia.list() == true; walks tia.setFields() as the typed "
-            + "non-@lookupKey ColumnField projection (no cast, no skip-during-walk). "
-            + "Invariant #4 guarantees setFields() is non-empty as the codegen-time projection. "
-            + "The SET clause is built at runtime from a presentKeys.contains(name) walk over "
-            + "tia.setFields() (single-row reads in.keySet(); bulk reads firstKeys captured from "
-            + "in.get(0).keySet() after the uniform-shape guard makes it a stable witness for "
-            + "every row). The no-set-fields-present runtime check rejects when every "
-            + "setField key is absent from presentKeys. The bulk arm's duplicate-lookup-key "
-            + "guard (HashSet<List<Object>> over per-row tuples) rejects same-key inputs before "
-            + "the chain executes; otherwise Postgres' implementation-defined join would "
-            + "silently drop one row's data.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "mutation-input.update-set-fields-equal-value-marked",
-        reliesOn = "Single-row UPDATE: walks tia.setFields() for the SET-map construction without "
-            + "checking @value directive presence or DmlKind; R144's classifier guarantee that "
-            + "setFields() is exactly the @value-marked admissible carriers on UPDATE.")
     private static MethodSpec buildMutationUpdateFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpdateTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
@@ -2302,12 +2162,6 @@ public class TypeFetcherGenerator {
      * {@code UPDATE … FROM (VALUES …)} form jOOQ renders here. R63 lifts both this guard and
      * UPSERT's existing Oracle-dialect guard onto typed {@code DialectRequirement} later.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "mutation-input.update-set-fields-equal-value-marked",
-        reliesOn = "Walks tia.setFields() for the bulk UPDATE's v-table column list and per-row "
-            + "cell construction without checking @value directive presence or DmlKind; R144's "
-            + "classifier guarantee that setFields() is exactly the @value-marked admissible "
-            + "carriers (in SDL declaration order) on UPDATE.")
     private static MethodSpec buildBulkUpdateFetcher(TypeFetcherEmissionContext ctx,
                                                      MutationField.MutationUpdateTableField f,
                                                      String outputPackage,
@@ -2465,27 +2319,6 @@ public class TypeFetcherGenerator {
      *
      * <p>PostgreSQL-only: {@code ON CONFLICT} is a Postgres extension.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "dml-mutation-shape-guarantees",
-        reliesOn = "Pattern-matches f.returnExpression() with no instanceof / "
-            + "Optional.orElseThrow / payloadAssembly().isPresent() guard; casts "
-            + "env.getArgument(tia.name()) to Map<?,?> when tia.list() == false, "
-            + "List<Map<?,?>> when tia.list() == true; walks tia.fields() as Direct-extracted "
-            + "ColumnField with a single cast for the col list and per-row VALUES cells, "
-            + "and tia.setFields() (typed non-@lookupKey ColumnField projection) for the "
-            + "DO UPDATE SET clause and the .doUpdate()/.doNothing() dispatch. Invariant #3 "
-            + "guarantees fieldBindings is non-empty (the ON CONFLICT key). Per-cell "
-            + "missing-vs-null dispatch on map.containsKey(\"col\") emits "
-            + "DSL.defaultValue(dataType) when absent and DSL.val(value, dataType) when present "
-            + "on insert-side cells. When tia.setFields() is non-empty (.doUpdate() mode), "
-            + "the DO UPDATE SET map is built from a presentKeys.contains(name) walk so an "
-            + "omitted column drops out of SET (PATCH semantics on the conflict branch); "
-            + "single-row reads in.keySet(), bulk reads firstKeys captured from in.get(0) "
-            + "after the uniform-shape guard. The no-set-fields-present check rejects when "
-            + "every setField key is absent from presentKeys. .doNothing() mode skips both "
-            + "walks. Duplicate-key detection is delegated to PostgreSQL: the engine "
-            + "hard-errors on duplicate ON CONFLICT keys (\"command cannot affect row a "
-            + "second time\"), so client-side detection would only duplicate the engine's check.")
     private static MethodSpec buildMutationUpsertFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationUpsertTableField f,
                                                           String outputPackage) {
         var tia = f.tableInputArg();
@@ -2626,18 +2459,6 @@ public class TypeFetcherGenerator {
      * arity-1 NodeId-decoded {@link InputColumnBinding.MapBinding}), plus the WHERE expression
      * that reads the typed slot values out of those locals.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "mutation-input.lookup-binding-decoded-record-arity-matches-carrier-columns",
-        reliesOn = "Iterates DecodedRecordGroup.bindings() positionally and reads "
-            + "decodeLocal.value<i+1>() for each binding's slot; the load-bearing classifier "
-            + "guarantee that bindings.size() equals the carrier's columns.size() lets this "
-            + "emit jOOQ's typed value1()..valueN() accessors without re-checking arity.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "mutation-input.lookup-binding-honors-carrier-extraction",
-        reliesOn = "Reads each MapBinding.extraction() and emits a decode<TypeName> call for "
-            + "NodeIdDecodeKeys, raw read otherwise. The classifier guarantee that the binding's "
-            + "extraction matches the carrier's wire-format intent lets the emitter pick the "
-            + "right form without consulting the SDL or re-deriving from raw column metadata.")
     private record LookupWhereChunk(CodeBlock decodeLocals, CodeBlock whereExpr) {}
 
     /**
@@ -2656,14 +2477,6 @@ public class TypeFetcherGenerator {
      *       WHERE expression.</li>
      * </ul>
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "mutation-input.where-columns-cover-pk",
-        reliesOn = "Emits the WHERE predicate as the AND of every contributed filter column "
-            + "without inspecting whether the union of columns is unique against the table. "
-            + "R144's PK-coverage classifier guarantee lets the emitter treat the WHERE clause "
-            + "as matching at most one row per input row when `multiRow: true` is absent. With "
-            + "`multiRow: true` the guarantee is intentionally not enforced and the broadcast "
-            + "is the documented opt-out semantics.")
     private static LookupWhereChunk buildLookupWhereSingleRow(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
@@ -2850,12 +2663,6 @@ public class TypeFetcherGenerator {
      * lambda (one decode call per arg per row). One shape regardless of key arity (PostgreSQL
      * renders 1-key {@code (col) IN ((v))} identically to {@code col IN (v)}).
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "mutation-input.where-columns-cover-pk",
-        reliesOn = "Builds the bulk row-tuple IN predicate from the filter-column union without "
-            + "verifying that the union is unique against the table. R144's PK-coverage "
-            + "classifier guarantee lets the emitter treat each input row as matching at most "
-            + "one database row; `multiRow: true` intentionally opts out of the guarantee.")
     private static CodeBlock buildBulkLookupRowIn(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
@@ -3784,13 +3591,6 @@ public class TypeFetcherGenerator {
      * narrowest payload the data-field fetcher needs and lives inside the smallest possible
      * transaction window.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "mutation-dml-record-field.data-table-equals-input-table",
-        reliesOn = "The two-step body's RETURNING clause projects "
-            + "tableInputArg.inputTable().primaryKeyColumns(); the data field's response "
-            + "SELECT reads the same columns off env.getSource(). Without table-equality the "
-            + "two halves would reference different column sets, and jOOQ would reject the "
-            + "data-field WHERE predicate at runtime.")
     private static MethodSpec buildMutationDmlRecordFetcher(
             TypeFetcherEmissionContext ctx, MutationField.MutationDmlRecordField f, String outputPackage) {
         var tia = f.tableInputArg();
@@ -3957,12 +3757,6 @@ public class TypeFetcherGenerator {
         return new DmlChainAndGuards(chain.build(), preGuard.build());
     }
 
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "mutation-input.update-set-fields-equal-value-marked",
-        reliesOn = "MutationDmlRecordField UPDATE arm: walks tia.setFields() for the SET map "
-            + "without checking @value directive presence or DmlKind; R144's classifier "
-            + "guarantee that setFields() is exactly the @value-marked admissible carriers on "
-            + "UPDATE.")
     private static DmlChainAndGuards buildRecordUpdateChain(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
@@ -4079,13 +3873,6 @@ public class TypeFetcherGenerator {
      *
      * @see MutationField.MutationBulkDmlRecordField
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "mutation-dml-record-field.data-table-equals-input-table",
-        reliesOn = "The per-row RETURNING clause projects "
-            + "tableInputArg.inputTable().primaryKeyColumns(); the data field's bulk response "
-            + "SELECT reads the same PK columns off env.getSource() (Result<RecordN<...>>). "
-            + "Without table-equality the two halves would reference different column sets, "
-            + "and jOOQ would reject the data-field WHERE predicate at runtime.")
     private static MethodSpec buildMutationBulkDmlRecordFetcher(
             TypeFetcherEmissionContext ctx, MutationField.MutationBulkDmlRecordField f, String outputPackage) {
         var tia = f.tableInputArg();
@@ -4332,21 +4119,6 @@ public class TypeFetcherGenerator {
      *       {@code Set<KeyType>}.</li>
      * </ul>
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "service-directive-resolver-strict-child-service-return",
-        reliesOn = "Types the DataLoader as DataLoader<K, V> (via the loaderType assembled in "
-            + "DataLoaderFetcherEmitter#build: ParameterizedTypeName.get(DATA_LOADER, keyType, "
-            + "loaderValueType)) where V is the perKeyType the caller threads through "
-            + "(tb.table().recordClass() for ServiceTableField, srf.elementType() for "
-            + "ServiceRecordField). The BatchLoader lambda is built from the rows-method's "
-            + "name (RowsMethodCall.batchLoaderLambda), so `newMappedDataLoader` / "
-            + "`newDataLoader` overload resolution against the lambda's return type sees the "
-            + "rows-method's declared `Map<K, V>` / `List<List<V>>` / `List<V>`. "
-            + "ServiceDirectiveResolver's strict-return check rejects developer methods "
-            + "whose declared return type doesn't match that exact shape, so the typed "
-            + "loader compiles without a wildcard or defensive cast. Post-R177 the strict "
-            + "TypeName.equals check is load-bearing for the typed loader, not just for the "
-            + "rows method's `.returns(...)`.")
     private static MethodSpec buildServiceDataFetcher(
             TypeFetcherEmissionContext ctx,
             String fieldName,
@@ -4399,20 +4171,6 @@ public class TypeFetcherGenerator {
      * jOOQ-generated {@code XRecord} class for the field's bound table) and the per-key
      * element type for {@code ServiceRecordField} (caller passes {@code srf.elementType()}).
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "service-directive-resolver-strict-child-service-return",
-        reliesOn = "Emits `return ServiceClass.method(<args>);` against a structurally-typed "
-            + "rows-method return (Map<K, V>/List<List<V>>/List<V>) without a defensive cast or "
-            + "wildcard local. ServiceDirectiveResolver's child-only strict-return check "
-            + "rejects developer methods whose declared return type doesn't match this exact "
-            + "outer shape (V = tb.table().recordClass() for TableBoundReturnType, the "
-            + "elementType for ServiceRecordField), so any mismatch surfaces at classify time "
-            + "rather than as a javac error on the generated source. Covers all (wrap, "
-            + "container) combinations, including the typed-TableRecord wrap for jOOQ "
-            + "TableRecord sources.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "service-catalog-instance-service-holder-shape",
-        reliesOn = "Same guarantee as buildServiceFetcherCommon's static-vs-instance fork.")
     private static MethodSpec buildServiceRowsMethod(
             TypeFetcherEmissionContext ctx,
             BatchKeyField bkf,
@@ -4545,16 +4303,6 @@ public class TypeFetcherGenerator {
      *            (for {@code returnType()} and {@code name()}) and {@link BatchKeyField} (for
      *            {@code sourceKey()}, {@code loaderRegistration()}, and {@code rowsMethodName()}).
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "accessor-rowkey-cardinality-matches-field",
-        reliesOn = "FieldBuilder.deriveAccessorRecordParentSource produces Cardinality.MANY + "
-            + "Dispatch.LOAD_MANY only on list fields and Cardinality.ONE + Dispatch.LOAD_ONE "
-            + "only on single fields. The valueType rule below "
-            + "(field.emitsSingleRecordPerKey() → Record else List<Record>) folds the two cases "
-            + "that emit a per-key value of Record (LOAD_MANY's loadMany contract; "
-            + "single-cardinality LOAD_ONE). A LOAD_MANY accessor on a non-list field would "
-            + "emit code expecting List<Record> from a loadMany that supplies Record, "
-            + "miscompiling generated *Fetchers.")
     private static <T extends GraphitronField & BatchKeyField> MethodSpec
             buildRecordBasedDataFetcher(TypeFetcherEmissionContext ctx, T field,
                     ReturnTypeRef.TableBoundReturnType returnType,
@@ -4702,13 +4450,6 @@ public class TypeFetcherGenerator {
      * it via {@code env.getLocalContext()}, and the data field's null-source guard
      * short-circuits the data side of the response.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "error-channel.local-context-transport",
-        reliesOn = "FieldBuilder.detectStructuralDmlErrorChannel only emits ErrorChannel.LocalContext "
-            + "when the carrier's data field's fetcher honors the null-source short-circuit "
-            + "guard at FetcherEmitter.java:273. The emitted dispatchToLocalContext call sets "
-            + "data=null on match, relying on that guard to keep the data side of the response "
-            + "render coherent.")
     private static CodeBlock dispatchToLocalContextCatchArm(String outputPackage,
             ErrorChannel.LocalContext channel, CodeBlock sentinel) {
         return CodeBlock.of("return $T.dispatchToLocalContext(e, $T.$L, env, $L);\n",
@@ -4750,10 +4491,6 @@ public class TypeFetcherGenerator {
      * phase-2 setter arm lands as a new {@code case} that emits a lambda body of
      * {@code errors -> { var p = new Payload(); p.setX(...); p.setErrors(errors); ...; return p; }}.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "payload-construction.shape-resolved",
-        reliesOn = "switch over errorsSlot is total. CtorParameterIndex emits the positional "
-            + "lambda; SetterMethod emits the no-arg-ctor + setters lambda body.")
     private static CodeBlock payloadFactoryLambda(ErrorChannel.PayloadClass channel) {
         return switch (channel.errorsSlot()) {
             case no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex cpi ->
@@ -4771,10 +4508,6 @@ public class TypeFetcherGenerator {
      * {@code rewrite-design-principles.adoc} the bound setter is called first for diagnostic
      * clarity; semantic order doesn't matter (Java-bean setters are independent assignments).
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "payload-construction.setter-name-matches-sdl-field",
-        reliesOn = "prints boundSetter.getName() and each nonBoundSetter.setter().getName() "
-            + "into the generated lambda body; the classifier guarantees each name resolves.")
     private static CodeBlock payloadFactoryLambdaSetters(
             ErrorChannel.PayloadClass channel,
             no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod sm) {

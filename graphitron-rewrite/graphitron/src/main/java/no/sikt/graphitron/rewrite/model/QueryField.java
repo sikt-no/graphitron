@@ -79,12 +79,6 @@ public sealed interface QueryField extends RootField
      * construction returns a generated jOOQ table class.
      * {@link TableMethodDirectiveResolver} rejects any other return shape as a schema error.
      */
-    @DependsOnClassifierCheck(
-        key = "tablemethod-resolver-return-is-table-bound",
-        reliesOn = "Declares returnType with the narrow ReturnTypeRef.TableBoundReturnType "
-            + "component type. The root @tableMethod emitter "
-            + "(TypeFetcherGenerator.buildQueryTableMethodFetcher) reaches .table().tableClass() "
-            + "directly without a sealed-switch or instanceof guard.")
     record QueryTableMethodTableField(
         String parentTypeName,
         String name,

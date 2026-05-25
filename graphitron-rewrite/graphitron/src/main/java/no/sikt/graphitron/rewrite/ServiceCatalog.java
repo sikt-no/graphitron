@@ -156,24 +156,6 @@ class ServiceCatalog {
      * the parameterised form so emitters can declare matching fetcher return types
      * directly without parsing a string.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "service-catalog-strict-service-return",
-        description = "The strict TypeName.equals arm rejects developer @service methods whose "
-            + "parameterised return type doesn't match the expected type for the field. Covers "
-            + "the Single arm of @table-bound returns (expected: XRecord). The List arm of "
-            + "@table-bound returns is a sibling concern owned by "
-            + "service-resolver-root-list-record-return-pair (caller passes null here for that "
-            + "case); ResultReturnType-with-backing-class paths are a sibling concern owned by "
-            + "FieldBuilder.checkServiceReturnMatchesPayload (caller passes null here for those "
-            + "too, see ServiceDirectiveResolver.computeExpectedServiceReturnType). Lets the "
-            + "emitter declare a typed XRecord return rather than Object.")
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "service-catalog-instance-service-holder-shape",
-        description = "The InstanceWithDslHolder arm rejects abstract / interface / no-(DSLContext)"
-            + "-ctor holders via checkServiceInstanceHolderShape, so a Service.callShape() of "
-            + "InstanceWithDslHolder structurally guarantees a usable holder. Lets the emitter "
-            + "unconditionally emit `new ServiceClass(dsl).method(...)` for the instance arm "
-            + "without checking the holder shape at emit time.")
     ServiceReflectionResult reflectServiceMethod(String className, String methodName,
             ArgBindingMap argBindings, Set<String> ctxKeys, List<ColumnRef> parentPkColumns,
             TypeName expectedReturnType) {
@@ -495,18 +477,6 @@ class ServiceCatalog {
      * (e.g. {@code Film table = Service.method(...)}) and feed it into
      * {@code FilmType.$fields(...)} without a downcast.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "service-catalog-strict-tablemethod-return",
-        description = "The strict ClassName.equals arm rejects developer @tableMethod methods "
-            + "whose return type is wider than the generated jOOQ table class for the field's "
-            + "@table-bound return type. Lets the emitter declare <SpecificTable> table = "
-            + "Method.x(...) without a downcast.")
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "service-catalog-tablemethod-must-be-static",
-        description = "The Modifier.isStatic check rejects instance @tableMethod methods. "
-            + "Lets the emitter unconditionally emit `ClassName.method(...)` "
-            + "static-call shape for @tableMethod refs without forking on call shape — the "
-            + "MethodRef.StaticOnly variant produced here carries that guarantee structurally.")
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
             ArgBindingMap argBindings, Set<String> ctxKeys, ClassName expectedReturnClass,
             TableSlotPolicy tableSlotPolicy) {
@@ -1234,17 +1204,6 @@ class ServiceCatalog {
      * extended-scalars convention layer produce their resolved Java type FQN instead of the
      * previous {@code null}-fallback.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "scalar-resolver.javatype-is-typename",
-        reliesOn = "Reads ScalarType.resolution().javaType() as a JavaPoet TypeName and renders "
-            + "it via toString() for literal comparison against reflected parameter types. The "
-            + "boxed-form invariant guarantees the rendered FQN matches graphql-java's argument "
-            + "coercion output.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "scalar-resolver.coercing-non-erased",
-        reliesOn = "Returned type is never Object from an erased Coercing; Resolved arms construct "
-            + "only after the erasure guard. A null return here is now reserved for non-classified "
-            + "types (enums, named input objects) rather than custom scalars.")
     private String mapToJavaTypeName(GraphQLInputType t) {
         GraphQLType current = t;
         int listDepth = 0;

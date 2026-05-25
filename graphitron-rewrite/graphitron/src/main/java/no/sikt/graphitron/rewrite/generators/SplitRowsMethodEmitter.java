@@ -145,23 +145,6 @@ public final class SplitRowsMethodEmitter {
      * <p>Single-cardinality callers pass a single-hop {@code joinPath}; the FK-chain loop emits
      * one declaration in that case.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "sourcerow-classifies-as-record-table-field",
-        reliesOn = "The JOIN-on side-aware switch admits exactly FkJoin and LiftedHop. "
-            + "SourceRowDirectiveResolver and FieldBuilder.deriveAccessorRecordParentSource "
-            + "both guarantee the field classifies as RecordTableField or RecordLookupTableField "
-            + "with a joinPath whose steps implement WithTarget (LiftedHop on the leaf-PK / "
-            + "accessor arms; FkJoin chain on the @sourceRow + @reference arm), so the prelude "
-            + "can read target accessors uniformly via WithTarget without per-accessor identity "
-            + "checks.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "source-key.accessor-call-wraps-record",
-        reliesOn = "The isAccessor arm of the parent-input VALUES loop emits "
-            + "`DSL.val(k.value$L())` to extract the scalar payload off the per-key RecordN<...>. "
-            + "The value$L() accessor exists on RecordN<...> but not on RowN<...>; SourceKey's "
-            + "compact constructor rejects any AccessorCall paired with a wrap other than "
-            + "Wrap.Record, so keyElementType() is guaranteed to be a RecordN<...> type on this "
-            + "arm and the value$L() invocation type-checks against the local key variable.")
     private static PreludeBindings emitParentInputAndFkChain(
             TypeFetcherEmissionContext ctx,
             CodeBlock.Builder body,
@@ -391,15 +374,6 @@ public final class SplitRowsMethodEmitter {
      * anchor the condition method's source argument, so the path AUTHOR_ERRORs upstream and
      * never reaches this emitter).
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "tablemethod-resolver-return-is-table-bound",
-        reliesOn = "Reads field.returnType().table() to declare the developer's table local "
-            + "with the specific generated jOOQ class. The resolver's TableBoundReturnType "
-            + "invariant guarantees the narrow return type at this site.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "fk-join.slots-oriented-source-and-target",
-        reliesOn = "Reads slot.targetSide() (developer-returned table's column) and "
-            + "slot.sourceSide() (parent's lifted-key column) without re-deriving FK direction.")
     static MethodSpec buildForRecordTableMethod(TypeFetcherEmissionContext ctx,
             ChildField.RecordTableMethodField rtmf, String outputPackage) {
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);

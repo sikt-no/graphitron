@@ -54,8 +54,7 @@ import java.util.Objects;
  *
  * <p>Cross-axis consistency rules. Each rejection here is a classifier-side bug (a producer
  * built a malformed key); the classifier is expected to never produce these shapes, and the
- * rejections double as a tripwire for future producers. Each invariant carries a
- * {@link LoadBearingClassifierCheck} declaration.
+ * rejections double as a tripwire for future producers.
  *
  * <ul>
  *   <li>{@link Reader.SourceRowsCall} → {@link Wrap#ROW}. The {@code @sourceRows} lifter
@@ -75,35 +74,6 @@ import java.util.Objects;
  *       list / {@code Result} ({@link Cardinality#MANY}).</li>
  * </ul>
  */
-@LoadBearingClassifierCheck(
-    key = "source-key.source-rows-call-wraps-row",
-    description = "SourceKey's compact constructor rejects Reader.SourceRowsCall paired with "
-        + "anything other than Wrap.Row. The lifter contract is "
-        + "(ParentBackingClass) -> RowN<...>; emitting against any other wrap would produce "
-        + "a row-vs-record-call mismatch the rows-method body cannot reconcile.")
-@LoadBearingClassifierCheck(
-    key = "source-key.accessor-call-wraps-record",
-    description = "SourceKey's compact constructor rejects Reader.AccessorCall paired with "
-        + "anything other than Wrap.Record. AccessorKeyedSingle and AccessorKeyedMany both "
-        + "emit RecordN<...> keys today; the rows-method body reads value1()..valueN() off "
-        + "the key, which only Wrap.Record supplies.")
-@LoadBearingClassifierCheck(
-    key = "source-key.service-table-record-target-aligned-empty-path",
-    description = "SourceKey's compact constructor rejects Reader.ServiceTableRecord whose "
-        + "recordType matches target's recordClass paired with a non-empty path. The service "
-        + "already produced a target-aligned record; walking past target is structurally "
-        + "redundant.")
-@LoadBearingClassifierCheck(
-    key = "source-key.result-row-walk-target-aligned-empty-path",
-    description = "SourceKey's compact constructor rejects Reader.ResultRowWalk paired with "
-        + "anything other than Wrap.Record or Wrap.TableRecord(target.recordClass()), or with "
-        + "a non-empty path. The upstream producer (DML mutation fetcher or carrier-shaped "
-        + "@service method) emits target-aligned rows; the data-field fetcher's typed source "
-        + "read relies on wrap to type the row shape and on path=empty to pin the source row "
-        + "to the data table. The Wrap.TableRecord arm requires className to match the "
-        + "target's recordClass for the same reason the source-key.service-table-record-"
-        + "target-aligned-empty-path invariant pins ServiceTableRecord to its target — the "
-        + "typed XRecord class names the same table the carrier is target-aligned to.")
 public record SourceKey(
     TableRef target,
     List<ColumnRef> columns,

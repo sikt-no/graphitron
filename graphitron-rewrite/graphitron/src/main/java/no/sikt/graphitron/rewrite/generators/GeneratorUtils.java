@@ -236,27 +236,6 @@ class GeneratorUtils {
             .build();
     }
 
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "sourcerow-leafkey-sourcerows-singlehop",
-        reliesOn = "The exhaustive sealed switch in buildRecordParentKeyExtraction routes "
-            + "Reader.SourceRowsCall (covering both leaf-PK and @reference-composed shapes) here. "
-            + "SourceRowDirectiveResolver guarantees the lifter arms are reached only when the "
-            + "parent is PojoResultType or JavaRecordType with a non-null fqClassName, so "
-            + "backingClassOf and the (BackingClass) env.getSource() coercion below are safe "
-            + "without a null check on the backing class.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "sourcerow-pathkey-sourcerows-fkchain",
-        reliesOn = "Same Reader.SourceRowsCall arm covers the @reference-composed lifter shape; "
-            + "SourceRowDirectiveResolver constructs the path-keyed lifter projection only on "
-            + "PojoResultType / JavaRecordType with a non-null fqClassName.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "source-key.source-rows-call-wraps-row",
-        reliesOn = "Declares `$T key = Lifters.method((BackingClass) env.getSource())` where "
-            + "`$T` is sourceKey.keyElementType(). The @sourceRows lifter signature returns "
-            + "RowN<...>; the local must be typed RowN<...> for the assignment to compile. "
-            + "SourceKey's compact constructor rejects any SourceRowsCall paired with a wrap "
-            + "other than Wrap.Row, so keyElementType() is guaranteed to derive a RowN<...> "
-            + "type at this site.")
     private static CodeBlock buildLifterRowKey(
             LifterRef lifter, TypeName keyType,
             GraphitronType.ResultType resultType) {
@@ -267,16 +246,6 @@ class GeneratorUtils {
             .build();
     }
 
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "accessor-rowkey-shape-resolved",
-        reliesOn = "FieldBuilder.deriveAccessorRecordParentSource produces the AccessorCall + "
-            + "Cardinality.ONE projection only after reflection has confirmed the parent backing "
-            + "class, the accessor (name, zero-arg, non-bridge, non-synthetic, non-static), and "
-            + "the element class (extends TableRecord, mapped table identical to the field's "
-            + "@table return). The emitted body casts env.getSource() to the resolved backing "
-            + "class and invokes the accessor by name without instanceof guards or null checks; "
-            + "the RecordN<...> key is built via __elt.into(Tables.X.PK1, ...) over typed Field "
-            + "references on the element table.")
     private static CodeBlock buildAccessorKeySingle(
             SourceKey sourceKey, AccessorRef accessor, TypeName keyType) {
         ClassName backingClass = accessor.parentBackingClass();
@@ -297,16 +266,6 @@ class GeneratorUtils {
             .build();
     }
 
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "accessor-rowkey-shape-resolved",
-        reliesOn = "FieldBuilder.deriveAccessorRecordParentSource produces the AccessorCall + "
-            + "Cardinality.MANY projection only after reflection has confirmed the parent "
-            + "backing class, the accessor (name, zero-arg, non-bridge, non-synthetic, "
-            + "non-static), and the element class (extends TableRecord, mapped table identical "
-            + "to the field's @table return). The emitted for-loop casts env.getSource() to the "
-            + "resolved backing class, invokes the accessor by name without instanceof guards or "
-            + "null checks, and projects each element to a RecordN<...> via "
-            + "__elt.into(Tables.X.PK1, ...) over typed Field references on the element table.")
     private static CodeBlock buildAccessorKeyMany(
             SourceKey sourceKey, AccessorRef accessor, TypeName keyType) {
         ClassName backingClass = accessor.parentBackingClass();
@@ -415,17 +374,6 @@ class GeneratorUtils {
      * consistency check guarantees the {@code TableRecord} arm's class matches the parent's
      * table, so the extraction's projection target is the parent table itself.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "source-key.service-table-record-target-aligned-empty-path",
-        reliesOn = "The Wrap.TableRecord arm emits `parent.into(Tables.X)` against parentTable "
-            + "directly — no walk over sourceKey.path() is performed. The arm is reachable only "
-            + "from the @service Reader.ServiceTableRecord codepath, where the typed record class "
-            + "matches the parent's table (validateTableRecordSourceParentTable on the validator "
-            + "side, target-aligned by construction in FieldBuilder). SourceKey's compact "
-            + "constructor rejects any ServiceTableRecord with recordType matching target's "
-            + "recordClass paired with a non-empty path, so the emitter can safely project "
-            + "without first walking a join chain that would otherwise have to land on the "
-            + "parent table.")
     static CodeBlock buildKeyExtraction(SourceKey sourceKey, TableRef parentTable) {
         TypeName keyType = sourceKey.keyElementType();
         var tablesClass = parentTable.constantsClass();

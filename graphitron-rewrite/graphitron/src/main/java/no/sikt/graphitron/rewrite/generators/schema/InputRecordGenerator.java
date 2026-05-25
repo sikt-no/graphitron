@@ -16,7 +16,6 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.HasInputRecordShape;
 import no.sikt.graphitron.rewrite.model.InputRecordShape;
@@ -52,12 +51,6 @@ import java.util.Set;
  * {@code List.stream().map(...).toList()} with element-level recursion when the element is
  * a nested input class.
  */
-@DependsOnClassifierCheck(
-    key = "input-record.shape-from-input-type",
-    reliesOn = "Reads InputRecordShape from each HasInputRecordShape leaf without null-guarding; "
-            + "the producer-side compact constructor on InputRecordShape rejects an empty "
-            + "components list, and TypeBuilder routes input types that cannot resolve their "
-            + "component types through UnclassifiedType.")
 public final class InputRecordGenerator {
 
     private static final ClassName MAP        = ClassName.get(Map.class);
