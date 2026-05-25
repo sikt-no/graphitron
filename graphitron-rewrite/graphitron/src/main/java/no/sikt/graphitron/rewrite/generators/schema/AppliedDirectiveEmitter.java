@@ -16,7 +16,6 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry;
-import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import no.sikt.graphitron.rewrite.model.ScalarResolution;
 
 import java.util.ArrayList;
@@ -133,11 +132,6 @@ public final class AppliedDirectiveEmitter {
      * <p>Other named types (enums, input objects) use {@code GraphQLTypeReference.typeRef("<name>")}
      * since those types are present in the base schema.
      */
-    @DependsOnClassifierCheck(
-        key = "scalar-resolver.javatype-is-typename",
-        reliesOn = "Reads ScalarResolution.Resolved.scalarConstantOwner / scalarConstantField to "
-            + "emit '<Owner>.<Field>' for spec built-ins and federation-namespace scalars. The "
-            + "Resolved arm guarantees both fields are populated.")
     static CodeBlock emitInputType(GraphQLInputType type) {
         if (type == null) return CodeBlock.of("$T.typeRef($S)", CN_TYPE_REF, "String");
         if (type instanceof GraphQLNonNull nn) {

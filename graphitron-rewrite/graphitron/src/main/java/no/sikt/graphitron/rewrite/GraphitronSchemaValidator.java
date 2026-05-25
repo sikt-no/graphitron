@@ -522,13 +522,6 @@ public class GraphitronSchemaValidator {
             ));
         }
     }
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "column-reference-field-no-nodeid-encode-keys",
-        description = "Rejects ChildField.ColumnReferenceField with NodeIdEncodeKeys compaction "
-            + "as Rejection.Deferred keyed to nodeidreferencefield-join-projection-form. Lets "
-            + "InlineColumnReferenceFieldEmitter and TypeClassGenerator assume Direct compaction "
-            + "post-validate without a runtime branch on compaction(), and lets FetcherEmitter "
-            + "carry only the Direct-compaction wiring arm for this variant.")
     private void validateColumnReferenceField(no.sikt.graphitron.rewrite.model.ChildField.ColumnReferenceField field, List<ValidationError> errors) {
         if (field.joinPath().isEmpty()) {
             errors.add(new ValidationError(
@@ -1010,15 +1003,6 @@ public class GraphitronSchemaValidator {
      * guard. This validator pass is the cross-check that turns a silently-broken admission into a
      * build-time {@link Rejection.AuthorError.Structural}.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "error-channel.local-context-transport",
-        reliesOn = "The validator mirrors the producer invariant that a carrier admitted with "
-            + "ErrorChannel.LocalContext has a data field whose fetcher honors the null-source "
-            + "short-circuit guard. Rejects schemas whose ErrorsField carries Transport.LocalContext "
-            + "but whose sibling data-channel field is not on the "
-            + "LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS allow-list as Rejection.structural so "
-            + "emit-time consumers (TypeFetcherGenerator's catch arm and asyncWrapTail) can assume "
-            + "the guard without a runtime branch.")
     private void validateLocalContextErrorsFieldGuards(GraphitronSchema schema, List<ValidationError> errors) {
         for (var f : schema.fields().values()) {
             if (!(f instanceof ChildField.ErrorsField ef)) continue;
@@ -1044,9 +1028,7 @@ public class GraphitronSchemaValidator {
     /**
      * Field variants whose generated fetcher honors the null-source short-circuit guard at emit
      * time, making them safe siblings for an {@link ChildField.ErrorsField} with
-     * {@link ChildField.Transport.LocalContext}. Each entry's matching emitter method in
-     * {@code FetcherEmitter} carries a {@code @DependsOnClassifierCheck(key =
-     * "error-channel.local-context-transport")} pinning the guarantee:
+     * {@link ChildField.Transport.LocalContext}:
      *
      * <ul>
      *   <li>{@code SingleRecordTableField} → {@code buildSingleRecordTableFetcherValueRecordWrap}
@@ -1059,12 +1041,8 @@ public class GraphitronSchemaValidator {
      *       (explicit guard before PK copy onto the synthesised Record).</li>
      * </ul>
      *
-     * <p>The audit harness {@code LoadBearingGuaranteeAuditTest} surfaces a missing producer if
-     * the {@code @LoadBearingClassifierCheck} on the LocalContext producer is relaxed below the
-     * consumer count. Adding a variant to this set without anchoring the matching emitter site
-     * annotation orphans the new consumer; removing the guard from an existing emitter arm must
-     * remove the variant from this set so the consumer-side annotation stops referencing a
-     * no-longer-honored invariant.
+     * <p>Adding a variant to this set requires the matching emitter site to honor the guard;
+     * removing the guard from an existing emitter arm must remove the variant from this set.
      */
     private static final java.util.Set<Class<? extends GraphitronField>> LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS = java.util.Set.of(
         ChildField.SingleRecordTableField.class,

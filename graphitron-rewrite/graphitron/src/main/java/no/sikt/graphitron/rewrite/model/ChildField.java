@@ -431,12 +431,6 @@ public sealed interface ChildField extends OutputField
      * generated jOOQ table class. {@link TableMethodDirectiveResolver} rejects any other return
      * shape as a schema error (R43).
      */
-    @DependsOnClassifierCheck(
-        key = "tablemethod-resolver-return-is-table-bound",
-        reliesOn = "Declares returnType with the narrow ReturnTypeRef.TableBoundReturnType "
-            + "component type. Downstream consumers reach .table() / .table().tableClass() "
-            + "without a sealed-switch or instanceof guard — the type signature is the "
-            + "load-bearing consumer of the resolver's structural rejection.")
     record TableMethodField(
         String parentTypeName,
         String name,
@@ -460,15 +454,9 @@ public sealed interface ChildField extends OutputField
      * is the resolved parent-to-target chain: {@code [fkJoin]} for the FK-auto-derive arm on a
      * jOOQ-table-record-backed parent, the lifter's resolved chain on the {@code @sourceRow} arm.
      *
-     * <p>The {@code @LoadBearingClassifierCheck} key {@code tablemethod-resolver-return-is-table-bound}
-     * is shared with {@link TableMethodField}: the directive resolver narrows the returnType to
-     * {@link ReturnTypeRef.TableBoundReturnType} for both producers.
+     * <p>The directive resolver narrows the returnType to
+     * {@link ReturnTypeRef.TableBoundReturnType} for both this variant and {@link TableMethodField}.
      */
-    @DependsOnClassifierCheck(
-        key = "tablemethod-resolver-return-is-table-bound",
-        reliesOn = "Declares returnType with the narrow ReturnTypeRef.TableBoundReturnType "
-            + "component type. Downstream consumers reach .table() / .table().tableClass() "
-            + "without a sealed-switch or instanceof guard.")
     record RecordTableMethodField(
         String parentTypeName,
         String name,

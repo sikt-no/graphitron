@@ -25,10 +25,8 @@ import no.sikt.graphitron.rewrite.ScalarTypeResolver;
  * rows method body in {@code TypeFetcherGenerator.buildServiceRowsMethod}), and the
  * data-fetcher emitter (the {@code DataLoader<K, V>} typing line built in
  * {@code TypeFetcherGenerator.buildServiceDataFetcher}, which Java generics invariance
- * forces to match the rows method's declared {@code V} exactly). The
- * {@code service-directive-resolver-strict-child-service-return}
- * {@link LoadBearingClassifierCheck} key pairs all three; this helper is the implementation
- * the validator and both emit sites share so the cross-product cannot drift.
+ * forces to match the rows method's declared {@code V} exactly). This helper is the
+ * implementation the validator and both emit sites share so the cross-product cannot drift.
  */
 public final class RowsMethodShape {
 
@@ -75,14 +73,6 @@ public final class RowsMethodShape {
      * convention layer surface custom-scalar Java types through the same resolver; callers
      * that wire those phases route their non-null branches through the resolver as well.
      */
-    @DependsOnClassifierCheck(
-        key = "scalar-resolver.javatype-is-typename",
-        reliesOn = "Returns the resolver's TypeName directly into strictPerKeyType, which feeds "
-            + "MethodSpec.returns(...) for the rows-method without coercion.")
-    @DependsOnClassifierCheck(
-        key = "scalar-resolver.coercing-non-erased",
-        reliesOn = "Non-null return is the spec-built-in canonical type from the resolver's "
-            + "closed table; never Object.")
     public static TypeName standardScalarJavaType(String graphqlScalarName) {
         return ScalarTypeResolver.builtInJavaType(graphqlScalarName);
     }

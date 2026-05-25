@@ -9,7 +9,6 @@ import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.FieldClassification;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
 import no.sikt.graphitron.rewrite.catalog.TypeBackingShape;
-import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.eclipse.lsp4j.MarkupContent;
@@ -67,22 +66,6 @@ public final class FieldCompletions {
         return completionsFor(data, snapshot, context, typeName.get(), fieldName);
     }
 
-    @DependsOnClassifierCheck(
-        key = "java-record-type-backs-record-class",
-        reliesOn = "RecordBacking.components is the record's @RecordAttribute component list; "
-            + "FieldCompletions emits them verbatim as @field(name:) candidates without "
-            + "re-checking that the backing class is in fact a record."
-    )
-    @DependsOnClassifierCheck(
-        key = "field-classification-payload-faithful",
-        reliesOn = "Routes @field(name:) completion through "
-            + "FieldClassification.lspColumnDispatch(): Resolve(tableName) emits the "
-            + "projected terminal table's columns (the @reference terminal table for "
-            + "Column / ColumnReference / CompositeColumn / CompositeColumnReference); "
-            + "Silent emits an empty list (InputUnbound, Unclassified, where suggestions "
-            + "from the enclosing-type backing would leak the wrong table); FallThrough "
-            + "routes back to the backing-driven dispatch for non-column-bearing permits."
-    )
     private static List<CompletionItem> completionsFor(
         CompletionData data, LspSchemaSnapshot snapshot, CompletionContext context,
         String typeName, String fieldName

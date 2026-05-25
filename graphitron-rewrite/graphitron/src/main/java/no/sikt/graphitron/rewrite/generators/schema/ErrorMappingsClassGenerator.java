@@ -6,7 +6,6 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
@@ -45,13 +44,6 @@ public final class ErrorMappingsClassGenerator {
 
     private ErrorMappingsClassGenerator() {}
 
-    @DependsOnClassifierCheck(
-        key = "error-channel.mappings-constant",
-        reliesOn = "groups channels by ErrorChannel.mappingsConstantName, trusting that the §3 "
-            + "hash-suffix dedup pass (MappingsConstantNameDedup, run during schema build) has "
-            + "already resolved any collisions. Two channels sharing a constant therefore "
-            + "guarantees the same handler shape; a divergent shape would indicate the dedup "
-            + "pass missed a variant and is treated as an internal classifier bug.")
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
         var schemaPackage = outputPackage.isEmpty() ? "" : outputPackage + ".schema";
         var errorRouter = ClassName.get(schemaPackage, ErrorRouterClassGenerator.CLASS_NAME);

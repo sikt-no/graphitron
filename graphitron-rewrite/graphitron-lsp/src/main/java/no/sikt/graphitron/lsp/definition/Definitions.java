@@ -7,7 +7,6 @@ import no.sikt.graphitron.lsp.parsing.TypeContext;
 import no.sikt.graphitron.lsp.state.WorkspaceFile;
 import no.sikt.graphitron.rewrite.catalog.CompletionData;
 import no.sikt.graphitron.rewrite.catalog.LspSchemaSnapshot;
-import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -33,13 +32,6 @@ public final class Definitions {
 
     private Definitions() {}
 
-    @DependsOnClassifierCheck(
-        key = "type-classification-payload-faithful",
-        reliesOn = "Resolves the enclosing type's tableName off TypeClassification.Table / Node / "
-            + "TableInterface / TableInput via TypeContext.tableNameOf for @field(name:) go-to-"
-            + "definition so an extension whose definition lives in another file still routes to "
-            + "the right table's column metadata."
-    )
     public static Optional<Location> compute(
         WorkspaceFile file, CompletionData catalog, LspSchemaSnapshot snapshot, Point pos
     ) {

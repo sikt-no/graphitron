@@ -286,14 +286,14 @@ class ServiceFieldValidationTest {
     // ===== Instance-holder rejection arm — validator-tier reachability (R87 Phase C) =====
 
     /**
-     * Drives the {@code service-catalog-instance-service-holder-shape} {@code @LoadBearingClassifierCheck}
-     * end-to-end: builds a real schema bound to {@link no.sikt.graphitron.rewrite.TestInstanceServiceStubNoCtor}
-     * (an instance holder with no {@code (DSLContext)} constructor), runs it through
-     * {@code GraphitronSchemaBuilder} + {@code GraphitronSchemaValidator}, and asserts a single
-     * {@link ValidationError} surfaces with both fix options ("make the method static, or add the
-     * (DSLContext) constructor"). Existing {@code ServiceCatalogTest} coverage is unit-tier; this
-     * test pins reachability through the validator's own dispatch surface, matching
-     * {@code rewrite-design-principles.adoc:101-105} ("validator mirrors classifier invariants").
+     * Drives the instance-service-holder-shape rejection end-to-end: builds a real schema bound to
+     * {@link no.sikt.graphitron.rewrite.TestInstanceServiceStubNoCtor} (an instance holder with
+     * no {@code (DSLContext)} constructor), runs it through {@code GraphitronSchemaBuilder} +
+     * {@code GraphitronSchemaValidator}, and asserts a single {@link ValidationError} surfaces
+     * with both fix options ("make the method static, or add the (DSLContext) constructor").
+     * Existing {@code ServiceCatalogTest} coverage is unit-tier; this test pins reachability
+     * through the validator's own dispatch surface, matching {@code rewrite-design-principles.adoc}
+     * ("validator mirrors classifier invariants").
      */
     @org.junit.jupiter.api.Test
     void instanceServiceHolderShape_noCtor_validatorReportsAuthorError() {

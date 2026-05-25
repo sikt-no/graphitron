@@ -112,25 +112,6 @@ final class SourceRowDirectiveResolver {
         this.fb = fb;
     }
 
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "sourcerow-classifies-as-record-table-field",
-        description = "A field carrying @sourceRow classifies as RecordTableField or "
-            + "RecordLookupTableField (never any other variant). The SourceKey-typed call sites "
-            + "in GeneratorUtils.buildRecordParentKeyExtraction depend on this routing so the "
-            + "type system excludes @service-only source paths at the parameter type.")
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "sourcerow-leafkey-sourcerows-singlehop",
-        description = "On the @sourceRow leaf-PK path (no @reference), the produced SourceKey "
-            + "has a single-element path of [JoinStep.LiftedHop] over the leaf table's PK; the "
-            + "reader is Reader.SourceRowsCall(lifter). buildRecordParentKeyExtraction's "
-            + "exhaustive switch and the rows-method prelude rely on this shape.")
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "sourcerow-pathkey-sourcerows-fkchain",
-        description = "On the @sourceRow + @reference path, the produced SourceKey has a "
-            + "multi-step path of resolved JoinStep.FkJoin entries from the parent's lifter "
-            + "columns to the leaf table; the reader is Reader.SourceRowsCall(lifter). "
-            + "buildRecordParentKeyExtraction's exhaustive switch and the rows-method prelude "
-            + "rely on this shape.")
     Resolved resolve(
             String parentTypeName,
             GraphQLFieldDefinition fieldDef,

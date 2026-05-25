@@ -208,39 +208,6 @@ final class EnumMappingResolver {
      * rejection path (mutation: {@code MutationInputResolver.resolveInput}'s per-field walk;
      * query: not currently a binding shape).
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "lookup-mapping-bindings-table-coherent",
-        description = "Each binding's targetColumn resolves against the @table-backed input "
-            + "type's inputTable, so all bindings of one MapInput / DecodedRecord target "
-            + "columns of a single table — the lookup target. Lets the LookupValuesJoinEmitter "
-            + "read b.targetColumn() across bindings without re-checking table coherence.")
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "lookup-key-input-field-non-list",
-        description = "Rejects list-typed admissible carriers with the 'move list cardinality "
-            + "to the outer argument' diagnostic. Lets the slot pipeline assume binding-level "
-            + "cardinality is scalar; only the outer LookupArg.list() drives row-count "
-            + "broadcasting in the emitter.")
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "mutation-input.lookup-binding-honors-carrier-extraction",
-        description = "Each MapBinding's extraction comes from the carrier's cf.extraction() "
-            + "when non-Direct (NodeIdDecodeKeys for an arity-1 NodeId-decoded ColumnField) and "
-            + "falls through to deriveExtraction(typeName, column, enumClass) only when "
-            + "the carrier is Direct. Pre-R130 the call always re-derived from raw column "
-            + "metadata, discarding the resolver-supplied NodeIdDecodeKeys; the R131 follow-up "
-            + "SDL-boundary @nodeId guard papered over this bug at the cost of rejecting the "
-            + "shape entirely. The fix at source lets the lookup-WHERE emitter read the binding's "
-            + "extraction and emit decodeBar(in.get(name)) for NodeId-decoded keys instead of a "
-            + "raw column read.")
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "mutation-input.lookup-binding-decoded-record-arity-matches-carrier-columns",
-        description = "DecodedRecordGroup.bindings.size() equals the carrier's column-arity by "
-            + "construction: CompositeColumnField.columns.size() for the same-table arm and "
-            + "CompositeColumnReferenceField.liftedSourceColumns.size() for the FK-target arm "
-            + "(arity-1 reference goes through MapGroup instead). One binding per slot, indexed "
-            + "0..N-1. Lets the lookup-WHERE / row-IN emitter read Record<N> slots positionally "
-            + "without re-checking arity, and lets INSERT/UPDATE/UPSERT walks that dispatch on "
-            + "the composite arms iterate 0..N-1 with record.value(i) reads against the "
-            + "carrier's columns (column() for same-table, liftedSourceColumns() for FK-target).")
     List<InputColumnBindingGroup> buildLookupBindings(GraphitronType.TableInputType tit,
             GraphQLArgument arg, GraphQLFieldDefinition fieldDef, String argName,
             List<String> errors, Set<String> excludeFieldNames) {

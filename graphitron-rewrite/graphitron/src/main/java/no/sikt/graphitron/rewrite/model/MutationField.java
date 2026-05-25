@@ -255,11 +255,8 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * (e.g. an ordinal-preserving Postgres contract) must preserve the same input-order
      * assertion the round-trip test makes. The {@code @see} pointer between this record and
      * {@link no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator}'s
-     * {@code buildMutationBulkDmlRecordFetcher} is the find-usages anchor; the invariant is
-     * not encoded as a load-bearing classifier check because the contract is a runtime claim
-     * about emit-order iteration with no compile-time signal under any classifier relaxation,
-     * and overloading {@code @LoadBearingClassifierCheck} for navigability-only contracts
-     * dilutes the audit's classifier→emitter shape-contract signal.
+     * {@code buildMutationBulkDmlRecordFetcher} is the find-usages anchor; the contract is a
+     * runtime claim about emit-order iteration with no compile-time signal.
      *
      * <p><b>Per-kind emit variation.</b> INSERT and UPDATE differ on the per-row statement
      * and the WHERE/SET clauses; future UPSERT lifts at R145 add a third shape with
@@ -282,14 +279,6 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      *
      * @see no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator
      */
-    @DependsOnClassifierCheck(
-        key = "mutation-input.where-columns-cover-pk",
-        reliesOn = "The bulk emitter's per-row UPDATE/DELETE WHERE clause assumes the contributed "
-            + "filter columns cover the input @table's primary key (so each row matches at most "
-            + "one database row), or the field carries multiRow: true and the broadcast is "
-            + "opted-in. Both arrive via MutationInputResolver.resolveInput; any future refactor "
-            + "that branches the bulk path around resolveInput would surface here as an orphaned "
-            + "consumer.")
     record MutationBulkDmlRecordField(
         String parentTypeName,
         String name,

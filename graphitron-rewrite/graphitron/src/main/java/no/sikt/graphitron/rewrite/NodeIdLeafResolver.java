@@ -228,40 +228,6 @@ final class NodeIdLeafResolver {
      *
      * <p>{@code leafName} is the GraphQL field-/argument-name; surfaces only in error messages.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "nodeid-fk.direct-fk-keys-match",
-        description = "The terminal hop's target-side columns equal the NodeType's key columns"
-                    + " as a multiset by SQL name (any order); emission can bind decoded keys"
-                    + " directly against the lifted source-side columns. The resolver picks"
-                    + " Resolved.FkTarget.DirectFk and pre-permutes the carrier's"
-                    + " liftedSourceColumns into NodeType.keyColumns order so emitters can read"
-                    + " liftedSourceColumns positionally without an extra permutation step."
-                    + " The pathological case (the FK target columns are not the NodeType key"
-                    + " columns) is sorted to TranslatedFk and rejected at projection time. The"
-                    + " projection arms for ColumnReferenceArg / CompositeColumnReferenceArg /"
-                    + " InputField.{Column,CompositeColumn}ReferenceField read"
-                    + " liftedSourceColumns straight into BodyParam.{Eq,In,RowEq,RowIn} and"
-                    + " assume positional correspondence with the decoded NodeType keys.")
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "nodeid-fk.identity-carrying-lift",
-        description = "Every intermediate hop in a multi-hop @reference path satisfies the lift"
-                    + " predicate: hop[i].sourceSideColumns is a positional sub-tuple of"
-                    + " hop[i-1].targetSideColumns by SQL name, for every i ≥ 1. The resolver"
-                    + " accepts only paths where this holds (single-hop is the trivial case);"
-                    + " other shapes route to a Rejected. The invariant guarantees that the"
-                    + " terminal hop's source-side tuple lifts back through the chain to a"
-                    + " sub-tuple of the first hop's source-side columns — i.e. a column tuple"
-                    + " on the parent's own table, positionally aligned with the decoded"
-                    + " NodeType keys. Emission then proceeds as a direct row predicate against"
-                    + " the parent table, no JOIN and no subquery, identical to single-hop"
-                    + " direct-FK.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "fk-join.slots-oriented-source-and-target",
-        reliesOn = "Reads each hop's targetSideColumns() / sourceSideColumns() to evaluate the"
-            + " lift predicate and to compute Resolved.FkTarget.DirectFk's"
-            + " liftedSourceColumns; depends on synthesis-time slot orientation so the same"
-            + " accessors work uniformly across hops regardless of which end of each catalog"
-            + " FK each hop's source / target maps to.")
     Resolved resolve(GraphQLDirectiveContainer leaf, String leafName, TableRef containingTable) {
         var typeNameInference = inferTypeName(leaf, containingTable);
         if (typeNameInference.error() != null) {

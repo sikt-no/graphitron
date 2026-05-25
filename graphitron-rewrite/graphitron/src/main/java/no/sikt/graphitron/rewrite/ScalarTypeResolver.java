@@ -5,8 +5,6 @@ import graphql.schema.GraphQLScalarType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.CoercingDeclarationKind;
-import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
-import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.ScalarResolution;
 
 import java.lang.reflect.Field;
@@ -45,32 +43,17 @@ import java.util.Set;
  *       directive; Phase 3 wires it to the extended-scalars convention layer.</li>
  * </ul>
  *
- * <p>Producer of two {@link LoadBearingClassifierCheck} keys:
+ * <p>Two narrowing invariants on {@link ScalarResolution.Resolved#javaType}:
  *
  * <ul>
- *   <li>{@code scalar-resolver.coercing-non-erased} — {@link ScalarResolution.Resolved#javaType}
- *       is never {@code Object} from a raw / erased Coercing. For built-ins this is a closed
+ *   <li>Never {@code Object} from a raw / erased Coercing. For built-ins this is a closed
  *       table; for consumer scalars this is the post-condition of
  *       {@link #recoverInputType(Coercing)} guarded by the {@link ScalarResolution.Rejected.CoercingErased}
  *       arm.</li>
- *   <li>{@code scalar-resolver.javatype-is-typename} — {@link ScalarResolution.Resolved#javaType}
- *       is a JavaPoet {@link TypeName} ready to drop into a {@code MethodSpec} / {@code RecordSpec}
+ *   <li>A JavaPoet {@link TypeName} ready to drop into a {@code MethodSpec} / {@code RecordSpec}
  *       declaration without further coercion.</li>
  * </ul>
  */
-@LoadBearingClassifierCheck(
-    key = "scalar-resolver.coercing-non-erased",
-    description = "ScalarResolution.Resolved.javaType is never Object from a raw or erased "
-        + "Coercing. Phase 1 built-ins draw from a closed SDL-name → Java-type table; Phase 2 "
-        + "consumer scalars route Object-erased Coercings into ScalarResolution.Rejected."
-        + "CoercingErased before Resolved can be constructed. Callers reading javaType may "
-        + "drop it into a TypeName-shaped slot without an Object-fallback guard.")
-@LoadBearingClassifierCheck(
-    key = "scalar-resolver.javatype-is-typename",
-    description = "ScalarResolution.Resolved.javaType is a JavaPoet TypeName (boxed for "
-        + "primitives) ready to drop into a MethodSpec / RecordSpec declaration without "
-        + "further coercion. Built-in path uses ClassName.get(java.lang.X.class) literals; "
-        + "consumer path boxes any primitive I via box(Class<?>).")
 public final class ScalarTypeResolver {
 
     private ScalarTypeResolver() {}
@@ -504,14 +487,6 @@ public final class ScalarTypeResolver {
      * Phase 2's {@code additionalType} registration switches to {@link #resolveBuiltIn(String)}
      * to recover the owner / field-name pair.
      */
-    @DependsOnClassifierCheck(
-        key = "scalar-resolver.javatype-is-typename",
-        reliesOn = "Returns the same TypeName the Resolved arm would carry; callers drop it "
-            + "into a MethodSpec without further coercion.")
-    @DependsOnClassifierCheck(
-        key = "scalar-resolver.coercing-non-erased",
-        reliesOn = "Returned TypeName is never an Object fallback; built-in table is a closed "
-            + "set of canonical types.")
     public static TypeName builtInJavaType(String scalarName) {
         BuiltIn entry = SPEC_BUILT_INS.get(scalarName);
         return entry == null ? null : ClassName.get(entry.javaType());

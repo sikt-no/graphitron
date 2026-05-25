@@ -310,34 +310,6 @@ final class MutationInputResolver {
      * @param kind one of {@link DmlKind#INSERT} / {@link DmlKind#UPDATE} /
      *             {@link DmlKind#DELETE} / {@link DmlKind#UPSERT}
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "input-field.unbound-with-override-condition-admits-on-mutation-update-delete",
-        description = "InputField.UnboundField with condition.isPresent() && override:true admits "
-            + "on @mutation(typeName: UPDATE | DELETE); the developer takes over the WHERE half via "
-            + "the explicit condition method (R215). INSERT rejects (no WHERE clause for the "
-            + "override to bind into). The admitted carrier participates only on the filter side; "
-            + "the SET-walking emitter never sees it because @value-marked partition is computed "
-            + "from the SDL @value directive set independently. Without this admission, schemas "
-            + "with developer-owned filter logic on mutation inputs would have no way to express "
-            + "the override.")
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "mutation-input.where-columns-cover-pk",
-        description = "On DELETE / UPDATE without `multiRow: true`, the union of contributed "
-            + "filter columns covers the input @table's primary key. Filter-column contributions "
-            + "are sourced per carrier: ColumnField.column() (one column), "
-            + "CompositeColumnField.columns() (N columns), "
-            + "ColumnReferenceField.liftedSourceColumns() (one column on the input's own table), "
-            + "and CompositeColumnReferenceField.liftedSourceColumns() (N columns on the input's "
-            + "own table). Lets the lookup-WHERE emitter assume the WHERE clause matches at most "
-            + "one row per input row.")
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "mutation-input.update-set-fields-equal-value-marked",
-        description = "On DmlKind.UPDATE, tia.setFields() is exactly the set of input fields "
-            + "carrying @value (in SDL declaration order), drawn from the admissible-carrier set "
-            + "(ColumnField / CompositeColumnField / ColumnReferenceField / "
-            + "CompositeColumnReferenceField). On DmlKind.DELETE / DmlKind.INSERT, "
-            + "tia.setFields() is empty. Lets each SET-walking emitter trust the partition "
-            + "source without checking kind or directive presence.")
     Resolved resolveInput(GraphQLFieldDefinition fieldDef, DmlKind kind) {
         if (kind == DmlKind.UPSERT) {
             return new Resolved.Rejected(Rejection.deferred(

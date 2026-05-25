@@ -62,12 +62,6 @@ public final class InlineLookupTableFieldEmitter {
      *                     recursion, where each nesting level declares its own
      *                     {@code SelectedField} local to avoid JLS §14.4.2 shadowing.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "condition-join.target-table-resolved-at-parse",
-        reliesOn = "Reads each hop's targetTable() through HasTargetTable without null-check; "
-            + "depends on BuildContext.resolveConditionJoinTarget pre-resolving ConditionJoin "
-            + "targets and the ConditionJoin compact constructor's null-check as the structural "
-            + "safety net.")
     public static CodeBlock buildSwitchArmBody(ChildField.LookupTableField lf, String parentAlias, String sfName, String outputPackage) {
         return buildArm(lf, parentAlias, sfName, outputPackage);
     }

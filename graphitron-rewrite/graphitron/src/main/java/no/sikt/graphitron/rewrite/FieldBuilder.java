@@ -56,12 +56,10 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableBackedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
-import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
-import no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.LookupMapping.ColumnMapping;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -490,20 +488,6 @@ class FieldBuilder {
      * payload's SDL type isn't an object (e.g. transient classifier callers without a fully
      * resolved schema fragment), pass {@code null} to skip the setter predicate.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "payload-construction.shape-resolved",
-        description = "Every ErrorChannel carries a PayloadConstructionShape arm (AllFieldsCtor "
-            + "or MutableBean) the emitter dispatches on. The two surviving consumers are the "
-            + "catch-arm payloadFactoryLambda (TypeFetcherGenerator) and the validator pre-step's "
-            + "declareEarlyPayloadFromErrors; both wear @DependsOnClassifierCheck on this key.")
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "payload-construction.setter-name-matches-sdl-field",
-        description = "Every MutableBean SetterBinding's setter method name matches the SDL "
-            + "field name under Java-bean conversion (sdl field 'rating' -> 'setRating'). "
-            + "The catch-arm payloadFactoryLambda and the validator pre-step's "
-            + "declareEarlyPayloadSetters call setter.getName() directly into the generated "
-            + "source; the binding guarantees that name resolves to a real method on the "
-            + "payload class.")
     static PayloadConstructionShapeResult resolvePayloadConstructionShape(
             Class<?> payloadCls, java.util.List<String> sdlFieldNames) {
         var ctors = payloadCls.getDeclaredConstructors();
@@ -676,18 +660,6 @@ class FieldBuilder {
      * ({@code TableInterfaceField}, {@code InterfaceField}, {@code UnionField}, {@code ServiceField},
      * {@code ComputedField}) are added in P3.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-table-backed",
-        description = "Table-backed-parent producer of ChildField.InterfaceField and "
-            + "ChildField.UnionField. Both parentSourceKey (a SourceKey with Wrap.Row over the "
-            + "parent table's PK columns) and parentResultType (GraphitronType.ResultType) are "
-            + "resolved at classification time. Lets the multi-table polymorphic emitter "
-            + "delegate to GeneratorUtils.buildRecordParentKeyExtraction with no parallel inline "
-            + "cast-to-Record path. Empty-PK parents are routed through UnclassifiedField above, "
-            + "so the non-empty-columns invariant on SourceKey is unreachable on this "
-            + "construction path. Sibling key '…-record-parent' covers the @record-parent "
-            + "producer in classifyChildFieldOnResultType, which can produce any of the "
-            + "record-parent SourceKey shapes; emitter consumers depend on both keys.")
     private GraphitronField classifyObjectReturnChildField(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType parentTableType, Set<String> expandingTypes) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
@@ -1242,13 +1214,6 @@ class FieldBuilder {
      * {@code buildPaginationSpec}) with one classification + one projection step. See
      * {@code docs/argument-resolution.md}.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "lookup-field-non-empty-args",
-        description = "Rejects '@lookupKey is declared but no argument resolved to a lookup column' "
-            + "with Rejection.structural before the field is constructed as a LookupTableField "
-            + "or QueryLookupTableField. Lets LookupValuesJoinEmitter.buildInputRowsMethod assume "
-            + "requireSlots(field) yields a non-empty Slot list, so the typed Row<N+1>[] arity "
-            + "computation always sees ≥ 2 (idx + ≥ 1 key column) and never emits Row<1>.")
     private TableFieldComponents projectForFilter(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
                                                   TableRef rt, String returnTypeName, List<Rejection> errors) {
         var filters = projectFilters(refs, fieldDef, rt, returnTypeName, errors);
@@ -1337,22 +1302,6 @@ class FieldBuilder {
      * input fields are grouped into a single {@link GeneratedConditionFilter} entry. The condition
      * class is named {@code <returnTypeName>Conditions} and the method {@code <fieldName>Condition}.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "nodeid-fk.direct-fk-keys-match",
-        reliesOn = "The ColumnReferenceArg / CompositeColumnReferenceArg arms read"
-            + " liftedSourceColumns straight into BodyParam.{Eq,In,RowEq,RowIn} on the"
-            + " assumption that the terminal hop's target-side columns positionally correspond"
-            + " to the NodeType keys bound by the decoded record. NodeIdLeafResolver only"
-            + " produces these carriers on the DirectFk arm (TranslatedFk routes to"
-            + " UnclassifiedArg upstream), so the projection skips the per-position check it"
-            + " would otherwise need.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "nodeid-fk.identity-carrying-lift",
-        reliesOn = "The ColumnReferenceArg / CompositeColumnReferenceArg arms read the"
-            + " resolver-supplied liftedSourceColumns slot directly, never re-walking joinPath"
-            + " to compute the lift. The carrier construction path (FieldBuilder.classifyArgument"
-            + " on DirectFk) populates the slot from NodeIdLeafResolver.Resolved.FkTarget.DirectFk,"
-            + " which only succeeds when every adjacent hop pair satisfies the lift predicate.")
     private List<WhereFilter> projectFilters(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef,
                                              TableRef rt, String returnTypeName, List<Rejection> errors) {
         var bodyParams = new ArrayList<BodyParam>();
@@ -1559,46 +1508,6 @@ class FieldBuilder {
      * returns {@code null} whenever any level is missing, so the emitter is allowed to omit the
      * runtime null guard only when every enclosing level is statically non-null.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "body-param.nonnull-is-effective-runtime",
-        description = "Producer contract for the BodyParam.nonNull slot across both"
-            + " BodyParam-construction sites: walkInputFieldConditions and the scalar-arg arms of"
-            + " projectFilters (ColumnArg / CompositeColumnArg / ColumnReferenceArg /"
-            + " CompositeColumnReferenceArg). At the implicitBodyParam / compositeImplicitBodyParam"
-            + " callsites here the value flowing into BodyParam is (effectiveNonNull &&"
-            + " field.nonNull()) — the AND of the top-level argument's declared nullability and"
-            + " every InputField.NestingField on the path, narrowed at each recursion into a"
-            + " NestingField. At the scalar-arg arms in projectFilters the enclosing chain has"
-            + " length zero, so the same AND collapses to the arg's own nonNull(), which is what"
-            + " those arms pass through. Across both producers the BodyParam.nonNull slot carries"
-            + " effective runtime nullability at the call site, not the binding's own SDL-declared"
-            + " nullability. TypeConditionsGenerator reads the flag to choose between an unguarded"
-            + " condition.and(...) and an if (arg != null) guard; relaxing this AND on the walker"
-            + " restores the silent .in(null) -> false cascade that motivated R230.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "input-field.unbound-implies-no-column",
-        reliesOn = "The UnboundField arm reads condition.isPresent() && override to decide between "
-            + "emitting the explicit ConditionFilter and routing to the consumer-side rejection "
-            + "channel. No column lookup is re-run at this site; the classifier's guarantee that "
-            + "UnboundField never carries a column binding is what lets the arm trust "
-            + "uf.attemptedColumnName() as the Levenshtein-hint payload without re-resolving.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "nodeid-fk.direct-fk-keys-match",
-        reliesOn = "implicitBodyParam / compositeImplicitBodyParam consume"
-            + " InputField.{Column,CompositeColumn}ReferenceField carriers built only on the"
-            + " DirectFk arm; the TranslatedFk arm routes upstream to InputFieldResolution.Unresolved"
-            + " so this walker never sees a JOIN-with-translation shape that would need a separate"
-            + " FK-source-column rebinding step.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "nodeid-fk.identity-carrying-lift",
-        reliesOn = "The ColumnReferenceField / CompositeColumnReferenceField arms read the"
-            + " resolver-supplied liftedSourceColumns slot directly (rf.liftedSourceColumns()"
-            + " and ccrf.liftedSourceColumns()), never re-walking joinPath to compute the lift."
-            + " Carriers reaching this walker were built on DirectFk (post-R131, all input-field"
-            + " @nodeId arms route through NodeIdLeafResolver.resolve, which only succeeds when"
-            + " every adjacent hop pair satisfies the lift predicate; the id-reference synthesis"
-            + " shim is the only remaining non-resolver intake but it produces single-hop paths"
-            + " where the lift predicate is vacuous).")
     private void walkInputFieldConditions(
             List<InputField> fields, String outerArgName, List<String> pathPrefix,
             boolean enclosingOverride, boolean effectiveNonNull, Set<String> lookupBoundNames,
@@ -1968,14 +1877,6 @@ class FieldBuilder {
         return new ErrorsField(parentTypeName, name, location, errorTypes, transport);
     }
 
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "error-channel.local-context-transport",
-        reliesOn = "Selects Transport.LocalContext on the ErrorsField only when a producer "
-            + "binding (DmlEmitted or ServiceEmitted) is present for the parent payload type, "
-            + "which is the structural guarantee that the mutation wrapper populates "
-            + "env.getLocalContext() at request time. Without a producer binding the parent has "
-            + "no localContext-populating wrapper, so the errors field must read from a payload "
-            + "accessor instead.")
     private ChildField.Transport transportForParent(GraphQLFieldDefinition fieldDef,
             String errorsFieldName, String parentTypeName, Class<?> parentBackingClass) {
         // Active-channel gate: a parent qualifies as carrying an error channel iff a producer-
@@ -2122,15 +2023,6 @@ class FieldBuilder {
      * structural check on the parameter is that it is a List/Iterable so the catch arm's
      * synthesized payload-factory lambda compiles.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "error-channel.mappings-constant",
-        description = "Every classified ErrorChannel carries a non-null mappingsConstantName "
-            + "derived from the payload class's simple name (toScreamingSnake) at this point. "
-            + "The §3 cross-field hash-suffix dedup runs as a classifier-side pass "
-            + "(MappingsConstantNameDedup) on the full classified-fields map before the schema "
-            + "model is constructed, so two channels for the same payload class with different "
-            + "handler shapes receive distinct constant names; the ErrorMappingsClassGenerator "
-            + "consumes the resolved name directly.")
     private ErrorChannelResult resolveErrorChannel(ReturnTypeRef returnType) {
         // Channel detection runs against @record payloads; @table payloads can in principle
         // carry an errors field too, but synthesizing a payload-factory there requires shape
@@ -2612,9 +2504,7 @@ class FieldBuilder {
      * {@code @service} and {@code @tableMethod} variants don't need that check (their return
      * shapes are pinned by the catalog's strict-return guarantee), so this helper omits it.
      *
-     * <p>Both helpers call into the same {@link #checkDeclaredCheckedExceptions} utility; the
-     * {@code service-method.declared-exceptions-covered} {@link no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck}
-     * annotation lives on {@link #buildServiceField} as the canonical producer.
+     * <p>Both helpers call into the same {@link #checkDeclaredCheckedExceptions} utility.
      */
     private GraphitronField buildMethodBackedWithChannel(
             ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
@@ -2650,14 +2540,6 @@ class FieldBuilder {
      * shapes (table-bound, pojo-result, scalar) are screened upstream by
      * {@code ServiceCatalog.reflectServiceMethod} and {@code ServiceDirectiveResolver}.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "service-method.declared-exceptions-covered",
-        description = "Declared-exception match check: every non-exempt checked "
-            + "exception declared by the @service method must be covered by at least one "
-            + "handler on the surrounding field's ErrorChannel (per CheckedExceptionMatcher's "
-            + "match rule). Unmatched declared exceptions surface as UnclassifiedField at "
-            + "classify time rather than redacting silently at runtime. Exempts "
-            + "InterruptedException and IOException as special cases.")
     private GraphitronField buildServiceField(
             ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
             String parentTypeName, String fieldName,
@@ -2747,14 +2629,6 @@ class FieldBuilder {
      * {@code resolveErrorChannel} therefore returns {@code NoChannel} by construction here; the
      * call is preserved so the model's slot stays uniformly wired.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "dml-mutation-shape-guarantees",
-        description = "Resolves DmlReturnExpression to one of four arms (EncodedSingle / "
-            + "EncodedList / ProjectedSingle / ProjectedList), so DML emitters pattern-match a "
-            + "single sealed dispatch with no instanceof ScalarReturnType, no wrapper().isList() "
-            + "lookup, and no Optional.orElseThrow() on the encode helper. Combined with the "
-            + "input-shape invariants (Invariants #1 and #7-#13), the entire DML emitter branch "
-            + "is total without defensive checks.")
     private GraphitronField buildDmlField(
             ReturnTypeRef returnType, String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef,
@@ -2784,16 +2658,6 @@ class FieldBuilder {
      *
      * <p>Returns {@code null} when the tables match; a non-null rejection reason otherwise.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "mutation-dml-record-field.data-table-equals-input-table",
-        description = "Rejects @mutation fields whose single-record DML carrier's data field "
-            + "binds to a table other than the input @table. Lets the mutation fetcher's "
-            + "PK-only RETURNING and the data-field fetcher's WHERE-PK-IN response SELECT "
-            + "share one column set without a defensive cross-table check; jOOQ would "
-            + "otherwise reject the RETURNING projection or the SELECT predicate at runtime. "
-            + "For ID-element carriers (R156, DELETE-only), the encoder's table replaces "
-            + "the element table in the equality check, since the encoded ID's NodeType pins "
-            + "the carrier to the input @table by structural identity.")
     private static String requireDmlDataTableMatchesInputTable(
             TableRef inputTable, BuildContext.DmlElementKind.Table tbl, DmlKind kind,
             String mutationFieldName, String carrierTypeName) {
@@ -2878,19 +2742,6 @@ class FieldBuilder {
         record RuleViolation(String reason) implements StructuralDmlErrorChannel {}
     }
 
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "error-channel.local-context-transport",
-        description = "A carrier admitted with ErrorChannel.LocalContext has a data field whose "
-            + "fetcher honors the null-source short-circuit guard "
-            + "(FetcherEmitter.java:273, 'if (source == null) return null;'). The catch arm "
-            + "emits 'data(null).localContext(List.of(t)).build()'; the data side of the "
-            + "response renders coherently only because the data-field fetcher refuses to "
-            + "run on a null source. Today only SingleRecordTableField cardinality variants and "
-            + "the DELETE-returning carriers are reachable through structural detection, and "
-            + "all honor this guard; this site is the load-bearing producer for the guarantee, "
-            + "and a future data-field shape that doesn't short-circuit on null must be rejected "
-            + "at this classifier (or at the validator mirror in GraphitronSchemaValidator) before "
-            + "reaching the emitter.")
     private StructuralDmlErrorChannel detectStructuralDmlErrorChannel(String payloadSdlName) {
         if (payloadSdlName == null) return new StructuralDmlErrorChannel.None();
         var payloadType = ctx.schema.getType(payloadSdlName);
@@ -3965,14 +3816,6 @@ class FieldBuilder {
      * with non-null {@code fqClassName} (the {@code parentBackingClass} threaded from
      * {@link TypeBuilder#recordBackingClasses()}).
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "record-binding.producer-agreement",
-        reliesOn = "Consumes parentBackingClass as the class field accessors will be emitted against. "
-            + "R96's RecordBindingResolver guarantees that every reachable SDL type with multiple "
-            + "producer-observation sites resolves to a single agreed reflected Class — or surfaces "
-            + "Rejection.AuthorError.RecordBindingMultiProducer and halts the build before "
-            + "field classification runs. Lets the resolver run ClassAccessorResolver against one "
-            + "stable class rather than guarding against producer-disagreement.")
     private AccessorResolution resolveRecordAccessor(GraphQLFieldDefinition fieldDef, String accessorBaseName,
             GraphitronType.ResultType parentResultType, Class<?> parentBackingClass) {
         if (parentBackingClass == null) return null;
@@ -4034,18 +3877,6 @@ class FieldBuilder {
      * <p>List wrappers map to {@code java.util.List} regardless of element type — generics are
      * erased to raw classes for the assignability check.
      */
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "scalar-resolver.javatype-is-typename",
-        reliesOn = "Resolves the scalar's Java type via ScalarType.resolution().javaType() and "
-            + "uses the rendered FQN as input to Class.forName for the reflect Type. The boxed-"
-            + "form invariant lets the assignability check compare against the same shape "
-            + "graphql-java produces in input maps.")
-    @no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck(
-        key = "scalar-resolver.coercing-non-erased",
-        reliesOn = "Returned Class is never Object from an erased Coercing; Resolved arms construct "
-            + "only after the erasure guard. The Object fallback below now only fires for "
-            + "non-classified types or for resolved scalars whose Java class is genuinely absent "
-            + "from the codegen classloader.")
     private java.lang.reflect.Type mapGraphQLTypeToReflectType(GraphQLType t) {
         GraphQLType current = t;
         int listDepth = 0;
@@ -4108,11 +3939,6 @@ class FieldBuilder {
      * unconditionally reads {@code fk.sourceSideColumns()} because record parents never batch by
      * parent PK.
      */
-    @DependsOnClassifierCheck(
-        key = "fk-join.slots-oriented-source-and-target",
-        reliesOn = "Reads fk.sourceSideColumns() to populate the SourceKey.columns key tuple "
-            + "with the parent-side columns of the FK; depends on synthesis-time slot orientation "
-            + "so the same call works whether the parent or the child holds the FK constraint.")
     private static SplitQuerySource deriveSplitQuerySource(
             TableRef parentTable, List<JoinStep> path, ReturnTypeRef.TableBoundReturnType returnType) {
         boolean isList = returnType.wrapper().isList();
@@ -4177,10 +4003,6 @@ class FieldBuilder {
      * {@link GraphitronType.ResultType} (jOOQ table record / jOOQ record / Java record / typed
      * POJO) to extract scalar values and build the key via {@code DSL.row(...)}.
      */
-    @DependsOnClassifierCheck(
-        key = "fk-join.slots-oriented-source-and-target",
-        reliesOn = "Reads fkJoin.sourceSideColumns() to build a record-parent SourceKey.columns "
-            + "key tuple over the parent-side columns of the FK, regardless of FK direction.")
     private static RecordParentSource deriveFkRecordParentSource(
             List<JoinStep> joinPath, GraphitronType.ResultType parentResultType,
             ReturnTypeRef.TableBoundReturnType tb) {
@@ -4293,30 +4115,6 @@ class FieldBuilder {
         record CardinalityMismatch(String message) implements AccessorMatch {}
     }
 
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "accessor-rowkey-shape-resolved",
-        description = "Returns AccessorDerivation.Ok only when reflection has confirmed (a) a "
-            + "single matching public zero-arg non-bridge non-synthetic instance accessor on the "
-            + "parent backing class, (b) returning X, List<X>, or Set<X> for a concrete X "
-            + "extending org.jooq.TableRecord, and (c) X's mapped jOOQ table identical to the "
-            + "field's @table return. The matched accessor's name is the value of @field(name:) "
-            + "when the directive is present on a free-form @record parent, else the GraphQL "
-            + "field name. The two emitter arms (buildAccessorKeySingle / "
-            + "buildAccessorKeyMany in GeneratorUtils) cast env.getSource() to the resolved "
-            + "backing class and invoke the accessor by name without instanceof guards or null "
-            + "checks; TypeFetcherGenerator.buildRecordBasedDataFetcher materialises the loader "
-            + "value type as Record without defending against a wider declared accessor return.")
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "accessor-rowkey-cardinality-matches-field",
-        description = "Returns SourceKey.Cardinality.ONE only when "
-            + "field.returnType().wrapper().isList() is false (Single accessor on a single field); "
-            + "returns Cardinality.MANY with LOAD_MANY dispatch only when it is true (Many "
-            + "accessor on a list field); mismatched cells become "
-            + "AccessorDerivation.CardinalityMismatch rejections. "
-            + "TypeFetcherGenerator.buildRecordBasedDataFetcher's "
-            + "((dispatch == LOAD_MANY || !isList) → valueType = Record) rule depends on this; "
-            + "an accessor-many SourceKey on a non-list field would emit code expecting "
-            + "List<Record> from a loadMany that supplies Record, miscompiling generated *Fetchers.")
     private AccessorDerivation deriveAccessorRecordParentSource(
             String fieldName, String accessorBaseName, ReturnTypeRef.TableBoundReturnType tb,
             GraphitronType.ResultType parentResultType) {
@@ -4492,20 +4290,6 @@ class FieldBuilder {
      * the appropriate {@code ChildField} variant. Any rejection at either step lands as
      * {@link UnclassifiedField}.
      */
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "multitable-polymorphic-child.parent-key-extraction-is-batchkey-driven-record-parent",
-        description = "@record-parent producer of ChildField.InterfaceField and "
-            + "ChildField.UnionField. Both parentSourceKey: SourceKey (Wrap.Row + ColumnRead "
-            + "when the parent is JooqTableRecord, Wrap.Record + AccessorCall when the parent "
-            + "is Pojo or JavaRecord with a typed hub accessor; @sourceRows lifters are deferred "
-            + "per spec Out of scope) and parentResultType: GraphitronType.ResultType are "
-            + "resolved at classification time. Lets the multi-table polymorphic emitter "
-            + "delegate to GeneratorUtils.buildRecordParentKeyExtraction with no parallel inline "
-            + "cast-to-Record path. Empty-PK / unresolved-hub parents are routed through "
-            + "UnclassifiedField, so the JoinStep.LiftedHop and SourceKey non-empty-columns "
-            + "invariants are unreachable on this construction path. Sibling key '…-table-backed' "
-            + "covers the table-backed producer in classifyObjectReturnChildField; emitter "
-            + "consumers depend on both keys.")
     private GraphitronField classifyRecordParentPolymorphicChild(
             GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
             SourceLocation location, String elementTypeName,
@@ -4656,21 +4440,6 @@ class FieldBuilder {
         };
     }
 
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "accessor-rowkey-shape-resolved-against-hub",
-        description = "Returns Resolved only when reflection has confirmed (a) a single matching "
-            + "public zero-arg non-bridge non-synthetic instance accessor on the @record-backed "
-            + "parent's backing class, (b) returning X, List<X>, or Set<X> for a concrete X "
-            + "extending org.jooq.TableRecord, and (c) X's mapped jOOQ table is taken to be the "
-            + "polymorphic hub the participants share an FK to. The matched accessor's name is "
-            + "the value of @field(name:) when the directive is present on a free-form @record "
-            + "parent, else the GraphQL field name. Identity contract: the accessor's "
-            + "element table is the discovered hub (not pinned against an external @table, there "
-            + "is none on a polymorphic return). Downstream, resolveChildPolymorphicJoinPaths "
-            + "verifies each participant has a unique FK to the discovered hub and rejects "
-            + "structurally otherwise; "
-            + "GeneratorUtils.buildAccessorKeySingle / buildAccessorKeyMany cast env.getSource() to "
-            + "the parent backing class and invoke the accessor by name without instanceof guards.")
     private PolymorphicRecordParentResolution derivePolymorphicHubSource(
             String fieldName, String accessorBaseName, boolean fieldIsList,
             GraphitronType.ResultType parentResultType) {
@@ -4794,13 +4563,6 @@ class FieldBuilder {
         return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
-    @no.sikt.graphitron.rewrite.model.LoadBearingClassifierCheck(
-        key = "column-field-requires-table-backed-parent",
-        description = "ChildField.ColumnField is constructed only inside this method (sole "
-            + "construction site at the tail return), and this method is only entered for "
-            + "parents that are table-backed types. Lets the TypeFetcherGenerator switch arm "
-            + "treat parentTable == null as a classifier-invariant violation rather than an "
-            + "expected runtime branch.")
     private GraphitronField classifyChildFieldOnTableType(GraphQLFieldDefinition fieldDef, String parentTypeName, TableBackedType tableType, Set<String> expandingTypes) {
         String name = fieldDef.getName();
         SourceLocation location = locationOf(fieldDef);
@@ -5067,12 +4829,6 @@ class FieldBuilder {
      * target-side columns positionally match the target NodeType's {@code keyColumns}.
      * {@code null} otherwise (composite-key with non-mirroring FK, multi-hop, condition-join).
      */
-    @DependsOnClassifierCheck(
-        key = "fk-join.slots-oriented-source-and-target",
-        reliesOn = "Reads fk.targetSideColumns() and fk.sourceSideColumns() to test whether the "
-            + "single-hop FK's target-side columns mirror the target NodeType's keyColumns; the "
-            + "returned source-side columns become a NodeId-translation predicate over the parent "
-            + "table without a JOIN.")
     private static List<ColumnRef> fkMirrorSourceColumns(TableRef parentTable, List<JoinStep> joinPath,
                                                           List<ColumnRef> targetKeyColumns) {
         if (joinPath.size() != 1) return null;

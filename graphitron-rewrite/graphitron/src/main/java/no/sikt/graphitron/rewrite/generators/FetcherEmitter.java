@@ -10,7 +10,6 @@ import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ColumnRef;
-import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -50,13 +49,6 @@ public final class FetcherEmitter {
      * @param resultType    the parent type's {@code @record} backing, or {@code null}
      * @param outputPackage the base output package (e.g. {@code no.sikt.graphql})
      */
-    @DependsOnClassifierCheck(
-        key = "error-channel.local-context-transport",
-        reliesOn = "The Transport.LocalContext arm of the ErrorsField switch emits "
-            + "'env -> env.getLocalContext()'. That reader is only correct when the carrier's "
-            + "catch arm has populated env.getLocalContext() with the errors list, which is "
-            + "the contract FieldBuilder.detectStructuralDmlErrorChannel pins as the load-bearing "
-            + "guarantee.")
     public static CodeBlock dataFetcherValue(
             GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
@@ -243,40 +235,6 @@ public final class FetcherEmitter {
      * lookups, which the loop skips; the upstream contract is that every PK in {@code source}
      * resolves, so a skipped slot is a programming error, not a data condition.
      */
-    @DependsOnClassifierCheck(
-        key = "mutation-dml-record-field.data-table-equals-input-table",
-        reliesOn = "The response SELECT's WHERE predicate reads PK column values off the "
-            + "upstream source against the data table. The load-bearing classifier check "
-            + "forces the data field's element table PK columns to equal the DML input "
-            + "@table PK columns, so source records carry the columns the SELECT predicate "
-            + "names; without the equality the read would request a column the upstream did "
-            + "not project. (Applies to the Wrap.Record arm; the Wrap.TableRecord arm reads "
-            + "PKs off the typed XRecord, where the producer-strict-return check pins the "
-            + "record class to the data table by construction.)")
-    @DependsOnClassifierCheck(
-        key = "source-key.result-row-walk-target-aligned-empty-path",
-        reliesOn = "The SingleRecordTableField permit's compact constructor requires "
-            + "Reader.ResultRowWalk, and SourceKey's compact constructor pins ResultRowWalk to "
-            + "Wrap.Record or Wrap.TableRecord(target.recordClass()) with empty path. Each "
-            + "wrap-permit arm types the source cast accordingly: Wrap.Record reads "
-            + "Result<RecordN<...>> / RecordN<...>; Wrap.TableRecord reads List<XRecord> / "
-            + "XRecord, where the typed cast is licensed by this invariant (the typed XRecord "
-            + "class names the same table the carrier is target-aligned to). Other "
-            + "Wrap.TableRecord consumers (e.g. GeneratorUtils.buildKeyExtraction's "
-            + "((Record) env.getSource()).into(Tables.X) posture) operate under different "
-            + "Reader invariants and read the source through the erased Record shape; the "
-            + "typed cast posture here is carrier-specific.")
-    @DependsOnClassifierCheck(
-        key = "output-fields.uniform-domain-return-type",
-        reliesOn = "Emits one source-Java-type per wrap arm without dispatching on the runtime "
-            + "source. The carrier's upstream producer is observed at classify time (DML "
-            + "mutation vs @service-on-Mutation); the R204 validator guarantees that exactly "
-            + "one DomainReturnType arm reaches the carrier's SDL payload type, so the wrap "
-            + "arm picked at emit time matches what the producer will actually put at "
-            + "env.getSource() at request time. Without the check, a second producer reaching "
-            + "the same payload SDL type with a different DomainReturnType would feed this "
-            + "switch's pre-committed source cast a value of the other arm's Java type and "
-            + "ClassCastException at request time.")
     private static CodeBlock buildSingleRecordTableFetcherValue(
             ChildField.SingleRecordTableField srtf, String outputPackage) {
         var sk = srtf.sourceKey();
@@ -298,14 +256,6 @@ public final class FetcherEmitter {
      * {@code RecordN} APIs that the {@code Wrap.TableRecord} arm replaces with positional
      * {@code record.get(<Table.PK>)} reads.
      */
-    @DependsOnClassifierCheck(
-        key = "error-channel.local-context-transport",
-        reliesOn = "Emits 'if (source == null) return null' before any source.value1()/getValues() "
-            + "read. Pairs with the validator allow-list's inclusion of SingleRecordTableField: a "
-            + "LocalContext-bound carrier's sentinel source whose PK columns are null reaches this "
-            + "fetcher, the guard short-circuits, and the SDL data field renders null while the "
-            + "errors field reads env.getLocalContext(). Removing the guard would dereference the "
-            + "sentinel's null PK and NPE at request time.")
     private static CodeBlock buildSingleRecordTableFetcherValueRecordWrap(
             ChildField.SingleRecordTableField srtf, String outputPackage) {
         var table = srtf.returnType().table();
@@ -454,14 +404,6 @@ public final class FetcherEmitter {
      * typed {@code record.get(<Table.PK_FIELD>)} accessors, paralleling the {@code Wrap.Record}
      * arm's map-key shape but typed against {@code XRecord} instead of {@code RecordN}.
      */
-    @DependsOnClassifierCheck(
-        key = "error-channel.local-context-transport",
-        reliesOn = "Emits 'if (source == null) return null' before any record.get(<Table.PK>) "
-            + "read. Pairs with the validator allow-list's inclusion of SingleRecordTableField: a "
-            + "LocalContext-bound carrier's sentinel source whose PK columns are null reaches this "
-            + "fetcher, the guard short-circuits, and the SDL data field renders null while the "
-            + "errors field reads env.getLocalContext(). Removing the guard would dereference the "
-            + "sentinel's null record state and NPE at request time.")
     private static CodeBlock buildSingleRecordTableFetcherValueTableRecordWrap(
             ChildField.SingleRecordTableField srtf,
             SourceKey.Wrap.TableRecord tableRecordWrap,
@@ -616,15 +558,6 @@ public final class FetcherEmitter {
      * slot directly. No follow-up SELECT runs — the deleted row's PK is the entire post-image
      * and lives in the upstream Record.
      */
-    @DependsOnClassifierCheck(
-        key = "error-channel.local-context-transport",
-        reliesOn = "Emits 'if (source == null) return null' before any record.get(<PK column>) "
-            + "read in both single-shaped and list-shaped wrapper arms. Pairs with the validator "
-            + "allow-list's inclusion of SingleRecordIdFieldFromReturning: a LocalContext-bound "
-            + "carrier's sentinel source whose PK columns are null reaches this fetcher, the "
-            + "guard short-circuits, and the SDL data field renders null while the errors field "
-            + "reads env.getLocalContext(). Removing the guard would feed null PKs into the "
-            + "NodeId encoder and NPE at request time.")
     private static CodeBlock buildSingleRecordIdFromReturningFetcherValue(
             ChildField.SingleRecordIdFieldFromReturning carrier) {
         var encoder = carrier.encode().encodeMethod();
@@ -687,8 +620,7 @@ public final class FetcherEmitter {
      * <p>The synthesis approach relies on
      * {@code BuildContext.classifyDeleteTableProjection} rejecting any element-type field that
      * cannot resolve from a PK-only synthesized Record (FK references, child collections,
-     * computed fields, {@code @service}-resolved fields). The {@code @DependsOnClassifierCheck}
-     * annotation below pins that producer-consumer pair; relaxing the rejection rule (e.g.
+     * computed fields, {@code @service}-resolved fields). Relaxing the rejection rule (e.g.
      * admitting a {@code ColumnReferenceField} as nullable) would surface here as a runtime
      * error when the per-field fetcher tries to read an aliased joined column off a synthesized
      * Record that doesn't carry it.
@@ -712,25 +644,6 @@ public final class FetcherEmitter {
      * {@code @table} on both sides; a future change that synthesizes a Record over a different
      * jOOQ-generated class than the source RETURNING reads from would need to revisit this.
      */
-    @DependsOnClassifierCheck(
-        key = "mutation-delete-carrier.pk-resolution-projection-clean",
-        reliesOn = "BuildContext.classifyDeleteTableProjection rejects DELETE @table-element "
-            + "projections on any PerFieldOutcome.NonPkNonNullable, ServiceField, or "
-            + "UnsupportedField arm. The synthesized PK-only Record this fetcher returns can "
-            + "only resolve plain ColumnField on the element table (PK columns populated; non-PK "
-            + "columns null). Field shapes that need aliased joined columns or runtime services "
-            + "(FK references, @service-resolved fields, child collections) cannot resolve from "
-            + "a synthesized PK-only Record; relaxing the classifier rejection surfaces here as "
-            + "per-field ColumnFetcher errors at request time.")
-    @DependsOnClassifierCheck(
-        key = "error-channel.local-context-transport",
-        reliesOn = "Emits 'if (source == null) return null' before any __src.get(<PK Field>) "
-            + "read in both single-shaped and list-shaped wrapper arms. Pairs with the validator "
-            + "allow-list's inclusion of SingleRecordTableFieldFromReturning: a LocalContext-bound "
-            + "carrier's sentinel source whose PK columns are null reaches this fetcher, the "
-            + "guard short-circuits, and the SDL data field renders null while the errors field "
-            + "reads env.getLocalContext(). Removing the guard would dereference the sentinel's "
-            + "null record and NPE on the PK copy at request time.")
     private static CodeBlock buildSingleRecordTableFromReturningFetcherValue(
             ChildField.SingleRecordTableFieldFromReturning carrier) {
         var table = carrier.returnType().table();
@@ -780,12 +693,6 @@ public final class FetcherEmitter {
         return body.build();
     }
 
-    @DependsOnClassifierCheck(
-        key = "class-accessor-resolver-shape-guarantee",
-        reliesOn = "Reads the pre-resolved Method or Field handle off AccessorResolution.Resolved. "
-            + "FieldBuilder routes Rejected through UnclassifiedField, and the slot type on "
-            + "PropertyField/RecordField is AccessorResolution.Resolved (statically), so the @record-Java "
-            + "branch below has no Rejected or runtime-heuristic case to fall back to.")
     private static CodeBlock propertyOrRecordValue(
             String columnName, ColumnRef column, GraphitronType.ResultType resultType,
             AccessorResolution.Resolved accessor, String outputPackage) {

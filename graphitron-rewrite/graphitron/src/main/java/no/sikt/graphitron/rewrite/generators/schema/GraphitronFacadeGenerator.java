@@ -7,7 +7,6 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;
-import no.sikt.graphitron.rewrite.model.DependsOnClassifierCheck;
 import no.sikt.graphitron.rewrite.model.ResolvedContextArg;
 
 import javax.lang.model.element.Modifier;
@@ -40,13 +39,6 @@ public final class GraphitronFacadeGenerator {
 
     private GraphitronFacadeGenerator() {}
 
-    @DependsOnClassifierCheck(
-        key = "context-argument.type-agreement",
-        reliesOn = "Reads ResolvedContextArg.javaType verbatim into the factory's typed parameter "
-            + "list and the graphQLContext.put value; the cross-site agreement classifier "
-            + "guarantees a single TypeName per name, so the factory body never has to pick a "
-            + "winner among disagreeing sites."
-    )
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage, boolean federationLink) {
         String schemaPackage = outputPackage + ".schema";
         var graphQLSchema = ClassName.get("graphql.schema", "GraphQLSchema");

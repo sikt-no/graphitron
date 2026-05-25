@@ -107,21 +107,6 @@ public sealed interface JoinStep permits JoinStep.FkJoin, JoinStep.ConditionJoin
          * column tuple) rather than slot-by-slot iteration. The order matches {@link #slots()};
          * index {@code i} is {@code slots[i].sourceSide()}.
          */
-        @LoadBearingClassifierCheck(
-            key = "fk-join.slots-oriented-source-and-target",
-            description = "BuildContext.synthesizeFkJoin orients each FkSlot at synthesis "
-                + "time using sourceSqlName.equalsIgnoreCase(f.getTable().getName()): "
-                + "sourceSide is always the column on the hop's source table, targetSide "
-                + "always the column on the hop's target table, regardless of which end of "
-                + "the catalog FK each maps to. Readers that previously consumed "
-                + "fk.sourceColumns() under an implicit FK-on-source precondition "
-                + "(parent-holds-FK in the older vocabulary) — to obtain 'the source-table "
-                + "column' for a JOIN predicate or SourceKey entry-point tuple — now read "
-                + "sourceSide() without the precondition: orientation is structural, not "
-                + "dispatched. "
-                + "LifterSlot folds both sides onto a single column by construction "
-                + "(DataLoader key tuple IS target-column tuple) so the same accessor reads "
-                + "uniformly across FkJoin and LiftedHop variants.")
         default List<ColumnRef> sourceSideColumns() {
             List<ColumnRef> out = new ArrayList<>(slotCount());
             for (JoinSlot slot : slots()) out.add(slot.sourceSide());
