@@ -123,8 +123,8 @@ If the rebase conflicts, surface and stop until resolved. Don't review a
 # Read first (in this order)
 
 1. {{spec-path}}  (the spec under review)
-2. graphitron-rewrite/docs/rewrite-design-principles.adoc  (technical principles)
-3. graphitron-rewrite/docs/workflow.adoc  (esp. "Documentation names only live tests/code")
+2. graphitron-rewrite/docs/rewrite-design-principles.adoc  (technical principles, esp. "Documentation names only live tests/code")
+3. graphitron-rewrite/docs/workflow.adoc  (state machine + reviewer-rule paragraph)
 4. graphitron-rewrite/docs/README.adoc  (architectural orientation)
 
 # What to assess
