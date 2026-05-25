@@ -139,6 +139,10 @@ Phase 4 done means:
 - Pipeline-tier tests still pin SDL → TypeSpec shape end-to-end (no regression).
 - `graphitron-sakila-example` compile still passes (the downstream backstop is still doing its job).
 
+#### Shipped: Delete (2026-05-25)
+
+Shipped at 246b349. 183 annotation blocks stripped across 50 Java files; four annotation classes, `LoadBearingGuaranteeAuditTest`, and the `auditfixture/` package deleted. `PkResolutionEmitterReachabilityTest.classifyDeleteTableProjectionWearsLoadBearingClassifierCheckPin` dropped along with its annotation dependency; the sibling sealed-arm symmetry test still pins the rejection contract structurally. `|c-signal|=0` confirmed: Phase 4 step 4 (test-side replacements) had zero pairs to handle. Build green on JDK 25.
+
 ### Phase 5: Knock-on edits
 
 Runs under Delete, Shrink, and Demote (lands together with Phase 4 or as a tail commit). Under Hold, Phase 5 is a no-op — the existing roadmap-item references and test javadocs are consistent with the preserved annotation sites and don't need rephrasing.
