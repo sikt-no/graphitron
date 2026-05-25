@@ -95,6 +95,18 @@ The thresholds are guides, not bright lines. Phase 3 may land in the gap between
 
 Commit the chosen direction as a Spec → Spec revision with the rationale and the decision-rule application against the actual counts. Under Hold, this commit closes R237 (Phase 4 and Phase 5 do not run). Under Delete, Shrink, or Demote, the commit gates Phase 4 below.
 
+#### Decision: Delete (2026-05-25)
+
+Applying the decision rule to Phase 2's counts:
+
+- **|c-signal| = 0**, well under Delete's `≤ 3` guide. The seven (c) keys all have non-empty silent-regression cells in principle (a producer relaxation could break the LSP consumer in concrete ways: missing completion items, wrong hover content, mis-routed diagnostic URIs), but each is mechanically pinned by an existing LSP-tier test (`FieldCompletionsTest.columnNameCompletionReturnsTableColumns`, `HoversTest.fieldHoverShowsColumnMetadata`, `DiagnosticsTest.unknownColumnNameProducesError`, `DeclarationHoversTest.cursorOnTypeNameProducesTypeClassificationHover`, `ValidatorDiagnosticsTest.authorErrorMapsToErrorSeverityWithValidatorSource`, etc.). The producer-side relaxation that bypasses the type fails those tests at LSP-tier.
+- **No surviving signal-bearing pair would mis-emit downstream without the consumer-module tests catching it.** Phase 4 step 4 (test-side replacements for `|c-signal|` keys under Delete) has no work to do — `|c-signal| = 0` means there are zero pairs needing a test-side replacement.
+- Cardinality of (c) alone (= 7) is above Delete's rough guide, but the discriminator is `|c-signal|`, not `|c|`'s cardinality. With `|c-signal| = 0`, the cross-module documentation link earns no cost.
+
+Delete proceeds: `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` annotation classes retire, `LoadBearingGuaranteeAuditTest` and the `auditfixture/` package retire, every annotation site drops. The two Backlog items filed in Phase 2 (R239 single-record `ColumnField.parentTable` lift, R240 multi-record type-token threading) ship independently as orthogonal type-system improvements; neither blocks Phase 4. Pre-lift signatures are fine; once the lifts ship the contracts are mechanically enforced rather than test-pinned.
+
+This commit gates Phase 4.
+
 ### Phase 4: Implementation
 
 Runs only if Phase 3 selected Delete, Shrink, or Demote. Under Hold, Phase 4 is a no-op and R237 closes at the Phase 3 commit.
