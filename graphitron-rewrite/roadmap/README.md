@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R19` | Rebase and squash rewrite branch onto main | Ready |  | [plan](history-squash.md) |
-| `R222` | Input model: walker-driven carriers on output fields | Spec | 2026-05-24 <sub>created 2026-05-21</sub> | [plan](input-model-dimensional-pivot.md) |
+| `R222` | Input model: walker-driven carriers on output fields | Spec | 2026-05-25 <sub>created 2026-05-21</sub> | [plan](input-model-dimensional-pivot.md) |
 | `R45` | Multi-tenant routing on top of the schema-driven ExecutionInput factory | Spec | 2026-05-20 | [plan](tenant-routing-and-execution-input.md) |
 | `R23` | Multi-parent `NestingField` sharing: `TableField` arm | Spec |  | [plan](nestingfield-multiparent-tablefield.md) |
 | `R186` | Nested input types in @mutation fields | Spec | 2026-05-20 | [plan](nested-input-types-in-mutation-fields.md) |
