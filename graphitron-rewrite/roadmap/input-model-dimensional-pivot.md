@@ -577,6 +577,7 @@ Acceptance: no consumer references `GraphitronType.InputType`, `TableInputType`,
 
 ### Phase 4: delete the legacy model
 
+- **Synthetic-types audit (gates the data-source switch).** Before deleting the legacy permits, audit that the input-type set in `GraphitronSchema.types` (the `InputType` / `TableInputType` permits) matches `GraphQLSchema.getInputObjectTypes()` exactly, modulo the documented skip list (`_`-prefixed federation / introspection types, `InputDirectiveInputTypes.NAMES`). An empty diff is the gate. If any input type appears in the model but not in graphql-java's registry, a generator or transformer has been adding schema elements through the internal model side channel; that's the drift mode this audit catches. Recovery: register the missing type with the graphql-java schema (so it appears on `GraphQLSchema.getInputObjectTypes()`), then re-run the audit. One-time proof that switching `InputTypeGenerator`'s data source over to graphql-java is safe.
 - Remove `InputType`, `TableInputType`, `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType` from `GraphitronType.permits`.
 - Delete the `HasInputRecordShape` capability marker class — orphaned once the legacy `*InputType` permits delete above (the new carrier lives as a slot on `OutputField`, not via the marker).
 - Delete `ArgumentRef.InputTypeArg.TableInputArg`, `PlainInputArg`. Args no longer carry classified state.
@@ -584,7 +585,7 @@ Acceptance: no consumer references `GraphitronType.InputType`, `TableInputType`,
 - Delete `TypeBuilder.findReturnTablesForInput` and the `Map<String, TableRef>` cache it builds.
 - Switch `InputTypeGenerator`'s data source from `schema.types()` + `schemaType()` lookup on the deleted permits to direct iteration over `GraphQLSchema.getInputObjectTypes()` (graphql-java's runtime input-type registry). The generator still emits one `<TypeName>Type.type()` class per input type; only the lookup path changes.
 
-Acceptance: build green; nothing references the old permits; the legacy classification surface is gone.
+Acceptance: build green; nothing references the old permits; the legacy classification surface is gone; the synthetic-types audit passes with an empty diff.
 
 ### Phase 5: sibling walkers ship (out of R222's scope, but R222 reserves the slots)
 
