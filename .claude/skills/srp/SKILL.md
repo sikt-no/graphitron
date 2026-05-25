@@ -145,8 +145,8 @@ Spec-stage framing: "is this plan sound enough to hand to an implementer", not
 - **Stale-reference rule.** Per "Documentation names only live tests/code":
   every concrete code/test/symbol the spec names must exist as named, with the
   cited paths and line numbers. Spot-check liberally; FQN-aware grep
-  (`grep -rn LoadBearingClassifierCheck` rather than `grep '@LoadBearing...'`)
-  catches false negatives that a simple-name search misses.
+  (`grep -rn everyGraphitronFieldLeafHasAKnownDispatchStatus` rather than a
+  partial-symbol search) catches false negatives that a simple-name search misses.
 
 # Two acceptable outcomes
 
