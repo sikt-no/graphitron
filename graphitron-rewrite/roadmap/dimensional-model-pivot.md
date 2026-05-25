@@ -1,7 +1,7 @@
 ---
 id: R222
 title: "Dimensional model pivot: slots over cross-product permits"
-status: Ready
+status: Spec
 bucket: structural
 priority: 3
 theme: structural-refactor
@@ -42,31 +42,21 @@ Three changes, all instances of the same principle.
 
 ### Destination sketch
 
-`GraphitronField` becomes a single field namespace (the renamed `OutputField` after the input/output split dissolves and `UnclassifiedField` retires). The slot set below is illustrative — the actual set lands one slot at a time as slices ship, and names may shift:
+`GraphitronField` becomes a single field namespace (the renamed `OutputField` after the input/output split dissolves and `UnclassifiedField` retires). Each carrier slot lives on the narrowest existing interface that names its property, not as a universal accessor on `GraphitronField`. The walker is universal across that interface's implementers; slot presence is interface-gated, and consumers reading the slot through the interface always get a populated value. R238 (the foundation slice) pins this for `MethodCall`: the slot lives on `MethodBackedField` (which already names "fields that carry a method call by definition"), with `ServiceField extends MethodBackedField` as a pure marker for the service-call subset.
 
-```java
-sealed interface GraphitronField permits QueryField, MutationField, ChildField {
-    String name();
-    SourceLocation location();
-    ReturnTypeRef returnType();
+Subsequent slices for `Pagination`, `Ordering`, `PredicateCarrier`, `ValidationShape`, `InsertRows`, `UpdateRows` follow the same pattern: find (or introduce) the narrow interface that names the property, put the slot there, and add a marker sub-interface if a consumer subset needs polymorphic dispatch. Interface names land per slice:
 
-    // Walker-output slots (former R222 carriers — populated by producers reading the SDL substrate)
-    ValidationShape validation();
-    Pagination pagination();
-    Ordering ordering();
-    PredicateCarrier predicate();
-    MethodCall methodCall();
-    InsertRows insertRows();
-    UpdateRows updateRows();
+| Carrier | Slot home | Status |
+|---|---|---|
+| `MethodCall` | `MethodBackedField` (existing) | R238 (Spec) |
+| `ValidationShape` | TBD (narrow interface or existing marker) | future slice |
+| `Pagination` | TBD | future slice |
+| `Ordering` | TBD | future slice |
+| `PredicateCarrier` | TBD | future slice |
+| `InsertRows` | TBD | future slice (R122 partner) |
+| `UpdateRows` | TBD | future slice |
 
-    // Dimensional slots (former R164 dimensions — composed from walker carriers + reflection-driven info)
-    DataFetcherBuilder dataFetcher();
-    QueryBuilder builder();
-    ValidationBuilder validationBuilder();
-}
-```
-
-The two layers compose: walker carriers are raw classification output (predicates collected, ordering directives parsed, method args bound); dimensional slots are emit-ready compositions. A `QueryBuilder` for an UPDATE field reads from `predicate()` (WHERE), `updateRows()` (SET), and the field's return-type table. A `DataFetcherBuilder.Service` reads from `methodCall()` and a class accessor. A `ValidationBuilder` reads from `validation()`. Consumers attach at whichever layer matches their concern; dimensional slots compose carriers without re-walking SDL behind them.
+A two-layer composition still holds where dimensional slots add real composition over multiple walker carriers: a `QueryBuilder` for an UPDATE field composes `predicate()` (WHERE), `updateRows()` (SET), and the field's return-type table; a `DataFetcherBuilder.Service` composes `methodCall()` and a class accessor; a `ValidationBuilder` composes `validation()`. Where a consumer's needs are simpler than full composition, a *shared emitter* parameterised on the carrier-bearing interface is the lighter tool: R238 introduces `MethodCallEmitter(MethodBackedField) -> (varDecls, callExpression)`. Not every carrier needs a dimensional slot; choose per consumer's need. Consumers attach at whichever layer (carrier, shared emitter, or dimensional slot) matches their concern; the layers compose without re-walking SDL behind them.
 
 Within each sub-seal, R164's permit consolidation collapses the cross-product permits to one record per emit-relevant identity. `RootField` as the intermediate between `OutputField` and `QueryField` / `MutationField` retires alongside the parent collapse.
 
@@ -91,7 +81,7 @@ The rewrite-internal disease is encoding multiple independent axes through one p
 
 - **Cross-product encodings hide axes.** Per-axis encodings surface them. Adding an axis becomes adding a slot; adding a value to an axis becomes adding an arm to that slot's sealed family. No multiplication. Impossible combinations are excluded at production time, not by permit cross-product.
 - **The walker abstraction is one implementation shape, not the load-bearing claim.** The load-bearing claim is that producers read graphql-java primitives directly and return typed sealed results. Slices may share an abstraction or roll their own; the test of correctness is the slot shape, not the producer shape.
-- **`No<Family>` arms make absence a first-class domain state.** Optional encodings hide absence as nullability; `No<Family>` makes it pattern-matchable. The compiler's exhaustiveness check catches every "did the producer run" question at compile time.
+- **Absence encoding follows the slot's home.** When a slot is field-universal (lives on `GraphitronField` or a sub-seal), absence is encoded by a `No<Family>` arm: the producer runs unconditionally, the carrier has a no-signal arm, consumers pattern-match exhaustively. When a slot is directive-gated and lives on a narrow interface (R238's pattern: `MethodCall` on `MethodBackedField`), absence is encoded by interface non-membership: the producer runs only for implementers, consumers reading the slot through the interface always get a populated value. Both forms make absence first-class; neither uses `Optional`.
 - **Validity lives at the wrapper, not inside the carrier.** Encoding failure inside the carrier family would force every downstream consumer to either filter or handle the failure arm. Encoding it at the wrapper plus a classification/generation phase split lets downstream consumers assume `Ok`-only inputs while classification runs to completion for the LSP's benefit.
 - **LSP-aligned diagnostics from day one.** Every diagnostic carries the LSP-shape fields (severity, code, message, tags, relatedInformation) so the wire-format adapter is a mechanical projection rather than a translation layer. R226's reframing of validator output as walker diagnostics, and R222's walker output, share one wire format.
 - **Each axis is independently testable.** A producer is a pure function: SDL fragment in, sealed result out. Tests don't need a graphitron classification context.
@@ -102,11 +92,11 @@ Each stage is a work-stream; spin-out roadmap items file as slices get picked up
 
 ### Stage 1 — Foundation slice
 
-One vertical slice, end-to-end: one slot on the field, one producer that fills it, one consumer migration, one LSP wire arm. The slot's identity, the producer's implementation shape (sealed `Walker<S, C>` vs another), and the first consumer to migrate are the foundation slice's call. The point is that the slot pattern lands once, in tree, demonstrating the pivot's structural shift end-to-end. The foundation slice fixes the wire-format conventions (source attribution, code namespace) that subsequent slices inherit.
+One vertical slice, end-to-end: one slot on a carrier-bearing interface, one producer that fills it, one consumer migration, one LSP wire arm. The slot's home (existing narrow interface vs. introduced one), the producer's implementation shape (sealed `Walker<S, C>` vs another), and the first consumer to migrate are the foundation slice's call. The point is that the slot pattern lands once, in tree, demonstrating the pivot's structural shift end-to-end. The foundation slice fixes the wire-format conventions (source attribution, code namespace) and the slot-home convention (narrow interface, not universal parent; interface-gated absence rather than `No<Family>` when directive-gated) that subsequent slices inherit. R238 ships the foundation slice on `MethodCall` / `MethodBackedField`.
 
 ### Stage 2 — Walker carrier slots
 
-Each remaining walker-output carrier ships as an independent slice: its sealed family (valid arms + `No<Family>`), its slot on `GraphitronField`, the consumer migrations that read it, the `Diagnostic` arms it surfaces. Candidates (minus whichever Stage 1 ships): `ValidationShape`, `Pagination`, `Ordering`, `PredicateCarrier`, `MethodCall`, `InsertRows`, `UpdateRows`. Slices are parallelizable; no ordering between them.
+Each remaining walker-output carrier ships as an independent slice: its sealed family or record, its slot on a carrier-bearing interface (existing or introduced), the consumer migrations that read it, the `Diagnostic` arms it surfaces. Whether the carrier needs a `No<Family>` arm depends on the slot's home: field-universal slots do, directive-gated slots on narrow interfaces don't. Candidates (minus whichever Stage 1 ships): `ValidationShape`, `Pagination`, `Ordering`, `PredicateCarrier`, `MethodCall`, `InsertRows`, `UpdateRows`. Slices are parallelizable; no ordering between them.
 
 ### Stage 3 — Field dimensional slots
 
@@ -173,11 +163,13 @@ The names below are the working vocabulary for the umbrella; slices may rename, 
 
 - **`Walker<S, C>`** — a pure function over an SDL substrate `S` returning `WalkerResult<C>`. One implementation shape for producers; slices may pick another. Substrate-parametric for forward-compat with type-level producers.
 - **`WalkerResult<C>`** — sealed `Ok<C>(C carrier, List<Diagnostic> diagnostics)` / `Err<C>(List<AuthorError> errors, List<Diagnostic> diagnostics)`. `Ok` rejects Error-severity diagnostics by compact-ctor; `Err.errors` is non-empty by compact-ctor invariant. Classification runs to completion regardless of how many `Err`s; downstream generation is blocked when any `Err` is present.
-- **Carriers** — `ValidationShape`, `Pagination`, `Ordering`, `PredicateCarrier`, `MethodCall`, `InsertRows`, `UpdateRows`. Each a sealed family with valid arm(s) plus an explicit `No<Family>` arm. No `Invalid` arm; structural failure rides on `WalkerResult.Err`.
+- **Carriers**: `ValidationShape`, `Pagination`, `Ordering`, `PredicateCarrier`, `MethodCall`, `InsertRows`, `UpdateRows`. Each a sealed family or record carrying the reduced output. `No<Family>` arms apply when the slot is field-universal; directive-gated slots on narrow interfaces (R238's pattern) skip the `No<>` arm and use interface non-membership instead. No `Invalid` arm in either case; structural failure rides on `WalkerResult.Err`.
 - **Dimensional slots** — `DataFetcherBuilder`, `QueryBuilder`, `ValidationBuilder`. Compose walker carriers + reflection-driven information into emit-ready form.
-- **`No<Family>`** — the domain arm naming "the substrate carries no actionable signal for this family." Producer ran, no error, nothing to encode. Concrete shapes vary per family (`NoPredicates`, `NoMethodCall`, `NoValidationShape`, ...); framing is uniform.
+- **`No<Family>`**: the domain arm naming "the substrate carries no actionable signal for this family." Producer ran, no error, nothing to encode. Applies when the slot is field-universal; directive-gated slots on narrow interfaces use interface non-membership instead. Concrete shapes vary per family (`NoPredicates`, `NoValidationShape`, ...); framing is uniform across the cases that need it.
 - **`PredicateCarrier`'s two valid arms** — `Condition` for SQL-emitting *read* fields, `LookupRows` for *mutation* fields. The producer's bailout-restart pattern handles role discovery: sentinel directives (`@lookupKey` on a read field, `@multirows` on a mutation field) trigger an arm flip. Consumers pattern-match the arm at use time.
-- **`MethodCall`** — renamed from earlier `MethodArguments` to align with the rewrite's `CallParam` / `CallSiteExtraction` / `MethodRef.Call` / `ExternalCodeReference` naming family. Carries an ordered list of `MethodArgumentBinding` arms (variant family lands inside the umbrella, not as an external dependency).
+- **`MethodCall`**: the record carrying `(target, methodName, bindings, returnShape)`. Renamed from earlier `MethodArguments` to align with the rewrite's `CallParam` / `CallSiteExtraction` / `MethodRef.Call` naming family. Bindings are `ParamBinding` arms (`FromEnvArg`, `FromContextKey`, `FromDslContext`, `FromBatchKeys`, `FromSourceRow`); R238 pins the family. The slot lives on `MethodBackedField`.
+- **Shared emitter**: a static utility parameterised on a carrier-bearing interface that produces emit-ready code fragments (var-decls, expression blocks). R238 introduces `MethodCallEmitter(MethodBackedField) -> (varDecls, callExpression)`. Lighter than a dimensional slot when the consumer's only need is the carrier's emission, not multi-carrier composition. Slices choose between shared emitter and dimensional slot per consumer's need.
+- **Marker interface**: a pure-marker sub-interface of a carrier-bearing interface, for consumers that need polymorphic dispatch on a narrower subset. R238 introduces `ServiceField extends MethodBackedField` as the marker for the service-call subset. Markers carry no new declarations.
 - **`BackingClass`** — three-arm sealed family (`Pojo`, `JavaRecord`, `JooqTableRecord`); attaches per binding kind where method-call semantics need it.
 - **`Diagnostic`** — LSP-aligned sealed family. Carries non-error events on both `Ok` and `Err`. `BuildWarning` migration retires; the channel is one unified stream at the LSP boundary.
 - **`AuthorError`** — the existing `Rejection.AuthorError` sealed family. The wire-format adapter projects each leaf to severity=Error LSP `Diagnostic` with a code derived per leaf type (e.g. `AuthorError.UnknownName` → `"graphitron.unknown-name"`).
@@ -203,6 +195,6 @@ Rejected alternatives from earlier R222 drafts, recorded so reviewers don't re-d
 - **`Invalid<Family>` arms inside the carrier families.** Encoded structural failure inside two of the seven families. Rejected because no downstream generator inspects an `Invalid` arm — generation is blocked before any generator runs in either failure mode, so the asymmetry encoded an invariant the wrapper + phase split already enforce.
 - **`Input` / `InputFieldDecl` per-input wrapper records.** Pass-through wrappers over `GraphQLInputObjectType` / `GraphQLInputObjectField`. Rejected because per-input identity has no carrier-independent state worth a record, and graphql-java already provides every accessor.
 - **`SchemaCoordinate(String)` identity wrapper.** Stringly-typed wrapper conflating `"FilmInput"` and `"FilmInput.title"`. Rejected because plain `String` covers the type-name case and graphql-java's `FieldCoordinates` covers the type+field case.
-- **Optional carrier slots on `OutputField` (`Optional<Pagination>`, ...).** Presence-vs-absence at the storage layer. Rejected because the `No<Family>` arm makes absence a first-class domain state consumers pattern-match exhaustively; Optional re-introduces a present/missing flag the sealed family already encodes.
+- **Optional carrier slots on `OutputField` (`Optional<Pagination>`, ...).** Presence-vs-absence at the storage layer. Rejected for field-universal slots because the `No<Family>` arm makes absence a first-class domain state consumers pattern-match exhaustively; Optional re-introduces a present/missing flag the sealed family already encodes. For directive-gated slots, R238 surfaced a third option: interface-gated presence (slot lives on a narrow interface, absent for non-implementers). Optional remains rejected in both cases.
 - **`ValidationShape` as a per-input carrier (`Map<String, ValidationShape>` on the classification artifact).** Two-substrate variant: per-output-field carriers on `OutputField`, per-input carriers in a name-keyed map. Rejected because validation fires at the resolver method-arg boundary, which is the output field's seat; the "global common shape across consumers" framing tried to reuse a per-type POJO, but the consumer is the unit of validation.
 - **`MethodArguments` as the carrier name.** Earlier vocabulary draft. Replaced by `MethodCall` to align with the rewrite's existing `CallParam` / `CallSiteExtraction` / `MethodRef.Call` naming family.
