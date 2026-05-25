@@ -14,6 +14,10 @@ last-updated: 2026-05-25
 
 R222 is the umbrella for the rewrite's dimensional pivot. Three sealed hierarchies pack multi-dimensional information onto single permit sets — input-side classification (`GraphitronType.InputType` + `TableInputType`), field-side classification (`QueryField` / `MutationField` / `ChildField` with 46 cross-product permits), and classification-failure encoding (`UnclassifiedType` / `UnclassifiedField` riding as permits alongside legitimate carriers). The same disease in three organs. R222 absorbs R164 (field-model three-dimension pivot) and R226 (type-level classification failure pivot) and unifies them as one architectural shift, landing the target architecture stage-by-stage through independent spin-out slices.
 
+## Direction, not contract
+
+The model sketched in this umbrella is the *target direction* — where the rewrite is heading. Specific slot names, carrier shapes, the boundary between walker carriers and dimensional slots, and the vocabulary itself are expected to shift as implementation slices land and surface new understanding. Each spin-out slice gets its own spec item where the specifics for that scope get pinned; the slice is free to redraw the diagram so long as it doesn't break the load-bearing claim (cross-product permits dissolve into dimensional slots; producers read graphql-java primitives directly; validity rides on the wrapper). What's stable is the *shape*: slots on a single unified field type, one per consumer concern, populated by thin layers over the SDL substrate. Read the sketches below as illustrative of that shape, not as a frozen contract.
+
 ## What is
 
 Three cross-product encodings, three sets of permit-identity-driven discriminations.
@@ -36,9 +40,9 @@ Three changes, all instances of the same principle.
 
 **Validity rides on the wrapper, not the carrier.** Every classification step returns a sealed `Ok(carrier, diagnostics) | Err(errors, diagnostics)`. Carriers have only "happy" arms — valid or the explicit absent arm (`No<Family>`). Structural failure surfaces through `Err`; the orchestrator collects errors across the whole pass and blocks downstream generation. Classification runs to completion regardless; the LSP consumes the partial classification output independent of whether generation ran.
 
-### The destination
+### Destination sketch
 
-`GraphitronField` becomes a single field namespace (the renamed `OutputField` after the input/output split dissolves and `UnclassifiedField` retires):
+`GraphitronField` becomes a single field namespace (the renamed `OutputField` after the input/output split dissolves and `UnclassifiedField` retires). The slot set below is illustrative — the actual set lands one slot at a time as slices ship, and names may shift:
 
 ```java
 sealed interface GraphitronField permits QueryField, MutationField, ChildField {
@@ -165,7 +169,7 @@ Adjacent but not absorbed:
 
 ## Vocabulary
 
-The names below pin the destination; implementation details belong to each slice's spin-out item.
+The names below are the working vocabulary for the umbrella; slices may rename, narrow, or restructure as their implementation details surface. Treat this as anchor terminology, not a frozen API.
 
 - **`Walker<S, C>`** — a pure function over an SDL substrate `S` returning `WalkerResult<C>`. One implementation shape for producers; slices may pick another. Substrate-parametric for forward-compat with type-level producers.
 - **`WalkerResult<C>`** — sealed `Ok<C>(C carrier, List<Diagnostic> diagnostics)` / `Err<C>(List<AuthorError> errors, List<Diagnostic> diagnostics)`. `Ok` rejects Error-severity diagnostics by compact-ctor; `Err.errors` is non-empty by compact-ctor invariant. Classification runs to completion regardless of how many `Err`s; downstream generation is blocked when any `Err` is present.
