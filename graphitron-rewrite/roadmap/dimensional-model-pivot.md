@@ -1,7 +1,7 @@
 ---
 id: R222
 title: "Dimensional model pivot: slots over cross-product permits"
-status: Spec
+status: Ready
 bucket: structural
 priority: 3
 theme: structural-refactor
