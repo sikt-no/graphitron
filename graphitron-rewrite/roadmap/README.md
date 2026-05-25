@@ -30,7 +30,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-20 | [plan](simplify-update-mutations-drop-value.md) |
-| `R237` | Retire @LoadBearingClassifierCheck / @DependsOnClassifierCheck annotation pair | Spec | 2026-05-24 | [plan](retire-loadbearing-classifier-check-annotations.md) |
+| `R237` | Retire @LoadBearingClassifierCheck / @DependsOnClassifierCheck annotation pair | Spec | 2026-05-25 <sub>created 2026-05-24</sub> | [plan](retire-loadbearing-classifier-check-annotations.md) |
 
 ---
 
