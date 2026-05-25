@@ -1,7 +1,7 @@
 ---
 id: R237
 title: Retire @LoadBearingClassifierCheck / @DependsOnClassifierCheck annotation pair
-status: Spec
+status: Ready
 bucket: architecture
 theme: structural-refactor
 depends-on: []
@@ -60,7 +60,7 @@ Concrete edits:
 
 Out of scope for Phase 1:
 - The 75 existing annotation sites stay untouched. `LoadBearingGuaranteeAuditTest` still runs and still passes.
-- The 12 other roadmap items still reference the pair by name. Phase 5 rephrases them. (R125 and R186 are resolved within Phase 1 itself per concrete edit 6 above; they don't appear in the Phase 5 list.)
+- The 15 other roadmap items still reference the pair by name. Phase 5 rephrases them. (R125 and R186 are resolved within Phase 1 itself per concrete edit 6 above; they don't appear in the Phase 5 list.)
 
 Phase 1 done means:
 - The Phase 1 commit lands on trunk. `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` green on Java 25. `LoadBearingGuaranteeAuditTest` still green; no annotations changed.
@@ -154,8 +154,8 @@ Phase 4 done means:
 
 Runs under Delete, Shrink, and Demote (lands together with Phase 4 or as a tail commit). Under Hold, Phase 5 is a no-op — the existing roadmap-item references and test javadocs are consistent with the preserved annotation sites and don't need rephrasing.
 
-- 12 roadmap items naming the pair (R125 and R186 already resolved in Phase 1): rephrase each reference to the new vocabulary (type-system contract, pipeline-test pinning, or cross-module convention as appropriate). Under Demote, also update `description` / `reliesOn` text and any annotation-referencing prose that uses the "load-bearing" framing to match the renamed annotation classes. Do not delete the items; preserve the underlying intent. The list:
-  - `binding-provenance-on-paramsource-arg.md`, `simplify-update-mutations-drop-value.md`, `record-parent-column-read-helper.md`, `multi-source-input-validation.md`, `catalog-check-constraint-validation.md`, `consolidate-sources-shape-predicates.md`, `inputs-package-internal-use-audit.md`, `input-model-dimensional-pivot.md`, `consumer-derived-input-tables.md`, `design-doc-implementation-conformance-audit.md`, `list-valued-external-field-multiset.md`, `tenant-routing-and-execution-input.md`.
+- 15 roadmap items naming the pair (R125 and R186 already resolved in Phase 1): rephrase each reference to the new vocabulary (type-system contract, pipeline-test pinning, or cross-module convention as appropriate). Under Demote, also update `description` / `reliesOn` text and any annotation-referencing prose that uses the "load-bearing" framing to match the renamed annotation classes. Do not delete the items; preserve the underlying intent. The list:
+  - `binding-provenance-on-paramsource-arg.md`, `simplify-update-mutations-drop-value.md`, `record-parent-column-read-helper.md`, `multi-source-input-validation.md`, `catalog-check-constraint-validation.md`, `consolidate-sources-shape-predicates.md`, `inputs-package-internal-use-audit.md`, `input-model-dimensional-pivot.md`, `consumer-derived-input-tables.md`, `design-doc-implementation-conformance-audit.md`, `list-valued-external-field-multiset.md`, `tenant-routing-and-execution-input.md`, `graphqlschemavisitor-driven-emission.md` (R166: rephrase "non-empty by load-bearing-pair convention" to name the convention without the pair-specific framing), `honor-field-directive-in-payload-construction-shape.md` (R201: rephrase the two "load-bearing-classifier-check at `:498-505`" cites and the "Update the load-bearing-classifier-check text" instruction to the type-system / pipeline-test contract the emitter relies on), `retire-connection-name-override.md` (R208: rephrase "promote the assumption to a load-bearing classifier check" as "promote the assumption to a validator-enforced invariant", since Phase 1 retires the pattern as an aspirational target).
 - Out of scope: `parent-context-aware-schema-coordinates.md` and `intellij-lsp-plugin.md` use the English phrase "load-bearing" descriptively ("Step 2 is the load-bearing change"; "transport is deliberate and load-bearing for the dev loop") with no reference to the annotation classes. The rephrase pass leaves both untouched. Listed here so the next reviewer doesn't expect them in scope.
 - Test javadocs in `PkResolutionEmitterReachabilityTest`, `DmlBulkMutationsExecutionTest`, `ServiceFieldValidationTest`, `TableMethodFieldValidationTest`, `LoadBearingGuaranteeAuditTest` (if it survives): rephrase to name the type-system contract or the cross-module mechanism instead of the annotation pair.
 - `graphitron-rewrite/roadmap/changelog.md`: append a one-line entry naming R237 and the landing commit SHA.
