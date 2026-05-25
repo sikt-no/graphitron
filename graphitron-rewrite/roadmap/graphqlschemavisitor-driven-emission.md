@@ -5,7 +5,7 @@ status: Backlog
 bucket: architecture
 priority: 5
 theme: structural-refactor
-depends-on: [field-model-two-axis-pivot]
+depends-on: [dimensional-model-pivot]
 created: 2026-05-15
 last-updated: 2026-05-15
 ---

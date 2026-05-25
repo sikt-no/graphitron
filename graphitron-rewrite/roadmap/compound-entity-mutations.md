@@ -63,7 +63,7 @@ new sealed permit on `DmlTableField`) without modification.
 
 ## Design space narrows under R222
 
-R222 (`input-model-dimensional-pivot`) introduces a recursive `InputUsage`
+R222 (`dimensional-model-pivot`) introduces a recursive `InputUsage`
 model where a nested-input slot can carry an `InputUsage` with its own
 table distinct from the parent's. `InputUsage` is the SQL-side carrier
 (`(Input, TableRef, List<InputField>)`); the recursive `InputField` arms
