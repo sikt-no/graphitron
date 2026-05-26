@@ -34,7 +34,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-26 <sub>created 2026-05-20</sub> | [plan](simplify-update-mutations-drop-value.md) |
 | `R243` | Per-field direction in @order/@defaultOrder via FieldSort.direction | Ready | 2026-05-26 | [plan](per-field-sort-direction.md) |
-| `R237` | Retire @LoadBearingClassifierCheck / @DependsOnClassifierCheck annotation pair | In Review | 2026-05-26 <sub>created 2026-05-24</sub> | [plan](retire-loadbearing-classifier-check-annotations.md) |
 
 ---
 
@@ -210,7 +209,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R118` [**Graphitron MCP server: knowledge-base tools for AI agents**](graphitron-mcp-server.md) — Backlog, feature, blocked by [knowledge-base-programme](knowledge-base-programme.md)
 - `R117` [**Graphitron knowledge base programme: DuckDB as queryable model**](knowledge-base-programme.md) — Backlog, architecture
 - `R112` [**Operation-driven test corpus, capability catalog, and runtime trace**](operation-driven-test-corpus.md) — Spec, architecture, blocked by [capability-catalog](capability-catalog.md)
-- `R237` [**Retire @LoadBearingClassifierCheck / @DependsOnClassifierCheck annotation pair**](retire-loadbearing-classifier-check-annotations.md) — In Review, architecture
 
 ### docs
 
