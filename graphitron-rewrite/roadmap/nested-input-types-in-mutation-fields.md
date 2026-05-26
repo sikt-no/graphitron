@@ -114,9 +114,9 @@ The partition lists (`setFields()` / `lookupKeyFields()`) carry the flat-leaf vi
    * Cross-reference from `docs/manual/reference/directives/mutation.adoc`: one paragraph in the "Input shape" subsection noting that nested non-`@table` inputs are admitted as a grouping shape, with a pointer to the tutorial chapter for the worked example.
    * No changes needed to `directives/table.adoc` (the nested grouping is *not* `@table`-backed) or to the diagnostics glossary unless step 1's `@value`-on-NestingField rejection ships before R188 retires `@value` — in which case the glossary gains one entry.
 
-7. **Existing audit key update** (`MutationInputResolver.java` `@LoadBearing` annotation, retained during the R237 retirement gap window):
-   * The Invariant #4 audit key `mutation-input.update-set-fields-equal-value-marked` (MutationInputResolver.java:319-323) generalises: `setFields()` on UPDATE is exactly the `@value`-marked admissible *leaves* (flat-projected), in SDL declaration order with `NestingField` children expanded in place. Update the `description` text accordingly; the assertion code holds unchanged because it reads the flat leaf list.
-   * The access-path invariant for nested-leaf extractions (every leaf flattened out of a `NestingField` carries a `CallSiteExtraction.NestedInputField` whose access path's first segment is the immediately-enclosing `NestingField`'s SDL name) is mechanically pinned by the sealed-variant carrier on the leaf's `extraction` slot and by the pipeline-tier coverage step 4 above; no new producer key is filed.
+7. **Existing classifier invariant update** (`MutationInputResolver.java`):
+   * The Invariant #4 contract (MutationInputResolver.java:319-323) — `setFields()` on UPDATE equals the `@value`-marked admissible leaves — generalises: under nesting it's the *flat-projected* `@value`-marked leaves in SDL declaration order with `NestingField` children expanded in place. Update the class javadoc text accordingly; the producing code holds unchanged because it reads the flat leaf list.
+   * The access-path invariant for nested-leaf extractions (every leaf flattened out of a `NestingField` carries a `CallSiteExtraction.NestedInputField` whose access path's first segment is the immediately-enclosing `NestingField`'s SDL name) is mechanically pinned by the sealed-variant carrier on the leaf's `extraction` slot and by the pipeline-tier coverage step 4 above.
 
 ### Interaction with neighbouring items
 
@@ -150,7 +150,7 @@ When this item completes:
 
 * Remove `DML_NESTING_FIELD_DEFERRED` from the pipeline-test enum; the deferred case becomes the admitted case.
 * Add `changelog.md` entry capturing the landing SHA and the new admitted shape (this is the kind of milestone worth keeping in the changelog).
-* Update `MutationInputResolver`'s class-level `@LoadBearing` description so the "Invariant #7 (nested input)" wording reflects admission rather than rejection.
+* Update `MutationInputResolver`'s class-level javadoc so the "Invariant #7 (nested input)" wording reflects admission rather than rejection.
 * The "R128 / R122 territory" comment at `MutationInputResolver.java:477-478` deletes with the rejection arm.
 
 ## Out of scope
