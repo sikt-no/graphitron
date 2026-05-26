@@ -24,7 +24,6 @@ Then `looksLikeSourcesShape` (used by the root-coordinate diagnostic) becomes `c
 Scope notes for Spec:
 
 - **Caller migration.** `looksLikeSourcesShape` has two call sites in `ServiceCatalog`'s diagnostic builder (root-batch-diagnostic and the diagnostic-arm fork). `couldBeSourcesShape` has one (R214 inference). `classifySourcesType` has one. All four migrate; the compiler exhaustiveness check on `Optional<SourcesShape>` is the safety net.
-- **Annotation discipline.** Add `@LoadBearingClassifierCheck` keys: `service-catalog.sources-shape-coordinate-aware` (producer: `classifySourcesShape` + `accepts`; consumers: the inference gate, the per-param loop, the root diagnostic). Same pattern R215 elaborates.
 - **Naming.** `couldBeSourcesShape` is the wrong name post-split; rename to something that signals "this param is SOURCES-classifiable at this coordinate" (`isAcceptedSourcesShape`?). Bikeshed at Spec time.
 
 Files in play: `ServiceCatalog.java` (`classifySourcesType`, `looksLikeSourcesShape`, `couldBeSourcesShape`, the diagnostic builder around line 280-345, the inference gate in `inferBindingsByType`). Tests: existing SOURCES-shape tests stay green; add a new test pinning the previously-excluded `List<XRecord>` at root case now inferring positionally.

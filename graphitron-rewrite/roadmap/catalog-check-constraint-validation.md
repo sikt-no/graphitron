@@ -417,19 +417,28 @@ constructed record, conditional on (a) the channel carries a
 `ColumnConstraint` entry. Specifically, between the body call (`Service.x(...)`
 or `dsl.insertInto(...).fetchOne()`) and the payload-assembly step.
 
-Per *Validator mirrors classifier invariants*, the emitter wears
-`@DependsOnClassifierCheck` against three narrow keys, each naming a specific
-invariant the emitter relies on rather than the umbrella "field is populated"
-(per the principle: "a load-bearing key names the invariant the emitter
-relies on"). The classifier site
+Per *Validator mirrors classifier invariants*, the emitter relies on three
+narrow structural invariants that the classifier site
 (`TypeBuilder.buildResultType` or wherever `columnConstraints` is populated)
-wears the matching `@LoadBearingClassifierCheck` per key:
+must guarantee at construction:
 
-| Key                                        | Invariant the emitter relies on                                              |
-|--------------------------------------------|-----------------------------------------------------------------------------|
-| `check-recognition.string-one-of-non-empty` | `StringOneOf.literals` is non-empty                                         |
-| `check-recognition.regex-is-java-pattern`   | `RegexMatch.regex` parses as a `java.util.regex.Pattern` (no Postgres-only constructs) |
-| `check-recognition.length-bounds-ordered`   | `LengthBound.min <= LengthBound.max`                                        |
+[cols="2,3"]
+|===
+| Invariant | What the emitter consumes
+
+| `StringOneOf.literals` is non-empty
+| iterated to join with `\|` between `Pattern.quote`'d literals
+
+| `RegexMatch.regex` parses as a `java.util.regex.Pattern` (no Postgres-only constructs)
+| dropped verbatim into the generated `Pattern.compile(...)` call
+
+| `LengthBound.min <= LengthBound.max`
+| ordered bound check in the generated branch
+|===
+
+The structural target is for each constraint variant's compact constructor
+to enforce its own invariant (non-empty literal list, regex parses, ordered
+bounds) so the emitter can read the record components without re-checking.
 
 The emitter joins `StringOneOf.literals` with `Pattern.quote` per literal and
 `|` between, producing `^(\Qlit1\E|\Qlit2\E|...)$`. Per-literal regex
@@ -623,15 +632,9 @@ phase 1 alone surfaces only the build-time strict-mode signal.
 Acceptance: build report names every CHECK constraint in the fixture and
 classifies it correctly. No emitted code change yet.
 
-Phase 1 ships its `@LoadBearingClassifierCheck` triple
-(`string-one-of-non-empty`, `regex-is-java-pattern`, `length-bounds-ordered`)
-producer-only: phase 2 attaches the matching `@DependsOnClassifierCheck` on
-the emitter side. Producer-only is an allowed shape per
-*Classifier guarantees shape emitter assumptions* (rewrite-design-principles.adoc:124,
-"Producers without consumers are allowed: some classifier checks reject
-shapes for hygiene rather than because an emitter relies on them"); the
-producer in phase 1 is hygienic, the phase 2 emitter then makes it
-load-bearing.
+Phase 1 ships the three structural invariants (non-empty literal list,
+regex-parses, ordered bounds) on the constraint records' compact
+constructors. Phase 2's emitter consumes them without re-checking.
 
 ### Phase 2: record-side mapping emit and runtime wiring
 

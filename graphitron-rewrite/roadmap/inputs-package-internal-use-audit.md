@@ -27,8 +27,7 @@ R94's original spec bundled three layered enforcement mechanisms:
 2. A generated `package-info.java` whose Javadoc states
    "Graphitron-internal validation targets; do not reference from
    service code".
-3. An `LoadBearingClassifierCheck`-style audit (a test that scans
-   consumer sources for references to the package).
+3. A scanning audit test that walks consumer sources for references to the package.
 
 graphitron-javapoet does not currently support records, sealed
 classes/interfaces, `permits` clauses, or `package-info.java` emission;
