@@ -1,7 +1,7 @@
 ---
 id: R241
-title: "Retire ErrorChannel.PayloadClass transport; route all errors through LocalContext"
-status: Backlog
+title: Retire ErrorChannel.PayloadClass transport; route all errors through LocalContext
+status: Spec
 bucket: architecture
 depends-on: []
 created: 2026-05-26
