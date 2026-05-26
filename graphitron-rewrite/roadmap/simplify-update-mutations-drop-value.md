@@ -155,7 +155,6 @@ Applied at classify time in `MutationInputResolver`:
 
 * **At most one input-field-level `override: true` per input.** Two overrides on different fields each claim row-identity responsibility; reject with a diagnostic naming the conflicting fields.
 * **`@condition` on the `@table` input arg stays rejected.** Diagnostic: "argument-level `@condition` on the `@table` input arg is rejected; put it on a non-`@table` argument or on an input field of the `@table` input."
-* **`@condition(override: true)` on a column-bound non-PK input field is rejected as no-op-override.** A non-PK field has no implicit predicate to suppress (the partition is pure; non-PK columns contribute to SET). Diagnostic names the field and suggests dropping the `override:` flag.
 * **`CompositeColumnReferenceField` whose lifted source columns mix PK and non-PK is rejected as ambiguous.** Diagnostic names the field and enumerates which columns are PK / non-PK. A schema with this shape (a composite FK that's a diagonal slice of the input table's PK) is architecturally rare; if a forcing case surfaces, file a follow-up roadmap item to lift the partition to per-column. By construction the case cannot arise on the other three carriers (`ColumnField` / `ColumnReferenceField` are single-column; `CompositeColumnField` from R130 is always the full PK).
 * **Inner explicit `@condition`s are always preserved.** The `filmsOuterOverrideTableInput` regression-fence applies on the mutation side; the composition step AND-s inner non-override filters into the override slot when override is present.
 
@@ -198,7 +197,6 @@ Strand B (each admit case asserts the slot values on the field record, not just 
 * Input-field `@condition(override: true)`, PK in input: admit; WHERE = `condition(?)`. Override suppresses implicit PK. SET still contains every non-PK column.
 * Non-`@table` argument `@condition`: admit; WHERE = `pk = ? AND argCondition(?)`. Lifts the line-446 rejection.
 * `@condition` on the `@table` arg: reject with the migration-pointing diagnostic.
-* `@condition(override: true)` on a column-bound non-PK input field: reject as no-op.
 * Two input fields with `@condition(override: true)`: reject (at-most-one-override).
 * Mixed layers: one input field with `override: true` plus one input field with non-override `@condition`: admit; override populates the override slot, non-override populates `additionalConditions`, both compose into WHERE.
 * `multiRow: true` plus non-override `@condition`: admit; broadcast WHERE additionally filtered by the condition.
@@ -249,10 +247,10 @@ If the result does not read simply, the design is wrong; the drafts above are sh
 
 ## Roadmap entries
 
-* **R215 (`condition-override-on-unbound-field.md`):** R215 admits `@condition(override: true)` on UnboundField but the directive is silently dropped at emit. Strand B wires it through. R215 closes when R188 lands; capture in `changelog.md`.
+* **R215 (already shipped at `fdb757b` + `3d60f40`, admit-but-no-emit half):** R215 (changelog.md entry) admits `@condition(override: true)` on `UnboundField` at classify time but the directive is a no-op at emit — no `.where(...)` clause is produced. Strand B wires the emit half through. On R188 Done, append a follow-on note to R215's `changelog.md` entry recording the emit-side closeout (no new R215 entry; the existing one captures the admission, this one captures the wiring).
 * **R145 (UPSERT, `mutation-cardinality-safety-upsert.md`):** R145's conflict-key axis is unchanged. R188's contribution: (a) UPSERT's SET clause becomes "input columns not in the conflict-target column set" (PK-default rule generalised to conflict-key-default); (b) R145 inherits the two-placement `@condition` mechanism for layering predicates on top of the conflict-target match (e.g. tenant-scoped UPSERT). The R145 body edit lands in the same commit that drops `@value` (Strand A). No status change.
 * **R146 (`mutation-cardinality-safety-unique-index.md`):** Stays Backlog. Under R188, "uniquely identified by an alternate unique key from input columns" without writing an override predicate no longer arises as a distinct shape. R146 reopens if a future schema needs that shape.
-* **R222 (dimensional model pivot):** R188 contributes two slots (`overrideCondition`, `additionalConditions`) and a `multiRow` boolean to the UPDATE/DELETE field record. R222's `PredicateCarrier` slice picks them up directly; no sealed taxonomy on the field record to relocate. The structural rules (at-most-one-override, table-plus-scope-scalars reflection contract, no-op-override rejection) stay observable in the classifier so R222 has a stable contract to refactor against.
+* **R222 (dimensional model pivot):** R188 contributes two slots (`overrideCondition`, `additionalConditions`) and a `multiRow` boolean to the UPDATE/DELETE field record. R222's `PredicateCarrier` slice picks them up directly; no sealed taxonomy on the field record to relocate. The structural rules (at-most-one-override, table-plus-scope-scalars reflection contract, composite-reference mixed-PK rejection) stay observable in the classifier so R222 has a stable contract to refactor against.
 * **R130 / R144:** both shipped; R188 is the next iteration of the same partition story plus the `@condition`-on-mutations lift. Add a `changelog.md` entry on R188's Done: directive removal, the two-placement `@condition` admission, and the R215 closeout.
 
 ## Out of scope
