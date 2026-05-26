@@ -1,0 +1,13 @@
+---
+id: R241
+title: "Retire ErrorChannel.PayloadClass transport; route all errors through LocalContext"
+status: Backlog
+bucket: architecture
+depends-on: []
+created: 2026-05-26
+last-updated: 2026-05-26
+---
+
+# Retire ErrorChannel.PayloadClass transport; route all errors through LocalContext
+
+Graphitron should not construct or mutate the developer's SDL payload class — mapping happens via per-field child datafetchers. R179 enforced this on the happy path (deleted `ResultAssembly` / `ResultSlot` / `buildSuccessPayload*`; the success arm collapses to `T result = service.method(...); return success(result);` and per-field wiring projects SDL fields off the service's domain return). The catch arm still violates the principle: `ErrorChannel.PayloadClass` (sealed-sibling to `ErrorChannel.LocalContext`) drives `payloadFactoryLambda` (`TypeFetcherGenerator.java:4494`) and the validator pre-step's `declareEarlyPayloadFromErrors` (`:1523`) to reflectively build the developer's payload class via either `new P(errors, defaults...)` (all-fields-ctor arm) or `new P(); p.setErrors(...); p.setX(default); return p;` (mutable-bean arm — R154's setter-shape admission). R12 already built the no-construction alternative: `ErrorChannel.LocalContext` packs `data(<generator-owned sentinel jOOQ record>).localContext(List.of(t)).build()`, the data field's null-source guards render `data: null`, and the `errors` field reads via `env.getLocalContext()` through `ChildField.ErrorsField` with `Transport.LocalContext`. This item retires `ErrorChannel.PayloadClass` entirely — routing every error through `LocalContext` and deleting `PayloadConstructionShape` (`AllFieldsCtor`, `MutableBean`, `SetterBinding`), `ErrorsSlot`, `DefaultedSlot`, `NonBoundSetter`, `FieldBuilder.resolvePayloadConstructionShape` + `tryMutableBean`, the `payloadFactoryLambda` ctor/setter arms, and `declareEarlyPayloadFromErrors`. The load-bearing dependency is extending the per-variant null-source guards across every data-channel variant currently outside `LOCAL_CONTEXT_GUARDED_DATA_CHANNEL_VARIANTS` (today the validator rejects `LocalContext` on those variants, which is what kept `PayloadClass` alive after R12). Supersedes R201 (its entire scope was threading `@field(name:)` through the `PayloadClass` arms — moot once those arms are gone). The pressure to do this now is a downstream `[author-error]`: `SlettPoengformelPayload(Boolean)` was rejected for declaring one ctor whose 1 parameter doesn't match the SDL payload's 2-field count — a rejection that exists only because graphitron reflects on and constructs the payload class. Under `LocalContext` transport, any developer-authored payload-class shape works without graphitron caring about its ctor or setter surface.
