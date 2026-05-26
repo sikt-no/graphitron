@@ -212,8 +212,6 @@ public final class MethodCallEmitter {
 
 **`@condition` is not in scope.** The `@condition` directive's binding lives outside `MethodBackedField` (it rides on `MethodRef.ConditionFilter`, a peer of the `NonCondition` arms this slice dissolves). Predicate-carrier territory; future slice.
 
-**`@DependsOnClassifierCheck` annotations.** The migrated emitter methods carry classifier-check annotations today (`buildServiceFetcherCommon`, `buildServiceRowsMethod`). The annotation is in retirement under R237; the slice removes the annotations from migrated methods where the classifier checks they reference now live inside the walker's failure modes. Any non-migrated annotations stay put.
-
 ## LSP wire format conventions (fixed by this slice)
 
 Every subsequent Stage 2/3 slice inherits the conventions below.
