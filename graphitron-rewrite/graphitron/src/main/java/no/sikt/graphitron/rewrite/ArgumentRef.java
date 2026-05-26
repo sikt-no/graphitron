@@ -267,8 +267,7 @@ public sealed interface ArgumentRef {
              *       (admissible carriers without {@code @value}).</li>
              *   <li>DELETE / INSERT: {@code setFields} is empty; {@code lookupKeyFields} is every
              *       admissible carrier. INSERT walks {@code fields()} directly for VALUES emit, so
-             *       an empty {@code setFields} is correct (audit key
-             *       {@code mutation-input.update-set-fields-equal-value-marked}).</li>
+             *       an empty {@code setFields} is correct.</li>
              *   <li>UPSERT: refused upstream by {@code MutationInputResolver} under R144; the
              *       factory is unreachable with this kind. Query-side ({@code kind == null}) takes
              *       the same shape as DELETE: every admissible carrier in {@code lookupKeyFields},

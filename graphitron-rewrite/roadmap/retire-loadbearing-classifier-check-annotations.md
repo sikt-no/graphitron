@@ -1,7 +1,7 @@
 ---
 id: R237
 title: Retire @LoadBearingClassifierCheck / @DependsOnClassifierCheck annotation pair
-status: Ready
+status: In Review
 bucket: architecture
 theme: structural-refactor
 depends-on: []
@@ -157,31 +157,33 @@ Runs under Delete, Shrink, and Demote (lands together with Phase 4 or as a tail 
 
 Knock-on edits landed in the same window as Phase 4. The four test-file javadocs were rephrased as drive-by cleanup in Phase 4 (they had code-level references the build required gone); 15 roadmap items rephrased to drop the annotation framing while preserving each plan's underlying intent (the same list named above, plus the residual `load-bearing classifier check` cites in `simplify-update-mutations-drop-value.md:13` and `list-valued-external-field-multiset.md:24` that the same pass caught); `rewrite-design-principles.adoc` retirement-window NOTE removed (now obsolete). Changelog entry appended.
 
-#### Rework needed: residual production-code javadocs missed (2026-05-26)
+#### Shipped: Phase 5 follow-up sweep (2026-05-26)
 
-In Review → Ready bounce. Phase 4's commit message claimed "Residual javadoc and code-comment references to the annotation pair are rephrased so the doc stops claiming a mechanism that no longer exists," but a sweep across `graphitron-rewrite/graphitron/`, `graphitron-rewrite/graphitron-sakila-example/`, and `graphitron-rewrite/docs/` finds 12 production sites still carrying the retired `load-bearing classifier check {key}` framing — each citing an annotation key string that no longer exists anywhere in the codebase. This is the exact false-invariant failure mode the broadened "Documentation names only live tests/code" principle (rewrite-design-principles.adoc:135-143) warns against, and the same principle Phase 1 elevated as R237's justification.
+The In Review review found Phase 4's "Residual javadoc and code-comment references … are rephrased" claim under-delivered: a sweep across `graphitron-rewrite/graphitron/`, `graphitron-rewrite/graphitron-sakila-example/`, and `graphitron-rewrite/docs/` turned up 30 production sites still carrying the retired `load-bearing classifier check {key}` framing or citing annotation key strings (`record-binding.producer-agreement`, `output-fields.uniform-domain-return-type`, `input-record.shape-from-input-type`, `mutation-dml-record-field.data-table-equals-input-table`, `context-argument.type-agreement`, `mutation-delete-carrier.pk-resolution-projection-clean`, `body-param.nonnull-is-effective-runtime`, `source-key.result-row-walk-target-aligned-empty-path`, `error-channel.local-context-transport`, `error-type.path-message-fields`, `service-catalog-tablemethod-must-be-static`, `snapshot-built-implies-clean-parse`, `class-accessor-resolver-shape-guarantee`, `sourcerow-*`, `mutation-input.update-set-fields-equal-value-marked`, `fetcher-registrations.no-empty-bodies`) that no longer exist anywhere in the codebase. This is the exact false-invariant failure mode the broadened "Documentation names only live tests/code" principle (rewrite-design-principles.adoc:135-143) warns against — and the principle Phase 1 elevated as R237's justification.
 
-The Phase 5 spec list named the four test-file javadocs and 15 roadmap items; main-source javadocs and the sakila schema comments were not explicitly itemised, but the principle that R237 stood up makes them in-scope by direct implication. A follow-up Phase 5 commit sweeps the 12 surviving sites and rephrases each to anchor on the actual structural pin (sealed-variant arm, compact-constructor invariant, record-component type) instead of the retired key. Build was green at In Review submission (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes on JDK 25); the rework is text-only and should stay green.
+Each site was rephrased to anchor on the actual structural pin (sealed-variant arm, compact-constructor invariant, non-null record component, named resolver class) rather than the retired key. Two runtime exception messages in `ProducerBinding.DmlEmitted` / `ServiceEmitted` had their prose updated alongside the matching `hasMessageContaining` assertion in `ProducerBindingDmlEmittedTest`. The `typed-rejection.adoc` xref's link text rephrased from "load-bearing classifier guarantee catalog" to "classifier-shaped emitter-assumption" (xref target is the unchanged `_classifier_guarantees_shape_emitter_assumptions` anchor).
 
-Surviving sites:
+Out of scope (preserved): the two `ProducerBinding` / test javadocs that explicitly mark the
+`mutation-dml-record-field.data-table-equals-input-table` key as **retired** while describing
+what now pins it structurally; these are honest historical context, not false invariants.
+The descriptive English use of "load-bearing" in tests and unrelated docs is preserved.
+The `roadmap/changelog.md` historical entries stay archaeological per § "Out of scope" above.
 
-- Main-source javadocs under `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/`:
-  - `RecordBindingResolver.java:64` — `record-binding.producer-agreement`
-  - `BuildContext.java:497` — `mutation-delete-carrier.pk-resolution-projection-clean`
-  - `TypeBuilder.java:1133` — `input-record.shape-from-input-type`
-  - `model/OutputField.java:29` — `output-fields.uniform-domain-return-type`
-  - `model/Rejection.java:107` — `record-binding.producer-agreement`
-  - `model/Rejection.java:134` — "R190's load-bearing classifier check"
-  - `model/Rejection.java:146` — `context-argument.type-agreement`
-  - `model/Rejection.java:183` — `output-fields.uniform-domain-return-type`
-  - `model/InputRecordShape.java:18` — `input-record.shape-from-input-type`
-  - `model/MutationField.java:235` — `mutation-dml-record-field.data-table-equals-input-table`
-- Sakila schema comments at `graphitron-rewrite/graphitron-sakila-example/src/main/resources/graphql/schema.graphqls:1297, 1308` — same key as MutationField.java.
-- Docs at `graphitron-rewrite/docs/typed-rejection.adoc:54` — "load-bearing classifier guarantee catalog"; both the link text and the "catalog" wording belong to the retired framing. The xref target (`_classifier_guarantees_shape_emitter_assumptions`) still resolves; rephrase the link text to name the principle in its current form and drop "catalog".
+Files touched in the sweep (15 main-source, 6 test, 1 schema, 1 docs):
+`graphitron/.../RecordBindingResolver.java`, `BuildContext.java`, `TypeBuilder.java`,
+`FieldBuilder.java`, `SourceRowDirectiveResolver.java`, `ArgumentRef.java`,
+`generators/FetcherEmitter.java`, `model/Rejection.java`, `model/OutputField.java`,
+`model/InputRecordShape.java`, `model/MutationField.java`, `model/HasInputRecordShape.java`,
+`model/ProducerBinding.java`, `model/SourceKey.java`, `model/ChildField.java`;
+`graphitron/src/test/.../TestTableMethodStub.java`, `catalog/CatalogBuilderSnapshotTest.java`,
+`SingleRecordPayloadPipelineTest.java`, `generators/schema/FetcherRegistrationsEmitterTest.java`,
+`validation/RecordFieldAccessorValidationTest.java`,
+`validation/LocalContextErrorsFieldValidationTest.java`,
+`validation/InputTypeValidationTest.java`, `model/ProducerBindingDmlEmittedTest.java`;
+`graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`;
+`docs/typed-rejection.adoc`.
 
-Per-site rephrase target: name the structural mechanism that actually pins each contract — the sealed variant a consumer pattern-matches on, the compact-constructor invariant a record enforces at construction, the non-null record component a consumer reads directly — rather than the abandoned annotation key. Several of the sites (Rejection.java's four arms, OutputField.java) describe rejections backed by record-shape invariants; the rephrase can attribute the producer-side guarantee to the rejection rule itself rather than to a "check" registered under a key. For the typed-rejection.adoc cross-reference, name the principle in its post-Phase-1 form ("classifier-shaped emitter assumption" or similar) and drop the "catalog" noun.
-
-Out of scope for the rework: the prose in `roadmap/changelog.md` historical entries (archaeological per § "Out of scope" above), and the descriptive English use of "load-bearing" in `parent-context-aware-schema-coordinates.md`, `intellij-lsp-plugin.md`, and `dispatch-axes.adoc:89` (table column header). These are noted here so the next implementation pass doesn't widen the sweep.
+Build green: `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` passes on JDK 25.
 
 ## Classification table
 

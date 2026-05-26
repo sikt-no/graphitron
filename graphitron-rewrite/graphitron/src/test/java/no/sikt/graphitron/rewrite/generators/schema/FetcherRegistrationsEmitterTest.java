@@ -20,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * gates on {@code fetcherBody != null}), producing an orphan call site and a javac error
  * in the emitted {@code GraphitronSchema.java}. The invariant is gated at the
  * construction site in {@code typeBody} / {@code nestedBody} (Optional return + ifPresent
- * put), and pinned globally via the load-bearing pair keyed
- * {@code fetcher-registrations.no-empty-bodies}.
+ * put); the sakila-example cross-module compile is the structural backstop that catches any
+ * regression that slips past the gating change.
  *
  * <p>One fixture per code path that produced an empty body before the gating change:
  * the regular type arm (an unreferenced payload-shaped type with one classifier-skipped

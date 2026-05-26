@@ -31,7 +31,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * per-kind divergence shows up immediately. DELETE-with-carrier is rejected at classify time
  * (the row is gone before the response SELECT can read it). Rejection paths share one
  * fixture per case. Cross-path cases verify the trigger is consumer-agnostic and that the
- * load-bearing data-table-equals-input-table check rejects mismatches.
+ * data-table-equals-input-table rejection (now backed structurally by
+ * {@link no.sikt.graphitron.rewrite.model.ProducerBinding.DmlEmitted}'s compact constructor)
+ * fires on mismatches.
  */
 @PipelineTier
 class SingleRecordPayloadPipelineTest {
@@ -301,7 +303,7 @@ class SingleRecordPayloadPipelineTest {
     @EnumSource(value = DmlKind.class, names = {"INSERT", "UPDATE"})
     void payload_dataTableMismatchesInputTable_rejectsAtClassifier(DmlKind kind) {
         // The data field's @table is `actor`, but the mutation's input @table is `film` —
-        // the load-bearing mutation-dml-record-field.data-table-equals-input-table check rejects.
+        // ProducerBinding.DmlEmitted's compact constructor rejects the disagreement at fold time.
         // Uses bulk input + list data field so the carrier admits its shape and the mismatch
         // check fires; the equivalent single-data-field shape would not fire Invariant #16.
         String sdl = """

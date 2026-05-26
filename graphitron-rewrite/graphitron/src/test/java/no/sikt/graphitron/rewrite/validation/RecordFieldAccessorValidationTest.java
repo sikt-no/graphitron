@@ -20,9 +20,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link AccessorResolution} arm (positive cases) or the produced {@link ValidationError}
  * messages (rejection cases).
  *
- * <p>Mirrors the {@code class-accessor-resolver-shape-guarantee} producer + consumer pair: every
- * shape an emitter relies on is exercised here, and every shape the resolver rejects produces
- * an actionable diagnostic.
+ * <p>Exercises the {@link no.sikt.graphitron.rewrite.ClassAccessorResolver} producer + the
+ * downstream emitter consumer: every shape an emitter relies on is exercised here, and every
+ * shape the resolver rejects produces an actionable diagnostic.
  */
 @PipelineTier
 class RecordFieldAccessorValidationTest {

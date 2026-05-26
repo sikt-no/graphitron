@@ -1293,8 +1293,8 @@ input CreateKeyedNodeInput @table(name: "keyed_node") {
 # the type promotes to PojoResultType.NoBacking at type-classification time; the data field
 # classifies as ChildField.SingleRecordTableField; the mutation classifies as
 # MutationField.MutationDmlRecordField with a PK-only RETURNING in a tight transaction.
-# The data field's @table (film) must equal the input @table (film), enforced by the
-# load-bearing classifier check mutation-dml-record-field.data-table-equals-input-table.
+# The data field's @table (film) must equal the input @table (film), enforced structurally
+# by ProducerBinding.DmlEmitted's compact-constructor invariant.
 type FilmPayload {
     film: Film
 }
@@ -1304,8 +1304,8 @@ type FilmPayload {
 # type-classification time; the data field classifies as ChildField.SingleRecordTableField
 # with SourceKey.Cardinality.MANY (the data field's wrapper is list-shaped); the mutation
 # classifies as MutationField.MutationBulkDmlRecordField with batched per-row DML inside one
-# transaction. The data field's @table (film) must equal the input @table (film), enforced by
-# the load-bearing classifier check mutation-dml-record-field.data-table-equals-input-table.
+# transaction. The data field's @table (film) must equal the input @table (film), enforced
+# structurally by ProducerBinding.DmlEmitted's compact-constructor invariant.
 type FilmsPayload {
     films: [Film!]
 }

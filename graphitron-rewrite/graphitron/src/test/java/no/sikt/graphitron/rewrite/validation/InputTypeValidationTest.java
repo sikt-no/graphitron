@@ -39,8 +39,9 @@ class InputTypeValidationTest {
     /**
      * Minimal {@link InputRecordShape} for tests that construct input types directly: the
      * validator under test reads only the validator-relevant slots, but the InputType records
-     * require a non-null shape (load-bearing for the {@code input-record.shape-from-input-type}
-     * classifier check). A single placeholder component satisfies the compact constructor.
+     * require a non-null shape (the {@code recordShape()} component is the structural pin for
+     * a successfully classified input type). A single placeholder component satisfies the
+     * compact constructor.
      */
     private static InputRecordShape placeholderShape(String typeName) {
         return new InputRecordShape(

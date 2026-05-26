@@ -293,8 +293,7 @@ public record SourceKey(
          * a typed {@code XRecord} or {@code List<XRecord>} verbatim). Cardinality matches
          * the producer's output cardinality (single → {@link Cardinality#ONE}; list →
          * {@link Cardinality#MANY}). The structural invariants are enforced by
-         * {@link SourceKey}'s compact constructor under the load-bearing key
-         * {@code source-key.result-row-walk-target-aligned-empty-path}.
+         * {@link SourceKey}'s compact constructor.
          */
         record ResultRowWalk() implements Reader {}
     }

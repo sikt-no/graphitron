@@ -71,8 +71,8 @@ class TestTableMethodStub {
 
     /**
      * Instance method (no {@code static} modifier) — exists to provoke the
-     * {@code service-catalog-tablemethod-must-be-static} rejection arm in
-     * {@code ServiceCatalog.reflectTableMethod}. Used by
+     * static-only rejection arm in {@code ServiceCatalog.reflectTableMethod} (the
+     * {@code MethodRef.StaticOnly} sealed variant requires a static method). Used by
      * {@code TableMethodFieldValidationTest.instanceTableMethod_validatorReportsAuthorError}.
      */
     public Film getFilmInstance() {

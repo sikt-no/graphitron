@@ -1502,11 +1502,11 @@ class FieldBuilder {
      * nullability — the top-level argument and every {@code NestingField} on the path. The
      * value passed to {@link BodyParam}'s {@code nonNull} slot at each leaf is
      * {@code effectiveNonNull && field.nonNull()}; the recursion into a {@link InputField.NestingField}
-     * carries {@code effectiveNonNull && nf.nonNull()} forward. This is the producer side of the
-     * {@code body-param.nonnull-is-effective-runtime} contract: the call-site extraction emitted
-     * for {@code NestedInputField} parameters cascades through {@code instanceof} checks and
-     * returns {@code null} whenever any level is missing, so the emitter is allowed to omit the
-     * runtime null guard only when every enclosing level is statically non-null.
+     * carries {@code effectiveNonNull && nf.nonNull()} forward. The {@code BodyParam.nonNull}
+     * slot carries the effective nullability the emitter relies on: the call-site extraction
+     * emitted for {@code NestedInputField} parameters cascades through {@code instanceof} checks
+     * and returns {@code null} whenever any level is missing, so the emitter is allowed to omit
+     * the runtime null guard only when every enclosing level is statically non-null.
      */
     private void walkInputFieldConditions(
             List<InputField> fields, String outerArgName, List<String> pathPrefix,

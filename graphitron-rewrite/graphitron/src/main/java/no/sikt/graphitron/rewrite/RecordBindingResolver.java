@@ -61,10 +61,10 @@ import static no.sikt.graphitron.rewrite.BuildContext.locationOf;
  * <p>The {@code @record} directive is read only to surface a directive-ignored warning; it does
  * not contribute to the binding under R96.
  *
- * <p>Producer site for the {@code record-binding.producer-agreement} load-bearing classifier
- * check; the consumer is {@link FieldBuilder} (via {@code resolveRecordAccessor}), which assumes
- * the resolved {@code Class} the binding produces is the class field accessors will be emitted
- * against.
+ * <p>The per-SDL-type fold is the producer-side rejection point for backing-class disagreement,
+ * surfacing as {@link Rejection.AuthorError.RecordBindingMultiProducer}. The consumer is
+ * {@link FieldBuilder} (via {@code resolveRecordAccessor}), which assumes the resolved
+ * {@code Class} the binding produces is the class field accessors will be emitted against.
  */
 final class RecordBindingResolver {
 

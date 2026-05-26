@@ -219,9 +219,10 @@ public final class FetcherEmitter {
      *
      * <p>Single-PK tables (the sakila fixtures) emit {@code where(PK.eq(value))} or
      * {@code where(PK.in(getValues(PK)))}; composite-PK tables emit {@code where(row(PK1,...).
-     * in(...))}. The {@code mutation-dml-record-field.data-table-equals-input-table} load-
-     * bearing key pins that the data field's table equals the input table, so the PK columns
-     * here are exactly what the upstream RETURNING projected.
+     * in(...))}. The data field's table equals the input table by construction (the
+     * {@link no.sikt.graphitron.rewrite.model.ProducerBinding.DmlEmitted} compact constructor
+     * enforces this structurally), so the PK columns here are exactly what the upstream
+     * RETURNING projected.
      *
      * <p><b>Order preservation (R141, {@code Cardinality.MANY} arm).</b> The bulk arm builds
      * a PK-keyed map of the SELECT result, then iterates {@code source.getValues(PK)} (the

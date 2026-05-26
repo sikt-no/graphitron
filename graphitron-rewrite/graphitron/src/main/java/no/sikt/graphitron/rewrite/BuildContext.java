@@ -493,11 +493,11 @@ class BuildContext {
      * {@link ChildField.SingleRecordTableFieldFromReturning} to the emitter.
      *
      * <p>Single producer of {@code List<PkResolution>} by construction; consumers of the
-     * projection list rely on the rejection rule (the
-     * {@code mutation-delete-carrier.pk-resolution-projection-clean} load-bearing classifier
-     * check) being a hard reject and not a silent drop. Relaxing the rejection would break the
-     * emitter's exhaustive sealed switch over {@link PkResolution}'s two arms — the rejection
-     * arms cannot reach the emitter by type.
+     * projection list rely on the rejection rule (any {@code NonPkNonNullable},
+     * {@code ServiceField}, or {@code UnsupportedField} arm rejects the whole carrier) being a
+     * hard reject and not a silent drop. Relaxing the rejection would break the emitter's
+     * exhaustive sealed switch over {@link PkResolution}'s two arms — the rejection arms cannot
+     * reach the emitter by type.
      *
      * <p>Consumes already-classified {@link ChildField} values from {@link #fieldRegistry};
      * called from {@link FieldBuilder} during mutation classification, where every type's
