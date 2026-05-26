@@ -46,6 +46,8 @@ This unification turns "update an FK column" into a natural shape: an FK referen
 
 INSERT and DELETE arms are untouched by the partition change. INSERT has no partition (every input field is a VALUES cell); DELETE has no SET clause. Removing `@value` deletes the `@value`-rejection clauses on these arms.
 
+**DELETE input fields are PK-only by the same four-carrier rule.** Today's DELETE inputs are PK-only by directive position (a non-PK column on a DELETE input could only be `@value`-marked, which DELETE rejects, or unmarked, which would put a non-PK column into the implicit WHERE, silently broad). Under R188, the rule becomes explicit: a `ColumnField` / `CompositeColumnField` / `ColumnReferenceField` / `CompositeColumnReferenceField` whose target columns on the input's own table contain any non-PK column is rejected at classify time on DELETE with diagnostic key `mutation-input.delete-input-field-non-pk` (message: "input field 'X' targets non-PK columns on DELETE; DELETE has no SET clause to receive the value. Move the column to a query argument, or replace the field with `@condition` on a non-`@table` argument."). Mirrors UPDATE's "no non-PK columns to set" diagnostic shape and removes the only path by which a DELETE could pick up a non-PK column predicate implicitly. `@condition(override: true)` on an `UnboundField` is unaffected (no target column to classify).
+
 ### `@condition` placements on mutations
 
 Three placements are admitted:
@@ -84,6 +86,14 @@ The R144 check stays as-is: the field has a row-identity proof iff at least one 
 
 holds; else the field is `UnclassifiedField` via `mutation-input.where-identifies-row`. No sealed `RowIdentity` taxonomy; the disjunction is checked directly in `MutationInputResolver`, and the emitter forks once on the three cases. The validator's invariant is the same disjunction R144 already pins. The boolean shape is intentionally retained: the three cases share the same `.where(...)` emit shape (just different ingredients), so a sealed lift would re-introduce a fork on payload presence inside the variant rather than eliminating one.
 
+A stricter sealed reading is conceivable: `sealed interface RowIdentity { record ImplicitPk(); record Override(ConditionFilter predicate); record MultiRow(); }` carried on the field record alongside `additionalConditions: List<ConditionFilter>`. The fork-on-payload-presence objection does not apply to that exact shape (each arm holds exactly its payload, `additionalConditions` is uniformly a sibling). The boolean-pair form is kept because no consumer downstream benefits: the emitter's three-arm `if`-chain at the cited site is the only switch on identity, and its branches are not symmetric in shape (override AND-s into a single `.where`, multiRow emits no WHERE at all, implicit-PK threads through `lookupKeyFields`). Wrapping the discriminator in a sealed type adds a constructor and a pattern-match without removing any existing fork; `RowIdentity.MultiRow` carries no payload because the SET/WHERE columns the multiRow arm reads live elsewhere on the field record. If R222's `PredicateCarrier` slice surfaces a second consumer of the same identity discrimination, the boolean pair lifts mechanically to the sealed form; today there is none.
+
+### Tables without a PK
+
+`JooqCatalog.findPkColumns(table)` returns empty when the input's `@table` has no primary key declared in the catalog. Under the four-carrier rule above, every input field then falls into the "no target column in PK" arm and lands in `setFields`; `lookupKeyFields` is empty. The R144 disjunction then rejects the field unless `override: true` or `multiRow: true` is set, but the diagnostic the schema author sees is R144's generic "where-identifies-row", pointing at row identity rather than at the missing catalog PK.
+
+R188 adds a dedicated classify-time rejection at the moment the PK lookup returns empty on a verb that requires PK coverage (UPDATE / DELETE without `multiRow:` and without an input-field `override: true`). Diagnostic key `mutation-input.table-has-no-pk`, message naming the table and pointing at the three escape hatches (declare a PK on the table, set `multiRow: true`, or attach `@condition(override: true)` to an input field). The validator mirrors the same check at SDL-walk time so the catalog-migration case ("PK dropped from `film`") fails loudly at the post-migration build rather than silently re-classifying every UPDATE/DELETE on the table as broadcast-or-override.
+
 ### Schema-legibility trade
 
 Under `@value`, the SET/WHERE partition was visible in the SDL. Under R188, a reader looking at `FilmUpdateInput.title` must know `filmId` is the PK in `film` to predict that `title` lands in SET. This is a real legibility reduction, accepted because the information lives in the catalog and the two structural diagnostics it gated existed to police a partition the catalog already knew. The user-doc rewrite names the inference rule once.
@@ -107,6 +117,8 @@ UPSERT is deferred to R145; R145's body is updated so its conflict-target / SET 
 * `MutationInputResolver.java`:
   * Drop the `valueMarkedNames` accumulation loop (current ~356-401) and the rejection sites it gates: `@value` on DELETE/INSERT, `@value` + `@condition` co-occurrence.
   * Drop the UPDATE-specific structural diagnostics (current ~509-520). The new failure mode (PK in input, no non-PK columns, no override) becomes a single check: "no non-PK columns to set; UPDATE has nothing to write."
+  * Add a `mutation-input.table-has-no-pk` rejection on UPDATE / DELETE when `JooqCatalog.findPkColumns(inputTable.tableName())` returns empty, `multiRow` is false, and no input-field `override: true` is present. The check runs before the per-field admission loop so the diagnostic surfaces at the table level, not as a cascade of per-field "no target column" failures.
+  * Add a `mutation-input.delete-input-field-non-pk` rejection on DELETE for any column-bound carrier whose target columns on the input's own table include a non-PK column. The check piggy-backs on the four-carrier classifier walk Strand A already adds (run the PK-membership categorisation; on DELETE, the no-PK and mixed arms both reject; the all-PK arm contributes to the implicit WHERE).
 * `TypeFetcherGenerator.java`: re-word `@value`-referencing javadoc to "non-PK admissible carriers." No behavioural change to the SET/WHERE walk.
 
 ### Strand B: `@condition` at two mutation placements
@@ -189,6 +201,8 @@ Strand A:
 * FK reference on a non-PK column lands in SET: `updateFilm(in: { filmId, languageRef })` where `languageRef` is a `ColumnReferenceField` whose lifted source is `language_id` (non-PK) → `setFields` contains the reference carrier, `lookupKeyFields` contains `filmId`. Pins the four-carrier unified rule against the "references always WHERE" reading.
 * FK reference on a PK column lands in WHERE: a join-table UPDATE input where one PK column is itself an FK → reference carrier lands in `lookupKeyFields`.
 * `CompositeColumnReferenceField` with diagonal PK overlap: classify-time reject with the new `mutation-input.composite-reference-mixes-pk-and-non-pk` diagnostic naming the field and per-column PK membership.
+* Table without a PK in the catalog: classify-time reject UPDATE and DELETE (no `multiRow:`, no override input field) with `mutation-input.table-has-no-pk` naming the table. The same shape under `multiRow: true` or under an `override: true` input field admits. Pins the dedicated diagnostic against the R144 generic message.
+* DELETE input field whose target column is non-PK (single-column `ColumnField`): classify-time reject with `mutation-input.delete-input-field-non-pk`. The same field on UPDATE admits and lands in `setFields` (Strand A's "FK on non-PK column" case is the UPDATE-side mirror); pins that DELETE is the strict side.
 
 Strand B (each admit case asserts the slot values on the field record, not just admit/reject):
 
@@ -201,6 +215,7 @@ Strand B (each admit case asserts the slot values on the field record, not just 
 * Mixed layers: one input field with `override: true` plus one input field with non-override `@condition`: admit; override populates the override slot, non-override populates `additionalConditions`, both compose into WHERE.
 * `multiRow: true` plus non-override `@condition`: admit; broadcast WHERE additionally filtered by the condition.
 * DELETE parity (Strand B inherits in full): non-override input-field `@condition` on a DELETE input → admit; WHERE = `pk = ? AND condition(?)`. Input-field `@condition(override: true)` on a DELETE input where PK is not in input → admit; WHERE = `condition(?)` only. Non-`@table` argument `@condition` on a DELETE → admit; WHERE = `pk = ? AND argCondition(?)`.
+* Reflection-shape asymmetry: a `@condition` method whose signature includes a per-row jOOQ record parameter passes the query-side reflection contract but is rejected on the mutation side with `mutation-condition.method-shape-table-plus-scope-scalars`. Pins the deliberate narrowing against a future relaxation of `ConditionResolver` that would silently invalidate `condition.adoc`'s "Use on `@mutation` fields" paragraph.
 
 ### Compilation
 
