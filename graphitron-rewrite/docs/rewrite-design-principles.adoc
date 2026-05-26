@@ -124,8 +124,6 @@ When a contributor wants to record a producer-consumer linkage explicitly ; beca
 
 Rule: if you relax a producer's check body, audit every emitter site that consumes the corresponding shape, in the same commit. The pipeline tests and the cross-module compile are the safety net.
 
-NOTE: The `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` annotation pair is in retirement under roadmap item R237 (`graphitron-rewrite/roadmap/retire-loadbearing-classifier-check-annotations.md`). Existing sites remain audit-clean until they retire under the chosen Phase 3 branch; no new producer keys should be filed during the retirement window.
-
 == Pipeline tests are the primary behavioural tier
 
 Behaviour is asserted at the SDL → classified model → generated `TypeSpec` pipeline layer, not at the per-variant unit tier. Per-variant structural tests (method names, return types, which methods exist) are bookkeeping; the primary signal that a feature works is that a realistic SDL produces a realistic `TypeSpec` end-to-end through the classifier. New features earn a pipeline test first; unit tests cover structural invariants that pipeline coverage would make repetitive.

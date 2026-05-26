@@ -222,9 +222,9 @@ Three phases, ordered so each is independently shippable.
   module, depending on where the parsing currently lives).
 - Sealed-result extension to `ArgBinding` to carry grouping
   outcomes.
-- New `@LoadBearingClassifierCheck` keys for grouping invariants
-  (every input field belongs to exactly one grouping entry; each
-  group entry's RHS matches the target type's constructor params).
+- Compact-constructor-enforced grouping invariants on the new
+  carrier (every input field belongs to exactly one grouping entry;
+  each group entry's RHS matches the target type's constructor params).
 - Pipeline-tier coverage: SDL with a multi-target service method →
   emitted fetcher constructs each target from the grouped input
   fields.
@@ -244,10 +244,9 @@ sakila fixture; existing single-source `argMapping` is unchanged.
   `FieldBuilder.classifyChildField`, and
   `GraphitronSchemaValidator.validateTableInputType` continue to
   consume `TableInputType`; no change to their internals.
-- New `@LoadBearingClassifierCheck` key:
-  `input-table.consumer-derived-or-argmapping` — the producer
-  guarantees that every `TableInputType` field has either a
-  consumer-derived table or an explicit `argMapping` binding.
+- Structural invariant: every `TableInputType` field carries either
+  a consumer-derived table or an explicit `argMapping` binding,
+  enforced at the producer site via a non-null typed carrier.
 - Existing `@table` declarations on inputs become a no-op (still
   parsed, but the directive's value isn't consulted; the
   consumer-derived value wins). Surfaces as a build warning during

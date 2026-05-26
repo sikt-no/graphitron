@@ -19,7 +19,6 @@ Scope notes for Spec:
 - **Shape.** Sealed sub-taxonomy on `ParamSource.Arg`, vs. an enum axis carried alongside `extraction` / `path`, vs. a wrapper `record InferredArg(Arg inner, InferenceKind kind) implements ParamSource`. Each has different exhaustiveness consequences for the downstream switch surface (`FetcherEmitter`, `ServiceProducerPipeline`, `RecordBindingResolver`).
 - **Visibility.** Where does provenance render? Resolved-coordinate report (definitely); LSP hover on the Java parameter (likely); a build-time warning when an inferred binding survives into emission (open — turns the silent rebind into a noisy one, which authors can grep but might find chatty).
 - **Strict mode.** Should a build-time flag let authors disable inference entirely (only `argMapping` and identity name match allowed)? Useful for codebases that want zero implicit behavior; cheap to add once provenance is typed.
-- **Cross-link R215.** R215 paired `@LoadBearingClassifierCheck` keys with consumer-side `@DependsOnClassifierCheck` annotations. The same discipline applies here: a key like `service-catalog.inferred-binding-marks-provenance` paired with consumers that render the binding's source.
 
 Files in play: `model/ParamSource.java`, `ServiceCatalog.java` (`inferBindingsByType`, both reflect methods), every downstream switch on `ParamSource` (compiler exhaustiveness check is the safety net), and the resolved-coordinate report renderer.
 

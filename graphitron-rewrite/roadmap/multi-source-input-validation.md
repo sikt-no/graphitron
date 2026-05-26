@@ -198,8 +198,9 @@ parse correctness.
   chain per `Constraint`. The R92-derived constraints already
   contribute to the same set (after R92 phase 3 is restructured per
   the *inheritance* note above).
-- New `@LoadBearingClassifierCheck`: every `Constraint` arm has a
-  matching emit case in both consumers (rendered + runtime).
+- Sealed-switch exhaustiveness on the `Constraint` carrier covers both
+  consumers (rendered + runtime); adding a new arm forces a compile
+  error in both emit sites.
 - Pipeline-tier: SDL with `@Size` → emitted `InputType` registration
   carries the directive application AND the runtime
   `ConstraintMapping` carries the corresponding constraint.

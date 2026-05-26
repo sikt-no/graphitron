@@ -153,6 +153,10 @@ Runs under Delete, Shrink, and Demote (lands together with Phase 4 or as a tail 
 - Test javadocs in `PkResolutionEmitterReachabilityTest`, `DmlBulkMutationsExecutionTest`, `ServiceFieldValidationTest`, `TableMethodFieldValidationTest`, `LoadBearingGuaranteeAuditTest` (if it survives): rephrase to name the type-system contract or the cross-module mechanism instead of the annotation pair.
 - `graphitron-rewrite/roadmap/changelog.md`: append a one-line entry naming R237 and the landing commit SHA.
 
+#### Shipped: Delete (2026-05-25)
+
+Knock-on edits landed in the same window as Phase 4. The four test-file javadocs were rephrased as drive-by cleanup in Phase 4 (they had code-level references the build required gone); 15 roadmap items rephrased to drop the annotation framing while preserving each plan's underlying intent (the same list named above, plus the residual `load-bearing classifier check` cites in `simplify-update-mutations-drop-value.md:13` and `list-valued-external-field-multiset.md:24` that the same pass caught); `rewrite-design-principles.adoc` retirement-window NOTE removed (now obsolete). Changelog entry appended.
+
 ## Classification table
 
 Walked all 59 unique keys across `graphitron-rewrite/graphitron/` and `graphitron-rewrite/graphitron-lsp/` via FQN-aware grep with annotation-context lookback. Counts feeding Phase 3's decision:

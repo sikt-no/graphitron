@@ -14,10 +14,10 @@ R205 surfaced a five-layer survival pattern where a documented design claim (`do
 
 This Backlog stub is the Spec-stage prompt to scope the audit. None of the below have an obvious answer; the Spec phase picks one and defends the choice:
 
-- **Audit method.** Mechanical (extract every truth table / numbered claim / "every X does Y" sentence from the docs, grep for the test that enforces it), manual (read each doc paragraph-by-paragraph against the code it describes), or audit-tool-assisted (something that diffs documented invariants against `@LoadBearingClassifierCheck` / `@DependsOnClassifierCheck` coverage)?
+- **Audit method.** Mechanical (extract every truth table / numbered claim / "every X does Y" sentence from the docs, grep for the test that enforces it), or manual (read each doc paragraph-by-paragraph against the code it describes)?
 - **Sweep depth.** All rewrite-internal docs, or only design docs (excluding principles)? Per-resolver javadocs in scope, or only top-level `.adoc` files?
 - **Output shape.** A single audit report committed under `graphitron-rewrite/docs/`, or one Backlog item per drift site found?
-- **Forcing function for future drift.** Add a `@LoadBearingClassifierCheck`-style anchor to every truth-table row that points at a test that pins it? Or a doc-side convention (`xref:test-file.java:TestName[]`) plus a CI lint that fails on dangling references?
+- **Forcing function for future drift.** A doc-side convention (`xref:test-file.java:TestName[]`) plus a CI lint that fails on dangling references? Or a per-truth-table-row javadoc `{@link}` from the claim to the test that pins it?
 
 R205 closes the specific instance at the plain-input-filter surface but does not generalise; that's this item's job.
 

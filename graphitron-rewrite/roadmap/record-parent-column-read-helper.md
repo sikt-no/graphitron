@@ -143,25 +143,20 @@ sites in lockstep when a sixth variant is added.
   is structurally unreachable), and emit `(($T) env.getSource()).<expr>`
   where `<expr>` is the per-shape access call.
 
-### Load-bearing classifier check
+### Classifier-emitter narrowing contract
 
 The `buildFkRowKey` callsite relies on the classifier guarantee that
 `PojoResultType.NoBacking` never reaches this emission path
 (`deriveFkRecordParentSource` rejects it at FieldBuilder.java:4184).
 The dispatcher's exhaustive switch admits `PropertyByName`; the
-row-key formatter rejects it. Mark the guarantee with paired
-annotations so a future relaxation surfaces as an orphaned check, not
-a runtime `IllegalStateException` for an end user:
-
-* `@LoadBearingClassifierCheck(key = "fk-record-parent-source-rejects-nobacking", ...)`
-  on `FieldBuilder.deriveFkRecordParentSource`'s `NoBacking` early
-  return.
-* `@DependsOnClassifierCheck(key = "fk-record-parent-source-rejects-nobacking", ...)`
-  on `buildFkRowKey`'s `PropertyByName` rejection.
-
-The existing `DependsOnClassifierCheck` annotations on
-`buildLifterRowKey`, `buildAccessorKeySingle`, and `buildAccessorKeyMany`
-(GeneratorUtils.java:239+) are the pattern.
+row-key formatter rejects it. The structural target is a type-system
+lift on the `PojoResultType` carrier (drop the `NoBacking` arm at the
+emit-path's input, or thread a narrower sub-taxonomy that excludes it
+so the rejection becomes a compile-time impossibility) rather than a
+runtime guard; until that lift, the existing pipeline-tier tests pin
+the producer-side rejection, and a javadoc `{@link}` from
+`buildFkRowKey`'s rejection arm to `deriveFkRecordParentSource` makes
+the producer-consumer link navigable.
 
 ### Helper hygiene
 
