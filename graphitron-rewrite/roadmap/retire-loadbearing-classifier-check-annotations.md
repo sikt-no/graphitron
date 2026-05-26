@@ -1,12 +1,12 @@
 ---
 id: R237
 title: Retire @LoadBearingClassifierCheck / @DependsOnClassifierCheck annotation pair
-status: Ready
+status: In Review
 bucket: architecture
 theme: structural-refactor
 depends-on: []
 created: 2026-05-24
-last-updated: 2026-05-25
+last-updated: 2026-05-26
 ---
 
 # Retire @LoadBearingClassifierCheck / @DependsOnClassifierCheck annotation pair
