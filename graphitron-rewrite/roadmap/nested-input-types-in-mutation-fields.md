@@ -85,23 +85,32 @@ The partition lists (`setFields()` / `lookupKeyFields()`) carry the flat-leaf vi
    * Descend into `NestingField` when constructing `InputColumnBinding` entries, so the binding records the leaf's column and the leaf's access path. `fieldBindings` then includes nested leaves under their access path, and the PK-coverage check at `MutationInputResolver.java:501-519` works unchanged (it consumes `fieldBindings.targetColumns().sqlName()` — the column identity, not the field name).
 
 4. **Emit-site refactor** (`TypeFetcherGenerator.emitSet*` and the parallel WHERE/lookup-key emitters):
-   * Replace the literal `presenceLocal.containsKey($S)` / `valueMapLocal.get($S)` codegen pattern with a helper that consumes a `List<String>` access path. For a single-segment path, the emitted code is identical to today. For a multi-segment path, the emitted code chains presence + non-null `get` checks down the path before the leaf read:
+   * Replace the literal `presenceLocal.containsKey($S)` / `valueMapLocal.get($S)` codegen pattern with a helper that consumes a `List<String>` access path. For a single-segment path, the emitted code is identical to today. For a multi-segment path, the emitted code chains the presence walk down the path before the leaf read; at the leaf, `containsKey` decides whether the column is written, and the value (which may be `null`) decides what it's written *to*:
      ```java
      if (in.containsKey("lokalisering")) {
-         var __nested = in.get("lokalisering");
-         if (__nested instanceof Map<?,?> __m && __m.containsKey("landkode")) {
-             sets.put(t.LANDKODE, DSL.val(__m.get("landkode"), t.LANDKODE.getDataType()));
+         var __outer = in.get("lokalisering");
+         if (__outer instanceof Map<?,?> __m) {
+             if (__m.containsKey("landkode")) {
+                 sets.put(t.LANDKODE, DSL.val(__m.get("landkode"), t.LANDKODE.getDataType()));
+             }
          }
      }
      ```
-     The presence semantics across nesting layers need to be picked deliberately: a missing outer key, a null outer value, a present-outer-but-missing-leaf, and a present-outer-but-null-leaf are all distinct on the wire. Default contract: *each layer's presence is independent* — missing or null at any layer skips the leaf write. This is a *deliberate fork*, not an inevitable one. The alternative — "outer presence implies leaf-write-attempted" (PATCH-semantic: sending `lokalisering: { landkode: null }` writes `LANDKODE = NULL`) — is what consumers reaching for nested groupings typically model. We pick emitter-simple over consumer-intuitive here because the simpler contract composes uniformly across all four DML verbs and because the PATCH-semantic alternative is observably weaker on the wire only when the consumer writes a present-outer-but-null-leaf — a narrow case. Revisit if a forcing-function schema appears. Document the chosen contract in the user docs verbatim so the trade-off is visible to consumers.
+     The presence contract honors the same absent-vs-null distinction at every nesting layer that top-level mutation inputs already honor:
+     * **Key absent** at any layer → no claim about that subtree; skip every leaf under it.
+     * **Key present with `null` outer value** (`lokalisering: null`) → no claim about the group; skip every leaf under it. (Reading 1 of the outer-null fork; the literal-symmetric "clear every column in the group" reading is rejected as a sharp edge with no forcing-function schema.)
+     * **Key present with a Map at the outer layer** → descend; each inner leaf's absent-vs-null is honored independently per the leaf-level rule below.
+     * **Leaf key absent** → skip the SET write for that column.
+     * **Leaf key present with `null`** → emit `SET <col> = NULL` (explicit clear).
+     * **Leaf key present with a value** → emit `SET <col> = <value>`.
+     This means sending `lokalisering: { landkode: "NO", bynavn: null }` writes `landkode='NO', bynavn=NULL` and leaves `regionnavn` untouched, matching the top-level absent-vs-null semantics. Document this contract verbatim in the user docs so the difference between an absent key, a null outer, and a null leaf is visible to consumers.
    * Apply the same refactor to the bulk-INSERT row walkers (`in.get(rowIdx)` becomes the row-local map; from there the same access-path walk produces the cell read) and to the SET-via-EXCLUDED upsert arm.
 
 5. **`InputColumnBindingGroup` shape**:
    * `MapGroup` today carries an SDL field name as the wire-format key. Either extend the record to carry an access path (default singleton) or replace the name with a path field. The MutationInputResolver pre-step (R94's input-record validator surface) already recurses into nested input components via `fromMap`, so the validator side composes without change once `InputColumnBindingGroup` knows the access path.
 
 6. **User documentation** (first-client check):
-   * Section in `docs/manual/tutorial/05-mutations.adoc`: "Grouping fields with nested input types". Show the `EndreOrganisasjonInput` / `LokaliseringInput` forcing-function schema verbatim, walk the resulting mutation call (`mutation { endreOrganisasjon(input: [{ id, originalnavn, lokalisering: { landkode, bynavn } }]) }`), and call out three things: (a) the nested grouping has no DML semantics — it's purely a wire-format ergonomics shape; (b) `@field(name:)` on a nested leaf targets the outer table; (c) each nesting layer's presence is independent of its parent's. The chapter has no current section on nested input shapes; insertion point is right after the multi-column `@mutation(typeName: UPDATE)` example.
+   * Section in `docs/manual/tutorial/05-mutations.adoc`: "Grouping fields with nested input types". Show the `EndreOrganisasjonInput` / `LokaliseringInput` forcing-function schema verbatim, walk the resulting mutation call (`mutation { endreOrganisasjon(input: [{ id, originalnavn, lokalisering: { landkode, bynavn } }]) }`), and call out three things: (a) the nested grouping has no DML semantics — it's purely a wire-format ergonomics shape; (b) `@field(name:)` on a nested leaf targets the outer table; (c) absent-vs-null is honored at every nesting layer — an absent outer key or a `null` outer value skips the whole group, a present outer with a Map descends and each leaf's absent-vs-null decides whether the column is written and whether the write is `NULL` or a value. Worked example: `lokalisering: { landkode: "NO", bynavn: null }` writes `landkode='NO', bynavn=NULL` and leaves `regionnavn` untouched. The chapter has no current section on nested input shapes; insertion point is right after the multi-column `@mutation(typeName: UPDATE)` example.
    * Cross-reference from `docs/manual/reference/directives/mutation.adoc`: one paragraph in the "Input shape" subsection noting that nested non-`@table` inputs are admitted as a grouping shape, with a pointer to the tutorial chapter for the worked example.
    * No changes needed to `directives/table.adoc` (the nested grouping is *not* `@table`-backed) or to the diagnostics glossary unless step 1's `@value`-on-NestingField rejection ships before R188 retires `@value` — in which case the glossary gains one entry.
 
@@ -131,7 +140,7 @@ Tier choices reflect the project's test-pyramid guidance.
 
 * **Compilation tier (`SakilaCompilationTest` or equivalent)**: one fixture schema with the forcing-function `EndreOrganisasjonInput` shape against a Sakila table (or fixtures-codegen schema if the URegOrganisasjon shape is too narrow). Verify generated Java compiles under Java 17. Catches emit-site refactor bugs in step 4 that the classification tests can't see.
 
-* **Execution tier (Sakila DB via `SakilaServiceTest`)**: one end-to-end execution test per DML verb (INSERT, UPDATE, UPSERT, DELETE) using a small nested-input shape against an actual Sakila table. Confirms the access-path walk in the emitted Java produces the right SQL against a real PG, that each layer's presence semantics work as documented (missing outer key, null outer value, missing leaf, null leaf are observable on the wire and the generated code handles each), and that PK-coverage still trips when expected.
+* **Execution tier (Sakila DB via `SakilaServiceTest`)**: one end-to-end execution test per DML verb (INSERT, UPDATE, UPSERT, DELETE) using a small nested-input shape against an actual Sakila table. Confirms the access-path walk in the emitted Java produces the right SQL against a real PG, that the absent-vs-null contract from step 4 is observable on the wire (absent outer key → no group writes; outer key with `null` value → no group writes; outer key with a Map and leaf absent → no write for that column; outer key with a Map and leaf `null` → `SET <col> = NULL`; outer key with a Map and leaf value → `SET <col> = <value>`), and that PK-coverage still trips when expected.
 
 * **LSP tier (`LspNodeTypeHover` or equivalent)**: confirm hover-on-leaf inside a `NestingField` reports the outer table's column (the lookup chain that already works for top-level leaves should compose transparently — but assert it to lock in the behaviour).
 
