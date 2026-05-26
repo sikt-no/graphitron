@@ -25,11 +25,24 @@ The strands are independent; either can land first.
 
 ### Partition (`@table` input → SET / WHERE)
 
-The SET/WHERE partition becomes purely PK-driven, read from the jOOQ catalog:
+The SET/WHERE partition becomes purely PK-driven, read from the jOOQ catalog. **One rule across all four admissible carriers**: for each input field, look at its target columns on the input's own table:
 
-* Input fields whose target column is in the table's primary key contribute to `lookupKeyFields` (WHERE).
-* Input fields whose target column is non-PK contribute to `setFields` (SET).
-* `@condition` does not move fields between partitions. It contributes predicates to WHERE; it does not remove columns from SET.
+* `ColumnField.column()` (single direct)
+* `CompositeColumnField.columns()` (composite direct, R130 NodeId → composite PK)
+* `ColumnReferenceField.liftedSourceColumns()` (single FK reference, R189)
+* `CompositeColumnReferenceField.liftedSourceColumns()` (composite FK reference)
+
+Then:
+
+* If **every** target column is in the table's PK → `lookupKeyFields` (WHERE).
+* If **no** target column is in the table's PK → `setFields` (SET).
+* **Mixed** (some PK, some non-PK) → reject at classify time with a structural diagnostic naming the conflicting columns. The partition is per-field; splitting one carrier across two partitions would require a model change inconsistent with R188's "no sealed RowIdentity" stance.
+
+`@condition` does not move fields between partitions. It contributes predicates to WHERE; it does not remove columns from SET.
+
+By construction, the mixed case only arises on `CompositeColumnReferenceField` (composite FK that's a diagonal slice of the input table's PK). `CompositeColumnField` only originates from R130's NodeId → composite-PK decode, so its column set is always the full PK; the all-PK arm always fires. Single carriers cannot be mixed.
+
+This unification turns "update an FK column" into a natural shape: an FK reference carrier whose lifted source column is non-PK lands in SET (e.g. `updateFilm(in: { filmId, languageId })` where `languageId` is a non-PK FK; the carrier writes the new language). A reference whose lifted source column is part of the PK lands in WHERE (e.g. a join-table UPDATE where one PK column is itself an FK).
 
 INSERT and DELETE arms are untouched by the partition change. INSERT has no partition (every input field is a VALUES cell); DELETE has no SET clause. Removing `@value` deletes the `@value`-rejection clauses on these arms.
 
@@ -89,7 +102,7 @@ UPSERT is deferred to R145; R145's body is updated so its conflict-target / SET 
 * `BuildContext.java:97`: remove `DIR_VALUE`; audit imports.
 * `GraphitronSchemaBuilder.java:495`: remove `assertDirective(ctx, DIR_VALUE)`.
 * `DmlKind.java`: delete `acceptsValueMarker()` and callers.
-* `ArgumentRef.java`: rework `TableInputArg.of(...)` to drop the `valueMarkedNames` parameter; derive the partition from PK metadata read off `inputTable.tableName()` via `JooqCatalog`. The factory grows a `JooqCatalog` (or precomputed PK column set) argument; threading site is `MutationInputResolver.resolveInput`. Update the `set-equals-value-marked` audit-key javadoc at line ~262 to describe the new PK-driven rule.
+* `ArgumentRef.java`: rework `TableInputArg.of(...)` to drop the `valueMarkedNames` parameter; derive the partition from PK metadata read off `inputTable.tableName()` via `JooqCatalog`. The factory grows a `JooqCatalog` (or precomputed PK column set) argument; threading site is `MutationInputResolver.resolveInput`. The factory applies the four-carrier unified rule from "Partition" above: per field, collect target columns on the input's own table (`.column()` / `.columns()` / `.liftedSourceColumns()` per carrier type), classify all-PK / no-PK / mixed, and route to `lookupKeyFields`, `setFields`, or rejection respectively. Update the `set-equals-value-marked` audit-key javadoc at line ~262 to describe the new PK-driven rule and rename the audit key to `mutation-input.partition-equals-pk-membership`.
 * `EnumMappingResolver.java`: refactor `buildLookupBindings` to read the PK set from the catalog rather than from a marked-name set.
 * `MutationInputResolver.java`:
   * Drop the `valueMarkedNames` accumulation loop (current ~356-401) and the rejection sites it gates: `@value` on DELETE/INSERT, `@value` + `@condition` co-occurrence.
@@ -101,7 +114,7 @@ UPSERT is deferred to R145; R145's body is updated so its conflict-target / SET 
 **Admission and resolution**
 
 * `MutationInputResolver.java`:
-  * Lift the rejection at line 446: argument-level `@condition` on a non-`@table` argument of a `@mutation` field is admitted. `@condition` on the `@table` arg stays rejected with a diagnostic recommending an input field or non-`@table` argument.
+  * Lift the rejection at lines 438-440 (`if (foundTia.argCondition().isPresent()) { return ...rejection... }`): argument-level `@condition` on a non-`@table` argument of a `@mutation` field is admitted. `@condition` on the `@table` arg stays rejected with a diagnostic recommending an input field or non-`@table` argument.
   * Admit input-field-level `@condition` without `override:` (today only `override: true` admits via R215, per `MutationInputResolver.java:482-498`). Both override and non-override forms now compose into the field record.
 * `ConditionResolver.resolveArg(...)` is already in place; no new resolver surface required.
 
@@ -143,6 +156,7 @@ Applied at classify time in `MutationInputResolver`:
 * **At most one input-field-level `override: true` per input.** Two overrides on different fields each claim row-identity responsibility; reject with a diagnostic naming the conflicting fields.
 * **`@condition` on the `@table` input arg stays rejected.** Diagnostic: "argument-level `@condition` on the `@table` input arg is rejected; put it on a non-`@table` argument or on an input field of the `@table` input."
 * **`@condition(override: true)` on a column-bound non-PK input field is rejected as no-op-override.** A non-PK field has no implicit predicate to suppress (the partition is pure; non-PK columns contribute to SET). Diagnostic names the field and suggests dropping the `override:` flag.
+* **`CompositeColumnReferenceField` whose lifted source columns mix PK and non-PK is rejected as ambiguous.** Diagnostic names the field and enumerates which columns are PK / non-PK. A schema with this shape (a composite FK that's a diagonal slice of the input table's PK) is architecturally rare; if a forcing case surfaces, file a follow-up roadmap item to lift the partition to per-column. By construction the case cannot arise on the other three carriers (`ColumnField` / `ColumnReferenceField` are single-column; `CompositeColumnField` from R130 is always the full PK).
 * **Inner explicit `@condition`s are always preserved.** The `filmsOuterOverrideTableInput` regression-fence applies on the mutation side; the composition step AND-s inner non-override filters into the override slot when override is present.
 
 ### Strand coupling
@@ -151,6 +165,7 @@ The strands are independent: Strand A's empty-SET diagnostic ("no non-PK columns
 
 ## Schema migration
 
+* `directives.graphqls:200-201`: rewrite the `@value`-mentioning sentence in `@lookupKey`'s retired-on-`INPUT_FIELD_DEFINITION` docstring ("on `@mutation(typeName: UPDATE)` inputs, mark assignment columns with `@value` (which `@lookupKey` previously did by negation)") to describe the new PK-driven inference rule instead.
 * `schema.graphqls:1232-1245`: strip `@value` from `FilmUpdateInput.title` and `FilmUpdateInput.description`; rewrite the comment block to describe PK-driven inference. No structural change to the input.
 * `GraphitronSchemaBuilderTest.java`: strip `@value` from every embedded SDL snippet (locate via `grep -n '@value'`; ~30 sites). Cases that exercised deleted diagnostics convert:
   * "UPDATE without any `@value` fields" (current ~6841-6852) becomes "UPDATE with only PK columns; no non-PK to set."
@@ -172,6 +187,9 @@ Strand A:
 * `GraphitronSchemaBuilderTest` cases above migrate to the new diagnostics and PK-default partition.
 * Broadcast admit: UPDATE with no PK columns, no `@condition`, `multiRow: true` → admit. Pins R144 semantics under R188.
 * Empty-SET reject: UPDATE with only PK columns → `UnclassifiedField` with "no non-PK columns to set."
+* FK reference on a non-PK column lands in SET: `updateFilm(in: { filmId, languageRef })` where `languageRef` is a `ColumnReferenceField` whose lifted source is `language_id` (non-PK) → `setFields` contains the reference carrier, `lookupKeyFields` contains `filmId`. Pins the four-carrier unified rule against the "references always WHERE" reading.
+* FK reference on a PK column lands in WHERE: a join-table UPDATE input where one PK column is itself an FK → reference carrier lands in `lookupKeyFields`.
+* `CompositeColumnReferenceField` with diagonal PK overlap: classify-time reject with the new `mutation-input.composite-reference-mixes-pk-and-non-pk` diagnostic naming the field and per-column PK membership.
 
 Strand B (each admit case asserts the slot values on the field record, not just admit/reject):
 
@@ -184,6 +202,7 @@ Strand B (each admit case asserts the slot values on the field record, not just 
 * Two input fields with `@condition(override: true)`: reject (at-most-one-override).
 * Mixed layers: one input field with `override: true` plus one input field with non-override `@condition`: admit; override populates the override slot, non-override populates `additionalConditions`, both compose into WHERE.
 * `multiRow: true` plus non-override `@condition`: admit; broadcast WHERE additionally filtered by the condition.
+* DELETE parity (Strand B inherits in full): non-override input-field `@condition` on a DELETE input → admit; WHERE = `pk = ? AND condition(?)`. Input-field `@condition(override: true)` on a DELETE input where PK is not in input → admit; WHERE = `condition(?)` only. Non-`@table` argument `@condition` on a DELETE → admit; WHERE = `pk = ? AND argCondition(?)`.
 
 ### Compilation
 
@@ -203,7 +222,7 @@ None.
 ## User documentation (first-client check)
 
 * **Delete** `docs/manual/reference/directives/value.adoc`. Not cross-referenced from `directives/index.adoc` (the alphabetical and category lists at `docs/manual/reference/directives/index.adoc:12-38` do not mention it); no inbound xrefs.
-* **Revise** `docs/manual/reference/directives/mutation.adoc`. Replace the UPDATE section (lines 65, 120-123):
+* **Revise** `docs/manual/reference/directives/mutation.adoc`. The current prose at lines 65 and 120-123 describes the UPDATE partition in terms of `@lookupKey` (the user docs are already out of step with code under the `@value` regime; R188 brings the docs into alignment with the post-R188 PK-driven rule rather than the never-shipped `@value` doc shape). Replace those sections with:
 
 [quote]
 ____
