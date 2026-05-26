@@ -12,23 +12,23 @@ last-updated: 2026-05-26
 
 # ServiceMethodCall walker carrier (R222 foundation slice)
 
-The slice lands R222's walker-carrier pattern on the root sync `@service` paths. Four permits migrate: `QueryServiceTableField`, `QueryServiceRecordField`, `MutationServiceTableField`, `MutationServiceRecordField`. Each loses its `MethodRef method` component and gains `ServiceMethodCall serviceMethodCall`, populated by a producer (`ServiceMethodCallWalker`) that reads the field's SDL definition plus the codegen classloader directly. The fetcher emitter for these four (`buildServiceFetcherCommon`) reads the slot and composes the var-decl-per-binding plus call line through a shared `ServiceMethodCallEmitter`. Alongside the carrier, the slice lands the plumbing every subsequent walker-carrier slice inherits: the `WalkerResult<C>` sealed wrapper, the sealed `AuthorError.Structural` sub-arm pattern, the LSP `Diagnostic` wire conventions, and the orchestrator's collect-Err-exclude-field flow.
+The slice lands R222's walker-carrier pattern on the root sync `@service` paths. Four permits migrate: `QueryServiceTableField`, `QueryServiceRecordField`, `MutationServiceTableField`, `MutationServiceRecordField`. Each loses its `MethodRef method` component and gains `ServiceMethodCall serviceMethodCall`, populated by a producer (`ServiceMethodCallWalker`) that reads the field's SDL definition plus the codegen classloader directly. The fetcher emitter for these four (`buildServiceFetcherCommon`) passes the carrier to a shared `ServiceMethodCallEmitter` that returns the lambda body's statements. Alongside the carrier, the slice lands the plumbing every subsequent walker-carrier slice inherits: the `WalkerResult<C>` sealed wrapper, the sealed `AuthorError.Structural` sub-arm pattern, the LSP `Diagnostic` wire conventions, and the orchestrator's collect-Err-exclude-field flow.
 
 ## Target emitted code
 
-The reducer backtracks from this shape. Each migrated fetcher's lambda body becomes a straight walk over the carrier's binding list followed by the call line:
+The reducer backtracks from this shape. Each migrated fetcher's lambda body becomes a sequence of var-decls followed by the call statement that assigns the result to a local:
 
 ```java
 // QueryServiceRecordField example, post-slice
-DSLContext dsl = graphitronContext(env).getDslContext(env);                  // only when needsDsl
-DomainTypeA paramA = constructParamA(env);                                   // one per ParamBinding arm
+DSLContext dsl = graphitronContext(env).getDslContext(env);                  // emitted once when needed
+DomainTypeA paramA = constructParamA(env);                                   // one per non-DSL binding
 DomainTypeB paramB = constructParamB(env);
 DomainResult result = new DomainService(dsl).method(paramA, paramB);
 ```
 
-One walk over `field.serviceMethodCall().bindings()` produces the var-decls; one composition of `target` + `methodName` + binding local-names produces the call line. Lifting per-param expressions to named locals is the structural shift.
+Each `ParamBinding` in the carrier's `methodArgs` (and `ctorArgs` when the carrier is `Instance`) supplies one var-decl plus one identifier in the call's argument list. `FromDslContext` is the exception: it shares the prelude's `dsl` local and contributes only the identifier, not a var-decl. Lifting per-param expressions to named locals is the structural shift.
 
-The "construct `ParamX`" expression is a sealed-arm dispatch: the existing `CallSiteExtraction` carried unchanged as `ArgConstruction`, with arms `Direct`, `EnumValueOf`, `ContextArg`, `JooqConvert`, `NestedInputField`, `NodeIdDecodeKeys`, `InputBean`. `InputBean` extracts to a `private static` helper through today's `InputBeanInstantiationEmitter`; the other arms inline.
+The right-hand side of each non-DSL var-decl is a sealed-arm dispatch on `ArgConstruction` (the existing `CallSiteExtraction` carried unchanged): `Direct`, `EnumValueOf`, `ContextArg`, `JooqConvert`, `NestedInputField`, `NodeIdDecodeKeys`, `InputBean`. Most arms inline their expression directly; `InputBean` extracts to a `private static` helper through today's `InputBeanInstantiationEmitter`.
 
 ## Carrier shape
 
@@ -124,40 +124,46 @@ Substrate: the field's SDL definition (`GraphQLFieldDefinition`) plus the codege
 
 Walker stages (one pass per `@service`-bearing root field):
 
-1. **Parse the `@service` directive.** Read the target class FQ name, method name, and `argMapping` string. Failure: typed `Structural.*` arm.
+1. **Parse the `@service` directive.** Read the service class FQ name, method name, and `argMapping` string.
 2. **Load class and resolve method.** Use the classloader; locate the method by name and signature shape; check `-parameters` availability.
-3. **Bind arguments.** Parse `argMapping`, resolve binding paths against the field's SDL arguments, derive the `ArgConstruction` per Java parameter.
-4. **Build `methodArgs`** per resolved method parameter:
-   - `@service` arg with extraction produces `FromEnvArg`
-   - context-key arg produces `FromContextKey`
-   - `DSLContext`-typed param produces `FromDslContext()` (refers to the shared `dsl` local; no per-binding var-decl)
-5. **Build `ctorArgs`** when the method is instance; today's only shape is `[FromDslContext()]` from the `(DSLContext)` service-holder constructor. Skip for static methods.
-6. **Build `ReturnTypeShape`** from the method's return type plus the field's declared return type; check shape compatibility.
-7. **Build the carrier arm.** Static methods produce `Static(fqClassName, methodName, methodArgs, returnShape)`. Instance methods produce `Instance(fqClassName, ctorArgs, methodName, methodArgs, returnShape)`.
-8. **Emit result.** `Ok(ServiceMethodCall(...), [])` on success; `Err(authorErrors, diagnostics)` when any step produced typed errors. Errors collect across stages; the walker doesn't short-circuit at the first failure.
+3. **Resolve `argMapping` paths** against the field's SDL arguments. For each Java method parameter that an SDL arg binds to, derive the `ArgConstruction`.
+4. **Build bindings per parameter slot.** Iterate the method's parameters, and (for instance methods) the ctor's parameters. Classify each slot:
+   - SDL arg with extraction produces `FromEnvArg`
+   - context-key match produces `FromContextKey`
+   - `DSLContext`-typed slot produces `FromDslContext()`
+   
+   The result is two ordered lists: `methodArgs` always, `ctorArgs` only when the method is instance. Today's only ctor shape is `[FromDslContext()]` from the `(DSLContext)` service-holder constructor.
+5. **Build `ReturnTypeShape`** from the method's return type plus the field's declared return type; check shape compatibility.
+6. **Build the carrier arm.** Static methods produce `Static(fqClassName, methodName, methodArgs, returnShape)`. Instance methods produce `Instance(fqClassName, ctorArgs, methodName, methodArgs, returnShape)`.
+7. **Return the result.** `Ok(...)` on success; `Err(authorErrors, diagnostics)` when any stage produced typed errors. Errors accumulate; the walker doesn't short-circuit at the first failure.
 
 The walker is invoked from `FieldBuilder` at each constructor site for the four service permits. Reflection helpers extracted from today's `ServiceCatalog.reflectServiceMethod` and `ArgBindingMap` move into the walker (or its `walker/internal/` package); they no longer surface on the public model boundary.
 
 ## Consumer migration
 
-`TypeFetcherGenerator.buildServiceFetcherCommon` reads `field.serviceMethodCall()` and emits through the shared utility:
+`TypeFetcherGenerator.buildServiceFetcherCommon` passes the carrier into a shared utility and appends the returned statements to its method body:
 
 ```java
 // graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/ServiceMethodCallEmitter.java
 public final class ServiceMethodCallEmitter {
-    public static List<CodeBlock> emit(ServiceField field);
+    public static List<CodeBlock> emit(ServiceMethodCall call);
 }
 ```
 
-The returned list is the ordered sequence of statements the consumer appends to its method body:
+```java
+ServiceMethodCallEmitter.emit(field.serviceMethodCall()).forEach(builder::addStatement);
+// then buildServiceFetcherCommon emits its return/catch wrapping over the `result` local
+```
+
+The returned list is the ordered statements that produce a local named `result` holding the call's return value:
 
 1. **DSL prelude** (when needed): `DSLContext dsl = graphitronContext(env).getDslContext(env);`. Emitted if the carrier is `Instance` or any binding (in either round) is `FromDslContext`.
-2. **Var-decls**, walking `ctorArgs` (when the carrier is `Instance`) followed by `methodArgs`. `FromEnvArg` and `FromContextKey` each emit a `Type localName = expr;` statement; `FromDslContext` contributes no var-decl (it reads from the prelude's `dsl`).
-3. **Final assignment** of the call result to a local named `result`:
+2. **Var-decls**, walking `ctorArgs` (when the carrier is `Instance`) followed by `methodArgs`. `FromEnvArg` and `FromContextKey` each emit a `Type localName = expr;` statement; `FromDslContext` contributes no var-decl.
+3. **Final assignment**:
    - `Static` arm: `ReturnType result = ClassName.methodName(methodArgs);`
    - `Instance` arm: `ReturnType result = new ClassName(ctorArgs).methodName(methodArgs);`
 
-In both cases the call's actual-args list reads from each binding's `localName()` accessor: `paramA`, `paramB`, ..., with `dsl` slotted in wherever a `FromDslContext` binding sits. `buildServiceFetcherCommon` appends each statement to its method body and then emits its own return/catch wrapping over the `result` local.
+The call's actual-args list at each position reads from the binding's `localName()`: `paramA`, `paramB`, ..., with `dsl` wherever a `FromDslContext` binding sits.
 
 `ArgCallEmitter.buildMethodBackedCallArgs` retires at this seam for the four service permits' callers. The per-arm extraction-to-expression switch (`ArgCallEmitter.buildArgExtraction`) survives, since `ArgConstruction` dispatches through it.
 
@@ -262,7 +268,11 @@ Each typed arm carries the data its message and its LSP `relatedInformation` nee
 
 Three tiers.
 
-**Unit (`@UnitTier`)**: `ServiceMethodCallWalkerTest` covers one positive case per `ParamBinding` arm (`FromEnvArg`, `FromContextKey`, `FromDslContext`) and one rejection case per `Structural.*` sub-arm plus `UnknownName(SERVICE_METHOD)`. Tests parse a small SDL fragment, configure a test `ClassLoader` with fixture resolver classes, call `walk`, and assert on the sealed result. `ServiceMethodCallEmitterTest` covers the `Static` arm (with and without a `FromDslContext` method param), the `Instance` arm with the today-only `(DSLContext)` ctor binding, and the cross-round case (instance ctor binds `dsl`, method also takes `DSLContext`) asserting that the prelude is emitted exactly once and both call positions read `dsl`. Asserts on the returned `List<CodeBlock>` statement-by-statement.
+**Unit (`@UnitTier`)**, two test classes.
+
+`ServiceMethodCallWalkerTest` parses a small SDL fragment, configures a test `ClassLoader` with fixture resolver classes, calls `walk`, and asserts on the sealed result. Coverage: one positive case per `ParamBinding` arm (`FromEnvArg`, `FromContextKey`, `FromDslContext`) and one rejection case per `Structural.*` sub-arm plus `UnknownName(SERVICE_METHOD)`.
+
+`ServiceMethodCallEmitterTest` asserts on the returned `List<CodeBlock>` statement-by-statement. Coverage: the `Static` arm with and without a `FromDslContext` method param; the `Instance` arm with the today-only `(DSLContext)` ctor binding; the cross-round case (instance ctor binds `dsl`, method also takes `DSLContext`) asserts that the prelude is emitted exactly once and both call positions read `dsl`.
 
 **Pipeline (`@PipelineTier`)**: extend `ServiceRootFetcherPipelineTest` with assertions on `walkerDiagnostics` and typed `Structural.*` arms for the rejection cases. Existing positive-witness tests keep their author-facing wording but assert against the typed arms instead of stringly-typed rejection prose. Body-string assertions on fetcher emission retire (per `rewrite-design-principles.adoc`'s ban on code-string assertions) and get replaced by structural assertions on the `ServiceMethodCall` carrier.
 
