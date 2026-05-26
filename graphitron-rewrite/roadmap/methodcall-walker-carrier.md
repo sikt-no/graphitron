@@ -145,18 +145,19 @@ The walker is invoked from `FieldBuilder` at each constructor site for the four 
 ```java
 // graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/ServiceMethodCallEmitter.java
 public final class ServiceMethodCallEmitter {
-    public static Emission emit(ServiceField field);
-
-    public record Emission(List<CodeBlock> varDecls, CodeBlock callExpression) {}
+    public static List<CodeBlock> emit(ServiceField field);
 }
 ```
 
-`emit` pattern-matches on the sealed carrier and reads the bindings directly off the arm. A shared rule applies to both arms: if the carrier is `Instance` or any binding (in either round) is `FromDslContext`, the emitter emits the lambda's DSL prelude once: `DSLContext dsl = graphitronContext(env).getDslContext(env);`. Then, walking `ctorArgs` (when present) followed by `methodArgs`, each binding contributes one entry:
+The returned list is the ordered sequence of statements the consumer appends to its method body:
 
-- `FromEnvArg` and `FromContextKey` emit a `Type localName = expr;` var-decl, and contribute `localName` at their position in the call.
-- `FromDslContext` emits no var-decl (the prelude already declared `dsl`), and contributes `dsl` at its position.
+1. **DSL prelude** (when needed): `DSLContext dsl = graphitronContext(env).getDslContext(env);`. Emitted if the carrier is `Instance` or any binding (in either round) is `FromDslContext`.
+2. **Var-decls**, walking `ctorArgs` (when the carrier is `Instance`) followed by `methodArgs`. `FromEnvArg` and `FromContextKey` each emit a `Type localName = expr;` statement; `FromDslContext` contributes no var-decl (it reads from the prelude's `dsl`).
+3. **Final assignment** of the call result to a local named `result`:
+   - `Static` arm: `ReturnType result = ClassName.methodName(methodArgs);`
+   - `Instance` arm: `ReturnType result = new ClassName(ctorArgs).methodName(methodArgs);`
 
-The call expression composes to `ClassName.methodName(methodArgs)` for `Static`, and `new ClassName(ctorArgs).methodName(methodArgs)` for `Instance`. `buildServiceFetcherCommon` wraps the Emission in assignment-and-return shape over the call expression.
+In both cases the call's actual-args list reads from each binding's `localName()` accessor: `paramA`, `paramB`, ..., with `dsl` slotted in wherever a `FromDslContext` binding sits. `buildServiceFetcherCommon` appends each statement to its method body and then emits its own return/catch wrapping over the `result` local.
 
 `ArgCallEmitter.buildMethodBackedCallArgs` retires at this seam for the four service permits' callers. The per-arm extraction-to-expression switch (`ArgCallEmitter.buildArgExtraction`) survives, since `ArgConstruction` dispatches through it.
 
@@ -261,7 +262,7 @@ Each typed arm carries the data its message and its LSP `relatedInformation` nee
 
 Three tiers.
 
-**Unit (`@UnitTier`)**: `ServiceMethodCallWalkerTest` covers one positive case per `ParamBinding` arm (`FromEnvArg`, `FromContextKey`, `FromDslContext`) and one rejection case per `Structural.*` sub-arm plus `UnknownName(SERVICE_METHOD)`. Tests parse a small SDL fragment, configure a test `ClassLoader` with fixture resolver classes, call `walk`, and assert on the sealed result. `ServiceMethodCallEmitterTest` covers the `Static` arm (with and without a `FromDslContext` method param), the `Instance` arm with the today-only `(DSLContext)` ctor binding, and the cross-round case (instance ctor binds `dsl`, method also takes `DSLContext`) asserting that the prelude is emitted exactly once and both positions in the call expression read `dsl`. Asserts on the `(varDecls, callExpression)` `Emission` shape.
+**Unit (`@UnitTier`)**: `ServiceMethodCallWalkerTest` covers one positive case per `ParamBinding` arm (`FromEnvArg`, `FromContextKey`, `FromDslContext`) and one rejection case per `Structural.*` sub-arm plus `UnknownName(SERVICE_METHOD)`. Tests parse a small SDL fragment, configure a test `ClassLoader` with fixture resolver classes, call `walk`, and assert on the sealed result. `ServiceMethodCallEmitterTest` covers the `Static` arm (with and without a `FromDslContext` method param), the `Instance` arm with the today-only `(DSLContext)` ctor binding, and the cross-round case (instance ctor binds `dsl`, method also takes `DSLContext`) asserting that the prelude is emitted exactly once and both call positions read `dsl`. Asserts on the returned `List<CodeBlock>` statement-by-statement.
 
 **Pipeline (`@PipelineTier`)**: extend `ServiceRootFetcherPipelineTest` with assertions on `walkerDiagnostics` and typed `Structural.*` arms for the rejection cases. Existing positive-witness tests keep their author-facing wording but assert against the typed arms instead of stringly-typed rejection prose. Body-string assertions on fetcher emission retire (per `rewrite-design-principles.adoc`'s ban on code-string assertions) and get replaced by structural assertions on the `ServiceMethodCall` carrier.
 
