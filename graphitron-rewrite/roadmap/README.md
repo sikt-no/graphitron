@@ -33,7 +33,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition + @condition on mutations | Spec | 2026-05-26 <sub>created 2026-05-20</sub> | [plan](simplify-update-mutations-drop-value.md) |
-| `R241` | Retire ErrorChannel.PayloadClass transport; route all errors through LocalContext | Spec | 2026-05-26 | [plan](retire-error-payloadclass-transport.md) |
 | `R243` | Per-field direction in @order/@defaultOrder via FieldSort.direction | Ready | 2026-05-26 | [plan](per-field-sort-direction.md) |
 | `R237` | Retire @LoadBearingClassifierCheck / @DependsOnClassifierCheck annotation pair | Ready | 2026-05-26 <sub>created 2026-05-24</sub> | [plan](retire-loadbearing-classifier-check-annotations.md) |
 
@@ -262,7 +261,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R243` [**Per-field direction in @order/@defaultOrder via FieldSort.direction**](per-field-sort-direction.md)
 - `R213` [**Plain-input field rejections attributed to consumer field, losing input-field source location**](input-field-rejection-attribution.md)
 - `R188` [**Replace @value with PK-default partition + @condition on mutations**](simplify-update-mutations-drop-value.md)
-- `R241` [**Retire ErrorChannel.PayloadClass transport; route all errors through LocalContext**](retire-error-payloadclass-transport.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
 - `R219` [**Unify arity-unique and type-unique inference under a single JavaTypeKey-counted rule**](unify-inference-rule-by-javatypekey.md)
 - `R221` [**Validator walks PlainInputArg.fields() for UnboundField rejection**](validator-walks-plain-input-unbound-fields.md)
