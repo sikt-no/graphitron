@@ -449,9 +449,10 @@ non-empty key (`"^()$"` matches only the empty string, which is silently
 wrong rather than a compile error), which is why this single key is
 load-bearing.
 
-`LoadBearingGuaranteeAuditTest` covers all three keys automatically. A future
-relaxation of the recognizer (admitting an empty `StringOneOf`, say) would
-surface as an orphaned consumer site rather than a runtime regex failure.
+Pinning each invariant in the constraint variant's compact constructor lets a
+future relaxation of the recognizer (admitting an empty `StringOneOf`, say)
+surface as a producer-side construction failure rather than a runtime regex
+failure.
 
 The sequence inside the wrapper, with both R12 §5 and R92 active, is:
 
