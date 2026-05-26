@@ -1,7 +1,7 @@
 ---
 id: R243
-title: "Per-field direction in @order/@defaultOrder via FieldSort.direction"
-status: Spec
+title: Per-field direction in @order/@defaultOrder via FieldSort.direction
+status: Ready
 bucket: feature
 depends-on: []
 created: 2026-05-26
