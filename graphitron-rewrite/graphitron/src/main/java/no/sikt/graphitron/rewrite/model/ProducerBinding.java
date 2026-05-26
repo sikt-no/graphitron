@@ -113,9 +113,10 @@ public sealed interface ProducerBinding
      * carried {@link TableRef}'s primary-key columns; {@link #reflectedClass()} returns the
      * record class for that {@code TableRef}, which is the same class {@link RootTable} grounds
      * with for an SDL Object carrying {@code @table} resolving to the same table. The fold's
-     * class-identity agreement therefore re-emerges through the existing
-     * {@code record-binding.producer-agreement} check; this arm is the structural replacement
-     * for the retired {@code mutation-dml-record-field.data-table-equals-input-table} invariant.
+     * class-identity agreement therefore re-emerges through
+     * {@link no.sikt.graphitron.rewrite.RecordBindingResolver}'s per-SDL-type fold; this arm
+     * is the structural replacement for the retired
+     * {@code mutation-dml-record-field.data-table-equals-input-table} invariant.
      *
      * <p>Compact-constructor invariants: every component is non-null and
      * {@code reflectedClass.getName()} matches {@code tableRef.recordClass().reflectionName()}.
@@ -138,7 +139,7 @@ public sealed interface ProducerBinding
                 throw new IllegalArgumentException(
                     "ProducerBinding.DmlEmitted: reflectedClass (" + reflectedClass.getName()
                         + ") must equal tableRef.recordClass().reflectionName() (" + expected
-                        + ") so the record-binding.producer-agreement fold matches RootTable for "
+                        + ") so the per-SDL-type binding fold matches RootTable for "
                         + "the same TableRef");
             }
         }
@@ -191,7 +192,7 @@ public sealed interface ProducerBinding
                 throw new IllegalArgumentException(
                     "ProducerBinding.ServiceEmitted: reflectedClass (" + reflectedClass.getName()
                         + ") must equal tableRef.recordClass().reflectionName() (" + expected
-                        + ") so the record-binding.producer-agreement fold matches RootTable "
+                        + ") so the per-SDL-type binding fold matches RootTable "
                         + "for the same TableRef");
             }
         }

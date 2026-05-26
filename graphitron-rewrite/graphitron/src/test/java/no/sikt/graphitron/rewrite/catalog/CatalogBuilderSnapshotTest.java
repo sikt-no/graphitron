@@ -17,11 +17,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * {@link CatalogBuilder#buildSnapshot} unit tests against hand-crafted
- * {@link graphql.schema.idl.TypeDefinitionRegistry} fixtures. The
- * {@code snapshot-built-implies-clean-parse} invariant is upstream of
- * {@code buildSnapshot} (parse failures throw before we get here), so the
- * tests below assume a successful parse and verify the directive shape
- * round-trips faithfully.
+ * {@link graphql.schema.idl.TypeDefinitionRegistry} fixtures. Parse failures
+ * throw upstream of {@code buildSnapshot}, so the tests below assume a successful
+ * parse and verify the directive shape round-trips faithfully.
  */
 @UnitTier
 class CatalogBuilderSnapshotTest {

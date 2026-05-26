@@ -950,8 +950,6 @@ class TypeBuilder {
         // Structural field check: every @error type declares path: [String!]! and message: String!.
         // Extras are admitted here and validated against each handler's source class by the
         // per-(channel, @error type, handler) accessor check on the carrier (FieldBuilder).
-        // Producer side of "error-type.path-message-fields"; the per-(channel, @error type,
-        // handler) accessor check is "error-channel.source-class-accessors".
         List<String> rejectReasons = new ArrayList<>();
         var pathField = objType.getFieldDefinition("path");
         if (pathField == null) {
@@ -1129,8 +1127,7 @@ class TypeBuilder {
      * codegen). An SDL field whose scalar fails to classify surfaces as a {@code null} return,
      * causing the caller to route the input type through {@link UnclassifiedType}.
      *
-     * <p>Producer-side rejection backing the {@code input-record.shape-from-input-type}
-     * load-bearing classifier check: empty {@code components} fails the compact constructor on
+     * <p>Producer-side rejection: empty {@code components} fails the compact constructor on
      * {@link InputRecordShape} (an SDL input type without fields is structurally rejected by
      * graphql-java earlier in the pipeline, so the guard is defence in depth).
      */

@@ -232,8 +232,11 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * <p>The classifier admits exactly
      * {@code (tableInputArg.list() == true, dataField.wrapper().isList() == true,
      * kind ∈ {INSERT, UPDATE})} and pairs the input cardinality to the data field's element
-     * type via the existing load-bearing classifier check
-     * {@code mutation-dml-record-field.data-table-equals-input-table}.
+     * type. The data table / input table agreement is now structurally pinned by the
+     * {@link ProducerBinding.DmlEmitted} compact constructor's
+     * {@code reflectedClass.getName().equals(tableRef.recordClass().reflectionName())}
+     * invariant, surfaced via {@link Rejection.AuthorError.RecordBindingMultiProducer} when
+     * disagreeing producers fold against the same SDL payload type.
      *
      * <p>UPSERT is structurally compatible with this leaf but is refused upstream by
      * {@code MutationInputResolver} under R144's cardinality-safety regime. R145

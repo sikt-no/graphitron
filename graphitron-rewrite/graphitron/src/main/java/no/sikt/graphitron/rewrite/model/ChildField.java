@@ -42,9 +42,8 @@ public sealed interface ChildField extends OutputField
      * across multiple parent rows. See {@code synthesize-payload-carrier.md}, "New sibling
      * permit: ChildField.SingleRecordTableField", for the design rationale.
      *
-     * <p>The {@link #sourceKey()} component is pinned by the {@code SourceKey} compact-constructor
-     * invariant {@code source-key.result-row-walk-target-aligned-empty-path} to use
-     * {@link SourceKey.Reader.ResultRowWalk} with either {@link SourceKey.Wrap.Record}
+     * <p>The {@link #sourceKey()} component is pinned by {@link SourceKey}'s compact constructor
+     * to use {@link SourceKey.Reader.ResultRowWalk} with either {@link SourceKey.Wrap.Record}
      * (DML mutation producer) or {@link SourceKey.Wrap.TableRecord} whose {@code className}
      * matches {@code target.recordClass()} ({@code @service} payload producer).
      * {@link #joinPath()},

@@ -14,9 +14,8 @@ import java.util.Objects;
  * names is forward-looking: the emitted artifact is a plain Java class today and becomes a
  * Java {@code record} once R174 lifts graphitron-javapoet's record support.
  *
- * <p>The compact constructor is the producer-side rejection backing the
- * {@code input-record.shape-from-input-type} load-bearing classifier check: a builder
- * site that fails to construct a shape (null {@code recordClass}, empty
+ * <p>The compact constructor enforces the structural invariants consumers rely on:
+ * a builder site that fails to construct a shape (null {@code recordClass}, empty
  * {@code components}) surfaces the input type as {@link GraphitronType.UnclassifiedType}
  * via the existing fail-mode.
  *

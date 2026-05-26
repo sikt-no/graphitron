@@ -103,8 +103,9 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          * set, this rejection surfaces with every disagreeing site listed.
          *
          * <p>Carries the SDL type name plus the typed {@link ProducerBinding} list; downstream
-         * tooling switches on the arm rather than parsing prose. Producer site of the
-         * {@code record-binding.producer-agreement} load-bearing classifier check.
+         * tooling switches on the arm rather than parsing prose. The producer-side rejection
+         * fires from {@link no.sikt.graphitron.rewrite.RecordBindingResolver}'s per-SDL-type fold when the collection set
+         * holds more than one distinct backing class.
          */
         record RecordBindingMultiProducer(String sdlTypeName, List<ProducerBinding> bindings)
                 implements AuthorError {
@@ -131,19 +132,19 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
         /**
          * Two or more directive sites reference the same {@code contextArgument} name with
-         * mutually-incompatible Java types. R190's load-bearing classifier check
-         * ({@code context-argument.type-agreement}) walks every
-         * {@link MethodRef.Param.Typed} whose source is {@link ParamSource.Context}, keys by
-         * parameter name, and requires every site to declare the same structural
+         * mutually-incompatible Java types. R190's per-name agreement walk over every
+         * {@link MethodRef.Param.Typed} whose source is {@link ParamSource.Context} keys by
+         * parameter name and requires every site to declare the same structural
          * {@link no.sikt.graphitron.javapoet.TypeName}. The factory emitter pastes that single
          * type verbatim into the generated {@code Graphitron.newExecutionInput(...)} parameter
          * list, and the call-site emitter pastes it as the {@code $T.class} literal at the
-         * {@code getContextArgument} call: any disagreement collapses the load-bearing guarantee.
+         * {@code getContextArgument} call: any disagreement would mis-type the generated cast.
          *
          * <p>Carries the contextArgument name plus the typed {@link ConflictSite} list (typed
          * structured data, not prose) so downstream tooling switches on the arm rather than
-         * parsing prose. Producer site of the
-         * {@code context-argument.type-agreement} load-bearing classifier check.
+         * parsing prose. The producer-side rejection fires from
+         * {@link no.sikt.graphitron.rewrite.ContextArgumentClassifier} when the per-name fold finds disagreeing
+         * {@code TypeName}s across sites.
          */
         record TypeConflict(String contextArgumentName, List<ConflictSite> sites)
                 implements AuthorError {
@@ -179,8 +180,9 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
          *
          * <p>Carries the SDL return type name plus a typed list of {@link Participant} entries
          * (one per producer in the conflict group); downstream tooling switches on the arm
-         * rather than parsing prose. Producer site of the
-         * {@code output-fields.uniform-domain-return-type} load-bearing classifier check.
+         * rather than parsing prose. The producer-side rejection fires from
+         * {@link no.sikt.graphitron.rewrite.GraphitronSchemaBuilder} when two producers reach the same SDL return type
+         * with disagreeing {@link DomainReturnType} arms.
          *
          * <p>The same rejection is attached to every demoted producer in the group, so each
          * surfaces independently in the validator's per-{@link GraphitronField.UnclassifiedField}

@@ -22,11 +22,11 @@ import static no.sikt.graphitron.rewrite.validation.FieldValidationTestHelper.va
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Unit-tier coverage for the validator mirror of the
- * {@code error-channel.local-context-transport} invariant. A carrier admitted with
- * {@link ChildField.Transport.LocalContext} must have a sibling data-channel field whose fetcher
- * honors the null-source short-circuit guard. The validator allow-list is exercised against the
- * variants currently reachable through the post-R178 structural detectors; an off-allow-list
+ * Unit-tier coverage for the validator mirror of the local-context transport invariant: a
+ * carrier admitted with {@link ChildField.Transport.LocalContext} must have a sibling
+ * data-channel field whose fetcher honors the null-source short-circuit guard. The validator
+ * allow-list is exercised against the variants currently reachable through the post-R178
+ * structural detectors; an off-allow-list
  * sibling produces a structural error.
  *
  * <p>The fixture builds {@link GraphitronSchema} instances directly rather than going through SDL

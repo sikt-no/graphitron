@@ -26,7 +26,8 @@ public sealed interface OutputField extends GraphitronField permits RootField, C
      * The Java domain type this producer puts at {@code env.getSource()} for its return type's
      * child datafetchers. The validator's structural-equality check rides on the
      * {@link DomainReturnType} sealed arm; relaxing the per-permit answer breaks the
-     * load-bearing classifier guarantee {@code output-fields.uniform-domain-return-type}.
+     * uniform-domain-return-type invariant that lets the generator commit to a single Java
+     * source type per child-field coord at emit time.
      */
     DomainReturnType domainReturnType();
 

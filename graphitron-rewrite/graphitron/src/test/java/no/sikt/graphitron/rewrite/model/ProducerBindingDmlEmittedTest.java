@@ -15,11 +15,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>The R178 spec pins two invariants the constructor must enforce: every component is non-null,
  * and the reflected class identity matches the carried {@link TableRef}'s record class. The
- * second invariant is what lets the {@code record-binding.producer-agreement} fold treat a
- * {@code DmlEmitted} arm and a {@link ProducerBinding.RootTable} arm for the same table as
- * agreeing, so the structural guarantee the deleted
- * {@code mutation-dml-record-field.data-table-equals-input-table} invariant carried re-emerges
- * through the existing fold without a dedicated check key.
+ * second invariant is what lets the per-SDL-type binding fold in
+ * {@link no.sikt.graphitron.rewrite.RecordBindingResolver} treat a {@code DmlEmitted} arm and a
+ * {@link ProducerBinding.RootTable} arm for the same table as agreeing, so the structural
+ * guarantee the retired {@code mutation-dml-record-field.data-table-equals-input-table}
+ * invariant carried re-emerges through the existing fold without a dedicated check key.
  *
  * <p>The tests use {@link String} as a stand-in for a jOOQ record class so the test can
  * construct a {@link TableRef} whose {@code recordClass().reflectionName()} matches a real,
@@ -111,7 +111,7 @@ class ProducerBindingDmlEmittedTest {
                 Object.class, STRING_TABLE, DmlKind.UPDATE,
                 SourceKey.Cardinality.ONE, LOC))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("record-binding.producer-agreement")
+            .hasMessageContaining("per-SDL-type binding fold")
             .hasMessageContaining("java.lang.String");
     }
 }

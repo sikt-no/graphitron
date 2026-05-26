@@ -43,19 +43,17 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_SOURCE_ROW;
  * shape: sealed {@link Resolved} result with {@code Ok} and {@code Rejected} arms;
  * constructor-injected dependencies; single {@link #resolve} entry point.
  *
- * <p>Three paired classifier checks the emitters depend on:
+ * <p>Three structural projections the emitters depend on:
  *
  * <ul>
- *   <li>{@code sourcerow-classifies-as-record-table-field} — every successful
- *       {@code @sourceRow} resolution projects into {@code RecordTableField} or
- *       {@code RecordLookupTableField}; the produced {@link SourceKey}'s
+ *   <li>Every successful {@code @sourceRow} resolution projects into {@code RecordTableField}
+ *       or {@code RecordLookupTableField}; the produced {@link SourceKey}'s
  *       {@link SourceKey.Reader} is always {@link SourceKey.Reader.SourceRowsCall}.</li>
- *   <li>{@code sourcerow-leafkey-sourcerows-singlehop} — on the no-{@code @reference}
- *       path, the produced {@link SourceKey}'s path is a single
+ *   <li>On the no-{@code @reference} path, the produced {@link SourceKey}'s path is a single
  *       {@link JoinStep.LiftedHop} (the leaf-PK shape).</li>
- *   <li>{@code sourcerow-pathkey-sourcerows-fkchain} — on the {@code @reference}-composed
- *       path, the produced {@link SourceKey}'s path is the resolved FK chain (one or more
- *       {@link JoinStep.FkJoin}s) from the parent's lifter columns to the leaf table.</li>
+ *   <li>On the {@code @reference}-composed path, the produced {@link SourceKey}'s path is the
+ *       resolved FK chain (one or more {@link JoinStep.FkJoin}s) from the parent's lifter
+ *       columns to the leaf table.</li>
  * </ul>
  *
  * <h2>Rejection messages</h2>
