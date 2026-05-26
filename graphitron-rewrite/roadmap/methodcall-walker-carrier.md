@@ -25,7 +25,7 @@ A new `ServiceField` marker extending `MethodBackedField` (pure, no declarations
 
 ## Target emitted code
 
-The reducer backtracks from this shape. Every service-backed field's lambda body, after the slice, reads as a straight walk over the carrier's binding list followed by the call line:
+The reducer backtracks from this shape. Every method-backed field's lambda body, after the slice, reads as a straight walk over the carrier's binding list followed by the call line. Sync `@service` fetcher example:
 
 ```java
 // QueryServiceRecordField example, post-slice
@@ -35,7 +35,9 @@ DomainTypeB paramB = constructParamB(env);
 DomainResult result = new DomainService(dsl).method(paramA, paramB);
 ```
 
-For `@tableMethod` and `@externalField` (not migrated in this slice but populated by the same walker), the same shape with a different surrounding composition: a `Table`-returning call followed by a `dsl.select(...).from(table)...fetch()` chain, or a `Record`-returning call that the field's lambda returns directly. The slice's claim is that one walk over `field.methodCall().bindings()` produces the var-decls, and a second short composition produces the call line; today, `ArgCallEmitter.buildMethodBackedCallArgs` interleaves these two by inlining each param's extraction directly into the call-line argument list. Lifting the per-param expression to a named local is the structural shift the carrier enables.
+The other nine consumers compose the same `(var-decls, call-expression)` shape into their own surrounding context. `@tableMethod` fetchers assign the call result to a `Table`-typed local then build the SELECT chain (`Table table = ...; dsl.select(...).from(table)...fetch()`). DataLoader rows methods assign and return. `ComputedField` passes the call expression through as the field's return value. The carrier is uniform; the wrapping varies per consumer.
+
+The slice's claim is that one walk over `field.methodCall().bindings()` produces the var-decls, and a second short composition produces the call line; today, `ArgCallEmitter.buildMethodBackedCallArgs` interleaves these two by inlining each param's extraction directly into the call-line argument list. Lifting the per-param expression to a named local is the structural shift the carrier enables.
 
 The "construct `ParamX`" expression is a single sealed-arm dispatch (today's `CallSiteExtraction`, retained as `ArgConstruction`); whether it inlines as an expression or extracts as a `private static T constructParamX(DataFetchingEnvironment env)` helper is the emitter's choice per arm. For this slice, only `InputBean` extracts to a helper (preserving today's `InputBeanInstantiationEmitter` output); the other arms inline. The carrier shape doesn't force the choice.
 
@@ -135,7 +137,7 @@ public record FromSourceRow(
 
 `ReturnTypeShape` is a thin wrapper over a JavaPoet `TypeName` plus the jOOQ-shape hint (`ScalarReturnType`, `PojoResultType`, `Result<XRecord>`, `List<XRecord>`, `XRecord`); the existing return-type computation in `computeMutationServiceRecordReturnType` and friends lifts onto this. Bookkeeping; nothing structural.
 
-`FromBatchKeys` and `FromSourceRow` cover the `ChildField.ServiceTableField` / `ServiceRecordField` `Sourced` param case and the parent-row case; the slot lives on those records even though their consumer migration is a follow-up slice. The carrier admits both root and child shapes; consumer migration is incremental.
+`FromBatchKeys` and `FromSourceRow` cover the `ChildField.ServiceTableField` / `ServiceRecordField` `Sourced` param case and parent-row cases for DataLoader paths. The carrier admits both root and child shapes uniformly; all ten consumers read it through the same `MethodBackedField` accessor.
 
 ## Producer (`MethodCallWalker`)
 
@@ -166,7 +168,7 @@ public final class MethodCallWalker {
 5. **Build `ReturnTypeShape`** from the method's return type plus the field's declared return type; check shape compatibility (return-type-mismatch is a typed `Structural` arm).
 6. **Emit result.** `Ok(MethodCall(...), [])` on success; `Err(authorErrors, diagnostics)` if any step produced typed errors. `Err` collects across stages; the walker doesn't short-circuit at the first failure.
 
-**Invocation point.** The walker is invoked from `FieldBuilder` at each constructor site for a `MethodBackedField` implementer. The sites today are around the `ServiceDirectiveResolver.Resolved.Success` arms (root query, root mutation, child) and the analogous `@tableMethod` / `@externalField` resolution sites; under the slice, those resolution sites collapse into a single walker call. (The earlier draft cited specific line numbers; these will drift with refactoring, so naming the call by enclosing method + permit-being-constructed is more durable than line citations.)
+**Invocation point.** The walker is invoked from `FieldBuilder` at each constructor site for a `MethodBackedField` implementer. The sites today are around the `ServiceDirectiveResolver.Resolved.Success` arms (root query, root mutation, child) and the analogous `@tableMethod` / `@externalField` resolution sites; under the slice, those resolution sites collapse into a single walker call.
 
 **No fallback to `UnclassifiedField`.** When `walk` returns `Err`, the orchestrator collects the typed `AuthorError`s into the build's diagnostic stream and the field is excluded from the classified set; downstream generation is blocked when any `Err` is present. The 10 permits never construct as `UnclassifiedField`. See the dedicated section below.
 
