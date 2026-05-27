@@ -240,7 +240,7 @@ The returned list is the ordered statements that produce a local named `result` 
 1. **DSL prelude** (when needed): `DSLContext dsl = graphitronContext(env).getDslContext(env);`. Emitted if the carrier is `Instance` or any top-level entry (in either round's `CompleteArgMapping`) is `FromDsl`.
 2. **Var-decls**, walking `ctorArgs.entries()` (when the carrier is `Instance`) followed by `methodArgs.entries()`. Per entry:
    - `FromArg` emits `Type javaName = expr;` where `expr` is the `ValueShape` evaluation. Leaf `Scalar` and shallow extractions inline; `ListOf`, `RecordInput`, and `JavaBeanInput` extract to `private static` helpers that recurse through nested `FieldBinding`s.
-   - `FromContext` emits `Type javaName = (Type) GraphitronContext.getContextArgument(env, "contextKey");`.
+   - `FromContext` emits `Type javaName = (Type) graphitronContext(env).getContextArgument(env, "contextKey");` (same `graphitronContext(env)` static factory the DSL prelude uses).
    - `FromDsl` contributes no var-decl (it shares the prelude's `dsl`).
 3. **Final assignment**:
    - `Static` arm: `ReturnType result = ClassName.methodName(methodArgs);`
@@ -258,13 +258,15 @@ The agreed-type contract on `ResolvedContextArg` is unchanged; the emitter reads
 
 Phase ordering: `ServiceMethodCallWalker` runs at `FieldBuilder` time and stores **site-local** declared types on `FromContext`; `GraphitronSchema`'s constructor invokes `ContextArgumentClassifier.classify` over the assembled fields and folds across both harvest arms (`MethodBackedField` and `ServiceField`); the emitter consumes the cached `Classification` at emit time. The walker has no read dependency on the classifier and no back-patching of `FromContext` is needed.
 
-`MappingsConstantNameDedup.dedupConstantNames` (`graphitron/src/main/java/no/sikt/graphitron/rewrite/MappingsConstantNameDedup.java:191-198`) rebuilds the four service permits in its dedup pass; each `f.method()` swaps to `f.serviceMethodCall()`, and the `MethodRef` ctor argument becomes `ServiceMethodCall`.
+`MappingsConstantNameDedup.withResolvedChannel` (`graphitron/src/main/java/no/sikt/graphitron/rewrite/MappingsConstantNameDedup.java:191-198`) rebuilds the four service permits in its error-channel rewrite; each `f.method()` swaps to `f.serviceMethodCall()`, and the `MethodRef` ctor argument becomes `ServiceMethodCall`.
 
 ## Plumbing fixed by this slice
 
 Every subsequent walker-carrier slice inherits these conventions.
 
 ### `WalkerResult<C>`
+
+`Diagnostic` and `Severity` are new graphitron-side types introduced by this slice (no LSP-protocol type leaks into the model). `Diagnostic` is a record carrying `severity` (a graphitron `Severity` enum with arms `Error` / `Warning` / `Information` / `Hint`, paralleling LSP `DiagnosticSeverity`), `code`, `source` (always `"graphitron"`), `message`, `relatedInformation` (the LSP-shape fields R222's "unified diagnostic surface" sketches). The LSP module's `Diagnostics` projector maps graphitron `Diagnostic` to `org.eclipse.lsp4j.Diagnostic` at the wire boundary; no graphitron code below the LSP module imports lsp4j. R238 ships only the shape R238's wire conventions need; future slices may extend the record without source-incompat by adding optional components.
 
 ```java
 public sealed interface WalkerResult<C> {
