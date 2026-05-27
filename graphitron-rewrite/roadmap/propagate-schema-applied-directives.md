@@ -37,31 +37,31 @@ Directive *declarations* are emitted (including `directive @link`), but no `@lin
 
 In `GraphitronSchemaClassGenerator.generate`, alongside the existing `DirectiveDefinitionEmitter.survivors(assembled)` loop at line 213, add a sibling emission that translates `assembled.getSchemaAppliedDirectives()` into `.withSchemaAppliedDirectives(...)` on the runtime `schemaBuilder`.
 
-The existing `AppliedDirectiveEmitter` already does most of the work for per-type containers (`ObjectTypeGenerator`, `InputTypeGenerator`, `EnumTypeGenerator`); its `buildApplication(GraphQLAppliedDirective)` / `emitAstLiteralValue(...)` / `emitInputType(...)` helpers are name-level filtered by `SchemaDirectiveRegistry.isSurvivor(...)`. We extract a sibling entry point that takes a raw `List<GraphQLAppliedDirective>` (the schema-level list is not a `GraphQLDirectiveContainer` in graphql-java), reusing the private helpers verbatim. Sketch:
+The emitter shape mirrors `DirectiveDefinitionEmitter` exactly: a `survivorApplications(GraphQLSchema)` entry point returns the typed graphql-java values (`List<GraphQLAppliedDirective>`), filtered through `SchemaDirectiveRegistry.isSurvivor(...)` and sorted by name for deterministic output. The existing private `buildApplication(GraphQLAppliedDirective)` is lifted to package-private so callers reach a single `CodeBlock` per application without each call site re-deriving the shape. The existing `applicationsFor(GraphQLDirectiveContainer)` entry point stays as-is (it returns *pre-wrapped* `.withAppliedDirective(...)` blocks because the per-type containers want a one-call-per-item idiom); the new schema-level entry point is intentionally lower-level because the schema-level call site wants a single `.withSchemaAppliedDirectives(List.of(...))` rather than a per-item chain.
 
 ```java
 // in AppliedDirectiveEmitter
-public static List<CodeBlock> applicationsForSchema(GraphQLSchema schema) {
-    var blocks = new ArrayList<CodeBlock>();
-    for (var applied : schema.getSchemaAppliedDirectives()) {
-        if (!SchemaDirectiveRegistry.isSurvivor(applied.getName())) continue;
-        blocks.add(buildApplication(applied));
-    }
-    return blocks;
+public static List<GraphQLAppliedDirective> survivorApplications(GraphQLSchema schema) {
+    return schema.getSchemaAppliedDirectives().stream()
+        .filter(d -> SchemaDirectiveRegistry.isSurvivor(d.getName()))
+        .sorted(Comparator.comparing(GraphQLAppliedDirective::getName))
+        .toList();
 }
-```
 
-`buildApplication` is already private and produces a single `GraphQLAppliedDirective.newDirective()...build()` block; we just need it reachable from the new entry point.
+static CodeBlock buildApplication(GraphQLAppliedDirective applied) { /* existing body, visibility widened */ }
+```
 
 Call site in `GraphitronSchemaClassGenerator`, immediately after the `survivors` loop (before `.codeRegistry(...)`):
 
 ```java
-var schemaApplied = AppliedDirectiveEmitter.applicationsForSchema(assembled);
+var schemaApplied = AppliedDirectiveEmitter.survivorApplications(assembled);
 if (!schemaApplied.isEmpty()) {
-    body.add("\n.withSchemaAppliedDirectives(java.util.List.of(");
-    for (int i = 0; i < schemaApplied.size(); i++) {
-        if (i > 0) body.add(", ");
-        body.add(schemaApplied.get(i));
+    body.add("\n.withSchemaAppliedDirectives($T.of(", ClassName.get(List.class));
+    var first = true;
+    for (var applied : schemaApplied) {
+        if (!first) body.add(", ");
+        body.add(AppliedDirectiveEmitter.buildApplication(applied));
+        first = false;
     }
     body.add("))");
 }
@@ -69,35 +69,27 @@ if (!schemaApplied.isEmpty()) {
 
 `GraphQLSchema.Builder.withSchemaAppliedDirectives(List<GraphQLAppliedDirective>)` is the existing graphql-java API; no shim needed. Argument-value rendering routes through the same `ValuesResolver.valueToLiteral` + `AstPrinter.printAst` + `Parser.parseValue` chain that the per-type emitter already uses, so `@link`'s `import: ["@key", "@tag", ...]` argument round-trips through an AST list literal without any per-shape coding.
 
-The `link__Import` scalar and `link__Purpose` enum referenced by the `@link` argument types are already registered on the runtime schema by the existing `.additionalType(...)` loop (R248's `ScalarTypeResolver` Synthesised arm for federation-namespace scalars; standard enum registration). `emitInputType`'s `GraphQLTypeReference.typeRef("link__Import")` resolves against those registrations at schema-build time. No new registration work needed.
+The `link__Import` scalar and `link__Purpose` enum referenced by the `@link` argument types are already registered on the runtime schema by the existing `.additionalType(...)` loop (R248's `ScalarTypeResolver` Synthesised arm for federation-namespace scalars; standard enum registration). `emitInputType`'s `GraphQLTypeReference.typeRef("link__Import")` resolves against those registrations at schema-build time. This is a load-bearing invariant — if a future change narrows the Synthesised arm or drops the enum registration, the emitted `schemaBuilder.build()` will fail at consumer runtime with `UnresolvedTypeReferenceException`. Step 2's pipeline-tier fixture pins this invariant: the fixture `@link` carries `import: ["@key"]` (forces `link__Import` resolution) and `for: EXECUTION` (forces `link__Purpose`).
 
-### Step 2 — sanity-check R247's `schema.graphqls` emission for opptak-shaped input
-
-Sakila's existing federated fixture is a single file (`federated-schema.graphqls`). Opptak's setup is multi-file: one file carries `extend schema @link(...)`, others carry types only, no explicit `schema { ... }` block anywhere. A standalone graphql-java repro with that exact shape preserved `@link` end-to-end through `ServiceSDLPrinter.generateServiceSDLV2`, so this is plausibly already fine; but it's not currently asserted in graphitron's tests, and the parity gap with the runtime-build side is what produced the bug. Two options:
-
-1. Split the existing `federated-schema.graphqls` fixture into two files (one with `extend schema @link(...)`, one with the types) and rerun the existing assertions.
-2. Add a second federated fixture (`federated-multi-file/`) with the split shape, then mirror the existing `FederationBuildSmokeTest` assertions onto it.
-
-Option 2 is preferred — it keeps the existing single-file fixture as a separate axis and isolates the multi-file regression check. Pipeline-tier; lives next to `FederationBuildSmokeTest`.
-
-### Step 3 — regression coverage
+### Step 2 — regression coverage
 
 Two new assertions:
 
-- **Unit tier** (`GraphitronSchemaClassGeneratorTest` or sibling): for an `assembled` schema carrying a schema-applied `@link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])`, assert the generated Java source contains `.withSchemaAppliedDirectives(java.util.List.of(GraphQLAppliedDirective.newDirective().name("link")...))` with the expected `import` list literal.
-- **Pipeline tier** (`FederationBuildSmokeTest`): assert that `Graphitron.buildSchema(b -> {}, fed -> {})`'s result, queried for `_service { sdl }`, returns SDL whose `schema {...}` block carries `@link(url : "https://specs.apollo.dev/federation/v2.10", import : ["@key"])` (graphql-java printer style, space-around-colon). Locks the round-trip from consumer SDL through codegen through `Federation.transform` through `_service.sdl` against silent regression.
+- **Unit tier** (`AppliedDirectiveEmitterTest` or sibling): build an `assembled` schema with a schema-applied `@link(url: "...federation/v2.10", import: ["@key"], for: EXECUTION)`, call `AppliedDirectiveEmitter.survivorApplications(assembled)`, and assert the returned `List<GraphQLAppliedDirective>` contains one application named `"link"` with the expected `url`, `import`, and `for` argument values. Structural assertion on the typed return — *not* a string match on rendered Java source. Mirrors `DirectiveDefinitionEmitterTest`'s shape (which also asserts on the survivors set, not the rendered chain).
+- **Pipeline tier** (`FederationBuildSmokeTest`): assert that `Graphitron.buildSchema(b -> {}, fed -> {})`'s result, queried for `_service { sdl }`, returns SDL whose `schema {...}` block carries `@link(url : "https://specs.apollo.dev/federation/v2.10", import : ["@key"], for : EXECUTION)` (graphql-java printer style, space-around-colon). Locks the round-trip from consumer SDL through codegen through `Federation.transform` through `_service.sdl`, and exercises the `link__Import` + `link__Purpose` type-registration invariant at runtime.
 
-Optional but cheap: assert `Files.readString(...)` of `target/generated-resources/.../schema.graphqls` contains `schema @link(` for the federated sakila build. Closes the loop on R247's file artifact.
+To make Step 2's pipeline assertion exercise `for: EXECUTION`, the existing `federated-schema.graphqls` fixture's `@link` gets a `for: EXECUTION` argument added (currently `@link(url: "...", import: ["@key"])`). The argument is valid Fed2 SDL and doesn't change the existing test semantics.
 
 ### Files touched
 
-- `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/AppliedDirectiveEmitter.java` — add `applicationsForSchema(GraphQLSchema)` entry point.
-- `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/GraphitronSchemaClassGenerator.java` — call the new entry point in the `buildSchema` body emission; emit `.withSchemaAppliedDirectives(...)` before `.codeRegistry(...)`.
-- `graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/schema/GraphitronSchemaClassGeneratorTest.java` — unit-tier assertion on the generated source.
-- `graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/FederationBuildSmokeTest.java` — pipeline-tier assertion on `_service.sdl` containing `schema @link(...)`.
-- Optional: add a `federated-multi-file/` fixture + sibling pipeline-tier test.
+- `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/AppliedDirectiveEmitter.java` — add `survivorApplications(GraphQLSchema)` entry point; widen `buildApplication` visibility from `private` to package-private.
+- `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/GraphitronSchemaClassGenerator.java` — call the new entry point in the `buildSchema` body emission; emit `.withSchemaAppliedDirectives(List.of(...))` before `.codeRegistry(...)`.
+- `graphitron/src/test/java/no/sikt/graphitron/rewrite/generators/schema/AppliedDirectiveEmitterTest.java` — unit-tier structural assertion on `survivorApplications`.
+- `graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/FederationBuildSmokeTest.java` — pipeline-tier `_service.sdl` assertion carrying `@link(... for : EXECUTION)`.
+- `graphitron-sakila-example/src/main/resources/graphql/federated-schema.graphqls` — add `for: EXECUTION` to the existing `@link`.
 
 ### Out of scope
 
 - Re-evaluating whether `Federation.transform(base).setFederation2(true)` is the right runtime wrap. Separate concern; that path also injects `_Service` and `_entities`, and the entity-resolver wiring is independent.
 - Multi-federation-`@link` consumer schemas. `FederationLinkApplier` already rejects more than one federation `@link` with a developer-readable error.
+- Multi-file federation fixture coverage for R247's `schema.graphqls` file emission. Filed as a sibling Backlog item (R251); the parity gap with R247 is its own concern and the runtime-build path under R250 is exercised end-to-end by the pipeline-tier assertion above regardless of whether the input arrives as one file or many.
