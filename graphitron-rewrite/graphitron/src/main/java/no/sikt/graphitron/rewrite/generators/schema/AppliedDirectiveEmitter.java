@@ -78,6 +78,12 @@ public final class AppliedDirectiveEmitter {
             .add("$T.newDirective()", APPLIED_DIRECTIVE)
             .add(".name($S)", applied.getName());
         for (var arg : applied.getArguments()) {
+            // applied.getArguments() returns one slot per declared argument on the directive,
+            // including ones the SDL application did not supply (e.g. @key without resolvable).
+            // Omitted args carry InputValueWithState.NOT_SET; valueToLiteral asserts on that
+            // state. Skipping the slot lets consumer-side schema build resolve to the
+            // directive's declared default.
+            if (arg.getArgumentValue().isNotSet()) continue;
             block.add(".argument(")
                 .add("$T.newArgument()", APPLIED_DIRECTIVE_ARG)
                 .add(".name($S)", arg.getName())
