@@ -1,7 +1,7 @@
 ---
 id: R247
 title: Emit assembled schema.graphqls into generated-resources/graphitron, federation-aware
-status: Ready
+status: Spec
 bucket: feature
 depends-on: []
 created: 2026-05-27
@@ -283,6 +283,51 @@ into an existing one) that loads
 `<outputPackage>/schema.graphqls` via
 `Thread.currentThread().getContextClassLoader().getResource(...)` and
 asserts non-null, demonstrating the resource shipped in the jar.
+
+### Pipeline ↔ runtime parity (property test)
+
+In `graphitron-sakila-example`, add a test that asserts the emitted
+`schema.graphqls` on the classpath is **byte-identical** to the result of
+printing the runtime-built schema through the same printer the emitter
+would use for that federation arm:
+
+```java
+@Test
+void emittedSdlMatchesRuntimePrint() throws IOException {
+    String emitted;
+    try (var in = Graphitron.class.getResourceAsStream("schema.graphqls")) {
+        assertThat(in).as("emitted schema.graphqls on classpath").isNotNull();
+        emitted = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    }
+    GraphQLSchema schema = Graphitron.buildSchema(b -> {}, fed -> {});
+    String runtimePrint = ServiceSDLPrinter.generateServiceSDLV2(schema);
+    assertThat(emitted).isEqualTo(runtimePrint);
+}
+```
+
+The printer arm is whichever `Bundle.federationLink()` resolves to for
+the sakila fixture (federation is in use in the sakila example today,
+so `ServiceSDLPrinter`; if a non-federation fixture is added later the
+test pairs against `SchemaPrinter` with the same options
+`SchemaSdlEmitter.printPlain` uses).
+
+This pins the strongest invariant the spec can carry: the on-classpath
+SDL is exactly what a consumer reconstructing the schema at runtime
+would print. It catches:
+
+- Wrong printer at emission (`SchemaPrinter` where `ServiceSDLPrinter`
+  was needed, or vice-versa) ; the two arms produce visibly different
+  shapes for federation types.
+- Non-determinism in schema build, which would make the shipped file
+  drift from any runtime regeneration consumers run.
+- Encoding or trailing-newline drift between `Files.writeString` and the
+  printer's output.
+
+Byte-equality implies the emitter and the printer's raw output must
+agree on terminating-newline behaviour. If the printer omits a final
+newline and `Files.writeString` does not add one, the test passes
+naturally; if either side ever appends one, both must, and `SchemaSdlEmitter`
+is the right place to normalise.
 
 ## Out of scope
 
