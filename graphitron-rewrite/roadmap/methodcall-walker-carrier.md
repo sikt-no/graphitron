@@ -30,43 +30,46 @@ DomainResult result = new DomainService(dsl).method(paramA, paramB);
 
 Each `MappingEntry` in the carrier's `methodArgs` (and `ctorArgs` when the carrier is `Instance`) supplies one var-decl plus one identifier in the call's argument list. `FromDsl` is the exception: it shares the prelude's `dsl` local and contributes only the identifier, not a var-decl. Lifting per-param expressions to named locals is the structural shift.
 
-The right-hand side of each non-DSL var-decl dispatches on the `MappingEntry`'s `ValueShape` directly. `Scalar` reads `env.getArgument(...)` (single- or multi-segment path) and applies its `LeafTransform`. `FromContext` reads a context key. `RecordInput` and `JavaBeanInput` extract to `private static` helpers that construct the bean from its `List<FieldBinding>` (recursion runs through the shared `ValueShape` family). `ListOf` extracts the list at its `sdlPath` and emits an element-wise mapper. The slice retires `CallSiteExtraction`'s top-level arms for these four permits: every value-source case it used to encode now appears as a `MappingEntry` arm, a `ValueShape` arm, or a `LeafTransform` arm (the four leaf arms move into the new `LeafTransform` sub-seal of `CallSiteExtraction`).
+The right-hand side of each non-DSL var-decl dispatches on the `MappingEntry`'s `ValueShape` directly. `Scalar` reads `env.getArgument(...)` (single- or multi-segment path) and applies its leaf transform (one of the four `CallSiteExtraction` leaf arms — `Direct`, `EnumValueOf`, `JooqConvert`, `NodeIdDecodeKeys`). `FromContext` reads a context key. `RecordInput` and `JavaBeanInput` extract to `private static` helpers that construct the bean from its `List<FieldBinding>` (recursion runs through the shared `ValueShape` family). `ListOf` extracts the list at its `sdlPath` and emits an element-wise mapper. The slice retires `CallSiteExtraction`'s non-leaf arms (`ContextArg`, `NestedInputField`, `InputBean`) for these four permits' callsites: every value-source case those arms used to encode now appears as a `MappingEntry` arm or a `ValueShape` arm. The four leaf arms stay on `CallSiteExtraction` unchanged; lifting them into a typed sub-family is a follow-up (see Out of scope).
 
 ## Carrier shape
 
-Five families co-locate in `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/`: `ServiceMethodCall`, `CompleteArgMapping` / `MappingEntry`, `ValueShape`, `ArgPath`, and a sub-seal added to the existing `CallSiteExtraction`. The model lives together because every emit-site needs to see the whole tree at once.
+Four families co-locate in `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/`: `ServiceMethodCall`, `MappingEntry`, `ValueShape`, and `ArgPath`. The model lives together because every emit-site needs to see the whole tree at once.
 
 ```java
 // model/ServiceMethodCall.java
 public sealed interface ServiceMethodCall permits Static, Instance {
     String fqClassName();
     String methodName();
-    CompleteArgMapping methodArgs();
+    List<MappingEntry> methodArgs();
     TypeName javaReturnType();
 }
 
 public record Static(
     String fqClassName,
     String methodName,
-    CompleteArgMapping methodArgs,
+    List<MappingEntry> methodArgs,
     TypeName javaReturnType
-) implements ServiceMethodCall {}
+) implements ServiceMethodCall {
+    public Static { methodArgs = List.copyOf(methodArgs); }
+}
 
 public record Instance(
     String fqClassName,
-    CompleteArgMapping ctorArgs,
+    List<MappingEntry> ctorArgs,
     String methodName,
-    CompleteArgMapping methodArgs,
+    List<MappingEntry> methodArgs,
     TypeName javaReturnType
-) implements ServiceMethodCall {}
+) implements ServiceMethodCall {
+    public Instance {
+        ctorArgs = List.copyOf(ctorArgs);
+        methodArgs = List.copyOf(methodArgs);
+    }
+}
 ```
 
 ```java
-// model/CompleteArgMapping.java
-public record CompleteArgMapping(List<MappingEntry> entries) {
-    public CompleteArgMapping { entries = List.copyOf(entries); }
-}
-
+// model/MappingEntry.java
 public sealed interface MappingEntry permits FromArg, FromContext, FromDsl {}
 
 public record FromArg(String javaName, ValueShape shape) implements MappingEntry {}
@@ -82,7 +85,7 @@ public sealed interface ValueShape permits Scalar, ListOf, RecordInput, JavaBean
     TypeName javaType();
 }
 
-public record Scalar(TypeName javaType, ArgPath sdlPath, CallSiteExtraction.LeafTransform leafTransform) implements ValueShape {}
+public record Scalar(TypeName javaType, ArgPath sdlPath, CallSiteExtraction leafTransform) implements ValueShape {}
 
 public record ListOf(ArgPath sdlPath, ValueShape elementShape) implements ValueShape {
     @Override public TypeName javaType() {
@@ -109,28 +112,7 @@ public record ArgPath(String outerArgName, List<String> deeperSegments) {
 }
 ```
 
-```java
-// model/CallSiteExtraction.java  (existing file — sub-seal added by this slice)
-public sealed interface CallSiteExtraction permits
-    CallSiteExtraction.LeafTransform,         // new sub-seal
-    CallSiteExtraction.ContextArg,            // unchanged, retained for non-R238 callers
-    CallSiteExtraction.NestedInputField,      // unchanged, retained for non-R238 callers
-    CallSiteExtraction.InputBean              // unchanged, retained for non-R238 callers
-{
-    /** Leaf transforms applied at a Scalar position. R238's only Extraction surface. */
-    sealed interface LeafTransform extends CallSiteExtraction permits Direct, EnumValueOf, JooqConvert, NodeIdDecodeKeys {}
-
-    record Direct() implements LeafTransform {}
-    record EnumValueOf(String enumClassName) implements LeafTransform {}
-    record JooqConvert(String columnJavaName) implements LeafTransform {}
-    sealed interface NodeIdDecodeKeys extends LeafTransform permits SkipMismatchedElement, ThrowOnMismatch { /* unchanged */ }
-
-    /* ContextArg / NestedInputField / InputBean retain their existing shapes; they're the
-       three arms R238's new model absorbs (ContextArg → FromContext; NestedInputField →
-       multi-segment ArgPath; InputBean → RecordInput / JavaBeanInput) and stay alive in
-       CallSiteExtraction only for non-R238 callsites (condition, tableMethod, externalField). */
-}
-```
+`Scalar.leafTransform` is typed as the existing `CallSiteExtraction` interface. R238's walker only produces four of its seven arms at this slot (`Direct`, `EnumValueOf`, `JooqConvert`, `NodeIdDecodeKeys`); the walker enforces that restriction structurally and a unit test pins it. The three other arms (`ContextArg`, `NestedInputField`, `InputBean`) are exactly what R238's new `MappingEntry` / `ValueShape` model absorbs (`ContextArg` → `FromContext`; `NestedInputField` → multi-segment `ArgPath`; `InputBean` → `RecordInput` / `JavaBeanInput`), but they stay alive on `CallSiteExtraction` for non-R238 callsites (condition, tableMethod, externalField) until those slices migrate. R238 restructures none of `CallSiteExtraction`'s permits; lifting the four leaf arms into a typed sub-family is a follow-up that lands once the other three retire.
 
 `MappingEntry` has three flat arms — none recursive, each carrying its own variant-specific component types (no lifted `javaType()` on the interface). `FromArg` carries a `ValueShape` whose `javaType()` is the slot's Java type; `FromContext` carries an explicit `TypeName javaType`; `FromDsl` carries no fields because the variant identity already determines `DSLContext.class` and the conventional `dsl` local name. Consumers switch on the arm and read the precise component.
 
@@ -138,11 +120,11 @@ public sealed interface CallSiteExtraction permits
 
 Paths live on the data-bearing leaves (`Scalar`, `ListOf`), not on composites. In default mapping every sibling field's `sdlPath` shares a prefix; in the forward-compatible nested `@argMapping` syntax (`paramName: { fieldA: input.x, fieldB: input.other.y, ... }`) sibling paths are independent. The model represents both uniformly: only the path values differ. The nested-form parser isn't part of R238's scope — R249 (`nested-argmapping-syntax`) wires it through `GraphQLSelectionParser`, parallel to R69 (`experimental-construct-type`) on the output side. R238's model doesn't need changes when R249 lands.
 
-`RecordInput` and `JavaBeanInput` are sibling arms rather than one arm with a flag, so the emitter pattern-matches the construction strategy without reflecting on the bean class at emit time. `LeafTransform` is structurally locked to `Scalar` (no other arm permits it).
+`RecordInput` and `JavaBeanInput` are sibling arms rather than one arm with a flag, so the emitter pattern-matches the construction strategy without reflecting on the bean class at emit time.
 
-The carrier itself is sealed. `Static` carries one round (`methodArgs`); `Instance` carries two (`ctorArgs` then `methodArgs`). Field order on `Instance` mirrors evaluation order. The walker enforces two asymmetries across the rounds: `FromArg` is invalid in `ctorArgs` (field arguments aren't in scope at ctor time, raising `Structural.CtorParamFromArg`), and two `FromDsl` entries cannot coexist in the same round (the shared `dsl` local would collide, raising `Structural.MultipleDslContextSlots`). Multi-arg constructors with `FromContext` and `FromDsl` slots are first-class; the legacy `(DSLContext)`-only ctor restriction retires in this slice. `FromContext` and `FromDsl` cannot reach bean fields by construction — `FieldBinding.shape` is `ValueShape`, and `ValueShape` has no such arms.
+The carrier itself is sealed. `Static` carries one round (`methodArgs`); `Instance` carries two (`ctorArgs` then `methodArgs`). Field order on `Instance` mirrors evaluation order. The walker enforces two asymmetries across the rounds: `FromArg` is invalid in `ctorArgs` (field arguments aren't in scope at ctor time, raising `ServiceMethodCallError.CtorParamFromArg`), and two `FromDsl` entries cannot coexist in the same round (the shared `dsl` local would collide, raising `ServiceMethodCallError.MultipleDslContextSlots`). Multi-arg constructors with `FromContext` and `FromDsl` slots are first-class; the legacy `(DSLContext)`-only ctor restriction retires in this slice. `FromContext` and `FromDsl` cannot reach bean fields by construction — `FieldBinding.shape` is `ValueShape`, and `ValueShape` has no such arms.
 
-`javaReturnType` on the carrier is the Java `TypeName` of the method's declared return type, used by the emitter to type the `result` local. The GraphQL-side classification of the field's return (`TableBoundReturnType` / `ResultReturnType` / `ScalarReturnType` / `PolymorphicReturnType`) lives on the existing `ReturnTypeRef` record component on each permit; the walker validates that the Java return type is shape-compatible with `ReturnTypeRef` at stage 5 and raises `Structural.ReturnTypeMismatch` on disagreement. The two classifications are orthogonal — Java-side vs GraphQL-side — and stay in their respective homes rather than merging into a single sealed shape.
+`javaReturnType` on the carrier is the Java `TypeName` of the method's declared return type, used by the emitter to type the `result` local. The GraphQL-side classification of the field's return (`TableBoundReturnType` / `ResultReturnType` / `ScalarReturnType` / `PolymorphicReturnType`) lives on the existing `ReturnTypeRef` record component on each permit; the walker validates that the Java return type is shape-compatible with `ReturnTypeRef` at stage 5 and raises `ServiceMethodCallError.ReturnTypeMismatch` on disagreement. The two classifications are orthogonal — Java-side vs GraphQL-side — and stay in their respective homes rather than merging into a single sealed shape.
 
 ## Slot landing on `ServiceField`
 
@@ -188,36 +170,25 @@ Substrate: the field's SDL definition (`GraphQLFieldDefinition`) plus the codege
 
 Walker stages (one pass per `@service`-bearing root field):
 
-1. **Parse the `@service` directive.** Read the service class FQ name, method name, and `argMapping` string. The argMapping parser returns a sealed `ParsedArgMapping.{Flat | Nested}` result:
-
-   ```java
-   public sealed interface ParsedArgMapping permits Flat, Nested {
-       record Flat(LinkedHashMap<String, List<String>> javaParamToPath) implements ParsedArgMapping {}
-       record Nested(/* per-entry decomposition, populated by R249 */) implements ParsedArgMapping {}
-   }
-   ```
-
-   R238 ships only the `Flat` arm; R249 (`nested-argmapping-syntax`) lights up the `Nested` arm by dispatching on `ObjectValue` from `GraphQLSelectionParser`. The sealed return shape lets R249 extend the parser without retrofitting R238's call sites.
-2. **Load class and resolve method.** Use the classloader; collect every declared method whose name matches. Filter by ctor+method arity match against the field's binding budget (SDL args plus declared context keys plus any `DSLContext` slots). Reject zero matches with `UnknownName(SERVICE_METHOD, ...)` and multi-match with `Structural.AmbiguousMethod(className, methodName, candidateSignatures)`. Check `-parameters` availability on the surviving candidate.
-3. **Build `CompleteArgMapping` per round.** For each round (the ctor for `Instance` carriers, plus the method always), iterate the Java parameter slots and classify each:
+1. **Parse the `@service` directive.** Read the service class FQ name, method name, and `argMapping` string. The argMapping parser returns a flat `ParsedArgMapping(LinkedHashMap<String, List<String>> javaParamToPath)`. Nested `@argMapping` syntax (R249, `nested-argmapping-syntax`) is out of scope here; when it lands, R249 reworks the parser's return shape — likely as a sealed split, but pinning that now would over-fit a feature that hasn't been built.
+2. **Load class and resolve method.** Use the classloader; collect every declared method whose name matches. Filter by ctor+method arity match against the field's binding budget (SDL args plus declared context keys plus any `DSLContext` slots). Reject zero matches with `UnknownName(SERVICE_METHOD, ...)` and multi-match with `ServiceMethodCallError.AmbiguousMethod(className, methodName, candidateSignatures)`. Check `-parameters` availability on the surviving candidate.
+3. **Build the per-round `List<MappingEntry>`.** For each round (the ctor for `Instance` carriers, plus the method always), iterate the Java parameter slots and classify each:
    - `DSLContext`-typed slot → `FromDsl()`.
    - Slot name matching a declared context key → `FromContext(name, localJavaType, key)`, where `localJavaType` is the walker's own reflection of the Java param's declared type at this site. The walker has no read dependency on `ContextArgumentClassifier`; the classifier later harvests these site-local types from the assembled `ServiceField` carriers and folds them per name into `ResolvedContextArg`. The emitter reads the cross-site agreed type from `GraphitronSchema.contextArguments().resolved().get(key).javaType()` at emit time. See "ContextArgumentClassifier harvest update" under Consumer migration.
-   - Otherwise an SDL arg source → resolve the slot's `@argMapping` entry (explicit override or implicit identity default) to an `ArgPath` from the field args root; produce `FromArg(name, shape)` per stage 4. In `ctorArgs`, `FromArg` raises `Structural.CtorParamFromArg`. Two `FromDsl()` entries in the same round raise `Structural.MultipleDslContextSlots`.
-   
-   Implicit and explicit entries are indistinguishable downstream — the artifact is "complete" in the sense that every parameter slot has a `MappingEntry`, even those the user didn't mention.
+   - Otherwise an SDL arg source → resolve the slot's `@argMapping` entry (explicit override or implicit identity default) to an `ArgPath` from the field args root; produce `FromArg(name, shape)` per stage 4. In `ctorArgs`, `FromArg` raises `ServiceMethodCallError.CtorParamFromArg`. Two `FromDsl()` entries in the same round raise `ServiceMethodCallError.MultipleDslContextSlots`.
+
+   Implicit and explicit entries are indistinguishable downstream — every parameter slot has a `MappingEntry`, even those the user didn't mention.
 4. **Derive `ValueShape` for each `FromArg` entry.** Starting from the SDL type at the path's leaf and the Java target type, recurse directly on the SDL type:
-   - `GraphQLScalarType` / `GraphQLEnumType` → `Scalar(javaType, sdlPath, leafTransform)` where `leafTransform` is the matching `CallSiteExtraction.LeafTransform` arm (`Direct` / `EnumValueOf` / `JooqConvert` / `NodeIdDecodeKeys`).
+   - `GraphQLScalarType` / `GraphQLEnumType` → `Scalar(javaType, sdlPath, leafTransform)` where `leafTransform` is one of the four `CallSiteExtraction` leaf arms (`Direct` / `EnumValueOf` / `JooqConvert` / `NodeIdDecodeKeys`).
    - `GraphQLList` → `ListOf(sdlPath, elementShape)`; recurse on the element SDL type with the element's Java target.
    - `GraphQLInputObjectType` → `RecordInput` or `JavaBeanInput` (pick by inspecting the Java class — record component layout vs no-arg ctor + setters); recurse on each SDL field with its matching Java component target, producing one `FieldBinding` per field.
 
-   The recursion is a four-way `switch` over `GraphQLInputType`; the visitor framework's polymorphic dispatch adds no value over the direct form here because the four cases are known and exhaustive. A `Set<GraphQLNamedType>` visited-set guards against cycles in the SDL input-object graph; existing `InputBeanResolver` carries the equivalent guard, and its discipline transfers verbatim.
-
-   The Java-driven descent (forward-compatible with R249's nested `@argMapping` syntax) follows the same shape recursion but iterates the Java target's record-components or JavaBean properties as the controlling structure, looking up each leaf's SDL path independently through a flat `GraphQLInputObjectType.getField` chain. Both forms converge on the same `ValueShape` tree. Validation errors map to `Structural.InputBeanShape` (bean-shape rejections), `Structural.ArgMappingPathRejected` (path doesn't resolve), and `Structural.ParameterUnbindable` (Java target doesn't match the SDL leaf).
-5. **Validate the Java return type against `ReturnTypeRef`.** Compute the Java method's declared return type, check shape-compatibility with the field's `ReturnTypeRef` arm, and raise `Structural.ReturnTypeMismatch` on disagreement. Store the validated `TypeName` for the emitter to use as the `result` local's declared type.
+   The recursion is a four-way `switch` over `GraphQLInputType`; the visitor framework's polymorphic dispatch adds no value over the direct form here because the four cases are known and exhaustive. A `Set<GraphQLNamedType>` visited-set guards against cycles in the SDL input-object graph; existing `InputBeanResolver` carries the equivalent guard, and its discipline transfers verbatim. Validation errors map to `ServiceMethodCallError.InputBeanShape` (bean-shape rejections), `ServiceMethodCallError.ArgMappingPathRejected` (path doesn't resolve), and `ServiceMethodCallError.ParameterUnbindable` (Java target doesn't match the SDL leaf).
+5. **Validate the Java return type against `ReturnTypeRef`.** Compute the Java method's declared return type, check shape-compatibility with the field's `ReturnTypeRef` arm, and raise `ServiceMethodCallError.ReturnTypeMismatch` on disagreement. Store the validated `TypeName` for the emitter to use as the `result` local's declared type.
 6. **Build the carrier arm.** Static methods produce `Static(fqClassName, methodName, methodArgs, javaReturnType)`. Instance methods produce `Instance(fqClassName, ctorArgs, methodName, methodArgs, javaReturnType)`.
 7. **Return the result.** `Ok(...)` on success; `Err(authorErrors, diagnostics)` when any stage produced typed errors. Errors accumulate; the walker doesn't short-circuit at the first failure.
 
-The walker is invoked from `FieldBuilder` at each constructor site for the four service permits. Reflection helpers extracted from today's `ServiceCatalog.reflectServiceMethod` and `ArgBindingMap`, plus the new direct-recursive `ValueShape` builder, live in `walker/internal/`; they no longer surface on the public model boundary. The slice also adds the `CallSiteExtraction.LeafTransform` sub-seal to `CallSiteExtraction.java`; the four leaf arms (`Direct`, `EnumValueOf`, `JooqConvert`, `NodeIdDecodeKeys`) move to implement `LeafTransform`, which itself extends `CallSiteExtraction`. Existing callers reading `CallSiteExtraction` still resolve; new R238 callsites accept the narrower `LeafTransform`.
+The walker is invoked from `FieldBuilder` at each constructor site for the four service permits. Reflection helpers extracted from today's `ServiceCatalog.reflectServiceMethod` and `ArgBindingMap`, plus the new direct-recursive `ValueShape` builder, live in `walker/internal/`; they no longer surface on the public model boundary. R238 does not restructure `CallSiteExtraction` itself; lifting its four leaf arms into a typed sub-family is a follow-up that lands once `ContextArg`, `NestedInputField`, and `InputBean` retire from `CallSiteExtraction` (their R238 replacements are in `MappingEntry` / `ValueShape`, but non-R238 callsites still use them).
 
 ## Consumer migration
 
@@ -237,8 +208,8 @@ ServiceMethodCallEmitter.emit(field.serviceMethodCall()).forEach(builder::addSta
 
 The returned list is the ordered statements that produce a local named `result` holding the call's return value:
 
-1. **DSL prelude** (when needed): `DSLContext dsl = graphitronContext(env).getDslContext(env);`. Emitted if the carrier is `Instance` or any top-level entry (in either round's `CompleteArgMapping`) is `FromDsl`.
-2. **Var-decls**, walking `ctorArgs.entries()` (when the carrier is `Instance`) followed by `methodArgs.entries()`. Per entry:
+1. **DSL prelude** (when needed): `DSLContext dsl = graphitronContext(env).getDslContext(env);`. Emitted if the carrier is `Instance` or any top-level entry (in either round's mapping list) is `FromDsl`.
+2. **Var-decls**, walking `ctorArgs` (when the carrier is `Instance`) followed by `methodArgs`. Per entry:
    - `FromArg` emits `Type javaName = expr;` where `expr` is the `ValueShape` evaluation. Leaf `Scalar` and shallow extractions inline; `ListOf`, `RecordInput`, and `JavaBeanInput` extract to `private static` helpers that recurse through nested `FieldBinding`s.
    - `FromContext` emits `Type javaName = (Type) graphitronContext(env).getContextArgument(env, "contextKey");` (same `graphitronContext(env)` static factory the DSL prelude uses).
    - `FromDsl` contributes no var-decl (it shares the prelude's `dsl`).
@@ -290,37 +261,36 @@ public sealed interface WalkerResult<C> {
 }
 ```
 
-### `AuthorError.Structural` as a sealed sub-family
+### `ServiceMethodCallError` as a sub-seal of `AuthorError`
 
-Today's `Structural(String reason)` arm becomes sealed:
+R238 adds one new arm to `AuthorError` — a sealed sub-family scoped to this walker:
 
 ```java
-sealed interface AuthorError permits UnknownName, Structural, /* ...existing arms... */ {}
+sealed interface AuthorError permits UnknownName, Structural, ServiceMethodCallError, /* ...existing arms... */ {}
 
-sealed interface Structural extends AuthorError permits
-    Structural.ClassNotLoadable,
-    Structural.AmbiguousMethod,
-    Structural.ReturnTypeMismatch,
-    Structural.InstanceHolderMissingCtor,
-    Structural.CtorParamFromArg,
-    Structural.MultipleDslContextSlots,
-    Structural.ParameterNamesMissing,
-    Structural.ParameterUnbindable,
-    Structural.InputBeanShape,
-    Structural.ArgMappingParseError,
-    Structural.ArgMappingUnknownArg,
-    Structural.ArgMappingPathRejected,
-    Structural.Other
+sealed interface ServiceMethodCallError extends AuthorError permits
+    ServiceMethodCallError.ClassNotLoadable,
+    ServiceMethodCallError.AmbiguousMethod,
+    ServiceMethodCallError.ReturnTypeMismatch,
+    ServiceMethodCallError.InstanceHolderMissingCtor,
+    ServiceMethodCallError.CtorParamFromArg,
+    ServiceMethodCallError.MultipleDslContextSlots,
+    ServiceMethodCallError.ParameterNamesMissing,
+    ServiceMethodCallError.ParameterUnbindable,
+    ServiceMethodCallError.InputBeanShape,
+    ServiceMethodCallError.ArgMappingParseError,
+    ServiceMethodCallError.ArgMappingUnknownArg,
+    ServiceMethodCallError.ArgMappingPathRejected
 { String message(); }
 ```
 
-Each typed sub-arm carries its specific data (class names, method names, expected vs actual types, suggested fixes). `Structural.Other(String reason)` is the transitional catch-all that wraps today's `Rejection.AuthorError.Structural(String reason)` for callsites outside R238's migration set; the four service permits' callsites produce only the typed sub-arms above. Non-R238 callsites (condition, tableMethod, externalField) continue producing `Rejection.AuthorError.Structural(reason)` until their slice migrates; that prose payload reaches the wire through `Structural.Other` and projects to the generic `graphitron.structural` LSP code. **R238 introduces no new `Structural.Other` callsites** — the arm exists only so the migrating decomposition doesn't break the existing-callsite contract while subsequent slices retire it from the inside out.
+Each typed sub-arm carries its specific data (class names, method names, expected vs actual types, suggested fixes). Today's `Rejection.AuthorError.Structural(String reason)` arm is untouched: the ~265 non-R238 callsites continue producing it and continue projecting to a code-less wire diagnostic exactly as today. Subsequent walker slices (condition, tableMethod, externalField) each add their own sibling sub-seal (`ConditionWalkerError`, `TableMethodWalkerError`, ...) rather than piling typed arms under a single flat `Structural` — keeps `AuthorError` permits one-row-per-walker as the dimensional pivot scales, and lets each walker's arm-to-code mapping live next to its own family declaration.
 
 ### LSP wire conventions
 
-- **Code namespace**: `graphitron.<carrier-name>.<leaf>`. Codes derive from the `AuthorError` arm's type, not stored as a string field.
+- **Code namespace**: `graphitron.service-method-call.<arm>`. Codes are stable strings written next to the arm declaration, not derived from the type name (avoids coupling a wire contract to a Java identifier).
 - **`source: "graphitron"`** on every diagnostic.
-- **Severity**: walker `AuthorError`s project to `Error`.
+- **Severity**: walker `AuthorError`s project to `Severity.Error`.
 - **Source attribution**: every diagnostic's primary `SourceLocation` is the field's own SDL location (`GraphQLFieldDefinition.getDefinition().getSourceLocation()`). For nested-path errors, the offending segment goes in `Diagnostic.relatedInformation` instead of retargeting the primary location.
 
 Arm-to-code mapping for this slice:
@@ -328,19 +298,18 @@ Arm-to-code mapping for this slice:
 | `AuthorError` arm | LSP `code` |
 |---|---|
 | `UnknownName(AttemptKind.SERVICE_METHOD)` | `graphitron.service-method-call.unknown-method` |
-| `Structural.ClassNotLoadable` | `graphitron.service-method-call.class-not-loadable` |
-| `Structural.AmbiguousMethod` | `graphitron.service-method-call.ambiguous-method` |
-| `Structural.ReturnTypeMismatch` | `graphitron.service-method-call.return-type-mismatch` |
-| `Structural.InstanceHolderMissingCtor` | `graphitron.service-method-call.instance-holder-missing-ctor` |
-| `Structural.CtorParamFromArg` | `graphitron.service-method-call.ctor-param-from-arg` |
-| `Structural.MultipleDslContextSlots` | `graphitron.service-method-call.multiple-dsl-context-slots` |
-| `Structural.ParameterNamesMissing` | `graphitron.service-method-call.parameter-names-missing` |
-| `Structural.ParameterUnbindable` | `graphitron.service-method-call.parameter-unbindable` |
-| `Structural.InputBeanShape` | `graphitron.service-method-call.input-bean-shape` |
-| `Structural.ArgMappingParseError` | `graphitron.service-method-call.arg-mapping-parse-error` |
-| `Structural.ArgMappingUnknownArg` | `graphitron.service-method-call.arg-mapping-unknown-arg` |
-| `Structural.ArgMappingPathRejected` | `graphitron.service-method-call.arg-mapping-path-rejected` |
-| `Structural.Other` | `graphitron.structural` |
+| `ServiceMethodCallError.ClassNotLoadable` | `graphitron.service-method-call.class-not-loadable` |
+| `ServiceMethodCallError.AmbiguousMethod` | `graphitron.service-method-call.ambiguous-method` |
+| `ServiceMethodCallError.ReturnTypeMismatch` | `graphitron.service-method-call.return-type-mismatch` |
+| `ServiceMethodCallError.InstanceHolderMissingCtor` | `graphitron.service-method-call.instance-holder-missing-ctor` |
+| `ServiceMethodCallError.CtorParamFromArg` | `graphitron.service-method-call.ctor-param-from-arg` |
+| `ServiceMethodCallError.MultipleDslContextSlots` | `graphitron.service-method-call.multiple-dsl-context-slots` |
+| `ServiceMethodCallError.ParameterNamesMissing` | `graphitron.service-method-call.parameter-names-missing` |
+| `ServiceMethodCallError.ParameterUnbindable` | `graphitron.service-method-call.parameter-unbindable` |
+| `ServiceMethodCallError.InputBeanShape` | `graphitron.service-method-call.input-bean-shape` |
+| `ServiceMethodCallError.ArgMappingParseError` | `graphitron.service-method-call.arg-mapping-parse-error` |
+| `ServiceMethodCallError.ArgMappingUnknownArg` | `graphitron.service-method-call.arg-mapping-unknown-arg` |
+| `ServiceMethodCallError.ArgMappingPathRejected` | `graphitron.service-method-call.arg-mapping-path-rejected` |
 
 ### Orchestrator flow
 
@@ -352,19 +321,19 @@ The walker routes today's existing rejections through `WalkerResult.Err` as the 
 
 | Source today | New arm |
 |---|---|
-| Class not loadable | `Structural.ClassNotLoadable(className)` |
+| Class not loadable | `ServiceMethodCallError.ClassNotLoadable(className)` |
 | Unknown service method | `UnknownName(SERVICE_METHOD, attempt, candidates)` |
-| Multiple methods match name+arity (new) | `Structural.AmbiguousMethod(className, methodName, candidateSignatures)` |
-| Return-type mismatch | `Structural.ReturnTypeMismatch(expected, actual)` |
-| Instance ctor unresolvable from context/DSL | `Structural.InstanceHolderMissingCtor(className, attemptedSignature)` |
-| Ctor slot bound to SDL arg (new) | `Structural.CtorParamFromArg(className, paramName)` |
-| Two `DSLContext` slots in same round (new) | `Structural.MultipleDslContextSlots(className, round)` |
-| Missing `-parameters` compile flag | `Structural.ParameterNamesMissing(className, methodName)` |
-| Parameter not matching arg/context/source | `Structural.ParameterUnbindable(paramName, available, suggestion)` |
-| `argMapping` parse error | `Structural.ArgMappingParseError(rawMapping, parserDetail)` |
-| `argMapping` unknown arg ref | `Structural.ArgMappingUnknownArg(javaParam, refHead, availableArgs)` |
-| `argMapping` path rejected | `Structural.ArgMappingPathRejected(javaParam, offendingSegment, reason)` |
-| Input-bean shape rejections | `Structural.InputBeanShape(beanClass, reason)` |
+| Multiple methods match name+arity (new) | `ServiceMethodCallError.AmbiguousMethod(className, methodName, candidateSignatures)` |
+| Return-type mismatch | `ServiceMethodCallError.ReturnTypeMismatch(expected, actual)` |
+| Instance ctor unresolvable from context/DSL | `ServiceMethodCallError.InstanceHolderMissingCtor(className, attemptedSignature)` |
+| Ctor slot bound to SDL arg (new) | `ServiceMethodCallError.CtorParamFromArg(className, paramName)` |
+| Two `DSLContext` slots in same round (new) | `ServiceMethodCallError.MultipleDslContextSlots(className, round)` |
+| Missing `-parameters` compile flag | `ServiceMethodCallError.ParameterNamesMissing(className, methodName)` |
+| Parameter not matching arg/context/source | `ServiceMethodCallError.ParameterUnbindable(paramName, available, suggestion)` |
+| `argMapping` parse error | `ServiceMethodCallError.ArgMappingParseError(rawMapping, parserDetail)` |
+| `argMapping` unknown arg ref | `ServiceMethodCallError.ArgMappingUnknownArg(javaParam, refHead, availableArgs)` |
+| `argMapping` path rejected | `ServiceMethodCallError.ArgMappingPathRejected(javaParam, offendingSegment, reason)` |
+| Input-bean shape rejections | `ServiceMethodCallError.InputBeanShape(beanClass, reason)` |
 
 Each typed arm carries the data its message and its LSP `relatedInformation` need. The walker collects across stages; multiple errors from one field surface together.
 
@@ -372,8 +341,8 @@ Each typed arm carries the data its message and its LSP `relatedInformation` nee
 
 - `ChildField.ServiceTableField` and `ChildField.ServiceRecordField`. These two child-field service permits keep `MethodRef method` and continue implementing `MethodBackedField`. Their child-field-shaped state (`joinPath`, `sourceKey`, `loaderRegistration`) is orthogonal to the call payload; a subsequent slice migrates them with a child-field carrier alongside those slots.
 - The four other `MethodBackedField` implementers (`ChildField.TableMethodField`, `ChildField.RecordTableMethodField`, `ChildField.ComputedField` for `@externalField`, `QueryField.QueryTableMethodTableField`). `MethodBackedField` and its `MethodRef method()` contract stay alive until those slices migrate them.
-- Nested `@argMapping` syntax. The `ParsedArgMapping.Nested` arm is sealed in but lit up by R249, which wires the `ObjectValue` branch in `GraphQLSelectionParser`.
-- R222's umbrella note. The unified-`MethodCall`-on-`MethodBackedField` framing R222 stated is superseded by R238's per-carrier sibling design; the umbrella entry needs a refresh tracked separately, but R238 itself ships narrow.
+- Nested `@argMapping` syntax. R238 ships only the flat parser; R249 (`nested-argmapping-syntax`) reworks the parser's return shape and wires the `ObjectValue` branch in `GraphQLSelectionParser`. R238's `MappingEntry` / `ValueShape` model already represents nested paths uniformly (leaves carry their full `ArgPath`), so R249 lights up new producer logic without retrofitting downstream consumers.
+- Restructuring `CallSiteExtraction`. R238 walks past it for its own callsites and emits the four leaf arms (`Direct`, `EnumValueOf`, `JooqConvert`, `NodeIdDecodeKeys`) at `Scalar.leafTransform`; the walker enforces the restriction. Lifting them into a typed `LeafTransform` sub-family — and retiring `ContextArg` / `NestedInputField` / `InputBean` from `CallSiteExtraction` — waits until the condition / tableMethod / externalField slices migrate their callsites off those arms.
 - `ArgCallEmitter.buildMethodBackedCallArgs` / `buildArgExtraction`. These retire from the four service permits' callers but stay live for non-scope sites; later slices retire them per-callsite.
 
 ## Tests
@@ -382,10 +351,10 @@ Three tiers.
 
 **Unit (`@UnitTier`)**, two test classes.
 
-`ServiceMethodCallWalkerTest` parses a small SDL fragment, configures a test `ClassLoader` with fixture resolver classes, calls `walk`, and asserts on the sealed result. Coverage: one positive case per `MappingEntry` arm (`FromArg`, `FromContext`, `FromDsl`); one positive case per `ValueShape` arm (`Scalar`, `ListOf`, `RecordInput`, `JavaBeanInput`); one positive case per `LeafTransform` arm (`Direct`, `EnumValueOf`, `JooqConvert`, `NodeIdDecodeKeys`); one rejection case per `Structural.*` sub-arm plus `UnknownName(SERVICE_METHOD)`; arity-match disambiguation across overloads (one case where arity picks a single candidate, one where two candidates remain and `AmbiguousMethod` fires); deep-path bean instantiation (a path terminating at depth 2 on an input-object slot produces a `RecordInput` whose `fields` themselves contain a nested `RecordInput`); multi-arg ctor (a service class with `(DSLContext, ContextArg)` ctor produces `Instance` with two `ctorArgs`); site-local context-arg `javaType` (a fixture whose service slot declares a context arg of type `String` asserts the walker emits `FromContext` carrying `ClassName.get(String.class)` — the walker's own reflection of the param, independent of any cross-site fold); SDL-side cycle (an input-object that references itself transitively rejects with `Structural.InputBeanShape` rather than recursing forever); shape recursion depth (a fixture with `RecordInput → ListOf → RecordInput → Scalar` exercises every shape arm in one descent).
+`ServiceMethodCallWalkerTest` parses a small SDL fragment, configures a test `ClassLoader` with fixture resolver classes, calls `walk`, and asserts on the sealed result. Coverage: one positive case per `MappingEntry` arm (`FromArg`, `FromContext`, `FromDsl`); one positive case per `ValueShape` arm (`Scalar`, `ListOf`, `RecordInput`, `JavaBeanInput`); one positive case per leaf-arm at a `Scalar` position (`Direct`, `EnumValueOf`, `JooqConvert`, `NodeIdDecodeKeys`); a walker-discipline test asserting the walker never produces a non-leaf `CallSiteExtraction` arm (`ContextArg`, `NestedInputField`, `InputBean`) at `Scalar.leafTransform`; one rejection case per `ServiceMethodCallError.*` arm plus `UnknownName(SERVICE_METHOD)`; arity-match disambiguation across overloads (one case where arity picks a single candidate, one where two candidates remain and `AmbiguousMethod` fires); deep-path bean instantiation (a path terminating at depth 2 on an input-object slot produces a `RecordInput` whose `fields` themselves contain a nested `RecordInput`); multi-arg ctor (a service class with `(DSLContext, ContextArg)` ctor produces `Instance` with two `ctorArgs`); site-local context-arg `javaType` (a fixture whose service slot declares a context arg of type `String` asserts the walker emits `FromContext` carrying `ClassName.get(String.class)` — the walker's own reflection of the param, independent of any cross-site fold); SDL-side cycle (an input-object that references itself transitively rejects with `ServiceMethodCallError.InputBeanShape` rather than recursing forever); shape recursion depth (a fixture with `RecordInput → ListOf → RecordInput → Scalar` exercises every shape arm in one descent).
 
 `ServiceMethodCallEmitterTest` asserts on the returned `List<CodeBlock>` statement-by-statement. Coverage: the `Static` arm with and without a `FromDsl` method entry; the `Static` arm with a `RecordInput` method entry (asserts a `private static` helper is emitted and called); the `Instance` arm with a single `FromDsl` ctor entry; the `Instance` arm with a multi-arg ctor mixing `FromDsl` and `FromContext`; the cross-round case (instance ctor binds `dsl`, method also takes `DSLContext`) asserts that the prelude is emitted exactly once and both call positions read `dsl`.
 
-**Pipeline (`@PipelineTier`)**: extend `ServiceRootFetcherPipelineTest` with end-to-end assertions on `walkerDiagnostics` for the rejection cases whose firing graphql-java doesn't catch upstream: `AmbiguousMethod`, `CtorParamFromArg`, `MultipleDslContextSlots`, `ParameterUnbindable`, `ArgMappingPathRejected`, `InputBeanShape`, `ReturnTypeMismatch`. Each fires from one Spec'd fixture and projects through to its arm-to-code mapping; the unit-tier provides per-arm coverage of the remaining structural arms. Existing positive-witness tests keep their author-facing wording but assert against the typed arms instead of stringly-typed rejection prose. Body-string assertions on fetcher emission retire (per `rewrite-design-principles.adoc`'s ban on code-string assertions) and get replaced by structural assertions on the `ServiceMethodCall` carrier. Extend `ContextArgumentTypeAgreementTest` (`@PipelineTier`) with a fixture exercising the new `ServiceField` harvest arm: two `@service` sites declaring the same context key fold into a single `ResolvedContextArg` when their site-local types match, and into a `Rejection.AuthorError.TypeConflict` carrying both `ServiceMethodCall` coordinates when they disagree.
+**Pipeline (`@PipelineTier`)**: extend `ServiceRootFetcherPipelineTest` with end-to-end assertions on `walkerDiagnostics` for the rejection cases whose firing graphql-java doesn't catch upstream: `AmbiguousMethod`, `CtorParamFromArg`, `MultipleDslContextSlots`, `ParameterUnbindable`, `ArgMappingPathRejected`, `InputBeanShape`, `ReturnTypeMismatch`. Each fires from one Spec'd fixture and projects through to its arm-to-code mapping; the unit-tier provides per-arm coverage of the remaining `ServiceMethodCallError` arms. Existing positive-witness tests keep their author-facing wording but assert against the typed arms instead of stringly-typed rejection prose. Body-string assertions on fetcher emission retire (per `rewrite-design-principles.adoc`'s ban on code-string assertions) and get replaced by structural assertions on the `ServiceMethodCall` carrier. Extend `ContextArgumentTypeAgreementTest` (`@PipelineTier`) with a fixture exercising the new `ServiceField` harvest arm: two `@service` sites declaring the same context key fold into a single `ResolvedContextArg` when their site-local types match, and into a `Rejection.AuthorError.TypeConflict` carrying both `ServiceMethodCall` coordinates when they disagree.
 
 **Compilation / Execution (`@CompilationTier` / `@ExecutionTier`)**: `graphitron-sakila-example` provides the regression net. The migration is structurally invariant on observable behaviour; `mvn install -Plocal-db` end-to-end-green is the safety net.
