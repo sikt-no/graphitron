@@ -28,13 +28,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-05-26 | [plan](dml-payload-positional-alignment.md) |
-| `R247` | Emit assembled schema.graphqls into generated-resources, federation-aware | Spec | 2026-05-27 | [plan](emit-assembled-schema-graphqls.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R244` | ErrorChannel walker carrier (R222 Stage 2 slice on @service + @tableMethod) | Spec | 2026-05-26 | [plan](errorchannel-walker-carrier.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition on UPDATE/DELETE | Spec | 2026-05-27 <sub>created 2026-05-20</sub> | [plan](simplify-update-mutations-drop-value.md) |
+| `R247` | Emit assembled schema.graphqls into generated-resources, federation-aware | Ready | 2026-05-27 | [plan](emit-assembled-schema-graphqls.md) |
 | `R243` | Per-field direction in @order/@defaultOrder via FieldSort.direction | In Review | 2026-05-27 <sub>created 2026-05-26</sub> | [plan](per-field-sort-direction.md) |
 
 ---
