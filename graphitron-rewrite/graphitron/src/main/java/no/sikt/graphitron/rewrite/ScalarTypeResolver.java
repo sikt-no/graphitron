@@ -81,19 +81,22 @@ public final class ScalarTypeResolver {
     private record BuiltIn(String fieldName, Class<?> javaType) {}
 
     /**
-     * Federation-namespace scalars the federation-jvm transform injects after Graphitron has
-     * emitted its base schema (see {@code Federation.transform()} in
-     * {@code com.apollographql.federation.graphqljava}). At emit time these names appear in
-     * applied-directive arguments (e.g. {@code @key(fields: "id")} where the {@code fields}
-     * argument is typed {@code federation__FieldSet!}) but the scalar type itself isn't in the
-     * assembled schema yet, so Graphitron emits {@link String} for the Java type and
-     * {@code Scalars.GraphQLString} for the argument-type reference. The federation transform
-     * later replaces the {@code GraphQLString} reference with its own scalar definition.
+     * Federation-namespace scalars (e.g. {@code federation__FieldSet}, renamed from
+     * {@code FieldSet} by federation-jvm's {@code LinkImportsRenamingVisitor} when the consumer
+     * imports the federation spec via {@code @link} without importing {@code FieldSet}). These
+     * names land in the assembled schema as {@link graphql.schema.GraphQLScalarType}s on
+     * directive-argument slots ({@code directive @key(fields: federation__FieldSet!) ...}),
+     * but no {@code public static final GraphQLScalarType} constant exists for them on the
+     * federation-jvm public API. The generator therefore synthesises an inline scalar at emit
+     * time, borrowing the coercing from {@code _Any.type.getCoercing()} (the same lever
+     * federation-jvm pulls in {@code ensureFederationV2DirectiveDefinitionsExist}).
      *
-     * <p>Pre-registering these names through the resolver replaces the previous silent fallback
-     * in {@code AppliedDirectiveEmitter.emitInputType} ("unknown scalar name → GraphQLString")
-     * with a typed {@link ScalarResolution.Resolved}. Phase 2 adds the recognition; Phase 3
-     * routes {@code AppliedDirectiveEmitter} through the resolver to consume it.
+     * <p>{@link #resolveFederationNamespaceScalar} returns a {@link ScalarResolution.Synthesised}
+     * carrying the SDL name and the coercing source; {@link no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerator}
+     * dispatches on the variant to emit the inline scalar registration. Directive-argument type
+     * slots reference the scalar via {@code GraphQLTypeReference.typeRef(name)} so the assembled
+     * schema's directive shapes survive the JavaPoet round-trip with the correct named-scalar
+     * references.
      *
      * <p>The set tracks federation-jvm's {@code FederationDirectives.loadFederationSpecDefinitions}
      * output; bump the federation spec version in {@code FederationSpec.URL} when new namespaced
@@ -298,29 +301,34 @@ public final class ScalarTypeResolver {
     }
 
     /**
-     * Verifies (without invoking the resolver) that a SDL name is a federation-namespace scalar
-     * the federation-jvm transform injects after Graphitron has emitted its base schema. See
-     * {@link #FEDERATION_NAMESPACE_SCALARS} for the rationale.
+     * Verifies (without invoking the resolver) that an SDL name is a federation-namespace scalar
+     * Graphitron synthesises at emit time. See {@link #FEDERATION_NAMESPACE_SCALARS} for the set
+     * and {@link #resolveFederationNamespaceScalar(String)} for the resolution path.
      */
     public static boolean isFederationNamespaceScalar(String scalarName) {
         return FEDERATION_NAMESPACE_SCALARS.contains(scalarName);
     }
 
     /**
-     * Resolves a federation-namespace scalar to a {@link ScalarResolution.Resolved} binding to
-     * {@code Scalars.GraphQLString} and {@link String} as the Java type. The federation-jvm
-     * transform replaces the {@code GraphQLString} reference with its own scalar definition
-     * after Graphitron's base schema is built; the {@link String} Java type matches the
-     * runtime shape these scalars carry (a serialized selection-set, a scope string, etc.).
+     * Resolves a federation-namespace scalar to a {@link ScalarResolution.Synthesised} carrying
+     * the SDL name ({@code federation__FieldSet}, {@code link__Import}, etc.) and the coercing
+     * source ({@code _Any.type.getCoercing()}, the same lever federation-jvm uses to synthesise
+     * missing federation scalars at its registry+wiring entry point). The Java-side carrier
+     * stays {@link String} since these scalars deserialise to strings on the wire (a serialised
+     * selection-set, a scope string, etc.). {@link no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerator}
+     * emits an inline {@code GraphQLScalarType.newScalar().name(sdlName).coercing(...).build()}
+     * for the registration and directive-argument slots reference the scalar via
+     * {@code GraphQLTypeReference.typeRef(name)}.
      */
     public static ScalarResolution resolveFederationNamespaceScalar(String scalarName) {
         if (!FEDERATION_NAMESPACE_SCALARS.contains(scalarName)) {
             return new ScalarResolution.Rejected.FieldNotFound(SCALARS_FQN, scalarName);
         }
-        return new ScalarResolution.Resolved(
+        return new ScalarResolution.Synthesised(
             ClassName.get(String.class),
-            ClassName.get("graphql", "Scalars"),
-            "GraphQLString"
+            scalarName,
+            ClassName.get("com.apollographql.federation.graphqljava", "_Any"),
+            "type"
         );
     }
 

@@ -63,7 +63,24 @@ class DirectiveDefinitionEmitterTest {
             .contains("DirectiveLocation.OBJECT")
             .contains("GraphQLArgument.newArgument()")
             .contains(".name(\"roles\")")
-            .contains(".name(\"mode\")");
+            .contains(".name(\"mode\")")
+            .contains(".defaultValueProgrammatic(")
+            .contains("\"strict\"");
+    }
+
+    @Test
+    void buildDefinition_emitsBooleanArgumentDefault() {
+        // GraphQLValueEmitter.emit(...) dispatches on the boxed Java value, so booleans hit a
+        // different emit arm than strings; cover both shapes.
+        var schema = TestSchemaHelper.buildBundle("""
+            directive @flag(enabled: Boolean = true) on FIELD_DEFINITION
+            type Query { x: String }
+            """).assembled();
+        var block = DirectiveDefinitionEmitter.buildDefinition(schema.getDirective("flag")).toString();
+        assertThat(block)
+            .contains(".name(\"enabled\")")
+            .contains(".defaultValueProgrammatic(")
+            .contains("true");
     }
 
     @Test

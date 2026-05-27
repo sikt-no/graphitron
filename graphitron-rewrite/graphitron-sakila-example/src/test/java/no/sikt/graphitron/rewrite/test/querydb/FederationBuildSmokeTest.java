@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import com.apollographql.federation.graphqljava.printer.ServiceSDLPrinter;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.schema.GraphQLSchema;
@@ -109,6 +110,27 @@ class FederationBuildSmokeTest {
             .containsPattern("type\\s+Customer\\b[^{]*@key\\s*\\(\\s*fields\\s*:\\s*\"id\"")
             .containsPattern("type\\s+Address\\b[^{]*@key\\s*\\(\\s*fields\\s*:\\s*\"id\"")
             .containsPattern("type\\s+Film\\b[^{]*@key\\s*\\(\\s*fields\\s*:\\s*\"id\"");
+    }
+
+    /**
+     * The printed Service SDL must carry the canonical {@code @key} directive shape:
+     * {@code fields: federation__FieldSet!} (the post-rename form when {@code @link} imports
+     * {@code @key} without importing {@code FieldSet}) and {@code resolvable: Boolean = true}
+     * (the spec-defined default value). Subgraph composition tooling rejects the placeholder
+     * shape that the previous emitter produced ({@code fields: String!} with no default on
+     * {@code resolvable}).
+     */
+    @Test
+    void serviceSdlExposesCanonicalKeyDirectiveShape() {
+        GraphQLSchema schema = Graphitron.buildSchema(b -> {}, fed -> {});
+        String sdl = ServiceSDLPrinter.generateServiceSDLV2(schema);
+        assertThat(sdl)
+            .as("@key directive must declare fields: federation__FieldSet! and resolvable: Boolean = true")
+            .containsPattern(
+                "directive\\s+@key\\s*\\(\\s*fields\\s*:\\s*federation__FieldSet\\s*!\\s*,\\s*"
+                    + "resolvable\\s*:\\s*Boolean\\s*=\\s*true\\s*\\)\\s+repeatable\\s+on")
+            .as("synthesised federation__FieldSet scalar must be registered under its SDL name")
+            .contains("scalar federation__FieldSet");
     }
 
 }

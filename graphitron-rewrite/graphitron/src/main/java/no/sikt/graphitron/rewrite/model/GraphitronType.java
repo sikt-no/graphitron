@@ -444,17 +444,24 @@ public sealed interface GraphitronType
     ) implements GraphitronType, EmitsPerTypeFile {}
 
     /**
-     * A GraphQL scalar type whose Java type and {@code GraphQLScalarType} constant have been
-     * resolved by {@link no.sikt.graphitron.rewrite.ScalarTypeResolver}. Carries the
-     * {@link ScalarResolution.Resolved} so emitters (notably {@code GraphitronSchemaClassGenerator}'s
-     * {@code .additionalType(...)} loop) can route the owner / field-name pair without re-running
-     * reflection.
+     * A GraphQL scalar type whose Java type and {@code GraphQLScalarType} constant (or inline
+     * synthesised form) have been resolved by
+     * {@link no.sikt.graphitron.rewrite.ScalarTypeResolver}. Carries the
+     * {@link ScalarResolution.Successful} so emitters (notably
+     * {@code GraphitronSchemaClassGenerator}'s scalar-registration loop) can dispatch on the
+     * variant ({@link ScalarResolution.Resolved} → {@code .additionalType(Owner.FIELD)};
+     * {@link ScalarResolution.Synthesised} → inline {@code GraphQLScalarType.newScalar()...build()})
+     * without re-running reflection.
      *
      * <p>The classifier produces this variant for:
      * <ul>
      *   <li>The five GraphQL spec built-ins ({@code Int}, {@code Float}, {@code String},
      *       {@code Boolean}, {@code ID}) — always resolved through the resolver's closed
-     *       built-in table.</li>
+     *       built-in table to a {@code Resolved} arm.</li>
+     *   <li>Federation-namespace scalars ({@code federation__FieldSet} etc.) — resolved to a
+     *       {@code Synthesised} arm so the schema registers them under their SDL names with
+     *       {@code _Any.type.getCoercing()} borrowed, since federation-jvm exposes no
+     *       public-static-final constant for the renamed forms.</li>
      *   <li>Consumer-declared scalars carrying a {@code @scalarType(scalar: "...")} directive
      *       that resolves cleanly. A directive that fails to resolve (unknown class, missing
      *       field, erased Coercing) surfaces as {@link UnclassifiedType} instead.</li>
@@ -471,7 +478,7 @@ public sealed interface GraphitronType
     record ScalarType(
         String name,
         SourceLocation location,
-        ScalarResolution.Resolved resolution,
+        ScalarResolution.Successful resolution,
         GraphQLScalarType schemaType
     ) implements GraphitronType {}
 

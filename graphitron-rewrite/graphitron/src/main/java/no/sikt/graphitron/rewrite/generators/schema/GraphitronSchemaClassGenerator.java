@@ -192,12 +192,23 @@ public final class GraphitronSchemaClassGenerator {
         }
         // Built-in GraphQL scalars aren't auto-registered on a programmatic schema; the SDL
         // path in SchemaGenerator used to add them for us. The classifier resolves every SDL
-        // scalar (spec built-in or @scalarType-declared) through ScalarTypeResolver, and the
-        // resulting ScalarType variants drive the registration here. Spec built-ins surface as
-        // (graphql.Scalars, "GraphQLInt"|...); @scalarType custom scalars surface as the
-        // (owner, fieldName) the consumer pointed at.
+        // scalar through ScalarTypeResolver, and the resulting ScalarType variants drive the
+        // registration here. Resolved scalars (spec built-ins and @scalarType-declared) surface
+        // as (owner, fieldName) pointing at a public-static-final GraphQLScalarType constant;
+        // Synthesised scalars (federation-namespace names whose renamed forms have no constant
+        // exposed on the federation-jvm public API) emit an inline newScalar().build() with the
+        // coercing borrowed from another constant.
         for (var reg : plan.scalarRegistrations) {
-            body.add("\n.additionalType($T.$L)", reg.owner(), reg.fieldName());
+            switch (reg.resolution()) {
+                case no.sikt.graphitron.rewrite.model.ScalarResolution.Resolved r ->
+                    body.add("\n.additionalType($T.$L)", r.scalarConstantOwner(), r.scalarConstantField());
+                case no.sikt.graphitron.rewrite.model.ScalarResolution.Synthesised s ->
+                    body.add("\n.additionalType($T.newScalar().name($S).coercing($T.$L.getCoercing()).build())",
+                        ClassName.get("graphql.schema", "GraphQLScalarType"),
+                        s.sdlName(),
+                        s.coercingSourceOwner(),
+                        s.coercingSourceField());
+            }
         }
         for (var dir : DirectiveDefinitionEmitter.survivors(assembled)) {
             body.add("\n.additionalDirective(").add(DirectiveDefinitionEmitter.buildDefinition(dir)).add(")");
@@ -468,12 +479,15 @@ public final class GraphitronSchemaClassGenerator {
     ) {}
 
     /**
-     * One {@code .additionalType(<owner>.<fieldName>)} call against a resolved scalar's static
-     * {@code GraphQLScalarType} constant. For spec built-ins, the pair is
-     * {@code (graphql.Scalars, "GraphQLInt"|"GraphQLFloat"|...)}; for {@code @scalarType}-bound
-     * scalars, it's the owner + field the consumer named.
+     * One scalar registration call in the emitted {@code GraphitronSchema.build()} body. Carries
+     * the SDL name (for stable sort order) and the resolved variant: {@link ScalarResolution.Resolved}
+     * emits {@code .additionalType(<owner>.<field>)}; {@link ScalarResolution.Synthesised} emits
+     * an inline {@code .additionalType(GraphQLScalarType.newScalar().name(<sdl>).coercing(<owner>.<field>.getCoercing()).build())}
+     * for scalars (notably federation-namespace ones) that have no referenceable
+     * public-static-final form.
      */
-    record ScalarRegistration(ClassName owner, String fieldName) {}
+    record ScalarRegistration(String sdlName,
+                              no.sikt.graphitron.rewrite.model.ScalarResolution.Successful resolution) {}
 
     /**
      * Enumerates the types that need registration in the emitted {@code GraphitronSchema.build()}.
@@ -506,8 +520,7 @@ public final class GraphitronSchemaClassGenerator {
             }
             if (variant instanceof UnclassifiedType) continue;
             if (variant instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType scalar) {
-                var resolved = scalar.resolution();
-                scalars.add(new ScalarRegistration(resolved.scalarConstantOwner(), resolved.scalarConstantField()));
+                scalars.add(new ScalarRegistration(scalar.name(), scalar.resolution()));
                 continue;
             }
             additional.add(name);
@@ -515,9 +528,7 @@ public final class GraphitronSchemaClassGenerator {
 
         var sorted = new ArrayList<>(additional);
         sorted.sort(Comparator.naturalOrder());
-        scalars.sort(Comparator
-            .comparing((ScalarRegistration r) -> r.owner().toString())
-            .thenComparing(ScalarRegistration::fieldName));
+        scalars.sort(Comparator.comparing(ScalarRegistration::sdlName));
         return new Plan(hasQuery, hasMutation, hasSubscription, List.copyOf(sorted), List.copyOf(scalars));
     }
 }
