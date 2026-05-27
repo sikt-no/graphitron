@@ -1,10 +1,13 @@
 package no.sikt.graphitron.rewrite.maven;
 
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
+import org.apache.maven.model.Resource;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.ResolutionScope;
+
+import java.nio.file.Path;
 
 /**
  * Runs the rewrite code-generation pipeline and writes generated Java sources.
@@ -27,5 +30,8 @@ public class GenerateMojo extends AbstractRewriteMojo {
     public void execute() throws MojoExecutionException {
         runGenerator(GraphQLRewriteGenerator::generate);
         project.addCompileSourceRoot(outputDirectory);
+        var resource = new Resource();
+        resource.setDirectory(Path.of(outputResourcesDirectory).toAbsolutePath().normalize().toString());
+        project.addResource(resource);
     }
 }

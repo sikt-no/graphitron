@@ -40,6 +40,7 @@ public record RewriteContext(
     Set<String> schemaFileExtensions,
     Path basedir,
     Path outputDirectory,
+    Path outputResourcesDirectory,
     String outputPackage,
     String jooqPackage,
     Map<String, String> namedReferences,
@@ -54,6 +55,7 @@ public record RewriteContext(
         Objects.requireNonNull(schemaFileExtensions, "schemaFileExtensions");
         Objects.requireNonNull(basedir, "basedir");
         Objects.requireNonNull(outputDirectory, "outputDirectory");
+        Objects.requireNonNull(outputResourcesDirectory, "outputResourcesDirectory");
         Objects.requireNonNull(outputPackage, "outputPackage");
         Objects.requireNonNull(jooqPackage, "jooqPackage");
         Objects.requireNonNull(namedReferences, "namedReferences");
@@ -71,7 +73,8 @@ public record RewriteContext(
     /**
      * Seven-arg overload for callers that supply {@code classpathRoots} but no explicit
      * {@code codegenLoader}; the loader defaults to the current thread's context classloader,
-     * which equals the system classloader in a JUnit-launched JVM.
+     * which equals the system classloader in a JUnit-launched JVM. The resources
+     * directory defaults to a {@code generated-resources} sibling of {@code outputDirectory}.
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
@@ -82,7 +85,8 @@ public record RewriteContext(
         Map<String, String> namedReferences,
         List<Path> classpathRoots
     ) {
-        this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory, outputPackage, jooqPackage,
+        this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory,
+            defaultResourcesDirectory(outputDirectory), outputPackage, jooqPackage,
             namedReferences, classpathRoots, Thread.currentThread().getContextClassLoader());
     }
 
@@ -91,6 +95,7 @@ public record RewriteContext(
      * scanning. Defaults {@code classpathRoots} to the empty list,
      * {@code codegenLoader} to the current thread's context classloader, and
      * {@code schemaFileExtensions} to {@link #DEFAULT_SCHEMA_FILE_EXTENSIONS}.
+     * The resources directory defaults to a sibling of {@code outputDirectory}.
      */
     public RewriteContext(
         List<SchemaInput> schemaInputs,
@@ -100,7 +105,13 @@ public record RewriteContext(
         String jooqPackage,
         Map<String, String> namedReferences
     ) {
-        this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory, outputPackage, jooqPackage,
+        this(schemaInputs, DEFAULT_SCHEMA_FILE_EXTENSIONS, basedir, outputDirectory,
+            defaultResourcesDirectory(outputDirectory), outputPackage, jooqPackage,
             namedReferences, List.of(), Thread.currentThread().getContextClassLoader());
+    }
+
+    private static Path defaultResourcesDirectory(Path outputDirectory) {
+        Path parent = outputDirectory.getParent();
+        return (parent != null ? parent : outputDirectory).resolve("generated-resources-graphitron");
     }
 }
