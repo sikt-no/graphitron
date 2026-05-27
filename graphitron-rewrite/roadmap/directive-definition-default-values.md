@@ -178,8 +178,17 @@ so the four call sites that only read `.javaType()` (`ServiceCatalog.java:1230`,
 `FieldBuilder.java:3892`) keep working unchanged. `GraphitronType.ScalarType.resolution`
 widens from `ScalarResolution.Resolved` to `ScalarResolution.Successful`.
 
-Two call sites need exhaustive dispatch added:
+Three call sites need exhaustive dispatch added:
 
+- `TypeBuilder.java:646-657` (the federation-namespace branch of
+  `tryResolveScalar`, which today reads `resolveFederationNamespaceScalar(...)`
+  into `instanceof ScalarResolution.Resolved r` at `:653` and constructs the
+  `GraphitronType.ScalarType` from `r`): rebind to `Synthesised` (or pattern
+  match on `Successful`) so the federation classifier propagates the new
+  variant into the model. Without this, the federation resolver's
+  `Synthesised` return falls through to `asRejection(...)`, which throws
+  `IllegalStateException("asRejection invoked on Resolved")` since the input
+  is neither `Resolved` nor `Rejected`.
 - `TypeBuilder.java:1217` (`instanceof ScalarResolution.Resolved sr`): pattern
   match on `Successful` so the `Synthesised` arm participates in the same
   Java-type lookup the existing arm performs.
@@ -253,12 +262,19 @@ definition and application agree on the type slot by construction.
 ### 4. Update the stale "transform replaces the placeholder" comments
 
 The misleading paragraphs at `ScalarTypeResolver.java:83-95`,
-`TypeBuilder.java:601-605`, and `AppliedDirectiveEmitter.java:99-101` /
-`:125-131` all rest on a false claim about federation-jvm's `transform(GraphQLSchema)`
-entry. Replace the "federation-jvm replaces this binding" framing with a
-factual description of the new synthesised-scalar path: graphitron emits the
-scalar under its federation-namespaced SDL name with `_Any.type.getCoercing()`
-borrowed (the same lever federation-jvm pulls in
+`ScalarTypeResolver.java:310-314` (the javadoc on
+`resolveFederationNamespaceScalar` itself; this one is implicitly rewritten in
+step 2 along with the method's return-type and contract, but it's listed here
+so the step-4 enumeration is exhaustive), `TypeBuilder.java:601-605` (the
+`tryResolveScalar` javadoc bullet), `TypeBuilder.java:647-651` (the inline
+comment in the same method's federation-namespace branch — "emitting
+`Scalars.GraphQLString` as a placeholder satisfies graphql-java's type-resolver
+until the replacement runs"), and `AppliedDirectiveEmitter.java:99-101` /
+`:125-131` all rest on a false claim about federation-jvm's
+`transform(GraphQLSchema)` entry. Replace the "federation-jvm replaces this
+binding" framing with a factual description of the new synthesised-scalar path:
+graphitron emits the scalar under its federation-namespaced SDL name with
+`_Any.type.getCoercing()` borrowed (the same lever federation-jvm pulls in
 `ensureFederationV2DirectiveDefinitionsExist` for the registry+wiring entry
 point), and the directive arg types reference it via `typeRef`. Drop the "safe
 placeholder" wording entirely.
