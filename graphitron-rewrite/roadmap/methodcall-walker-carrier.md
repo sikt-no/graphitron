@@ -28,14 +28,16 @@ DomainTypeB paramB = constructParamB(env);
 DomainResult result = new DomainService(dsl).method(paramA, paramB);
 ```
 
-Each `ParamBinding` in the carrier's `methodArgs` (and `ctorArgs` when the carrier is `Instance`) supplies one var-decl plus one identifier in the call's argument list. `FromDslContext` is the exception: it shares the prelude's `dsl` local and contributes only the identifier, not a var-decl. Lifting per-param expressions to named locals is the structural shift.
+Each `ParamBinding` in the carrier's `methodArgs` (and `ctorArgs` when the carrier is `Instance`) supplies one var-decl plus one identifier in the call's argument list. `DslContext` is the exception: it shares the prelude's `dsl` local and contributes only the identifier, not a var-decl. Lifting per-param expressions to named locals is the structural shift.
 
-The right-hand side of each non-DSL var-decl is a sealed-arm dispatch on `ArgConstruction` (the existing `CallSiteExtraction` carried unchanged): `Direct`, `EnumValueOf`, `ContextArg`, `JooqConvert`, `NestedInputField`, `NodeIdDecodeKeys`, `InputBean`. Most arms inline their expression directly; `InputBean` extracts to a `private static` helper through today's `InputBeanInstantiationEmitter`.
+The right-hand side of each non-DSL var-decl dispatches on the `ParamBinding` arm directly. `EnvArg` reads `env.getArgument(...)` (single- or multi-segment path) and applies its `Extraction` leaf transform. `ContextArg` reads a context key. `InputBean` extracts to a `private static` helper that constructs the bean from its nested `List<ParamBinding>` fields (recursion runs through the same sealed family). The slice retires `CallSiteExtraction` for these four permits: every value-source case it used to encode now appears as a `ParamBinding` arm or an `Extraction` leaf.
 
 ## Carrier shape
 
+Four sealed families co-locate in `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/`: `ServiceMethodCall`, `ParamBinding`, `Extraction`, `ReturnTypeShape`. The model lives together because every emit-site needs to see the whole tree at once.
+
 ```java
-// graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ServiceMethodCall.java
+// model/ServiceMethodCall.java
 public sealed interface ServiceMethodCall permits Static, Instance {
     String fqClassName();
     String methodName();
@@ -57,30 +59,50 @@ public record Instance(
     List<ParamBinding> methodArgs,
     ReturnTypeShape returnShape
 ) implements ServiceMethodCall {}
+```
 
-public sealed interface ParamBinding
-    permits FromEnvArg, FromContextKey, FromDslContext {
-    String localName();
+```java
+// model/ParamBinding.java
+public sealed interface ParamBinding permits EnvArg, ContextArg, DslContext, InputBean {
+    String name();          // local-var name at top-level slots; bean field name at nested positions
     TypeName javaType();
 }
 
-public record FromEnvArg(
-    String localName, TypeName javaType,
-    String argName,
-    ArgConstruction construction
+public record EnvArg(
+    String name, TypeName javaType,
+    ArgPath path,
+    Extraction extraction
 ) implements ParamBinding {}
 
-public record FromContextKey(
-    String localName, TypeName javaType, String contextKey
+public record ContextArg(
+    String name, TypeName javaType, String contextKey
 ) implements ParamBinding {}
 
-public record FromDslContext() implements ParamBinding {
-    @Override public String localName() { return "dsl"; }
+public record DslContext() implements ParamBinding {
+    @Override public String name() { return "dsl"; }
     @Override public TypeName javaType() { return ClassName.get(DSLContext.class); }
+}
+
+public record InputBean(
+    String name, ClassName beanClass,
+    List<ParamBinding> fields
+) implements ParamBinding {
+    @Override public TypeName javaType() { return beanClass; }
 }
 ```
 
-The carrier itself is sealed. `Static` carries one round of bindings (`methodArgs`); `Instance` carries two (`ctorArgs` for the constructor, then `methodArgs` for the method). Field order on `Instance` mirrors evaluation order. The same `ParamBinding` family applies uniformly to both rounds, with one walker-enforced asymmetry: `FromEnvArg` is invalid in `ctorArgs` (field arguments aren't in scope at ctor time). Multi-arg constructors with `FromContextKey` and `FromDslContext` slots are first-class; the legacy `(DSLContext)`-only ctor restriction retires in this slice.
+```java
+// model/Extraction.java
+public sealed interface Extraction permits Direct, EnumValueOf, JooqConvert, NodeIdDecodeKeys {}
+public record Direct() implements Extraction {}
+public record EnumValueOf(ClassName enumClass) implements Extraction {}
+public record JooqConvert(/* converter spec */) implements Extraction {}
+public record NodeIdDecodeKeys(/* key descriptors */) implements Extraction {}
+```
+
+`ParamBinding` is recursive: `InputBean.fields` is `List<ParamBinding>`. The tree captures both rounds of binding (method args, ctor args) and any depth of bean composition without a sibling taxonomy. `Extraction` reduces to four leaf-scalar transforms applied to a path-extracted env value; `ContextArg` and `InputBean` are first-class `ParamBinding` arms rather than nested under an extraction enum. `NestedInputField` from today's `CallSiteExtraction` collapses into `EnvArg` with a multi-segment `ArgPath`.
+
+The carrier itself is sealed. `Static` carries one round of bindings (`methodArgs`); `Instance` carries two (`ctorArgs` for the constructor, then `methodArgs` for the method). Field order on `Instance` mirrors evaluation order. The same `ParamBinding` family applies uniformly to both rounds, with two walker-enforced asymmetries: `EnvArg` is invalid in `ctorArgs` (field arguments aren't in scope at ctor time), and `DslContext` is invalid in `InputBean.fields` (beans don't take a DSLContext). Multi-arg constructors with `ContextArg` and `DslContext` slots are first-class; the legacy `(DSLContext)`-only ctor restriction retires in this slice.
 
 `ReturnTypeShape` wraps a JavaPoet `TypeName` plus a sealed jOOQ-shape hint (`Scalar`, `Pojo`, `JooqResult(recordClass)`, `JooqRecord(recordClass)`). The existing return-type computation in `computeMutationServiceRecordReturnType` and friends lifts onto this.
 
@@ -128,13 +150,13 @@ Walker stages (one pass per `@service`-bearing root field):
 
 1. **Parse the `@service` directive.** Read the service class FQ name, method name, and `argMapping` string.
 2. **Load class and resolve method.** Use the classloader; collect every declared method whose name matches. Filter by ctor+method arity match against the field's binding budget (SDL args plus declared context keys plus any DSLContext slots). Reject zero matches with `UnknownName(SERVICE_METHOD, ...)` and multi-match with `Structural.AmbiguousMethod(className, methodName, candidateSignatures)`. Check `-parameters` availability on the surviving candidate.
-3. **Resolve `argMapping` paths** against the field's SDL arguments. For each Java method parameter that an SDL arg binds to, derive the `ArgConstruction`. Paths terminating at any input-object depth instantiate beans at that depth (`InputBeanResolver` head-only restriction retires here); leaf-scalar paths remain `NestedInputField`.
+3. **Resolve `argMapping` paths** against the field's SDL arguments. For each Java method parameter that an SDL arg binds to, build the value subtree as a `ParamBinding`. Paths terminating at an input-object slot produce a recursive `InputBean` with one nested `ParamBinding` per bean field (the `InputBeanResolver` head-only restriction retires here); paths terminating at a scalar produce `EnvArg` with a single- or multi-segment `ArgPath` and the appropriate `Extraction` leaf.
 4. **Build bindings per parameter slot.** Iterate the method's parameters and, for instance methods, the ctor's parameters. Classify each slot:
-   - SDL arg with extraction produces `FromEnvArg` (valid only in `methodArgs`; in `ctorArgs` it raises `Structural.CtorParamFromArg`).
-   - context-key match produces `FromContextKey(localName, javaType, contextKey)` where `javaType` is read from the cross-site `ResolvedContextArg` produced by `ContextArgumentClassifier`, not from this site's local Java param reflection.
-   - `DSLContext`-typed slot produces `FromDslContext()`.
+   - SDL arg produces `EnvArg(name, javaType, path, extraction)` (valid only in `methodArgs`; in `ctorArgs` it raises `Structural.CtorParamFromArg`).
+   - context-key match produces `ContextArg(name, javaType, contextKey)` where `javaType` is read from the cross-site `ResolvedContextArg` produced by `ContextArgumentClassifier`, not from this site's local Java param reflection.
+   - `DSLContext`-typed slot produces `DslContext()`.
 
-   The result is two ordered lists: `methodArgs` always, `ctorArgs` only when the method is instance. Ctor and method slots use the same classification helper; the only difference is which `ParamBinding` arms are admissible.
+   The result is two ordered lists: `methodArgs` always, `ctorArgs` only when the method is instance. Ctor and method slots use the same classification helper; the only difference is which `ParamBinding` arms are admissible (`EnvArg` is excluded for ctor slots; `DslContext` is excluded for `InputBean.fields`).
 5. **Build `ReturnTypeShape`** from the method's return type plus the field's declared return type; check shape compatibility.
 6. **Build the carrier arm.** Static methods produce `Static(fqClassName, methodName, methodArgs, returnShape)`. Instance methods produce `Instance(fqClassName, ctorArgs, methodName, methodArgs, returnShape)`.
 7. **Return the result.** `Ok(...)` on success; `Err(authorErrors, diagnostics)` when any stage produced typed errors. Errors accumulate; the walker doesn't short-circuit at the first failure.
@@ -159,15 +181,15 @@ ServiceMethodCallEmitter.emit(field.serviceMethodCall()).forEach(builder::addSta
 
 The returned list is the ordered statements that produce a local named `result` holding the call's return value:
 
-1. **DSL prelude** (when needed): `DSLContext dsl = graphitronContext(env).getDslContext(env);`. Emitted if the carrier is `Instance` or any binding (in either round) is `FromDslContext`.
-2. **Var-decls**, walking `ctorArgs` (when the carrier is `Instance`) followed by `methodArgs`. `FromEnvArg` and `FromContextKey` each emit a `Type localName = expr;` statement; `FromDslContext` contributes no var-decl.
+1. **DSL prelude** (when needed): `DSLContext dsl = graphitronContext(env).getDslContext(env);`. Emitted if the carrier is `Instance` or any top-level binding (in either round) is `DslContext`.
+2. **Var-decls**, walking `ctorArgs` (when the carrier is `Instance`) followed by `methodArgs`. `EnvArg`, `ContextArg`, and `InputBean` each emit a `Type name = expr;` statement; `DslContext` contributes no var-decl. `InputBean` expansions extract to `private static` helpers that recursively walk the bean's nested `List<ParamBinding>` fields.
 3. **Final assignment**:
    - `Static` arm: `ReturnType result = ClassName.methodName(methodArgs);`
    - `Instance` arm: `ReturnType result = new ClassName(ctorArgs).methodName(methodArgs);`
 
-The call's actual-args list at each position reads from the binding's `localName()`: `paramA`, `paramB`, ..., with `dsl` wherever a `FromDslContext` binding sits.
+The call's actual-args list at each position reads from the binding's `name()`: `paramA`, `paramB`, ..., with `dsl` wherever a `DslContext` binding sits.
 
-`ArgCallEmitter.buildMethodBackedCallArgs` retires at this seam for the four service permits' callers. The per-arm extraction-to-expression switch (`ArgCallEmitter.buildArgExtraction`) survives, since `ArgConstruction` dispatches through it.
+`ArgCallEmitter.buildMethodBackedCallArgs` and `buildArgExtraction` retire at this seam for the four service permits' callers; the new emitter dispatches on `ParamBinding` directly. Both helpers stay alive for non-scope sites (condition, tableMethod, etc.) until later slices migrate them.
 
 ## Plumbing fixed by this slice
 
@@ -278,9 +300,9 @@ Three tiers.
 
 **Unit (`@UnitTier`)**, two test classes.
 
-`ServiceMethodCallWalkerTest` parses a small SDL fragment, configures a test `ClassLoader` with fixture resolver classes, calls `walk`, and asserts on the sealed result. Coverage: one positive case per `ParamBinding` arm (`FromEnvArg`, `FromContextKey`, `FromDslContext`); one rejection case per `Structural.*` sub-arm plus `UnknownName(SERVICE_METHOD)`; arity-match disambiguation across overloads (one case where arity picks a single candidate, one where two candidates remain and `AmbiguousMethod` fires); deep-path bean instantiation (a path terminating at depth 2 on an input-object slot produces a nested `InputBean` construction); multi-arg ctor (a service class with `(DSLContext, ContextKey)` ctor produces `Instance` with two `ctorArgs`); cross-site context-key projection (the walker's `FromContextKey.javaType` matches the cross-site `ResolvedContextArg.javaType`, not the local reflected type, verified via a fixture where two sites declare the same key and the agreed type wins).
+`ServiceMethodCallWalkerTest` parses a small SDL fragment, configures a test `ClassLoader` with fixture resolver classes, calls `walk`, and asserts on the sealed result. Coverage: one positive case per `ParamBinding` arm (`EnvArg`, `ContextArg`, `DslContext`, `InputBean`); one positive case per `Extraction` leaf (`Direct`, `EnumValueOf`, `JooqConvert`, `NodeIdDecodeKeys`); one rejection case per `Structural.*` sub-arm plus `UnknownName(SERVICE_METHOD)`; arity-match disambiguation across overloads (one case where arity picks a single candidate, one where two candidates remain and `AmbiguousMethod` fires); deep-path bean instantiation (a path terminating at depth 2 on an input-object slot produces a nested `InputBean` whose `fields` themselves contain an `InputBean` arm); multi-arg ctor (a service class with `(DSLContext, ContextArg)` ctor produces `Instance` with two `ctorArgs`); cross-site context-arg projection (the walker's `ContextArg.javaType` matches the cross-site `ResolvedContextArg.javaType`, not the local reflected type, verified via a fixture where two sites declare the same key and the agreed type wins).
 
-`ServiceMethodCallEmitterTest` asserts on the returned `List<CodeBlock>` statement-by-statement. Coverage: the `Static` arm with and without a `FromDslContext` method param; the `Instance` arm with a single `FromDslContext` ctor binding; the `Instance` arm with a multi-arg ctor mixing `FromDslContext` and `FromContextKey`; the cross-round case (instance ctor binds `dsl`, method also takes `DSLContext`) asserts that the prelude is emitted exactly once and both call positions read `dsl`.
+`ServiceMethodCallEmitterTest` asserts on the returned `List<CodeBlock>` statement-by-statement. Coverage: the `Static` arm with and without a `DslContext` method param; the `Static` arm with an `InputBean` method param (asserts a `private static` helper is emitted and called); the `Instance` arm with a single `DslContext` ctor binding; the `Instance` arm with a multi-arg ctor mixing `DslContext` and `ContextArg`; the cross-round case (instance ctor binds `dsl`, method also takes `DSLContext`) asserts that the prelude is emitted exactly once and both call positions read `dsl`.
 
 **Pipeline (`@PipelineTier`)**: extend `ServiceRootFetcherPipelineTest` with assertions on `walkerDiagnostics` and typed `Structural.*` arms for the rejection cases. Existing positive-witness tests keep their author-facing wording but assert against the typed arms instead of stringly-typed rejection prose. Body-string assertions on fetcher emission retire (per `rewrite-design-principles.adoc`'s ban on code-string assertions) and get replaced by structural assertions on the `ServiceMethodCall` carrier.
 
