@@ -487,10 +487,10 @@ class TypeFetcherGeneratorTest {
     private static QueryField.QueryTableField queryTableFieldWithOrderByArg(String fieldName) {
         var filmIdCol = TestFixtures.filmIdCol();
         var base = new OrderBySpec.Fixed(
-            List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null)), "ASC");
+            List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null, OrderBySpec.SortDirection.ASC)), true);
         var namedOrder = new OrderBySpec.NamedOrder(
             "TITLE",
-            new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null)), "ASC"));
+            new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null, OrderBySpec.SortDirection.ASC)), true));
         var orderBy = new OrderBySpec.Argument(
             "order", "FilmOrder", false, false, "field", "direction",
             List.of(namedOrder), base);
@@ -567,7 +567,7 @@ class TypeFetcherGeneratorTest {
 
     private static QueryField.QueryTableField connectionField(String name) {
         var orderBy = new OrderBySpec.Fixed(
-            List.of(new OrderBySpec.ColumnOrderEntry(TestFixtures.filmIdCol(), null)), "ASC");
+            List.of(new OrderBySpec.ColumnOrderEntry(TestFixtures.filmIdCol(), null, OrderBySpec.SortDirection.ASC)), true);
         return new QueryField.QueryTableField("Query", name, null,
             TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, 100)),
             List.of(), orderBy, forwardPagination());
@@ -576,10 +576,10 @@ class TypeFetcherGeneratorTest {
     private static QueryField.QueryTableField connectionFieldWithArgOrderBy(String name) {
         var filmIdCol = TestFixtures.filmIdCol();
         var base = new OrderBySpec.Fixed(
-            List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null)), "ASC");
+            List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null, OrderBySpec.SortDirection.ASC)), true);
         var namedOrder = new OrderBySpec.NamedOrder(
             "TITLE",
-            new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null)), "ASC"));
+            new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null, OrderBySpec.SortDirection.ASC)), true));
         var orderBy = new OrderBySpec.Argument(
             "order", "FilmOrder", false, false, "field", "direction",
             List.of(namedOrder), base);

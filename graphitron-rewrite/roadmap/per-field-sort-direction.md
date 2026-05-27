@@ -1,11 +1,11 @@
 ---
 id: R243
 title: Per-field direction in @order/@defaultOrder via FieldSort.direction
-status: Ready
+status: In Review
 bucket: feature
 depends-on: []
 created: 2026-05-26
-last-updated: 2026-05-26
+last-updated: 2026-05-27
 ---
 
 # Per-field direction in @order/@defaultOrder via FieldSort.direction

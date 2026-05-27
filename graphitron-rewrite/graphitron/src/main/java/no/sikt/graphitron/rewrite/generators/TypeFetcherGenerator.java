@@ -3194,7 +3194,7 @@ public class TypeFetcherGenerator {
                     for (int i = 0; i < fixed.columns().size(); i++) {
                         var col = fixed.columns().get(i);
                         if (i > 0) { sortParts.add(", "); colParts.add(", "); }
-                        sortParts.add("$L.$L.$L()", srcAlias, col.column().javaName(), fixed.jooqMethodName());
+                        sortParts.add("$L.$L.$L()", srcAlias, col.column().javaName(), col.direction().jooqMethodName());
                         colParts.add("$L.$L", srcAlias, col.column().javaName());
                     }
                     code.addStatement("$T orderBy = $T.of($L)", SORT_FIELD_LIST, LIST, sortParts.build());
@@ -3238,7 +3238,7 @@ public class TypeFetcherGenerator {
                     for (int i = 0; i < fixed.columns().size(); i++) {
                         var col = fixed.columns().get(i);
                         if (i > 0) parts.add(", ");
-                        parts.add("$L.$L.$L()", srcAlias, col.column().javaName(), fixed.jooqMethodName());
+                        parts.add("$L.$L.$L()", srcAlias, col.column().javaName(), col.direction().jooqMethodName());
                     }
                     code.addStatement("$T<$T<?>> orderBy = $T.of($L)", LIST, SORT_FIELD, LIST, parts.build());
                 }
@@ -3318,7 +3318,7 @@ public class TypeFetcherGenerator {
                 for (int i = 0; i < fixed.columns().size(); i++) {
                     if (i > 0) { sortParts.add(", "); colParts.add(", "); }
                     var col = fixed.columns().get(i);
-                    sortParts.add("$L.$L.$L()", srcAlias, col.column().javaName(), fixed.jooqMethodName());
+                    sortParts.add("$L.$L.$L()", srcAlias, col.column().javaName(), col.direction().jooqMethodName());
                     colParts.add("$L.$L", srcAlias, col.column().javaName());
                 }
                 yield CodeBlock.of("new $T($T.of($L), $T.of($L))",
@@ -3360,9 +3360,15 @@ public class TypeFetcherGenerator {
             for (int i = 0; i < cols.size(); i++) {
                 if (i > 0) { sortParts.add(", "); colParts.add(", "); }
                 var col = cols.get(i);
-                sortParts.add("$S.equals(dir) ? $L.$L.desc() : $L.$L.$L()",
-                    "DESC", srcAlias, col.column().javaName(), srcAlias, col.column().javaName(),
-                    namedOrder.order().jooqMethodName());
+                if (namedOrder.order().uniformAsc()) {
+                    // Uniform-ASC: runtime `dir` flips the whole spec.
+                    sortParts.add("$S.equals(dir) ? $L.$L.desc() : $L.$L.asc()",
+                        "DESC", srcAlias, col.column().javaName(), srcAlias, col.column().javaName());
+                } else {
+                    // Direction-locked: SDL author baked in per-entry directions; ignore runtime dir.
+                    sortParts.add("$L.$L.$L()",
+                        srcAlias, col.column().javaName(), col.direction().jooqMethodName());
+                }
                 colParts.add("$L.$L", srcAlias, col.column().javaName());
             }
             code.add("case $S -> new $T($T.of($L), $T.of($L));\n",
@@ -3415,9 +3421,13 @@ public class TypeFetcherGenerator {
             code.add("case $S -> {\n", namedOrder.name());
             code.indent();
             for (var col : cols) {
-                code.addStatement("sortParts.add($S.equals(d) ? $L.$L.desc() : $L.$L.$L())",
-                    "DESC", srcAlias, col.column().javaName(), srcAlias, col.column().javaName(),
-                    namedOrder.order().jooqMethodName());
+                if (namedOrder.order().uniformAsc()) {
+                    code.addStatement("sortParts.add($S.equals(d) ? $L.$L.desc() : $L.$L.asc())",
+                        "DESC", srcAlias, col.column().javaName(), srcAlias, col.column().javaName());
+                } else {
+                    code.addStatement("sortParts.add($L.$L.$L())",
+                        srcAlias, col.column().javaName(), col.direction().jooqMethodName());
+                }
                 code.addStatement("colParts.add($L.$L)", srcAlias, col.column().javaName());
             }
             code.unindent();

@@ -85,7 +85,7 @@ class SplitTableFieldValidationTest {
         CONNECTION_EMPTY_ORDERBY_FIXED("Connection + empty OrderBySpec.Fixed — same rejection",
             new SplitTableField("Film", "actors", null, RT_CONN,
                 FK_PATH,
-                List.of(), new OrderBySpec.Fixed(List.of(), "asc"), null, SOURCE_KEY_CONN, LR_CONN,
+                List.of(), new OrderBySpec.Fixed(List.of(), true), null, SOURCE_KEY_CONN, LR_CONN,
                 TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable())),
             List.of("Field 'Film.actors': @splitQuery connections require a non-empty ORDER BY "
                 + "(add @defaultOrder, @orderBy, or a primary key on the target table)"));

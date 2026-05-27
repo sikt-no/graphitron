@@ -32,13 +32,35 @@ public sealed interface OrderBySpec
         permits OrderBySpec.Fixed, OrderBySpec.Argument, OrderBySpec.None {
 
     /**
+     * Per-entry sort direction. Decoupled from the SDL {@code SortDirection} enum on purpose:
+     * this is the resolved truth the emitter consumes, not the directive-argument value the
+     * resolver reads. R243 lifted this from a whole-spec {@code String} on {@link Fixed} down
+     * onto each {@link ColumnOrderEntry}, so a single fixed spec can carry heterogeneous
+     * directions (e.g. {@code year DESC, key ASC}).
+     */
+    enum SortDirection {
+        ASC, DESC;
+
+        /** jOOQ sort-direction method name: {@code "asc"} or {@code "desc"}. */
+        public String jooqMethodName() { return this == ASC ? "asc" : "desc"; }
+
+        /** Sibling direction; the runtime-flip helper for backward pagination operates on
+         *  jOOQ {@code SortField}s, but a flipped-direction algebra lives here for callers
+         *  that need it at build time. */
+        public SortDirection flipped() { return this == ASC ? DESC : ASC; }
+    }
+
+    /**
      * A single entry in a column-order list.
      *
      * <p>{@code column} is the resolved jOOQ {@link ColumnRef}.
      * {@code collation} is the optional {@code COLLATE} clause (e.g. {@code "C"}), or {@code null}
      * when no collation is specified.
+     * {@code direction} is the resolved per-entry sort direction. Set by the resolver from the
+     * per-field {@code FieldSort.direction:} value if present, otherwise inherited from the
+     * directive-level {@code direction:} argument (or {@code ASC} when neither is supplied).
      */
-    record ColumnOrderEntry(ColumnRef column, String collation) {}
+    record ColumnOrderEntry(ColumnRef column, String collation, SortDirection direction) {}
 
     /**
      * Maps an {@code @orderBy} enum value name to the SQL ORDER BY it represents.
@@ -54,18 +76,17 @@ public sealed interface OrderBySpec
      * <p>Used directly as the ordering for fields without a dynamic {@code @orderBy} argument,
      * and as the tiebreaker / fallback inside {@link Argument}.
      *
-     * <p>{@code direction} is the raw directive value ({@code "ASC"} or {@code "DESC"}).
-     * Use {@link #jooqMethodName()} when emitting the jOOQ sort call.
+     * <p>{@code uniformAsc} is {@code true} iff every entry carries {@link SortDirection#ASC}.
+     * Computed once at resolution time; consumed by the {@code @orderBy} helper emitter to
+     * decide whether the runtime direction arg flips the whole spec (uniform-ASC case) or is
+     * ignored because the spec is direction-locked (any non-ASC entry). Harmless when this
+     * {@code Fixed} is consumed outside the {@code @orderBy} helper path
+     * ({@code @defaultOrder} standalone, PK fallback).
      */
     record Fixed(
         List<ColumnOrderEntry> columns,
-        String direction
-    ) implements OrderBySpec {
-        /** Returns the jOOQ sort-direction method name: {@code "asc"} or {@code "desc"}. */
-        public String jooqMethodName() {
-            return "ASC".equalsIgnoreCase(direction) ? "asc" : "desc";
-        }
-    }
+        boolean uniformAsc
+    ) implements OrderBySpec {}
 
     /**
      * A dynamic ordering driven by a GraphQL {@code @orderBy} argument.

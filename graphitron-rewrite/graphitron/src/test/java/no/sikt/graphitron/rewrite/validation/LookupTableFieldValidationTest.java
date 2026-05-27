@@ -28,7 +28,7 @@ class LookupTableFieldValidationTest {
     private static final TableRef FILM_TABLE = TestFixtures.tableRef("film", "FILM", "Film", List.of());
     private static final LookupMapping EMPTY_LOOKUP = new LookupMapping.ColumnMapping(List.of(), FILM_TABLE);
     private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
-        List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null)), "ASC");
+        List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null, OrderBySpec.SortDirection.ASC)), true);
 
     private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {
         return new ReturnTypeRef.TableBoundReturnType("Film", FILM_TABLE, wrapper);

@@ -946,7 +946,7 @@ public final class SplitRowsMethodEmitter {
                 for (int i = 0; i < fixed.columns().size(); i++) {
                     if (i > 0) { sortParts.add(", "); colParts.add(", "); }
                     var col = fixed.columns().get(i);
-                    sortParts.add("$L.$L.$L()", terminalAlias, col.column().javaName(), fixed.jooqMethodName());
+                    sortParts.add("$L.$L.$L()", terminalAlias, col.column().javaName(), col.direction().jooqMethodName());
                     colParts.add("$L.$L", terminalAlias, col.column().javaName());
                 }
                 body.addStatement("$T orderBy = $T.of($L)", listOfSortField, LIST, sortParts.build());

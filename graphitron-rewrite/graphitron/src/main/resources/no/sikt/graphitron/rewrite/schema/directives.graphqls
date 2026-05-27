@@ -265,6 +265,12 @@ input FieldSort {
   name: String!
   """Collation to apply (e.g., "xdanish_ai"). Database-specific."""
   collate: String
+  """
+  Sort direction for this entry. When absent, falls back to the directive-level
+  `direction:` argument on `@defaultOrder` (default ASC), or to ASC on `@order`
+  (which has no directive-level direction surface).
+  """
+  direction: SortDirection
 }
 
 """

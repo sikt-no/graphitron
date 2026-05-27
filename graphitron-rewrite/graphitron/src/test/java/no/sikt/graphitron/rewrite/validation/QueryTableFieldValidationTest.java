@@ -25,8 +25,8 @@ class QueryTableFieldValidationTest {
 
     private static final ColumnRef TITLE_COL = new ColumnRef("title", "TITLE", "java.lang.String");
     private static final ColumnRef ID_COL    = new ColumnRef("film_id", "FILM_ID", "java.lang.Long");
-    private static final OrderBySpec.Fixed INDEX_ORDER = new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(TITLE_COL, null)), "ASC");
-    private static final OrderBySpec.Fixed PK_ORDER    = new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(ID_COL, null)), "ASC");
+    private static final OrderBySpec.Fixed INDEX_ORDER = new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(TITLE_COL, null, OrderBySpec.SortDirection.ASC)), true);
+    private static final OrderBySpec.Fixed PK_ORDER    = new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(ID_COL, null, OrderBySpec.SortDirection.ASC)), true);
 
     /** Resolved return type backed by {@code film} (has a primary key). */
     private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {
@@ -48,7 +48,7 @@ class QueryTableFieldValidationTest {
         DEFAULT_ORDER_PRIMARY_KEY("@defaultOrder with primaryKey mode — valid",
             new QueryTableField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
-                List.of(), new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(ID_COL, null)), "DESC"), null),
+                List.of(), new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(ID_COL, null, OrderBySpec.SortDirection.DESC)), false), null),
             List.of()),
 
         DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields — valid",
@@ -56,9 +56,9 @@ class QueryTableFieldValidationTest {
                 filmReturn(new FieldWrapper.List(true, true)),
                 List.of(),
                 new OrderBySpec.Fixed(List.of(
-                    new OrderBySpec.ColumnOrderEntry(TITLE_COL, null),
-                    new OrderBySpec.ColumnOrderEntry(ID_COL, "C")),
-                    "ASC"),
+                    new OrderBySpec.ColumnOrderEntry(TITLE_COL, null, OrderBySpec.SortDirection.ASC),
+                    new OrderBySpec.ColumnOrderEntry(ID_COL, "C", OrderBySpec.SortDirection.ASC)),
+                    true),
                 null),
             List.of()),
 

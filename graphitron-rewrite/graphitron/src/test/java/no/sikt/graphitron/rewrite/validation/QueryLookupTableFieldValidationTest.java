@@ -31,7 +31,7 @@ class QueryLookupTableFieldValidationTest {
     private static final TableRef FILM_TABLE = TestFixtures.tableRef("film", "FILM", "Film", List.of());
     private static final LookupMapping EMPTY_LOOKUP = new LookupMapping.ColumnMapping(List.of(), FILM_TABLE);
     private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
-        List.of(new OrderBySpec.ColumnOrderEntry(FILM_ID_COL, null)), "ASC");
+        List.of(new OrderBySpec.ColumnOrderEntry(FILM_ID_COL, null, OrderBySpec.SortDirection.ASC)), true);
 
     private static GeneratedConditionFilter columnFilter(String name, boolean nonNull, boolean list) {
         BodyParam bodyParam = list

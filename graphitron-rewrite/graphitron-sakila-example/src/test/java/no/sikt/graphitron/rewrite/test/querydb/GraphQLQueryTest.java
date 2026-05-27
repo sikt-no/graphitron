@@ -626,6 +626,51 @@ class GraphQLQueryTest {
         assertThat(filteredFilms.get(0).get("title")).isEqualTo(onlyTitle);
     }
 
+    // ===== R243: per-field direction in @defaultOrder(fields:) =====
+
+    @Test
+    void filmsOrderedConnection_mixedOrderEnumValue_ignoresRuntimeDirection() {
+        // R243 direction-locked semantics: an @order enum value with per-field directions
+        // (YEAR_DESC_TITLE_ASC) carries uniformAsc = false on its resolved Fixed. The runtime
+        // `direction:` argument on FilmOrderBy is ignored for that arm — both ASC and DESC
+        // client inputs return the same SDL-baked order. Test fixture has equal release_year
+        // across all films, so the visible order is title ASC for both cases. Pins the
+        // opt-out semantics against accidental regression to multiplier semantics.
+        Map<String, Object> ascResult = execute(
+            "{ filmsOrderedConnection(order: [{field: YEAR_DESC_TITLE_ASC, direction: ASC}], first: 5) "
+            + "{ nodes { title } } }");
+        Map<String, Object> descResult = execute(
+            "{ filmsOrderedConnection(order: [{field: YEAR_DESC_TITLE_ASC, direction: DESC}], first: 5) "
+            + "{ nodes { title } } }");
+        var ascTitles = assertThat(ascResult).extractingByKey("filmsOrderedConnection", as(MAP))
+            .extractingByKey("nodes", as(list(Map.class)))
+            .extracting(n -> n.get("title"));
+        var descTitles = assertThat(descResult).extractingByKey("filmsOrderedConnection", as(MAP))
+            .extractingByKey("nodes", as(list(Map.class)))
+            .extracting(n -> n.get("title"));
+        ascTitles.containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES",
+            "AFFAIR PREJUDICE", "AGENT TRUMAN");
+        descTitles.containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES",
+            "AFFAIR PREJUDICE", "AGENT TRUMAN");
+    }
+
+    @Test
+    void filmsByYearDescTitleAsc_executesHeterogeneousOrder() {
+        // R243 execution proof: @defaultOrder(fields: [{release_year DESC}, {title ASC}]) on the
+        // filmsByYearDescTitleAsc connection emits per-entry direction in the generated jOOQ
+        // call. All seeded films share release_year=2006, so the DESC year is a no-op tie and
+        // the secondary title ASC drives the visible ordering. Verifies that the heterogeneous
+        // spec compiles, runs, and returns rows in the expected order against a real DB.
+        Map<String, Object> data = execute(
+            "{ filmsByYearDescTitleAsc(first: 5) { nodes { filmId title } } }");
+        var conn = assertThat(data).extractingByKey("filmsByYearDescTitleAsc", as(MAP));
+        conn.extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(5)
+            .extracting(n -> n.get("title"))
+            .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER", "ADAPTATION HOLES",
+                "AFFAIR PREJUDICE", "AGENT TRUMAN");
+    }
+
     @Test
     void filmsConnectionByRequiredIds_idsSupplied_paginatesBoundedSet() {
         // R113 production shape: required outer wrapper on a same-table @nodeId list arg
