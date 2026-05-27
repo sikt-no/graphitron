@@ -95,6 +95,23 @@ Route 1 is the more contained change and is the recommended starting
 point unless Spec discussion surfaces a directive case the printer-level
 filter cannot represent.
 
+### Route 3 — Route 1 with the survivor decision made explicit at one site
+
+Independent-review remark surfaced during R247 self-review: Route 1's con
+("splits survivor semantics across two sites") collapses if the print
+predicate consumes the same
+`SchemaDirectiveRegistry.isSurvivor(String)` method the codegen
+`additionalDirective(survivors)` loop and per-type
+`AppliedDirectiveEmitter.applicationsFor` filter already consume. Both
+sides then route through one survivor decision, with the printer-level
+filter as a thin lookup. The con only resurfaces if a future runtime
+filter diverges from `isSurvivor` (e.g. a runtime-only override).
+
+In practice this is what Route 1's code sketch above already does. Pull
+this out as the explicit Spec framing so the Spec → Ready reviewer
+doesn't re-discover it: "one survivor predicate, two consumers" is the
+shape, not "two predicates that happen to agree today".
+
 ## Re-enabling the test
 
 Either route lets the test go green by removing the `@Disabled`

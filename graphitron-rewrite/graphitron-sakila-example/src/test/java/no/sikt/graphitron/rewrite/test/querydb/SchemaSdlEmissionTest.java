@@ -52,7 +52,9 @@ class SchemaSdlEmissionTest {
             .as("federated SDL registers the synthesised federation__FieldSet scalar")
             .contains("scalar federation__FieldSet")
             .as("federated SDL carries the @link directive referencing FederationSpec.URL")
-            .contains(FederationSpec.URL);
+            .contains(FederationSpec.URL)
+            .as("federated SDL carries the schema-applied @link declaration (R250)")
+            .containsPattern("schema\\s+@link\\s*\\(");
     }
 
     @Test

@@ -26,11 +26,10 @@ public class GenerateMojo extends AbstractRewriteMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
-        runGenerator(GraphQLRewriteGenerator::generate);
-        project.addCompileSourceRoot(outputDirectory);
+        var ctx = runGenerator(GraphQLRewriteGenerator::generate);
+        project.addCompileSourceRoot(ctx.outputDirectory().toString());
         var resource = new Resource();
-        resource.setDirectory(resolveOutputResourcesDirectory(project.getBasedir().toPath())
-            .toAbsolutePath().normalize().toString());
+        resource.setDirectory(ctx.outputResourcesDirectory().toString());
         project.addResource(resource);
     }
 }
