@@ -35,7 +35,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition on UPDATE/DELETE | Spec | 2026-05-27 <sub>created 2026-05-20</sub> | [plan](simplify-update-mutations-drop-value.md) |
 | `R243` | Per-field direction in @order/@defaultOrder via FieldSort.direction | In Review | 2026-05-27 <sub>created 2026-05-26</sub> | [plan](per-field-sort-direction.md) |
-| `R248` | Survivor directive definitions emit incorrect arg types and miss defaults | In Review | 2026-05-27 | [plan](directive-definition-default-values.md) |
 
 ---
 
@@ -268,7 +267,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R213` [**Plain-input field rejections attributed to consumer field, losing input-field source location**](input-field-rejection-attribution.md)
 - `R188` [**Replace @value with PK-default partition on UPDATE/DELETE**](simplify-update-mutations-drop-value.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
-- `R248` [**Survivor directive definitions emit incorrect arg types and miss defaults**](directive-definition-default-values.md)
 - `R219` [**Unify arity-unique and type-unique inference under a single JavaTypeKey-counted rule**](unify-inference-rule-by-javatypekey.md)
 - `R221` [**Validator walks PlainInputArg.fields() for UnboundField rejection**](validator-walks-plain-input-unbound-fields.md)
 - `R245` [**Wire @condition through to mutation WHERE (emit half + new placements)**](wire-condition-emit-on-mutations.md)
