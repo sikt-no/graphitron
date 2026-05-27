@@ -38,3 +38,8 @@ At generation time the generator parses the `selection` string and emits a `DSL.
 ## Out of scope for this item
 
 Renaming the `@experimental_` prefix once the feature is stable (separate stabilisation step).
+
+## Related
+
+- **R249 (`nested-argmapping-syntax`)** is the input-side sibling: it wires `GraphQLSelectionParser` into `@argMapping`'s right-hand side so that `paramName: { fieldA: input.x, fieldB: input.other.y, ... }` parses through the same `ObjectValue` arm. Both items lean on the `selection/` package's parser; this item drives the output-side projection, R249 drives the input-side construction.
+- **R238 (`methodcall-walker-carrier`)** lands the carrier model with paths on `ValueShape` leaves, which represents R249's nested-form construction uniformly with the default-mapping case.
