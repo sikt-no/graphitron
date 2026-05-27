@@ -223,10 +223,22 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      * Builds the context and invokes the generator through a single
      * error-handling path so every goal surfaces {@link RuntimeException}s
      * wrapped as {@link MojoExecutionException}. Goals that have work to do
-     * after a successful generator call add it after this returns.
+     * after a successful generator call (e.g. registering the generated
+     * source / resource roots with Maven) read the returned
+     * {@link RewriteContext} so they reuse the paths {@link #buildContext}
+     * computed instead of recomputing them.
+     *
+     * <p>The returned context's {@code codegenLoader} has been closed by the
+     * time this method returns; callers must not call back into the
+     * reflection seams off the returned context. The path-shaped fields
+     * ({@link RewriteContext#outputDirectory},
+     * {@link RewriteContext#outputResourcesDirectory},
+     * {@link RewriteContext#basedir}) remain valid.
      */
-    protected final void runGenerator(GeneratorCall call) throws MojoExecutionException {
+    protected final RewriteContext runGenerator(GeneratorCall call) throws MojoExecutionException {
+        var holder = new RewriteContext[1];
         withCodegenScope(ctx -> {
+            holder[0] = ctx;
             try {
                 call.invoke(new GraphQLRewriteGenerator(ctx));
             } catch (SchemaProblem e) {
@@ -244,6 +256,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
                 throw new MojoExecutionException(e.getMessage(), e);
             }
         });
+        return holder[0];
     }
 
     /**

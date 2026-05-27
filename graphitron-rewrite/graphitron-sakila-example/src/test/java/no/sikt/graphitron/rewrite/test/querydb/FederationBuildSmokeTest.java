@@ -95,6 +95,44 @@ class FederationBuildSmokeTest {
      * the emitted SDL carries it for every {@code @node} type, even ones that did not write the
      * directive themselves (Customer, Address). Locks the synthesis path against silent removal.
      */
+    /**
+     * R250: the consumer's {@code extend schema @link(url:..., import:[...])}
+     * must round-trip through codegen ({@code AppliedDirectiveEmitter.
+     * applicationsForSchema} → {@code .withSchemaAppliedDirectives(...)} on
+     * the runtime build) so the runtime {@code _service.sdl} carries the
+     * schema-applied {@code @link} the supergraph composer's Fed2 detection
+     * branch reads ({@code completeSubgraphSchema} in
+     * {@code @apollo/federation-internals}). Without this, composition falls
+     * through to {@code completeFed1SubgraphSchema} and rejects the
+     * canonically Fed2-shaped {@code @key} declarations with "argument fields
+     * should have type _FieldSet! but found federation__FieldSet!".
+     */
+    @Test
+    void serviceSdlExposesSchemaAppliedFederationLink() {
+        GraphQLSchema schema = Graphitron.buildSchema(b -> {}, fed -> {});
+        var graphql = GraphQL.newGraphQL(schema).build();
+        var input = ExecutionInput.newExecutionInput()
+            .query("{ _service { sdl } }")
+            .build();
+        var result = graphql.execute(input);
+        assertThat(result.getErrors()).isEmpty();
+        @SuppressWarnings("unchecked")
+        var service = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("_service");
+        var sdl = (String) service.get("sdl");
+        // The federation SDL printer uses ` : ` (space-around-colon) for applied-directive args.
+        // Argument order on a printed application is alphabetical (import before url here);
+        // the assertion locks the presence and shape of both args, not their order.
+        assertThat(sdl)
+            .as("schema { ... } block must carry @link from the consumer SDL")
+            .containsPattern("schema\\s+@link\\s*\\(")
+            .as("@link url argument must point at FederationSpec v2.10")
+            .containsPattern(
+                "schema\\s+@link[^{]*url\\s*:\\s*\""
+                    + "https://specs\\.apollo\\.dev/federation/v2\\.10\"")
+            .as("@link import argument must list @key")
+            .containsPattern("schema\\s+@link[^{]*import\\s*:\\s*\\[\\s*\"@key\"\\s*\\]");
+    }
+
     @Test
     void serviceSdlExposesSynthesisedKeyOnNodeTypes() {
         GraphQLSchema schema = Graphitron.buildSchema(b -> {}, fed -> {});

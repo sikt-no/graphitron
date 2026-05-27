@@ -60,6 +60,14 @@ public final class AppliedDirectiveEmitter {
      *
      * <p>The list is empty when the container has no survivor applications; callers can emit
      * without checking.
+     *
+     * <p><b>Shape contract.</b> Per-container blocks are pre-wrapped in
+     * {@code .withAppliedDirective(...)} because graphql-java's per-type builders take one
+     * application at a time. The schema-level sibling, {@link #applicationsForSchema(GraphQLSchema)},
+     * returns the bare {@code GraphQLAppliedDirective.newDirective()...build()} inner
+     * blocks instead, because {@link GraphQLSchema.Builder#withSchemaAppliedDirectives}
+     * takes a single {@code List<GraphQLAppliedDirective>}. The names look symmetric; the
+     * shapes are not.
      */
     public static List<CodeBlock> applicationsFor(GraphQLDirectiveContainer container) {
         var blocks = new ArrayList<CodeBlock>();
@@ -83,7 +91,15 @@ public final class AppliedDirectiveEmitter {
      * mirrors {@link #applicationsFor}: generator-only directives are skipped;
      * everything else survives.
      *
-     * <p>The schema-level applied-directive list is not exposed as a
+     * <p><b>Shape contract.</b> Returns the bare
+     * {@code GraphQLAppliedDirective.newDirective()...build()} inner blocks,
+     * unwrapped — the call site assembles them into a single
+     * {@code .withSchemaAppliedDirectives(java.util.List.of(...))} call because
+     * {@link GraphQLSchema.Builder#withSchemaAppliedDirectives} takes a
+     * {@code List<GraphQLAppliedDirective>} rather than one application per
+     * builder call. The per-container sibling {@link #applicationsFor} pre-wraps
+     * each in {@code .withAppliedDirective(...)} to match its singular-builder
+     * call site. The schema-level applied-directive list is not exposed as a
      * {@link GraphQLDirectiveContainer} in graphql-java, so this entry point
      * takes the raw {@link GraphQLSchema} rather than reusing
      * {@link #applicationsFor}.
