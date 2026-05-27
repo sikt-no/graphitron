@@ -58,6 +58,9 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     @Parameter(defaultValue = "${project.build.directory}/generated-sources/graphitron")
     String outputDirectory;
 
+    @Parameter(defaultValue = "${project.build.directory}/generated-resources/graphitron")
+    String outputResourcesDirectory;
+
     @Parameter
     String outputPackage;
 
@@ -102,6 +105,8 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         var basedir = project.getBasedir().toPath();
         var out = Path.of(outputDirectory);
         var outAbs = out.isAbsolute() ? out.normalize() : basedir.resolve(out).normalize();
+        var resources = Path.of(outputResourcesDirectory);
+        var resourcesAbs = resources.isAbsolute() ? resources.normalize() : basedir.resolve(resources).normalize();
 
         String effectiveOutput;
         String effectiveJooq;
@@ -130,6 +135,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             extensions,
             basedir,
             outAbs,
+            resourcesAbs,
             effectiveOutput,
             effectiveJooq,
             toNamedReferenceMap(namedReferences),

@@ -20,6 +20,7 @@ class GenerateMojoTest {
     void buildContext_allParametersRoundTrip(@TempDir Path basedir) throws Exception {
         var mojo = mojo(basedir);
         mojo.outputDirectory = basedir.resolve("target/generated").toString();
+        mojo.outputResourcesDirectory = basedir.resolve("target/generated-resources").toString();
 
         var ref = new NamedReferenceBinding();
         ref.name = "MyRef";
@@ -40,8 +41,11 @@ class GenerateMojoTest {
     void buildContext_relativeOutputDirectory_resolvesAgainstBasedir(@TempDir Path basedir) throws Exception {
         var mojo = mojo(basedir);
         mojo.outputDirectory = "gen";
+        mojo.outputResourcesDirectory = "gen-resources";
 
         var ctx = mojo.buildContext();
+        assertThat(ctx.outputResourcesDirectory()).isAbsolute();
+        assertThat(ctx.outputResourcesDirectory()).isEqualTo(basedir.resolve("gen-resources").normalize());
 
         assertThat(ctx.outputDirectory()).isAbsolute();
         assertThat(ctx.outputDirectory()).isEqualTo(basedir.resolve("gen").normalize());
@@ -76,6 +80,7 @@ class GenerateMojoTest {
         // outputPackage deliberately null
         mojo.jooqPackage = "com.example.jooq";
         mojo.outputDirectory = basedir.resolve("target/generated").toString();
+        mojo.outputResourcesDirectory = basedir.resolve("target/generated-resources").toString();
 
         assertThatThrownBy(mojo::buildContext)
             .isInstanceOf(MojoExecutionException.class)
@@ -91,6 +96,7 @@ class GenerateMojoTest {
         mojo.outputPackage = "com.example.generated";
         // jooqPackage deliberately null
         mojo.outputDirectory = basedir.resolve("target/generated").toString();
+        mojo.outputResourcesDirectory = basedir.resolve("target/generated-resources").toString();
 
         assertThatThrownBy(mojo::buildContext)
             .isInstanceOf(MojoExecutionException.class)
@@ -104,6 +110,7 @@ class GenerateMojoTest {
         project.setFile(basedir.resolve("pom.xml").toFile());
         mojo.project = project;
         mojo.outputDirectory = basedir.resolve("target/generated").toString();
+        mojo.outputResourcesDirectory = basedir.resolve("target/generated-resources").toString();
         // outputPackage + jooqPackage deliberately null
 
         var ctx = mojo.buildContext();
@@ -121,6 +128,7 @@ class GenerateMojoTest {
         mojo.outputPackage = "com.example.generated";
         mojo.jooqPackage = "com.example.jooq";
         mojo.outputDirectory = basedir.resolve("target/generated-sources/graphitron").toString();
+        mojo.outputResourcesDirectory = basedir.resolve("target/generated-resources/graphitron").toString();
         return mojo;
     }
 }

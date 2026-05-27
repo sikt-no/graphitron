@@ -26,6 +26,7 @@ import no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerat
 import no.sikt.graphitron.rewrite.generators.schema.InputRecordGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.InputTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ObjectTypeGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.SchemaSdlEmitter;
 import no.sikt.graphitron.rewrite.generators.util.ColumnFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
@@ -202,6 +203,7 @@ public class GraphQLRewriteGenerator {
         write(QueryConditionsGenerator.generate(schema, outputPackage),                           "conditions", emittedThisRun);
         write(fetcherClasses,                                                                      "fetchers",   emittedThisRun);
         write(QueryNodeFetcherClassGenerator.generate(schema, outputPackage),                      "fetchers",   emittedThisRun);
+        emittedThisRun.add(SchemaSdlEmitter.emit(assembled, federationLink, ctx.outputResourcesDirectory(), outputPackage));
         sweepOrphans(emittedThisRun);
     }
 
