@@ -1,7 +1,7 @@
 ---
 id: R247
 title: Emit assembled schema.graphqls into generated-resources, federation-aware
-status: In Review
+status: Ready
 bucket: feature
 depends-on: []
 created: 2026-05-27
@@ -9,6 +9,67 @@ last-updated: 2026-05-27
 ---
 
 # Emit assembled schema.graphqls into generated-resources, federation-aware
+
+## Review (In Review → Ready, 2026-05-27)
+
+Implementation at `8c7e101` delivers the shape the spec describes
+(`SchemaSdlEmitter` at the tail of `runPipeline`, dispatch on
+`Bundle.federationLink()`, `@Parameter outputResourcesDirectory` on the
+Mojo, resource root registered via `project.addResource`, defaulted on the
+two `RewriteContext` convenience constructors, unit + pipeline-tier
+coverage). What blocks approval is build-green: `mvn install -Plocal-db`
+fails in `graphitron-maven-plugin` with three R247-induced regressions.
+
+Findings:
+
+1. `DevMojoTest.bindToTakenPortFailsWithOverrideHint`
+   (`graphitron-rewrite/graphitron-maven-plugin/src/test/java/no/sikt/graphitron/rewrite/maven/DevMojoTest.java:90`)
+   hand-builds a `DevMojo` and never sets `outputResourcesDirectory`. The
+   new `Path.of(outputResourcesDirectory)` in `AbstractRewriteMojo.buildContext`
+   (`AbstractRewriteMojo.java:108`) NPEs before the dev-port validation runs,
+   so the test sees `NullPointerException` instead of the expected
+   `MojoExecutionException`. The implementation commit's own note acknowledges
+   this risk for `GenerateMojoTest` ("the @Parameter default only applies
+   under Maven") but missed `DevMojoTest`. Fix: set
+   `mojo.outputResourcesDirectory = basedir.resolve("target/generated-resources/graphitron").toString();`
+   in `mojoFor` alongside the existing `outputDirectory` line.
+
+2. `CodegenLoaderTest.codegenLoader_resolvesClassFromProjectCompileClasspath`
+   (`graphitron-rewrite/graphitron-maven-plugin/src/test/java/no/sikt/graphitron/rewrite/maven/CodegenLoaderTest.java:105`)
+   hits the same NPE for the same reason. Fix: set `outputResourcesDirectory`
+   on the hand-built mojo in the `mojo(...)` helper.
+
+3. `MojoDocCoverageTest.everyMojoParameterHasADocRowAndViceVersa`
+   (`MojoDocCoverageTest.java:111`) fails because `outputResourcesDirectory`
+   is a new editable parameter in `plugin.xml` without a matching row in
+   `docs/manual/reference/mojo-configuration.adoc`. That doc guard is the
+   project's gate against parameter/doc drift; spec section 2 implicitly
+   pulls in a doc-row obligation (any new `@Parameter` needs one). Fix: add
+   a row to the "Common parameters" table at
+   `docs/manual/reference/mojo-configuration.adoc:37-70` describing
+   `outputResourcesDirectory`, its default
+   `${project.build.directory}/generated-resources/graphitron`, and that
+   `generate` registers the directory via `project.addResource` so
+   `schema.graphqls` ships on the classpath under `<outputPackage>`.
+
+Minor (non-blocking) observations:
+
+- The `In Progress → In Review` commit (`744fe65`) message says
+  "Implementation landed at 1d10159" but the actual implementation SHA is
+  `8c7e101`. Stale message; cosmetic only.
+- The spec body was not marked up to reflect shipped phases (spec section
+  9 in `workflow.adoc` describes the "collapse to one-line shipped at `<sha>`"
+  hygiene). Acceptable for a single-commit landing.
+- Spec section 1 said "thread `outputResourcesDirectory` through the two
+  convenience constructors"; the implementation defaults it to a
+  `generated-resources-graphitron` sibling instead. This is a benign
+  divergence (preserves unit-tier ergonomics) and is fine as shipped.
+
+Once the three failing tests + the doc row are in, re-run
+`mvn -f graphitron-rewrite/pom.xml install -Plocal-db` to verify green,
+then flip back to In Review for a fresh reviewer session.
+
+---
 
 > Add one step to the rewrite pipeline that prints the assembled
 > `GraphQLSchema` to a `schema.graphqls` file under the consumer's
