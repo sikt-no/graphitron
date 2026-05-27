@@ -988,9 +988,10 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
                 assertThat(order).isNotNull();
-                assertThat(order.direction()).isEqualTo("ASC");
+                assertThat(order.uniformAsc()).isTrue();
                 assertThat(order.columns()).hasSize(1);
                 assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
+                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
             }),
 
         DEFAULT_ORDER_PRIMARY_KEY(
@@ -1028,7 +1029,8 @@ class GraphitronSchemaBuilderTest {
             }),
 
         DEFAULT_ORDER_DIRECTION_DESC(
-            "@defaultOrder(direction: DESC) stores the direction in the Fixed order",
+            "@defaultOrder(direction: DESC) pushes DESC onto each PK entry; primaryKey-mode "
+            + "synthesised entries hardcode ASC, so uniformAsc reflects the entries' ASC, not the directive's DESC",
             """
             type Actor @table(name: "actor") { name: String }
             type FilmActor @table(name: "film_actor") {
@@ -1038,7 +1040,85 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
-                assertThat(order.direction()).isEqualTo("DESC");
+                // primaryKey-mode synthesises entries hardcoded to ASC; directive-level DESC does not
+                // apply to PK/index variants (only to fields:). Per the R243 spec, fork (b).
+                assertThat(order.uniformAsc()).isTrue();
+                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
+            }),
+
+        // R243: per-field direction in @defaultOrder(fields: [...]).
+        PER_FIELD_DIRECTION_DEFAULT_ORDER(
+            "R243: @defaultOrder(fields: [...]) with mixed per-field direction → "
+            + "ColumnOrderEntry carries per-entry SortDirection; uniformAsc reflects the mix",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type FilmActor @table(name: "film_actor") {
+                actors: [Actor!]! @defaultOrder(fields: [
+                    {name: "last_name", direction: DESC},
+                    {name: "first_name"}
+                ])
+            }
+            type Query { filmActor: FilmActor }
+            """,
+            schema -> {
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
+                assertThat(order.columns()).hasSize(2);
+                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
+                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
+                assertThat(order.columns().get(1).column().sqlName()).isEqualToIgnoringCase("first_name");
+                // Per-entry direction omitted → fallback to directive-level (ASC default).
+                assertThat(order.columns().get(1).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
+                assertThat(order.uniformAsc()).isFalse();
+            }),
+
+        // R243: directive-level direction on @defaultOrder pushes down per-entry as the fallback.
+        DIRECTIVE_LEVEL_DIRECTION_PUSHES_DOWN(
+            "R243: @defaultOrder(direction: DESC, fields: [...]) pushes DESC down onto entries "
+            + "that omit per-field direction; per-field ASC overrides",
+            """
+            type Actor @table(name: "actor") { name: String }
+            type FilmActor @table(name: "film_actor") {
+                actors: [Actor!]! @defaultOrder(direction: DESC, fields: [
+                    {name: "last_name"},
+                    {name: "first_name", direction: ASC}
+                ])
+            }
+            type Query { filmActor: FilmActor }
+            """,
+            schema -> {
+                var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
+                assertThat(order.columns()).hasSize(2);
+                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
+                assertThat(order.columns().get(1).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
+                assertThat(order.uniformAsc()).isFalse();
+            }),
+
+        // R243: per-field direction in @order enum-value directives.
+        PER_FIELD_DIRECTION_ORDER_ENUM_VALUE(
+            "R243: enum value's @order(fields: [...]) with per-field direction → "
+            + "NamedOrder's Fixed carries the per-entry directions and uniformAsc = false",
+            """
+            enum ActorOrderField {
+                LASTNAME_DESC_FIRSTNAME_ASC @order(fields: [
+                    {name: "last_name", direction: DESC},
+                    {name: "first_name", direction: ASC}
+                ])
+            }
+            input ActorOrder { sortField: ActorOrderField direction: SortDirection }
+            type Actor @table(name: "actor") { name: String }
+            type Query {
+                actors(order: ActorOrder @orderBy): [Actor!]!
+            }
+            """,
+            schema -> {
+                var orderBy = (OrderBySpec.Argument) ((QueryField.QueryTableField) schema.field("Query", "actors")).orderBy();
+                assertThat(orderBy.namedOrders()).hasSize(1);
+                var named = orderBy.namedOrders().get(0);
+                assertThat(named.name()).isEqualTo("LASTNAME_DESC_FIRSTNAME_ASC");
+                assertThat(named.order().columns()).hasSize(2);
+                assertThat(named.order().columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
+                assertThat(named.order().columns().get(1).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
+                assertThat(named.order().uniformAsc()).isFalse();
             }),
 
         CONNECTION_WITH_DEFAULT_ORDER_INDEX_SPLIT_CLASSIFIED(
@@ -1072,9 +1152,10 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
                 assertThat(order).isNotNull();
-                assertThat(order.direction()).isEqualTo("ASC");
+                assertThat(order.uniformAsc()).isTrue();
                 assertThat(order.columns()).hasSize(1);
                 assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("actor_id");
+                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
             }),
 
         NO_DEFAULT_ORDER_PKLESS_TABLE(

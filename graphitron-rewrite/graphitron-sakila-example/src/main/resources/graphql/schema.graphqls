@@ -71,6 +71,15 @@ type Query {
         order: [FilmOrderBy] @orderBy,
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
+    # R243: per-field direction on @defaultOrder. Heterogeneous spec — release_year DESC
+    # then title ASC. Exercises the lifted ColumnOrderEntry.direction model and the
+    # emitter's per-entry direction handling against real jOOQ classes.
+    filmsByYearDescTitleAsc(
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(fields: [
+        {name: "release_year", direction: DESC},
+        {name: "title", direction: ASC}
+    ])
     # argres Phase 4: @condition on INPUT_FIELD_DEFINITION — @table input type.
     # FilmConditionInput.filmId carries @condition; the condition method is wired
     # and called at runtime. In Phase 4, filmId arrives as null (nested-arg access
@@ -970,6 +979,13 @@ enum TextRating {
 enum FilmSort {
     FILM_ID @order(primaryKey: true)
     TITLE   @order(fields: [{name: "title"}])
+    # R243: heterogeneous per-field direction on an @order enum value. The runtime
+    # `direction:` argument on FilmOrderBy is ignored for this entry because the spec
+    # baked in per-column directions; uniformAsc = false on the resolved Fixed.
+    YEAR_DESC_TITLE_ASC @order(fields: [
+        {name: "release_year", direction: DESC},
+        {name: "title",        direction: ASC}
+    ])
 }
 
 input FilmOrderBy {

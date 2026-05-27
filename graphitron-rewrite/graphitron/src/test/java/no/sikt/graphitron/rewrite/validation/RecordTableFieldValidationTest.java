@@ -34,7 +34,7 @@ class RecordTableFieldValidationTest {
     private static final ReturnTypeRef.TableBoundReturnType RT_SINGLE = filmReturn(new FieldWrapper.Single(true));
     private static final ReturnTypeRef.TableBoundReturnType RT_LIST = filmReturn(new FieldWrapper.List(true, true));
     private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
-        List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null)), "ASC");
+        List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null, OrderBySpec.SortDirection.ASC)), true);
     private static final SourceKey SOURCE_KEY_SINGLE = TestFixtures.recordParentRowSourceKey(RT_SINGLE.table(), PARENT_KEY_COLS, false);
     private static final SourceKey SOURCE_KEY_LIST = TestFixtures.recordParentRowSourceKey(RT_LIST.table(), PARENT_KEY_COLS, true);
     private static final LoaderRegistration LR_SINGLE = TestFixtures.loaderRegistration(RT_SINGLE, false, false);

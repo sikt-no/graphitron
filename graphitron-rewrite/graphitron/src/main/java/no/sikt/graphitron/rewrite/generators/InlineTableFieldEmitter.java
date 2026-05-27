@@ -159,8 +159,9 @@ public final class InlineTableFieldEmitter {
             var orderParts = CodeBlock.builder();
             for (int i = 0; i < fixed.columns().size(); i++) {
                 if (i > 0) orderParts.add(", ");
+                var col = fixed.columns().get(i);
                 orderParts.add("$L.$L.$L()",
-                    terminalAlias, fixed.columns().get(i).column().javaName(), fixed.jooqMethodName());
+                    terminalAlias, col.column().javaName(), col.direction().jooqMethodName());
             }
             sel.add("\n        .orderBy($L)", orderParts.build());
         }

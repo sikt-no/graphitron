@@ -132,9 +132,12 @@ final class OrderByResolver {
         if (pkCols.isEmpty()) return new Resolved.Ok(new OrderBySpec.None());
         return new Resolved.Ok(new OrderBySpec.Fixed(
             pkCols.stream()
-                .map(ce -> new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
+                .map(ce -> new OrderBySpec.ColumnOrderEntry(
+                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()),
+                    null,
+                    OrderBySpec.SortDirection.ASC))
                 .toList(),
-            "ASC"));
+            true));
     }
 
     /**
@@ -145,19 +148,30 @@ final class OrderByResolver {
      */
     private OrderBySpec.Fixed resolveColumnOrderSpec(GraphQLFieldDefinition fieldDef, String tableSqlName) {
         var dir = fieldDef.getAppliedDirective(DIR_DEFAULT_ORDER);
-
-        // direction has a default of ASC in the directive; absent arg means ASC.
-        String direction = "ASC";
-        var dirArg = dir.getArgument(ARG_DIRECTION);
-        if (dirArg != null) {
-            Object dirVal = dirArg.getValue();
-            if (dirVal instanceof EnumValue ev) direction = ev.getName();
-            else if (dirVal instanceof String s) direction = s;
-        }
-
-        var entries = resolveOrderEntries(dir, tableSqlName);
+        OrderBySpec.SortDirection fallback = readDirectionArg(dir, OrderBySpec.SortDirection.ASC);
+        var entries = resolveOrderEntries(dir, tableSqlName, fallback);
         if (entries == null) return null;
-        return new OrderBySpec.Fixed(entries, direction);
+        boolean uniformAsc = entries.stream().allMatch(e -> e.direction() == OrderBySpec.SortDirection.ASC);
+        return new OrderBySpec.Fixed(entries, uniformAsc);
+    }
+
+    /** Reads the directive's {@code direction:} argument as a typed {@link OrderBySpec.SortDirection}. */
+    private static OrderBySpec.SortDirection readDirectionArg(GraphQLAppliedDirective dir, OrderBySpec.SortDirection fallback) {
+        var dirArg = dir.getArgument(ARG_DIRECTION);
+        if (dirArg == null) return fallback;
+        return parseDirection(dirArg.getValue(), fallback);
+    }
+
+    /** Parses a directive-argument or input-map value into {@link OrderBySpec.SortDirection}. */
+    private static OrderBySpec.SortDirection parseDirection(Object value, OrderBySpec.SortDirection fallback) {
+        String name = switch (value) {
+            case null -> null;
+            case EnumValue ev -> ev.getName();
+            case String s -> s;
+            default -> value.toString();
+        };
+        if (name == null) return fallback;
+        return "DESC".equalsIgnoreCase(name) ? OrderBySpec.SortDirection.DESC : OrderBySpec.SortDirection.ASC;
     }
 
     /**
@@ -174,7 +188,8 @@ final class OrderByResolver {
         var dir = ev.getAppliedDirective("order");
         List<OrderBySpec.ColumnOrderEntry> entries;
         if (dir != null) {
-            entries = resolveOrderEntries(dir, tableSqlName);
+            // @order has no directive-level direction surface; ASC is the per-entry fallback.
+            entries = resolveOrderEntries(dir, tableSqlName, OrderBySpec.SortDirection.ASC);
         } else {
             // @index is a deprecated alias: @index(name: "idx") ≡ @order(index: "idx")
             var indexDir = ev.getAppliedDirective("index");
@@ -188,7 +203,8 @@ final class OrderByResolver {
             errors.add("enum value '" + ev.getName() + "': could not resolve @order columns in table '" + tableSqlName + "'");
             return null;
         }
-        return new OrderBySpec.Fixed(entries, "ASC");
+        boolean uniformAsc = entries.stream().allMatch(e -> e.direction() == OrderBySpec.SortDirection.ASC);
+        return new OrderBySpec.Fixed(entries, uniformAsc);
     }
 
     /** Looks up named index columns from the catalog; returns {@code null} when not found. */
@@ -197,7 +213,10 @@ final class OrderByResolver {
         var colsOpt = ctx.catalog.findIndexColumns(tableSqlName, indexName);
         if (colsOpt.isEmpty() || colsOpt.get().isEmpty()) return null;
         return colsOpt.get().stream()
-            .map(ce -> new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
+            .map(ce -> new OrderBySpec.ColumnOrderEntry(
+                new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()),
+                null,
+                OrderBySpec.SortDirection.ASC))
             .toList();
     }
 
@@ -213,7 +232,8 @@ final class OrderByResolver {
      * Returns {@code null} when any lookup fails (index not found, PK absent, or a column name is
      * unresolvable). The caller is responsible for generating a diagnostic message.
      */
-    private List<OrderBySpec.ColumnOrderEntry> resolveOrderEntries(GraphQLAppliedDirective dir, String tableSqlName) {
+    private List<OrderBySpec.ColumnOrderEntry> resolveOrderEntries(
+            GraphQLAppliedDirective dir, String tableSqlName, OrderBySpec.SortDirection defaultDirection) {
         var indexArg = dir.getArgument(ARG_INDEX);
         if (indexArg != null) {
             Object indexVal = indexArg.getValue();
@@ -230,7 +250,10 @@ final class OrderByResolver {
             var pkCols = ctx.catalog.findPkColumns(tableSqlName);
             if (pkCols.isEmpty()) return null;
             return pkCols.stream()
-                .map(ce -> new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), null))
+                .map(ce -> new OrderBySpec.ColumnOrderEntry(
+                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()),
+                    null,
+                    OrderBySpec.SortDirection.ASC))
                 .toList();
         }
 
@@ -246,10 +269,12 @@ final class OrderByResolver {
                 if (nameRaw == null) return null;
                 String colName = nameRaw.toString().strip();
                 String collation = Optional.ofNullable(map.get(ARG_COLLATE)).map(Object::toString).map(String::strip).orElse(null);
+                OrderBySpec.SortDirection entryDirection = parseDirection(map.get(ARG_DIRECTION), defaultDirection);
                 var ceOpt = ctx.catalog.findColumn(tableSqlName, colName);
                 if (ceOpt.isEmpty()) return null;
                 var ce = ceOpt.get();
-                entries.add(new OrderBySpec.ColumnOrderEntry(new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), collation));
+                entries.add(new OrderBySpec.ColumnOrderEntry(
+                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()), collation, entryDirection));
             }
             return entries;
         }
