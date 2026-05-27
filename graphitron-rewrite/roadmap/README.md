@@ -33,9 +33,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
-| `R250` | Propagate schema-applied directives (@link) from consumer SDL to generated buildSchema | Spec | 2026-05-27 | [plan](propagate-schema-applied-directives.md) |
 | `R188` | Replace @value with PK-default partition on UPDATE/DELETE | Spec | 2026-05-27 <sub>created 2026-05-20</sub> | [plan](simplify-update-mutations-drop-value.md) |
 | `R247` | Emit assembled schema.graphqls into generated-resources/graphitron, federation-aware | Ready | 2026-05-27 | [plan](emit-assembled-schema-graphqls.md) |
+| `R250` | Propagate schema-applied directives (@link) from consumer SDL to generated buildSchema | Ready | 2026-05-27 | [plan](propagate-schema-applied-directives.md) |
 | `R251` | AppliedDirectiveEmitter trips assert on NOT_SET argument values | In Review | 2026-05-27 | [plan](applied-directive-emitter-not-set-arg.md) |
 | `R243` | Per-field direction in @order/@defaultOrder via FieldSort.direction | In Review | 2026-05-27 <sub>created 2026-05-26</sub> | [plan](per-field-sort-direction.md) |
 
