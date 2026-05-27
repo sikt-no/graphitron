@@ -1,81 +1,59 @@
 ---
 id: R247
-title: Emit assembled schema.graphqls into generated-resources, federation-aware
-status: Ready
+title: Emit assembled schema.graphqls into generated-resources/graphitron, federation-aware
+status: Spec
 bucket: feature
 depends-on: []
 created: 2026-05-27
 last-updated: 2026-05-27
 ---
 
-# Emit assembled schema.graphqls into generated-resources, federation-aware
+# Emit assembled schema.graphqls into generated-resources/graphitron, federation-aware
 
-## Review (In Review → Ready, 2026-05-27)
+## Redesign (Ready → Spec, 2026-05-27)
 
-Implementation at `8c7e101` delivers the shape the spec describes
-(`SchemaSdlEmitter` at the tail of `runPipeline`, dispatch on
-`Bundle.federationLink()`, `@Parameter outputResourcesDirectory` on the
-Mojo, resource root registered via `project.addResource`, defaulted on the
-two `RewriteContext` convenience constructors, unit + pipeline-tier
-coverage). What blocks approval is build-green: `mvn install -Plocal-db`
-fails in `graphitron-maven-plugin` with three R247-induced regressions.
+The first implementation pass (commit `8c7e101`) landed faithfully against
+the spec as written but introduced a new Mojo `@Parameter
+outputResourcesDirectory`. That contradicts the "no Mojo flag, no
+per-consumer toggle, no configurable filename" line below and adds a knob
+nobody needs to turn. The redesign drops the parameter while keeping the
+Maven-convention layout: the file lands at
+`${project.build.directory}/generated-resources/graphitron/<outputPackage
+as path>/schema.graphqls`, derived inside the Mojo from
+`project.getBuild().getDirectory()` (not user-configurable, hardcoded
+relative segment `generated-resources/graphitron`). `GenerateMojo`
+registers that directory via `project.addResource(...)` so the
+maven-resources-plugin copies the tree into `target/classes` at the
+`process-resources` phase, and the file ships at
+`<outputPackage as path>/schema.graphqls` in the consumer's JAR.
 
-Findings:
+The path still needs to thread from the Mojo down to the emitter, so
+`RewriteContext.outputResourcesDirectory` stays as a record component; it
+just becomes a Mojo-derived field instead of a user-bound `@Parameter`.
 
-1. `DevMojoTest.bindToTakenPortFailsWithOverrideHint`
-   (`graphitron-rewrite/graphitron-maven-plugin/src/test/java/no/sikt/graphitron/rewrite/maven/DevMojoTest.java:90`)
-   hand-builds a `DevMojo` and never sets `outputResourcesDirectory`. The
-   new `Path.of(outputResourcesDirectory)` in `AbstractRewriteMojo.buildContext`
-   (`AbstractRewriteMojo.java:108`) NPEs before the dev-port validation runs,
-   so the test sees `NullPointerException` instead of the expected
-   `MojoExecutionException`. The implementation commit's own note acknowledges
-   this risk for `GenerateMojoTest` ("the @Parameter default only applies
-   under Maven") but missed `DevMojoTest`. Fix: set
-   `mojo.outputResourcesDirectory = basedir.resolve("target/generated-resources/graphitron").toString();`
-   in `mojoFor` alongside the existing `outputDirectory` line.
+Implementation commits to revert / amend in the next pass (single revert
+plus fresh emission commit is cleanest):
 
-2. `CodegenLoaderTest.codegenLoader_resolvesClassFromProjectCompileClasspath`
-   (`graphitron-rewrite/graphitron-maven-plugin/src/test/java/no/sikt/graphitron/rewrite/maven/CodegenLoaderTest.java:105`)
-   hits the same NPE for the same reason. Fix: set `outputResourcesDirectory`
-   on the hand-built mojo in the `mojo(...)` helper.
+- `8c7e101` — drop the `outputResourcesDirectory` `@Parameter` declaration
+  on `AbstractRewriteMojo` and the `GenerateMojoTest` field-setter
+  additions. Replace the `Path.of(outputResourcesDirectory)` resolution
+  step with a hardcoded
+  `Path.of(project.getBuild().getDirectory()).resolve("generated-resources/graphitron")`
+  derivation in `AbstractRewriteMojo.buildContext`. Keep the
+  `RewriteContext.outputResourcesDirectory` field, the
+  `SchemaSdlEmitter` dispatch + path logic, and the test shape.
 
-3. `MojoDocCoverageTest.everyMojoParameterHasADocRowAndViceVersa`
-   (`MojoDocCoverageTest.java:111`) fails because `outputResourcesDirectory`
-   is a new editable parameter in `plugin.xml` without a matching row in
-   `docs/manual/reference/mojo-configuration.adoc`. That doc guard is the
-   project's gate against parameter/doc drift; spec section 2 implicitly
-   pulls in a doc-row obligation (any new `@Parameter` needs one). Fix: add
-   a row to the "Common parameters" table at
-   `docs/manual/reference/mojo-configuration.adoc:37-70` describing
-   `outputResourcesDirectory`, its default
-   `${project.build.directory}/generated-resources/graphitron`, and that
-   `generate` registers the directory via `project.addResource` so
-   `schema.graphqls` ships on the classpath under `<outputPackage>`.
-
-Minor (non-blocking) observations:
-
-- The `In Progress → In Review` commit (`744fe65`) message says
-  "Implementation landed at 1d10159" but the actual implementation SHA is
-  `8c7e101`. Stale message; cosmetic only.
-- The spec body was not marked up to reflect shipped phases (spec section
-  9 in `workflow.adoc` describes the "collapse to one-line shipped at `<sha>`"
-  hygiene). Acceptable for a single-commit landing.
-- Spec section 1 said "thread `outputResourcesDirectory` through the two
-  convenience constructors"; the implementation defaults it to a
-  `generated-resources-graphitron` sibling instead. This is a benign
-  divergence (preserves unit-tier ergonomics) and is fine as shipped.
-
-Once the three failing tests + the doc row are in, re-run
-`mvn -f graphitron-rewrite/pom.xml install -Plocal-db` to verify green,
-then flip back to In Review for a fresh reviewer session.
+See **Implementation sites** below for the revised mechanics.
 
 ---
 
 > Add one step to the rewrite pipeline that prints the assembled
-> `GraphQLSchema` to a `schema.graphqls` file under the consumer's
-> `outputPackage` in a generated-resources root, so the file ships on the
-> classpath alongside the generated Java like a regular Java resource.
-> When the schema carries the Apollo Federation `@link`, route through
+> `GraphQLSchema` to a `schema.graphqls` file under
+> `${project.build.directory}/generated-resources/graphitron/<outputPackage
+> as path>/`, so the file ships on the classpath at
+> `<outputPackage as path>/schema.graphqls` like a regular Java resource,
+> alongside the generated `Graphitron.class` facade. When the schema
+> carries the Apollo Federation `@link`, route through
 > `com.apollographql.federation.graphqljava.printer.ServiceSDLPrinter`
 > (already a runtime dep, pinned at `6.0.0`); otherwise use graphql-java's
 > `SchemaPrinter` with a directive-aware configuration. The decision is
@@ -118,15 +96,21 @@ federation branch directly on that call site.
    directive rewriting. R248 demonstrated the round-trip is correct.
 2. **Filename is fixed: `schema.graphqls`.** No Mojo parameter, no
    per-consumer override. One name, one place, predictable for tooling.
-3. **Output location: `<outputResourcesDirectory>/<outputPackage as
-   path>/schema.graphqls`.** Mirrors the Java side (`outputDirectory` +
-   `outputPackage`), so the file ends up at e.g.
-   `com/example/myapp/schema.graphqls` on the classpath, alongside the
-   generated `Graphitron.class` facade. A consumer that wants the
-   schema at runtime calls
-   `getClass().getResourceAsStream("schema.graphqls")` from any class in
-   `outputPackage`; the lookup is package-local, so two graphitron
-   consumers in the same JVM can each find their own.
+3. **Output location:
+   `${project.build.directory}/generated-resources/graphitron/<outputPackage
+   as path>/schema.graphqls`.** Mirrors the Maven convention for
+   plugin-generated resources (`generated-resources/<plugin-name>/`), so
+   the file ends up at e.g. `com/example/myapp/schema.graphqls` on the
+   classpath after maven-resources-plugin's `process-resources` phase
+   copies it into `target/classes/`, alongside the generated
+   `Graphitron.class` facade. A consumer that wants the schema at runtime
+   calls `getClass().getResourceAsStream("schema.graphqls")` from any
+   class in `outputPackage`; the lookup is package-local, so two graphitron
+   consumers in the same JVM can each find their own. The relative path
+   `generated-resources/graphitron` is hardcoded inside the Mojo (no
+   `@Parameter`); only the build directory itself comes from Maven
+   (`project.getBuild().getDirectory()`), the same source the existing
+   `outputDirectory` default resolves against.
 4. **Federation detection: `Bundle.federationLink()`.** The boolean is
    already computed by `FederationLinkApplier.apply` and threaded
    through `GraphitronSchemaBuilder.buildBundle`
@@ -151,24 +135,46 @@ generator, and one new emitter class.
 
 Add `Path outputResourcesDirectory` as a record component alongside the
 existing `outputDirectory`. `Objects.requireNonNull` it in the canonical
-constructor; thread it through the two convenience constructors at
-`:76` and `:95`. The generator reads it directly when writing the SDL
-file.
+constructor. The two convenience constructors at `:76` and `:95` (used
+only by unit-tier callers) derive a sensible default from
+`outputDirectory` (a sibling named `generated-resources-graphitron` is
+fine: unit-tier doesn't run through Maven, so the literal Maven layout
+is moot there). The generator reads the field directly when writing the
+SDL file. The shape from `8c7e101` is correct here; only the
+user-configurability story changes (see site 2).
 
-### 2. `AbstractRewriteMojo`: `@Parameter` plus wiring
+### 2. `AbstractRewriteMojo`: derive (not parameterise) the resources root
 
 `graphitron-rewrite/graphitron-maven-plugin/src/main/java/no/sikt/graphitron/rewrite/maven/AbstractRewriteMojo.java`
 
-Add:
+Do **not** add a `@Parameter` for the resources directory. In
+`buildContext(...)`, compute the path inline from the Maven build
+directory, with a `basedir/target` fallback for hand-built `MavenProject`
+instances (test fixtures call `new MavenProject()` without
+`setBuild(...)`, so `project.getBuild()` returns null until the lifecycle
+populates it):
 
 ```java
-@Parameter(defaultValue = "${project.build.directory}/generated-resources/graphitron")
-String outputResourcesDirectory;
+var buildDirectory = project.getBuild() != null
+    ? project.getBuild().getDirectory()
+    : null;
+var targetDir = buildDirectory != null
+    ? Path.of(buildDirectory)
+    : basedir.resolve("target");
+var resourcesAbs = (targetDir.isAbsolute() ? targetDir : basedir.resolve(targetDir))
+    .resolve("generated-resources/graphitron")
+    .normalize();
 ```
 
-In `buildContext(...)`, resolve it to an absolute `Path` (same
-`isAbsolute` / `basedir.resolve` pattern used for `outputDirectory` at
-`:103-104`) and pass it into the `RewriteContext` constructor.
+Pass `resourcesAbs` into the `RewriteContext` constructor in the slot
+that lands at `outputResourcesDirectory`. The relative segment
+`generated-resources/graphitron` is a hardcoded Maven convention
+(`generated-resources/<plugin-name>/`) and not user-tunable, so no Mojo
+flag, no doc-row, no `MojoDocCoverageTest` drift, and the hand-built
+mojos in `DevMojoTest` / `CodegenLoaderTest` / `GenerateMojoTest` need
+no field-setter changes. The `getBuild() == null` fallback also keeps
+`8c7e101`'s `GenerateMojoTest` modifications from being load-bearing:
+back them out as part of the rework.
 
 ### 3. `GenerateMojo`: register the resource root with Maven
 
@@ -176,8 +182,10 @@ In `buildContext(...)`, resolve it to an absolute `Path` (same
 
 After `project.addCompileSourceRoot(outputDirectory);` add an
 `org.apache.maven.model.Resource` with its `directory` set to the
-absolute path of `outputResourcesDirectory`, and call
-`project.addResource(resource)`. This is the one-line "good Java
+absolute path of the derived `generated-resources/graphitron` root
+(computed the same way as in `buildContext`, or recovered from
+`ctx.outputResourcesDirectory()` after `runGenerator` returns), and
+call `project.addResource(resource)`. This is the one-line "good Java
 citizen" wiring: the generated-resources tree gets copied into
 `target/classes` at the `process-resources` phase, and the file ships
 in the jar at `<outputPackage as path>/schema.graphqls`.
@@ -187,7 +195,9 @@ in the jar at `<outputPackage as path>/schema.graphqls`.
 `graphitron-rewrite/graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/schema/SchemaSdlEmitter.java`
 
 Single static `emit(GraphQLSchema assembled, boolean federationLink,
-Path resourcesRoot, String outputPackage)` method:
+Path resourcesRoot, String outputPackage)` method (parameter name
+matches `RewriteContext.outputResourcesDirectory()`, but inside the
+emitter "resourcesRoot" reads better):
 
 - Compute the target path:
   `resourcesRoot.resolve(outputPackage.replace('.', '/')).resolve("schema.graphqls")`.
