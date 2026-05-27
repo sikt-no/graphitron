@@ -1,7 +1,7 @@
 ---
 id: R248
 title: Survivor directive definitions emit incorrect arg types and miss defaults
-status: Spec
+status: Ready
 bucket: bug
 depends-on: []
 created: 2026-05-27
