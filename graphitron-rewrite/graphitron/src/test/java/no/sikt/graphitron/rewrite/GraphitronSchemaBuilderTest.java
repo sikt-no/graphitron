@@ -63,6 +63,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ResultType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType;
+import no.sikt.graphitron.rewrite.model.ScalarResolution;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnclassifiedType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInputType;
@@ -5250,8 +5251,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var t = (ScalarType) schema.type("String");
-                assertThat(t.resolution().scalarConstantField()).isEqualTo("GraphQLString");
-                assertThat(t.resolution().scalarConstantOwner().toString()).isEqualTo("graphql.Scalars");
+                assertThat(((ScalarResolution.Resolved) t.resolution()).scalarConstantField()).isEqualTo("GraphQLString");
+                assertThat(((ScalarResolution.Resolved) t.resolution()).scalarConstantOwner().toString()).isEqualTo("graphql.Scalars");
             }),
 
         SPEC_BUILT_IN_ID_RESOLVES(
@@ -5261,7 +5262,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var t = (ScalarType) schema.type("ID");
-                assertThat(t.resolution().scalarConstantField()).isEqualTo("GraphQLID");
+                assertThat(((ScalarResolution.Resolved) t.resolution()).scalarConstantField()).isEqualTo("GraphQLID");
             }),
 
         DIRECTIVE_RESOLVES_CONSUMER_SCALAR(
@@ -5272,8 +5273,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var t = (ScalarType) schema.type("Money");
-                assertThat(t.resolution().scalarConstantField()).isEqualTo("MONEY");
-                assertThat(t.resolution().scalarConstantOwner().toString())
+                assertThat(((ScalarResolution.Resolved) t.resolution()).scalarConstantField()).isEqualTo("MONEY");
+                assertThat(((ScalarResolution.Resolved) t.resolution()).scalarConstantOwner().toString())
                     .isEqualTo("no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants");
                 assertThat(t.resolution().javaType().toString())
                     .isEqualTo("no.sikt.graphitron.rewrite.scalarfixture.Money");
@@ -5343,8 +5344,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var t = (ScalarType) schema.type("BigDecimal");
-                assertThat(t.resolution().scalarConstantField()).isEqualTo("GraphQLBigDecimal");
-                assertThat(t.resolution().scalarConstantOwner().toString())
+                assertThat(((ScalarResolution.Resolved) t.resolution()).scalarConstantField()).isEqualTo("GraphQLBigDecimal");
+                assertThat(((ScalarResolution.Resolved) t.resolution()).scalarConstantOwner().toString())
                     .isEqualTo("graphql.scalars.ExtendedScalars");
                 assertThat(t.resolution().javaType().toString()).isEqualTo("java.math.BigDecimal");
             }),
@@ -5357,7 +5358,7 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var t = (ScalarType) schema.type("UUID");
-                assertThat(t.resolution().scalarConstantField()).isEqualTo("UUID");
+                assertThat(((ScalarResolution.Resolved) t.resolution()).scalarConstantField()).isEqualTo("UUID");
                 assertThat(t.resolution().javaType().toString()).isEqualTo("java.util.UUID");
             }),
 
@@ -5370,7 +5371,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 // Directive resolves to Money, not the convention table's GraphQLBigDecimal.
                 var t = (ScalarType) schema.type("BigDecimal");
-                assertThat(t.resolution().scalarConstantField()).isEqualTo("MONEY");
+                assertThat(((ScalarResolution.Resolved) t.resolution()).scalarConstantField()).isEqualTo("MONEY");
                 assertThat(t.resolution().javaType().toString())
                     .isEqualTo("no.sikt.graphitron.rewrite.scalarfixture.Money");
             });

@@ -70,6 +70,12 @@ public final class DirectiveDefinitionEmitter {
             if (arg.getDescription() != null && !arg.getDescription().isEmpty()) {
                 block.add(".description($S)", arg.getDescription());
             }
+            if (arg.hasSetDefaultValue()) {
+                Object defaultValue = graphql.schema.GraphQLArgument.getArgumentDefaultValue(arg);
+                block.add(".defaultValueProgrammatic(")
+                    .add(GraphQLValueEmitter.emit(defaultValue))
+                    .add(")");
+            }
             block.add(".build())");
         }
         block.add(".build()");

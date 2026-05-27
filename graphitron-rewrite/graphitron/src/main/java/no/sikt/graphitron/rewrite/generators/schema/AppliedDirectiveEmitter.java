@@ -122,12 +122,13 @@ public final class AppliedDirectiveEmitter {
     /**
      * Emits a {@link CodeBlock} that reconstructs a {@link GraphQLInputType} at runtime.
      *
-     * <p>Spec built-ins and federation-namespace scalars both route through the
-     * {@link ScalarTypeResolver} so the recognition tables (spec built-ins, federation namespace)
-     * live in one place. Federation-namespace scalars (e.g. {@code federation__FieldSet}) resolve
-     * to {@code Scalars.GraphQLString}; the federation-jvm transform replaces them after the
-     * base schema is built. Other custom scalars not recognised by the resolver also fall back
-     * to {@code Scalars.GraphQLString} for the same applied-directive metadata reason.
+     * <p>Spec built-ins route through {@link ScalarTypeResolver} so the recognition table lives
+     * in one place; the emitted reference is {@code Scalars.GraphQLString} etc. Federation-namespace
+     * scalars ({@code federation__FieldSet}, {@code link__Import}, ...) emit
+     * {@code GraphQLTypeReference.typeRef("<name>")} that resolves at {@code schemaBuilder.build()}
+     * time against the synthesised scalar registered by
+     * {@link GraphitronSchemaClassGenerator}; this preserves the SDL-declared name on every
+     * directive-argument type slot.
      *
      * <p>Other named types (enums, input objects) use {@code GraphQLTypeReference.typeRef("<name>")}
      * since those types are present in the base schema.
@@ -154,9 +155,8 @@ public final class AppliedDirectiveEmitter {
                 && ScalarTypeResolver.resolveBuiltIn(name) instanceof ScalarResolution.Resolved r) {
                 return CodeBlock.of("$T.$L", r.scalarConstantOwner(), r.scalarConstantField());
             }
-            if (ScalarTypeResolver.isFederationNamespaceScalar(name)
-                && ScalarTypeResolver.resolveFederationNamespaceScalar(name) instanceof ScalarResolution.Resolved r) {
-                return CodeBlock.of("$T.$L", r.scalarConstantOwner(), r.scalarConstantField());
+            if (ScalarTypeResolver.isFederationNamespaceScalar(name)) {
+                return CodeBlock.of("$T.typeRef($S)", CN_TYPE_REF, name);
             }
             // Custom scalars not in the resolver's recognised tables: keep the existing
             // GraphQLString placeholder. Threading consumer-resolved scalars (via @scalarType /

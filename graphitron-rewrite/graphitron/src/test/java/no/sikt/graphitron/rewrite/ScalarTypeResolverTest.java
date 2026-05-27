@@ -253,13 +253,28 @@ class ScalarTypeResolverTest {
     }
 
     @Test
-    void resolveFederationNamespaceScalar_returnsStringResolution() {
+    void resolveFederationNamespaceScalar_returnsSynthesisedForFieldSet() {
         ScalarResolution result = ScalarTypeResolver.resolveFederationNamespaceScalar("federation__FieldSet");
 
-        assertThat(result).isInstanceOfSatisfying(ScalarResolution.Resolved.class, r -> {
-            assertThat(r.javaType()).isEqualTo(ClassName.get(String.class));
-            assertThat(r.scalarConstantOwner()).isEqualTo(ClassName.get("graphql", "Scalars"));
-            assertThat(r.scalarConstantField()).isEqualTo("GraphQLString");
+        assertThat(result).isInstanceOfSatisfying(ScalarResolution.Synthesised.class, s -> {
+            assertThat(s.javaType()).isEqualTo(ClassName.get(String.class));
+            assertThat(s.sdlName()).isEqualTo("federation__FieldSet");
+            assertThat(s.coercingSourceOwner())
+                .isEqualTo(ClassName.get("com.apollographql.federation.graphqljava", "_Any"));
+            assertThat(s.coercingSourceField()).isEqualTo("type");
+        });
+    }
+
+    @Test
+    void resolveFederationNamespaceScalar_returnsSynthesisedForLinkImport() {
+        // Second federation-namespace name to confirm the dispatch isn't FieldSet-specific.
+        ScalarResolution result = ScalarTypeResolver.resolveFederationNamespaceScalar("link__Import");
+
+        assertThat(result).isInstanceOfSatisfying(ScalarResolution.Synthesised.class, s -> {
+            assertThat(s.sdlName()).isEqualTo("link__Import");
+            assertThat(s.coercingSourceOwner())
+                .isEqualTo(ClassName.get("com.apollographql.federation.graphqljava", "_Any"));
+            assertThat(s.coercingSourceField()).isEqualTo("type");
         });
     }
 

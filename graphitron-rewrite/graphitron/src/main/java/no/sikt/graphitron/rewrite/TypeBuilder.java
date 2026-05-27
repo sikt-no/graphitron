@@ -599,10 +599,12 @@ class TypeBuilder {
      *       {@code ID}) resolve through the resolver's closed built-in table. {@code @scalarType}
      *       on a spec built-in is a {@link Rejection.InvalidSchema.DirectiveConflict}.</li>
      *   <li><b>Federation-namespace scalars</b> ({@code federation__FieldSet},
-     *       {@code federation__Scope}, etc.) resolve to {@code graphql.Scalars.GraphQLString} via
-     *       {@link ScalarTypeResolver#resolveFederationNamespaceScalar(String)}. The federation-jvm
-     *       transform replaces this binding with its own scalar definition after Graphitron's base
-     *       schema is built, so emitting {@code GraphQLString} as a placeholder is safe.</li>
+     *       {@code federation__Scope}, etc.) resolve via
+     *       {@link ScalarTypeResolver#resolveFederationNamespaceScalar(String)} to a
+     *       {@link ScalarResolution.Synthesised} carrying the SDL name and the
+     *       {@code _Any.type.getCoercing()} source. The schema generator inlines a
+     *       {@code GraphQLScalarType.newScalar()...build()} registration; directive-argument
+     *       slots reference the scalar via {@code GraphQLTypeReference.typeRef(name)}.</li>
      *   <li><b>{@code @scalarType(scalar: "FQN.FIELD")}</b> on the SDL scalar: the resolver looks
      *       up the named class + field through {@link BuildContext#codegenLoader}, validates the
      *       field, and reflects on the {@code Coercing<I, O>} type parameters.</li>
@@ -645,13 +647,15 @@ class TypeBuilder {
 
         if (ScalarTypeResolver.isFederationNamespaceScalar(name)) {
             // Federation-namespace names (federation__FieldSet etc.) appear in the assembled
-            // schema as scalar types when the consumer @link's the federation spec. The
-            // federation-jvm transform replaces them after Graphitron's base schema is built;
-            // emitting Scalars.GraphQLString as a placeholder satisfies graphql-java's
-            // type-resolver until the replacement runs.
+            // schema as scalar types when the consumer @link's the federation spec but
+            // federation-jvm exposes no public-static-final constant for the renamed forms.
+            // The resolver returns a Synthesised carrier; GraphitronSchemaClassGenerator emits
+            // an inline GraphQLScalarType.newScalar()...build() registration with
+            // _Any.type.getCoercing() borrowed, and directive-argument slots reference it via
+            // GraphQLTypeReference.typeRef(name).
             var resolution = ScalarTypeResolver.resolveFederationNamespaceScalar(name);
-            if (resolution instanceof ScalarResolution.Resolved r) {
-                return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, r, scalarType);
+            if (resolution instanceof ScalarResolution.Successful s) {
+                return new no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType(name, location, s, scalarType);
             }
             return new UnclassifiedType(name, location, asRejection(resolution, name));
         }
@@ -698,8 +702,8 @@ class TypeBuilder {
      */
     private static Rejection asRejection(ScalarResolution resolution, String scalarName) {
         return switch (resolution) {
-            case ScalarResolution.Resolved ignored ->
-                throw new IllegalStateException("asRejection invoked on Resolved");
+            case ScalarResolution.Successful ignored ->
+                throw new IllegalStateException("asRejection invoked on Successful");
             case ScalarResolution.Rejected.ClassNotFound r -> Rejection.structural(
                 "scalar '" + scalarName + "': @scalarType references class '" + r.fqn()
                     + "' which is not on the codegen classpath.");
@@ -1213,9 +1217,8 @@ class TypeBuilder {
             // by reachable-closure on the input field. Treat absence as Object so the validator
             // walk still works; jOOQ rebinds at value-set time via getDataType().
             var classified = ctx.typeRegistry.get(scalar.getName());
-            if (classified instanceof GraphitronType.ScalarType st
-                && st.resolution() instanceof ScalarResolution.Resolved sr) {
-                return sr.javaType();
+            if (classified instanceof GraphitronType.ScalarType st) {
+                return st.resolution().javaType();
             }
             return ClassName.get(Object.class);
         }
