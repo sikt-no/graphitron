@@ -92,4 +92,4 @@ To make Step 2's pipeline assertion exercise `for: EXECUTION`, the existing `fed
 
 - Re-evaluating whether `Federation.transform(base).setFederation2(true)` is the right runtime wrap. Separate concern; that path also injects `_Service` and `_entities`, and the entity-resolver wiring is independent.
 - Multi-federation-`@link` consumer schemas. `FederationLinkApplier` already rejects more than one federation `@link` with a developer-readable error.
-- Multi-file federation fixture coverage for R247's `schema.graphqls` file emission. Filed as a sibling Backlog item (R251); the parity gap with R247 is its own concern and the runtime-build path under R250 is exercised end-to-end by the pipeline-tier assertion above regardless of whether the input arrives as one file or many.
+- Multi-file federation fixture coverage for R247's `schema.graphqls` file emission. Filed as a sibling Backlog item (R252); the parity gap with R247 is its own concern and the runtime-build path under R250 is exercised end-to-end by the pipeline-tier assertion above regardless of whether the input arrives as one file or many.
