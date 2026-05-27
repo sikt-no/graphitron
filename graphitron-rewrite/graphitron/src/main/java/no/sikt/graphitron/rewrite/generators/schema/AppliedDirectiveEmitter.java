@@ -12,6 +12,7 @@ import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLScalarType;
+import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
@@ -69,6 +70,29 @@ public final class AppliedDirectiveEmitter {
                 .add(buildApplication(applied))
                 .add(")")
                 .build());
+        }
+        return blocks;
+    }
+
+    /**
+     * Survivor applied directives sitting on the schema definition itself
+     * ({@link GraphQLSchema#getSchemaAppliedDirectives()}). Used to propagate
+     * the consumer's {@code extend schema @link(url: ..., import: [...])} into
+     * the generated runtime build via
+     * {@link GraphQLSchema.Builder#withSchemaAppliedDirectives}. Filtering
+     * mirrors {@link #applicationsFor}: generator-only directives are skipped;
+     * everything else survives.
+     *
+     * <p>The schema-level applied-directive list is not exposed as a
+     * {@link GraphQLDirectiveContainer} in graphql-java, so this entry point
+     * takes the raw {@link GraphQLSchema} rather than reusing
+     * {@link #applicationsFor}.
+     */
+    public static List<CodeBlock> applicationsForSchema(GraphQLSchema schema) {
+        var blocks = new ArrayList<CodeBlock>();
+        for (var applied : schema.getSchemaAppliedDirectives()) {
+            if (!SchemaDirectiveRegistry.isSurvivor(applied.getName())) continue;
+            blocks.add(buildApplication(applied));
         }
         return blocks;
     }

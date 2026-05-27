@@ -116,6 +116,43 @@ class GraphitronSchemaClassGeneratorTest {
             .contains(".name(\"auth\")");
     }
 
+    /**
+     * R250: an {@code extend schema @link(...)} declaration on the consumer SDL
+     * must reach the runtime build via {@code .withSchemaAppliedDirectives(...)}.
+     * Without this, the runtime {@code _service.sdl} (and any printer output)
+     * lacks the {@code schema @link(...)} block, which makes federation
+     * supergraph composition fall through to Fed1 and reject the Fed2-shaped
+     * {@code @key} declarations.
+     */
+    @Test
+    void build_emitsWithSchemaAppliedDirectives_forSchemaLevelLink() {
+        var bundle = TestSchemaHelper.buildBundle("""
+            directive @link(url: String!, import: [String!]) repeatable on SCHEMA
+            extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+            type Query { x: String }
+            """);
+        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0)
+            .methodSpecs().get(0).code().toString();
+        assertThat(body)
+            .contains(".withSchemaAppliedDirectives(java.util.List.of(")
+            .contains("graphql.schema.GraphQLAppliedDirective.newDirective()")
+            .contains(".name(\"link\")")
+            .contains("https://specs.apollo.dev/federation/v2.10");
+        // Must be emitted before .codeRegistry(...) so the schema-level directive
+        // ships on the final GraphQLSchema, not after the build seam.
+        int appliedIdx = body.indexOf(".withSchemaAppliedDirectives(");
+        int registryIdx = body.indexOf(".codeRegistry(codeRegistry.build())");
+        assertThat(appliedIdx).isGreaterThan(0).isLessThan(registryIdx);
+    }
+
+    @Test
+    void build_skipsWithSchemaAppliedDirectives_whenNoSchemaLevelSurvivors() {
+        var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");
+        var body = GraphitronSchemaClassGenerator.generate(bundle.model(), bundle.assembled()).get(0)
+            .methodSpecs().get(0).code().toString();
+        assertThat(body).doesNotContain(".withSchemaAppliedDirectives(");
+    }
+
     @Test
     void build_skipsAdditionalDirective_forGeneratorOnlyDirectives() {
         var bundle = TestSchemaHelper.buildBundle("type Query { x: String }");

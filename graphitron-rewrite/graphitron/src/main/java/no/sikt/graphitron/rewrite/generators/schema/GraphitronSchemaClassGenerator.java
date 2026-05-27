@@ -213,6 +213,15 @@ public final class GraphitronSchemaClassGenerator {
         for (var dir : DirectiveDefinitionEmitter.survivors(assembled)) {
             body.add("\n.additionalDirective(").add(DirectiveDefinitionEmitter.buildDefinition(dir)).add(")");
         }
+        var schemaApplied = AppliedDirectiveEmitter.applicationsForSchema(assembled);
+        if (!schemaApplied.isEmpty()) {
+            body.add("\n.withSchemaAppliedDirectives($T.of(", ClassName.get("java.util", "List"));
+            for (int i = 0; i < schemaApplied.size(); i++) {
+                if (i > 0) body.add(", ");
+                body.add(schemaApplied.get(i));
+            }
+            body.add("))");
+        }
         body.add("\n.codeRegistry(codeRegistry.build());\n").unindent();
 
         var classBuilder = TypeSpec.classBuilder(CLASS_NAME)
