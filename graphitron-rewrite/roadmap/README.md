@@ -28,13 +28,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R26` | Retire `graphitron-maven-plugin` + `graphitron-schema-transform` | In Progress |  | [plan](retire-maven-plugin.md) |
 | `R180` | Centralize ResultType column-read emission for @record parents | Spec | 2026-05-19 | [plan](record-parent-column-read-helper.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-05-26 | [plan](dml-payload-positional-alignment.md) |
-| `R248` | DirectiveDefinitionEmitter drops argument default values | Spec | 2026-05-27 | [plan](directive-definition-default-values.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec |  | [plan](capability-catalog.md) |
 | `R244` | ErrorChannel walker carrier (R222 Stage 2 slice on @service + @tableMethod) | Spec | 2026-05-26 | [plan](errorchannel-walker-carrier.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec |  | [plan](list-valued-external-field-multiset.md) |
 | `R212` | IntelliJ plugin wrapping graphitron:dev LSP | Spec | 2026-05-21 | [plan](intellij-lsp-plugin.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec |  | [plan](operation-driven-test-corpus.md) |
 | `R188` | Replace @value with PK-default partition on UPDATE/DELETE | Spec | 2026-05-27 <sub>created 2026-05-20</sub> | [plan](simplify-update-mutations-drop-value.md) |
+| `R248` | Survivor directive definitions emit incorrect arg types and miss defaults | Spec | 2026-05-27 | [plan](directive-definition-default-values.md) |
 | `R243` | Per-field direction in @order/@defaultOrder via FieldSort.direction | In Review | 2026-05-27 <sub>created 2026-05-26</sub> | [plan](per-field-sort-direction.md) |
 
 ---
@@ -255,7 +255,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R180` [**Centralize ResultType column-read emission for @record parents**](record-parent-column-read-helper.md)
 - `R220` [**Consolidate looksLikeSourcesShape, couldBeSourcesShape, and classifySourcesType into one predicate**](consolidate-sources-shape-predicates.md)
 - `R242` [**DML payload positional input/output alignment**](dml-payload-positional-alignment.md)
-- `R248` [**DirectiveDefinitionEmitter drops argument default values**](directive-definition-default-values.md)
 - `R247` [**Emit assembled schema.graphqls into generated-resources, federation-aware**](emit-assembled-schema-graphqls.md)
 - `R85` [**Emit graphitronContext helper into Conditions and Type classes**](helper-emission-non-fetcher-hosts.md)
 - `R244` [**ErrorChannel walker carrier (R222 Stage 2 slice on @service + @tableMethod)**](errorchannel-walker-carrier.md)
@@ -267,6 +266,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R213` [**Plain-input field rejections attributed to consumer field, losing input-field source location**](input-field-rejection-attribution.md)
 - `R188` [**Replace @value with PK-default partition on UPDATE/DELETE**](simplify-update-mutations-drop-value.md)
 - `R51` [**Split PropertyField/RecordField on parent-kind instead of nullable column**](propertyfield-recordfield-nullable-column.md)
+- `R248` [**Survivor directive definitions emit incorrect arg types and miss defaults**](directive-definition-default-values.md)
 - `R219` [**Unify arity-unique and type-unique inference under a single JavaTypeKey-counted rule**](unify-inference-rule-by-javatypekey.md)
 - `R221` [**Validator walks PlainInputArg.fields() for UnboundField rejection**](validator-walks-plain-input-unbound-fields.md)
 - `R245` [**Wire @condition through to mutation WHERE (emit half + new placements)**](wire-condition-emit-on-mutations.md)
