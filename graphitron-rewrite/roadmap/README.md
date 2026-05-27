@@ -36,7 +36,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R188` | Replace @value with PK-default partition on UPDATE/DELETE | Spec | 2026-05-27 <sub>created 2026-05-20</sub> | [plan](simplify-update-mutations-drop-value.md) |
 | `R247` | Emit assembled schema.graphqls into generated-resources/graphitron, federation-aware | Ready | 2026-05-27 | [plan](emit-assembled-schema-graphqls.md) |
 | `R250` | Propagate schema-applied directives (@link) from consumer SDL to generated buildSchema | Ready | 2026-05-27 | [plan](propagate-schema-applied-directives.md) |
-| `R251` | AppliedDirectiveEmitter trips assert on NOT_SET argument values | In Review | 2026-05-27 | [plan](applied-directive-emitter-not-set-arg.md) |
 | `R243` | Per-field direction in @order/@defaultOrder via FieldSort.direction | In Review | 2026-05-27 <sub>created 2026-05-26</sub> | [plan](per-field-sort-direction.md) |
 
 ---
@@ -254,7 +253,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### (untagged)
 
-- `R251` [**AppliedDirectiveEmitter trips assert on NOT_SET argument values**](applied-directive-emitter-not-set-arg.md)
 - `R207` [**Audit design-doc claims for implementation conformance**](design-doc-implementation-conformance-audit.md)
 - `R218` [**Carry inference provenance on ParamSource.Arg so resolved bindings audit cleanly**](binding-provenance-on-paramsource-arg.md)
 - `R180` [**Centralize ResultType column-read emission for @record parents**](record-parent-column-read-helper.md)
