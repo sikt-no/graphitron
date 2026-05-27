@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import com.apollographql.federation.graphqljava.Federation;
 import com.apollographql.federation.graphqljava.printer.ServiceSDLPrinter;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
@@ -40,9 +41,17 @@ class SchemaSdlEmitterTest {
         GraphQLSchema schema = sampleSchema();
         Path target = SchemaSdlEmitter.emit(schema, true, root, "com.example.app");
 
+        // The emitter runs Federation.transform before printing so the file
+        // matches what the consumer's runtime serves; ServiceSDLPrinter then
+        // strips the federation runtime types back out.
+        var expected = ServiceSDLPrinter.generateServiceSDLV2(
+            Federation.transform(schema)
+                .setFederation2(true)
+                .resolveEntityType(env -> null)
+                .fetchEntities(env -> java.util.List.of())
+                .build());
         assertThat(target).isEqualTo(root.resolve("com/example/app/schema.graphqls"));
-        assertThat(Files.readString(target, StandardCharsets.UTF_8))
-            .isEqualTo(ServiceSDLPrinter.generateServiceSDLV2(schema));
+        assertThat(Files.readString(target, StandardCharsets.UTF_8)).isEqualTo(expected);
     }
 
     @Test

@@ -141,6 +141,40 @@ class AppliedDirectiveEmitterTest {
         assertThat(filmBody).doesNotContain(".withAppliedDirective(");
     }
 
+    /**
+     * R250: schema-applied directives (e.g. {@code extend schema @link(...)})
+     * round-trip through {@link AppliedDirectiveEmitter#applicationsForSchema}
+     * so the runtime build can attach them via
+     * {@code .withSchemaAppliedDirectives(...)}. The codegen output is a list
+     * of {@code GraphQLAppliedDirective.newDirective()...build()} blocks; one
+     * per survivor schema-level application.
+     */
+    @Test
+    void applicationsForSchema_emitsBlocksForSchemaLevelSurvivorDirectives() {
+        String sdl = """
+            directive @link(url: String!, import: [String!]) repeatable on SCHEMA
+            extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+            type Query { x: String }
+            """;
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        var blocks = AppliedDirectiveEmitter.applicationsForSchema(bundle.assembled());
+        assertThat(blocks).hasSize(1);
+        String rendered = blocks.get(0).toString();
+        assertThat(rendered)
+            .contains(".name(\"link\")")
+            .contains(".name(\"url\")")
+            .contains("https://specs.apollo.dev/federation/v2.10")
+            .contains(".name(\"import\")")
+            .contains("@key");
+    }
+
+    @Test
+    void applicationsForSchema_skipsGeneratorOnlyDirectives() {
+        String sdl = "type Query { x: String }";
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        assertThat(AppliedDirectiveEmitter.applicationsForSchema(bundle.assembled())).isEmpty();
+    }
+
     private static String findTypeBody(String sdl, String typeName) {
         var bundle = TestSchemaHelper.buildBundle(sdl);
         var specs = ObjectTypeGenerator.generate(bundle.model(), bundle.assembled());

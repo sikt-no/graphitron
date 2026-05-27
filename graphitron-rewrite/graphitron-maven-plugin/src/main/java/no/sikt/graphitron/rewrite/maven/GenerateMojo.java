@@ -7,8 +7,6 @@ import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 
-import java.nio.file.Path;
-
 /**
  * Runs the rewrite code-generation pipeline and writes generated Java sources.
  * Invoke as {@code mvn graphitron:generate}.
@@ -31,7 +29,8 @@ public class GenerateMojo extends AbstractRewriteMojo {
         runGenerator(GraphQLRewriteGenerator::generate);
         project.addCompileSourceRoot(outputDirectory);
         var resource = new Resource();
-        resource.setDirectory(Path.of(outputResourcesDirectory).toAbsolutePath().normalize().toString());
+        resource.setDirectory(resolveOutputResourcesDirectory(project.getBasedir().toPath())
+            .toAbsolutePath().normalize().toString());
         project.addResource(resource);
     }
 }

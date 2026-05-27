@@ -58,9 +58,6 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     @Parameter(defaultValue = "${project.build.directory}/generated-sources/graphitron")
     String outputDirectory;
 
-    @Parameter(defaultValue = "${project.build.directory}/generated-resources/graphitron")
-    String outputResourcesDirectory;
-
     @Parameter
     String outputPackage;
 
@@ -105,8 +102,7 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         var basedir = project.getBasedir().toPath();
         var out = Path.of(outputDirectory);
         var outAbs = out.isAbsolute() ? out.normalize() : basedir.resolve(out).normalize();
-        var resources = Path.of(outputResourcesDirectory);
-        var resourcesAbs = resources.isAbsolute() ? resources.normalize() : basedir.resolve(resources).normalize();
+        var resourcesAbs = resolveOutputResourcesDirectory(basedir);
 
         String effectiveOutput;
         String effectiveJooq;
@@ -169,6 +165,29 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
                     + String.join(", ", RewriteContext.DEFAULT_SCHEMA_FILE_EXTENSIONS) + "]");
         }
         return Set.copyOf(normalised);
+    }
+
+    /**
+     * Derives the {@code generated-resources/graphitron} root from
+     * {@code project.getBuild().getDirectory()} with a {@code basedir/target}
+     * fallback. The relative segment is a hardcoded Maven convention
+     * ({@code generated-resources/<plugin-name>}); not user-configurable.
+     *
+     * <p>The fallback handles hand-built {@link MavenProject} instances used by
+     * unit-tier callers ({@code DevMojoTest}, {@code CodegenLoaderTest},
+     * {@code GenerateMojoTest}), where {@code project.getBuild()} returns
+     * either {@code null} or a default {@code Build} with no directory set.
+     */
+    final Path resolveOutputResourcesDirectory(Path basedir) {
+        var buildDirectory = project.getBuild() != null
+            ? project.getBuild().getDirectory()
+            : null;
+        var targetDir = buildDirectory != null
+            ? Path.of(buildDirectory)
+            : basedir.resolve("target");
+        return (targetDir.isAbsolute() ? targetDir : basedir.resolve(targetDir))
+            .resolve("generated-resources/graphitron")
+            .normalize();
     }
 
     /**

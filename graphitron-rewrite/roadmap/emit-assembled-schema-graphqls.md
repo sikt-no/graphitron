@@ -1,7 +1,7 @@
 ---
 id: R247
 title: Emit assembled schema.graphqls into generated-resources/graphitron, federation-aware
-status: Ready
+status: In Progress
 bucket: feature
 depends-on: []
 created: 2026-05-27
