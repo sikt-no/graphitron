@@ -100,6 +100,30 @@ class AppliedDirectiveEmitterTest {
             .contains("graphql.parser.Parser.parseValue(\"true\")");
     }
 
+    /**
+     * Regression guard for R250: when a directive application omits a nullable, no-default
+     * argument that the directive declares, graphql-java leaves that argument slot in
+     * {@code InputValueWithState.NOT_SET}. The emitter previously fed that state into
+     * {@code ValuesResolver.valueToLiteral} and tripped {@code assertShouldNeverHappen}.
+     * Now the slot is skipped; consumer-side schema build leaves the omitted arg absent on
+     * the rebuilt application, matching the original SDL.
+     */
+    @Test
+    void omittedArguments_areSkipped_notRenderedAsNotSetLiteral() {
+        String sdl = """
+            directive @audit(reason: String, ticket: String) on OBJECT
+            type Query { user: User }
+            type User @audit(reason: "pii") {
+              id: ID!
+            }
+            """;
+        var userBody = findTypeBody(sdl, "UserType");
+        assertThat(userBody)
+            .contains(".name(\"audit\")")
+            .contains(".name(\"reason\")")
+            .doesNotContain(".name(\"ticket\")");
+    }
+
     @Test
     void generatorOnlyDirectives_areSkipped() {
         String sdl = """
