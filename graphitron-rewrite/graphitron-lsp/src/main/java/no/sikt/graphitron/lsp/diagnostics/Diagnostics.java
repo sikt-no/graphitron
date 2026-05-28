@@ -184,12 +184,13 @@ public final class Diagnostics {
         for (ValidationError error : report.errors()) {
             var loc = error.location();
             if (!matchesOpenFile(uri, loc)) continue;
-            out.add(validatorDiagnostic(loc, severityOf(error.rejection()), error.message()));
+            out.add(validatorDiagnostic(loc, severityOf(error.rejection()), error.message(),
+                lspCodeOf(error.rejection())));
         }
         for (BuildWarning warning : report.warnings()) {
             var loc = warning.location();
             if (!matchesOpenFile(uri, loc)) continue;
-            out.add(validatorDiagnostic(loc, DiagnosticSeverity.Warning, warning.message()));
+            out.add(validatorDiagnostic(loc, DiagnosticSeverity.Warning, warning.message(), null));
         }
         return out;
     }
@@ -199,6 +200,22 @@ public final class Diagnostics {
         String sourceName = loc.getSourceName();
         if (sourceName == null || sourceName.isEmpty()) return false;
         return uri.equals(ValidationReport.canonicalUri(sourceName));
+    }
+
+    /**
+     * Reads the stable wire code for typed AuthorError arms that publish one. R238's
+     * {@link no.sikt.graphitron.rewrite.model.ServiceMethodCallError} arms expose
+     * {@code lspCode()} under the {@code graphitron.service-method-call.} namespace; the
+     * LSP projector forwards the code into the lsp4j {@link Diagnostic#setCode} field so
+     * editor extensions can key off the arm without parsing the prose message. Returns
+     * {@code null} for rejection arms that don't publish a code; the lsp4j Diagnostic just
+     * omits the field in that case.
+     */
+    private static String lspCodeOf(Rejection rejection) {
+        if (rejection instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCallError sce) {
+            return sce.lspCode();
+        }
+        return null;
     }
 
     private static DiagnosticSeverity severityOf(Rejection rejection) {
@@ -225,13 +242,16 @@ public final class Diagnostics {
      * right balance.
      */
     private static Diagnostic validatorDiagnostic(
-        SourceLocation loc, DiagnosticSeverity severity, String message
+        SourceLocation loc, DiagnosticSeverity severity, String message, String code
     ) {
         var start = new Position(loc.getLine() - 1, Math.max(0, loc.getColumn() - 1));
         var end = new Position(loc.getLine() - 1, Integer.MAX_VALUE);
         var d = new Diagnostic(new Range(start, end), message);
         d.setSeverity(severity);
         d.setSource(VALIDATOR_SOURCE);
+        if (code != null) {
+            d.setCode(code);
+        }
         return d;
     }
 

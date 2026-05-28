@@ -2568,8 +2568,12 @@ class FieldBuilder {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.ServiceMethodCall> ok ->
                 builder.apply(channel, ok.carrier());
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.ServiceMethodCall> err ->
+                // R238: preserve the typed ServiceMethodCallError as the UnclassifiedField's
+                // rejection so the LSP Diagnostic projector can read its lspCode() and set the
+                // wire `code` field. Collapsing to Rejection.structural would erase the typed
+                // arm and lose the stable wire code that editor extensions key on.
                 new UnclassifiedField(parentTypeName, fieldName, location, fieldDef,
-                    Rejection.structural(err.errors().getFirst().message()));
+                    err.errors().getFirst());
         };
     }
 

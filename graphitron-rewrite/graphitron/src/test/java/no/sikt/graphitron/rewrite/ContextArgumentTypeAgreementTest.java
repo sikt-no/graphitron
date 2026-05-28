@@ -60,6 +60,68 @@ class ContextArgumentTypeAgreementTest {
         assertThat(resolved.sites()).hasSizeGreaterThanOrEqualTo(2);
     }
 
+    /**
+     * R238: the ContextArgumentClassifier grows a sibling harvest arm walking
+     * {@link no.sikt.graphitron.rewrite.model.ServiceField#serviceMethodCall()} for
+     * {@link no.sikt.graphitron.rewrite.model.MappingEntry.FromContext} entries. Two root
+     * {@code @service} sites declaring the same context key with the same Java type fold into
+     * a single {@link no.sikt.graphitron.rewrite.model.ResolvedContextArg}.
+     */
+    @Test
+    void agreement_acceptsServiceFieldHarvestSameType() {
+        String sdl = """
+            type Query {
+                ratingA: String @service(
+                    service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getRatingByUser"},
+                    contextArguments: ["userId"])
+                ratingB: String @service(
+                    service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getRatingByUser"},
+                    contextArguments: ["userId"])
+            }
+            """;
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        var classification = ContextArgumentClassifier.classify(schema);
+
+        assertThat(classification.conflicts()).isEmpty();
+        var resolved = classification.resolved().get("userId");
+        assertThat(resolved).as("userId must resolve when both ServiceField sites agree on String").isNotNull();
+        assertThat(resolved.javaType()).isEqualTo(ClassName.get(String.class));
+        assertThat(resolved.sites()).hasSizeGreaterThanOrEqualTo(2);
+    }
+
+    /**
+     * R238: two root {@code @service} sites declaring the same context key with disagreeing
+     * Java types surface a {@link Rejection.AuthorError.TypeConflict} carrying both sites'
+     * declared types. Pairs with {@link #agreement_acceptsServiceFieldHarvestSameType}; the
+     * harvest arm contributes the {@code FromContext.javaType()} as the site-local declaration.
+     */
+    @Test
+    void agreement_rejectsServiceFieldHarvestDisagreeingTypes() {
+        String sdl = """
+            type Query {
+                ratingA: String @service(
+                    service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getRatingByUser"},
+                    contextArguments: ["userId"])
+                ratingB: String @service(
+                    service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getRatingByUserLong"},
+                    contextArguments: ["userId"])
+            }
+            """;
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        var classification = ContextArgumentClassifier.classify(schema);
+
+        assertThat(classification.resolved()).doesNotContainKey("userId");
+        assertThat(classification.conflicts()).hasSize(1);
+
+        var conflict = (Rejection.AuthorError.TypeConflict) classification.conflicts().get(0);
+        assertThat(conflict.contextArgumentName()).isEqualTo("userId");
+        assertThat(conflict.sites())
+            .extracting(s -> s.declared())
+            .containsExactlyInAnyOrder(
+                ClassName.get(String.class),
+                ClassName.get(Long.class));
+    }
+
     @Test
     void agreement_rejectsDisagreeingTypesAcrossSites() {
         // R190 fixture: argConditionWithContext declares tenantId: String;
