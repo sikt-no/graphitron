@@ -165,7 +165,7 @@ The narrow interface (`UpdateRowsField`) names the property and is the seam futu
 | No `@table` input argument on the mutation field | `Rejection.structural(reason)` | — |
 | Multiple `@table` input arguments | `Rejection.structural(reason)` | — |
 
-The `multiRow` and `@argCondition` rejections previously lived inside `MutationInputResolver.resolveInput` (lines 322-327 and 438-440). They migrate to FieldBuilder's UPDATE path; `MutationInputResolver`'s remaining UPDATE-specific checks (the value-driven partition rules at lines 509-541) dissolve under R188 + R246 together. `MutationInputResolver` itself stays alive for DELETE / INSERT / UPSERT until their own walker-carrier slices land.
+The `@argCondition`-on-mutation-arg rejection migrates from `MutationInputResolver.resolveInput` (lines 438-440 today) to the FieldBuilder pre-check. The `multiRow: true` UPDATE rejection is new in R246 — today's `MutationInputResolver` rejects only `multiRow: true` on INSERT (lines 322-327), which is unaffected by this slice and stays where it is. The INSERT precedent at 322-327 is cited only as shape reference for what the new UPDATE rejection looks like. `MutationInputResolver`'s remaining UPDATE-specific checks (the value-driven partition rules at lines 509-541) dissolve under R188 + R246 together. `MutationInputResolver` itself stays alive for DELETE / INSERT / UPSERT until their own walker-carrier slices land.
 
 ## Producer (`UpdateRowsWalker`)
 
@@ -280,9 +280,7 @@ Three tiers.
 * `@argCondition` on a mutation input arg surfaces as `UnclassifiedField` with `Rejection.structural`.
 * Typed `Structural.*` arm assertions for each walker rejection case (replacing today's stringly-typed rejection-prose assertions on the equivalent shapes from R144 / R188).
 
-The `@LoadBearingClassifierCheck` audit keys carry over: `mutation-input.where-columns-cover-pk` extends to "covers-pk-or-uk" with R246's slot as the structural witness.
-
-**Compilation / Execution (`@CompilationTier` / `@ExecutionTier`)**: `graphitron-sakila-example` provides the regression net. The migration is structurally invariant on observable behaviour for the surviving UPDATE shapes; existing `DmlMutationsExecutionTest` / `DmlBulkMutationsExecutionTest` round-trips are the safety net. A new execution case lands for the UK-driven UPDATE shape: a sakila fixture input keyed on a unique column other than the PK (candidate: `customer.email`, which has a unique index in canonical sakila), exercising the `MatchedKey.UniqueKey` arm end-to-end. The `multiRow: true` UPDATE rejection (no example currently uses `multiRow: true` on UPDATE in `graphitron-sakila-example`) is covered at the pipeline tier; no execution-tier coverage is added for it.
+**Compilation / Execution (`@CompilationTier` / `@ExecutionTier`)**: `graphitron-sakila-example` provides the regression net. The migration is structurally invariant on observable behaviour for the surviving UPDATE shapes; existing `SingleRecordPayloadDmlTest` (single-row UPDATE, e.g. `updateFilmPayload_updatesRowAndReturnsPayloadWithSingleDataField` at line 179) / `DmlBulkMutationsExecutionTest` round-trips are the safety net. A new execution case lands for the UK-driven UPDATE shape using the existing `nodeidfixture.parent_node.alt_key` fixture (the only non-PK `UNIQUE` constraint in `graphitron-sakila-db/src/main/resources/init.sql`, line 402): an UPDATE input keyed on `alt_key` exercises the `MatchedKey.UniqueKey` arm end-to-end. The `multiRow: true` UPDATE rejection (no example currently uses `multiRow: true` on UPDATE in `graphitron-sakila-example`) is covered at the pipeline tier; no execution-tier coverage is added for it.
 
 ## What this absorbs
 
