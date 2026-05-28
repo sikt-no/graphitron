@@ -172,26 +172,57 @@ public final class ServiceMethodCallEmitter {
      * {@code _l.stream().map(_e -> ...).toList()}. {@code null} anywhere in the chain yields
      * {@code null} rather than an NPE or CCE.
      *
-     * <p>Mirrors {@code ArgCallEmitter#buildMapChain} / {@code buildListAwarePathExtraction};
-     * the older sites stay in place for non-R238 callsites (condition, tableMethod,
-     * externalField) until those slices migrate.
+     * <p>The declared {@code javaType} carries one {@code List<>} wrap per {@code liftsList=true}
+     * segment, including the leaf segment if it lifts. The emitter strips that many wraps to
+     * find the innermost element type, then applies the leaf transform's cast against either
+     * the stripped element type (non-list leaf) or its single-{@code List<>} re-wrap (list-typed
+     * leaf). Mirrors {@code ArgCallEmitter#buildListAwarePathExtraction}; the older site stays
+     * live for non-R238 callsites (condition, tableMethod, externalField) until those slices
+     * migrate.
      */
     private static CodeBlock mapTraversal(CallSiteExtraction leaf, TypeName javaType, ArgPath path) {
+        int liftCount = 0;
+        for (ArgPath.Segment s : path.deeperSegments()) {
+            if (s.liftsList()) liftCount++;
+        }
+        TypeName innerElementType = stripListWraps(javaType, liftCount);
         CodeBlock root = CodeBlock.of("env.getArgument($S)", path.outerArgName());
-        return walkSegments(root, path.deeperSegments(), 0, leaf, javaType, new int[]{0});
+        return walkSegments(root, path.deeperSegments(), 0, leaf, innerElementType, new int[]{0});
+    }
+
+    /**
+     * Strip {@code n} leading {@code List<...>} wraps from {@code type}. If the wrap count
+     * exceeds the actual nesting (which indicates a classifier/schema drift), the helper stops
+     * at the innermost {@code ParameterizedTypeName} found rather than throwing: the resulting
+     * cast may fail at runtime, which surfaces the mismatch loudly enough.
+     */
+    private static TypeName stripListWraps(TypeName type, int n) {
+        TypeName t = type;
+        ClassName listRaw = ClassName.get(java.util.List.class);
+        for (int i = 0; i < n; i++) {
+            if (t instanceof ParameterizedTypeName ptn
+                    && ptn.rawType().equals(listRaw)
+                    && ptn.typeArguments().size() == 1) {
+                t = ptn.typeArguments().getFirst();
+            } else {
+                return t;
+            }
+        }
+        return t;
     }
 
     /**
      * Recursive emit for the segment walker. {@code currentExpr} is the {@code Object}-typed
      * value at the current depth; {@code segments[depth..]} are the remaining segments;
-     * {@code counter} is shared across recursive calls so binding names {@code _m1, _l2, _e3,
-     * ...} stay distinct within the same expression. The leaf transform's cast wraps the
-     * innermost {@code Map.get} result in {@code List<X>} when the leaf segment itself lifts a
-     * list, mirroring {@code ArgCallEmitter#walkSegments}'s {@code seg.liftsList()} branch.
+     * {@code innerElementType} is the leaf scalar's Java type after stripping all
+     * {@code liftsList} wraps from the declared Java parameter type; {@code counter} is shared
+     * across recursive calls so binding names {@code _m1, _l2, _e3, ...} stay distinct within
+     * the same expression. At the leaf, if the segment itself lifts a list the cast target
+     * wraps once in {@code List<innerElementType>}; otherwise the cast is the bare element type.
      */
     private static CodeBlock walkSegments(CodeBlock currentExpr, List<ArgPath.Segment> segments,
-                                          int depth, CallSiteExtraction leaf, TypeName javaType,
-                                          int[] counter) {
+                                          int depth, CallSiteExtraction leaf,
+                                          TypeName innerElementType, int[] counter) {
         ArgPath.Segment seg = segments.get(depth);
         boolean isLast = depth == segments.size() - 1;
         ClassName mapClass = ClassName.get(java.util.Map.class);
@@ -200,26 +231,22 @@ public final class ServiceMethodCallEmitter {
         String mBind = "_m" + mNum;
 
         if (isLast) {
-            CodeBlock leafExpr = scalarLeaf(leaf, javaType,
+            TypeName leafCastType = seg.liftsList()
+                ? ParameterizedTypeName.get(listClass, innerElementType)
+                : innerElementType;
+            CodeBlock leafExpr = scalarLeaf(leaf, leafCastType,
                 CodeBlock.of("$L.get($S)", mBind, seg.name()));
             return CodeBlock.of("$L instanceof $T<?, ?> $L ? $L : null",
                 currentExpr, mapClass, mBind, leafExpr);
         }
 
         if (seg.liftsList()) {
-            // Intermediate list segment: rebind the value at the current depth as a Map, then
-            // its segment-named entry as a List<?>, then stream-and-map each element through
-            // the recursion. Element-typed Java target for the leaf depends on the per-segment
-            // lift count, which the walker already encodes structurally; the leaf scalar cast
-            // here is left to the leaf segment's branch above (it sees the un-lifted element
-            // type because the consumer's Java parameter strips one List<> wrap per lifting
-            // segment).
             int lNum = ++counter[0];
             String lBind = "_l" + lNum;
             int eNum = ++counter[0];
             String eBind = "_e" + eNum;
             CodeBlock recursed = walkSegments(CodeBlock.of("$L", eBind), segments, depth + 1,
-                leaf, javaType, counter);
+                leaf, innerElementType, counter);
             return CodeBlock.of(
                 "$L instanceof $T<?, ?> $L ? ($L.get($S) instanceof $T<?> $L "
                 + "? $L.stream().map($L -> $L).toList() : null) : null",
@@ -228,7 +255,7 @@ public final class ServiceMethodCallEmitter {
         }
 
         CodeBlock next = CodeBlock.of("$L.get($S)", mBind, seg.name());
-        CodeBlock recursed = walkSegments(next, segments, depth + 1, leaf, javaType, counter);
+        CodeBlock recursed = walkSegments(next, segments, depth + 1, leaf, innerElementType, counter);
         return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($L) : null",
             currentExpr, mapClass, mBind, recursed);
     }

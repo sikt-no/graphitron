@@ -223,7 +223,9 @@ class ServiceMethodCallEmitterTest {
     void emit_static_listBearingPath_emitsStreamMapChain() {
         // ArgPath with a liftsList=true intermediate segment: argMapping `filmIds: input.items.id`
         // where SDL `items: [FilmIdItem!]!`. The emitter must dispatch at the list segment to
-        // `_l.stream().map(_e -> ...).toList()` rather than nested Map.get.
+        // `_l.stream().map(_e -> ...).toList()` rather than nested Map.get. The leaf cast strips
+        // one List<> wrap per liftsList segment, so the inner `_m.get("id")` cast is Integer (not
+        // List<Integer>) — wrapping it in .toList() produces the declared List<Integer>.
         var intType = ClassName.get(Integer.class);
         var listOfInt = ParameterizedTypeName.get(ClassName.get(java.util.List.class), intType);
         var entry = new MappingEntry.FromArg("filmIds",
@@ -247,9 +249,10 @@ class ServiceMethodCallEmitterTest {
             .contains("_l2.stream().map(_e3")
             .contains(".toList()");
         assertThat(varDecl)
-            .as("Inside the lambda the per-element value rebinds as Map and reads the leaf key")
+            .as("Inside the lambda the per-element value rebinds as Map and reads the leaf key, "
+                + "cast to the stripped inner type (Integer) — NOT the declared List<Integer>")
             .contains("_e3 instanceof java.util.Map<?, ?> _m4")
-            .contains("_m4.get(\"id\")");
+            .contains("(java.lang.Integer) _m4.get(\"id\")");
     }
 
     @Test

@@ -37,6 +37,7 @@ import no.sikt.graphitron.rewrite.model.ParticipantRef;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.Rejection;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
+import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
 import no.sikt.graphitron.rewrite.model.TableRef;
 import no.sikt.graphitron.rewrite.model.WhereFilter;
 
@@ -1214,8 +1215,8 @@ public class TypeFetcherGenerator {
         // declare the local with whichever shape the developer chose so the generated
         // assignment compiles. graphql-java accepts either as a list value.
         TypeName returnType = isList ? qstf.method().returnType() : recordClass;
-        return buildServiceFetcherCommon(ctx, qstf.name(), qstf.method(), qstf.parentTypeName(),
-            returnType, qstf.errorChannel(), outputPackage);
+        return buildServiceFetcherCommon(ctx, qstf.name(), qstf.method(), qstf.serviceMethodCall(),
+            qstf.parentTypeName(), returnType, qstf.errorChannel(), outputPackage);
     }
 
     /**
@@ -1236,8 +1237,8 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildQueryServiceRecordFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryServiceRecordField qsrf,
                                                               String outputPackage) {
         TypeName returnType = computeServiceRecordReturnType(qsrf);
-        return buildServiceFetcherCommon(ctx, qsrf.name(), qsrf.method(), qsrf.parentTypeName(),
-            returnType, qsrf.errorChannel(), outputPackage);
+        return buildServiceFetcherCommon(ctx, qsrf.name(), qsrf.method(), qsrf.serviceMethodCall(),
+            qsrf.parentTypeName(), returnType, qsrf.errorChannel(), outputPackage);
     }
 
     /**
@@ -1273,8 +1274,8 @@ public class TypeFetcherGenerator {
         boolean isList = mstf.returnType().wrapper().isList();
         // See buildQueryServiceTableFetcher for the List-cardinality policy.
         TypeName returnType = isList ? mstf.method().returnType() : recordClass;
-        return buildServiceFetcherCommon(ctx, mstf.name(), mstf.method(), mstf.parentTypeName(),
-            returnType, mstf.errorChannel(), outputPackage);
+        return buildServiceFetcherCommon(ctx, mstf.name(), mstf.method(), mstf.serviceMethodCall(),
+            mstf.parentTypeName(), returnType, mstf.errorChannel(), outputPackage);
     }
 
     /**
@@ -1286,8 +1287,8 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildMutationServiceRecordFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationServiceRecordField msrf,
                                                                  String outputPackage) {
         TypeName returnType = computeMutationServiceRecordReturnType(msrf);
-        return buildServiceFetcherCommon(ctx, msrf.name(), msrf.method(), msrf.parentTypeName(),
-            returnType, msrf.errorChannel(), outputPackage);
+        return buildServiceFetcherCommon(ctx, msrf.name(), msrf.method(), msrf.serviceMethodCall(),
+            msrf.parentTypeName(), returnType, msrf.errorChannel(), outputPackage);
     }
 
     /**
@@ -1331,17 +1332,10 @@ public class TypeFetcherGenerator {
      * wiring to project from.
      */
     private static MethodSpec buildServiceFetcherCommon(TypeFetcherEmissionContext ctx, String fieldName, MethodRef method,
+                                                        ServiceMethodCall carrier,
                                                         String parentTypeName, TypeName valueType,
                                                         Optional<ErrorChannel> errorChannel,
                                                         String outputPackage) {
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
-        var serviceClass = ClassName.bestGuess(method.className());
-        String conditionsClassName = outputPackage + ".conditions."
-            + parentTypeName + QueryConditionsGenerator.CLASS_NAME_SUFFIX;
-        var service = (MethodRef.Service) method;
-        boolean needsDsl = needsDsl(service.callShape());
-        CodeBlock callTarget = serviceCallTarget(service, serviceClass);
-
         var builder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(valueType))
@@ -1354,7 +1348,8 @@ public class TypeFetcherGenerator {
         // payload class populated from the violations list, then short-circuits. The
         // LocalContext arm has no payload class to construct; if a LocalContext channel ever
         // declares a ValidationHandler the producer must wire a sibling pre-step that emits
-        // {@code data(null).localContext(violations)} instead.
+        // {@code data(null).localContext(violations)} instead. The pre-step still reads
+        // MethodRef.params() for SDL arg names; migrating it off the legacy slot is a later step.
         if (errorChannel.isPresent()
                 && errorChannel.get() instanceof ErrorChannel.PayloadClass payloadChannel
                 && hasValidationHandler(payloadChannel)) {
@@ -1362,14 +1357,12 @@ public class TypeFetcherGenerator {
         }
 
         builder.beginControlFlow("try");
-        if (needsDsl) {
-            builder.addStatement("$T dsl = $L.getDslContext(env)", dslContextClass, ctx.graphitronContextCall());
-        }
-        builder.addStatement("$T result = $L.$L($L)",
-            valueType,
-            callTarget,
-            method.methodName(),
-            ArgCallEmitter.buildMethodBackedCallArgs(ctx, method, null, conditionsClassName));
+        // Register the same-class graphitronContext(env) helper before the emitter expands; the
+        // emitter generates unqualified calls and relies on the *Fetchers-class helper that
+        // {@link #buildGraphitronContextHelper} installs when GRAPHITRON_CONTEXT is requested.
+        ctx.graphitronContextCall();
+        ServiceMethodCallEmitter.emit(carrier, outputPackage, valueType)
+            .forEach(builder::addStatement);
         builder.addCode(returnSyncSuccess(valueType, "result"));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, errorChannel));
