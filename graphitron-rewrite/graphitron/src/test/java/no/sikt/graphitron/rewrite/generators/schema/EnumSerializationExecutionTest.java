@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * R229 integration test: pin graphql-java's bidirectional behavior at the
  * {@code GraphQLEnumValueDefinition.name(...).value(...)} boundary that the schema emitter (see
- * {@link EnumTypeGenerator#buildValueDefinition}) writes into the generated {@code <Name>Type.type()}
+ * {@link EnumTypeGenerator#buildValueDefinitionMethod}) writes into the generated {@code <Name>Type.type()}
  * method.
  *
  * <p>These tests construct the {@link GraphQLEnumType} the same way the generated code does — by
@@ -95,7 +95,7 @@ class EnumSerializationExecutionTest {
     }
 
     /**
-     * Builds the same enum shape {@link EnumTypeGenerator#buildValueDefinition} writes for
+     * Builds the same enum shape {@link EnumTypeGenerator#buildValueDefinitionMethod} writes for
      * {@code FODSELSNUMMER @field(name: "FØDSELSNUMMER")} on a {@code PersonIdentifikasjon} enum,
      * plus a {@code Query} with one enum-returning field and one enum-arg-bearing field both
      * routed to {@code typeFetcher}.
