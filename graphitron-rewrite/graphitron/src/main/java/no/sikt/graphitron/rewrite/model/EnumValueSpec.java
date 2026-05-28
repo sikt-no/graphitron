@@ -17,10 +17,10 @@ import graphql.schema.GraphQLEnumValueDefinition;
  *   <li>{@link #description} / {@link #deprecationReason} — pre-extracted, {@code null} when
  *       absent (the emitter checks for null to decide whether to emit the corresponding builder
  *       call).</li>
- *   <li>{@link #source} — the raw {@link GraphQLEnumValueDefinition} retained for
- *       {@code AppliedDirectiveEmitter.applicationsFor(value)} at value-level applied-directive
- *       emission. Consolidating the applied-directive emission against this record is a separate
- *       concern.</li>
+ *   <li>{@link #source} — the raw {@link GraphQLEnumValueDefinition} retained as the
+ *       {@code GraphQLDirectiveContainer} {@code AppliedDirectiveEmitter.emitApplications}
+ *       reads at value-level applied-directive emission. Consolidating the applied-directive
+ *       emission against this record is a separate concern.</li>
  * </ul>
  */
 public record EnumValueSpec(
