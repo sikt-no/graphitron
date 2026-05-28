@@ -187,6 +187,36 @@ class ServiceMethodCallEmitterTest {
     }
 
     @Test
+    void emit_static_multiSegmentScalarPath_emitsNullSafeMapChain() {
+        // NestedInputField-style scalar with a two-segment path. The walker unwraps to
+        // ValueShape.Scalar with deeperSegments=[items, id]; the emitter must produce a
+        // null-safe Map traversal that compiles under -source 17 (wildcard-parameterised
+        // instanceof, no unconditional Map pattern).
+        var intType = ClassName.get(Integer.class);
+        var entry = new MappingEntry.FromArg("filmId",
+            new ValueShape.Scalar(intType,
+                new ArgPath("input", List.of("items", "id")),
+                new CallSiteExtraction.Direct()));
+        var call = new ServiceMethodCall.Static(
+            "com.example.Svc", "find", List.of(entry), intType);
+
+        var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
+
+        String varDecl = stmts.get(0).toString();
+        assertThat(varDecl)
+            .as("Outer arg unwraps via instanceof Map<?, ?> _m1 binding")
+            .contains("env.getArgument(\"input\") instanceof java.util.Map<?, ?> _m1");
+        assertThat(varDecl)
+            .as("Inner segment rebinds via instanceof Map<?, ?> _m2 against _m1.get(...)")
+            .contains("_m1.get(\"items\") instanceof java.util.Map<?, ?> _m2");
+        assertThat(varDecl)
+            .as("Leaf segment casts the final Map.get to the declared Java type")
+            .contains("_m2.get(\"id\")")
+            .contains("java.lang.Integer")
+            .endsWith(": null");
+    }
+
+    @Test
     void emit_static_listOfRecordInputArg_callsCreateBeanListHelper() {
         var beanClass = ClassName.get("com.example", "MyInput");
         var stringType = ClassName.get(String.class);

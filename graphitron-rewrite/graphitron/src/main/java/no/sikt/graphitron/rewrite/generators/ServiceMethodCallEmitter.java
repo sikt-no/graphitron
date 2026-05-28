@@ -45,30 +45,47 @@ public final class ServiceMethodCallEmitter {
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
 
     /**
-     * Emit the body statements for a {@link ServiceMethodCall}. {@code outputPackage} is used
-     * to resolve the {@code GraphitronContext} reference at the call to
-     * {@code graphitronContext(env).getDslContext(env)} / {@code .getContextArgument(env, key)}.
+     * Emit the body statements for a {@link ServiceMethodCall}. The {@code result} local is
+     * declared with the carrier's {@link ServiceMethodCall#javaReturnType()}. The
+     * {@code outputPackage} parameter is reserved for resolving package-qualified references in
+     * future extensions; the current emitter only generates unqualified same-class calls into
+     * the {@code graphitronContext(env)} private static helper that
+     * {@code TypeFetcherGenerator.buildGraphitronContextHelper} emits on every {@code *Fetchers}
+     * class. The caller is responsible for registering
+     * {@link TypeFetcherEmissionContext.HelperKind#GRAPHITRON_CONTEXT} so the helper is actually
+     * emitted (the existing {@link TypeFetcherEmissionContext#graphitronContextCall()} accessor
+     * records the dependency on the way out).
      */
     public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage) {
-        ClassName graphitronContext = ClassName.get(outputPackage + ".schema", "GraphitronContext");
+        return emit(call, outputPackage, call.javaReturnType());
+    }
+
+    /**
+     * Variant that declares the {@code result} local with an explicit {@code resultLocalType}
+     * instead of the carrier's reflected return type. Used by the root-fetcher emitter, which
+     * sometimes declares the local with the GraphQL-side classification (e.g. a table record
+     * class) rather than the dev method's reflected return; the actual method return value is
+     * shape-compatible by classifier-time validation.
+     */
+    @SuppressWarnings("unused")
+    public static List<CodeBlock> emit(ServiceMethodCall call, String outputPackage, TypeName resultLocalType) {
         List<CodeBlock> out = new ArrayList<>();
 
         boolean needsDsl = anyFromDsl(allEntries(call)) || call instanceof ServiceMethodCall.Instance;
         if (needsDsl) {
-            out.add(CodeBlock.of("$T dsl = $T.graphitronContext(env).getDslContext(env)",
-                DSL_CONTEXT, graphitronContext));
+            out.add(CodeBlock.of("$T dsl = graphitronContext(env).getDslContext(env)", DSL_CONTEXT));
         }
 
         if (call instanceof ServiceMethodCall.Instance inst) {
             for (MappingEntry e : inst.ctorArgs()) {
-                addVarDecl(out, e, graphitronContext);
+                addVarDecl(out, e);
             }
         }
         for (MappingEntry e : call.methodArgs()) {
-            addVarDecl(out, e, graphitronContext);
+            addVarDecl(out, e);
         }
 
-        out.add(finalAssignment(call));
+        out.add(finalAssignment(call, resultLocalType));
         return out;
     }
 
@@ -89,12 +106,12 @@ public final class ServiceMethodCallEmitter {
         return false;
     }
 
-    private static void addVarDecl(List<CodeBlock> out, MappingEntry entry, ClassName graphitronContext) {
+    private static void addVarDecl(List<CodeBlock> out, MappingEntry entry) {
         switch (entry) {
             case MappingEntry.FromDsl ignored -> { /* shares the prelude's dsl local */ }
             case MappingEntry.FromContext ctx ->
-                out.add(CodeBlock.of("$T $L = ($T) $T.graphitronContext(env).getContextArgument(env, $S)",
-                    ctx.javaType(), ctx.javaName(), ctx.javaType(), graphitronContext, ctx.contextKey()));
+                out.add(CodeBlock.of("$T $L = ($T) graphitronContext(env).getContextArgument(env, $S)",
+                    ctx.javaType(), ctx.javaName(), ctx.javaType(), ctx.contextKey()));
             case MappingEntry.FromArg arg -> {
                 CodeBlock expr = valueShapeExpression(arg.shape());
                 out.add(CodeBlock.of("$T $L = $L", arg.shape().javaType(), arg.javaName(), expr));
@@ -146,19 +163,39 @@ public final class ServiceMethodCallEmitter {
         };
     }
 
+    /**
+     * Null-safe nested {@code Map<String, Object>} traversal from a top-level
+     * {@code env.getArgument(outer)} through each segment of {@code path.deeperSegments()}, with
+     * the leaf transform applied to the final {@code Map.get(leafSegment)} value. Each step
+     * uses an {@code instanceof Map<?, ?> _mN} rebind (wildcard-parameterised, conditional
+     * under {@code -source 17}) so a {@code null} anywhere in the chain yields {@code null}
+     * rather than a {@link NullPointerException} or a {@link ClassCastException}.
+     *
+     * <p>Mirrors {@code ArgCallEmitter#buildMapChain}; the older site stays in place for non-
+     * R238 callsites (condition, tableMethod, externalField) until those slices migrate.
+     */
     private static CodeBlock mapTraversal(CallSiteExtraction leaf, TypeName javaType, ArgPath path) {
-        // outerArg -> chained Map.get descent; null-safe per spec for NestedInputField.
-        CodeBlock.Builder traversal = CodeBlock.builder()
-            .add("(($T<$T, $T>) env.getArgument($S))",
-                ClassName.get(java.util.Map.class), ClassName.get(String.class), ClassName.OBJECT,
-                path.outerArgName());
-        for (String seg : path.deeperSegments()) {
-            traversal.add(" instanceof $T m1$L ? (($T<$T, $T>) m1$L).get($S) : null",
-                ClassName.get(java.util.Map.class), seg,
-                ClassName.get(java.util.Map.class), ClassName.get(String.class), ClassName.OBJECT,
-                seg, seg);
+        CodeBlock root = CodeBlock.of("env.getArgument($S)", path.outerArgName());
+        return buildMapChain(root, path.deeperSegments(), 0, leaf, javaType);
+    }
+
+    private static CodeBlock buildMapChain(CodeBlock currentExpr, List<String> segments, int depth,
+                                            CallSiteExtraction leaf, TypeName javaType) {
+        String key = segments.get(depth);
+        boolean isLeaf = depth == segments.size() - 1;
+        String binding = "_m" + (depth + 1);
+        ClassName mapClass = ClassName.get(java.util.Map.class);
+
+        if (isLeaf) {
+            CodeBlock leafExpr = scalarLeaf(leaf, javaType,
+                CodeBlock.of("$L.get($S)", binding, key));
+            return CodeBlock.of("$L instanceof $T<?, ?> $L ? $L : null",
+                currentExpr, mapClass, binding, leafExpr);
         }
-        return scalarLeaf(leaf, javaType, traversal.build());
+        CodeBlock next = CodeBlock.of("$L.get($S)", binding, key);
+        return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($L) : null",
+            currentExpr, mapClass, binding,
+            buildMapChain(next, segments, depth + 1, leaf, javaType));
     }
 
     private static CodeBlock listExpression(ValueShape.ListOf list) {
@@ -228,13 +265,13 @@ public final class ServiceMethodCallEmitter {
         };
     }
 
-    private static CodeBlock finalAssignment(ServiceMethodCall call) {
+    private static CodeBlock finalAssignment(ServiceMethodCall call, TypeName resultLocalType) {
         CodeBlock argList = argList(call.methodArgs());
         return switch (call) {
             case ServiceMethodCall.Static s -> CodeBlock.of("$T result = $T.$L($L)",
-                s.javaReturnType(), ClassName.bestGuess(s.fqClassName()), s.methodName(), argList);
+                resultLocalType, ClassName.bestGuess(s.fqClassName()), s.methodName(), argList);
             case ServiceMethodCall.Instance i -> CodeBlock.of("$T result = new $T($L).$L($L)",
-                i.javaReturnType(), ClassName.bestGuess(i.fqClassName()),
+                resultLocalType, ClassName.bestGuess(i.fqClassName()),
                 argList(i.ctorArgs()), i.methodName(), argList);
         };
     }
