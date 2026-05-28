@@ -45,6 +45,23 @@ class TestServiceStub {
      */
     public static String getRatingByFnr(Long fnr) { throw new UnsupportedOperationException(); }
 
+    /**
+     * R238 fixture: {@code @service} with one {@code Long userId} contextArgument; the
+     * {@code userId} name shares with {@link #getRatingByUser} but the Java type is {@code Long},
+     * not {@code String} — exercises the ContextArgumentClassifier's ServiceField harvest
+     * disagreement path.
+     */
+    public static String getRatingByUserLong(Long userId) { throw new UnsupportedOperationException(); }
+
+    /**
+     * R238 fixture: a static service method with two {@link DSLContext} parameters in the same
+     * method round. The walker's {@code MultipleDslContextSlots} invariant fires when more than
+     * one DSL slot lands per round; the test verifies the rejection projects to a typed
+     * {@code ServiceMethodCallError.MultipleDslContextSlots} arm carrying its
+     * {@code lspCode()} through to LSP.
+     */
+    public static String getWithTwoDsls(DSLContext a, DSLContext b) { throw new UnsupportedOperationException(); }
+
     /** No-arg, returns {@code String} — used for mutation parameter-classification tests. */
     public static String run() { throw new UnsupportedOperationException(); }
 

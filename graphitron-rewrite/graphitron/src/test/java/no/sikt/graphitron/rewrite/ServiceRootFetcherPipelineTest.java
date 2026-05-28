@@ -130,6 +130,34 @@ class ServiceRootFetcherPipelineTest {
                 && m.contains("Result<LanguageRecord>"));
     }
 
+    /**
+     * R238: a {@code @service} method with two {@code DSLContext} params in the same round
+     * surfaces the walker's typed {@code ServiceMethodCallError.MultipleDslContextSlots} arm
+     * end-to-end through the validator. The {@link ValidationError#rejection} preserves the
+     * typed arm (rather than collapsing to {@code Rejection.AuthorError.Structural}) so the
+     * LSP {@code Diagnostics.lspCodeOf} projector can read its stable wire code.
+     */
+    @Test
+    void serviceWithTwoDslContextParams_surfacesAsTypedServiceMethodCallError() {
+        var errors = validate("""
+            type Query {
+                twoDsls: String
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getWithTwoDsls"})
+            }
+            """);
+
+        var typed = errors.stream()
+            .map(ValidationError::rejection)
+            .filter(r -> r instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCallError.MultipleDslContextSlots)
+            .map(r -> (no.sikt.graphitron.rewrite.model.ServiceMethodCallError.MultipleDslContextSlots) r)
+            .findFirst();
+        assertThat(typed)
+            .as("Walker's MultipleDslContextSlots arm must reach ValidationError as a typed rejection")
+            .isPresent();
+        assertThat(typed.get().lspCode())
+            .isEqualTo("graphitron.service-method-call.multiple-dsl-context-slots");
+    }
+
     private static List<ValidationError> validate(String sdl) {
         var schema = TestSchemaHelper.buildSchema(sdl);
         return new GraphitronSchemaValidator().validate(schema);
