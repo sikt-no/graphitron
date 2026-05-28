@@ -358,3 +358,93 @@ Three tiers.
 **Pipeline (`@PipelineTier`)**: extend `ServiceRootFetcherPipelineTest` with end-to-end assertions on `walkerDiagnostics` for the rejection cases whose firing graphql-java doesn't catch upstream: `AmbiguousMethod`, `CtorParamFromArg`, `MultipleDslContextSlots`, `ParameterUnbindable`, `ArgMappingPathRejected`, `InputBeanShape`, `ReturnTypeMismatch`. Each fires from one Spec'd fixture and projects through to its arm-to-code mapping; the unit-tier provides per-arm coverage of the remaining `ServiceMethodCallError` arms. Existing positive-witness tests keep their author-facing wording but assert against the typed arms instead of stringly-typed rejection prose. Body-string assertions on fetcher emission retire (per `rewrite-design-principles.adoc`'s ban on code-string assertions) and get replaced by structural assertions on the `ServiceMethodCall` carrier. Extend `ContextArgumentTypeAgreementTest` (`@PipelineTier`) with a fixture exercising the new `ServiceField` harvest arm: two `@service` sites declaring the same context key fold into a single `ResolvedContextArg` when their site-local types match, and into a `Rejection.AuthorError.TypeConflict` carrying both `ServiceMethodCall` coordinates when they disagree.
 
 **Compilation / Execution (`@CompilationTier` / `@ExecutionTier`)**: `graphitron-sakila-example` provides the regression net. The migration is structurally invariant on observable behaviour; `mvn install -Plocal-db` end-to-end-green is the safety net.
+
+## Handoff (2026-05-28)
+
+This item is **In Progress** with an additive landing on trunk through commit `f90a2f3`. The spec's vertical is not complete; this section records what shipped, what was deliberately deferred, and the concrete files a continuation session must touch.
+
+### What shipped
+
+Five commits on `claude/graphitron-rewrite`:
+
+1. `9ebfa34` — roadmap Ready → In Progress.
+2. `9451dff` — additive model types under `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/`: `ServiceMethodCall` (sealed `Static` / `Instance`), `MappingEntry` (sealed `FromArg` / `FromContext` / `FromDsl`), `ValueShape` (sealed `Scalar` / `ListOf` / `RecordInput` / `JavaBeanInput` plus `FieldBinding`), `ArgPath`, `ServiceField`, `WalkerResult<C>` (sealed `Ok` / `Err`), `Diagnostic` + `RelatedInformation`, `Severity` enum, `ServiceMethodCallError` sub-seal of `Rejection.AuthorError` with all 12 typed arms and stable `lspCode()`.
+3. `9e60c7d` — `walker/ServiceMethodCallWalker` (translator over a resolved `MethodRef.Service`; not fresh reflection — see "Walker substrate" below) and `generators/ServiceMethodCallEmitter` (statement-list emitter with placeholders for composite `ValueShape` arms — see "Emitter composite arms" below).
+4. `8c11a2f` — 17 unit-tier tests across `ServiceMethodCallWalkerTest` and `ServiceMethodCallEmitterTest`. Coverage: every `MappingEntry` arm, every non-composite `ValueShape` arm, `Static` / `Instance` carriers, multi-segment `ArgPath` flattening, `MultipleDslContextSlots` cross-round invariant, DSL prelude single-emission discipline.
+5. `f90a2f3` — additive cutover on the four root sync `@service` permits. Each record gains `ServiceMethodCall serviceMethodCall` *alongside* the existing `MethodRef method`, and implements both `ServiceField` and `MethodBackedField`. `FieldBuilder.buildServiceField` wraps the resolver output with the walker, threads both slots into the constructor, and short-circuits to `UnclassifiedField` on walker `Err`. `MappingsConstantNameDedup.withResolvedChannel` rebuilds the four service permits carrying both slots through the error-channel rewrite. `TestFixtures.stubServiceCall(MethodRef.Service)` projects through the walker so tests fill the new slot from the existing `MethodRef.Service` fixtures. Plus CI-side drift-protection fixes (`RejectionSeverityCoverageTest` sample-map for 12 new arms; `typed-rejection.adoc` paragraph + drift enumeration update).
+
+### What's deferred and why
+
+The spec calls for the four permits to **drop** `MethodRef method` and **stop** implementing `MethodBackedField`. The additive landing keeps both slots live. The blocker is consumer migration on the emitter side:
+
+- `TypeFetcherGenerator.buildServiceFetcherCommon` (at `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java:1333`) reads `MethodRef.Service.callShape()` to decide static-vs-instance, calls `serviceCallTarget(MethodRef.Service, ClassName)` (same file, line 1393) to emit either `ClassName` or `new ClassName(dsl)`, and calls `ArgCallEmitter.buildMethodBackedCallArgs(ctx, method, null, conditionsClassName)` to render the call's actual-arg list. All three reach into `MethodRef.Service.params()` for the per-param `ParamSource` / `CallSiteExtraction` data.
+- `ServiceMethodCallEmitter.emit(ServiceMethodCall, outputPackage)` covers the `Static` / `Instance` fork and the var-decl prelude correctly for `Scalar`, `FromContext`, and `FromDsl` entries (asserted by `ServiceMethodCallEmitterTest`). It does **not** yet cover composite `ValueShape` arms: `RecordInput` and `JavaBeanInput` return a `/* R238: bean construct ... pending helper extraction */ null` placeholder, and `ListOf` returns a similar placeholder. Wiring real emission for these arms requires plumbing through `InputBeanInstantiationEmitter` (at `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/InputBeanInstantiationEmitter.java`) which today is driven by `CallSiteExtraction.InputBean` arms appearing in `MethodRef.Service.params()`.
+
+The retirement step needs the emitter to produce output **equivalent** to today's `ArgCallEmitter.buildMethodBackedCallArgs` for every shape the existing service-permit population uses. Until composite `ValueShape` emission is finished, switching `buildServiceFetcherCommon` to consume `serviceMethodCall()` instead of `method()` would regress every `@service` method that takes an input-bean argument.
+
+### Concrete next steps
+
+Pick one of the two strategies; the choice depends on how the implementer values "spec-true retirement" vs "minimum-risk landing".
+
+**Strategy A — finish the destructive cutover (spec-true).**
+
+1. Wire composite `ValueShape` emission in `ServiceMethodCallEmitter`. The existing `InputBeanInstantiationEmitter` registers per-bean helpers and emits `create<Bean>(env.getArgument("arg"))` at the call site; the new emitter needs to feed the same registration flow from a `ValueShape.RecordInput` / `ValueShape.JavaBeanInput` walk. The shape-mapping is one-to-one with today's `CallSiteExtraction.InputBean` (each `FieldBinding` in the new model corresponds to one in the old). For `ListOf`, today's path uses the same helper with the `List<Bean>` parameter type; the emitter calls `createBeans(env.getArgument("arg"))` and the helper streams. Reuse `InputBeanInstantiationEmitter`'s code generation directly rather than re-deriving.
+2. Migrate `TypeFetcherGenerator.buildServiceFetcherCommon` to take `ServiceMethodCall` instead of `MethodRef`. Replace `serviceCallTarget(MethodRef.Service, ClassName)` with a switch on `ServiceMethodCall.Static` / `Instance`. Replace `ArgCallEmitter.buildMethodBackedCallArgs(...)` with the statement-list returned by `ServiceMethodCallEmitter.emit(carrier, outputPackage)` — the existing one-line `addStatement("$T result = $L.$L($L)", ...)` becomes a `forEach(builder::addStatement)`.
+3. Drop `MethodRef method` from the four permit record components. Drop `MethodBackedField` from each `implements` clause. Drop the `, method,` constructor arguments from every call site (the 4 in `FieldBuilder`, the 4 in `MappingsConstantNameDedup.withResolvedChannel`, plus every test site updated in `f90a2f3`'s `, method, TestFixtures.stubServiceCall(method), Optional.` pattern collapses to `, TestFixtures.stubServiceCall(method), Optional.`).
+4. Update `ContextArgumentClassifier.collectFromField` (at `graphitron/src/main/java/no/sikt/graphitron/rewrite/ContextArgumentClassifier.java:109-121`). Today's `if (field instanceof MethodBackedField mbf)` branch catches the four permits via `MethodBackedField`; after retirement that path no longer fires for them. Add a sibling `if (field instanceof ServiceField sf)` branch that walks `sf.serviceMethodCall()` and projects every `FromContext` entry (across both `ctorArgs` and `methodArgs`) into the same per-name conflict-site map. The `ConflictSite` record at `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ConflictSite.java` widens its `site` component to a sealed identifier with `MethodRef` and `ServiceMethodCall` arms; the existing `Rejection.AuthorError.TypeConflict` message renderer dispatches on the arm.
+5. Drop `OutputField.peelToClassName(method.returnType())` in `QueryServiceRecordField.domainReturnType()` (`graphitron/src/main/java/no/sikt/graphitron/rewrite/model/QueryField.java`) in favour of `serviceMethodCall.javaReturnType()`; same swap in `MutationServiceRecordField.domainReturnType()`.
+6. Retire `TestFixtures.stubServiceCall(MethodRef.Service)` — once the record drops `method`, the fixture no longer needs a paired `MethodRef`. Tests construct `ServiceMethodCall` either directly (record literals) or via the walker.
+7. Add the `ValidationReport.walkerDiagnostics: List<Diagnostic>` slot and wire the orchestrator's collect-Err-exclude-field flow through to LSP. The `Diagnostics` projector arm in `graphitron-lsp/src/main/java/no/sikt/graphitron/lsp/diagnostics/Diagnostics.java` maps each `ServiceMethodCallError.lspCode()` to the LSP `Diagnostic.code` field; `Diagnostic.severity` projects from graphitron `Severity` to lsp4j `DiagnosticSeverity` via an exhaustive arm-by-arm switch.
+8. Author pipeline-tier tests per the Tests section: extend `ServiceRootFetcherPipelineTest` with `walkerDiagnostics` assertions for the seven rejection arms whose firing graphql-java doesn't catch upstream; extend `ContextArgumentTypeAgreementTest` with the `ServiceField` harvest arm fixture.
+9. The full pipeline (`mvn -f graphitron-rewrite/pom.xml install -Plocal-db`) is the regression net. Watch the `graphitron-sakila-example` compilation-tier and execution-tier fixtures — they exercise every emit shape the four service permits land.
+
+**Strategy B — accept the additive landing as the slice and split the retirement.**
+
+Push the additive landing as R238's permanent shape. File a sibling roadmap item (`retire-methodref-from-service-permits` or similar) that does steps 1–6 above as its own vertical, with the composite-emission wiring as its primary work. Pros: R238 is shipped, the carrier is live, every future walker slice has a working precedent. Cons: the spec's "retires four legacy carryovers" language is unmet by R238 itself; the dual-slot state lives on trunk indefinitely until the sibling lands.
+
+If choosing Strategy B, the Spec section above needs a paragraph noting the carve-out (the legacy slot stays live), and the "Out of scope" list grows an entry pointing at the sibling item.
+
+### Walker substrate (deviation from spec)
+
+The spec says `ServiceMethodCallWalker` reads "the field's SDL definition plus the codegen classloader directly. No graphitron-internal intermediate model." The shipped walker takes a resolved `MethodRef.Service` and translates it. This was a deliberate scope choice: today's `ServiceCatalog.reflectServiceMethod` is 1258 LOC of battle-tested reflection; duplicating it in `walker/internal/` per the spec's "extract" phrasing would have doubled the slice's footprint without changing the observable shape.
+
+The translator boundary lives at one place: `FieldBuilder.buildServiceField` calls the resolver first, then passes the `MethodRef.Service` to the walker. A continuation session that prefers the spec's substrate can:
+
+- Inline the resolver's parse-and-reflect work into the walker (move `ServiceDirectiveResolver.resolve`'s body under `walker/internal/`).
+- Have `FieldBuilder` call the walker directly with `(GraphQLFieldDefinition, ClassLoader)`.
+- Drop the `MethodRef.Service` intermediate from the four permit construction paths entirely.
+
+This is independent of Strategy A vs B; the substrate choice is orthogonal to the retirement of the legacy record slot.
+
+### Emitter composite arms (the actual implementation work)
+
+`ServiceMethodCallEmitter.compositeHelperCall(beanClass, fields, path)` (lines 178–182) and `listExpression(list)` (lines 170–174) return placeholder `CodeBlock`s. The real path:
+
+- For `RecordInput(class, fields)`: emit a static helper on the enclosing fetcher class named `create<TypeName>(Map<String,Object> map)` that walks `fields` field-by-field, materialising each via the same per-`ValueShape`-arm dispatch, then calls the record's canonical constructor positionally. The helper is deduplicated per bean class across the whole `*Fetchers` file.
+- For `JavaBeanInput(class, fields)`: same, but instantiate via the no-arg constructor and apply each field via `set<JavaFieldName>(value)`.
+- For `ListOf(path, element)`: emit `env.getArgument(path).stream().map(create<TypeName>).toList()` when the element is a composite; for `ListOf(path, Scalar(...))` the existing emitter's `Scalar` arm already handles the list-of-scalars case via the leaf's transform.
+
+The existing `InputBeanInstantiationEmitter` and `InputBeanResolver` already perform this work for `CallSiteExtraction.InputBean`; reusing them keeps the helper-emission shape consistent across cutover sites.
+
+### Tests still owed
+
+Per the Tests section above the unit-tier coverage is partial:
+
+- `ServiceMethodCallWalkerTest` does not yet have one rejection case per `ServiceMethodCallError.*` arm — only `MultipleDslContextSlots` fires from the current translator. The other arms (`ClassNotLoadable`, `AmbiguousMethod`, `ReturnTypeMismatch`, `InstanceHolderMissingCtor`, `CtorParamFromArg`, `ParameterNamesMissing`, `ParameterUnbindable`, `InputBeanShape`, `ArgMappingParseError`, `ArgMappingUnknownArg`, `ArgMappingPathRejected`) need walker-side production paths (today they're produced by the upstream resolver in different prose forms, not by the walker). A continuation session that absorbs reflection into the walker (per "Walker substrate" above) gets these production paths naturally; the additive landing doesn't.
+- `ServiceMethodCallEmitterTest` doesn't yet cover composite `ValueShape` emission (the test for `RecordInput` would assert the emitted helper invocation; pending the emitter work above).
+- Pipeline tier extensions (`ServiceRootFetcherPipelineTest`, `ContextArgumentTypeAgreementTest`) are not yet added.
+
+### Risk inventory for the continuation session
+
+- **`MappingsConstantNameDedup.withResolvedChannel` rebuild order.** The four `case` arms today reconstruct each permit with `f.method(), f.serviceMethodCall(), present` in component order. When `method` drops, the arm becomes `f.serviceMethodCall(), present`. Don't forget any.
+- **`ConflictSite.site` widening** is an existing record component change; every reader currently does `cs.site().className()` and `cs.site().methodName()`. Widening to a sealed split breaks those readers unless the typed accessor stays callable via dispatch (`site instanceof MethodRef m ? m.className() : ((ServiceMethodCall) site).fqClassName()`). Plan the widening through the existing `Rejection.AuthorError.TypeConflict` message renderer.
+- **`graphitron-sakila-example` is the regression net.** Watch its compilation and execution tiers. Any service method using an input bean is the first canary for composite `ValueShape` emission.
+- **CI drift-protection.** Any further sealed-permit additions on `Rejection` (or on a future `Severity` enum extension) need both `RejectionSeverityCoverageTest.sampleFor()` and `graphitron-rewrite/docs/typed-rejection.adoc`'s enumeration updated in the same commit.
+
+### Useful entry points
+
+- The carrier model: `graphitron/src/main/java/no/sikt/graphitron/rewrite/model/ServiceMethodCall.java` + siblings.
+- The walker: `graphitron/src/main/java/no/sikt/graphitron/rewrite/walker/ServiceMethodCallWalker.java`. Read the class javadoc; it explains the substrate choice and stage layout.
+- The emitter: `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/ServiceMethodCallEmitter.java`. Read the class javadoc and `compositeHelperCall` / `listExpression` for the placeholder boundary.
+- The cutover seam: `graphitron/src/main/java/no/sikt/graphitron/rewrite/FieldBuilder.java`, search for `buildServiceField` and the four `serviceResolver.resolve(...)` switches.
+- The legacy emitter path that still drives generation: `TypeFetcherGenerator.buildServiceFetcherCommon` at `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java:1333`.
