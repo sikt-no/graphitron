@@ -1214,8 +1214,8 @@ public class TypeFetcherGenerator {
         // or List<XRecord> (validated in ServiceDirectiveResolver.validateRootInvariants §3);
         // declare the local with whichever shape the developer chose so the generated
         // assignment compiles. graphql-java accepts either as a list value.
-        TypeName returnType = isList ? qstf.method().returnType() : recordClass;
-        return buildServiceFetcherCommon(ctx, qstf.name(), qstf.method(), qstf.serviceMethodCall(),
+        TypeName returnType = isList ? qstf.serviceMethodCall().javaReturnType() : recordClass;
+        return buildServiceFetcherCommon(ctx, qstf.name(), qstf.serviceMethodCall(),
             qstf.parentTypeName(), returnType, qstf.errorChannel(), outputPackage);
     }
 
@@ -1237,7 +1237,7 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildQueryServiceRecordFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryServiceRecordField qsrf,
                                                               String outputPackage) {
         TypeName returnType = computeServiceRecordReturnType(qsrf);
-        return buildServiceFetcherCommon(ctx, qsrf.name(), qsrf.method(), qsrf.serviceMethodCall(),
+        return buildServiceFetcherCommon(ctx, qsrf.name(), qsrf.serviceMethodCall(),
             qsrf.parentTypeName(), returnType, qsrf.errorChannel(), outputPackage);
     }
 
@@ -1253,10 +1253,10 @@ public class TypeFetcherGenerator {
             return isList ? ParameterizedTypeName.get(LIST, recordCls) : recordCls;
         }
         // PojoResultType (null fqClassName) or ScalarReturnType: faithfully reflect the
-        // developer's declared return type. MethodRef.returnType is the structured TypeName
-        // captured at reflection time, so the emitter declares the matching shape directly
+        // developer's declared return type. ServiceMethodCall.javaReturnType is the structured
+        // TypeName captured at walk time, so the emitter declares the matching shape directly
         // without parsing a string.
-        return qsrf.method().returnType();
+        return qsrf.serviceMethodCall().javaReturnType();
     }
 
     /**
@@ -1273,8 +1273,8 @@ public class TypeFetcherGenerator {
         var recordClass = tableRef.recordClass();
         boolean isList = mstf.returnType().wrapper().isList();
         // See buildQueryServiceTableFetcher for the List-cardinality policy.
-        TypeName returnType = isList ? mstf.method().returnType() : recordClass;
-        return buildServiceFetcherCommon(ctx, mstf.name(), mstf.method(), mstf.serviceMethodCall(),
+        TypeName returnType = isList ? mstf.serviceMethodCall().javaReturnType() : recordClass;
+        return buildServiceFetcherCommon(ctx, mstf.name(), mstf.serviceMethodCall(),
             mstf.parentTypeName(), returnType, mstf.errorChannel(), outputPackage);
     }
 
@@ -1287,7 +1287,7 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildMutationServiceRecordFetcher(TypeFetcherEmissionContext ctx, MutationField.MutationServiceRecordField msrf,
                                                                  String outputPackage) {
         TypeName returnType = computeMutationServiceRecordReturnType(msrf);
-        return buildServiceFetcherCommon(ctx, msrf.name(), msrf.method(), msrf.serviceMethodCall(),
+        return buildServiceFetcherCommon(ctx, msrf.name(), msrf.serviceMethodCall(),
             msrf.parentTypeName(), returnType, msrf.errorChannel(), outputPackage);
     }
 
@@ -1302,7 +1302,7 @@ public class TypeFetcherGenerator {
             ClassName recordCls = ClassName.bestGuess(r.fqClassName());
             return isList ? ParameterizedTypeName.get(LIST, recordCls) : recordCls;
         }
-        return msrf.method().returnType();
+        return msrf.serviceMethodCall().javaReturnType();
     }
 
     /**
@@ -1331,7 +1331,7 @@ public class TypeFetcherGenerator {
      * construction is unavoidable on the error path because no value was returned for per-field
      * wiring to project from.
      */
-    private static MethodSpec buildServiceFetcherCommon(TypeFetcherEmissionContext ctx, String fieldName, MethodRef method,
+    private static MethodSpec buildServiceFetcherCommon(TypeFetcherEmissionContext ctx, String fieldName,
                                                         ServiceMethodCall carrier,
                                                         String parentTypeName, TypeName valueType,
                                                         Optional<ErrorChannel> errorChannel,
@@ -1353,7 +1353,7 @@ public class TypeFetcherGenerator {
         if (errorChannel.isPresent()
                 && errorChannel.get() instanceof ErrorChannel.PayloadClass payloadChannel
                 && hasValidationHandler(payloadChannel)) {
-            builder.addCode(validatorPreStep(ctx, method, fieldName, payloadChannel, valueType, outputPackage));
+            builder.addCode(validatorPreStep(ctx, carrier, fieldName, payloadChannel, valueType, outputPackage));
         }
 
         builder.beginControlFlow("try");
@@ -1430,8 +1430,15 @@ public class TypeFetcherGenerator {
      * the raw value path. When the assembled schema is unavailable (some unit-tier tests
      * build the model only), the pre-step falls back to validating against the raw value for
      * every arg, mirroring pre-R94 behaviour.
+     *
+     * <p>R238: walks {@link ServiceMethodCall#methodArgs()} for {@link MappingEntry.FromArg}
+     * entries. The {@link no.sikt.graphitron.rewrite.model.ValueShape} carries each top-level
+     * arg's outer arg name on its data-bearing leaves; {@link #outerArgOfValueShape} descends
+     * to the first available leaf to extract it. Ctor args are not walked (the walker forbids
+     * {@code FromArg} entries in {@code ctorArgs} structurally), matching the legacy behaviour
+     * that only iterated method params.
      */
-    private static CodeBlock validatorPreStep(TypeFetcherEmissionContext ctx, MethodRef method,
+    private static CodeBlock validatorPreStep(TypeFetcherEmissionContext ctx, ServiceMethodCall carrier,
                                               String fieldName,
                                               ErrorChannel.PayloadClass channel,
                                               TypeName valueType, String outputPackage) {
@@ -1450,9 +1457,9 @@ public class TypeFetcherGenerator {
         var b = CodeBlock.builder();
         b.addStatement("$T __validator = $L.getValidator(env)", validator, ctx.graphitronContextCall());
         b.addStatement("$T __violations = new $T<>()", listOfErrors, arrayList);
-        for (var p : method.params()) {
-            if (!(p.source() instanceof ParamSource.Arg arg)) continue;
-            String argName = arg.graphqlArgName();
+        for (var entry : carrier.methodArgs()) {
+            if (!(entry instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromArg fromArg)) continue;
+            String argName = outerArgOfValueShape(fromArg.shape());
             String local = "__arg_" + sanitizeIdent(argName);
             ClassName inputClass = resolveInputArgClass(ctx, fieldName, argName, outputPackage);
             if (inputClass != null) {
@@ -1481,6 +1488,24 @@ public class TypeFetcherGenerator {
         b.addStatement("    .build()");
         b.endControlFlow();
         return b.build();
+    }
+
+    /**
+     * Descends into a {@link no.sikt.graphitron.rewrite.model.ValueShape} until a data-bearing
+     * leaf ({@code Scalar} / {@code ListOf}) is found, then returns its outer-arg name. The
+     * walker emits every {@link no.sikt.graphitron.rewrite.model.ValueShape.RecordInput} /
+     * {@link no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput} with siblings that
+     * share the same outer arg as a prefix, so descending to any leaf is sufficient.
+     */
+    private static String outerArgOfValueShape(no.sikt.graphitron.rewrite.model.ValueShape shape) {
+        return switch (shape) {
+            case no.sikt.graphitron.rewrite.model.ValueShape.Scalar s -> s.sdlPath().outerArgName();
+            case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l -> l.sdlPath().outerArgName();
+            case no.sikt.graphitron.rewrite.model.ValueShape.RecordInput r ->
+                r.fields().isEmpty() ? "" : outerArgOfValueShape(r.fields().getFirst().shape());
+            case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb ->
+                jb.fields().isEmpty() ? "" : outerArgOfValueShape(jb.fields().getFirst().shape());
+        };
     }
 
     /**
