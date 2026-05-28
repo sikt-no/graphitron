@@ -224,11 +224,13 @@ public final class ServiceMethodCallWalker {
     }
 
     private static ArgPath toArgPath(PathExpr expr) {
-        // PathExpr is recursive (Head / Step); flatten into outerArg + deeper segments.
-        List<String> segments = new ArrayList<>();
+        // PathExpr is recursive (Head / Step); flatten into outerArg + deeper segments. Each
+        // Step's liftsList flag carries forward so the emitter can dispatch between Map.get
+        // descent and stream/map element-wise descent at each depth.
+        List<ArgPath.Segment> segments = new ArrayList<>();
         PathExpr cursor = expr;
         while (cursor instanceof PathExpr.Step step) {
-            segments.addFirst(step.fieldName());
+            segments.addFirst(new ArgPath.Segment(step.fieldName(), step.liftsList()));
             cursor = step.parent();
         }
         if (cursor instanceof PathExpr.Head head) {

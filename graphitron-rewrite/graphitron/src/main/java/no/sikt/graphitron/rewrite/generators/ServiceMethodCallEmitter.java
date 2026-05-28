@@ -164,38 +164,73 @@ public final class ServiceMethodCallEmitter {
     }
 
     /**
-     * Null-safe nested {@code Map<String, Object>} traversal from a top-level
-     * {@code env.getArgument(outer)} through each segment of {@code path.deeperSegments()}, with
-     * the leaf transform applied to the final {@code Map.get(leafSegment)} value. Each step
-     * uses an {@code instanceof Map<?, ?> _mN} rebind (wildcard-parameterised, conditional
-     * under {@code -source 17}) so a {@code null} anywhere in the chain yields {@code null}
-     * rather than a {@link NullPointerException} or a {@link ClassCastException}.
+     * Null-safe traversal from a top-level {@code env.getArgument(outer)} through each
+     * {@link ArgPath.Segment} of {@code path.deeperSegments()}, with the leaf transform applied
+     * to the final {@code Map.get(leafSegment)} value. Map-shaped segments rebind via
+     * {@code instanceof Map<?, ?> _mN} (wildcard-parameterised, conditional under
+     * {@code -source 17}); list-shaped segments stream through their elements via
+     * {@code _l.stream().map(_e -> ...).toList()}. {@code null} anywhere in the chain yields
+     * {@code null} rather than an NPE or CCE.
      *
-     * <p>Mirrors {@code ArgCallEmitter#buildMapChain}; the older site stays in place for non-
-     * R238 callsites (condition, tableMethod, externalField) until those slices migrate.
+     * <p>Mirrors {@code ArgCallEmitter#buildMapChain} / {@code buildListAwarePathExtraction};
+     * the older sites stay in place for non-R238 callsites (condition, tableMethod,
+     * externalField) until those slices migrate.
      */
     private static CodeBlock mapTraversal(CallSiteExtraction leaf, TypeName javaType, ArgPath path) {
         CodeBlock root = CodeBlock.of("env.getArgument($S)", path.outerArgName());
-        return buildMapChain(root, path.deeperSegments(), 0, leaf, javaType);
+        return walkSegments(root, path.deeperSegments(), 0, leaf, javaType, new int[]{0});
     }
 
-    private static CodeBlock buildMapChain(CodeBlock currentExpr, List<String> segments, int depth,
-                                            CallSiteExtraction leaf, TypeName javaType) {
-        String key = segments.get(depth);
-        boolean isLeaf = depth == segments.size() - 1;
-        String binding = "_m" + (depth + 1);
+    /**
+     * Recursive emit for the segment walker. {@code currentExpr} is the {@code Object}-typed
+     * value at the current depth; {@code segments[depth..]} are the remaining segments;
+     * {@code counter} is shared across recursive calls so binding names {@code _m1, _l2, _e3,
+     * ...} stay distinct within the same expression. The leaf transform's cast wraps the
+     * innermost {@code Map.get} result in {@code List<X>} when the leaf segment itself lifts a
+     * list, mirroring {@code ArgCallEmitter#walkSegments}'s {@code seg.liftsList()} branch.
+     */
+    private static CodeBlock walkSegments(CodeBlock currentExpr, List<ArgPath.Segment> segments,
+                                          int depth, CallSiteExtraction leaf, TypeName javaType,
+                                          int[] counter) {
+        ArgPath.Segment seg = segments.get(depth);
+        boolean isLast = depth == segments.size() - 1;
         ClassName mapClass = ClassName.get(java.util.Map.class);
+        ClassName listClass = ClassName.get(java.util.List.class);
+        int mNum = ++counter[0];
+        String mBind = "_m" + mNum;
 
-        if (isLeaf) {
+        if (isLast) {
             CodeBlock leafExpr = scalarLeaf(leaf, javaType,
-                CodeBlock.of("$L.get($S)", binding, key));
+                CodeBlock.of("$L.get($S)", mBind, seg.name()));
             return CodeBlock.of("$L instanceof $T<?, ?> $L ? $L : null",
-                currentExpr, mapClass, binding, leafExpr);
+                currentExpr, mapClass, mBind, leafExpr);
         }
-        CodeBlock next = CodeBlock.of("$L.get($S)", binding, key);
+
+        if (seg.liftsList()) {
+            // Intermediate list segment: rebind the value at the current depth as a Map, then
+            // its segment-named entry as a List<?>, then stream-and-map each element through
+            // the recursion. Element-typed Java target for the leaf depends on the per-segment
+            // lift count, which the walker already encodes structurally; the leaf scalar cast
+            // here is left to the leaf segment's branch above (it sees the un-lifted element
+            // type because the consumer's Java parameter strips one List<> wrap per lifting
+            // segment).
+            int lNum = ++counter[0];
+            String lBind = "_l" + lNum;
+            int eNum = ++counter[0];
+            String eBind = "_e" + eNum;
+            CodeBlock recursed = walkSegments(CodeBlock.of("$L", eBind), segments, depth + 1,
+                leaf, javaType, counter);
+            return CodeBlock.of(
+                "$L instanceof $T<?, ?> $L ? ($L.get($S) instanceof $T<?> $L "
+                + "? $L.stream().map($L -> $L).toList() : null) : null",
+                currentExpr, mapClass, mBind, mBind, seg.name(),
+                listClass, lBind, lBind, eBind, recursed);
+        }
+
+        CodeBlock next = CodeBlock.of("$L.get($S)", mBind, seg.name());
+        CodeBlock recursed = walkSegments(next, segments, depth + 1, leaf, javaType, counter);
         return CodeBlock.of("$L instanceof $T<?, ?> $L ? ($L) : null",
-            currentExpr, mapClass, binding,
-            buildMapChain(next, segments, depth + 1, leaf, javaType));
+            currentExpr, mapClass, mBind, recursed);
     }
 
     private static CodeBlock listExpression(ValueShape.ListOf list) {

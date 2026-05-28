@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.PathExpr;
+import no.sikt.graphitron.rewrite.model.ArgPath;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.MappingEntry;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -216,7 +217,11 @@ class ServiceMethodCallWalkerTest {
 
         var scalar = (ValueShape.Scalar) ((MappingEntry.FromArg) call.methodArgs().getFirst()).shape();
         assertThat(scalar.sdlPath().outerArgName()).isEqualTo("input");
-        assertThat(scalar.sdlPath().deeperSegments()).containsExactly("where", "id");
+        assertThat(scalar.sdlPath().deeperSegments())
+            .extracting(ArgPath.Segment::name).containsExactly("where", "id");
+        assertThat(scalar.sdlPath().hasListSegment())
+            .as("non-list segments preserve liftsList=false from PathExpr.Step")
+            .isFalse();
     }
 
     // ===== helpers =====
