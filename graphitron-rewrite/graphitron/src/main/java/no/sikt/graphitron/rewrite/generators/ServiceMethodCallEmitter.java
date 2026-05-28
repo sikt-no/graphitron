@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ArgPath;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
@@ -104,18 +105,21 @@ public final class ServiceMethodCallEmitter {
     /**
      * Render an expression that evaluates to the value at the given {@link ValueShape}. Scalar
      * leaves inline directly; composite shapes ({@link ValueShape.RecordInput},
-     * {@link ValueShape.JavaBeanInput}, {@link ValueShape.ListOf}) delegate to a
-     * {@code private static} helper on the enclosing fetcher class. R238 lands the carrier and
-     * the call-site expression form; helper emission (creating the
-     * {@code private static T create<Bean>(Map) }-style helpers) reuses the existing
-     * {@code InputBeanInstantiationEmitter} machinery and is wired in at cutover.
+     * {@link ValueShape.JavaBeanInput}, {@link ValueShape.ListOf}) delegate to the
+     * {@code create<Bean>} / {@code create<Bean>List} helpers emitted on the enclosing
+     * {@code *Fetchers} class by {@link InputBeanInstantiationEmitter}. The helper names follow
+     * the R150 convention; the helper queue in {@link TypeFetcherGenerator} is driven from the
+     * call sites that produce {@link CallSiteExtraction.InputBean} arms (today the four service
+     * permits implement both {@code ServiceField} and {@code MethodBackedField} during the
+     * additive cutover, so the queue still sees them via the legacy {@code method().callParams()}
+     * walk).
      */
     static CodeBlock valueShapeExpression(ValueShape shape) {
         return switch (shape) {
             case ValueShape.Scalar s -> scalarExpression(s);
             case ValueShape.ListOf list -> listExpression(list);
-            case ValueShape.RecordInput rec -> compositeHelperCall(rec.javaClass(), rec.fields(), pathFor(shape));
-            case ValueShape.JavaBeanInput bean -> compositeHelperCall(bean.javaClass(), bean.fields(), pathFor(shape));
+            case ValueShape.RecordInput rec -> compositeHelperCall(rec.javaClass(), rec.fields());
+            case ValueShape.JavaBeanInput bean -> compositeHelperCall(bean.javaClass(), bean.fields());
         };
     }
 
@@ -158,43 +162,69 @@ public final class ServiceMethodCallEmitter {
     }
 
     private static CodeBlock listExpression(ValueShape.ListOf list) {
-        // R238 cutover wires element-wise mapping through extracted helpers; ship the carrier
-        // shape now and have the helper-emitter fill this in at cutover.
-        return CodeBlock.of("/* R238: list mapping for $L pending helper extraction */ null",
-            list.sdlPath().outerArgName());
-    }
-
-    private static CodeBlock compositeHelperCall(ClassName beanClass, List<ValueShape.FieldBinding> fields, ArgPath path) {
-        // R238 cutover wires per-bean static helpers (create<Bean>(Map)); the carrier ships now
-        // and the helper plumbing follows. Emit a structural placeholder so the carrier's
-        // intent is visible in unit-tier emitter snapshots without committing to a final form.
-        return CodeBlock.of("/* R238: bean construct $T from $L pending helper extraction */ null",
-            beanClass, path.outerArgName());
-    }
-
-    private static ArgPath pathFor(ValueShape shape) {
-        return switch (shape) {
-            case ValueShape.Scalar s -> s.sdlPath();
-            case ValueShape.ListOf l -> l.sdlPath();
-            case ValueShape.RecordInput r -> r.fields().isEmpty()
-                ? ArgPath.head("")
-                : firstLeafPath(r.fields().getFirst().shape());
-            case ValueShape.JavaBeanInput b -> b.fields().isEmpty()
-                ? ArgPath.head("")
-                : firstLeafPath(b.fields().getFirst().shape());
+        ValueShape elt = list.elementShape();
+        String outerArg = list.sdlPath().outerArgName();
+        return switch (elt) {
+            case ValueShape.RecordInput rec ->
+                CodeBlock.of("$L(env.getArgument($S))",
+                    pluralHelperName(rec.javaClass()), outerArg);
+            case ValueShape.JavaBeanInput bean ->
+                CodeBlock.of("$L(env.getArgument($S))",
+                    pluralHelperName(bean.javaClass()), outerArg);
+            case ValueShape.Scalar s ->
+                // List of scalars at a top-level path: the walker produces a Scalar directly
+                // for {@code List<X>} args, so this arm is defensive. Cast the raw List<?> to
+                // the declared element type via the leaf transform-equivalent expression.
+                CodeBlock.of("($T) env.getArgument($S)",
+                    ParameterizedTypeName.get(ClassName.get(List.class), s.javaType()),
+                    outerArg);
+            case ValueShape.ListOf nested ->
+                // Nested ListOf (list of lists) is not produced by the current walker. Defensive
+                // fallback so the switch is exhaustive without inventing a syntax.
+                CodeBlock.of("/* unsupported nested ListOf at $L */ null", outerArg);
         };
     }
 
-    private static ArgPath firstLeafPath(ValueShape shape) {
+    /**
+     * Call the {@code create<Bean>} singular helper emitted on the enclosing {@code *Fetchers}
+     * class. The walker positions every {@link ValueShape.RecordInput} / {@link ValueShape.JavaBeanInput}
+     * at a top-level path (the bean is itself the SDL arg; sibling field paths share the outer
+     * arg name as a prefix), so the call site is {@code createBean(env.getArgument("outerArg"))}.
+     * The outer arg name is derived from any sibling field's path; the {@code @Nullable}
+     * graphql-java argument map is passed through unchanged and the helper handles null.
+     */
+    private static CodeBlock compositeHelperCall(ClassName beanClass, List<ValueShape.FieldBinding> fields) {
+        return CodeBlock.of("$L(env.getArgument($S))",
+            singularHelperName(beanClass), outerArgOf(fields));
+    }
+
+    private static String singularHelperName(ClassName beanClass) {
+        return "create" + beanClass.simpleName();
+    }
+
+    private static String pluralHelperName(ClassName beanClass) {
+        return "create" + beanClass.simpleName() + "List";
+    }
+
+    /**
+     * Derive the outer SDL arg name shared by every leaf under a composite. Every
+     * {@link ValueShape.FieldBinding} inside a bean carries the outer arg in its leaf path's
+     * head (the walker calls {@code path.append(...)} per field while keeping the same
+     * {@code outerArgName}). An empty bean is structurally well-formed but has no source —
+     * defensively returns the empty string; the only way to reach this branch is a bean class
+     * with no SDL-visible fields, which never produces a useful helper call anyway.
+     */
+    private static String outerArgOf(List<ValueShape.FieldBinding> fields) {
+        if (fields.isEmpty()) return "";
+        return outerArgOf(fields.getFirst().shape());
+    }
+
+    private static String outerArgOf(ValueShape shape) {
         return switch (shape) {
-            case ValueShape.Scalar s -> s.sdlPath();
-            case ValueShape.ListOf l -> l.sdlPath();
-            case ValueShape.RecordInput r -> r.fields().isEmpty()
-                ? ArgPath.head("")
-                : firstLeafPath(r.fields().getFirst().shape());
-            case ValueShape.JavaBeanInput b -> b.fields().isEmpty()
-                ? ArgPath.head("")
-                : firstLeafPath(b.fields().getFirst().shape());
+            case ValueShape.Scalar s -> s.sdlPath().outerArgName();
+            case ValueShape.ListOf l -> l.sdlPath().outerArgName();
+            case ValueShape.RecordInput r -> outerArgOf(r.fields());
+            case ValueShape.JavaBeanInput b -> outerArgOf(b.fields());
         };
     }
 
