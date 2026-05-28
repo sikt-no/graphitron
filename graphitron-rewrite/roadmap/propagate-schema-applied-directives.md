@@ -1,10 +1,10 @@
 ---
 id: R250
 title: Propagate schema-applied directives (@link) from consumer SDL to generated buildSchema
-status: In Progress
+status: In Review
 depends-on: []
 created: 2026-05-27
-last-updated: 2026-05-27
+last-updated: 2026-05-28
 ---
 
 # Propagate schema-applied directives (@link) from consumer SDL to generated buildSchema
