@@ -137,4 +137,76 @@ class ServiceMethodCallEmitterTest {
         assertThat(stmts.getFirst().toString())
             .contains("result = com.example.Svc.doThing()");
     }
+
+    @Test
+    void emit_static_recordInputArg_callsCreateBeanHelper() {
+        // RecordInput at a top-level path: emitter calls the create<Bean>() helper produced by
+        // InputBeanInstantiationEmitter, passing the raw env argument map through unchanged.
+        var beanClass = ClassName.get("com.example", "MyInput");
+        var stringType = ClassName.get(String.class);
+        var fields = List.of(new ValueShape.FieldBinding(
+            "title", "title",
+            new ValueShape.Scalar(stringType,
+                new ArgPath("input", List.of("title")),
+                new CallSiteExtraction.Direct())));
+        var entry = new MappingEntry.FromArg("input",
+            new ValueShape.RecordInput(beanClass, fields));
+        var call = new ServiceMethodCall.Static(
+            "com.example.Svc", "save", List.of(entry), stringType);
+
+        var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
+
+        assertThat(stmts).hasSize(2);
+        assertThat(stmts.get(0).toString())
+            .as("RecordInput var-decl invokes the singular createBean helper")
+            .contains("createMyInput(env.getArgument(\"input\"))")
+            .contains("com.example.MyInput input");
+        assertThat(stmts.get(1).toString()).contains("save(input)");
+    }
+
+    @Test
+    void emit_static_javaBeanInputArg_callsCreateBeanHelper() {
+        var beanClass = ClassName.get("com.example", "MyBean");
+        var stringType = ClassName.get(String.class);
+        var fields = List.of(new ValueShape.FieldBinding(
+            "title", "title",
+            new ValueShape.Scalar(stringType,
+                new ArgPath("input", List.of("title")),
+                new CallSiteExtraction.Direct())));
+        var entry = new MappingEntry.FromArg("input",
+            new ValueShape.JavaBeanInput(beanClass, fields));
+        var call = new ServiceMethodCall.Static(
+            "com.example.Svc", "save", List.of(entry), stringType);
+
+        var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
+
+        assertThat(stmts).hasSize(2);
+        assertThat(stmts.get(0).toString())
+            .as("JavaBeanInput uses the same singular helper convention as RecordInput")
+            .contains("createMyBean(env.getArgument(\"input\"))");
+    }
+
+    @Test
+    void emit_static_listOfRecordInputArg_callsCreateBeanListHelper() {
+        var beanClass = ClassName.get("com.example", "MyInput");
+        var stringType = ClassName.get(String.class);
+        var fields = List.of(new ValueShape.FieldBinding(
+            "title", "title",
+            new ValueShape.Scalar(stringType,
+                new ArgPath("inputs", List.of("title")),
+                new CallSiteExtraction.Direct())));
+        var listShape = new ValueShape.ListOf(ArgPath.head("inputs"),
+            new ValueShape.RecordInput(beanClass, fields));
+        var entry = new MappingEntry.FromArg("inputs", listShape);
+        var call = new ServiceMethodCall.Static(
+            "com.example.Svc", "saveAll", List.of(entry), stringType);
+
+        var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
+
+        assertThat(stmts).hasSize(2);
+        assertThat(stmts.get(0).toString())
+            .as("ListOf(RecordInput) invokes the plural createBeanList helper")
+            .contains("createMyInputList(env.getArgument(\"inputs\"))");
+        assertThat(stmts.get(1).toString()).contains("saveAll(inputs)");
+    }
 }
