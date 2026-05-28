@@ -5,7 +5,7 @@ status: In Progress
 bucket: structural
 priority: 4
 theme: structural-refactor
-depends-on: [methodcall-walker-carrier, simplify-update-mutations-drop-value]
+depends-on: [methodcall-walker-carrier]
 created: 2026-05-27
 last-updated: 2026-05-28
 ---
@@ -200,7 +200,7 @@ Walker stages (one pass per UPDATE field that survived the pre-checks):
 
 5. **Find the matched key.** Iterate the candidate keys; the first whose column set is a subset of the input-covered columns wins. PK preferred over UK by step 4's ordering. No matching key ⇒ `Structural.NoUniqueKeyCoverage(table, inputColumns, candidateKeys)` — names the table, the input-covered columns, and every candidate key the walker considered with its column shortfall.
 
-6. **Partition the input fields into SET and WHERE.** For each admitted field, if every target column it contributes is a member of the matched key's column set, the field's columns project to `keyColumns`. If no target column is in the matched key's set, the columns project to `setColumns`. Mixed-membership fields (some columns in the matched key, some outside) reject with `Structural.MixedCarrierKeyMembership(fieldName, columnsInKey, columnsOutsideKey)` — only possible on composite reference shapes per R188's analysis.
+6. **Partition the input fields into SET and WHERE.** For each admitted field, if every target column it contributes is a member of the matched key's column set, the field's columns project to `keyColumns`. If no target column is in the matched key's set, the columns project to `setColumns`. Mixed-membership fields (some columns in the matched key, some outside) reject with `Structural.MixedCarrierKeyMembership(fieldName, columnsInKey, columnsOutsideKey)` — only possible on composite reference shapes, which are the only admitted carriers whose lifted source columns can span more than one column.
 
 7. **Reject empty SET.** If `setColumns` ends up empty after step 6, reject with `Structural.NoSetFields(table, matchedKey)` — UPDATE with nothing to set is structurally ill-formed regardless of whether the WHERE is well-pinned. Today's runtime check at `TypeFetcherGenerator:2131-2135` lifts to classify-time.
 
@@ -301,11 +301,12 @@ Three tiers.
 | Item | Absorption mode |
 |---|---|
 | **R146** (`mutation-cardinality-safety-unique-index`) | Subsumed. The PK-or-UK coverage check this slice files for is R146's design content, applied at the walker layer. With `multiRow: true` rejected on UPDATE outright, PK-or-UK coverage is not an *alternative* to a broadcast opt-out — it's *the* way to express a single-row UPDATE. R146's file is discarded on R246's Done landing. |
+| **R188** (`simplify-update-mutations-drop-value`) UPDATE-side | Partially absorbed. R188's UPDATE-side scope is the partition rule in `TableInputArg.of(...)` (replace "marked by `@value`" with "PK columns are WHERE"). R246 dissolves `TableInputArg` from `MutationUpdateTableField` and the walker partitions by matched-key membership directly from SDL + jOOQ — bypassing the partition rule R188 ships, and ignoring `@value` on UPDATE inputs entirely. R188 retains its DELETE-side partition scope (DELETE has no walker carrier yet) and the `@value` directive declaration retirement at the codebase level. The two items can ship in either order. |
 
 ## Dependencies and sequencing
 
 * **R238** (foundation slice): provides `WalkerResult<C>`, `AuthorError.Structural` sealed sub-family, LSP wire conventions, orchestrator collect-Err flow. Hard prerequisite.
-* **R188** (PK-default partition): drops `@value` and provides the per-input-field admitted-carrier set the walker classifies into (`ColumnField` / `CompositeColumnField` / `ColumnReferenceField` / `CompositeColumnReferenceField`). Hard prerequisite — the walker reads target columns through the same four-carrier rule R188 establishes. With R188 + R246 both shipped, the `@value` directive and the legacy `TableInputArg.of`-driven partition retire together for UPDATE.
+* **R188** (PK-default partition): **not a prerequisite.** R246's walker reads SDL directly and partitions by matched-key membership, bypassing the `TableInputArg.of` rewrite R188 ships. R246 and R188 can land in either order; if R188 ships first, R246 inherits a cleaner classifier state, but R246 doesn't depend on it. R188's UPDATE-side scope is absorbed (see § What this absorbs); its DELETE-side scope and the `@value` directive retirement are independent and unaffected by R246.
 * **R145** (UPSERT): untouched. UPSERT continues through `MutationInputResolver`'s deferral until R145 ships.
 
 ## Out of scope
